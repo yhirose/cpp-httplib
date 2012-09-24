@@ -5,16 +5,16 @@
 //  The Boost Software License 1.0
 //
 
-#include <functional>
-#include <map>
-#include <regex>
-#include <string>
-#include <assert.h>
-
 #ifdef _WIN32
+//#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_NONSTDC_NO_DEPRECATE
+
+#include <fcntl.h>
+#include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+typedef unsigned __int16 uint16_t;
 typedef SOCKET socket_t;
 
 int inet_aton(const char* strptr, struct in_addr* addrptr)
@@ -33,6 +33,12 @@ int inet_aton(const char* strptr, struct in_addr* addrptr)
 
 typedef int socket_t;
 #endif
+
+#include <functional>
+#include <map>
+#include <regex>
+#include <string>
+#include <assert.h>
 
 namespace httpsvrkit
 {
@@ -74,33 +80,13 @@ public:
     void stop();
 
 private:
-    void process_request(int fd);
+    void process_request(FILE* fp_read, FILE* fp_write);
 
     socket_t sock_;
     std::multimap<std::string, Handler> handlers_;
 };
 
 // Implementation
-
-template <typename Fn>
-void fdopen_b(int fd, const char* md, Fn fn)
-{
-#ifdef _WIN32
-    int osfhandle = _open_osfhandle(fd, _O_RDONLY);
-    FILE* fp = fdopen(osfhandle, md);
-#else
-    FILE* fp = fdopen(fd, md);
-#endif
-
-    if (fp) {
-        fn(fp);
-        fclose(fp);
-
-#ifdef _WIN32
-        close(osfhandle);
-#endif
-    }
-}
 
 inline socket_t create_socket(const std::string& ipaddr, int port)
 {
@@ -111,8 +97,8 @@ inline socket_t create_socket(const std::string& ipaddr, int port)
     }
 
     // Make 'reuse address' option available
-    int yes = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes));
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
 
     // Bind the socket to the given address
     struct sockaddr_in addr;
@@ -151,6 +137,15 @@ inline Server::Server()
 #ifdef _WIN32
     WSADATA wsaData;
     WSAStartup(0x0002, &wsaData);
+
+#ifndef SO_SYNCHRONOUS_NONALERT
+#define SO_SYNCHRONOUS_NONALERT 0x20;
+#endif
+#ifndef SO_OPENTYPE
+#define SO_OPENTYPE 0x7008
+#endif
+    int opt = SO_SYNCHRONOUS_NONALERT;
+    setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
 #endif
 }
 
@@ -190,8 +185,19 @@ inline bool Server::run(const std::string& ipaddr, int port)
             return false;
         }
 
-        process_request(fd);
-        close(fd);
+#ifdef _WIN32
+        int osfhandle = _open_osfhandle(fd, _O_RDONLY);
+        FILE* fp_read = fdopen(osfhandle, "r");
+        FILE* fp_write = fdopen(osfhandle, "w");
+#else
+        FILE* fp_read = fdopen(fd, "r");
+        FILE* fp_write = fdopen(fd, "w");
+#endif
+
+        process_request(fp_read, fp_write);
+
+        fflush(fp_write);
+        close_socket(fd);
     }
 
     // NOTREACHED
@@ -238,18 +244,16 @@ inline void read_headers(FILE* fp, Map& headers)
     }
 }
 
-inline void write_plain_text(int fd, const char* s)
+inline void write_plain_text(FILE* fp, const char* s)
 {
-    fdopen_b(fd, "w", [=](FILE* fp) {
-        fprintf(fp, "HTTP/1.0 200 OK\r\n");
-        fprintf(fp, "Content-type: text/plain\r\n");
-        fprintf(fp, "Connection: close\r\n");
-        fprintf(fp, "\r\n");
-        fprintf(fp, "%s", s);
-    });
+    fprintf(fp, "HTTP/1.0 200 OK\r\n");
+    fprintf(fp, "Content-type: text/plain\r\n");
+    fprintf(fp, "Connection: close\r\n");
+    fprintf(fp, "\r\n");
+    fprintf(fp, "%s", s);
 }
 
-inline void write_error(int fd, int code)
+inline void write_error(FILE* fp, int code)
 {
     const char* msg = NULL;
 
@@ -268,43 +272,42 @@ inline void write_error(int fd, int code)
 
     assert(msg);
 
-    fdopen_b(fd, "w", [=](FILE* fp) {
-        fprintf(fp, "HTTP/1.0 %d %s\r\n", code, msg);
-        fprintf(fp, "Content-type: text/plain\r\n");
-        fprintf(fp, "Connection: close\r\n");
-        fprintf(fp, "\r\n");
-        fprintf(fp, "Status: %d\r\n", code);
-    });
+    fprintf(fp, "HTTP/1.0 %d %s\r\n", code, msg);
+    fprintf(fp, "Content-type: text/plain\r\n");
+    fprintf(fp, "Connection: close\r\n");
+    fprintf(fp, "\r\n");
+    fprintf(fp, "Status: %d\r\n", code);
 }
 
-inline void Server::process_request(int fd)
+inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
-    fdopen_b(fd, "r", [=](FILE* fp) {
-        // Read and parse request line
-        std::string method, url;
-        if (!read_request_line(fp, method, url)) {
-            write_error(fd, 400);
-            return;
-        }
+      // Read and parse request line
+      std::string method, url;
+      if (!read_request_line(fp_read, method, url)) {
+         write_error(fp_write, 400);
+         return;
+      }
 
-        // Read headers
-        Map headers;
-        read_headers(fp, headers);
+      // Read headers
+      Map headers;
+      read_headers(fp_read, headers);
 
-        // Write content
-        char buf[BUFSIZ];
-        std::string content;
-        sprintf(buf, "Method: %s, URL: %s\n", method.c_str(), url.c_str());
-        content += buf;
-        for (const auto& x : headers) {
-            sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
-            content += buf;
-        }
-        write_plain_text(fd, content.c_str());
-    });
+      // Write content
+      char buf[BUFSIZ];
+      std::string content;
+      sprintf(buf, "Method: %s, URL: %s\n", method.c_str(), url.c_str());
+      content += buf;
+
+      //for (const auto& x : headers) {
+      for (auto it = headers.begin(); it != headers.end(); ++it) {
+         const auto& x = *it;
+         sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
+         content += buf;
+      }
+
+      write_plain_text(fp_write, content.c_str());
 }
 
 } // namespace httpsvrkit
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix
-

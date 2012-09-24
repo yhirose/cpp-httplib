@@ -2,3 +2,10 @@ tags
 sample
 
 *.swp
+
+Debug
+Release
+*.vcxproj.user
+*.sdf
+*.opensdf
+ipch
