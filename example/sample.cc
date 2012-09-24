@@ -14,17 +14,17 @@ int main(void)
 
     Server svr;
 
-    svr.post("/", [](const Request& /*req*/, Response& res) {
-        res.body_ = "<html><head></head><body><ul></ul></body></html>";
+    svr.get("/", [](Context& cxt) {
+        cxt.response.body = "<html><head></head><body><ul></ul></body></html>";
     });
 
-    svr.post("/item", [](const Request& req, Response& res) {
-        res.body_ = req.pattern_;
+    svr.post("/item", [](Context& cxt) {
+        cxt.response.body = cxt.request.pattern;
     });
 
-    svr.get("/item/:name", [](const Request& req, Response& res) {
+    svr.get("/item/:name", [](Context& cxt) {
         try {
-            res.body_ = req.params_.at("name");
+            cxt.response.body = cxt.request.params.at("name");
         } catch (...) {
             // Error...
         }

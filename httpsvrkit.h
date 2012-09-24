@@ -37,27 +37,32 @@ typedef int socket_t;
 namespace httpsvrkit
 {
 
-// HTTP request
-class Request {
-public:
-    std::map<std::string, std::string> headers_;
-    std::string body_;
+typedef std::map<std::string, std::string>      Map;
+typedef std::multimap<std::string, std::string> MultiMap;
 
-    std::string pattern_;
-    std::map<std::string, std::string> params_;
+// HTTP request
+struct Request {
+    Map         headers;
+    std::string body;
+    std::string pattern;
+    Map         params;
 };
 
 // HTTP response
-class Response {
-public:
-    std::multimap<std::string, std::string> headers_;
-    std::string body_;
+struct Response {
+    MultiMap    headers;
+    std::string body;
+};
+
+struct Context {
+    const Request request;
+    Response      response;
 };
 
 // HTTP server
 class Server {
 public:
-    typedef std::function<void (const Request&, Response& res)> Handler;
+    typedef std::function<void (Context& context)> Handler;
 
     Server();
     ~Server();
@@ -70,8 +75,6 @@ public:
 
 private:
     void process_request(int fd);
-
-    const size_t BUFSIZ_REQUESTLINE = 2048;
 
     socket_t sock_;
     std::multimap<std::string, Handler> handlers_;
@@ -200,16 +203,39 @@ inline void Server::stop()
     sock_ = -1;
 }
 
-inline bool parse_request_line(const char* s, std::string& cmd, std::string& url)
+inline bool read_request_line(FILE* fp, std::string& method, std::string& url)
 {
-    std::regex re("(GET|POST) (.+) HTTP/1\\.1\r\n");
+    static std::regex re("(GET|POST) (.+) HTTP/1\\.1\r\n");
+
+    const size_t BUFSIZ_REQUESTLINE = 2048;
+    char buf[BUFSIZ_REQUESTLINE];
+    fgets(buf, BUFSIZ_REQUESTLINE, fp);
+
     std::cmatch m;
-    if (std::regex_match(s, m, re)) {
-        cmd = std::string(m[1]);
+    if (std::regex_match(buf, m, re)) {
+        method = std::string(m[1]);
         url = std::string(m[2]);
         return true;
     }
+
     return false;
+}
+
+inline void read_headers(FILE* fp, Map& headers)
+{
+    static std::regex re("(.+?): (.+?)\r\n");
+
+    const size_t BUFSIZ_HEADER = 2048;
+    char buf[BUFSIZ_HEADER];
+
+    while (fgets(buf, BUFSIZ_HEADER, fp) && strcmp(buf, "\r\n")) {
+        std::cmatch m;
+        if (std::regex_match(buf, m, re)) {
+            auto key = std::string(m[1]);
+            auto val = std::string(m[2]);
+            headers[key] = val;
+        }
+    }
 }
 
 inline void write_plain_text(int fd, const char* s)
@@ -254,20 +280,27 @@ inline void write_error(int fd, int code)
 inline void Server::process_request(int fd)
 {
     fdopen_b(fd, "r", [=](FILE* fp) {
-        // Parse request line
-        char request_line[BUFSIZ_REQUESTLINE];
-        fgets(request_line, BUFSIZ_REQUESTLINE, fp);
-
-        std::string cmd, url;
-        if (!parse_request_line(request_line, cmd, url)) {
+        // Read and parse request line
+        std::string method, url;
+        if (!read_request_line(fp, method, url)) {
             write_error(fd, 400);
             return;
         }
 
+        // Read headers
+        Map headers;
+        read_headers(fp, headers);
+
         // Write content
-        char content[BUFSIZ];
-        sprintf(content, "cmd: %s, url: %s\n", cmd.c_str(), url.c_str());
-        write_plain_text(fd, content);
+        char buf[BUFSIZ];
+        std::string content;
+        sprintf(buf, "Method: %s, URL: %s\n", method.c_str(), url.c_str());
+        content += buf;
+        for (const auto& x : headers) {
+            sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
+            content += buf;
+        }
+        write_plain_text(fd, content.c_str());
     });
 }
 
