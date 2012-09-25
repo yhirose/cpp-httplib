@@ -23,14 +23,10 @@ int main(void)
     });
 
     svr.get("/item/:name", [](Context& cxt) {
-        try {
-            cxt.response.body = cxt.request.params.at("name");
-        } catch (...) {
-            // Error...
-        }
+         cxt.response.body = cxt.request.params.at("name");
     });
 
-    svr.run("0.0.0.0", 1234);
+    svr.run("localhost", 1234);
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

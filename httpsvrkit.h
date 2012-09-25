@@ -12,24 +12,15 @@
 #include <fcntl.h>
 #include <io.h>
 #include <winsock2.h>
-#include <ws2tcpip.h>
 
-typedef unsigned __int16 uint16_t;
 typedef SOCKET socket_t;
-
-int inet_aton(const char* strptr, struct in_addr* addrptr)
-{
-    unsigned long addr = inet_addr(strptr);
-    if (addr == ULONG_MAX)
-        return 0;
-    addrptr->s_addr = addr;
-    return 1;
-}
 #else
 #include <pthread.h>
 #include <unistd.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 
 typedef int socket_t;
 #endif
@@ -73,10 +64,10 @@ public:
     Server();
     ~Server();
 
-    void get(const std::string& pattern, Handler handler);
-    void post(const std::string& pattern, Handler handler);
+    void get(const char* pattern, Handler handler);
+    void post(const char* pattern, Handler handler);
 
-    bool run(const std::string& ipaddr, int port);
+    bool run(const char* ipaddr_or_hostname, int port);
     void stop();
 
 private:
@@ -88,7 +79,7 @@ private:
 
 // Implementation
 
-inline socket_t create_socket(const std::string& ipaddr, int port)
+inline socket_t create_server_socket(const const char* ipaddr_or_hostname, int port)
 {
     // Create a server socket
     socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -100,16 +91,21 @@ inline socket_t create_socket(const std::string& ipaddr, int port)
     int opt = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
 
-    // Bind the socket to the given address
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons((uint16_t)port);
-
-    if (inet_aton(ipaddr.c_str(), &addr.sin_addr) <= 0) {
+    // Get a host entry info
+    struct hostent* hp;
+    if (!(hp = gethostbyname(ipaddr_or_hostname))) {
         return -1;
     }
 
+    // Bind the socket to the given address
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    memcpy(&addr.sin_addr, hp->h_addr, hp->h_length);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
     if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        puts("(error)\n");
         return -1;
     }
 
@@ -156,19 +152,19 @@ inline Server::~Server()
 #endif
 }
 
-inline void Server::get(const std::string& pattern, Handler handler)
+inline void Server::get(const char* pattern, Handler handler)
 {
     handlers_.insert(std::make_pair(pattern, handler));
 }
 
-inline void Server::post(const std::string& pattern, Handler handler)
+inline void Server::post(const char* pattern, Handler handler)
 {
     handlers_.insert(std::make_pair(pattern, handler));
 }
 
-inline bool Server::run(const std::string& ipaddr, int port)
+inline bool Server::run(const const char*ipaddr_or_hostname, int port)
 {
-    sock_ = create_socket(ipaddr, port);
+    sock_ = create_server_socket(ipaddr_or_hostname, port);
     if (sock_ == -1) {
         return false;
     }
