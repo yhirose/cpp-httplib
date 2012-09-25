@@ -7,5 +7,6 @@ Debug
 Release
 *.vcxproj.user
 *.sdf
+*.suo
 *.opensdf
 ipch
