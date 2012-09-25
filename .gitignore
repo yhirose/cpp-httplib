@@ -10,3 +10,4 @@ Release
 *.suo
 *.opensdf
 ipch
+*.dSYM
