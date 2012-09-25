@@ -8,22 +8,52 @@
 #include <httpsvrkit.h>
 #include <cstdio>
 
+using namespace httpsvrkit;
+
+int dump_request(Context& cxt)
+{
+    auto& body = cxt.response.body;
+    char buf[BUFSIZ];
+
+    body += "================================\n";
+
+    sprintf(buf, "Method: %s, URL: %s\n",
+        cxt.request.method.c_str(),
+        cxt.request.url.c_str());
+
+    body += buf;
+
+    //for (const auto& x : cxt.request.headers) {
+    for (auto it = cxt.request.headers.begin(); it != cxt.request.headers.end(); ++it) {
+       const auto& x = *it;
+       sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
+       body += buf;
+    }
+
+    body += "================================\n";
+
+    return 200;
+}
+
 int main(void)
 {
-    using namespace httpsvrkit;
-
     Server svr;
 
-    svr.get("/", [](Context& cxt) {
-        cxt.response.body = "<html><head></head><body><ul></ul></body></html>";
+    svr.get("/", [](Context& cxt) -> int {
+        dump_request(cxt);
+        return 200;
     });
 
-    svr.post("/item", [](Context& cxt) {
-        cxt.response.body = cxt.request.pattern;
+    svr.post("/item", [](Context& cxt) -> int {
+        dump_request(cxt);
+        cxt.response.body += cxt.request.url;
+        return 200;
     });
 
-    svr.get("/item/:name", [](Context& cxt) {
-         cxt.response.body = cxt.request.params.at("name");
+    svr.get("/item/([^/]+)", [](Context& cxt) -> int {
+        dump_request(cxt);
+        cxt.response.body += cxt.request.params[0];
+        return 200;
     });
 
     svr.run("localhost", 1234);

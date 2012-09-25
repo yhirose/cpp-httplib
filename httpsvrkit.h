@@ -35,14 +35,17 @@ namespace httpsvrkit
 {
 
 typedef std::map<std::string, std::string>      Map;
+typedef std::vector<std::string>                Array;
 typedef std::multimap<std::string, std::string> MultiMap;
 
 // HTTP request
 struct Request {
+    std::string method;
+    std::string url;
     Map         headers;
     std::string body;
-    std::string pattern;
-    Map         params;
+    Map         query;
+    Array       params;
 };
 
 // HTTP response
@@ -52,14 +55,14 @@ struct Response {
 };
 
 struct Context {
-    const Request request;
-    Response      response;
+    Request  request;
+    Response response;
 };
 
 // HTTP server
 class Server {
 public:
-    typedef std::function<void (Context& context)> Handler;
+    typedef std::function<int (Context& context)> Handler;
 
     Server();
     ~Server();
@@ -74,10 +77,30 @@ private:
     void process_request(FILE* fp_read, FILE* fp_write);
 
     socket_t sock_;
-    std::multimap<std::string, Handler> handlers_;
+    std::vector<std::pair<std::regex, Handler>> get_handlers_;
+    std::vector<std::pair<std::string, Handler>> post_handlers_;
 };
 
 // Implementation
+
+template <class Fn>
+void split(const char* b, const char* e, char d, Fn fn)
+{
+    int i = 0;
+    int beg = 0;
+
+    while (e ? (b + i != e) : (b[i] != '\0')) {
+        if (b[i] == d) {
+            fn(&b[beg], &b[i]);
+            beg = i + 1;
+        }
+        i++;
+    }
+
+    if (i != 0) {
+        fn(&b[beg], &b[i]);
+    }
+}
 
 inline socket_t create_server_socket(const const char* ipaddr_or_hostname, int port)
 {
@@ -154,12 +177,12 @@ inline Server::~Server()
 
 inline void Server::get(const char* pattern, Handler handler)
 {
-    handlers_.insert(std::make_pair(pattern, handler));
+    get_handlers_.push_back(std::make_pair(pattern, handler));
 }
 
 inline void Server::post(const char* pattern, Handler handler)
 {
-    handlers_.insert(std::make_pair(pattern, handler));
+    post_handlers_.push_back(std::make_pair(pattern, handler));
 }
 
 inline bool Server::run(const const char*ipaddr_or_hostname, int port)
@@ -205,9 +228,9 @@ inline void Server::stop()
     sock_ = -1;
 }
 
-inline bool read_request_line(FILE* fp, std::string& method, std::string& url)
+inline bool read_request_line(FILE* fp, Request& request)
 {
-    static std::regex re("(GET|POST) (.+) HTTP/1\\.1\r\n");
+    static std::regex re("(GET|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.1\r\n");
 
     const size_t BUFSIZ_REQUESTLINE = 2048;
     char buf[BUFSIZ_REQUESTLINE];
@@ -215,8 +238,27 @@ inline bool read_request_line(FILE* fp, std::string& method, std::string& url)
 
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
-        method = std::string(m[1]);
-        url = std::string(m[2]);
+        request.method = std::string(m[1]);
+        request.url = std::string(m[2]);
+
+        // Parse query text
+        auto len = std::distance(m[3].first, m[3].second);
+        if (len > 0) {
+            const auto& pos = m[3];
+            split(pos.first, pos.second, '&', [&](const char* b, const char* e) {
+                std::string key;
+                std::string val;
+                split(b, e, '=', [&](const char* b, const char* e) {
+                    if (key.empty()) {
+                        key.assign(b, e);
+                    } else {
+                        val.assign(b, e);
+                    }
+                });
+                request.query[key] = val;
+            });
+        }
+
         return true;
     }
 
@@ -249,11 +291,11 @@ inline void write_plain_text(FILE* fp, const char* s)
     fprintf(fp, "%s", s);
 }
 
-inline void write_error(FILE* fp, int code)
+inline void write_error(FILE* fp, int status)
 {
     const char* msg = NULL;
 
-    switch (code) {
+    switch (status) {
     case 400:
         msg = "Bad Request";
         break;
@@ -261,47 +303,60 @@ inline void write_error(FILE* fp, int code)
         msg = "Not Found";
         break;
     default:
-        code = 500;
+        status = 500;
         msg = "Internal Server Error";
         break;
     }
 
     assert(msg);
 
-    fprintf(fp, "HTTP/1.0 %d %s\r\n", code, msg);
+    fprintf(fp, "HTTP/1.0 %d %s\r\n", status, msg);
     fprintf(fp, "Content-type: text/plain\r\n");
     fprintf(fp, "Connection: close\r\n");
     fprintf(fp, "\r\n");
-    fprintf(fp, "Status: %d\r\n", code);
+    fprintf(fp, "Status: %d\r\n", status);
 }
 
 inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
-      // Read and parse request line
-      std::string method, url;
-      if (!read_request_line(fp_read, method, url)) {
-         write_error(fp_write, 400);
-         return;
-      }
+    Context cxt;
 
-      // Read headers
-      Map headers;
-      read_headers(fp_read, headers);
+    // Read and parse request line
+    if (!read_request_line(fp_read, cxt.request)) {
+        write_error(fp_write, 400);
+        return;
+    }
 
-      // Write content
-      char buf[BUFSIZ];
-      std::string content;
-      sprintf(buf, "Method: %s, URL: %s\n", method.c_str(), url.c_str());
-      content += buf;
+    // Read headers
+    read_headers(fp_read, cxt.request.headers);
 
-      //for (const auto& x : headers) {
-      for (auto it = headers.begin(); it != headers.end(); ++it) {
-         const auto& x = *it;
-         sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
-         content += buf;
-      }
+    // Routing
+    int status = 404;
 
-      write_plain_text(fp_write, content.c_str());
+    if (cxt.request.method == "GET") {
+        for (auto it = get_handlers_.begin(); it != get_handlers_.end(); ++it) {
+            const auto& pattern = it->first;
+            const auto& handler = it->second;
+            
+            std::smatch m;
+            if (std::regex_match(cxt.request.url, m, pattern)) {
+                for (size_t i = 1; i < m.size(); i++) {
+                    cxt.request.params.push_back(m[i]);
+                }
+                status = handler(cxt);
+            }
+        }
+    } else if (cxt.request.method == "POST") {
+        // TODO: parse body
+    } else {
+        status = 400;
+    }
+
+    if (status == 200) {
+        write_plain_text(fp_write, cxt.response.body.c_str());
+    } else {
+        write_error(fp_write, status);
+    }
 }
 
 } // namespace httpsvrkit
