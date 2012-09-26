@@ -416,7 +416,7 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
          svr->run(), svr.reset())
 
 #define GET(url, body) \
-    svr->get(url, [](httpsvrkit::Context& cxt) { \
+    svr->get(url, [&](httpsvrkit::Context& cxt) { \
         const auto& req = cxt.request; \
         auto& res = cxt.response; \
         body \

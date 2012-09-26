@@ -47,6 +47,8 @@ std::string dump_request(Context& cxt)
 int main(void)
 {
     if (true) {
+        const char* s = "abcde";
+
         // DSL style
         HTTP_SERVER("localhost", 1234) {
 
@@ -56,6 +58,10 @@ int main(void)
 
             GET("/home", {
                 res.set_content(dump_request(cxt));
+            });
+
+            GET("/abcde", {
+                res.set_content(s);
             });
         }
     } else {
