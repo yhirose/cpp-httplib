@@ -170,6 +170,35 @@ inline void close_socket(socket_t sock)
 #endif
 }
 
+std::string dump_request(Context& cxt)
+{
+    const auto& req = cxt.request;
+    std::string s;
+    char buf[BUFSIZ];
+
+    s += "================================\n";
+
+    sprintf(buf, "%s %s", req.method.c_str(), req.url.c_str());
+    s += buf;
+
+    std::string query;
+    for (auto it = req.query.begin(); it != req.query.end(); ++it) {
+       const auto& x = *it;
+       sprintf(buf, "%c%s=%s", (it == req.query.begin()) ? '?' : '&', x.first.c_str(), x.second.c_str());
+       query += buf;
+    }
+    sprintf(buf, "%s\n", query.c_str());
+    s += buf;
+
+    for (auto it = req.headers.begin(); it != req.headers.end(); ++it) {
+       const auto& x = *it;
+       sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
+       s += buf;
+    }
+
+    return s;
+}
+
 void Response::set_redirect(const char* url)
 {
     headers.insert(std::make_pair("Location", url));
@@ -379,6 +408,8 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 
     // Read headers
     read_headers(fp_read, cxt.request.headers);
+    
+    printf("%s", dump_request(cxt).c_str());
 
     // Routing
     cxt.response.status = 404;
