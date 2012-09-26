@@ -16,7 +16,3 @@ sample : sample.cc ../httpsvrkit.h
 
 hello : hello.cc ../httpsvrkit.h
 	$(CC) -o hello $(CFLAGS) -I.. hello.cc
-
-.PHONY : test
-test: sample
-	./sample
