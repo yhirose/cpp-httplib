@@ -10,53 +10,76 @@
 
 using namespace httpsvrkit;
 
-int dump_request(Context& cxt)
+std::string dump_request(Context& cxt)
 {
-    auto& body = cxt.response.body;
+    std::string s;
     char buf[BUFSIZ];
 
-    body += "================================\n";
+    s += "================================\n";
 
-    sprintf(buf, "Method: %s, URL: %s\n",
-        cxt.request.method.c_str(),
-        cxt.request.url.c_str());
+    sprintf(buf, "Method: %s\n", cxt.request.method.c_str());
+    s += buf;
 
-    body += buf;
+    sprintf(buf, "URL: %s\n", cxt.request.url.c_str());
+    s += buf;
+
+    std::string query;
+    for (auto it = cxt.request.query.begin(); it != cxt.request.query.end(); ++it) {
+       const auto& x = *it;
+       sprintf(buf, "(%s:%s)", x.first.c_str(), x.second.c_str());
+       query += buf;
+    }
+    sprintf(buf, "QUERY: %s\n", query.c_str());
+    s += buf;
 
     //for (const auto& x : cxt.request.headers) {
     for (auto it = cxt.request.headers.begin(); it != cxt.request.headers.end(); ++it) {
        const auto& x = *it;
        sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
-       body += buf;
+       s += buf;
     }
 
-    body += "================================\n";
+    s += "================================\n";
 
-    return 200;
+    return s;
 }
 
 int main(void)
 {
-    Server svr;
+    if (true) {
+        // DSL style
+        HTTP_SERVER("localhost", 1234) {
 
-    svr.get("/", [](Context& cxt) -> int {
-        dump_request(cxt);
-        return 200;
-    });
+            GET("/", {
+                res.set_redirect("/home");
+            });
 
-    svr.post("/item", [](Context& cxt) -> int {
-        dump_request(cxt);
-        cxt.response.body += cxt.request.url;
-        return 200;
-    });
+            GET("/home", {
+                res.set_content(dump_request(cxt));
+            });
+        }
+    } else {
+        // Regular style
+        Server svr("localhost", 1234);
 
-    svr.get("/item/([^/]+)", [](Context& cxt) -> int {
-        dump_request(cxt);
-        cxt.response.body += cxt.request.params[0];
-        return 200;
-    });
+        svr.get("/", [](Context& cxt) {
+            cxt.response.set_redirect("/home");
+        });
 
-    svr.run("localhost", 1234);
+        svr.get("/home", [](Context& cxt) {
+            cxt.response.set_content(dump_request(cxt));
+        });
+
+        svr.post("/item", [](Context& cxt) {
+            cxt.response.set_content(dump_request(cxt));
+        });
+
+        svr.get("/item/([^/]+)", [](Context& cxt) {
+            cxt.response.set_content(dump_request(cxt));
+        });
+
+        svr.run();
+    }
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix
