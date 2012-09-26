@@ -9,7 +9,7 @@
 #define HTTPSVRKIT_H
 
 #ifdef _WIN32
-//#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
 #define _CRT_NONSTDC_NO_DEPRECATE
 
 #ifndef SO_SYNCHRONOUS_NONALERT
@@ -24,6 +24,7 @@
 #include <winsock2.h>
 
 typedef SOCKET socket_t;
+#define snprintf sprintf_s
 #else
 #include <pthread.h>
 #include <unistd.h>
@@ -178,21 +179,21 @@ std::string dump_request(Context& cxt)
 
     s += "================================\n";
 
-    sprintf(buf, "%s %s", req.method.c_str(), req.url.c_str());
+    snprintf(buf, sizeof(buf), "%s %s", req.method.c_str(), req.url.c_str());
     s += buf;
 
     std::string query;
     for (auto it = req.query.begin(); it != req.query.end(); ++it) {
        const auto& x = *it;
-       sprintf(buf, "%c%s=%s", (it == req.query.begin()) ? '?' : '&', x.first.c_str(), x.second.c_str());
+       snprintf(buf, sizeof(buf), "%c%s=%s", (it == req.query.begin()) ? '?' : '&', x.first.c_str(), x.second.c_str());
        query += buf;
     }
-    sprintf(buf, "%s\n", query.c_str());
+    snprintf(buf, sizeof(buf), "%s\n", query.c_str());
     s += buf;
 
     for (auto it = req.headers.begin(); it != req.headers.end(); ++it) {
        const auto& x = *it;
-       sprintf(buf, "%s: %s\n", x.first.c_str(), x.second.c_str());
+       snprintf(buf, sizeof(buf), "%s: %s\n", x.first.c_str(), x.second.c_str());
        s += buf;
     }
 
@@ -279,8 +280,9 @@ inline bool Server::run()
 
 inline void Server::stop()
 {
-    close_socket(sock_);
+    auto sock = sock_;
     sock_ = -1;
+    close_socket(sock);
 }
 
 inline bool read_request_line(FILE* fp, Request& request)
