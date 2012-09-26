@@ -10,16 +10,8 @@
 int main(void)
 {
     HTTP_SERVER("localhost", 1234) {
-
-        // const httpsvrkit::Request& req
-        // httpsvrkit::Response& res
-        
-        GET("/hello", {
-            res.set_content("world");
-        });
-
-        GET("/url", {
-            res.set_content(req.url);
+        GET("/hi", {
+            res.set_content("Hello World!");
         });
     }
 }
