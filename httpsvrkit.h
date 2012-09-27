@@ -161,13 +161,14 @@ inline socket_t create_server_socket(const char* ipaddr_or_hostname, int port)
     return sock;
 }
 
-inline void close_socket(socket_t sock)
+inline int close_server_socket(socket_t sock)
 {
 #ifdef _WIN32
-    closesocket(sock);
+    shutdown(sock, SD_BOTH);
+    return closesocket(sock);
 #else
     shutdown(sock, SHUT_RDWR);
-    close(sock);
+    return close(sock);
 #endif
 }
 
@@ -256,7 +257,7 @@ inline bool Server::run()
                 return true;
             } 
 
-            close_socket(sock_);
+            close_server_socket(sock_);
             return false;
         }
 
@@ -272,7 +273,7 @@ inline bool Server::run()
         process_request(fp_read, fp_write);
 
         fflush(fp_write);
-        close_socket(fd);
+        close_server_socket(fd);
     }
 
     // NOTREACHED
@@ -280,9 +281,8 @@ inline bool Server::run()
 
 inline void Server::stop()
 {
-    auto sock = sock_;
+    close_server_socket(sock_);
     sock_ = -1;
-    close_socket(sock);
 }
 
 inline bool read_request_line(FILE* fp, Request& request)
