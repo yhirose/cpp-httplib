@@ -9,9 +9,9 @@
 
 int main(void)
 {
-    HTTP_SERVER("localhost", 1234) {
-        GET("/hi", {
-            res.set_content("Hello World!");
+    HTTP_SERVER("localhost", 1234) /* svr_ */ {
+        GET("/hi", /* req_, res_ */ {
+            res_.set_content("Hello World!");
         });
     }
 }

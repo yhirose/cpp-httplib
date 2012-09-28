@@ -22,23 +22,23 @@ template<typename Fn> void signal(int sig, Fn fn)
 int main(void)
 {
     const char* hi = "/hi";
-    HTTP_SERVER("localhost", 1234) {
-        // svr, req, res
+
+    HTTP_SERVER("localhost", 1234) /* svr_ */ {
 
         GET("/", {
-            res.set_redirect(hi);
+            res_.set_redirect(hi);
         });
 
         GET("/hi", {
-            res.set_content("Hello World!");
+            res_.set_content("Hello World!");
         });
 
         GET("/dump", {
-            res.set_content(dump_request(cxt));
+            res_.set_content(dump_request(cxt));
         });
 
         signal(SIGINT, [&](){
-            svr->stop();
+            svr_->stop();
         });
     }
 }
