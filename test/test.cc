@@ -1,6 +1,7 @@
 
 #include <gtest/gtest.h>
 #include <httpsvrkit.h>
+#include <future>
 
 using namespace std;
 using namespace httpsvrkit;
@@ -48,6 +49,22 @@ TEST(GetHeaderValueTest, RegularValue)
     MultiMap map = {{"Content-Type","text/html"}, {"Dummy", "Dummy"}};
     auto val = get_header_value(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/html", val);
+}
+
+TEST(ServerTest, GetMethod)
+{
+    Server svr("localhost", 1914);
+
+    svr.get("hi", [&](httpsvrkit::Context& cxt) {
+        cxt.response.set_content("Hello World!");
+    });
+
+    svr.on_ready([&]() {
+        // TODO: HTTP GET request...
+        svr.stop();
+    });
+    
+    auto f = async([&](){ svr.run(); });
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

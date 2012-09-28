@@ -85,6 +85,8 @@ public:
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
 
+    void on_ready(std::function<void ()> callback);
+
     bool run();
     void stop();
 
@@ -94,8 +96,10 @@ private:
     const std::string ipaddr_or_hostname_;
     const int         port_;
     socket_t          sock_;
-    std::vector<std::pair<std::regex, Handler>> get_handlers_;
+
+    std::vector<std::pair<std::regex, Handler>>  get_handlers_;
     std::vector<std::pair<std::string, Handler>> post_handlers_;
+    std::function<void ()>                       on_ready_;
 };
 
 // Implementation
@@ -242,11 +246,20 @@ inline void Server::post(const char* pattern, Handler handler)
     post_handlers_.push_back(std::make_pair(pattern, handler));
 }
 
+inline void Server::on_ready(std::function<void ()> callback)
+{
+    on_ready_ = callback;
+}
+
 inline bool Server::run()
 {
     sock_ = create_server_socket(ipaddr_or_hostname_.c_str(), port_);
     if (sock_ == -1) {
         return false;
+    }
+    
+    if (on_ready_) {
+        on_ready_();
     }
 
     for (;;) {
@@ -444,14 +457,14 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 }
 
 #define HTTP_SERVER(host, port) \
-    for (std::shared_ptr<httpsvrkit::Server> svr = std::make_shared<httpsvrkit::Server>(host, port); \
-         svr; \
-         svr->run(), svr.reset())
+    for (std::shared_ptr<httpsvrkit::Server> svr_ = std::make_shared<httpsvrkit::Server>(host, port); \
+         svr_; \
+         svr_->run(), svr_.reset())
 
 #define GET(url, body) \
-    svr->get(url, [&](httpsvrkit::Context& cxt) { \
-        const auto& req = cxt.request; \
-        auto& res = cxt.response; \
+    svr_->get(url, [&](httpsvrkit::Context& cxt) { \
+        const auto& req_ = cxt.request; \
+        auto& res_ = cxt.response; \
         body \
     });
 
