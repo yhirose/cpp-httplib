@@ -5,11 +5,11 @@
 //  The Boost Software License 1.0
 //
 
-#include <httpsvrkit.h>
+#include <httplib.h>
 #include <cstdio>
 #include <signal.h>
 
-using namespace httpsvrkit;
+using namespace httplib;
 
 template<typename Fn> void signal(int sig, Fn fn)
 {

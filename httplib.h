@@ -1,5 +1,5 @@
 //
-//  httpsvrkit.h
+//  httplib.h
 //
 //  Copyright (c) 2012 Yuji Hirose. All rights reserved.
 //  The Boost Software License 1.0
@@ -42,7 +42,7 @@ typedef int socket_t;
 #include <string>
 #include <assert.h>
 
-namespace httpsvrkit
+namespace httplib
 {
 
 typedef std::map<std::string, std::string>      Map;
@@ -457,18 +457,18 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 }
 
 #define HTTP_SERVER(host, port) \
-    for (std::shared_ptr<httpsvrkit::Server> svr_ = std::make_shared<httpsvrkit::Server>(host, port); \
+    for (std::shared_ptr<httplib::Server> svr_ = std::make_shared<httplib::Server>(host, port); \
          svr_; \
          svr_->run(), svr_.reset())
 
 #define GET(url, body) \
-    svr_->get(url, [&](httpsvrkit::Context& cxt) { \
+    svr_->get(url, [&](httplib::Context& cxt) { \
         const auto& req_ = cxt.request; \
         auto& res_ = cxt.response; \
         body \
     });
 
-} // namespace httpsvrkit
+} // namespace httplib
 
 #endif
 

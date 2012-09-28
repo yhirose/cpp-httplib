@@ -11,8 +11,8 @@ endif
 
 all: sample hello
 
-sample : sample.cc ../httpsvrkit.h
+sample : sample.cc ../httplib.h
 	$(CC) -o sample $(CFLAGS) -I.. sample.cc
 
-hello : hello.cc ../httpsvrkit.h
+hello : hello.cc ../httplib.h
 	$(CC) -o hello $(CFLAGS) -I.. hello.cc

@@ -1,10 +1,10 @@
 
 #include <gtest/gtest.h>
-#include <httpsvrkit.h>
+#include <httplib.h>
 #include <future>
 
 using namespace std;
-using namespace httpsvrkit;
+using namespace httplib;
 
 TEST(SplitTest, ParseQueryString)
 {
@@ -55,7 +55,7 @@ TEST(ServerTest, GetMethod)
 {
     Server svr("localhost", 1914);
 
-    svr.get("hi", [&](httpsvrkit::Context& cxt) {
+    svr.get("hi", [&](httplib::Context& cxt) {
         cxt.response.set_content("Hello World!");
     });
 

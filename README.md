@@ -1,14 +1,16 @@
-httpsvrkit
-==========
+cpp-httplib
+===========
 
-C++ HTTP sever library inspired by [Sinatra](http://www.sinatrarb.com/) 
+A C++ HTTP library.
 
 [The Boost Software License 1.0](http://www.boost.org/LICENSE_1_0.txt)
 
-Example
--------
+Server Example
+--------------
 
-    #include <httpsvrkit.h>
+Inspired by [Sinatra](http://www.sinatrarb.com/) 
+
+    #include <httplib.h>
 
     int main(void) {
         HTTP_SERVER("localhost", 1234) {

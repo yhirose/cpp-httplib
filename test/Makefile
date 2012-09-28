@@ -9,7 +9,7 @@ CC = g++
 CFLAGS = -std=c++11 -g
 endif
 
-test : test.cc ../httpsvrkit.h
+test : test.cc ../httplib.h
 	$(CC) -o test $(CFLAGS) -I.. -I. test.cc gtest/gtest-all.cc gtest/gtest_main.cc
 
 .PHONY : run
