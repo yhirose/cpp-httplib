@@ -21,26 +21,27 @@ template<typename Fn> void signal(int sig, Fn fn)
 
 int main(void)
 {
+    using namespace httplib;
+
     const char* hi = "/hi";
 
-    HTTP_SERVER("localhost", 1234) /* svr_ */ {
+    Server svr("localhost", 1234);
 
-        GET("/", {
-            res_.set_redirect(hi);
-        });
+    svr.get("/", [=](Connection& c) {
+        c.response.set_redirect(hi);
+    });
 
-        GET("/hi", {
-            res_.set_content("Hello World!");
-        });
+    svr.get("/hi", [](Connection& c) {
+        c.response.set_content("Hello World!");
+    });
 
-        GET("/dump", {
-            res_.set_content(dump_request(cxt));
-        });
+    svr.get("/dump", [](Connection& c) {
+        c.response.set_content(dump_request(c));
+    });
 
-        signal(SIGINT, [&](){
-            svr_->stop();
-        });
-    }
+    signal(SIGINT, [&]() { svr.stop(); });
+
+    svr.run();
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

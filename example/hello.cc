@@ -6,14 +6,17 @@
 //
 
 #include <httplib.h>
+using namespace httplib;
 
 int main(void)
 {
-    HTTP_SERVER("localhost", 1234) /* svr_ */ {
-        GET("/hi", /* req_, res_ */ {
-            res_.set_content("Hello World!");
-        });
-    }
+    Server svr("localhost", 1234);
+
+    svr.get("/hi", [](Connection& c) {
+        c.response.set_content("Hello World!");
+    });
+
+    svr.run();
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

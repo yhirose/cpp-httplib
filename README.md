@@ -11,13 +11,17 @@ Server Example
 Inspired by [Sinatra](http://www.sinatrarb.com/) 
 
     #include <httplib.h>
+    using namespace httplib;
 
-    int main(void) {
-        HTTP_SERVER("localhost", 1234) {
-            GET("/hi", {
-                res.set_content("Hello World!");
-            });
-        }
+    int main(void)
+    {
+        Server svr("localhost", 1234);
+
+        svr.get("/hi", [](Connection& c) {
+            c.response.set_content("Hello World!");
+        });
+
+        svr.run();
     }
 
 Copyright (c) 2012 Yuji Hirose. All rights reserved.

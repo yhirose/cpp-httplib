@@ -55,8 +55,8 @@ TEST(ServerTest, GetMethod)
 {
     Server svr("localhost", 1914);
 
-    svr.get("hi", [&](httplib::Context& cxt) {
-        cxt.response.set_content("Hello World!");
+    svr.get("hi", [&](httplib::Connection& c) {
+        c.response.set_content("Hello World!");
     });
 
     svr.on_ready([&]() {

@@ -69,7 +69,7 @@ struct Response {
     void set_content(const std::string& s, const char* content_type = "text/plain");
 };
 
-struct Context {
+struct Connection {
     Request  request;
     Response response;
 };
@@ -77,7 +77,7 @@ struct Context {
 // HTTP server
 class Server {
 public:
-    typedef std::function<void (Context& context)> Handler;
+    typedef std::function<void (Connection& c)> Handler;
 
     Server(const char* ipaddr_or_hostname, int port);
     ~Server();
@@ -176,9 +176,9 @@ inline int close_server_socket(socket_t sock)
 #endif
 }
 
-std::string dump_request(Context& cxt)
+std::string dump_request(Connection& c)
 {
-    const auto& req = cxt.request;
+    const auto& req = c.request;
     std::string s;
     char buf[BUFSIZ];
 
@@ -413,60 +413,48 @@ inline void write_error(FILE* fp, int status)
 
 inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
-    Context cxt;
+    Connection c;
 
     // Read and parse request line
-    if (!read_request_line(fp_read, cxt.request)) {
+    if (!read_request_line(fp_read, c.request)) {
         write_error(fp_write, 400);
         return;
     }
 
     // Read headers
-    read_headers(fp_read, cxt.request.headers);
+    read_headers(fp_read, c.request.headers);
     
-    printf("%s", dump_request(cxt).c_str());
+    printf("%s", dump_request(c).c_str());
 
     // Routing
-    cxt.response.status = 404;
+    c.response.status = 404;
 
-    if (cxt.request.method == "GET") {
+    if (c.request.method == "GET") {
         for (auto it = get_handlers_.begin(); it != get_handlers_.end(); ++it) {
             const auto& pattern = it->first;
             const auto& handler = it->second;
             
             std::smatch m;
-            if (std::regex_match(cxt.request.url, m, pattern)) {
+            if (std::regex_match(c.request.url, m, pattern)) {
                 for (size_t i = 1; i < m.size(); i++) {
-                    cxt.request.params.push_back(m[i]);
+                    c.request.params.push_back(m[i]);
                 }
-                handler(cxt);
+                handler(c);
                 break;
             }
         }
-    } else if (cxt.request.method == "POST") {
+    } else if (c.request.method == "POST") {
         // TODO: parse body
     } else {
-        cxt.response.status = 400;
+        c.response.status = 400;
     }
 
-    if (200 <= cxt.response.status && cxt.response.status < 400) {
-        write_response(fp_write, cxt.response);
+    if (200 <= c.response.status && c.response.status < 400) {
+        write_response(fp_write, c.response);
     } else {
-        write_error(fp_write, cxt.response.status);
+        write_error(fp_write, c.response.status);
     }
 }
-
-#define HTTP_SERVER(host, port) \
-    for (std::shared_ptr<httplib::Server> svr_ = std::make_shared<httplib::Server>(host, port); \
-         svr_; \
-         svr_->run(), svr_.reset())
-
-#define GET(url, body) \
-    svr_->get(url, [&](httplib::Context& cxt) { \
-        const auto& req_ = cxt.request; \
-        auto& res_ = cxt.response; \
-        body \
-    });
 
 } // namespace httplib
 
