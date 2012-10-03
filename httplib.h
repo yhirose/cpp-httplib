@@ -49,17 +49,15 @@ typedef std::map<std::string, std::string>      Map;
 typedef std::vector<std::string>                Array;
 typedef std::multimap<std::string, std::string> MultiMap;
 
-// HTTP request
 struct Request {
     std::string method;
     std::string url;
-    Map         headers;
+    MultiMap    headers;
     std::string body;
     Map         query;
     Array       params;
 };
 
-// HTTP response
 struct Response {
     int         status;
     MultiMap    headers;
@@ -74,18 +72,18 @@ struct Connection {
     Response response;
 };
 
-// HTTP server
 class Server {
 public:
     typedef std::function<void (Connection& c)> Handler;
 
-    Server(const char* ipaddr_or_hostname, int port);
+    Server(const char* host, int port);
     ~Server();
 
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
 
     void on_ready(std::function<void ()> callback);
+    void set_logger(std::function<void (const Connection&)> logger);
 
     bool run();
     void stop();
@@ -93,13 +91,32 @@ public:
 private:
     void process_request(FILE* fp_read, FILE* fp_write);
 
-    const std::string ipaddr_or_hostname_;
+    bool read_request_line(FILE* fp, Request& request);
+    void write_response(FILE* fp, const Response& response);
+    void write_error(FILE* fp, int status);
+
+    const std::string host_;
     const int         port_;
     socket_t          sock_;
 
     std::vector<std::pair<std::regex, Handler>>  get_handlers_;
     std::vector<std::pair<std::string, Handler>> post_handlers_;
     std::function<void ()>                       on_ready_;
+    std::function<void (const Connection&)>      logger_;
+};
+
+class Client {
+public:
+    Client(const char* host, int port);
+    ~Client();
+
+    int get(const char* url, Response& response);
+
+private:
+    bool read_response_line(FILE* fp, Response& response);
+
+    const std::string host_;
+    const int         port_;
 };
 
 // Implementation
@@ -118,12 +135,25 @@ void split(const char* b, const char* e, char d, Fn fn)
         i++;
     }
 
-    if (i != 0) {
+    if (i) {
         fn(&b[beg], &b[i]);
     }
 }
 
-inline socket_t create_server_socket(const char* ipaddr_or_hostname, int port)
+inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
+{
+#ifdef _WIN32
+    int osfhandle = _open_osfhandle(fd, _O_RDONLY);
+    fp_read = fdopen(osfhandle, "rb");
+    fp_write = fdopen(osfhandle, "wb");
+#else
+    fp_read = fdopen(fd, "rb");
+    fp_write = fdopen(fd, "wb");
+#endif
+}
+
+template <typename Fn>
+inline socket_t create_socket(const char* host, int port, Fn fn)
 {
 #ifdef _WIN32
     int opt = SO_SYNCHRONOUS_NONALERT;
@@ -142,7 +172,7 @@ inline socket_t create_server_socket(const char* ipaddr_or_hostname, int port)
 
     // Get a host entry info
     struct hostent* hp;
-    if (!(hp = gethostbyname(ipaddr_or_hostname))) {
+    if (!(hp = gethostbyname(host))) {
         return -1;
     }
 
@@ -153,16 +183,24 @@ inline socket_t create_server_socket(const char* ipaddr_or_hostname, int port)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-        return -1;
-    }
+    return fn(sock, addr);
+}
 
-    // Listen through 5 channels
-    if (listen(sock, 5) != 0) {
-        return -1;
-    }
+inline socket_t create_server_socket(const char* host, int port)
+{
+    return create_socket(host, port, [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
 
-    return sock;
+        if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
+            return -1;
+        }
+
+        // Listen through 5 channels
+        if (listen(sock, 5)) {
+            return -1;
+        }
+
+        return sock;
+    });
 }
 
 inline int close_server_socket(socket_t sock)
@@ -176,27 +214,69 @@ inline int close_server_socket(socket_t sock)
 #endif
 }
 
-std::string dump_request(Connection& c)
+inline socket_t create_client_socket(const char* host, int port)
 {
-    const auto& req = c.request;
+    return create_socket(host, port,
+            [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
+
+        if (connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
+            return -1;
+        }
+
+        return sock;
+    });
+}
+
+inline int close_client_socket(socket_t sock)
+{
+#ifdef _WIN32
+    return closesocket(sock);
+#else
+    return close(sock);
+#endif
+}
+
+inline const char* get_header_value(const MultiMap& map, const char* key, const char* def)
+{
+    auto it = map.find(key);
+    if (it != map.end()) {
+        return it->second.c_str();
+    }
+    return def;
+}
+
+inline int get_header_value_int(const MultiMap& map, const char* key, int def)
+{
+    auto it = map.find(key);
+    if (it != map.end()) {
+        return std::atoi(it->second.c_str());
+    }
+    return def;
+}
+
+inline void read_headers(FILE* fp, MultiMap& headers)
+{
+    static std::regex re("(.+?): (.+?)\r\n");
+
+    const size_t BUFSIZ_HEADER = 2048;
+    char buf[BUFSIZ_HEADER];
+
+    while (fgets(buf, BUFSIZ_HEADER, fp) && strcmp(buf, "\r\n")) {
+        std::cmatch m;
+        if (std::regex_match(buf, m, re)) {
+            auto key = std::string(m[1]);
+            auto val = std::string(m[2]);
+            headers.insert(std::make_pair(key, val));
+        }
+    }
+}
+
+inline std::string dump_headers(const MultiMap& headers)
+{
     std::string s;
     char buf[BUFSIZ];
 
-    s += "================================\n";
-
-    snprintf(buf, sizeof(buf), "%s %s", req.method.c_str(), req.url.c_str());
-    s += buf;
-
-    std::string query;
-    for (auto it = req.query.begin(); it != req.query.end(); ++it) {
-       const auto& x = *it;
-       snprintf(buf, sizeof(buf), "%c%s=%s", (it == req.query.begin()) ? '?' : '&', x.first.c_str(), x.second.c_str());
-       query += buf;
-    }
-    snprintf(buf, sizeof(buf), "%s\n", query.c_str());
-    s += buf;
-
-    for (auto it = req.headers.begin(); it != req.headers.end(); ++it) {
+    for (auto it = headers.begin(); it != headers.end(); ++it) {
        const auto& x = *it;
        snprintf(buf, sizeof(buf), "%s: %s\n", x.first.c_str(), x.second.c_str());
        s += buf;
@@ -205,21 +285,22 @@ std::string dump_request(Connection& c)
     return s;
 }
 
-void Response::set_redirect(const char* url)
+// HTTP server implementation
+inline void Response::set_redirect(const char* url)
 {
     headers.insert(std::make_pair("Location", url));
     status = 302;
 }
 
-void Response::set_content(const std::string& s, const char* content_type)
+inline void Response::set_content(const std::string& s, const char* content_type)
 {
     body = s;
     headers.insert(std::make_pair("Content-Type", content_type));
     status = 200;
 }
 
-inline Server::Server(const char* ipaddr_or_hostname, int port)
-    : ipaddr_or_hostname_(ipaddr_or_hostname)
+inline Server::Server(const char* host, int port)
+    : host_(host)
     , port_(port)
     , sock_(-1)
 {
@@ -251,9 +332,14 @@ inline void Server::on_ready(std::function<void ()> callback)
     on_ready_ = callback;
 }
 
+inline void Server::set_logger(std::function<void (const Connection&)> logger)
+{
+    logger_ = logger;
+}
+
 inline bool Server::run()
 {
-    sock_ = create_server_socket(ipaddr_or_hostname_.c_str(), port_);
+    sock_ = create_server_socket(host_.c_str(), port_);
     if (sock_ == -1) {
         return false;
     }
@@ -274,14 +360,9 @@ inline bool Server::run()
             return false;
         }
 
-#ifdef _WIN32
-        int osfhandle = _open_osfhandle(fd, _O_RDONLY);
-        FILE* fp_read = fdopen(osfhandle, "rb");
-        FILE* fp_write = fdopen(osfhandle, "wb");
-#else
-        FILE* fp_read = fdopen(fd, "rb");
-        FILE* fp_write = fdopen(fd, "wb");
-#endif
+        FILE* fp_read;
+        FILE* fp_write;
+        get_flie_pointers(fd, fp_read, fp_write);
 
         process_request(fp_read, fp_write);
 
@@ -298,13 +379,15 @@ inline void Server::stop()
     sock_ = -1;
 }
 
-inline bool read_request_line(FILE* fp, Request& request)
+inline bool Server::read_request_line(FILE* fp, Request& request)
 {
-    static std::regex re("(GET|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.1\r\n");
-
     const size_t BUFSIZ_REQUESTLINE = 2048;
     char buf[BUFSIZ_REQUESTLINE];
-    fgets(buf, BUFSIZ_REQUESTLINE, fp);
+    if (!fgets(buf, BUFSIZ_REQUESTLINE, fp)) {
+        return false;
+    }
+
+    static std::regex re("(GET|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.[01]\r\n");
 
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
@@ -335,33 +418,7 @@ inline bool read_request_line(FILE* fp, Request& request)
     return false;
 }
 
-inline void read_headers(FILE* fp, Map& headers)
-{
-    static std::regex re("(.+?): (.+?)\r\n");
-
-    const size_t BUFSIZ_HEADER = 2048;
-    char buf[BUFSIZ_HEADER];
-
-    while (fgets(buf, BUFSIZ_HEADER, fp) && strcmp(buf, "\r\n")) {
-        std::cmatch m;
-        if (std::regex_match(buf, m, re)) {
-            auto key = std::string(m[1]);
-            auto val = std::string(m[2]);
-            headers[key] = val;
-        }
-    }
-}
-
-inline const char* get_header_value(const MultiMap& map, const char* key, const char* def)
-{
-    auto it = map.find(key);
-    if (it != map.end()) {
-        return it->second.c_str();
-    }
-    return def;
-}
-
-inline void write_response(FILE* fp, const Response& response)
+inline void Server::write_response(FILE* fp, const Response& response)
 {
     fprintf(fp, "HTTP/1.0 %d OK\r\n", response.status);
     fprintf(fp, "Connection: close\r\n");
@@ -385,7 +442,7 @@ inline void write_response(FILE* fp, const Response& response)
     }
 }
 
-inline void write_error(FILE* fp, int status)
+inline void Server::write_error(FILE* fp, int status)
 {
     const char* msg = NULL;
 
@@ -415,17 +472,13 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
     Connection c;
 
-    // Read and parse request line
     if (!read_request_line(fp_read, c.request)) {
         write_error(fp_write, 400);
         return;
     }
 
-    // Read headers
     read_headers(fp_read, c.request.headers);
     
-    printf("%s", dump_request(c).c_str());
-
     // Routing
     c.response.status = 404;
 
@@ -449,11 +502,86 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
         c.response.status = 400;
     }
 
+    if (logger_) {
+        logger_(c);
+    }
+
     if (200 <= c.response.status && c.response.status < 400) {
         write_response(fp_write, c.response);
     } else {
         write_error(fp_write, c.response.status);
     }
+}
+
+// HTTP client implementation
+inline Client::Client(const char* host, int port)
+    : host_(host)
+    , port_(port)
+{
+#ifdef _WIN32
+    WSADATA wsaData;
+    WSAStartup(0x0002, &wsaData);
+#endif
+}
+
+inline Client::~Client()
+{
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+inline bool Client::read_response_line(FILE* fp, Response& response)
+{
+    const size_t BUFSIZ_RESPONSELINE = 2048;
+    char buf[BUFSIZ_RESPONSELINE];
+    if (!fgets(buf, BUFSIZ_RESPONSELINE, fp)) {
+        return false;
+    }
+
+    static std::regex re("HTTP/1\\.[01] (\\d+?) .+\r\n");
+
+    std::cmatch m;
+    if (std::regex_match(buf, m, re)) {
+        response.status = std::atoi(std::string(m[1]).c_str());
+    }
+
+    return true;
+}
+
+inline int Client::get(const char* url, Response& response)
+{
+    socket_t sock = create_client_socket(host_.c_str(), port_);
+    if (sock == -1) {
+        return -1;
+    }
+
+    FILE* fp_read;
+    FILE* fp_write;
+    get_flie_pointers(sock, fp_read, fp_write);
+
+    // Send request
+    fprintf(fp_write, "GET %s HTTP/1.0\r\n\r\n", url);
+    fflush(fp_write);
+
+    if (!read_response_line(fp_read, response)) {
+        return -1;
+    }
+
+    read_headers(fp_read, response.headers);
+
+    // Read content body
+    auto len = get_header_value_int(response.headers, "Content-Length", 0);
+    if (len) {
+        response.body.assign(len, 0);
+        if (!fgets(&response.body[0], response.body.size() + 1, fp_read)) {
+            return -1;
+        }
+    }
+
+    close_client_socket(sock);
+
+    return 0;
 }
 
 } // namespace httplib

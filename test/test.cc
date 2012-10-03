@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <future>
+#include <iostream>
 
 using namespace std;
 using namespace httplib;
@@ -53,18 +54,30 @@ TEST(GetHeaderValueTest, RegularValue)
 
 TEST(ServerTest, GetMethod)
 {
-    Server svr("localhost", 1914);
+    const char* host = "localhost";
+    int port = 1914;
+    const char* url = "/hi";
+    const char* content = "Hello World!";
 
-    svr.get("hi", [&](httplib::Connection& c) {
-        c.response.set_content("Hello World!");
+    Server svr(host, port);
+
+    svr.get(url, [&](httplib::Connection& c) {
+        c.response.set_content(content);
     });
 
-    svr.on_ready([&]() {
-        // TODO: HTTP GET request...
-        svr.stop();
-    });
+    //svr.on_ready([&]() { svr.stop(); });
     
     auto f = async([&](){ svr.run(); });
+
+    sleep(1);
+
+    Client cli(host, port);
+
+    Response res;
+    cli.get(url, res);
+    EXPECT_EQ(content, res.body);
+
+    svr.stop();
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix
