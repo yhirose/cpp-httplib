@@ -109,7 +109,7 @@ public:
     Client(const char* host, int port);
     ~Client();
 
-    int get(const char* url, Response& res);
+    bool get(const char* url, Response& res);
 
 private:
     bool read_response_line(FILE* fp, Response& res);
@@ -545,11 +545,11 @@ inline bool Client::read_response_line(FILE* fp, Response& res)
     return true;
 }
 
-inline int Client::get(const char* url, Response& res)
+inline bool Client::get(const char* url, Response& res)
 {
     socket_t sock = create_client_socket(host_.c_str(), port_);
     if (sock == -1) {
-        return -1;
+        return false;
     }
 
     FILE* fp_read;
@@ -561,7 +561,7 @@ inline int Client::get(const char* url, Response& res)
     fflush(fp_write);
 
     if (!read_response_line(fp_read, res)) {
-        return -1;
+        return false;
     }
 
     read_headers(fp_read, res.headers);
@@ -571,13 +571,13 @@ inline int Client::get(const char* url, Response& res)
     if (len) {
         res.body.assign(len, 0);
         if (!fgets(&res.body[0], res.body.size() + 1, fp_read)) {
-            return -1;
+            return false;
         }
     }
 
     close_client_socket(sock);
 
-    return 0;
+    return res.status == 200;
 }
 
 } // namespace httplib
