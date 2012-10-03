@@ -65,17 +65,20 @@ TEST(ServerTest, GetMethod)
         c.response.set_content(content);
     });
 
-    //svr.on_ready([&]() { svr.stop(); });
-    
     auto f = async([&](){ svr.run(); });
 
-    sleep(1);
+    {
+        Response res;
+        Client(host, port).get(url, res);
+        EXPECT_EQ(200, res.status);
+        EXPECT_EQ(content, res.body);
+    }
 
-    Client cli(host, port);
-
-    Response res;
-    cli.get(url, res);
-    EXPECT_EQ(content, res.body);
+    {
+        Response res;
+        Client(host, port).get("/invalid", res);
+        EXPECT_EQ(404, res.status);
+    }
 
     svr.stop();
 }

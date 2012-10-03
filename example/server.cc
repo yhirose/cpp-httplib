@@ -57,13 +57,20 @@ std::string log(const httplib::Connection& c)
     return s;
 }
 
+inline void error_handler(httplib::Connection& c)
+{
+    char buf[BUFSIZ];
+    snprintf(buf, sizeof(buf), "Error Status: %d\r\n", c.response.status);
+    c.response.set_content(buf);
+}
+
 int main(void)
 {
     using namespace httplib;
 
     const char* hi = "/hi";
 
-    Server svr("localhost", 1234);
+    Server svr("localhost", 8080);
 
     svr.get("/", [=](Connection& c) {
         c.response.set_redirect(hi);
@@ -74,8 +81,10 @@ int main(void)
     });
 
     svr.get("/dump", [](Connection& c) {
-        c.response.set_content(log(c));
+        c.response.set_content(httplib::dump_headers(c.request.headers));
     });
+
+    svr.error(error_handler);
 
     svr.set_logger([](const Connection& c) {
         printf("%s", log(c).c_str());

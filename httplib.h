@@ -81,8 +81,8 @@ public:
 
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
+    void error(Handler handler);
 
-    void on_ready(std::function<void ()> callback);
     void set_logger(std::function<void (const Connection&)> logger);
 
     bool run();
@@ -91,9 +91,8 @@ public:
 private:
     void process_request(FILE* fp_read, FILE* fp_write);
 
-    bool read_request_line(FILE* fp, Request& request);
-    void write_response(FILE* fp, const Response& response);
-    void write_error(FILE* fp, int status);
+    bool read_request_line(FILE* fp, Request& req);
+    void write_response(FILE* fp, const Response& res);
 
     const std::string host_;
     const int         port_;
@@ -101,7 +100,7 @@ private:
 
     std::vector<std::pair<std::regex, Handler>>  get_handlers_;
     std::vector<std::pair<std::string, Handler>> post_handlers_;
-    std::function<void ()>                       on_ready_;
+    Handler                                      error_handler_;
     std::function<void (const Connection&)>      logger_;
 };
 
@@ -110,10 +109,10 @@ public:
     Client(const char* host, int port);
     ~Client();
 
-    int get(const char* url, Response& response);
+    int get(const char* url, Response& res);
 
 private:
-    bool read_response_line(FILE* fp, Response& response);
+    bool read_response_line(FILE* fp, Response& res);
 
     const std::string host_;
     const int         port_;
@@ -236,6 +235,26 @@ inline int close_client_socket(socket_t sock)
 #endif
 }
 
+inline const char* status_message(int status)
+{
+    const char* s = NULL;
+
+    switch (status) {
+    case 400:
+        s = "Bad Request";
+        break;
+    case 404:
+        s = "Not Found";
+        break;
+    default:
+        status = 500;
+        s = "Internal Server Error";
+        break;
+    }
+
+    return s;
+}
+
 inline const char* get_header_value(const MultiMap& map, const char* key, const char* def)
 {
     auto it = map.find(key);
@@ -296,7 +315,6 @@ inline void Response::set_content(const std::string& s, const char* content_type
 {
     body = s;
     headers.insert(std::make_pair("Content-Type", content_type));
-    status = 200;
 }
 
 inline Server::Server(const char* host, int port)
@@ -327,9 +345,9 @@ inline void Server::post(const char* pattern, Handler handler)
     post_handlers_.push_back(std::make_pair(pattern, handler));
 }
 
-inline void Server::on_ready(std::function<void ()> callback)
+inline void Server::error(Handler handler)
 {
-    on_ready_ = callback;
+    error_handler_ = handler;
 }
 
 inline void Server::set_logger(std::function<void (const Connection&)> logger)
@@ -344,10 +362,6 @@ inline bool Server::run()
         return false;
     }
     
-    if (on_ready_) {
-        on_ready_();
-    }
-
     for (;;) {
         socket_t fd = accept(sock_, NULL, NULL);
         if (fd == -1) {
@@ -379,7 +393,7 @@ inline void Server::stop()
     sock_ = -1;
 }
 
-inline bool Server::read_request_line(FILE* fp, Request& request)
+inline bool Server::read_request_line(FILE* fp, Request& req)
 {
     const size_t BUFSIZ_REQUESTLINE = 2048;
     char buf[BUFSIZ_REQUESTLINE];
@@ -391,8 +405,8 @@ inline bool Server::read_request_line(FILE* fp, Request& request)
 
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
-        request.method = std::string(m[1]);
-        request.url = std::string(m[2]);
+        req.method = std::string(m[1]);
+        req.url = std::string(m[2]);
 
         // Parse query text
         auto len = std::distance(m[3].first, m[3].second);
@@ -408,7 +422,7 @@ inline bool Server::read_request_line(FILE* fp, Request& request)
                         val.assign(b, e);
                     }
                 });
-                request.query[key] = val;
+                req.query[key] = val;
             });
         }
 
@@ -418,54 +432,28 @@ inline bool Server::read_request_line(FILE* fp, Request& request)
     return false;
 }
 
-inline void Server::write_response(FILE* fp, const Response& response)
+inline void Server::write_response(FILE* fp, const Response& res)
 {
-    fprintf(fp, "HTTP/1.0 %d OK\r\n", response.status);
+    fprintf(fp, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
     fprintf(fp, "Connection: close\r\n");
 
-    for (auto it = response.headers.begin(); it != response.headers.end(); ++it) {
+    for (auto it = res.headers.begin(); it != res.headers.end(); ++it) {
         if (it->first != "Content-Type" && it->second != "Content-Length") {
             fprintf(fp, "%s: %s\r\n", it->first.c_str(), it->second.c_str());
         }
     }
 
-    if (!response.body.empty()) {
-        auto content_type = get_header_value(response.headers, "Content-Type", "text/plain");
+    if (!res.body.empty()) {
+        auto content_type = get_header_value(res.headers, "Content-Type", "text/plain");
         fprintf(fp, "Content-Type: %s\r\n", content_type);
-        fprintf(fp, "Content-Length: %ld\r\n", response.body.size());
+        fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
     }
 
     fprintf(fp, "\r\n");
 
-    if (!response.body.empty()) {
-        fprintf(fp, "%s", response.body.c_str());
+    if (!res.body.empty()) {
+        fprintf(fp, "%s", res.body.c_str());
     }
-}
-
-inline void Server::write_error(FILE* fp, int status)
-{
-    const char* msg = NULL;
-
-    switch (status) {
-    case 400:
-        msg = "Bad Request";
-        break;
-    case 404:
-        msg = "Not Found";
-        break;
-    default:
-        status = 500;
-        msg = "Internal Server Error";
-        break;
-    }
-
-    assert(msg);
-
-    fprintf(fp, "HTTP/1.0 %d %s\r\n", status, msg);
-    fprintf(fp, "Content-type: text/plain\r\n");
-    fprintf(fp, "Connection: close\r\n");
-    fprintf(fp, "\r\n");
-    fprintf(fp, "Status: %d\r\n", status);
 }
 
 inline void Server::process_request(FILE* fp_read, FILE* fp_write)
@@ -473,14 +461,13 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
     Connection c;
 
     if (!read_request_line(fp_read, c.request)) {
-        write_error(fp_write, 400);
         return;
     }
 
     read_headers(fp_read, c.request.headers);
     
     // Routing
-    c.response.status = 404;
+    c.response.status = 0;
 
     if (c.request.method == "GET") {
         for (auto it = get_handlers_.begin(); it != get_handlers_.end(); ++it) {
@@ -493,6 +480,9 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
                     c.request.params.push_back(m[i]);
                 }
                 handler(c);
+                if (!c.response.status) {
+                    c.response.status = 200;
+                }
                 break;
             }
         }
@@ -502,15 +492,21 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
         c.response.status = 400;
     }
 
+    if (!c.response.status) {
+        c.response.status = 404;
+    }
+
+    if (400 <= c.response.status) {
+        if (error_handler_) {
+            error_handler_(c);
+        }
+    }
+
     if (logger_) {
         logger_(c);
     }
 
-    if (200 <= c.response.status && c.response.status < 400) {
-        write_response(fp_write, c.response);
-    } else {
-        write_error(fp_write, c.response.status);
-    }
+    write_response(fp_write, c.response);
 }
 
 // HTTP client implementation
@@ -531,7 +527,7 @@ inline Client::~Client()
 #endif
 }
 
-inline bool Client::read_response_line(FILE* fp, Response& response)
+inline bool Client::read_response_line(FILE* fp, Response& res)
 {
     const size_t BUFSIZ_RESPONSELINE = 2048;
     char buf[BUFSIZ_RESPONSELINE];
@@ -543,13 +539,13 @@ inline bool Client::read_response_line(FILE* fp, Response& response)
 
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
-        response.status = std::atoi(std::string(m[1]).c_str());
+        res.status = std::atoi(std::string(m[1]).c_str());
     }
 
     return true;
 }
 
-inline int Client::get(const char* url, Response& response)
+inline int Client::get(const char* url, Response& res)
 {
     socket_t sock = create_client_socket(host_.c_str(), port_);
     if (sock == -1) {
@@ -564,17 +560,17 @@ inline int Client::get(const char* url, Response& response)
     fprintf(fp_write, "GET %s HTTP/1.0\r\n\r\n", url);
     fflush(fp_write);
 
-    if (!read_response_line(fp_read, response)) {
+    if (!read_response_line(fp_read, res)) {
         return -1;
     }
 
-    read_headers(fp_read, response.headers);
+    read_headers(fp_read, res.headers);
 
     // Read content body
-    auto len = get_header_value_int(response.headers, "Content-Length", 0);
+    auto len = get_header_value_int(res.headers, "Content-Length", 0);
     if (len) {
-        response.body.assign(len, 0);
-        if (!fgets(&response.body[0], response.body.size() + 1, fp_read)) {
+        res.body.assign(len, 0);
+        if (!fgets(&res.body[0], res.body.size() + 1, fp_read)) {
             return -1;
         }
     }
