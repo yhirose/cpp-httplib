@@ -40,10 +40,10 @@ std::string log(const httplib::Connection& c)
     s += buf;
 
     std::string query;
-    for (auto it = req.query.begin(); it != req.query.end(); ++it) {
+    for (auto it = req.params.begin(); it != req.params.end(); ++it) {
        const auto& x = *it;
        snprintf(buf, sizeof(buf), "%c%s=%s",
-           (it == req.query.begin()) ? '?' : '&', x.first.c_str(), x.second.c_str());
+           (it == req.params.begin()) ? '?' : '&', x.first.c_str(), x.second.c_str());
        query += buf;
     }
     snprintf(buf, sizeof(buf), "%s\n", query.c_str());
