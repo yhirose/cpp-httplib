@@ -13,7 +13,7 @@ int main(void)
     Server svr("localhost", 1234);
 
     svr.get("/hi", [](Connection& c) {
-        c.response.set_content("Hello World!");
+        c.response.set_content("Hello World!", "text/plain");
     });
 
     svr.run();

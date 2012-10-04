@@ -24,7 +24,6 @@
 #include <winsock2.h>
 
 typedef SOCKET socket_t;
-#define snprintf sprintf_s
 #else
 #include <pthread.h>
 #include <unistd.h>
@@ -46,8 +45,8 @@ namespace httplib
 {
 
 typedef std::map<std::string, std::string>      Map;
-typedef std::vector<std::string>                Array;
 typedef std::multimap<std::string, std::string> MultiMap;
+typedef std::smatch                             Match;
 
 struct Request {
     std::string method;
@@ -55,7 +54,10 @@ struct Request {
     MultiMap    headers;
     std::string body;
     Map         query;
-    Array       params;
+    Match       match;
+
+    bool has_header(const char* key) const;
+    std::string get_header_value(const char* key) const;
 };
 
 struct Response {
@@ -63,8 +65,12 @@ struct Response {
     MultiMap    headers;
     std::string body;
 
+    bool has_header(const char* key) const;
+    std::string get_header_value(const char* key) const;
+    void set_header(const char* key, const char* val);
+
     void set_redirect(const char* url);
-    void set_content(const std::string& s, const char* content_type = "text/plain");
+    void set_content(const std::string& s, const char* content_type);
 };
 
 struct Connection {
@@ -81,8 +87,8 @@ public:
 
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
-    void error(Handler handler);
 
+    void set_error_handler(Handler handler);
     void set_logger(std::function<void (const Connection&)> logger);
 
     bool run();
@@ -152,7 +158,7 @@ inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
 }
 
 template <typename Fn>
-inline socket_t create_socket(const char* host, int port, Fn fn)
+socket_t create_socket(const char* host, int port, Fn fn)
 {
 #ifdef _WIN32
     int opt = SO_SYNCHRONOUS_NONALERT;
@@ -255,7 +261,7 @@ inline const char* status_message(int status)
     return s;
 }
 
-inline const char* get_header_value(const MultiMap& map, const char* key, const char* def)
+inline const char* get_header_value_text(const MultiMap& map, const char* key, const char* def)
 {
     auto it = map.find(key);
     if (it != map.end()) {
@@ -290,31 +296,43 @@ inline void read_headers(FILE* fp, MultiMap& headers)
     }
 }
 
-inline std::string dump_headers(const MultiMap& headers)
+// HTTP server implementation
+inline bool Request::has_header(const char* key) const
 {
-    std::string s;
-    char buf[BUFSIZ];
-
-    for (auto it = headers.begin(); it != headers.end(); ++it) {
-       const auto& x = *it;
-       snprintf(buf, sizeof(buf), "%s: %s\n", x.first.c_str(), x.second.c_str());
-       s += buf;
-    }
-
-    return s;
+    return headers.find(key) != headers.end();
 }
 
-// HTTP server implementation
+inline std::string Request::get_header_value(const char* key) const
+{
+    return get_header_value_text(headers, key, "");
+}
+
+inline bool Response::has_header(const char* key) const
+{
+    return headers.find(key) != headers.end();
+}
+
+inline std::string Response::get_header_value(const char* key) const
+{
+    return get_header_value_text(headers, key, "");
+}
+
+inline void Response::set_header(const char* key, const char* val)
+{
+    headers.insert(std::make_pair(key, val));
+}
+
 inline void Response::set_redirect(const char* url)
 {
-    headers.insert(std::make_pair("Location", url));
+    set_header("Location", url);
     status = 302;
 }
 
 inline void Response::set_content(const std::string& s, const char* content_type)
 {
     body = s;
-    headers.insert(std::make_pair("Content-Type", content_type));
+    set_header("Content-Type", content_type);
+    status = 200;
 }
 
 inline Server::Server(const char* host, int port)
@@ -345,7 +363,7 @@ inline void Server::post(const char* pattern, Handler handler)
     post_handlers_.push_back(std::make_pair(pattern, handler));
 }
 
-inline void Server::error(Handler handler)
+inline void Server::set_error_handler(Handler handler)
 {
     error_handler_ = handler;
 }
@@ -444,7 +462,7 @@ inline void Server::write_response(FILE* fp, const Response& res)
     }
 
     if (!res.body.empty()) {
-        auto content_type = get_header_value(res.headers, "Content-Type", "text/plain");
+        auto content_type = get_header_value_text(res.headers, "Content-Type", "text/plain");
         fprintf(fp, "Content-Type: %s\r\n", content_type);
         fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
     }
@@ -474,22 +492,13 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
             const auto& pattern = it->first;
             const auto& handler = it->second;
             
-            std::smatch m;
-            if (std::regex_match(c.request.url, m, pattern)) {
-                for (size_t i = 1; i < m.size(); i++) {
-                    c.request.params.push_back(m[i]);
-                }
+            if (std::regex_match(c.request.url, c.request.match, pattern)) {
                 handler(c);
-                if (!c.response.status) {
-                    c.response.status = 200;
-                }
                 break;
             }
         }
     } else if (c.request.method == "POST") {
         // TODO: parse body
-    } else {
-        c.response.status = 400;
     }
 
     if (!c.response.status) {
@@ -577,7 +586,7 @@ inline bool Client::get(const char* url, Response& res)
 
     close_client_socket(sock);
 
-    return res.status == 200;
+    return true;
 }
 
 } // namespace httplib

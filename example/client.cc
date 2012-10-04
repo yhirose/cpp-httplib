@@ -6,21 +6,23 @@
 //
 
 #include <httplib.h>
-#include <cstdio>
-#include <signal.h>
+#include <iostream>
 
+using namespace std;
 using namespace httplib;
 
 int main(void)
 {
-    using namespace httplib;
-
     const char* hi = "/hi";
 
-    Client cli("localhost", 1234);
+    Client cli("localhost", 8080);
 
     Response res;
-    cli.get(hi, res);
+    if (cli.get(hi, res)) {
+        cout << res.status << endl;
+        cout << res.get_header_value("Content-Type") << endl;
+        cout << res.body << endl;
+    }
 
     return 0;
 }

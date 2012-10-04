@@ -41,7 +41,7 @@ TEST(SocketTest, OpenClose)
 TEST(GetHeaderValueTest, DefaultValue)
 {
     MultiMap map = {{"Dummy","Dummy"}};
-    auto val = get_header_value(map, "Content-Type", "text/plain");
+    auto val = get_header_value_text(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/plain", val);
 }
 
@@ -55,7 +55,7 @@ TEST(GetHeaderValueTest, DefaultValueInt)
 TEST(GetHeaderValueTest, RegularValue)
 {
     MultiMap map = {{"Content-Type","text/html"}, {"Dummy", "Dummy"}};
-    auto val = get_header_value(map, "Content-Type", "text/plain");
+    auto val = get_header_value_text(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/html", val);
 }
 
@@ -68,43 +68,44 @@ TEST(GetHeaderValueTest, RegularValueInt)
 
 class ServerTest : public ::testing::Test {
 protected:
-    ServerTest() : svr(host, port) {
+    ServerTest() : svr_(host_, port_) {
     }
 
     virtual void SetUp() {
-        svr.get(url, [&](httplib::Connection& c) {
-            c.response.set_content(content);
+        svr_.get(url_, [&](httplib::Connection& c) {
+            c.response.set_content(content_, mime_);
         });
-        f = async([&](){ svr.run(); });
+        f_ = async([&](){ svr_.run(); });
     }
 
     virtual void TearDown() {
-        svr.stop();
-        f.get();
+        svr_.stop();
+        f_.get();
     }
 
-    const char* host = "localhost";
-    int port = 1914;
-    const char* url = "/hi";
-    const char* content = "Hello World!";
+    const char* host_ = "localhost";
+    int         port_ = 1914;
+    const char* url_ = "/hi";
+    const char* content_ = "Hello World!";
+    const char* mime_ = "text/plain";
 
-    Server svr;
-    std::future<void> f;
+    Server            svr_;
+    std::future<void> f_;
 };
 
 TEST_F(ServerTest, GetMethod200)
 {
     Response res;
-    bool ret = Client(host, port).get(url, res);
+    bool ret = Client(host_, port_).get(url_, res);
     ASSERT_EQ(true, ret);
     ASSERT_EQ(200, res.status);
-    ASSERT_EQ(content, res.body);
+    ASSERT_EQ(content_, res.body);
 }
 
 TEST_F(ServerTest, GetMethod404)
 {
     Response res;
-    bool ret = Client(host, port).get("/invalid", res);
+    bool ret = Client(host_, port_).get("/invalid", res);
     ASSERT_EQ(false, ret);
     ASSERT_EQ(404, res.status);
 }
