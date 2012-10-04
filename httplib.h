@@ -217,7 +217,7 @@ inline socket_t create_server_socket(const char* host, int port)
     });
 }
 
-inline int close_server_socket(socket_t sock)
+inline int close_socket(socket_t sock)
 {
 #ifdef _WIN32
     shutdown(sock, SD_BOTH);
@@ -239,15 +239,6 @@ inline socket_t create_client_socket(const char* host, int port)
 
         return sock;
     });
-}
-
-inline int close_client_socket(socket_t sock)
-{
-#ifdef _WIN32
-    return closesocket(sock);
-#else
-    return close(sock);
-#endif
 }
 
 inline const char* status_message(int status)
@@ -485,7 +476,7 @@ inline bool Server::run()
                 return true;
             } 
 
-            close_server_socket(sock_);
+            close_socket(sock_);
             return false;
         }
 
@@ -496,7 +487,7 @@ inline bool Server::run()
         process_request(fp_read, fp_write);
 
         fflush(fp_write);
-        close_server_socket(fd);
+        close_socket(fd);
     }
 
     // NOTREACHED
@@ -504,7 +495,7 @@ inline bool Server::run()
 
 inline void Server::stop()
 {
-    close_server_socket(sock_);
+    close_socket(sock_);
     sock_ = -1;
 }
 
@@ -674,7 +665,7 @@ inline bool Client::send(const Request& req, Response& res)
         return false;
     }
 
-    close_client_socket(sock);
+    close_socket(sock);
 
     return true;
 }

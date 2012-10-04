@@ -46,7 +46,7 @@ TEST(SocketTest, OpenClose)
     socket_t sock = create_server_socket("localhost", 1914);
     ASSERT_NE(-1, sock);
 
-    auto ret = close_server_socket(sock);
+    auto ret = close_socket(sock);
     EXPECT_EQ(0, ret);
 }
 
