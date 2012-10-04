@@ -74,6 +74,8 @@ struct Response {
 
     void set_redirect(const char* url);
     void set_content(const std::string& s, const char* content_type);
+
+    Response() : status(-1) {}
 };
 
 struct Connection {
@@ -102,7 +104,8 @@ private:
 
     void process_request(FILE* fp_read, FILE* fp_write);
     bool read_request_line(FILE* fp, Request& req);
-    void dispatch_request(Connection& c, Handlers& handlers);
+    bool routing(Connection& c);
+    bool dispatch_request(Connection& c, Handlers& handlers);
 
     const std::string host_;
     const int         port_;
@@ -533,7 +536,17 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
     return false;
 }
 
-inline void Server::dispatch_request(Connection& c, Handlers& handlers)
+inline bool Server::routing(Connection& c)
+{
+    if (c.request.method == "GET") {
+        return dispatch_request(c, get_handlers_);
+    } else if (c.request.method == "POST") {
+        return dispatch_request(c, post_handlers_);
+    }
+    return false;
+}
+
+inline bool Server::dispatch_request(Connection& c, Handlers& handlers)
 {
     for (auto it = handlers.begin(); it != handlers.end(); ++it) {
         const auto& pattern = it->first;
@@ -541,53 +554,45 @@ inline void Server::dispatch_request(Connection& c, Handlers& handlers)
 
         if (std::regex_match(c.request.url, c.request.matches, pattern)) {
             handler(c);
-
-            if (!c.response.status) {
-                c.response.status = 200;
-            }
-            break;
+            return true;
         }
     }
+    return false;
 }
 
 inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
     Connection c;
     auto& req = c.request;
-    auto& res = c.response;
 
     if (!read_request_line(fp_read, req) ||
         !read_headers(fp_read, req.headers)) {
         return;
     }
-    
-    // Routing
-    res.status = 0;
 
-    if (req.method == "GET") {
-        dispatch_request(c, get_handlers_);
-    } else if (req.method == "POST") {
+    if (req.method == "POST") {
         if (!read_content(req, fp_read)) {
             return;
         }
         if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
-            // Parse query text
-            const char* b = &req.body[0];
-            const char* e = &req.body[req.body.size()];
-            parse_query_text(b, e, req.params);
+            parse_query_text(&req.body[0], &req.body[req.body.size()], req.params);
         }
-        dispatch_request(c, post_handlers_);
     }
-
-    if (!res.status) {
-        res.status = 404;
+    
+    if (routing(c)) {
+        if (c.response.status == -1) {
+            c.response.status = 200;
+        }
+    } else {
+        c.response.status = 404;
     }
+    assert(c.response.status != -1);
 
-    if (400 <= res.status && error_handler_) {
+    if (400 <= c.response.status && error_handler_) {
         error_handler_(c);
     }
 
-    write_response(fp_write, res);
+    write_response(fp_write, c.response);
 
     if (logger_) {
         logger_(c);

@@ -70,12 +70,10 @@ int main(void)
 {
     using namespace httplib;
 
-    const char* hi = "/hi";
-
     Server svr("localhost", 8080);
 
     svr.get("/", [=](Connection& c) {
-        c.response.set_redirect(hi);
+        c.response.set_redirect("/hi");
     });
 
     svr.get("/hi", [](Connection& c) {
@@ -86,9 +84,10 @@ int main(void)
         c.response.set_content(dump_headers(c.request.headers), "text/plain");
     });
 
-    svr.set_error_handler([](httplib::Connection& c) {
+    svr.set_error_handler([](Connection& c) {
+        const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
-        snprintf(buf, sizeof(buf), "<p>Error Status: <span style='color:red;'>%d</span></p>", c.response.status);
+        snprintf(buf, sizeof(buf), fmt, c.response.status);
         c.response.set_content(buf, "text/html");
     });
 
