@@ -17,11 +17,11 @@ int main(void)
 
     Client cli("localhost", 8080);
 
-    Response res;
-    if (cli.get(hi, res)) {
-        cout << res.status << endl;
-        cout << res.get_header_value("Content-Type") << endl;
-        cout << res.body << endl;
+    auto res = cli.get(hi);
+    if (res) {
+        cout << res->status << endl;
+        cout << res->get_header_value("Content-Type") << endl;
+        cout << res->body << endl;
     }
 
     return 0;

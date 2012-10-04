@@ -24,4 +24,21 @@ Inspired by [Sinatra](http://www.sinatrarb.com/)
         svr.run();
     }
 
+Client Example
+--------------
+
+    #include <httplib.h>
+    #include <iostream>
+    using namespace httplib;
+
+    int main(void)
+    {
+        Client cli("localhost", 1234);
+
+        auto res = cli.get("/hi");
+        if (res && res->status == 200) {
+            std::cout << res->body << std::endl;
+        }
+    }
+
 Copyright (c) 2012 Yuji Hirose. All rights reserved.

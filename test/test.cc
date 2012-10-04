@@ -187,4 +187,36 @@ TEST_F(ServerTest, PostMethod)
     }
 }
 
+TEST_F(ServerTest, GetMethod200Shared)
+{
+    auto res = Client(host_, port_).get("/hi");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("Hello World!", res->body);
+}
+
+TEST_F(ServerTest, PostMethodShared)
+{
+    {
+        auto res = Client(host_, port_).get("/person/john3");
+        ASSERT_TRUE(res != nullptr);
+        ASSERT_EQ(404, res->status);
+    }
+    {
+        auto content = "name=john3&note=coder";
+        auto content_type = "application/x-www-form-urlencoded";
+        auto res = Client(host_, port_).post("/person", content, content_type);
+        ASSERT_TRUE(res != nullptr);
+        ASSERT_EQ(200, res->status);
+    }
+    {
+        auto res = Client(host_, port_).get("/person/john3");
+        ASSERT_TRUE(res != nullptr);
+        ASSERT_EQ(200, res->status);
+        ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+        ASSERT_EQ("coder", res->body);
+    }
+}
+
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

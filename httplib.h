@@ -126,6 +126,9 @@ public:
     bool post(const char* url, const std::string& body, const char* content_type, Response& res);
     bool send(const Request& req, Response& res);
 
+    std::shared_ptr<Response> get(const char* url);
+    std::shared_ptr<Response> post(const char* url, const std::string& body, const char* content_type);
+
 private:
     bool read_response_line(FILE* fp, Response& res);
 
@@ -634,7 +637,8 @@ inline bool Client::get(const char* url, Response& res)
     return send(req, res);
 }
 
-inline bool Client::post(const char* url, const std::string& body, const char* content_type, Response& res)
+inline bool Client::post(
+    const char* url, const std::string& body, const char* content_type, Response& res)
 {
     Request req;
     req.method = "POST";
@@ -668,6 +672,19 @@ inline bool Client::send(const Request& req, Response& res)
     close_socket(sock);
 
     return true;
+}
+
+inline std::shared_ptr<Response> Client::get(const char* url)
+{
+    auto res = std::make_shared<Response>();
+    return get(url, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::post(
+    const char* url, const std::string& body, const char* content_type)
+{
+    auto res = std::make_shared<Response>();
+    return post(url, body, content_type, *res) ? res : nullptr;
 }
 
 } // namespace httplib
