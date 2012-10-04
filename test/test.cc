@@ -24,9 +24,21 @@ TEST(SplitTest, ParseQueryString)
         dic[key] = val;
     });
 
-    ASSERT_EQ("val1", dic["key1"]);
-    ASSERT_EQ("val2", dic["key2"]);
-    ASSERT_EQ("val3", dic["key3"]);
+    EXPECT_EQ("val1", dic["key1"]);
+    EXPECT_EQ("val2", dic["key2"]);
+    EXPECT_EQ("val3", dic["key3"]);
+}
+
+TEST(ParseQueryTest, ParseQueryString)
+{
+    string s = "key1=val1&key2=val2&key3=val3";
+    map<string, string> dic;
+
+    parse_query_text(&s[0], &s[s.size()], dic);
+
+    EXPECT_EQ("val1", dic["key1"]);
+    EXPECT_EQ("val2", dic["key2"]);
+    EXPECT_EQ("val3", dic["key3"]);
 }
 
 TEST(SocketTest, OpenClose)
@@ -35,7 +47,7 @@ TEST(SocketTest, OpenClose)
     ASSERT_NE(-1, sock);
 
     auto ret = close_server_socket(sock);
-    ASSERT_EQ(0, ret);
+    EXPECT_EQ(0, ret);
 }
 
 TEST(GetHeaderValueTest, DefaultValue)
@@ -49,7 +61,7 @@ TEST(GetHeaderValueTest, DefaultValueInt)
 {
     MultiMap map = {{"Dummy","Dummy"}};
     auto val = get_header_value_int(map, "Content-Length", 100);
-    ASSERT_EQ(100, val);
+    EXPECT_EQ(100, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue)
@@ -63,12 +75,13 @@ TEST(GetHeaderValueTest, RegularValueInt)
 {
     MultiMap map = {{"Content-Length","100"}, {"Dummy", "Dummy"}};
     auto val = get_header_value_int(map, "Content-Length", 0);
-    ASSERT_EQ(100, val);
+    EXPECT_EQ(100, val);
 }
 
 class ServerTest : public ::testing::Test {
 protected:
     ServerTest() : svr_(host_, port_) {
+        persons_["john"] = "programmer";
     }
 
     virtual void SetUp() {
@@ -78,6 +91,24 @@ protected:
         svr_.get("/", [&](httplib::Connection& c) {
             c.response.set_redirect("/hi");
         });
+        svr_.post("/person", [&](httplib::Connection& c) {
+            const auto& req = c.request;
+            if (req.has_param("name") && req.has_param("note")) {
+                persons_[req.params.at("name")] = req.params.at("note");
+            } else {
+                c.response.status = 400;
+            }
+        });
+        svr_.get("/person/(.*)", [&](httplib::Connection& c) {
+            const auto& req = c.request;
+            std::string name = req.matches[1];
+            if (persons_.find(name) != persons_.end()) {
+                auto note = persons_[name];
+                c.response.set_content(note, "text/plain");
+            } else {
+                c.response.status = 404;
+            }
+        });
         f_ = async([&](){ svr_.run(); });
     }
 
@@ -86,10 +117,11 @@ protected:
         f_.get();
     }
 
-    const char*       host_ = "localhost";
-    int               port_ = 1914;
-    Server            svr_;
-    std::future<void> f_;
+    const char*                        host_ = "localhost";
+    int                                port_ = 1914;
+    std::map<std::string, std::string> persons_;
+    Server                             svr_;
+    std::future<void>                  f_;
 };
 
 TEST_F(ServerTest, GetMethod200)
@@ -97,9 +129,9 @@ TEST_F(ServerTest, GetMethod200)
     Response res;
     bool ret = Client(host_, port_).get("/hi", res);
     ASSERT_EQ(true, ret);
-    ASSERT_EQ(200, res.status);
-    ASSERT_EQ("text/plain", res.get_header_value("Content-Type"));
-    ASSERT_EQ("Hello World!", res.body);
+    EXPECT_EQ(200, res.status);
+    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+    EXPECT_EQ("Hello World!", res.body);
 }
 
 TEST_F(ServerTest, GetMethod302)
@@ -107,8 +139,8 @@ TEST_F(ServerTest, GetMethod302)
     Response res;
     bool ret = Client(host_, port_).get("/", res);
     ASSERT_EQ(true, ret);
-    ASSERT_EQ(302, res.status);
-    ASSERT_EQ("/hi", res.get_header_value("Location"));
+    EXPECT_EQ(302, res.status);
+    EXPECT_EQ("/hi", res.get_header_value("Location"));
 }
 
 TEST_F(ServerTest, GetMethod404)
@@ -116,7 +148,43 @@ TEST_F(ServerTest, GetMethod404)
     Response res;
     bool ret = Client(host_, port_).get("/invalid", res);
     ASSERT_EQ(true, ret);
-    ASSERT_EQ(404, res.status);
+    EXPECT_EQ(404, res.status);
+}
+
+TEST_F(ServerTest, GetMethodPersonJohn)
+{
+    Response res;
+    bool ret = Client(host_, port_).get("/person/john", res);
+    ASSERT_EQ(true, ret);
+    EXPECT_EQ(200, res.status);
+    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+    EXPECT_EQ("programmer", res.body);
+}
+
+TEST_F(ServerTest, PostMethod)
+{
+    {
+        Response res;
+        bool ret = Client(host_, port_).get("/person/john2", res);
+        ASSERT_EQ(true, ret);
+        ASSERT_EQ(404, res.status);
+    }
+    {
+        auto content = "name=john2&note=coder";
+        auto content_type = "application/x-www-form-urlencoded";
+        Response res;
+        bool ret = Client(host_, port_).post("/person", content, content_type, res);
+        ASSERT_EQ(true, ret);
+        ASSERT_EQ(200, res.status);
+    }
+    {
+        Response res;
+        bool ret = Client(host_, port_).get("/person/john2", res);
+        ASSERT_EQ(true, ret);
+        ASSERT_EQ(200, res.status);
+        ASSERT_EQ("text/plain", res.get_header_value("Content-Type"));
+        ASSERT_EQ("coder", res.body);
+    }
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

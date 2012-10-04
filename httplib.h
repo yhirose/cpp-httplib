@@ -53,11 +53,14 @@ struct Request {
     std::string url;
     MultiMap    headers;
     std::string body;
-    Map         query;
-    Match       match;
+    Map         params;
+    Match       matches;
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
+    void set_header(const char* key, const char* val);
+
+    bool has_param(const char* key) const;
 };
 
 struct Response {
@@ -99,7 +102,6 @@ private:
 
     void process_request(FILE* fp_read, FILE* fp_write);
     bool read_request_line(FILE* fp, Request& req);
-    void write_response(FILE* fp, const Response& res);
     void dispatch_request(Connection& c, Handlers& handlers);
 
     const std::string host_;
@@ -118,6 +120,8 @@ public:
     ~Client();
 
     bool get(const char* url, Response& res);
+    bool post(const char* url, const std::string& body, const char* content_type, Response& res);
+    bool send(const Request& req, Response& res);
 
 private:
     bool read_response_line(FILE* fp, Response& res);
@@ -319,6 +323,64 @@ bool read_content(T& x, FILE* fp)
     return true;
 }
 
+template <typename T>
+inline void write_headers(FILE* fp, const T& x)
+{
+    fprintf(fp, "Connection: close\r\n");
+
+    for (auto it = x.headers.begin(); it != x.headers.end(); ++it) {
+        if (it->first != "Content-Type" && it->first != "Content-Length") {
+            fprintf(fp, "%s: %s\r\n", it->first.c_str(), it->second.c_str());
+        }
+    }
+
+    if (!x.body.empty()) {
+        auto content_type = get_header_value_text(x.headers, "Content-Type", "text/plain");
+        fprintf(fp, "Content-Type: %s\r\n", content_type);
+        fprintf(fp, "Content-Length: %ld\r\n", x.body.size());
+    }
+
+    fprintf(fp, "\r\n");
+}
+
+inline void write_response(FILE* fp, const Response& res)
+{
+    fprintf(fp, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
+
+    write_headers(fp, res);
+
+    if (!res.body.empty()) {
+        fprintf(fp, "%s", res.body.c_str());
+    }
+}
+
+inline void write_request(FILE* fp, const Request& req)
+{
+    fprintf(fp, "%s %s HTTP/1.0\r\n", req.method.c_str(), req.url.c_str());
+
+    write_headers(fp, req);
+
+    if (!req.body.empty()) {
+        fprintf(fp, "%s", req.body.c_str());
+    }
+}
+
+inline void parse_query_text(const char* b, const char* e, Map& params)
+{
+    split(b, e, '&', [&](const char* b, const char* e) {
+        std::string key;
+        std::string val;
+        split(b, e, '=', [&](const char* b, const char* e) {
+            if (key.empty()) {
+                key.assign(b, e);
+            } else {
+                val.assign(b, e);
+            }
+        });
+        params[key] = val;
+    });
+}
+
 // HTTP server implementation
 inline bool Request::has_header(const char* key) const
 {
@@ -328,6 +390,16 @@ inline bool Request::has_header(const char* key) const
 inline std::string Request::get_header_value(const char* key) const
 {
     return get_header_value_text(headers, key, "");
+}
+
+inline void Request::set_header(const char* key, const char* val)
+{
+    headers.insert(std::make_pair(key, val));
+}
+
+inline bool Request::has_param(const char* key) const
+{
+    return params.find(key) != params.end();
 }
 
 inline bool Response::has_header(const char* key) const
@@ -452,18 +524,7 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
         auto len = std::distance(m[3].first, m[3].second);
         if (len > 0) {
             const auto& pos = m[3];
-            split(pos.first, pos.second, '&', [&](const char* b, const char* e) {
-                std::string key;
-                std::string val;
-                split(b, e, '=', [&](const char* b, const char* e) {
-                    if (key.empty()) {
-                        key.assign(b, e);
-                    } else {
-                        val.assign(b, e);
-                    }
-                });
-                req.query[key] = val;
-            });
+            parse_query_text(pos.first, pos.second, req.params);
         }
 
         return true;
@@ -472,37 +533,13 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
     return false;
 }
 
-inline void Server::write_response(FILE* fp, const Response& res)
-{
-    fprintf(fp, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
-    fprintf(fp, "Connection: close\r\n");
-
-    for (auto it = res.headers.begin(); it != res.headers.end(); ++it) {
-        if (it->first != "Content-Type" && it->second != "Content-Length") {
-            fprintf(fp, "%s: %s\r\n", it->first.c_str(), it->second.c_str());
-        }
-    }
-
-    if (!res.body.empty()) {
-        auto content_type = get_header_value_text(res.headers, "Content-Type", "text/plain");
-        fprintf(fp, "Content-Type: %s\r\n", content_type);
-        fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
-    }
-
-    fprintf(fp, "\r\n");
-
-    if (!res.body.empty()) {
-        fprintf(fp, "%s", res.body.c_str());
-    }
-}
-
 inline void Server::dispatch_request(Connection& c, Handlers& handlers)
 {
     for (auto it = handlers.begin(); it != handlers.end(); ++it) {
         const auto& pattern = it->first;
         const auto& handler = it->second;
 
-        if (std::regex_match(c.request.url, c.request.match, pattern)) {
+        if (std::regex_match(c.request.url, c.request.matches, pattern)) {
             handler(c);
 
             if (!c.response.status) {
@@ -516,33 +553,41 @@ inline void Server::dispatch_request(Connection& c, Handlers& handlers)
 inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
     Connection c;
+    auto& req = c.request;
+    auto& res = c.response;
 
-    if (!read_request_line(fp_read, c.request) ||
-        !read_headers(fp_read, c.request.headers)) {
+    if (!read_request_line(fp_read, req) ||
+        !read_headers(fp_read, req.headers)) {
         return;
     }
     
     // Routing
-    c.response.status = 0;
+    res.status = 0;
 
-    if (c.request.method == "GET") {
+    if (req.method == "GET") {
         dispatch_request(c, get_handlers_);
-    } else if (c.request.method == "POST") {
-        if (!read_content(c.request, fp_read)) {
+    } else if (req.method == "POST") {
+        if (!read_content(req, fp_read)) {
             return;
+        }
+        if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
+            // Parse query text
+            const char* b = &req.body[0];
+            const char* e = &req.body[req.body.size()];
+            parse_query_text(b, e, req.params);
         }
         dispatch_request(c, post_handlers_);
     }
 
-    if (!c.response.status) {
-        c.response.status = 404;
+    if (!res.status) {
+        res.status = 404;
     }
 
-    if (400 <= c.response.status && error_handler_) {
+    if (400 <= res.status && error_handler_) {
         error_handler_(c);
     }
 
-    write_response(fp_write, c.response);
+    write_response(fp_write, res);
 
     if (logger_) {
         logger_(c);
@@ -587,6 +632,24 @@ inline bool Client::read_response_line(FILE* fp, Response& res)
 
 inline bool Client::get(const char* url, Response& res)
 {
+    Request req;
+    req.method = "GET";
+    req.url = url;
+    return send(req, res);
+}
+
+inline bool Client::post(const char* url, const std::string& body, const char* content_type, Response& res)
+{
+    Request req;
+    req.method = "POST";
+    req.url = url;
+    req.set_header("Content-Type", content_type);
+    req.body = body;
+    return send(req, res);
+}
+
+inline bool Client::send(const Request& req, Response& res)
+{
     socket_t sock = create_client_socket(host_.c_str(), port_);
     if (sock == -1) {
         return false;
@@ -597,7 +660,7 @@ inline bool Client::get(const char* url, Response& res)
     get_flie_pointers(sock, fp_read, fp_write);
 
     // Send request
-    fprintf(fp_write, "GET %s HTTP/1.0\r\n\r\n", url);
+    write_request(fp_write, req);
     fflush(fp_write);
 
     if (!read_response_line(fp_read, res) ||
