@@ -89,8 +89,7 @@ int main(void)
     svr.set_error_handler([](httplib::Connection& c) {
         char buf[BUFSIZ];
         snprintf(buf, sizeof(buf), "<p>Error Status: <span style='color:red;'>%d</span></p>", c.response.status);
-        c.response.body = buf;
-        c.response.set_header("Content-Type", "text/html");
+        c.response.set_content(buf, "text/html");
     });
 
     svr.set_logger([](const Connection& c) {

@@ -72,8 +72,11 @@ protected:
     }
 
     virtual void SetUp() {
-        svr_.get(url_, [&](httplib::Connection& c) {
-            c.response.set_content(content_, mime_);
+        svr_.get("/hi", [&](httplib::Connection& c) {
+            c.response.set_content("Hello World!", "text/plain");
+        });
+        svr_.get("/", [&](httplib::Connection& c) {
+            c.response.set_redirect("/hi");
         });
         f_ = async([&](){ svr_.run(); });
     }
@@ -83,12 +86,8 @@ protected:
         f_.get();
     }
 
-    const char* host_ = "localhost";
-    int         port_ = 1914;
-    const char* url_ = "/hi";
-    const char* content_ = "Hello World!";
-    const char* mime_ = "text/plain";
-
+    const char*       host_ = "localhost";
+    int               port_ = 1914;
     Server            svr_;
     std::future<void> f_;
 };
@@ -96,17 +95,27 @@ protected:
 TEST_F(ServerTest, GetMethod200)
 {
     Response res;
-    bool ret = Client(host_, port_).get(url_, res);
+    bool ret = Client(host_, port_).get("/hi", res);
     ASSERT_EQ(true, ret);
     ASSERT_EQ(200, res.status);
-    ASSERT_EQ(content_, res.body);
+    ASSERT_EQ("text/plain", res.get_header_value("Content-Type"));
+    ASSERT_EQ("Hello World!", res.body);
+}
+
+TEST_F(ServerTest, GetMethod302)
+{
+    Response res;
+    bool ret = Client(host_, port_).get("/", res);
+    ASSERT_EQ(true, ret);
+    ASSERT_EQ(302, res.status);
+    ASSERT_EQ("/hi", res.get_header_value("Location"));
 }
 
 TEST_F(ServerTest, GetMethod404)
 {
     Response res;
     bool ret = Client(host_, port_).get("/invalid", res);
-    ASSERT_EQ(false, ret);
+    ASSERT_EQ(true, ret);
     ASSERT_EQ(404, res.status);
 }
 
