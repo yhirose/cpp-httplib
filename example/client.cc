@@ -9,15 +9,12 @@
 #include <iostream>
 
 using namespace std;
-using namespace httplib;
 
 int main(void)
 {
-    const char* hi = "/hi";
+    httplib::Client cli("localhost", 8080);
 
-    Client cli("localhost", 8080);
-
-    auto res = cli.get(hi);
+    auto res = cli.get("/hi");
     if (res) {
         cout << res->status << endl;
         cout << res->get_header_value("Content-Type") << endl;

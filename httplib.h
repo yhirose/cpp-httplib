@@ -102,14 +102,14 @@ public:
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
 
-    void process_request(FILE* fp_read, FILE* fp_write);
+    void process_request(socket_t sock);
     bool read_request_line(FILE* fp, Request& req);
     bool routing(Connection& c);
     bool dispatch_request(Connection& c, Handlers& handlers);
 
     const std::string host_;
     const int         port_;
-    socket_t          sock_;
+    socket_t          svr_sock_;
 
     Handlers get_handlers_;
     Handlers post_handlers_;
@@ -122,12 +122,11 @@ public:
     Client(const char* host, int port);
     ~Client();
 
-    bool get(const char* url, Response& res);
-    bool post(const char* url, const std::string& body, const char* content_type, Response& res);
-    bool send(const Request& req, Response& res);
-
     std::shared_ptr<Response> get(const char* url);
-    std::shared_ptr<Response> post(const char* url, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> post(
+        const char* url, const std::string& body, const char* content_type);
+
+    bool send(const Request& req, Response& res);
 
 private:
     bool read_response_line(FILE* fp, Response& res);
@@ -137,6 +136,7 @@ private:
 };
 
 // Implementation
+namespace detail {
 
 template <class Fn>
 void split(const char* b, const char* e, char d, Fn fn)
@@ -177,7 +177,7 @@ socket_t create_socket(const char* host, int port, Fn fn)
     setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
 #endif
 
-    // Create a server socket
+    // Create a socket
     socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) {
         return -1;
@@ -206,21 +206,17 @@ socket_t create_socket(const char* host, int port, Fn fn)
 inline socket_t create_server_socket(const char* host, int port)
 {
     return create_socket(host, port, [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
-
         if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
             return -1;
         }
-
-        // Listen through 5 channels
-        if (listen(sock, 5)) {
+        if (listen(sock, 5)) { // Listen through 5 channels
             return -1;
         }
-
         return sock;
     });
 }
 
-inline int close_socket(socket_t sock)
+inline int shutdown_and_close_socket(socket_t sock)
 {
 #ifdef _WIN32
     shutdown(sock, SD_BOTH);
@@ -233,35 +229,23 @@ inline int close_socket(socket_t sock)
 
 inline socket_t create_client_socket(const char* host, int port)
 {
-    return create_socket(host, port,
-            [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
-
+    return create_socket(host, port, [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
         if (connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
             return -1;
         }
-
         return sock;
     });
 }
 
 inline const char* status_message(int status)
 {
-    const char* s = NULL;
-
     switch (status) {
-    case 400:
-        s = "Bad Request";
-        break;
-    case 404:
-        s = "Not Found";
-        break;
+    case 400: return "Bad Request";
+    case 404: return "Not Found";
     default:
         status = 500;
-        s = "Internal Server Error";
-        break;
+        return "Internal Server Error";
     }
-
-    return s;
 }
 
 inline const char* get_header_value_text(const MultiMap& map, const char* key, const char* def)
@@ -378,7 +362,14 @@ inline void parse_query_text(const char* b, const char* e, Map& params)
     });
 }
 
-// HTTP server implementation
+inline void parse_query_text(const std::string& s, Map& params)
+{
+    parse_query_text(&s[0], &s[s.size()], params);
+}
+
+} // namespace detail
+
+// Request implementation
 inline bool Request::has_header(const char* key) const
 {
     return headers.find(key) != headers.end();
@@ -386,7 +377,7 @@ inline bool Request::has_header(const char* key) const
 
 inline std::string Request::get_header_value(const char* key) const
 {
-    return get_header_value_text(headers, key, "");
+    return detail::get_header_value_text(headers, key, "");
 }
 
 inline void Request::set_header(const char* key, const char* val)
@@ -399,6 +390,7 @@ inline bool Request::has_param(const char* key) const
     return params.find(key) != params.end();
 }
 
+// Response implementation
 inline bool Response::has_header(const char* key) const
 {
     return headers.find(key) != headers.end();
@@ -406,7 +398,7 @@ inline bool Response::has_header(const char* key) const
 
 inline std::string Response::get_header_value(const char* key) const
 {
-    return get_header_value_text(headers, key, "");
+    return detail::get_header_value_text(headers, key, "");
 }
 
 inline void Response::set_header(const char* key, const char* val)
@@ -426,10 +418,11 @@ inline void Response::set_content(const std::string& s, const char* content_type
     set_header("Content-Type", content_type);
 }
 
+// HTTP server implementation
 inline Server::Server(const char* host, int port)
     : host_(host)
     , port_(port)
-    , sock_(-1)
+    , svr_sock_(-1)
 {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -466,31 +459,26 @@ inline void Server::set_logger(Handler logger)
 
 inline bool Server::run()
 {
-    sock_ = create_server_socket(host_.c_str(), port_);
-    if (sock_ == -1) {
+    svr_sock_ = detail::create_server_socket(host_.c_str(), port_);
+    if (svr_sock_ == -1) {
         return false;
     }
     
     for (;;) {
-        socket_t fd = accept(sock_, NULL, NULL);
-        if (fd == -1) {
-            // The server socket was closed by user.
-            if (sock_ == -1) {
+        socket_t sock = accept(svr_sock_, NULL, NULL);
+        if (sock == -1) {
+            if (svr_sock_ == -1) {
+                // The server socket was closed by user.
                 return true;
-            } 
-
-            close_socket(sock_);
-            return false;
+            } else {
+                detail::shutdown_and_close_socket(svr_sock_);
+                return false;
+            }
         }
 
-        FILE* fp_read;
-        FILE* fp_write;
-        get_flie_pointers(fd, fp_read, fp_write);
-
-        process_request(fp_read, fp_write);
-
-        fflush(fp_write);
-        close_socket(fd);
+        // TODO: should be async
+        process_request(sock);
+        detail::shutdown_and_close_socket(sock);
     }
 
     // NOTREACHED
@@ -498,8 +486,8 @@ inline bool Server::run()
 
 inline void Server::stop()
 {
-    close_socket(sock_);
-    sock_ = -1;
+    detail::shutdown_and_close_socket(svr_sock_);
+    svr_sock_ = -1;
 }
 
 inline bool Server::read_request_line(FILE* fp, Request& req)
@@ -521,7 +509,7 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
         auto len = std::distance(m[3].first, m[3].second);
         if (len > 0) {
             const auto& pos = m[3];
-            parse_query_text(pos.first, pos.second, req.params);
+            detail::parse_query_text(pos.first, pos.second, req.params);
         }
 
         return true;
@@ -554,22 +542,25 @@ inline bool Server::dispatch_request(Connection& c, Handlers& handlers)
     return false;
 }
 
-inline void Server::process_request(FILE* fp_read, FILE* fp_write)
+inline void Server::process_request(socket_t sock)
 {
-    Connection c;
-    auto& req = c.request;
+    FILE* fp_read;
+    FILE* fp_write;
+    detail::get_flie_pointers(sock, fp_read, fp_write);
 
-    if (!read_request_line(fp_read, req) ||
-        !read_headers(fp_read, req.headers)) {
+    Connection c;
+
+    if (!read_request_line(fp_read, c.request) ||
+        !detail::read_headers(fp_read, c.request.headers)) {
         return;
     }
 
-    if (req.method == "POST") {
-        if (!read_content(req, fp_read)) {
+    if (c.request.method == "POST") {
+        if (!detail::read_content(c.request, fp_read)) {
             return;
         }
-        if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
-            parse_query_text(&req.body[0], &req.body[req.body.size()], req.params);
+        if (c.request.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
+            detail::parse_query_text(c.request.body, c.request.params);
         }
     }
     
@@ -586,7 +577,9 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
         error_handler_(c);
     }
 
-    write_response(fp_write, c.response);
+    detail::write_response(fp_write, c.response);
+
+    fflush(fp_write);
 
     if (logger_) {
         logger_(c);
@@ -629,62 +622,55 @@ inline bool Client::read_response_line(FILE* fp, Response& res)
     return true;
 }
 
-inline bool Client::get(const char* url, Response& res)
-{
-    Request req;
-    req.method = "GET";
-    req.url = url;
-    return send(req, res);
-}
-
-inline bool Client::post(
-    const char* url, const std::string& body, const char* content_type, Response& res)
-{
-    Request req;
-    req.method = "POST";
-    req.url = url;
-    req.set_header("Content-Type", content_type);
-    req.body = body;
-    return send(req, res);
-}
-
 inline bool Client::send(const Request& req, Response& res)
 {
-    socket_t sock = create_client_socket(host_.c_str(), port_);
+    socket_t sock = detail::create_client_socket(host_.c_str(), port_);
     if (sock == -1) {
         return false;
     }
 
     FILE* fp_read;
     FILE* fp_write;
-    get_flie_pointers(sock, fp_read, fp_write);
+    detail::get_flie_pointers(sock, fp_read, fp_write);
 
     // Send request
-    write_request(fp_write, req);
+    detail::write_request(fp_write, req);
     fflush(fp_write);
 
     if (!read_response_line(fp_read, res) ||
-        !read_headers(fp_read, res.headers) ||
-        !read_content(res, fp_read)) {
+        !detail::read_headers(fp_read, res.headers) ||
+        !detail::read_content(res, fp_read)) {
         return false;
     }
 
-    close_socket(sock);
+    detail::shutdown_and_close_socket(sock);
 
     return true;
 }
 
 inline std::shared_ptr<Response> Client::get(const char* url)
 {
+    Request req;
+    req.method = "GET";
+    req.url = url;
+
     auto res = std::make_shared<Response>();
-    return get(url, *res) ? res : nullptr;
+
+    return send(req, *res) ? res : nullptr;
 }
 
 inline std::shared_ptr<Response> Client::post(
     const char* url, const std::string& body, const char* content_type)
 {
+    Request req;
+    req.method = "POST";
+    req.url = url;
+    req.set_header("Content-Type", content_type);
+    req.body = body;
+
     auto res = std::make_shared<Response>();
-    return post(url, body, content_type, *res) ? res : nullptr;
+
+    return send(req, *res) ? res : nullptr;
 }
 
 } // namespace httplib

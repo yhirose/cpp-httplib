@@ -1,9 +1,11 @@
 cpp-httplib
 ===========
 
-A C++ HTTP library.
+A C++11 header-only HTTP library.
 
 [The Boost Software License 1.0](http://www.boost.org/LICENSE_1_0.txt)
+
+It's extremely easy to setup. Just include **httplib.h** file in your code!
 
 Server Example
 --------------
@@ -11,10 +13,11 @@ Server Example
 Inspired by [Sinatra](http://www.sinatrarb.com/) 
 
     #include <httplib.h>
-    using namespace httplib;
 
     int main(void)
     {
+        using namespace httplib;
+
         Server svr("localhost", 1234);
 
         svr.get("/hi", [](Connection& c) {
@@ -29,11 +32,10 @@ Client Example
 
     #include <httplib.h>
     #include <iostream>
-    using namespace httplib;
 
     int main(void)
     {
-        Client cli("localhost", 1234);
+        httplib::Client cli("localhost", 1234);
 
         auto res = cli.get("/hi");
         if (res && res->status == 200) {
