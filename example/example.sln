@@ -7,7 +7,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "client", "client.vcxproj", 
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{280E605F-0CB8-4336-8D9F-CE50A9472AE2}"
 	ProjectSection(SolutionItems) = preProject
-		..\httplib.h = ..\httplib.h
 		..\README.md = ..\README.md
 	EndProjectSection
 EndProject
