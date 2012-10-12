@@ -84,6 +84,7 @@ struct Response {
 class Server {
 public:
     typedef std::function<void (const Request&, Response&)> Handler;
+    typedef std::function<void (const Request&, const Response&)> Logger;
 
     Server();
     ~Server();
@@ -92,7 +93,7 @@ public:
     void post(const char* pattern, Handler handler);
 
     void set_error_handler(Handler handler);
-    void set_logger(Handler logger);
+    void set_logger(Logger logger);
 
     bool listen(const char* host, int port);
     void stop();
@@ -109,7 +110,7 @@ private:
     Handlers get_handlers_;
     Handlers post_handlers_;
     Handler  error_handler_;
-    Handler  logger_;
+    Logger   logger_;
 };
 
 class Client {
@@ -586,7 +587,7 @@ inline void Server::set_error_handler(Handler handler)
     error_handler_ = handler;
 }
 
-inline void Server::set_logger(Handler logger)
+inline void Server::set_logger(Logger logger)
 {
     logger_ = logger;
 }

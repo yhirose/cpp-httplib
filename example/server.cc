@@ -24,7 +24,7 @@ std::string dump_headers(const MultiMap& headers)
     return s;
 }
 
-std::string log(const Request& req, Response& res)
+std::string log(const Request& req, const Response& res)
 {
     std::string s;
     char buf[BUFSIZ];
@@ -88,7 +88,7 @@ int main(void)
         res.set_content(buf, "text/html");
     });
 
-    svr.set_logger([](const Request& req, Response& res) {
+    svr.set_logger([](const Request& req, const Response& res) {
         printf("%s", log(req, res).c_str());
     });
 
