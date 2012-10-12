@@ -81,13 +81,6 @@ struct Response {
     Response() : status(-1) {}
 };
 
-/*
-struct Connection {
-    Request  request;
-    Response response;
-};
-*/
-
 class Server {
 public:
     typedef std::function<void (const Request&, Response&)> Handler;
@@ -125,6 +118,7 @@ public:
     ~Client();
 
     std::shared_ptr<Response> get(const char* url);
+    std::shared_ptr<Response> head(const char* url);
     std::shared_ptr<Response> post(const char* url, const std::string& body, const char* content_type);
     std::shared_ptr<Response> post(const char* url, const Map& params);
 
@@ -249,11 +243,11 @@ inline socket_t create_client_socket(const char* host, int port)
 inline const char* status_message(int status)
 {
     switch (status) {
+    case 200: return "OK";
     case 400: return "Bad Request";
     case 404: return "Not Found";
     default:
-        status = 500;
-        return "Internal Server Error";
+        case 500: return "Internal Server Error";
     }
 }
 
@@ -333,13 +327,13 @@ inline void write_headers(FILE* fp, const T& x)
     fprintf(fp, "\r\n");
 }
 
-inline void write_response(FILE* fp, const Response& res)
+inline void write_response(FILE* fp, const Request& req, const Response& res)
 {
     fprintf(fp, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
 
     write_headers(fp, res);
 
-    if (!res.body.empty()) {
+    if (!res.body.empty() && req.method != "HEAD") {
         fprintf(fp, "%s", res.body.c_str());
     }
 }
@@ -643,7 +637,7 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
         return false;
     }
 
-    static std::regex re("(GET|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.[01]\r\n");
+    static std::regex re("(GET|HEAD|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.[01]\r\n");
 
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
@@ -664,7 +658,7 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
 
 inline bool Server::routing(Request& req, Response& res)
 {
-    if (req.method == "GET") {
+    if (req.method == "GET" || req.method == "HEAD") {
         return dispatch_request(req, res, get_handlers_);
     } else if (req.method == "POST") {
         return dispatch_request(req, res, post_handlers_);
@@ -722,7 +716,7 @@ inline void Server::process_request(socket_t sock)
         error_handler_(req, res);
     }
 
-    detail::write_response(fp_write, res);
+    detail::write_response(fp_write, req, res);
     fflush(fp_write);
 
     if (logger_) {
@@ -781,10 +775,15 @@ inline bool Client::send(const Request& req, Response& res)
     detail::write_request(fp_write, req);
     fflush(fp_write);
 
+    // Receive response
     if (!read_response_line(fp_read, res) ||
-        !detail::read_headers(fp_read, res.headers) ||
-        !detail::read_content(res, fp_read)) {
+        !detail::read_headers(fp_read, res.headers)) {
         return false;
+    }
+    if (req.method != "HEAD") {
+        if (!detail::read_content(res, fp_read)) {
+            return false;
+        }
     }
 
     detail::shutdown_socket(sock);
@@ -797,6 +796,17 @@ inline std::shared_ptr<Response> Client::get(const char* url)
 {
     Request req;
     req.method = "GET";
+    req.url = url;
+
+    auto res = std::make_shared<Response>();
+
+    return send(req, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::head(const char* url)
+{
+    Request req;
+    req.method = "HEAD";
     req.url = url;
 
     auto res = std::make_shared<Response>();

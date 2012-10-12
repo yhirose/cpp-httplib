@@ -15,7 +15,7 @@ using namespace std;
 using namespace httplib;
 
 const char* HOST = "localhost";
-const int   PORT = 8080;
+const int   PORT = 1234;
 
 class thread
 {
@@ -258,6 +258,23 @@ TEST_F(ServerTest, GetMethod404)
     auto res = cli_.get("/invalid");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, HeadMethod200)
+{
+    auto res = cli_.head("/hi");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("", res->body);
+}
+
+TEST_F(ServerTest, HeadMethod404)
+{
+    auto res = cli_.head("/invalid");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(404, res->status);
+    EXPECT_EQ("", res->body);
 }
 
 TEST_F(ServerTest, GetMethodPersonJohn)
