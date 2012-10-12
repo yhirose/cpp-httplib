@@ -311,7 +311,7 @@ TEST_F(ServerTest, PostMethod2)
 TEST(CleanupTest, WSACleanup)
 {
     int ret = WSACleanup();
-	 ASSERT_EQ(0, ret);
+    ASSERT_EQ(0, ret);
 }
 #endif
 
