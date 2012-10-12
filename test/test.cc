@@ -1,18 +1,98 @@
 
 #include <gtest/gtest.h>
 #include <httplib.h>
-#include <future>
+//#include <future>
 #include <iostream>
+
+#ifdef _WIN32
+#include <process.h>
+#endif
 
 using namespace std;
 using namespace httplib;
+
+const char* HOST = "localhost";
+const int   PORT = 8080;
+
+class thread
+{
+public:
+    thread(std::function<void ()> fn);
+    ~thread();
+
+    void join();
+
+private:
+    thread();
+
+#ifdef _WIN32
+    HANDLE thread_;
+    static unsigned int __stdcall TreadFunc(void* arg);
+#else
+    pthread_t thread_;
+    static void* TreadFunc(void* arg);
+#endif
+
+    static std::map<void*, std::function<void ()>> tasks_;
+};
+
+std::map<void*, std::function<void ()>> thread::tasks_;
+
+inline thread::thread(std::function<void ()> fn)
+    : thread_(NULL)
+{
+    tasks_[this] = fn;
+#ifdef _WIN32
+    thread_ = (HANDLE)_beginthreadex(NULL, 0, TreadFunc, this, 0, NULL); 
+#else
+    pthread_create(&thread_, NULL, TreadFunc, this);
+#endif
+}
+
+inline thread::~thread()
+{
+#ifdef _WIN32
+    CloseHandle(thread_);
+#endif
+}
+
+inline void thread::join()
+{
+#ifdef _WIN32
+    ::WaitForSingleObject(thread_, INFINITE);
+#else
+    pthread_join(thread_, NULL);
+#endif
+}
+
+#ifdef _WIN32
+unsigned int __stdcall thread::TreadFunc(void* arg)
+#else
+void* thread::TreadFunc(void* arg)
+#endif
+{
+    thread* pThis = static_cast<thread*>(arg);
+    tasks_[pThis]();
+    tasks_.erase(pThis);
+
+    return 0;
+}
+
+#ifdef _WIN32
+TEST(StartupTest, WSAStartup)
+{
+    WSADATA wsaData;
+    int ret = WSAStartup(0x0002, &wsaData);
+    ASSERT_EQ(0, ret);
+}
+#endif
 
 TEST(SplitTest, ParseQueryString)
 {
     string s = "key1=val1&key2=val2&key3=val3";
     map<string, string> dic;
 
-    detail::split(&s[0], &s[s.size()], '&', [&](const char* b, const char* e) {
+    detail::split(s.c_str(), s.c_str() + s.size(), '&', [&](const char* b, const char* e) {
         string key, val;
         detail::split(b, e, '=', [&](const char* b, const char* e) {
             if (key.empty()) {
@@ -34,7 +114,7 @@ TEST(ParseQueryTest, ParseQueryString)
     string s = "key1=val1&key2=val2&key3=val3";
     map<string, string> dic;
 
-    detail::parse_query_text(&s[0], &s[s.size()], dic);
+    detail::parse_query_text(s, dic);
 
     EXPECT_EQ("val1", dic["key1"]);
     EXPECT_EQ("val2", dic["key2"]);
@@ -43,37 +123,47 @@ TEST(ParseQueryTest, ParseQueryString)
 
 TEST(SocketTest, OpenClose)
 {
-    socket_t sock = detail::create_server_socket("localhost", 1914);
+    socket_t sock = detail::create_server_socket(HOST, PORT);
     ASSERT_NE(-1, sock);
 
-    auto ret = detail::shutdown_and_close_socket(sock);
+    auto ret = detail::close_socket(sock);
     EXPECT_EQ(0, ret);
 }
 
 TEST(GetHeaderValueTest, DefaultValue)
 {
-    MultiMap map = {{"Dummy","Dummy"}};
+    //MultiMap map = {{"Dummy","Dummy"}};
+    MultiMap map;
+    map.insert(std::make_pair("Dummy", "Dummy"));
     auto val = detail::get_header_value_text(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/plain", val);
 }
 
 TEST(GetHeaderValueTest, DefaultValueInt)
 {
-    MultiMap map = {{"Dummy","Dummy"}};
+    //MultiMap map = {{"Dummy","Dummy"}};
+    MultiMap map;
+    map.insert(std::make_pair("Dummy", "Dummy"));
     auto val = detail::get_header_value_int(map, "Content-Length", 100);
     EXPECT_EQ(100, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue)
 {
-    MultiMap map = {{"Content-Type","text/html"}, {"Dummy", "Dummy"}};
+    //MultiMap map = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
+    MultiMap map;
+    map.insert(std::make_pair("Content-Type","text/html"));
+    map.insert(std::make_pair("Dummy", "Dummy"));
     auto val = detail::get_header_value_text(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/html", val);
 }
 
 TEST(GetHeaderValueTest, RegularValueInt)
 {
-    MultiMap map = {{"Content-Length","100"}, {"Dummy", "Dummy"}};
+    //MultiMap map = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
+    MultiMap map;
+    map.insert(std::make_pair("Content-Length", "100"));
+    map.insert(std::make_pair("Dummy", "Dummy"));
     auto val = detail::get_header_value_int(map, "Content-Length", 0);
     EXPECT_EQ(100, val);
 }
@@ -81,17 +171,18 @@ TEST(GetHeaderValueTest, RegularValueInt)
 class ServerTest : public ::testing::Test {
 protected:
     ServerTest() : svr_(HOST, PORT), cli_(HOST, PORT) {
-        persons_["john"] = "programmer";
     }
 
     virtual void SetUp() {
-        svr_.get("/hi", [&](httplib::Connection& c) {
+        svr_.get("/hi", [&](Connection& c) {
             c.response.set_content("Hello World!", "text/plain");
         });
+
         svr_.get("/", [&](httplib::Connection& c) {
             c.response.set_redirect("/hi");
         });
-        svr_.post("/person", [&](httplib::Connection& c) {
+
+        svr_.post("/person", [&](Connection& c) {
             const auto& req = c.request;
             if (req.has_param("name") && req.has_param("note")) {
                 persons_[req.params.at("name")] = req.params.at("note");
@@ -99,7 +190,8 @@ protected:
                 c.response.status = 400;
             }
         });
-        svr_.get("/person/(.*)", [&](httplib::Connection& c) {
+
+        svr_.get("/person/(.*)", [&](Connection& c) {
             const auto& req = c.request;
             std::string name = req.matches[1];
             if (persons_.find(name) != persons_.end()) {
@@ -109,21 +201,30 @@ protected:
                 c.response.status = 404;
             }
         });
-        f_ = async([&](){ svr_.run(); });
+
+        svr_.get("/stop", [&](Connection& c) {
+            svr_.stop();
+        });
+
+        persons_["john"] = "programmer";
+
+        //f_ = async([&](){ svr_.run(); });
+        t_ = std::make_shared<thread>([&](){ svr_.run(); });
     }
 
     virtual void TearDown() {
-        svr_.stop();
-        f_.get();
-    }
+        //svr_.stop(); // NOTE: This causes dead lock on Windows.
+        cli_.get("/stop");
 
-    const char* HOST = "localhost";
-    const int   PORT = 1914;
+        //f_.get();
+        t_->join();
+    }
 
     std::map<std::string, std::string> persons_;
     Server                             svr_;
     Client                             cli_;
-    std::future<void>                  f_;
+    //std::future<void>                  f_;
+    std::shared_ptr<thread>            t_;
 };
 
 TEST_F(ServerTest, GetMethod200)
@@ -159,21 +260,50 @@ TEST_F(ServerTest, GetMethodPersonJohn)
     EXPECT_EQ("programmer", res->body);
 }
 
-TEST_F(ServerTest, PostMethod)
+TEST_F(ServerTest, PostMethod1)
 {
-    auto res = cli_.get("/person/john3");
+    auto res = cli_.get("/person/john1");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(404, res->status);
 
-    res = cli_.post("/person", "name=john3&note=coder", "application/x-www-form-urlencoded");
+    res = cli_.post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
 
-    res = cli_.get("/person/john3");
+    res = cli_.get("/person/john1");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
     ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
     ASSERT_EQ("coder", res->body);
 }
+
+TEST_F(ServerTest, PostMethod2)
+{
+    auto res = cli_.get("/person/john2");
+    ASSERT_TRUE(res != nullptr);
+    ASSERT_EQ(404, res->status);
+
+    Map params;
+    params["name"] = "john2";
+    params["note"] = "coder";
+
+    res = cli_.post("/person", params);
+    ASSERT_TRUE(res != nullptr);
+    ASSERT_EQ(200, res->status);
+
+    res = cli_.get("/person/john2");
+    ASSERT_TRUE(res != nullptr);
+    ASSERT_EQ(200, res->status);
+    ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+    ASSERT_EQ("coder", res->body);
+}
+
+#ifdef _WIN32
+TEST(CleanupTest, WSACleanup)
+{
+    int ret = WSACleanup();
+	 ASSERT_EQ(0, ret);
+}
+#endif
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix

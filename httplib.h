@@ -5,8 +5,8 @@
 //  The Boost Software License 1.0
 //
 
-#ifndef HTTPSVRKIT_H
-#define HTTPSVRKIT_H
+#ifndef _CPPHTTPLIB_HTTPSLIB_H_
+#define _CPPHTTPLIB_HTTPSLIB_H_
 
 #ifdef _WIN32
 #define _CRT_SECURE_NO_WARNINGS
@@ -123,8 +123,8 @@ public:
     ~Client();
 
     std::shared_ptr<Response> get(const char* url);
-    std::shared_ptr<Response> post(
-        const char* url, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> post(const char* url, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> post(const char* url, const Map& params);
 
     bool send(const Request& req, Response& res);
 
@@ -161,8 +161,8 @@ inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
 {
 #ifdef _WIN32
     int osfhandle = _open_osfhandle(fd, _O_RDONLY);
-    fp_read = fdopen(osfhandle, "rb");
-    fp_write = fdopen(osfhandle, "wb");
+    fp_read = _fdopen(osfhandle, "rb");
+    fp_write = _fdopen(osfhandle, "wb");
 #else
     fp_read = fdopen(fd, "rb");
     fp_write = fdopen(fd, "wb");
@@ -216,13 +216,20 @@ inline socket_t create_server_socket(const char* host, int port)
     });
 }
 
-inline int shutdown_and_close_socket(socket_t sock)
+inline int shutdown_socket(socket_t sock)
 {
 #ifdef _WIN32
-    shutdown(sock, SD_BOTH);
+    return shutdown(sock, SD_BOTH);
+#else
+    return shutdown(sock, SHUT_RDWR);
+#endif
+}
+
+inline int close_socket(socket_t sock)
+{
+#ifdef _WIN32
     return closesocket(sock);
 #else
-    shutdown(sock, SHUT_RDWR);
     return close(sock);
 #endif
 }
@@ -335,20 +342,159 @@ inline void write_response(FILE* fp, const Response& res)
     }
 }
 
+inline std::string encode_url(const std::string& s)
+{
+    std::string result;
+
+    int i = 0;
+    while (s[i]) {
+        switch (s[i]) {
+        case ' ':  result += "%20"; break;
+        case '\'': result += "%27"; break;
+        case ',':  result += "%2C"; break;
+        case ':':  result += "%3A"; break;
+        case ';':  result += "%3B"; break;
+        default:
+            if (s[i] < 0) {
+                result += '%';
+                char hex[4];
+                size_t len = sprintf(hex, "%02X", (int)(unsigned char)s[i]);
+                assert(len == 2);
+                result.append(hex, len);
+            } else {
+                result += s[i];
+            }
+            break;
+        }
+        i++;
+    }
+
+    return result;
+}
+
+inline bool is_hex(char c, int& v)
+{
+    if (0x20 <= c && isdigit(c)) {
+        v = c - '0';
+        return true;
+    } else if ('A' <= c && c <= 'F') {
+        v = c - 'A' + 10;
+        return true;
+    } else if ('a' <= c && c <= 'f') {
+        v = c - 'a' + 10;
+        return true;
+    }
+    return false;
+}
+
+inline int from_hex_to_i(const std::string& s, int i, int cnt, int& val)
+{
+    val = 0;
+    for (; s[i] && cnt; i++, cnt--) {
+        int v = 0;
+        if (is_hex(s[i], v)) {
+            val = val * 16 + v;
+        } else {
+            break;
+        }
+    }
+    return --i;
+}
+
+size_t to_utf8(int code, char* buff)
+{
+    if (code < 0x0080) {
+        buff[0] = (uint8_t)(code & 0x7F);
+        return 1;
+    } else if (code < 0x0800) {
+        buff[0] = (uint8_t)(0xC0 | ((code >> 6) & 0x1F));
+        buff[1] = (uint8_t)(0x80 | (code & 0x3F));
+        return 2;
+    } else if (code < 0xD800) {
+        buff[0] = (uint8_t)(0xE0 | ((code >> 12) & 0xF));
+        buff[1] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
+        buff[2] = (uint8_t)(0x80 | (code & 0x3F));
+        return 3;
+    } else if (code < 0xE000)  { // D800 - DFFF is invalid...
+        assert(!"NOTREACHED");
+        return 0;
+    } else if (code < 0x10000) {
+        buff[0] = (uint8_t)(0xE0 | ((code >> 12) & 0xF));
+        buff[1] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
+        buff[2] = (uint8_t)(0x80 | (code & 0x3F));
+        return 3;
+    } else if (code < 0x110000) {
+        buff[0] = (uint8_t)(0xF0 | ((code >> 18) & 0x7));
+        buff[1] = (uint8_t)(0x80 | ((code >> 12) & 0x3F));
+        buff[2] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
+        buff[3] = (uint8_t)(0x80 | (code & 0x3F));
+        return 4;
+    }
+
+    assert(!"NOTREACHED");
+    // NOTREACHED
+}
+
+inline std::string decode_url(const std::string& s)
+{
+    std::string result;
+
+    for (int i = 0; s[i]; i++) {
+        if (s[i] == '%') {
+            i++;
+            assert(s[i]);
+
+            if (s[i] == '%') {
+                result += s[i];
+            } else if (s[i] == 'u') {
+                // Unicode
+                i++;
+                assert(s[i]);
+
+                int val = 0;
+                i = from_hex_to_i(s, i, 4, val);
+
+                char buff[4];
+                size_t len = to_utf8(val, buff);
+
+                if (len > 0) {
+                    result.append(buff, len);
+                }
+            } else {
+                // ASCII
+                int val = 0;
+                i = from_hex_to_i(s, i, 2, val);
+                result += (char)val;
+            }
+        } else if (s[i] == '+') {
+            result += ' ';
+        } else {
+            result += s[i];
+        }
+    }
+
+    return result;
+}
+
 inline void write_request(FILE* fp, const Request& req)
 {
-    fprintf(fp, "%s %s HTTP/1.0\r\n", req.method.c_str(), req.url.c_str());
+    auto url = encode_url(req.url);
+    fprintf(fp, "%s %s HTTP/1.0\r\n", req.method.c_str(), url.c_str());
 
     write_headers(fp, req);
 
     if (!req.body.empty()) {
-        fprintf(fp, "%s", req.body.c_str());
+        if (req.has_header("application/x-www-form-urlencoded")) {
+            fprintf(fp, "%s", encode_url(req.body).c_str());
+        } else {
+            fprintf(fp, "%s", req.body.c_str());
+        }
     }
 }
 
-inline void parse_query_text(const char* b, const char* e, Map& params)
+inline void parse_query_text(const std::string& s, Map& params)
 {
-    split(b, e, '&', [&](const char* b, const char* e) {
+    split(&s[0], &s[s.size()], '&', [&](const char* b, const char* e) {
         std::string key;
         std::string val;
         split(b, e, '=', [&](const char* b, const char* e) {
@@ -360,11 +506,6 @@ inline void parse_query_text(const char* b, const char* e, Map& params)
         });
         params[key] = val;
     });
-}
-
-inline void parse_query_text(const std::string& s, Map& params)
-{
-    parse_query_text(&s[0], &s[s.size()], params);
 }
 
 } // namespace detail
@@ -439,12 +580,12 @@ inline Server::~Server()
 
 inline void Server::get(const char* pattern, Handler handler)
 {
-    get_handlers_.push_back(std::make_pair(pattern, handler));
+    get_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
 }
 
 inline void Server::post(const char* pattern, Handler handler)
 {
-    post_handlers_.push_back(std::make_pair(pattern, handler));
+    post_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
 }
 
 inline void Server::set_error_handler(Handler handler)
@@ -464,29 +605,34 @@ inline bool Server::run()
         return false;
     }
     
+    auto ret = true;
+
     for (;;) {
         socket_t sock = accept(svr_sock_, NULL, NULL);
+
         if (sock == -1) {
-            if (svr_sock_ == -1) {
-                // The server socket was closed by user.
-                return true;
+            if (svr_sock_ != -1) {
+                detail::close_socket(svr_sock_);
+                ret = false;
             } else {
-                detail::shutdown_and_close_socket(svr_sock_);
-                return false;
+                ; // The server socket was closed by user.
             }
+            break;
         }
 
         // TODO: should be async
         process_request(sock);
-        detail::shutdown_and_close_socket(sock);
+        detail::shutdown_socket(sock);
+        detail::close_socket(sock);
     }
 
-    // NOTREACHED
+    return ret;
 }
 
 inline void Server::stop()
 {
-    detail::shutdown_and_close_socket(svr_sock_);
+    detail::shutdown_socket(svr_sock_);
+    detail::close_socket(svr_sock_);
     svr_sock_ = -1;
 }
 
@@ -503,13 +649,12 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
         req.method = std::string(m[1]);
-        req.url = std::string(m[2]);
+        req.url = detail::decode_url(m[2]);
 
         // Parse query text
         auto len = std::distance(m[3].first, m[3].second);
         if (len > 0) {
-            const auto& pos = m[3];
-            detail::parse_query_text(pos.first, pos.second, req.params);
+            detail::parse_query_text(detail::decode_url(m[3]), req.params);
         }
 
         return true;
@@ -560,7 +705,7 @@ inline void Server::process_request(socket_t sock)
             return;
         }
         if (c.request.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
-            detail::parse_query_text(c.request.body, c.request.params);
+            detail::parse_query_text(detail::decode_url(c.request.body), c.request.params);
         }
     }
     
@@ -578,7 +723,6 @@ inline void Server::process_request(socket_t sock)
     }
 
     detail::write_response(fp_write, c.response);
-
     fflush(fp_write);
 
     if (logger_) {
@@ -643,7 +787,8 @@ inline bool Client::send(const Request& req, Response& res)
         return false;
     }
 
-    detail::shutdown_and_close_socket(sock);
+    detail::shutdown_socket(sock);
+    detail::close_socket(sock);
 
     return true;
 }
@@ -671,6 +816,22 @@ inline std::shared_ptr<Response> Client::post(
     auto res = std::make_shared<Response>();
 
     return send(req, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::post(
+    const char* url, const Map& params)
+{
+    std::string query;
+    for (auto it = params.begin(); it != params.end(); ++it) {
+        if (it != params.begin()) {
+            query += "&";
+        }
+        query += it->first;
+        query += "=";
+        query += it->second;
+    }
+
+    return post(url, query, "application/x-www-form-urlencoded");
 }
 
 } // namespace httplib

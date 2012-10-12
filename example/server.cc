@@ -84,6 +84,10 @@ int main(void)
         c.response.set_content(dump_headers(c.request.headers), "text/plain");
     });
 
+    svr.get("/stop", [&](Connection& c) {
+        svr.stop();
+    });
+
     svr.set_error_handler([](Connection& c) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
