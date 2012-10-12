@@ -18,6 +18,9 @@
 #ifndef SO_OPENTYPE
 #define SO_OPENTYPE 0x7008
 #endif
+#ifndef snprintf
+#define snprintf _snprintf_s
+#endif
 
 #include <fcntl.h>
 #include <io.h>
@@ -78,16 +81,18 @@ struct Response {
     Response() : status(-1) {}
 };
 
+/*
 struct Connection {
     Request  request;
     Response response;
 };
+*/
 
 class Server {
 public:
-    typedef std::function<void (Connection& c)> Handler;
+    typedef std::function<void (const Request&, Response&)> Handler;
 
-    Server(const char* host, int port);
+    Server();
     ~Server();
 
     void get(const char* pattern, Handler handler);
@@ -96,7 +101,7 @@ public:
     void set_error_handler(Handler handler);
     void set_logger(Handler logger);
 
-    bool run();
+    bool listen(const char* host, int port);
     void stop();
 
 private:
@@ -104,13 +109,10 @@ private:
 
     void process_request(socket_t sock);
     bool read_request_line(FILE* fp, Request& req);
-    bool routing(Connection& c);
-    bool dispatch_request(Connection& c, Handlers& handlers);
+    bool routing(Request& req, Response& res);
+    bool dispatch_request(Request& req, Response& res, Handlers& handlers);
 
-    const std::string host_;
-    const int         port_;
-    socket_t          svr_sock_;
-
+    socket_t svr_sock_;
     Handlers get_handlers_;
     Handlers post_handlers_;
     Handler  error_handler_;
@@ -358,7 +360,7 @@ inline std::string encode_url(const std::string& s)
             if (s[i] < 0) {
                 result += '%';
                 char hex[4];
-                size_t len = sprintf(hex, "%02X", (int)(unsigned char)s[i]);
+                size_t len = snprintf(hex, sizeof(hex), "%02X", (unsigned char)s[i]);
                 assert(len == 2);
                 result.append(hex, len);
             } else {
@@ -404,35 +406,34 @@ inline int from_hex_to_i(const std::string& s, int i, int cnt, int& val)
 size_t to_utf8(int code, char* buff)
 {
     if (code < 0x0080) {
-        buff[0] = (uint8_t)(code & 0x7F);
+        buff[0] = (code & 0x7F);
         return 1;
     } else if (code < 0x0800) {
-        buff[0] = (uint8_t)(0xC0 | ((code >> 6) & 0x1F));
-        buff[1] = (uint8_t)(0x80 | (code & 0x3F));
+        buff[0] = (0xC0 | ((code >> 6) & 0x1F));
+        buff[1] = (0x80 | (code & 0x3F));
         return 2;
     } else if (code < 0xD800) {
-        buff[0] = (uint8_t)(0xE0 | ((code >> 12) & 0xF));
-        buff[1] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
-        buff[2] = (uint8_t)(0x80 | (code & 0x3F));
+        buff[0] = (0xE0 | ((code >> 12) & 0xF));
+        buff[1] = (0x80 | ((code >> 6) & 0x3F));
+        buff[2] = (0x80 | (code & 0x3F));
         return 3;
     } else if (code < 0xE000)  { // D800 - DFFF is invalid...
-        assert(!"NOTREACHED");
         return 0;
     } else if (code < 0x10000) {
-        buff[0] = (uint8_t)(0xE0 | ((code >> 12) & 0xF));
-        buff[1] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
-        buff[2] = (uint8_t)(0x80 | (code & 0x3F));
+        buff[0] = (0xE0 | ((code >> 12) & 0xF));
+        buff[1] = (0x80 | ((code >> 6) & 0x3F));
+        buff[2] = (0x80 | (code & 0x3F));
         return 3;
     } else if (code < 0x110000) {
-        buff[0] = (uint8_t)(0xF0 | ((code >> 18) & 0x7));
-        buff[1] = (uint8_t)(0x80 | ((code >> 12) & 0x3F));
-        buff[2] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
-        buff[3] = (uint8_t)(0x80 | (code & 0x3F));
+        buff[0] = (0xF0 | ((code >> 18) & 0x7));
+        buff[1] = (0x80 | ((code >> 12) & 0x3F));
+        buff[2] = (0x80 | ((code >> 6) & 0x3F));
+        buff[3] = (0x80 | (code & 0x3F));
         return 4;
     }
 
-    assert(!"NOTREACHED");
     // NOTREACHED
+    return 0;
 }
 
 inline std::string decode_url(const std::string& s)
@@ -461,10 +462,10 @@ inline std::string decode_url(const std::string& s)
                     result.append(buff, len);
                 }
             } else {
-                // ASCII
+                // HEX
                 int val = 0;
                 i = from_hex_to_i(s, i, 2, val);
-                result += (char)val;
+                result += val;
             }
         } else if (s[i] == '+') {
             result += ' ';
@@ -560,10 +561,8 @@ inline void Response::set_content(const std::string& s, const char* content_type
 }
 
 // HTTP server implementation
-inline Server::Server(const char* host, int port)
-    : host_(host)
-    , port_(port)
-    , svr_sock_(-1)
+inline Server::Server()
+    : svr_sock_(-1)
 {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -598,9 +597,9 @@ inline void Server::set_logger(Handler logger)
     logger_ = logger;
 }
 
-inline bool Server::run()
+inline bool Server::listen(const char* host, int port)
 {
-    svr_sock_ = detail::create_server_socket(host_.c_str(), port_);
+    svr_sock_ = detail::create_server_socket(host, port);
     if (svr_sock_ == -1) {
         return false;
     }
@@ -663,24 +662,24 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
     return false;
 }
 
-inline bool Server::routing(Connection& c)
+inline bool Server::routing(Request& req, Response& res)
 {
-    if (c.request.method == "GET") {
-        return dispatch_request(c, get_handlers_);
-    } else if (c.request.method == "POST") {
-        return dispatch_request(c, post_handlers_);
+    if (req.method == "GET") {
+        return dispatch_request(req, res, get_handlers_);
+    } else if (req.method == "POST") {
+        return dispatch_request(req, res, post_handlers_);
     }
     return false;
 }
 
-inline bool Server::dispatch_request(Connection& c, Handlers& handlers)
+inline bool Server::dispatch_request(Request& req, Response& res, Handlers& handlers)
 {
     for (auto it = handlers.begin(); it != handlers.end(); ++it) {
         const auto& pattern = it->first;
         const auto& handler = it->second;
 
-        if (std::regex_match(c.request.url, c.request.matches, pattern)) {
-            handler(c);
+        if (std::regex_match(req.url, req.matches, pattern)) {
+            handler(req, res);
             return true;
         }
     }
@@ -693,40 +692,41 @@ inline void Server::process_request(socket_t sock)
     FILE* fp_write;
     detail::get_flie_pointers(sock, fp_read, fp_write);
 
-    Connection c;
+    Request req;
+    Response res;
 
-    if (!read_request_line(fp_read, c.request) ||
-        !detail::read_headers(fp_read, c.request.headers)) {
+    if (!read_request_line(fp_read, req) ||
+        !detail::read_headers(fp_read, req.headers)) {
         return;
     }
 
-    if (c.request.method == "POST") {
-        if (!detail::read_content(c.request, fp_read)) {
+    if (req.method == "POST") {
+        if (!detail::read_content(req, fp_read)) {
             return;
         }
-        if (c.request.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
-            detail::parse_query_text(detail::decode_url(c.request.body), c.request.params);
+        if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
+            detail::parse_query_text(detail::decode_url(req.body), req.params);
         }
     }
     
-    if (routing(c)) {
-        if (c.response.status == -1) {
-            c.response.status = 200;
+    if (routing(req, res)) {
+        if (res.status == -1) {
+            res.status = 200;
         }
     } else {
-        c.response.status = 404;
+        res.status = 404;
     }
-    assert(c.response.status != -1);
+    assert(res.status != -1);
 
-    if (400 <= c.response.status && error_handler_) {
-        error_handler_(c);
+    if (400 <= res.status && error_handler_) {
+        error_handler_(req, res);
     }
 
-    detail::write_response(fp_write, c.response);
+    detail::write_response(fp_write, res);
     fflush(fp_write);
 
     if (logger_) {
-        logger_(c);
+        logger_(req, res);
     }
 }
 

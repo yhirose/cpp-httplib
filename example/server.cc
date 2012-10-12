@@ -8,11 +8,9 @@
 #include <httplib.h>
 #include <cstdio>
 
-#ifdef _WIN32
-#define snprintf sprintf_s
-#endif
+using namespace httplib;
 
-std::string dump_headers(const httplib::MultiMap& headers)
+std::string dump_headers(const MultiMap& headers)
 {
     std::string s;
     char buf[BUFSIZ];
@@ -26,11 +24,8 @@ std::string dump_headers(const httplib::MultiMap& headers)
     return s;
 }
 
-std::string log(const httplib::Connection& c)
+std::string log(const Request& req, Response& res)
 {
-    const auto& req = c.request;
-    const auto& res = c.response;
-
     std::string s;
     char buf[BUFSIZ];
 
@@ -68,38 +63,36 @@ std::string log(const httplib::Connection& c)
 
 int main(void)
 {
-    using namespace httplib;
+    Server svr;
 
-    Server svr("localhost", 8080);
-
-    svr.get("/", [=](Connection& c) {
-        c.response.set_redirect("/hi");
+    svr.get("/", [=](const Request& req, Response& res) {
+        res.set_redirect("/hi");
     });
 
-    svr.get("/hi", [](Connection& c) {
-        c.response.set_content("Hello World!", "text/plain");
+    svr.get("/hi", [](const Request& req, Response& res) {
+        res.set_content("Hello World!", "text/plain");
     });
 
-    svr.get("/dump", [](Connection& c) {
-        c.response.set_content(dump_headers(c.request.headers), "text/plain");
+    svr.get("/dump", [](const Request& req, Response& res) {
+        res.set_content(dump_headers(req.headers), "text/plain");
     });
 
-    svr.get("/stop", [&](Connection& c) {
+    svr.get("/stop", [&](const Request& req, Response& res) {
         svr.stop();
     });
 
-    svr.set_error_handler([](Connection& c) {
+    svr.set_error_handler([](const Request& req, Response& res) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
-        snprintf(buf, sizeof(buf), fmt, c.response.status);
-        c.response.set_content(buf, "text/html");
+        snprintf(buf, sizeof(buf), fmt, res.status);
+        res.set_content(buf, "text/html");
     });
 
-    svr.set_logger([](const Connection& c) {
-        printf("%s", log(c).c_str());
+    svr.set_logger([](const Request& req, Response& res) {
+        printf("%s", log(req, res).c_str());
     });
 
-    svr.run();
+    svr.listen("localhost", 8080);
 
     return 0;
 }

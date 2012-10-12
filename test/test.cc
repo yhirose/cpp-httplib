@@ -6,6 +6,9 @@
 
 #ifdef _WIN32
 #include <process.h>
+#define msleep(n) ::Sleep(n)
+#else
+#define msleep(n) ::usleep(n * 1000)
 #endif
 
 using namespace std;
@@ -170,46 +173,51 @@ TEST(GetHeaderValueTest, RegularValueInt)
 
 class ServerTest : public ::testing::Test {
 protected:
-    ServerTest() : svr_(HOST, PORT), cli_(HOST, PORT) {
+    ServerTest() : cli_(HOST, PORT), up_(false) {
     }
 
     virtual void SetUp() {
-        svr_.get("/hi", [&](Connection& c) {
-            c.response.set_content("Hello World!", "text/plain");
+        svr_.get("/hi", [&](const Request& req, Response& res) {
+            res.set_content("Hello World!", "text/plain");
         });
 
-        svr_.get("/", [&](httplib::Connection& c) {
-            c.response.set_redirect("/hi");
+        svr_.get("/", [&](const Request& req, Response& res) {
+            res.set_redirect("/hi");
         });
 
-        svr_.post("/person", [&](Connection& c) {
-            const auto& req = c.request;
+        svr_.post("/person", [&](const Request& req, Response& res) {
             if (req.has_param("name") && req.has_param("note")) {
                 persons_[req.params.at("name")] = req.params.at("note");
             } else {
-                c.response.status = 400;
+                res.status = 400;
             }
         });
 
-        svr_.get("/person/(.*)", [&](Connection& c) {
-            const auto& req = c.request;
+        svr_.get("/person/(.*)", [&](const Request& req, Response& res) {
             std::string name = req.matches[1];
             if (persons_.find(name) != persons_.end()) {
                 auto note = persons_[name];
-                c.response.set_content(note, "text/plain");
+                res.set_content(note, "text/plain");
             } else {
-                c.response.status = 404;
+                res.status = 404;
             }
         });
 
-        svr_.get("/stop", [&](Connection& c) {
+        svr_.get("/stop", [&](const Request& req, Response& res) {
             svr_.stop();
         });
 
         persons_["john"] = "programmer";
 
-        //f_ = async([&](){ svr_.run(); });
-        t_ = std::make_shared<thread>([&](){ svr_.run(); });
+        //f_ = async([&](){ svr_.listen(HOST, PORT); });
+        t_ = std::make_shared<thread>([&](){
+            up_ = true;
+            svr_.listen(HOST, PORT);
+        });
+
+        while (!up_) {
+            msleep(1);
+        }
     }
 
     virtual void TearDown() {
@@ -225,6 +233,7 @@ protected:
     Client                             cli_;
     //std::future<void>                  f_;
     std::shared_ptr<thread>            t_;
+    bool up_;
 };
 
 TEST_F(ServerTest, GetMethod200)

@@ -10,7 +10,7 @@ It's extremely easy to setup. Just include **httplib.h** file in your code!
 Server Example
 --------------
 
-Inspired by [Sinatra](http://www.sinatrarb.com/) 
+Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.com/visionmedia/express).
 
     #include <httplib.h>
 
@@ -18,13 +18,13 @@ Inspired by [Sinatra](http://www.sinatrarb.com/)
     {
         using namespace httplib;
 
-        Server svr("localhost", 1234);
+        Server svr;
 
-        svr.get("/hi", [](Connection& c) {
-            c.response.set_content("Hello World!", "text/plain");
+        svr.get("/hi", [](const Request& req, Response& res) {
+            res.set_content("Hello World!", "text/plain");
         });
 
-        svr.run();
+        svr.listen("localhost", 1234);
     }
 
 Client Example

@@ -10,13 +10,13 @@ using namespace httplib;
 
 int main(void)
 {
-    Server svr("localhost", 1234);
+    Server svr;
 
-    svr.get("/hi", [](Connection& c) {
-        c.response.set_content("Hello World!", "text/plain");
+    svr.get("/hi", [](const Request& req, Response& res) {
+        res.set_content("Hello World!", "text/plain");
     });
 
-    svr.run();
+    svr.listen("localhost", 1234);
 }
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix
