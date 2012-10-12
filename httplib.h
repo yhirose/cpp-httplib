@@ -349,7 +349,7 @@ inline std::string encode_url(const std::string& s)
     int i = 0;
     while (s[i]) {
         switch (s[i]) {
-        case ' ':  result += "%20"; break;
+        case ' ':  result += "+"; break;
         case '\'': result += "%27"; break;
         case ',':  result += "%2C"; break;
         case ':':  result += "%3A"; break;
