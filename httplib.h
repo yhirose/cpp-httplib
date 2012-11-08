@@ -87,7 +87,6 @@ public:
     typedef std::function<void (const Request&, const Response&)> Logger;
 
     Server();
-    ~Server();
 
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
@@ -116,7 +115,6 @@ private:
 class Client {
 public:
     Client(const char* host, int port);
-    ~Client();
 
     std::shared_ptr<Response> get(const char* url);
     std::shared_ptr<Response> head(const char* url);
@@ -504,6 +502,22 @@ inline void parse_query_text(const std::string& s, Map& params)
     });
 }
 
+#ifdef _WIN32
+class WSInit {
+public:
+    WSInit::WSInit() {
+        WSADATA wsaData;
+        WSAStartup(0x0002, &wsaData);
+    }
+
+    WSInit::~WSInit() {
+        WSACleanup();
+    }
+};
+
+static WSInit wsinit_;
+#endif
+
 } // namespace detail
 
 // Request implementation
@@ -559,17 +573,6 @@ inline void Response::set_content(const std::string& s, const char* content_type
 inline Server::Server()
     : svr_sock_(-1)
 {
-#ifdef _WIN32
-    WSADATA wsaData;
-    WSAStartup(0x0002, &wsaData);
-#endif
-}
-
-inline Server::~Server()
-{
-#ifdef _WIN32
-    WSACleanup();
-#endif
 }
 
 inline void Server::get(const char* pattern, Handler handler)
@@ -730,17 +733,6 @@ inline Client::Client(const char* host, int port)
     : host_(host)
     , port_(port)
 {
-#ifdef _WIN32
-    WSADATA wsaData;
-    WSAStartup(0x0002, &wsaData);
-#endif
-}
-
-inline Client::~Client()
-{
-#ifdef _WIN32
-    WSACleanup();
-#endif
 }
 
 inline bool Client::read_response_line(FILE* fp, Response& res)
