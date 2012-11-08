@@ -173,7 +173,7 @@ socket_t create_socket(const char* host, int port, Fn fn)
 #endif
 
     // Create a socket
-    socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
+    auto sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) {
         return -1;
     }
@@ -272,7 +272,7 @@ inline bool read_headers(FILE* fp, MultiMap& headers)
 {
     static std::regex re("(.+?): (.+?)\r\n");
 
-    const size_t BUFSIZ_HEADER = 2048;
+    const auto BUFSIZ_HEADER = 2048;
     char buf[BUFSIZ_HEADER];
 
     for (;;) {
@@ -341,8 +341,7 @@ inline std::string encode_url(const std::string& s)
 {
     std::string result;
 
-    int i = 0;
-    while (s[i]) {
+    for (auto i = 0; s[i]; i++) {
         switch (s[i]) {
         case ' ':  result += "+"; break;
         case '\'': result += "%27"; break;
@@ -361,8 +360,7 @@ inline std::string encode_url(const std::string& s)
             }
             break;
         }
-        i++;
-    }
+   }
 
     return result;
 }
@@ -635,7 +633,7 @@ inline void Server::stop()
 
 inline bool Server::read_request_line(FILE* fp, Request& req)
 {
-    const size_t BUFSIZ_REQUESTLINE = 2048;
+    const auto BUFSIZ_REQUESTLINE = 2048;
     char buf[BUFSIZ_REQUESTLINE];
     if (!fgets(buf, BUFSIZ_REQUESTLINE, fp)) {
         return false;
@@ -737,7 +735,7 @@ inline Client::Client(const char* host, int port)
 
 inline bool Client::read_response_line(FILE* fp, Response& res)
 {
-    const size_t BUFSIZ_RESPONSELINE = 2048;
+    const auto BUFSIZ_RESPONSELINE = 2048;
     char buf[BUFSIZ_RESPONSELINE];
     if (!fgets(buf, BUFSIZ_RESPONSELINE, fp)) {
         return false;
@@ -755,7 +753,7 @@ inline bool Client::read_response_line(FILE* fp, Response& res)
 
 inline bool Client::send(const Request& req, Response& res)
 {
-    socket_t sock = detail::create_client_socket(host_.c_str(), port_);
+    auto sock = detail::create_client_socket(host_.c_str(), port_);
     if (sock == -1) {
         return false;
     }
