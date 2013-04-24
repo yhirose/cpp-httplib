@@ -1,8 +1,8 @@
 tags
-server
-client
-hello
-test
+example/server
+example/client
+example/hello
+test/test
 
 *.swp
 
