@@ -31,6 +31,7 @@ typedef SOCKET socket_t;
 #include <pthread.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <cstring>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -40,6 +41,7 @@ typedef int socket_t;
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <regex>
 #include <string>
 #include <assert.h>
@@ -263,7 +265,7 @@ inline int get_header_value_int(const MultiMap& map, const char* key, int def)
 {
     auto it = map.find(key);
     if (it != map.end()) {
-        return std::atoi(it->second.c_str());
+        return std::stoi(it->second);
     }
     return def;
 }
@@ -741,11 +743,11 @@ inline bool Client::read_response_line(FILE* fp, Response& res)
         return false;
     }
 
-    static std::regex re("HTTP/1\\.[01] (\\d+?) .+\r\n");
+    const static std::regex re("HTTP/1\\.[01] (\\d+?) .+\r\n");
 
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
-        res.status = std::atoi(std::string(m[1]).c_str());
+        res.status = std::stoi(std::string(m[1]));
     }
 
     return true;
