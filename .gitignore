@@ -1,8 +1,11 @@
 tags
+
 example/server
 example/client
 example/hello
 test/test
+test/test.xcodeproj/xcuser*
+test/test.xcodeproj/*/xcuser*
 
 *.swp
 
