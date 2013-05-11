@@ -71,38 +71,28 @@ TEST(SocketTest, OpenClose)
 
 TEST(GetHeaderValueTest, DefaultValue)
 {
-    //MultiMap map = {{"Dummy","Dummy"}};
-    MultiMap map;
-    map.insert(make_pair("Dummy", "Dummy"));
-    auto val = detail::get_header_value_text(map, "Content-Type", "text/plain");
+    MultiMap map = {{"Dummy","Dummy"}};
+    auto val = detail::get_header_value(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/plain", val);
 }
 
 TEST(GetHeaderValueTest, DefaultValueInt)
 {
-    //MultiMap map = {{"Dummy","Dummy"}};
-    MultiMap map;
-    map.insert(make_pair("Dummy", "Dummy"));
+    MultiMap map = {{"Dummy","Dummy"}};
     auto val = detail::get_header_value_int(map, "Content-Length", 100);
     EXPECT_EQ(100, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue)
 {
-    //MultiMap map = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
-    MultiMap map;
-    map.insert(make_pair("Content-Type","text/html"));
-    map.insert(make_pair("Dummy", "Dummy"));
-    auto val = detail::get_header_value_text(map, "Content-Type", "text/plain");
+    MultiMap map = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
+    auto val = detail::get_header_value(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/html", val);
 }
 
 TEST(GetHeaderValueTest, RegularValueInt)
 {
-    //MultiMap map = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
-    MultiMap map;
-    map.insert(make_pair("Content-Length", "100"));
-    map.insert(make_pair("Dummy", "Dummy"));
+    MultiMap map = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
     auto val = detail::get_header_value_int(map, "Content-Length", 0);
     EXPECT_EQ(100, val);
 }

@@ -252,7 +252,7 @@ inline const char* status_message(int status)
     }
 }
 
-inline const char* get_header_value_text(const MultiMap& map, const char* key, const char* def)
+inline const char* get_header_value(const MultiMap& map, const char* key, const char* def)
 {
     auto it = map.find(key);
     if (it != map.end()) {
@@ -309,20 +309,20 @@ bool read_content(T& x, FILE* fp)
 }
 
 template <typename T>
-inline void write_headers(FILE* fp, const T& x)
+inline void write_headers(FILE* fp, const T& res)
 {
     fprintf(fp, "Connection: close\r\n");
 
-    for (auto it = x.headers.begin(); it != x.headers.end(); ++it) {
-        if (it->first != "Content-Type" && it->first != "Content-Length") {
-            fprintf(fp, "%s: %s\r\n", it->first.c_str(), it->second.c_str());
+    for (const auto& x: res.headers) {
+        if (x.first != "Content-Type" && x.first != "Content-Length") {
+            fprintf(fp, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
         }
     }
 
-    if (!x.body.empty()) {
-        auto content_type = get_header_value_text(x.headers, "Content-Type", "text/plain");
-        fprintf(fp, "Content-Type: %s\r\n", content_type);
-        fprintf(fp, "Content-Length: %ld\r\n", x.body.size());
+    if (!res.body.empty()) {
+        auto t = get_header_value(res.headers, "Content-Type", "text/plain");
+        fprintf(fp, "Content-Type: %s\r\n", t);
+        fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
     }
 
     fprintf(fp, "\r\n");
@@ -528,7 +528,7 @@ inline bool Request::has_header(const char* key) const
 
 inline std::string Request::get_header_value(const char* key) const
 {
-    return detail::get_header_value_text(headers, key, "");
+    return detail::get_header_value(headers, key, "");
 }
 
 inline void Request::set_header(const char* key, const char* val)
@@ -549,7 +549,7 @@ inline bool Response::has_header(const char* key) const
 
 inline std::string Response::get_header_value(const char* key) const
 {
-    return detail::get_header_value_text(headers, key, "");
+    return detail::get_header_value(headers, key, "");
 }
 
 inline void Response::set_header(const char* key, const char* val)
@@ -672,9 +672,9 @@ inline bool Server::routing(Request& req, Response& res)
 
 inline bool Server::dispatch_request(Request& req, Response& res, Handlers& handlers)
 {
-    for (auto it = handlers.begin(); it != handlers.end(); ++it) {
-        const auto& pattern = it->first;
-        const auto& handler = it->second;
+    for (const auto& x: handlers) {
+        const auto& pattern = x.first;
+        const auto& handler = x.second;
 
         if (std::regex_match(req.url, req.matches, pattern)) {
             handler(req, res);
