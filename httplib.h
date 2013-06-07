@@ -723,6 +723,9 @@ inline void Server::process_request(socket_t sock)
     detail::write_response(fp_write, req, res);
     fflush(fp_write);
 
+    fclose(fp_read);
+    fclose(fp_write);
+
     if (logger_) {
         logger_(req, res);
     }
@@ -778,6 +781,9 @@ inline bool Client::send(const Request& req, Response& res)
             return false;
         }
     }
+
+    fclose(fp_read);
+    fclose(fp_write);
 
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
