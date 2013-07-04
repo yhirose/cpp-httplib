@@ -103,6 +103,8 @@ protected:
     }
 
     virtual void SetUp() {
+		svr_.set_base_dir("./www");
+
         svr_.get("/hi", [&](const Request& req, Response& res) {
             res.set_content("Hello World!", "text/plain");
         });
@@ -245,6 +247,24 @@ TEST_F(ServerTest, PostMethod2)
     ASSERT_EQ(200, res->status);
     ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
     ASSERT_EQ("coder", res->body);
+}
+
+TEST_F(ServerTest, GetMethodDir)
+{
+	auto res = cli_.get("/dir/");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(200, res->status);
+	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+	EXPECT_EQ("index.html", res->body);
+}
+
+TEST_F(ServerTest, GetMethodDirTest)
+{
+	auto res = cli_.get("/dir/test.html");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(200, res->status);
+	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+	EXPECT_EQ("test.html", res->body);
 }
 
 #ifdef _WIN32

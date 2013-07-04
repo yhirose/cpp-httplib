@@ -8,7 +8,7 @@
 #ifndef _CPPHTTPLIB_HTTPSLIB_H_
 #define _CPPHTTPLIB_HTTPSLIB_H_
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_NONSTDC_NO_DEPRECATE
 
@@ -21,6 +21,11 @@
 #ifndef snprintf
 #define snprintf _snprintf_s
 #endif
+#ifndef getcwd
+#define getcwd _getcwd
+#endif
+
+#define S_ISREG(m)	(((m)&S_IFREG)==S_IFREG)
 
 #include <fcntl.h>
 #include <io.h>
@@ -35,10 +40,12 @@ typedef SOCKET socket_t;
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 typedef int socket_t;
 #endif
 
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -93,6 +100,8 @@ public:
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
 
+    void set_base_dir(const char* path);
+
     void set_error_handler(Handler handler);
     void set_logger(Logger logger);
 
@@ -105,13 +114,15 @@ private:
     void process_request(socket_t sock);
     bool read_request_line(FILE* fp, Request& req);
     bool routing(Request& req, Response& res);
-    bool dispatch_request(Request& req, Response& res, Handlers& handlers);
+	bool handle_file_request(Request& req, Response& res);
+	bool dispatch_request(Request& req, Response& res, Handlers& handlers);
 
-    socket_t svr_sock_;
-    Handlers get_handlers_;
-    Handlers post_handlers_;
-    Handler  error_handler_;
-    Logger   logger_;
+    socket_t    svr_sock_;
+    std::string base_dir_;
+    Handlers    get_handlers_;
+    Handlers    post_handlers_;
+    Handler     error_handler_;
+    Logger      logger_;
 };
 
 class Client {
@@ -156,7 +167,7 @@ void split(const char* b, const char* e, char d, Fn fn)
 
 inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
 {
-#ifdef _WIN32
+#ifdef _MSC_VER
     int osfhandle = _open_osfhandle(fd, _O_RDONLY);
     fp_read = _fdopen(osfhandle, "rb");
     fp_write = _fdopen(osfhandle, "wb");
@@ -169,7 +180,7 @@ inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
 template <typename Fn>
 socket_t create_socket(const char* host, int port, Fn fn)
 {
-#ifdef _WIN32
+#ifdef _MSC_VER
     int opt = SO_SYNCHRONOUS_NONALERT;
     setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
 #endif
@@ -215,7 +226,7 @@ inline socket_t create_server_socket(const char* host, int port)
 
 inline int shutdown_socket(socket_t sock)
 {
-#ifdef _WIN32
+#ifdef _MSC_VER
     return shutdown(sock, SD_BOTH);
 #else
     return shutdown(sock, SHUT_RDWR);
@@ -224,7 +235,7 @@ inline int shutdown_socket(socket_t sock)
 
 inline int close_socket(socket_t sock)
 {
-#ifdef _WIN32
+#ifdef _MSC_VER
     return closesocket(sock);
 #else
     return close(sock);
@@ -239,6 +250,45 @@ inline socket_t create_client_socket(const char* host, int port)
         }
         return sock;
     });
+}
+
+inline bool is_file(const std::string& s)
+{
+	struct stat st;
+	if (stat(s.c_str(), &st) < 0) {
+		return false;
+	}
+	return S_ISREG(st.st_mode);
+}
+
+inline void read_file(const std::string& path, std::string& out)
+{
+	auto fs = std::ifstream(path, std::ios_base::binary);
+	fs.seekg(0, std::ios_base::end);
+	auto size = fs.tellg();
+	fs.seekg(0);
+	out.assign(size, 0);
+	fs.read(&out[0], size);
+}
+
+inline std::string get_file_extention(const std::string& path)
+{
+	std::smatch m;
+	auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
+	auto ret = std::regex_search(path, m, pat);
+	std::string content_type;
+	if (ret) {
+		return m[1].str();
+	}
+	return std::string();
+}
+
+inline const char* get_content_type_from_file_extention(const std::string& ext)
+{
+	if (ext == "html") {
+		return "text/html";
+	}
+	return "text/plain";
 }
 
 inline const char* status_message(int status)
@@ -502,7 +552,7 @@ inline void parse_query_text(const std::string& s, Map& params)
     });
 }
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 class WSInit {
 public:
     WSInit::WSInit() {
@@ -573,6 +623,11 @@ inline void Response::set_content(const std::string& s, const char* content_type
 inline Server::Server()
     : svr_sock_(-1)
 {
+    char curr_dir[FILENAME_MAX];
+    if (getcwd(curr_dir, sizeof(curr_dir))) {
+        curr_dir[sizeof(curr_dir) - 1] = '\0';
+        base_dir_ = curr_dir;
+    }
 }
 
 inline void Server::get(const char* pattern, Handler handler)
@@ -583,6 +638,11 @@ inline void Server::get(const char* pattern, Handler handler)
 inline void Server::post(const char* pattern, Handler handler)
 {
     post_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+}
+
+inline void Server::set_base_dir(const char* path)
+{
+    base_dir_ = path;
 }
 
 inline void Server::set_error_handler(Handler handler)
@@ -660,8 +720,31 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
     return false;
 }
 
+inline bool Server::handle_file_request(Request& req, Response& res)
+{
+	std::string path = base_dir_ + req.url;
+
+	if (!path.empty() && path.back() == '/') {
+		path += "index.html";
+	}
+
+	if (detail::is_file(path)) {
+		detail::read_file(path, res.body);
+		auto type = detail::get_content_type_from_file_extention(detail::get_file_extention(path));
+		res.set_header("Content-Type", type);
+		res.status = 200;
+		return true;
+	}
+
+	return false;
+}
+
 inline bool Server::routing(Request& req, Response& res)
 {
+	if (req.method == "GET" && handle_file_request(req, res)) {
+		return true;
+    }
+
     if (req.method == "GET" || req.method == "HEAD") {
         return dispatch_request(req, res, get_handlers_);
     } else if (req.method == "POST") {
@@ -723,8 +806,9 @@ inline void Server::process_request(socket_t sock)
     detail::write_response(fp_write, req, res);
     fflush(fp_write);
 
-    fclose(fp_read);
-    fclose(fp_write);
+	// NOTE: The following code causes problem on Windows...
+    //fclose(fp_read);
+    //fclose(fp_write);
 
     if (logger_) {
         logger_(req, res);
@@ -782,8 +866,9 @@ inline bool Client::send(const Request& req, Response& res)
         }
     }
 
-    fclose(fp_read);
-    fclose(fp_write);
+	// NOTE: The following code causes problem on Windows...
+	//fclose(fp_read);
+    //fclose(fp_write);
 
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
