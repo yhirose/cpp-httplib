@@ -58,6 +58,11 @@ string log(const Request& req, const Response& res)
 
 int main(int argc, const char** argv)
 {
+    if (argc > 1 && string("--help") == argv[1]) {
+        cout << "usage: simplesvr [PORT] [DIR]" << endl;
+        return 1;
+    }
+
     Server svr;
 
     svr.set_error_handler([](const Request& req, Response& res) {
@@ -71,14 +76,19 @@ int main(int argc, const char** argv)
         cout << log(req, res);
     });
 
-    int port = 8080;
+    auto port = 80;
     if (argc > 1) {
         port = atoi(argv[1]);
     }
 
+    auto base_dir = "./";
     if (argc > 2) {
-        svr.set_base_dir(argv[2]);
+        base_dir = argv[2];
     }
+
+    svr.set_base_dir(base_dir);
+
+    cout << "The server started at port " << port << "...";
 
     svr.listen("localhost", port);
 
