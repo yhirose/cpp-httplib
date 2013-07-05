@@ -21,11 +21,9 @@
 #ifndef snprintf
 #define snprintf _snprintf_s
 #endif
-#ifndef getcwd
-#define getcwd _getcwd
-#endif
 
 #define S_ISREG(m)	(((m)&S_IFREG)==S_IFREG)
+#define S_ISDIR(m)	(((m)&S_IFDIR)==S_IFDIR)
 
 #include <fcntl.h>
 #include <io.h>
@@ -100,7 +98,7 @@ public:
     void get(const char* pattern, Handler handler);
     void post(const char* pattern, Handler handler);
 
-    void set_base_dir(const char* path);
+    bool set_base_dir(const char* path);
 
     void set_error_handler(Handler handler);
     void set_logger(Logger logger);
@@ -255,10 +253,13 @@ inline socket_t create_client_socket(const char* host, int port)
 inline bool is_file(const std::string& s)
 {
 	struct stat st;
-	if (stat(s.c_str(), &st) < 0) {
-		return false;
-	}
-	return S_ISREG(st.st_mode);
+	return stat(s.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+}
+
+inline bool is_dir(const std::string& s)
+{
+	struct stat st;
+	return stat(s.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
 }
 
 inline void read_file(const std::string& path, std::string& out)
@@ -623,11 +624,6 @@ inline void Response::set_content(const std::string& s, const char* content_type
 inline Server::Server()
     : svr_sock_(-1)
 {
-    char curr_dir[FILENAME_MAX];
-    if (getcwd(curr_dir, sizeof(curr_dir))) {
-        curr_dir[sizeof(curr_dir) - 1] = '\0';
-        base_dir_ = curr_dir;
-    }
 }
 
 inline void Server::get(const char* pattern, Handler handler)
@@ -640,9 +636,13 @@ inline void Server::post(const char* pattern, Handler handler)
     post_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
 }
 
-inline void Server::set_base_dir(const char* path)
+inline bool Server::set_base_dir(const char* path)
 {
-    base_dir_ = path;
+    if (detail::is_dir(path)) {
+        base_dir_ = path;
+        return true;
+    }
+    return false;
 }
 
 inline void Server::set_error_handler(Handler handler)
@@ -722,19 +722,22 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
 
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
-	std::string path = base_dir_ + req.url;
+    if (!base_dir_.empty()) {
+        std::string path = base_dir_ + req.url;
 
-	if (!path.empty() && path.back() == '/') {
-		path += "index.html";
-	}
+        if (!path.empty() && path.back() == '/') {
+            path += "index.html";
+        }
 
-	if (detail::is_file(path)) {
-		detail::read_file(path, res.body);
-		auto type = detail::get_content_type_from_file_extention(detail::get_file_extention(path));
-		res.set_header("Content-Type", type);
-		res.status = 200;
-		return true;
-	}
+        if (detail::is_file(path)) {
+            detail::read_file(path, res.body);
+            res.set_header("Content-Type", 
+                detail::get_content_type_from_file_extention(
+                    detail::get_file_extention(path)));
+            res.status = 200;
+            return true;
+        }
+    }
 
 	return false;
 }

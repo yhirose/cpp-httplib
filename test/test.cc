@@ -267,6 +267,12 @@ TEST_F(ServerTest, GetMethodDirTest)
 	EXPECT_EQ("test.html", res->body);
 }
 
+TEST_F(ServerTest, InvalidBaseDir)
+{
+	EXPECT_EQ(false, svr_.set_base_dir("invalid_dir"));
+	EXPECT_EQ(true, svr_.set_base_dir("./"));
+}
+
 #ifdef _WIN32
 TEST(CleanupTest, WSACleanup)
 {
