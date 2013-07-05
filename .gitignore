@@ -3,6 +3,7 @@ tags
 example/server
 example/client
 example/hello
+example/simplesvr
 test/test
 test/test.xcodeproj/xcuser*
 test/test.xcodeproj/*/xcuser*
