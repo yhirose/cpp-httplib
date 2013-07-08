@@ -270,7 +270,7 @@ TEST_F(ServerTest, GetMethodDirTest)
 TEST_F(ServerTest, InvalidBaseDir)
 {
 	EXPECT_EQ(false, svr_.set_base_dir("invalid_dir"));
-	EXPECT_EQ(true, svr_.set_base_dir("./"));
+	EXPECT_EQ(true, svr_.set_base_dir("."));
 }
 
 #ifdef _WIN32
