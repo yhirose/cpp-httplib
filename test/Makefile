@@ -3,10 +3,10 @@ USE_CLANG = 1
 
 ifdef USE_CLANG
 CC = clang++
-CCFLAGS = -std=c++0x -stdlib=libc++ -g -DGTEST_USE_OWN_TR1_TUPLE
+CCFLAGS = -std=c++1y -stdlib=libc++ -g -DGTEST_USE_OWN_TR1_TUPLE
 else
-CC = g++-4.7
-CCFLAGS = -std=c++11 -g
+CC = g++-4.9
+CCFLAGS = -std=c++1y -g
 endif
 
 all : test

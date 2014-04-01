@@ -20,7 +20,7 @@ Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.co
 
         Server svr;
 
-        svr.get("/hi", [](const Request& req, Response& res) {
+        svr.get("/hi", [](const auto& req, auto& res) {
             res.set_content("Hello World!", "text/plain");
         });
 
@@ -43,4 +43,4 @@ Client Example
         }
     }
 
-Copyright (c) 2012 Yuji Hirose. All rights reserved.
+Copyright (c) 2014 Yuji Hirose. All rights reserved.
