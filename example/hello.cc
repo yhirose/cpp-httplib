@@ -12,7 +12,7 @@ int main(void)
 {
     Server svr;
 
-    svr.get("/hi", [](const Request& req, Response& res) {
+    svr.get("/hi", [](const auto& req, auto& res) {
         res.set_content("Hello World!", "text/plain");
     });
 

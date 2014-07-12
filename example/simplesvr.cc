@@ -65,14 +65,14 @@ int main(int argc, const char** argv)
 
     Server svr;
 
-    svr.set_error_handler([](const Request& req, Response& res) {
+    svr.set_error_handler([](const auto& req, auto& res) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
         snprintf(buf, sizeof(buf), fmt, res.status);
         res.set_content(buf, "text/html");
     });
 
-    svr.set_logger([](const Request& req, const Response& res) {
+    svr.set_logger([](const auto& req, const auto& res) {
         cout << log(req, res);
     });
 

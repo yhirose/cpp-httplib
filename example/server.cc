@@ -65,30 +65,30 @@ int main(void)
 {
     Server svr;
 
-    svr.get("/", [=](const Request& req, Response& res) {
+    svr.get("/", [=](const auto& req, auto& res) {
         res.set_redirect("/hi");
     });
 
-    svr.get("/hi", [](const Request& req, Response& res) {
+    svr.get("/hi", [](const auto& req, auto& res) {
         res.set_content("Hello World!", "text/plain");
     });
 
-    svr.get("/dump", [](const Request& req, Response& res) {
+    svr.get("/dump", [](const auto& req, auto& res) {
         res.set_content(dump_headers(req.headers), "text/plain");
     });
 
-    svr.get("/stop", [&](const Request& req, Response& res) {
+    svr.get("/stop", [&](const auto& req, auto& res) {
         svr.stop();
     });
 
-    svr.set_error_handler([](const Request& req, Response& res) {
+    svr.set_error_handler([](const auto& req, auto& res) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
         snprintf(buf, sizeof(buf), fmt, res.status);
         res.set_content(buf, "text/html");
     });
 
-    svr.set_logger([](const Request& req, const Response& res) {
+    svr.set_logger([](const auto& req, const auto& res) {
         printf("%s", log(req, res).c_str());
     });
 
