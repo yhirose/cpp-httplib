@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <io.h>
 #include <winsock2.h>
+#include <ws2tcpip.h>
 
 typedef SOCKET socket_t;
 #else
@@ -38,7 +39,6 @@ typedef SOCKET socket_t;
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 
 typedef int socket_t;
 #endif
@@ -49,6 +49,7 @@ typedef int socket_t;
 #include <memory>
 #include <regex>
 #include <string>
+#include <sys/stat.h>
 #include <assert.h>
 
 namespace httplib
@@ -175,53 +176,6 @@ inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
 #endif
 }
 
-template <typename Fn>
-socket_t create_socket(const char* host, int port, Fn fn)
-{
-#ifdef _MSC_VER
-    int opt = SO_SYNCHRONOUS_NONALERT;
-    setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
-#endif
-
-    // Create a socket
-    auto sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        return -1;
-    }
-
-    // Make 'reuse address' option available
-    int yes = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes));
-
-    // Get a host entry info
-    struct hostent* hp;
-    if (!(hp = gethostbyname(host))) {
-        return -1;
-    }
-
-    // Bind the socket to the given address
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    memcpy(&addr.sin_addr, hp->h_addr, hp->h_length);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-
-    return fn(sock, addr);
-}
-
-inline socket_t create_server_socket(const char* host, int port)
-{
-    return create_socket(host, port, [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
-        if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
-            return -1;
-        }
-        if (listen(sock, 5)) { // Listen through 5 channels
-            return -1;
-        }
-        return sock;
-    });
-}
-
 inline int shutdown_socket(socket_t sock)
 {
 #ifdef _MSC_VER
@@ -240,13 +194,74 @@ inline int close_socket(socket_t sock)
 #endif
 }
 
+template <typename Fn>
+socket_t create_socket(const char* host, int port, Fn fn)
+{
+#ifdef _MSC_VER
+    int opt = SO_SYNCHRONOUS_NONALERT;
+    setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
+#endif
+
+    // Get address info
+    struct addrinfo hints;
+    struct addrinfo *result;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+
+    auto service = std::to_string(port);
+
+    if (getaddrinfo(host, service.c_str(), &hints, &result)) {
+        return -1;
+    }
+
+    for (auto rp = result; rp; rp = rp->ai_next) {
+       // Create a socket
+       auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+       if (sock == -1) {
+          continue;
+       }
+
+       // Make 'reuse address' option available
+       int yes = 1;
+       setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes));
+
+       // bind or connect
+       if (fn(sock, *rp)) {
+          freeaddrinfo(result);
+          return sock;
+       }
+
+       close_socket(sock);
+    }
+
+    freeaddrinfo(result);
+    return -1;
+}
+
+inline socket_t create_server_socket(const char* host, int port)
+{
+    return create_socket(host, port, [](socket_t sock, struct addrinfo& ai) -> socket_t {
+        if (::bind(sock, ai.ai_addr, ai.ai_addrlen)) {
+              return false;
+        }
+        if (listen(sock, 5)) { // Listen through 5 channels
+            return false;
+        }
+        return true;
+    });
+}
+
 inline socket_t create_client_socket(const char* host, int port)
 {
-    return create_socket(host, port, [](socket_t sock, struct sockaddr_in& addr) -> socket_t {
-        if (connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
-            return -1;
+    return create_socket(host, port, [](socket_t sock, struct addrinfo& ai) -> socket_t {
+        if (connect(sock, ai.ai_addr, ai.ai_addrlen)) {
+            return false;
         }
-        return sock;
+        return true;
     });
 }
 
@@ -268,7 +283,7 @@ inline void read_file(const std::string& path, std::string& out)
 	fs.seekg(0, std::ios_base::end);
 	auto size = fs.tellg();
 	fs.seekg(0);
-	out.assign(size, 0);
+   out.resize(size);
 	fs.read(&out[0], size);
 }
 
@@ -370,9 +385,10 @@ inline void write_headers(FILE* fp, const T& res)
         }
     }
 
+    auto t = get_header_value(res.headers, "Content-Type", "text/plain");
+    fprintf(fp, "Content-Type: %s\r\n", t);
+
     if (!res.body.empty()) {
-        auto t = get_header_value(res.headers, "Content-Type", "text/plain");
-        fprintf(fp, "Content-Type: %s\r\n", t);
         fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
     }
 
@@ -447,7 +463,7 @@ inline int from_hex_to_i(const std::string& s, int i, int cnt, int& val)
     return --i;
 }
 
-size_t to_utf8(int code, char* buff)
+inline size_t to_utf8(int code, char* buff)
 {
     if (code < 0x0080) {
         buff[0] = (code & 0x7F);

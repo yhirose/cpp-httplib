@@ -105,15 +105,15 @@ protected:
     virtual void SetUp() {
 		svr_.set_base_dir("./www");
 
-        svr_.get("/hi", [&](const auto& req, auto& res) {
+        svr_.get("/hi", [&](const Request& req, Response& res) {
             res.set_content("Hello World!", "text/plain");
         });
 
-        svr_.get("/", [&](const auto& req, auto& res) {
+        svr_.get("/", [&](const Request& req, Response& res) {
             res.set_redirect("/hi");
         });
 
-        svr_.post("/person", [&](const auto& req, auto& res) {
+        svr_.post("/person", [&](const Request& req, Response& res) {
             if (req.has_param("name") && req.has_param("note")) {
                 persons_[req.params.at("name")] = req.params.at("note");
             } else {
@@ -121,7 +121,7 @@ protected:
             }
         });
 
-        svr_.get("/person/(.*)", [&](const auto& req, auto& res) {
+        svr_.get("/person/(.*)", [&](const Request& req, Response& res) {
             string name = req.matches[1];
             if (persons_.find(name) != persons_.end()) {
                 auto note = persons_[name];
@@ -131,7 +131,7 @@ protected:
             }
         });
 
-        svr_.get("/stop", [&](const auto& req, auto& res) {
+        svr_.get("/stop", [&](const Request& req, Response& res) {
             svr_.stop();
         });
 
