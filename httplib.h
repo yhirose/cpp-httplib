@@ -110,7 +110,7 @@ public:
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
 
-    void process_request(socket_t sock);
+    void process_request(FILE* fp_read, FILE* fp_write);
     bool read_request_line(FILE* fp, Request& req);
     bool routing(Request& req, Response& res);
 	bool handle_file_request(Request& req, Response& res);
@@ -164,16 +164,30 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
-inline void get_flie_pointers(int fd, FILE*& fp_read, FILE*& fp_write)
+template <typename T>
+inline bool read_and_close_socket(socket_t sock, T callback)
 {
+    FILE* fp_read;
+    FILE* fp_write;
 #ifdef _MSC_VER
-    int osfhandle = _open_osfhandle(fd, _O_RDONLY);
+    int osfhandle = _open_osfhandle(sock, _O_RDONLY);
     fp_read = _fdopen(osfhandle, "rb");
     fp_write = _fdopen(osfhandle, "wb");
 #else
-    fp_read = fdopen(fd, "rb");
-    fp_write = fdopen(fd, "wb");
+    fp_read = fdopen(sock, "rb");
+    fp_write = fdopen(sock, "wb");
 #endif
+
+    auto ret = callback(fp_read, fp_write);
+
+#ifdef _MSC_VER
+    sock = osfhandle;
+#else
+    fclose(fp_read);
+    fclose(fp_write);
+#endif
+
+    return ret;
 }
 
 inline int shutdown_socket(socket_t sock)
@@ -677,7 +691,7 @@ inline bool Server::listen(const char* host, int port)
     if (svr_sock_ == -1) {
         return false;
     }
-    
+
     auto ret = true;
 
     for (;;) {
@@ -694,9 +708,10 @@ inline bool Server::listen(const char* host, int port)
         }
 
         // TODO: should be async
-        process_request(sock);
-        detail::shutdown_socket(sock);
-        detail::close_socket(sock);
+        detail::read_and_close_socket(sock, [this](FILE* fp_read, FILE* fp_write) {
+            process_request(fp_read, fp_write);
+            return true;
+        });
     }
 
     return ret;
@@ -786,12 +801,8 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
     return false;
 }
 
-inline void Server::process_request(socket_t sock)
+inline void Server::process_request(FILE* fp_read, FILE* fp_write)
 {
-    FILE* fp_read;
-    FILE* fp_write;
-    detail::get_flie_pointers(sock, fp_read, fp_write);
-
     Request req;
     Response res;
 
@@ -808,7 +819,7 @@ inline void Server::process_request(socket_t sock)
             detail::parse_query_text(detail::decode_url(req.body), req.params);
         }
     }
-    
+
     if (routing(req, res)) {
         if (res.status == -1) {
             res.status = 200;
@@ -824,10 +835,6 @@ inline void Server::process_request(socket_t sock)
 
     detail::write_response(fp_write, req, res);
     fflush(fp_write);
-
-	// NOTE: The following code causes problem on Windows...
-    //fclose(fp_read);
-    //fclose(fp_write);
 
     if (logger_) {
         logger_(req, res);
@@ -866,33 +873,24 @@ inline bool Client::send(const Request& req, Response& res)
         return false;
     }
 
-    FILE* fp_read;
-    FILE* fp_write;
-    detail::get_flie_pointers(sock, fp_read, fp_write);
+    return detail::read_and_close_socket(sock, [&](FILE* fp_read, FILE* fp_write) {
+	    // Send request
+	    detail::write_request(fp_write, req);
+	    fflush(fp_write);
 
-    // Send request
-    detail::write_request(fp_write, req);
-    fflush(fp_write);
+	    // Receive response
+	    if (!read_response_line(fp_read, res) ||
+	        !detail::read_headers(fp_read, res.headers)) {
+	        return false;
+	    }
+	    if (req.method != "HEAD") {
+	        if (!detail::read_content(res, fp_read)) {
+	            return false;
+	        }
+	    }
 
-    // Receive response
-    if (!read_response_line(fp_read, res) ||
-        !detail::read_headers(fp_read, res.headers)) {
-        return false;
-    }
-    if (req.method != "HEAD") {
-        if (!detail::read_content(res, fp_read)) {
-            return false;
-        }
-    }
-
-	// NOTE: The following code causes problem on Windows...
-	//fclose(fp_read);
-    //fclose(fp_write);
-
-    detail::shutdown_socket(sock);
-    detail::close_socket(sock);
-
-    return true;
+        return true;
+    });
 }
 
 inline std::shared_ptr<Response> Client::get(const char* url)
