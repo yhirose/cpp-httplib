@@ -12,35 +12,44 @@ Server Example
 
 Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.com/visionmedia/express).
 
-    #include <httplib.h>
+```c++
+#include <httplib.h>
 
-    int main(void)
-    {
-        using namespace httplib;
+int main(void)
+{
+    using namespace httplib;
 
-        Server svr;
+    Server svr;
 
-        svr.get("/hi", [](const auto& req, auto& res) {
-            res.set_content("Hello World!", "text/plain");
-        });
+    svr.get("/hi", [](const auto& req, auto& res) {
+        res.set_content("Hello World!", "text/plain");
+    });
 
-        svr.listen("localhost", 1234);
-    }
+    svr_.get("/numbers/(\d+)", [&](const auto& req, auto& res) {
+        string numbers = req.matches[1];
+        res.set_content(numbers, "text/plain");
+    });
+
+    svr.listen("localhost", 1234);
+}
+```
 
 Client Example
 --------------
 
-    #include <httplib.h>
-    #include <iostream>
+```c++
+#include <httplib.h>
+#include <iostream>
 
-    int main(void)
-    {
-        httplib::Client cli("localhost", 1234);
+int main(void)
+{
+    httplib::Client cli("localhost", 1234);
 
-        auto res = cli.get("/hi");
-        if (res && res->status == 200) {
-            std::cout << res->body << std::endl;
-        }
+    auto res = cli.get("/hi");
+    if (res && res->status == 200) {
+        std::cout << res->body << std::endl;
     }
+}
+```
 
 Copyright (c) 2014 Yuji Hirose. All rights reserved.
