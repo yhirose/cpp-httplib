@@ -381,7 +381,7 @@ bool read_content(T& x, FILE* fp)
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
     if (len) {
         x.body.assign(len, 0);
-        if (!fgets(&x.body[0], x.body.size() + 1, fp)) {
+        if (!fread(&x.body[0], x.body.size(), 1, fp)) {
             return false;
         }
     }
