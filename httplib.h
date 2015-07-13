@@ -30,6 +30,9 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#undef min
+#undef max
+
 typedef SOCKET socket_t;
 #else
 #include <pthread.h>
@@ -579,7 +582,7 @@ inline void parse_query_text(const std::string& s, Map& params)
                 val.assign(b, e);
             }
         });
-        params[key] = val;
+        params[key] = detail::decode_url(val);
     });
 }
 
@@ -742,7 +745,7 @@ inline bool Server::read_request_line(FILE* fp, Request& req)
         // Parse query text
         auto len = std::distance(m[3].first, m[3].second);
         if (len > 0) {
-            detail::parse_query_text(detail::decode_url(m[3]), req.params);
+            detail::parse_query_text(m[3], req.params);
         }
 
         return true;
@@ -815,8 +818,9 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
         if (!detail::read_content(req, fp_read)) {
             return;
         }
-        if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
-            detail::parse_query_text(detail::decode_url(req.body), req.params);
+        static std::string type = "application/x-www-form-urlencoded";
+        if (!req.get_header_value("Content-Type").compare(0, type.size(), type)) {
+            detail::parse_query_text(req.body, req.params);
         }
     }
 
