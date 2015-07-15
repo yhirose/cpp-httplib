@@ -22,8 +22,8 @@
 #define snprintf _snprintf_s
 #endif
 
-#define S_ISREG(m)	(((m)&S_IFREG)==S_IFREG)
-#define S_ISDIR(m)	(((m)&S_IFDIR)==S_IFDIR)
+#define S_ISREG(m)  (((m)&S_IFREG)==S_IFREG)
+#define S_ISDIR(m)  (((m)&S_IFDIR)==S_IFDIR)
 
 #include <fcntl.h>
 #include <io.h>
@@ -117,8 +117,8 @@ private:
     void process_request(FILE* fp_read, FILE* fp_write);
     bool read_request_line(FILE* fp, Request& req);
     bool routing(Request& req, Response& res);
-	bool handle_file_request(Request& req, Response& res);
-	bool dispatch_request(Request& req, Response& res, Handlers& handlers);
+    bool handle_file_request(Request& req, Response& res);
+    bool dispatch_request(Request& req, Response& res, Handlers& handlers);
 
     socket_t    svr_sock_;
     std::string base_dir_;
@@ -285,44 +285,44 @@ inline socket_t create_client_socket(const char* host, int port)
 
 inline bool is_file(const std::string& s)
 {
-	struct stat st;
-	return stat(s.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+    struct stat st;
+    return stat(s.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
 }
 
 inline bool is_dir(const std::string& s)
 {
-	struct stat st;
-	return stat(s.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
+    struct stat st;
+    return stat(s.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
 }
 
 inline void read_file(const std::string& path, std::string& out)
 {
-	auto fs = std::ifstream(path, std::ios_base::binary);
-	fs.seekg(0, std::ios_base::end);
-	auto size = fs.tellg();
-	fs.seekg(0);
+    auto fs = std::ifstream(path, std::ios_base::binary);
+    fs.seekg(0, std::ios_base::end);
+    auto size = fs.tellg();
+    fs.seekg(0);
    out.resize(size);
-	fs.read(&out[0], size);
+    fs.read(&out[0], size);
 }
 
 inline std::string get_file_extention(const std::string& path)
 {
-	std::smatch m;
-	auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
-	auto ret = std::regex_search(path, m, pat);
-	std::string content_type;
-	if (ret) {
-		return m[1].str();
-	}
-	return std::string();
+    std::smatch m;
+    auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
+    auto ret = std::regex_search(path, m, pat);
+    std::string content_type;
+    if (ret) {
+        return m[1].str();
+    }
+    return std::string();
 }
 
 inline const char* get_content_type_from_file_extention(const std::string& ext)
 {
-	if (ext == "html") {
-		return "text/html";
-	}
-	return "text/plain";
+    if (ext == "html") {
+        return "text/html";
+    }
+    return "text/plain";
 }
 
 inline const char* status_message(int status)
@@ -776,13 +776,13 @@ inline bool Server::handle_file_request(Request& req, Response& res)
         }
     }
 
-	return false;
+    return false;
 }
 
 inline bool Server::routing(Request& req, Response& res)
 {
-	if (req.method == "GET" && handle_file_request(req, res)) {
-		return true;
+    if (req.method == "GET" && handle_file_request(req, res)) {
+        return true;
     }
 
     if (req.method == "GET" || req.method == "HEAD") {
@@ -881,20 +881,20 @@ inline bool Client::send(const Request& req, Response& res)
     }
 
     return detail::read_and_close_socket(sock, [&](FILE* fp_read, FILE* fp_write) {
-	    // Send request
-	    detail::write_request(fp_write, req);
-	    fflush(fp_write);
+        // Send request
+        detail::write_request(fp_write, req);
+        fflush(fp_write);
 
-	    // Receive response
-	    if (!read_response_line(fp_read, res) ||
-	        !detail::read_headers(fp_read, res.headers)) {
-	        return false;
-	    }
-	    if (req.method != "HEAD") {
-	        if (!detail::read_content(res, fp_read)) {
-	            return false;
-	        }
-	    }
+        // Receive response
+        if (!read_response_line(fp_read, res) ||
+            !detail::read_headers(fp_read, res.headers)) {
+            return false;
+        }
+        if (req.method != "HEAD") {
+            if (!detail::read_content(res, fp_read)) {
+                return false;
+            }
+        }
 
         return true;
     });
