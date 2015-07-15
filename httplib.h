@@ -87,6 +87,7 @@ struct Response {
     void set_header(const char* key, const char* val);
 
     void set_redirect(const char* url);
+    void set_content(const char* s, size_t n, const char* content_type);
     void set_content(const std::string& s, const char* content_type);
 
     Response() : status(-1) {}
@@ -641,6 +642,12 @@ inline void Response::set_redirect(const char* url)
 {
     set_header("Location", url);
     status = 302;
+}
+
+inline void Response::set_content(const char* s, size_t n, const char* content_type)
+{
+    body.assign(s, n);
+    set_header("Content-Type", content_type);
 }
 
 inline void Response::set_content(const std::string& s, const char* content_type)
