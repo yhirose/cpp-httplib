@@ -404,11 +404,7 @@ inline void write_headers(FILE* fp, const T& res)
 
     auto t = get_header_value(res.headers, "Content-Type", "text/plain");
     fprintf(fp, "Content-Type: %s\r\n", t);
-
-    if (!res.body.empty()) {
-        fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
-    }
-
+    fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
     fprintf(fp, "\r\n");
 }
 
