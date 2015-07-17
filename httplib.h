@@ -297,11 +297,11 @@ inline bool is_dir(const std::string& s)
 
 inline void read_file(const std::string& path, std::string& out)
 {
-    auto fs = std::ifstream(path, std::ios_base::binary);
+    std::ifstream fs(path, std::ios_base::binary);
     fs.seekg(0, std::ios_base::end);
     auto size = fs.tellg();
     fs.seekg(0);
-   out.resize(size);
+    out.resize(size);
     fs.read(&out[0], size);
 }
 
