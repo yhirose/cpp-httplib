@@ -18,7 +18,7 @@
 #ifndef SO_OPENTYPE
 #define SO_OPENTYPE 0x7008
 #endif
-#ifndef snprintf
+#if (_MSC_VER < 1900)
 #define snprintf _snprintf_s
 #endif
 
