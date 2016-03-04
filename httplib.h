@@ -13,7 +13,7 @@
 #define _CRT_NONSTDC_NO_DEPRECATE
 
 #ifndef SO_SYNCHRONOUS_NONALERT
-#define SO_SYNCHRONOUS_NONALERT 0x20;
+#define SO_SYNCHRONOUS_NONALERT 0x20
 #endif
 #ifndef SO_OPENTYPE
 #define SO_OPENTYPE 0x7008
@@ -586,12 +586,12 @@ inline void parse_query_text(const std::string& s, Map& params)
 #ifdef _MSC_VER
 class WSInit {
 public:
-    WSInit::WSInit() {
+    WSInit() {
         WSADATA wsaData;
         WSAStartup(0x0002, &wsaData);
     }
 
-    WSInit::~WSInit() {
+    ~WSInit() {
         WSACleanup();
     }
 };
