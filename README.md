@@ -25,8 +25,8 @@ int main(void)
         res.set_content("Hello World!", "text/plain");
     });
 
-    svr_.get(R"(/numbers/(\d+))", [&](const auto& req, auto& res) {
-        string numbers = req.matches[1];
+    svr.get(R"(/numbers/(\d+))", [&](const auto& req, auto& res) {
+        auto numbers = req.matches[1];
         res.set_content(numbers, "text/plain");
     });
 
