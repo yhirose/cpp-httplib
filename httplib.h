@@ -173,10 +173,10 @@ inline bool read_and_close_socket(socket_t sock, T callback)
 {
     FILE* fp_read;
     FILE* fp_write;
+
 #ifdef _MSC_VER
-    int osfhandle = _open_osfhandle(sock, _O_RDONLY);
-    fp_read = _fdopen(osfhandle, "rb");
-    fp_write = _fdopen(osfhandle, "wb");
+    fp_read = _fdopen(_open_osfhandle(sock, _O_RDONLY), "rb");
+    fp_write = _fdopen(_open_osfhandle(sock, _O_WRONLY), "wb");
 #else
     fp_read = fdopen(sock, "rb");
     fp_write = fdopen(sock, "wb");
@@ -184,12 +184,8 @@ inline bool read_and_close_socket(socket_t sock, T callback)
 
     auto ret = callback(fp_read, fp_write);
 
-#ifdef _MSC_VER
-    sock = osfhandle;
-#else
     fclose(fp_read);
     fclose(fp_write);
-#endif
 
     return ret;
 }
