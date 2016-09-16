@@ -114,8 +114,8 @@ public:
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
 
-    void process_request(FILE* fp_read, FILE* fp_write);
-    bool read_request_line(FILE* fp, Request& req);
+    void process_request(socket_t sock);
+    bool read_request_line(socket_t sock, Request& req);
     bool routing(Request& req, Response& res);
     bool handle_file_request(Request& req, Response& res);
     bool dispatch_request(Request& req, Response& res, Handlers& handlers);
@@ -140,7 +140,7 @@ public:
     bool send(const Request& req, Response& res);
 
 private:
-    bool read_response_line(FILE* fp, Response& res);
+    bool read_response_line(socket_t sock, Response& res);
 
     const std::string host_;
     const int         port_;
@@ -168,25 +168,75 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
+inline int socket_read(socket_t sock, char* ptr, size_t size)
+{
+    return recv(sock, ptr, size, 0);
+}
+
+inline int socket_write(socket_t sock, const char* ptr, size_t size = -1)
+{
+    if (size == -1) {
+        size = strlen(ptr);
+    }
+    return send(sock, ptr, size, 0);
+}
+
+inline bool socket_gets(socket_t sock, char* buf, int bufsiz)
+{
+    // TODO: buffering for better performance
+    size_t i = 0;
+
+    for (;;) {
+        char byte;
+        auto n = socket_read(sock, &byte, 1);
+
+        if (n < 1) {
+            if (i == 0) {
+                return false;
+            } else {
+                break;
+            }
+        }
+
+        buf[i++] = byte;
+
+        if (byte == '\n') {
+            break;
+        }
+    }
+
+    buf[i] = '\0';
+    return true;
+}
+
+template <typename ...Args>
+inline void socket_printf(socket_t sock, const char* fmt, const Args& ...args)
+{
+    char buf[BUFSIZ];
+    auto n = snprintf(buf, BUFSIZ, fmt, args...);
+    if (n > 0) {
+        if (n >= BUFSIZ) {
+            // TODO: buffer size is not large enough...
+        } else {
+            socket_write(sock, buf, n);
+        }
+    }
+}
+
+inline int close_socket(socket_t sock)
+{
+#ifdef _MSC_VER
+    return closesocket(sock);
+#else
+    return close(sock);
+#endif
+}
+
 template <typename T>
 inline bool read_and_close_socket(socket_t sock, T callback)
 {
-    FILE* fp_read;
-    FILE* fp_write;
-
-#ifdef _MSC_VER
-    fp_read = _fdopen(_open_osfhandle(sock, _O_RDONLY), "rb");
-    fp_write = _fdopen(_open_osfhandle(sock, _O_WRONLY), "wb");
-#else
-    fp_read = fdopen(sock, "rb");
-    fp_write = fdopen(sock, "wb");
-#endif
-
-    auto ret = callback(fp_read, fp_write);
-
-    fclose(fp_read);
-    fclose(fp_write);
-
+    auto ret = callback(sock);
+    close_socket(sock);
     return ret;
 }
 
@@ -196,15 +246,6 @@ inline int shutdown_socket(socket_t sock)
     return shutdown(sock, SD_BOTH);
 #else
     return shutdown(sock, SHUT_RDWR);
-#endif
-}
-
-inline int close_socket(socket_t sock)
-{
-#ifdef _MSC_VER
-    return closesocket(sock);
-#else
-    return close(sock);
 #endif
 }
 
@@ -297,7 +338,7 @@ inline void read_file(const std::string& path, std::string& out)
     fs.seekg(0, std::ios_base::end);
     auto size = fs.tellg();
     fs.seekg(0);
-    out.resize(size);
+    out.resize(static_cast<size_t>(size));
     fs.read(&out[0], size);
 }
 
@@ -350,7 +391,7 @@ inline int get_header_value_int(const MultiMap& map, const char* key, int def)
     return def;
 }
 
-inline bool read_headers(FILE* fp, MultiMap& headers)
+inline bool read_headers(socket_t sock, MultiMap& headers)
 {
     static std::regex re("(.+?): (.+?)\r\n");
 
@@ -358,7 +399,7 @@ inline bool read_headers(FILE* fp, MultiMap& headers)
     char buf[BUFSIZ_HEADER];
 
     for (;;) {
-        if (!fgets(buf, BUFSIZ_HEADER, fp)) {
+        if (!socket_gets(sock, buf, BUFSIZ_HEADER)) {
             return false;
         }
         if (!strcmp(buf, "\r\n")) {
@@ -376,12 +417,12 @@ inline bool read_headers(FILE* fp, MultiMap& headers)
 }
 
 template <typename T>
-bool read_content(T& x, FILE* fp)
+bool read_content(socket_t sock, T& x)
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
     if (len) {
         x.body.assign(len, 0);
-        if (!fread(&x.body[0], x.body.size(), 1, fp)) {
+        if (!socket_read(sock, &x.body[0], x.body.size())) {
             return false;
         }
     }
@@ -389,30 +430,30 @@ bool read_content(T& x, FILE* fp)
 }
 
 template <typename T>
-inline void write_headers(FILE* fp, const T& res)
+inline void write_headers(socket_t sock, const T& res)
 {
-    fprintf(fp, "Connection: close\r\n");
+    socket_write(sock, "Connection: close\r\n");
 
     for (const auto& x: res.headers) {
         if (x.first != "Content-Type" && x.first != "Content-Length") {
-            fprintf(fp, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
+            socket_printf(sock, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
         }
     }
 
     auto t = get_header_value(res.headers, "Content-Type", "text/plain");
-    fprintf(fp, "Content-Type: %s\r\n", t);
-    fprintf(fp, "Content-Length: %ld\r\n", res.body.size());
-    fprintf(fp, "\r\n");
+    socket_printf(sock, "Content-Type: %s\r\n", t);
+    socket_printf(sock, "Content-Length: %ld\r\n", res.body.size());
+    socket_write(sock, "\r\n");
 }
 
-inline void write_response(FILE* fp, const Request& req, const Response& res)
+inline void write_response(socket_t sock, const Request& req, const Response& res)
 {
-    fprintf(fp, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
+    socket_printf(sock, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
 
-    write_headers(fp, res);
+    write_headers(sock, res);
 
     if (!res.body.empty() && req.method != "HEAD") {
-        fprintf(fp, "%s", res.body.c_str());
+        socket_write(sock, res.body.c_str(), res.body.size());
     }
 }
 
@@ -547,18 +588,19 @@ inline std::string decode_url(const std::string& s)
     return result;
 }
 
-inline void write_request(FILE* fp, const Request& req)
+inline void write_request(socket_t sock, const Request& req)
 {
     auto url = encode_url(req.url);
-    fprintf(fp, "%s %s HTTP/1.0\r\n", req.method.c_str(), url.c_str());
+    socket_printf(sock, "%s %s HTTP/1.0\r\n", req.method.c_str(), url.c_str());
 
-    write_headers(fp, req);
+    write_headers(sock, req);
 
     if (!req.body.empty()) {
         if (req.has_header("application/x-www-form-urlencoded")) {
-            fprintf(fp, "%s", encode_url(req.body).c_str());
+            auto str = encode_url(req.body);
+            socket_write(sock, str.c_str(), str.size());
         } else {
-            fprintf(fp, "%s", req.body.c_str());
+            socket_write(sock, req.body.c_str(), req.body.size());
         }
     }
 }
@@ -710,8 +752,8 @@ inline bool Server::listen(const char* host, int port)
         }
 
         // TODO: should be async
-        detail::read_and_close_socket(sock, [this](FILE* fp_read, FILE* fp_write) {
-            process_request(fp_read, fp_write);
+        detail::read_and_close_socket(sock, [this](socket_t sock) {
+            process_request(sock);
             return true;
         });
     }
@@ -726,11 +768,11 @@ inline void Server::stop()
     svr_sock_ = -1;
 }
 
-inline bool Server::read_request_line(FILE* fp, Request& req)
+inline bool Server::read_request_line(socket_t sock, Request& req)
 {
     const auto BUFSIZ_REQUESTLINE = 2048;
     char buf[BUFSIZ_REQUESTLINE];
-    if (!fgets(buf, BUFSIZ_REQUESTLINE, fp)) {
+    if (!detail::socket_gets(sock, buf, BUFSIZ_REQUESTLINE)) {
         return false;
     }
 
@@ -803,18 +845,18 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
     return false;
 }
 
-inline void Server::process_request(FILE* fp_read, FILE* fp_write)
+inline void Server::process_request(socket_t sock)
 {
     Request req;
     Response res;
 
-    if (!read_request_line(fp_read, req) ||
-        !detail::read_headers(fp_read, req.headers)) {
+    if (!read_request_line(sock, req) ||
+        !detail::read_headers(sock, req.headers)) {
         return;
     }
 
     if (req.method == "POST") {
-        if (!detail::read_content(req, fp_read)) {
+        if (!detail::read_content(sock, req)) {
             return;
         }
         static std::string type = "application/x-www-form-urlencoded";
@@ -836,8 +878,7 @@ inline void Server::process_request(FILE* fp_read, FILE* fp_write)
         error_handler_(req, res);
     }
 
-    detail::write_response(fp_write, req, res);
-    fflush(fp_write);
+    detail::write_response(sock, req, res);
 
     if (logger_) {
         logger_(req, res);
@@ -851,11 +892,11 @@ inline Client::Client(const char* host, int port)
 {
 }
 
-inline bool Client::read_response_line(FILE* fp, Response& res)
+inline bool Client::read_response_line(socket_t sock, Response& res)
 {
     const auto BUFSIZ_RESPONSELINE = 2048;
     char buf[BUFSIZ_RESPONSELINE];
-    if (!fgets(buf, BUFSIZ_RESPONSELINE, fp)) {
+    if (!detail::socket_gets(sock, buf, BUFSIZ_RESPONSELINE)) {
         return false;
     }
 
@@ -876,18 +917,17 @@ inline bool Client::send(const Request& req, Response& res)
         return false;
     }
 
-    return detail::read_and_close_socket(sock, [&](FILE* fp_read, FILE* fp_write) {
+    return detail::read_and_close_socket(sock, [&](socket_t sock) {
         // Send request
-        detail::write_request(fp_write, req);
-        fflush(fp_write);
+        detail::write_request(sock, req);
 
         // Receive response
-        if (!read_response_line(fp_read, res) ||
-            !detail::read_headers(fp_read, res.headers)) {
+        if (!read_response_line(sock, res) ||
+            !detail::read_headers(sock, res.headers)) {
             return false;
         }
         if (req.method != "HEAD") {
-            if (!detail::read_content(res, fp_read)) {
+            if (!detail::read_content(sock, res)) {
                 return false;
             }
         }
