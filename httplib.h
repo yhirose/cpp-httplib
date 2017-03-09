@@ -173,12 +173,15 @@ inline int socket_read(socket_t sock, char* ptr, size_t size)
     return recv(sock, ptr, size, 0);
 }
 
-inline int socket_write(socket_t sock, const char* ptr, size_t size = -1)
+inline int socket_write(socket_t sock, const char* ptr, size_t size)
 {
-    if (size == -1) {
-        size = strlen(ptr);
-    }
     return send(sock, ptr, size, 0);
+}
+
+inline int socket_write(socket_t sock, const char* ptr)
+{
+    size_t size = strlen(ptr);
+    return socket_write(sock, ptr, size);
 }
 
 inline bool socket_gets(socket_t sock, char* buf, int bufsiz)
