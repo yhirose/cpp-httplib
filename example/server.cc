@@ -8,6 +8,9 @@
 #include <httplib.h>
 #include <cstdio>
 
+#define SERVER_CERT_FILE "./cert.pem"
+#define SERVER_PRIVATE_KEY_FILE "./key.pem"
+
 using namespace httplib;
 
 std::string dump_headers(const MultiMap& headers)
@@ -51,7 +54,7 @@ std::string log(const Request& req, const Response& res)
     snprintf(buf, sizeof(buf), "%d\n", res.status);
     s += buf;
     s += dump_headers(res.headers);
-    
+
     if (!res.body.empty()) {
         s += res.body;
     }
@@ -63,7 +66,11 @@ std::string log(const Request& req, const Response& res)
 
 int main(void)
 {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+#else
     Server svr;
+#endif
 
     svr.get("/", [=](const auto& req, auto& res) {
         res.set_redirect("/hi");

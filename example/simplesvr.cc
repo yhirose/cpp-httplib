@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <iostream>
 
+#define SERVER_CERT_FILE "./cert.pem"
+#define SERVER_PRIVATE_KEY_FILE "./key.pem"
+
 using namespace httplib;
 using namespace std;
 
@@ -52,7 +55,7 @@ string log(const Request& req, const Response& res)
     snprintf(buf, sizeof(buf), "%d\n", res.status);
     s += buf;
     s += dump_headers(res.headers);
-    
+
     return s;
 }
 
@@ -63,7 +66,11 @@ int main(int argc, const char** argv)
         return 1;
     }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+#else
     Server svr;
+#endif
 
     svr.set_error_handler([](const auto& req, auto& res) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";

@@ -12,7 +12,11 @@ using namespace std;
 
 int main(void)
 {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    httplib::SSLClient cli("localhost", 8080);
+#else
     httplib::Client cli("localhost", 8080);
+#endif
 
     auto res = cli.get("/hi");
     if (res) {

@@ -4,6 +4,9 @@
 #include <future>
 #include <iostream>
 
+#define SERVER_CERT_FILE "./cert.pem"
+#define SERVER_PRIVATE_KEY_FILE "./key.pem"
+
 #ifdef _WIN32
 #include <process.h>
 #define msleep(n) ::Sleep(n)
@@ -99,8 +102,12 @@ TEST(GetHeaderValueTest, RegularValueInt)
 
 class ServerTest : public ::testing::Test {
 protected:
-    ServerTest() : cli_(HOST, PORT), up_(false) {
-    }
+    ServerTest()
+        : cli_(HOST, PORT)
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        , svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
+#endif
+        , up_(false) {}
 
     virtual void SetUp() {
 		svr_.set_base_dir("./www");
@@ -155,8 +162,13 @@ protected:
     }
 
     map<string, string> persons_;
-    Server              svr_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient           cli_;
+    SSLServer           svr_;
+#else
     Client              cli_;
+    Server              svr_;
+#endif
     future<void>        f_;
     bool                up_;
 };

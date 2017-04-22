@@ -52,4 +52,17 @@ int main(void)
 }
 ```
 
-Copyright (c) 2014 Yuji Hirose. All rights reserved.
+OpenSSL Support
+---------------
+
+SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
+
+```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+
+SSLServer svr("./key.pem", "./cert.pem");
+
+SSLClient cli("localhost", 8080);
+```
+
+Copyright (c) 2017 Yuji Hirose. All rights reserved.
