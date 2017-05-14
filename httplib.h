@@ -406,24 +406,47 @@ inline void read_file(const std::string& path, std::string& out)
     fs.read(&out[0], size);
 }
 
-inline std::string get_file_extension(const std::string& path)
+inline std::string file_extension(const std::string& path)
 {
     std::smatch m;
     auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
-    auto ret = std::regex_search(path, m, pat);
-    std::string content_type;
-    if (ret) {
+    if (std::regex_search(path, m, pat)) {
         return m[1].str();
     }
     return std::string();
 }
 
-inline const char* get_content_type_from_file_extension(const std::string& ext)
+inline const char* content_type(const std::string& path)
 {
-    if (ext == "html") {
+    auto ext = detail::file_extension(path);
+    if (ext == "txt") {
+        return "text/plain";
+    } else if (ext == "html") {
         return "text/html";
+    } else if (ext == "js") {
+        return "text/javascript";
+    } else if (ext == "css") {
+        return "text/css";
+    } else if (ext == "xml") {
+        return "text/xml";
+    } else if (ext == "jpeg" || ext == "jpg") {
+        return "image/jpg";
+    } else if (ext == "png") {
+        return "image/png";
+    } else if (ext == "gif") {
+        return "image/gif";
+    } else if (ext == "svg") {
+        return "image/svg+xml";
+    } else if (ext == "ico") {
+        return "image/x-icon";
+    } else if (ext == "json") {
+        return "application/json";
+    } else if (ext == "pdf") {
+        return "application/pdf";
+    } else if (ext == "xhtml") {
+        return "application/xhtml+xml";
     }
-    return "text/plain";
+    return nullptr;
 }
 
 inline const char* status_message(int status)
@@ -895,9 +918,10 @@ inline bool Server::handle_file_request(Request& req, Response& res)
 
         if (detail::is_file(path)) {
             detail::read_file(path, res.body);
-            res.set_header("Content-Type",
-                detail::get_content_type_from_file_extension(
-                    detail::get_file_extension(path)));
+            auto type = detail::content_type(path);
+            if (type) {
+                res.set_header("Content-Type", type);
+            }
             res.status = 200;
             return true;
         }
