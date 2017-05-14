@@ -1111,7 +1111,10 @@ template <typename U, typename T>
 inline bool read_and_close_socket_ssl(socket_t sock, SSL_CTX* ctx, U SSL_connect_or_accept, T callback)
 {
     auto ssl = SSL_new(ctx);
-    SSL_set_fd(ssl, sock);
+
+    auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
+    SSL_set_bio(ssl, bio, bio);
+
     SSL_connect_or_accept(ssl);
 
     SSLSocketStream strm(ssl);
