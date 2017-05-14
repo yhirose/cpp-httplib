@@ -406,7 +406,7 @@ inline void read_file(const std::string& path, std::string& out)
     fs.read(&out[0], size);
 }
 
-inline std::string get_file_extention(const std::string& path)
+inline std::string get_file_extension(const std::string& path)
 {
     std::smatch m;
     auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
@@ -418,7 +418,7 @@ inline std::string get_file_extention(const std::string& path)
     return std::string();
 }
 
-inline const char* get_content_type_from_file_extention(const std::string& ext)
+inline const char* get_content_type_from_file_extension(const std::string& ext)
 {
     if (ext == "html") {
         return "text/html";
@@ -896,8 +896,8 @@ inline bool Server::handle_file_request(Request& req, Response& res)
         if (detail::is_file(path)) {
             detail::read_file(path, res.body);
             res.set_header("Content-Type",
-                detail::get_content_type_from_file_extention(
-                    detail::get_file_extention(path)));
+                detail::get_content_type_from_file_extension(
+                    detail::get_file_extension(path)));
             res.status = 200;
             return true;
         }
