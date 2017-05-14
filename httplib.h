@@ -68,7 +68,7 @@ typedef std::smatch                             Match;
 
 struct Request {
     std::string method;
-    std::string url;
+    std::string path;
     MultiMap    headers;
     std::string body;
     Map         params;
@@ -164,10 +164,10 @@ public:
     Client(const char* host, int port);
     virtual ~Client();
 
-    std::shared_ptr<Response> get(const char* url);
-    std::shared_ptr<Response> head(const char* url);
-    std::shared_ptr<Response> post(const char* url, const std::string& body, const char* content_type);
-    std::shared_ptr<Response> post(const char* url, const Map& params);
+    std::shared_ptr<Response> get(const char* path);
+    std::shared_ptr<Response> head(const char* path);
+    std::shared_ptr<Response> post(const char* path, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> post(const char* path, const Map& params);
 
     bool send(const Request& req, Response& res);
 
@@ -654,8 +654,8 @@ inline std::string decode_url(const std::string& s)
 
 inline void write_request(Stream& strm, const Request& req)
 {
-    auto url = encode_url(req.url);
-    socket_printf(strm, "%s %s HTTP/1.0\r\n", req.method.c_str(), url.c_str());
+    auto path = encode_url(req.path);
+    socket_printf(strm, "%s %s HTTP/1.0\r\n", req.method.c_str(), path.c_str());
 
     write_headers(strm, req);
 
@@ -870,7 +870,7 @@ inline bool Server::read_request_line(Stream& strm, Request& req)
     std::cmatch m;
     if (std::regex_match(buf, m, re)) {
         req.method = std::string(m[1]);
-        req.url = detail::decode_url(m[2]);
+        req.path = detail::decode_url(m[2]);
 
         // Parse query text
         auto len = std::distance(m[3].first, m[3].second);
@@ -887,7 +887,7 @@ inline bool Server::read_request_line(Stream& strm, Request& req)
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
     if (!base_dir_.empty()) {
-        std::string path = base_dir_ + req.url;
+        std::string path = base_dir_ + req.path;
 
         if (!path.empty() && path.back() == '/') {
             path += "index.html";
@@ -926,7 +926,7 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
         const auto& pattern = x.first;
         const auto& handler = x.second;
 
-        if (std::regex_match(req.url, req.matches, pattern)) {
+        if (std::regex_match(req.path, req.matches, pattern)) {
             handler(req, res);
             return true;
         }
@@ -1049,22 +1049,22 @@ inline bool Client::read_and_close_socket(socket_t sock, const Request& req, Res
     });
 }
 
-inline std::shared_ptr<Response> Client::get(const char* url)
+inline std::shared_ptr<Response> Client::get(const char* path)
 {
     Request req;
     req.method = "GET";
-    req.url = url;
+    req.path = path;
 
     auto res = std::make_shared<Response>();
 
     return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::head(const char* url)
+inline std::shared_ptr<Response> Client::head(const char* path)
 {
     Request req;
     req.method = "HEAD";
-    req.url = url;
+    req.path = path;
 
     auto res = std::make_shared<Response>();
 
@@ -1072,11 +1072,11 @@ inline std::shared_ptr<Response> Client::head(const char* url)
 }
 
 inline std::shared_ptr<Response> Client::post(
-    const char* url, const std::string& body, const char* content_type)
+    const char* path, const std::string& body, const char* content_type)
 {
     Request req;
     req.method = "POST";
-    req.url = url;
+    req.path = path;
     req.set_header("Content-Type", content_type);
     req.body = body;
 
@@ -1086,7 +1086,7 @@ inline std::shared_ptr<Response> Client::post(
 }
 
 inline std::shared_ptr<Response> Client::post(
-    const char* url, const Map& params)
+    const char* path, const Map& params)
 {
     std::string query;
     for (auto it = params.begin(); it != params.end(); ++it) {
@@ -1098,7 +1098,7 @@ inline std::shared_ptr<Response> Client::post(
         query += it->second;
     }
 
-    return post(url, query, "application/x-www-form-urlencoded");
+    return post(path, query, "application/x-www-form-urlencoded");
 }
 
 /*
