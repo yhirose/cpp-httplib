@@ -267,7 +267,17 @@ TEST_F(ServerTest, GetMethodDir)
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
-	EXPECT_EQ("index.html", res->body);
+
+    auto body = R"(<html>
+<head>
+</head>
+<body>
+  <a href="/dir/test.html">Test</a>
+  <a href="/hi">hi</a>
+</body>
+</html>
+)";
+	EXPECT_EQ(body, res->body);
 }
 
 TEST_F(ServerTest, GetMethodDirTest)
