@@ -509,8 +509,13 @@ bool read_content(Stream& strm, T& x)
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
     if (len) {
         x.body.assign(len, 0);
-        if (!strm.read(&x.body[0], x.body.size())) {
-            return false;
+        auto r = 0;
+        while (r < len){
+            auto r_incr = strm.read(&x.body[r], len - r);
+            if (r_incr <= 0) {
+                return false;
+            }
+            r += r_incr;
         }
     }
     return true;
