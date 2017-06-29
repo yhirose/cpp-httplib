@@ -176,6 +176,7 @@ protected:
 
 private:
     bool read_response_line(Stream& strm, Response& res);
+    void add_default_headers(Request& req);
 
     virtual bool read_and_close_socket(socket_t sock, const Request& req, Response& res);
 
@@ -1078,11 +1079,19 @@ inline bool Client::read_and_close_socket(socket_t sock, const Request& req, Res
     });
 }
 
+inline void Client::add_default_headers(Request& req)
+{
+    req.set_header("Host", host_.c_str());
+    req.set_header("Accept", "*/*");
+    req.set_header("User-Agent", "cpp-httplib/0.1");
+}
+
 inline std::shared_ptr<Response> Client::get(const char* path)
 {
     Request req;
     req.method = "GET";
     req.path = path;
+    add_default_headers(req);
 
     auto res = std::make_shared<Response>();
 
@@ -1094,6 +1103,7 @@ inline std::shared_ptr<Response> Client::head(const char* path)
     Request req;
     req.method = "HEAD";
     req.path = path;
+    add_default_headers(req);
 
     auto res = std::make_shared<Response>();
 
@@ -1106,6 +1116,8 @@ inline std::shared_ptr<Response> Client::post(
     Request req;
     req.method = "POST";
     req.path = path;
+    add_default_headers(req);
+
     req.set_header("Content-Type", content_type);
     req.body = body;
 
