@@ -35,7 +35,7 @@ string log(const Request& req, const Response& res)
 
     s += "================================\n";
 
-    snprintf(buf, sizeof(buf), "%s %s", req.method.c_str(), req.url.c_str());
+    snprintf(buf, sizeof(buf), "%s %s", req.method.c_str(), req.path.c_str());
     s += buf;
 
     string query;
