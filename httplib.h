@@ -815,6 +815,9 @@ inline int SocketStream::write(const char* ptr)
 inline Server::Server()
     : svr_sock_(-1)
 {
+#ifndef _MSC_VER
+    signal(SIGPIPE, SIG_IGN);
+#endif
 }
 
 inline Server::~Server()
