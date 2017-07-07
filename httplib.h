@@ -41,6 +41,7 @@ typedef SOCKET socket_t;
 #include <cstring>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include <sys/socket.h>
 
 typedef int socket_t;
