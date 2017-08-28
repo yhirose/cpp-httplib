@@ -60,7 +60,7 @@ SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcry
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 
-SSLServer svr("./key.pem", "./cert.pem");
+SSLServer svr("./cert.pem", "./key.pem");
 
 SSLClient cli("localhost", 8080);
 ```
