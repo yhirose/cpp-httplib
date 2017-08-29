@@ -65,7 +65,16 @@ TEST(ParseQueryTest, ParseQueryString)
 
 TEST(SocketTest, OpenClose)
 {
-    socket_t sock = detail::create_server_socket(HOST, PORT);
+    socket_t sock = detail::create_server_socket(HOST, PORT, 0);
+    ASSERT_NE(-1, sock);
+
+    auto ret = detail::close_socket(sock);
+    EXPECT_EQ(0, ret);
+}
+
+TEST(SocketTest, OpenCloseWithAI_PASSIVE)
+{
+    socket_t sock = detail::create_server_socket(nullptr, PORT, AI_PASSIVE);
     ASSERT_NE(-1, sock);
 
     auto ret = detail::close_socket(sock);
@@ -157,7 +166,6 @@ protected:
     virtual void TearDown() {
         //svr_.stop(); // NOTE: This causes dead lock on Windows.
         cli_.get("/stop");
-
         f_.get();
     }
 
@@ -293,6 +301,60 @@ TEST_F(ServerTest, InvalidBaseDir)
 {
 	EXPECT_EQ(false, svr_.set_base_dir("invalid_dir"));
 	EXPECT_EQ(true, svr_.set_base_dir("."));
+}
+
+class ServerTestWithAI_PASSIVE : public ::testing::Test {
+protected:
+    ServerTestWithAI_PASSIVE()
+        : cli_(HOST, PORT)
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        , svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
+#endif
+        , up_(false) {}
+
+    virtual void SetUp() {
+        svr_.get("/hi", [&](const Request& req, Response& res) {
+            res.set_content("Hello World!", "text/plain");
+        });
+
+        svr_.get("/stop", [&](const Request& req, Response& res) {
+            svr_.stop();
+        });
+
+        f_ = async([&](){
+            up_ = true;
+            svr_.listen(nullptr, PORT, AI_PASSIVE);
+        });
+
+        while (!up_) {
+            msleep(1);
+        }
+    }
+
+    virtual void TearDown() {
+        //svr_.stop(); // NOTE: This causes dead lock on Windows.
+        cli_.get("/stop");
+        f_.get();
+    }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient           cli_;
+    SSLServer           svr_;
+#else
+    Client              cli_;
+    Server              svr_;
+#endif
+    future<void>        f_;
+    bool                up_;
+};
+
+TEST_F(ServerTestWithAI_PASSIVE, GetMethod200)
+{
+    auto res = cli_.get("/hi");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("Hello World!", res->body);
 }
 
 #ifdef _WIN32
