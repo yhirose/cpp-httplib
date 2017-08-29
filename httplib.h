@@ -135,7 +135,7 @@ public:
     void set_error_handler(Handler handler);
     void set_logger(Logger logger);
 
-    bool listen(const char* host, int port);
+    bool listen(const char* host, int port, int socket_flags = 0);
     void stop();
 
 protected:
@@ -316,7 +316,7 @@ inline int shutdown_socket(socket_t sock)
 }
 
 template <typename Fn>
-socket_t create_socket(const char* host, int port, Fn fn)
+socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
 {
 #ifdef _MSC_VER
     int opt = SO_SYNCHRONOUS_NONALERT;
@@ -330,7 +330,7 @@ socket_t create_socket(const char* host, int port, Fn fn)
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = 0;
+    hints.ai_flags = socket_flags;
     hints.ai_protocol = 0;
 
     auto service = std::to_string(port);
@@ -363,7 +363,7 @@ socket_t create_socket(const char* host, int port, Fn fn)
     return -1;
 }
 
-inline socket_t create_server_socket(const char* host, int port)
+inline socket_t create_server_socket(const char* host, int port, int socket_flags)
 {
     return create_socket(host, port, [](socket_t sock, struct addrinfo& ai) -> socket_t {
         if (::bind(sock, ai.ai_addr, ai.ai_addrlen)) {
@@ -373,7 +373,7 @@ inline socket_t create_server_socket(const char* host, int port)
             return false;
         }
         return true;
-    });
+    }, socket_flags);
 }
 
 inline socket_t create_client_socket(const char* host, int port)
@@ -854,9 +854,9 @@ inline void Server::set_logger(Logger logger)
     logger_ = logger;
 }
 
-inline bool Server::listen(const char* host, int port)
+inline bool Server::listen(const char* host, int port, int socket_flags)
 {
-    svr_sock_ = detail::create_server_socket(host, port);
+    svr_sock_ = detail::create_server_socket(host, port, socket_flags);
     if (svr_sock_ == -1) {
         return false;
     }
