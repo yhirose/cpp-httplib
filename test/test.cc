@@ -357,6 +357,16 @@ TEST_F(ServerTestWithAI_PASSIVE, GetMethod200)
     EXPECT_EQ("Hello World!", res->body);
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(SSLClientTest, ServerNameIndication)
+{
+    SSLClient cli("httpbin.org", 443);
+    auto res = cli.get("/get");
+    ASSERT_TRUE(res != nullptr);
+    ASSERT_EQ(200, res->status);
+}
+#endif
+
 #ifdef _WIN32
 TEST(CleanupTest, WSACleanup)
 {

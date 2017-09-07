@@ -175,14 +175,14 @@ public:
 protected:
     bool process_request(Stream& strm, const Request& req, Response& res);
 
+    const std::string host_;
+    const int         port_;
+
 private:
     bool read_response_line(Stream& strm, Response& res);
     void add_default_headers(Request& req);
 
     virtual bool read_and_close_socket(socket_t sock, const Request& req, Response& res);
-
-    const std::string host_;
-    const int         port_;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1152,13 +1152,15 @@ inline std::shared_ptr<Response> Client::post(
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 namespace detail {
 
-template <typename U, typename T>
-inline bool read_and_close_socket_ssl(socket_t sock, SSL_CTX* ctx, U SSL_connect_or_accept, T callback)
+template <typename U, typename V, typename T>
+inline bool read_and_close_socket_ssl(socket_t sock, SSL_CTX* ctx, U SSL_connect_or_accept, V setup, T callback)
 {
     auto ssl = SSL_new(ctx);
 
     auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
     SSL_set_bio(ssl, bio, bio);
+
+    setup(ssl);
 
     SSL_connect_or_accept(ssl);
 
@@ -1239,10 +1241,14 @@ inline SSLServer::~SSLServer()
 
 inline bool SSLServer::read_and_close_socket(socket_t sock)
 {
-    return detail::read_and_close_socket_ssl(sock, ctx_, SSL_accept, [this](Stream& strm) {
-        process_request(strm);
-        return true;
-    });
+    return detail::read_and_close_socket_ssl(
+        sock, ctx_,
+        SSL_accept,
+        [](SSL* ssl) {},
+        [this](Stream& strm) {
+            process_request(strm);
+            return true;
+        });
 }
 
 // SSL HTTP client implementation
@@ -1261,9 +1267,15 @@ inline SSLClient::~SSLClient()
 
 inline bool SSLClient::read_and_close_socket(socket_t sock, const Request& req, Response& res)
 {
-    return detail::read_and_close_socket_ssl(sock, ctx_, SSL_connect, [&](Stream& strm) {
-        return process_request(strm, req, res);
-    });
+    return detail::read_and_close_socket_ssl(
+        sock, ctx_,
+        SSL_connect,
+        [&](SSL* ssl) {
+            SSL_set_tlsext_host_name(ssl, host_.c_str());
+        },
+        [&](Stream& strm) {
+            return process_request(strm, req, res);
+        });
 }
 #endif
 
