@@ -506,7 +506,7 @@ inline bool read_headers(Stream& strm, MultiMap& headers)
 }
 
 template <typename T>
-bool read_content(Stream& strm, T& x)
+bool read_content(Stream& strm, T& x, bool allow_no_content_length)
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
     if (len) {
@@ -518,6 +518,19 @@ bool read_content(Stream& strm, T& x)
                 return false;
             }
             r += r_incr;
+        }
+    } else if (allow_no_content_length) {
+        for (;;) {
+            char byte;
+            auto n = strm.read(&byte, 1);
+            if (n < 1) {
+                if (x.body.size() == 0) {
+                    return true; // no body
+                } else {
+                    break;
+                }
+            }
+            x.body += byte;
         }
     }
     return true;
@@ -980,7 +993,7 @@ inline void Server::process_request(Stream& strm)
     }
 
     if (req.method == "POST") {
-        if (!detail::read_content(strm, req)) {
+        if (!detail::read_content(strm, req, false)) {
             // TODO:
             return;
         }
@@ -1068,7 +1081,7 @@ inline bool Client::process_request(Stream& strm, const Request& req, Response& 
         return false;
     }
     if (req.method != "HEAD") {
-        if (!detail::read_content(strm, res)) {
+        if (!detail::read_content(strm, res, false)) {
             return false;
         }
     }
