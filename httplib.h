@@ -1081,7 +1081,7 @@ inline bool Client::process_request(Stream& strm, const Request& req, Response& 
         return false;
     }
     if (req.method != "HEAD") {
-        if (!detail::read_content(strm, res, false)) {
+        if (!detail::read_content(strm, res, true)) {
             return false;
         }
     }
