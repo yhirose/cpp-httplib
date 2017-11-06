@@ -6,7 +6,7 @@ CFLAGS = -std=c++14 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I.
 all : test
 	./test
 
-test : test.cc ../httplib.h
+test : test.cc ../httplib.h Makefile
 	$(CC) -o test $(CFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT)
 
 pem:
