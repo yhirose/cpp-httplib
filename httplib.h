@@ -177,6 +177,7 @@ protected:
 
     const std::string host_;
     const int         port_;
+    const std::string host_and_port_;
 
 private:
     bool read_response_line(Stream& strm, Response& res);
@@ -1035,6 +1036,7 @@ inline bool Server::read_and_close_socket(socket_t sock)
 inline Client::Client(const char* host, int port)
     : host_(host)
     , port_(port)
+    , host_and_port_(host_ + ":" + std::to_string(port_))
 {
 }
 
@@ -1098,7 +1100,7 @@ inline bool Client::read_and_close_socket(socket_t sock, const Request& req, Res
 
 inline void Client::add_default_headers(Request& req)
 {
-    req.set_header("Host", host_.c_str());
+    req.set_header("Host", host_and_port_.c_str());
     req.set_header("Accept", "*/*");
     req.set_header("User-Agent", "cpp-httplib/0.1");
 }
