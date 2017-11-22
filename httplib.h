@@ -66,6 +66,7 @@ namespace httplib
 typedef std::map<std::string, std::string>      Map;
 typedef std::multimap<std::string, std::string> MultiMap;
 typedef std::smatch                             Match;
+typedef std::function<void (int64_t current, int64_t total)> Progress;
 
 struct Request {
     std::string method;
@@ -74,6 +75,7 @@ struct Request {
     std::string body;
     Map         params;
     Match       matches;
+    Progress    progress;
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
@@ -165,7 +167,7 @@ public:
     Client(const char* host, int port);
     virtual ~Client();
 
-    std::shared_ptr<Response> get(const char* path);
+    std::shared_ptr<Response> get(const char* path, Progress callback = [](int64_t,int64_t){});
     std::shared_ptr<Response> head(const char* path);
     std::shared_ptr<Response> post(const char* path, const std::string& body, const char* content_type);
     std::shared_ptr<Response> post(const char* path, const Map& params);
@@ -507,7 +509,7 @@ inline bool read_headers(Stream& strm, MultiMap& headers)
 }
 
 template <typename T>
-bool read_content(Stream& strm, T& x, bool allow_no_content_length)
+bool read_content(Stream& strm, T& x, bool allow_no_content_length, Progress progress = [](int64_t,int64_t){})
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
     if (len) {
@@ -519,6 +521,7 @@ bool read_content(Stream& strm, T& x, bool allow_no_content_length)
                 return false;
             }
             r += r_incr;
+            progress(r, len);
         }
     } else if (allow_no_content_length) {
         for (;;) {
@@ -1083,7 +1086,7 @@ inline bool Client::process_request(Stream& strm, const Request& req, Response& 
         return false;
     }
     if (req.method != "HEAD") {
-        if (!detail::read_content(strm, res, true)) {
+        if (!detail::read_content(strm, res, true, req.progress)) {
             return false;
         }
     }
@@ -1105,11 +1108,12 @@ inline void Client::add_default_headers(Request& req)
     req.set_header("User-Agent", "cpp-httplib/0.1");
 }
 
-inline std::shared_ptr<Response> Client::get(const char* path)
+inline std::shared_ptr<Response> Client::get(const char* path, Progress callback)
 {
     Request req;
     req.method = "GET";
     req.path = path;
+    req.progress = callback;
     add_default_headers(req);
 
     auto res = std::make_shared<Response>();
