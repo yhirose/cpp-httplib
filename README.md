@@ -52,6 +52,25 @@ int main(void)
 }
 ```
 
+### With Progress Callback
+
+```cpp
+httplib::Client client(url, port);
+
+// prints: 0 / 000 bytes => 50% complete
+std::shared_ptr<httplib::Response> res = 
+    cli.get("/", [](int64_t len, int64_t total) {
+        printf("%lld / %lld bytes => %d%% complete\n", 
+            len, total,
+            (int)((len/total)*100));
+    }
+);
+```
+
+![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
+
+This feature has been contributed by @underscorediscovery.
+
 OpenSSL Support
 ---------------
 
