@@ -34,6 +34,43 @@ int main(void)
 }
 ```
 
+### Method Chain
+
+```cpp
+svr.get("/get", [](const auto& req, auto& res) {
+        res.set_content("get", "text/plain");
+    })
+    .post("/post", [](const auto& req, auto& res) {
+        res.set_content(req.body(), "text/plain");
+    })
+    .listen("localhost", 1234);
+```
+
+### Static File Server
+
+```cpp
+svr.set_base_dir("./www");
+```
+
+### Logging
+
+```cpp
+svr.set_logger([](const auto& req, const auto& res) {
+    your_logger(req, res);
+});
+```
+
+### Error Handler
+
+```cpp
+svr.set_error_handler([](const auto& req, auto& res) {
+    const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
+    char buf[BUFSIZ];
+    snprintf(buf, sizeof(buf), fmt, res.status);
+    res.set_content(buf, "text/html");
+});
+```
+
 Client Example
 --------------
 
