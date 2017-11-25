@@ -122,34 +122,30 @@ protected:
 		svr_.set_base_dir("./www");
 
         svr_.get("/hi", [&](const Request& req, Response& res) {
-            res.set_content("Hello World!", "text/plain");
-        });
-
-        svr_.get("/", [&](const Request& req, Response& res) {
-            res.set_redirect("/hi");
-        });
-
-        svr_.post("/person", [&](const Request& req, Response& res) {
-            if (req.has_param("name") && req.has_param("note")) {
-                persons_[req.params.at("name")] = req.params.at("note");
-            } else {
-                res.status = 400;
-            }
-        });
-
-        svr_.get("/person/(.*)", [&](const Request& req, Response& res) {
-            string name = req.matches[1];
-            if (persons_.find(name) != persons_.end()) {
-                auto note = persons_[name];
-                res.set_content(note, "text/plain");
-            } else {
-                res.status = 404;
-            }
-        });
-
-        svr_.get("/stop", [&](const Request& req, Response& res) {
-            svr_.stop();
-        });
+                res.set_content("Hello World!", "text/plain");
+            })
+            .get("/", [&](const Request& req, Response& res) {
+                res.set_redirect("/hi");
+            })
+            .post("/person", [&](const Request& req, Response& res) {
+                if (req.has_param("name") && req.has_param("note")) {
+                    persons_[req.params.at("name")] = req.params.at("note");
+                } else {
+                    res.status = 400;
+                }
+            })
+            .get("/person/(.*)", [&](const Request& req, Response& res) {
+                string name = req.matches[1];
+                if (persons_.find(name) != persons_.end()) {
+                    auto note = persons_[name];
+                    res.set_content(note, "text/plain");
+                } else {
+                    res.status = 404;
+                }
+            })
+            .get("/stop", [&](const Request& req, Response& res) {
+                svr_.stop();
+            });
 
         persons_["john"] = "programmer";
 

@@ -133,8 +133,8 @@ public:
     Server();
     virtual ~Server();
 
-    void get(const char* pattern, Handler handler);
-    void post(const char* pattern, Handler handler);
+    Server& get(const char* pattern, Handler handler);
+    Server& post(const char* pattern, Handler handler);
 
     bool set_base_dir(const char* path);
 
@@ -846,14 +846,16 @@ inline Server::~Server()
 {
 }
 
-inline void Server::get(const char* pattern, Handler handler)
+inline Server& Server::get(const char* pattern, Handler handler)
 {
     get_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+    return *this;
 }
 
-inline void Server::post(const char* pattern, Handler handler)
+inline Server& Server::post(const char* pattern, Handler handler)
 {
     post_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+    return *this;
 }
 
 inline bool Server::set_base_dir(const char* path)
