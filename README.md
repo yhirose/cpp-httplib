@@ -69,7 +69,7 @@ std::shared_ptr<httplib::Response> res =
 
 ![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
 
-This feature has been contributed by @underscorediscovery.
+This feature was contributed by [underscorediscovery](https://github.com/yhirose/cpp-httplib/pull/23).
 
 OpenSSL Support
 ---------------
