@@ -393,16 +393,55 @@ inline socket_t create_client_socket(const char* host, int port)
     });
 }
 
-inline bool is_file(const std::string& s)
+inline bool is_file(const std::string& path)
 {
     struct stat st;
-    return stat(s.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+    return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
 }
 
-inline bool is_dir(const std::string& s)
+inline bool is_dir(const std::string& path)
 {
     struct stat st;
-    return stat(s.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
+    return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
+}
+
+inline bool is_valid_path(const std::string& path) {
+    size_t level = 0;
+    size_t i = 0;
+
+    // Skip slash
+    while (i < path.size() && path[i] == '/') {
+        i++;
+    }
+
+    while (i < path.size()) {
+        // Read component
+        auto beg = i;
+        while (i < path.size() && path[i] != '/') {
+            i++;
+        }
+
+        auto len = i - beg;
+        assert(len > 0);
+
+        if (!path.compare(beg, len, ".")) {
+            ;
+        } else if (!path.compare(beg, len, "..")) {
+            if (level == 0) {
+                return false;
+            }
+            level--;
+        } else {
+            level++;
+        }
+
+        // Skip slash
+        while (i < path.size() && path[i] == '/') {
+            i++;
+        }
+    }
+
+    return true;
 }
 
 inline void read_file(const std::string& path, std::string& out)
@@ -942,7 +981,7 @@ inline bool Server::read_request_line(Stream& strm, Request& req)
 
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
-    if (!base_dir_.empty()) {
+    if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
         std::string path = base_dir_ + req.path;
 
         if (!path.empty() && path.back() == '/') {

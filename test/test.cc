@@ -293,6 +293,36 @@ TEST_F(ServerTest, GetMethodDirTest)
 	EXPECT_EQ("test.html", res->body);
 }
 
+TEST_F(ServerTest, GetMethodDirTestWithDoubleDots)
+{
+	auto res = cli_.get("/dir/../dir/test.html");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(200, res->status);
+	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+	EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GetMethodInvalidPath)
+{
+	auto res = cli_.get("/dir/../test.html");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, GetMethodOutOfBaseDir)
+{
+	auto res = cli_.get("/../www/dir/test.html");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, GetMethodOutOfBaseDir2)
+{
+	auto res = cli_.get("/dir/../../www/dir/test.html");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(404, res->status);
+}
+
 TEST_F(ServerTest, InvalidBaseDir)
 {
 	EXPECT_EQ(false, svr_.set_base_dir("invalid_dir"));
