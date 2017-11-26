@@ -51,6 +51,15 @@ typedef SOCKET socket_t;
 typedef int socket_t;
 #endif
 
+#ifdef __GNUC__
+#include <features.h>
+
+#if not __GNUC_PREREQ(4,9)
+#error "As least GCC 4.9 is required"
+#endif
+
+#endif
+
 #include <fstream>
 #include <functional>
 #include <map>
