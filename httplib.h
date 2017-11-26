@@ -51,6 +51,15 @@ typedef SOCKET socket_t;
 typedef int socket_t;
 #endif
 
+#ifdef __GNUC__
+#include <features.h>
+
+#if not __GNUC_PREREQ(4,9)
+#error "As least GCC 4.9 is required"
+#endif
+
+#endif
+
 #include <fstream>
 #include <functional>
 #include <map>
@@ -1030,6 +1039,87 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
     return false;
 }
 
+namespace detail
+{
+
+/* Multipart-FormData implementation */
+
+class LineReader
+{
+public:
+    LineReader(const std::string body) : pos(0), body(body) { }
+    void gotoLineStart()
+    {
+        while(pos > 0 && body[pos] != '\n') pos--;
+        if(body[pos] == '\n') pos++;
+    }
+    const std::string getLine()
+    {
+        size_t newLine = body.find("\n", pos), lineEnd = newLine;
+        size_t oldPos = pos;
+        pos = newLine == std::string::npos ? body.length() : newLine+1;
+
+        if(newLine == std::string::npos) return body.substr(oldPos);
+        if(lineEnd > 0 && body[lineEnd-1] == '\r') lineEnd--;
+        return body.substr(oldPos, lineEnd - oldPos);
+    }
+    bool findNext(const std::string needle)
+    {
+        size_t found_at = body.find(needle, pos);
+        if(found_at == std::string::npos) { pos = body.length(); return false; }
+        else { pos = found_at; return true; }
+    }
+    bool isEnd() { return pos >= body.length(); }
+    size_t getPos() { return pos; }
+    const std::string &getBody() { return body; }
+    void setPos(size_t pos) { this->pos = pos; }
+private:
+    size_t pos;
+    const std::string body;
+};
+
+inline const std::string parse_multipart_boundary(const std::string &contentType)
+{
+    size_t pos = contentType.find("boundary=");
+    if(pos == std::string::npos) throw std::runtime_error("No boundary specified in Content-Type");
+    return contentType.substr(pos+9);
+}
+
+inline void parse_multipart_formdata(const std::string &boundary, const std::string& body, Map& params)
+{
+    LineReader p(body);
+    if(!p.findNext(boundary)) throw std::runtime_error("Couldn't find boundary");
+
+    std::string parsed_name;
+
+    while(!p.isEnd())
+    {
+        const std::string line = p.getLine();
+        if(line == "")
+        {
+            size_t start = p.getPos();
+            p.findNext(boundary);
+            p.gotoLineStart();
+            size_t end = p.getPos();
+            if(end > 0 && p.getBody()[end-1] == '\n') end--;
+            if(end > 0 && p.getBody()[end-1] == '\r') end--;
+            params[parsed_name] = p.getBody().substr(start, end-start);
+        }
+        else if(line.find("Content-Disposition") != std::string::npos)
+        {
+            size_t name_start = line.find("name=\"");
+            size_t name_end = line.find("\"", name_start + 6);
+            if(name_start != std::string::npos && name_end != std::string::npos && name_end > name_start)
+            {
+                name_start += 6;
+                parsed_name = line.substr(name_start, name_end-name_start);
+            }
+        }
+    }
+}
+
+}
+
 inline void Server::process_request(Stream& strm)
 {
     Request req;
@@ -1046,9 +1136,11 @@ inline void Server::process_request(Stream& strm)
             // TODO:
             return;
         }
-        static std::string type = "application/x-www-form-urlencoded";
-        if (!req.get_header_value("Content-Type").compare(0, type.size(), type)) {
+        if (req.get_header_value("Content-Type").find("application/x-www-form-urlencoded") == 0) {
             detail::parse_query_text(req.body, req.params);
+        } else if(req.get_header_value("Content-Type").find("multipart/form-data") == 0) {
+            const std::string boundary = detail::parse_multipart_boundary(req.get_header_value("Content-Type"));
+            detail::parse_multipart_formdata(boundary, req.body, req.params);
         }
     }
 
