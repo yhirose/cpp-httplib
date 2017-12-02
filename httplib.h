@@ -155,6 +155,7 @@ private:
     bool dispatch_request(Request& req, Response& res, Handlers& handlers);
 
     bool read_request_line(Stream& strm, Request& req);
+    void write_response(Stream& strm, const Request& req, Response& res);
 
     virtual bool read_and_close_socket(socket_t sock);
 
@@ -270,11 +271,19 @@ inline bool socket_gets(Stream& strm, char* buf, int bufsiz)
             }
         }
 
+        if (i == bufsiz) {
+            return false;
+        }
+
         buf[i++] = byte;
 
         if (byte == '\n') {
             break;
         }
+    }
+
+    if (i == bufsiz) {
+        return false;
     }
 
     buf[i] = '\0';
@@ -288,7 +297,13 @@ inline void socket_printf(Stream& strm, const char* fmt, const Args& ...args)
     auto n = snprintf(buf, BUFSIZ, fmt, args...);
     if (n > 0) {
         if (n >= BUFSIZ) {
-            // TODO: buffer size is not large enough...
+            std::vector<char> glowable_buf(BUFSIZ);
+
+            while (n >= glowable_buf.size()) {
+                glowable_buf.resize(glowable_buf.size() * 2);
+                n = snprintf(&glowable_buf[0], glowable_buf.size(), fmt, args...);
+            }
+            strm.write(&glowable_buf[0], n);
         } else {
             strm.write(buf, n);
         }
@@ -564,7 +579,9 @@ bool read_content(Stream& strm, T& x, bool allow_no_content_length, Progress pro
                 return false;
             }
             r += r_incr;
-            progress(r, len);
+            if (progress) {
+                progress(r, len);
+            }
         }
     } else if (allow_no_content_length) {
         for (;;) {
@@ -979,6 +996,21 @@ inline bool Server::read_request_line(Stream& strm, Request& req)
     return false;
 }
 
+inline void Server::write_response(Stream& strm, const Request& req, Response& res)
+{
+    assert(res.status != -1);
+
+    if (400 <= res.status && error_handler_) {
+        error_handler_(req, res);
+    }
+
+    detail::write_response(strm, req, res);
+
+    if (logger_) {
+        logger_(req, res);
+    }
+}
+
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
     if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
@@ -1035,17 +1067,19 @@ inline void Server::process_request(Stream& strm)
     Request req;
     Response res;
 
-    if (!read_request_line(strm, req) ||
-        !detail::read_headers(strm, req.headers)) {
-        // TODO:
+    if (!read_request_line(strm, req) || !detail::read_headers(strm, req.headers)) {
+        res.status = 400;
+        write_response(strm, req, res);
         return;
     }
 
     if (req.method == "POST") {
         if (!detail::read_content(strm, req, false)) {
-            // TODO:
+            res.status = 400;
+            write_response(strm, req, res);
             return;
         }
+
         static std::string type = "application/x-www-form-urlencoded";
         if (!req.get_header_value("Content-Type").compare(0, type.size(), type)) {
             detail::parse_query_text(req.body, req.params);
@@ -1059,17 +1093,8 @@ inline void Server::process_request(Stream& strm)
     } else {
         res.status = 404;
     }
-    assert(res.status != -1);
 
-    if (400 <= res.status && error_handler_) {
-        error_handler_(req, res);
-    }
-
-    detail::write_response(strm, req, res);
-
-    if (logger_) {
-        logger_(req, res);
-    }
+    write_response(strm, req, res);
 }
 
 inline bool Server::read_and_close_socket(socket_t sock)
@@ -1130,6 +1155,7 @@ inline bool Client::process_request(Stream& strm, const Request& req, Response& 
         !detail::read_headers(strm, res.headers)) {
         return false;
     }
+
     if (req.method != "HEAD") {
         if (!detail::read_content(strm, res, true, req.progress)) {
             return false;

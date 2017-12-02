@@ -329,6 +329,77 @@ TEST_F(ServerTest, InvalidBaseDir)
 	EXPECT_EQ(true, svr_.set_base_dir("."));
 }
 
+TEST_F(ServerTest, EmptyRequest)
+{
+	auto res = cli_.get("");
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(400, res->status);
+}
+
+TEST_F(ServerTest, LongRequest)
+{
+	auto res = cli_.get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ok__");
+
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, TooLongRequest)
+{
+	auto res = cli_.get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ng___");
+
+	ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(400, res->status);
+}
+
+TEST_F(ServerTest, LongHeader)
+{
+    Request req;
+    req.method = "GET";
+    req.path = "/hi";
+
+    std::string host_and_port;
+    host_and_port += HOST;
+    host_and_port += ":";
+    host_and_port += std::to_string(PORT);
+
+    req.set_header("Host", host_and_port.c_str());
+    req.set_header("Accept", "*/*");
+    req.set_header("User-Agent", "cpp-httplib/0.1");
+
+	req.set_header("Header-Name", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+
+    auto res = std::make_shared<Response>();
+    auto ret = cli_.send(req, *res);
+
+	ASSERT_TRUE(ret);
+	EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, TooLongHeader)
+{
+    Request req;
+    req.method = "GET";
+    req.path = "/hi";
+
+    std::string host_and_port;
+    host_and_port += HOST;
+    host_and_port += ":";
+    host_and_port += std::to_string(PORT);
+
+    req.set_header("Host", host_and_port.c_str());
+    req.set_header("Accept", "*/*");
+    req.set_header("User-Agent", "cpp-httplib/0.1");
+
+	req.set_header("Header-Name", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+
+    auto res = std::make_shared<Response>();
+    auto ret = cli_.send(req, *res);
+
+	ASSERT_TRUE(ret);
+	EXPECT_EQ(400, res->status);
+}
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
     ServerTestWithAI_PASSIVE()
