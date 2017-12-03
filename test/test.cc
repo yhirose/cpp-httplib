@@ -121,10 +121,10 @@ protected:
     virtual void SetUp() {
 		svr_.set_base_dir("./www");
 
-        svr_.get("/hi", [&](const Request& req, Response& res) {
+        svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
-            .get("/", [&](const Request& req, Response& res) {
+            .get("/", [&](const Request& /*req*/, Response& res) {
                 res.set_redirect("/hi");
             })
             .post("/person", [&](const Request& req, Response& res) {
@@ -143,7 +143,7 @@ protected:
                     res.status = 404;
                 }
             })
-            .get("/stop", [&](const Request& req, Response& res) {
+            .get("/stop", [&](const Request& /*req*/, Response& /*res*/) {
                 svr_.stop();
             });
 
@@ -410,11 +410,11 @@ protected:
         , up_(false) {}
 
     virtual void SetUp() {
-        svr_.get("/hi", [&](const Request& req, Response& res) {
+        svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
             res.set_content("Hello World!", "text/plain");
         });
 
-        svr_.get("/stop", [&](const Request& req, Response& res) {
+        svr_.get("/stop", [&](const Request& /*req*/, Response& /*res*/) {
             svr_.stop();
         });
 

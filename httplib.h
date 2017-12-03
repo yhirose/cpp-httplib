@@ -254,7 +254,7 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
-inline bool socket_gets(Stream& strm, char* buf, int bufsiz)
+inline bool socket_gets(Stream& strm, char* buf, size_t bufsiz)
 {
     // TODO: buffering for better performance
     size_t i = 0;
@@ -299,7 +299,7 @@ inline void socket_printf(Stream& strm, const char* fmt, const Args& ...args)
         if (n >= BUFSIZ) {
             std::vector<char> glowable_buf(BUFSIZ);
 
-            while (n >= glowable_buf.size()) {
+            while (n >= static_cast<int>(glowable_buf.size())) {
                 glowable_buf.resize(glowable_buf.size() * 2);
                 n = snprintf(&glowable_buf[0], glowable_buf.size(), fmt, args...);
             }
