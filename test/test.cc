@@ -109,6 +109,33 @@ TEST(GetHeaderValueTest, RegularValueInt)
     EXPECT_EQ(100, val);
 }
 
+void testChunkedEncoding(httplib::HttpVersion ver)
+{
+    auto host = "www.httpwatch.com";
+    auto port = 80;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    httplib::SSLClient cli(host, port, ver);
+#else
+    httplib::Client cli(host, port, ver);
+#endif
+
+    auto res = cli.get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
+    ASSERT_TRUE(res != nullptr);
+
+    std::string out;
+    httplib::detail::read_file("./image.jpg", out);
+
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(out, res->body);
+}
+
+TEST(ChunkedEncodingTest, FromHTTPWatch)
+{
+    testChunkedEncoding(httplib::HttpVersion::v1_0);
+    testChunkedEncoding(httplib::HttpVersion::v1_1);
+}
+
 class ServerTest : public ::testing::Test {
 protected:
     ServerTest()
