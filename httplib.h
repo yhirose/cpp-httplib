@@ -738,18 +738,21 @@ inline bool is_hex(char c, int& v)
     return false;
 }
 
-inline int from_hex_to_i(const std::string& s, int i, int cnt, int& val)
+inline bool from_hex_to_i(const std::string& s, int i, int cnt, int& val)
 {
     val = 0;
-    for (; s[i] && cnt; i++, cnt--) {
+    for (; cnt; i++, cnt--) {
+        if (!s[i]) {
+            return false;
+        }
         int v = 0;
         if (is_hex(s[i], v)) {
             val = val * 16 + v;
         } else {
-            break;
+            return false;
         }
     }
-    return --i;
+    return true;
 }
 
 inline size_t to_utf8(int code, char* buff)
@@ -791,30 +794,28 @@ inline std::string decode_url(const std::string& s)
 
     for (int i = 0; s[i]; i++) {
         if (s[i] == '%') {
-            i++;
-            assert(s[i]);
-
-            if (s[i] == '%') {
-                result += s[i];
-            } else if (s[i] == 'u') {
-                // Unicode
-                i++;
-                assert(s[i]);
-
+            if (s[i + 1] && s[i + 1] == 'u') {
                 int val = 0;
-                i = from_hex_to_i(s, i, 4, val);
-
-                char buff[4];
-                size_t len = to_utf8(val, buff);
-
-                if (len > 0) {
-                    result.append(buff, len);
+                if (from_hex_to_i(s, i + 2, 4, val)) {
+                    // 4 digits Unicode codes
+                    char buff[4];
+                    size_t len = to_utf8(val, buff);
+                    if (len > 0) {
+                        result.append(buff, len);
+                    }
+                    i += 5; // 'u0000'
+                } else {
+                    result += s[i];
                 }
             } else {
-                // HEX
                 int val = 0;
-                i = from_hex_to_i(s, i, 2, val);
-                result += val;
+                if (from_hex_to_i(s, i + 1, 2, val)) {
+                    // 2 digits hex codes
+                    result += val;
+                    i += 2; // '00'
+                } else {
+                    result += s[i];
+                }
             }
         } else if (s[i] == '+') {
             result += ' ';

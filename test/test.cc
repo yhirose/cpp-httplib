@@ -151,6 +151,9 @@ protected:
         svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
+            .get("/endwith%", [&](const Request& /*req*/, Response& res) {
+                res.set_content("Hello World!", "text/plain");
+            })
             .get("/", [&](const Request& /*req*/, Response& res) {
                 res.set_redirect("/hi");
             })
@@ -425,6 +428,34 @@ TEST_F(ServerTest, TooLongHeader)
 
 	ASSERT_TRUE(ret);
 	EXPECT_EQ(400, res->status);
+}
+
+TEST_F(ServerTest, PercentEncoding)
+{
+    auto res = cli_.get("/e%6edwith%");
+    ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, PercentEncodingUnicode)
+{
+    auto res = cli_.get("/e%u006edwith%");
+    ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, InvalidPercentEncoding)
+{
+    auto res = cli_.get("/%endwith%");
+    ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, InvalidPercentEncodingUnicode)
+{
+    auto res = cli_.get("/%uendwith%");
+    ASSERT_TRUE(res != nullptr);
+	EXPECT_EQ(404, res->status);
 }
 
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
