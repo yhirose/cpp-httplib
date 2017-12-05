@@ -18,7 +18,7 @@ struct StopWatch {
   chrono::system_clock::time_point start_;
 };
 
-int main(int argc, char* argv[]) {
+int main(void) {
   string body(1024 * 5, 'a');
 
   httplib::Client cli("httpbin.org", 80);

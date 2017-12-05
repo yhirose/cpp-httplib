@@ -72,11 +72,11 @@ int main(void)
     Server svr;
 #endif
 
-    svr.get("/", [=](const auto& req, auto& res) {
+    svr.get("/", [=](const auto& /*req*/, auto& res) {
         res.set_redirect("/hi");
     });
 
-    svr.get("/hi", [](const auto& req, auto& res) {
+    svr.get("/hi", [](const auto& /*req*/, auto& res) {
         res.set_content("Hello World!", "text/plain");
     });
 
@@ -84,11 +84,11 @@ int main(void)
         res.set_content(dump_headers(req.headers), "text/plain");
     });
 
-    svr.get("/stop", [&](const auto& req, auto& res) {
+    svr.get("/stop", [&](const auto& /*req*/, auto& /*res*/) {
         svr.stop();
     });
 
-    svr.set_error_handler([](const auto& req, auto& res) {
+    svr.set_error_handler([](const auto& /*req*/, auto& res) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
         snprintf(buf, sizeof(buf), fmt, res.status);
