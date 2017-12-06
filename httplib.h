@@ -223,7 +223,7 @@ private:
 
 class SSLClient : public Client {
 public:
-    SSLClient(const char* host, int port, HttpVersion http_version = HttpVersion:v1_0);
+    SSLClient(const char* host, int port, HttpVersion http_version = HttpVersion::v1_0);
     virtual ~SSLClient();
 
 private:
