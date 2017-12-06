@@ -69,9 +69,8 @@ namespace httplib
 
 enum class HttpVersion { v1_0 = 0, v1_1 };
 
-typedef std::map<std::string, std::string>      Map;
-typedef std::multimap<std::string, std::string> MultiMap;
-typedef std::smatch                             Match;
+typedef std::multimap<std::string, std::string>              MultiMap;
+typedef std::smatch                                          Match;
 typedef std::function<void (int64_t current, int64_t total)> Progress;
 
 struct MultipartFile {
@@ -87,7 +86,7 @@ struct Request {
     std::string    path;
     MultiMap       headers;
     std::string    body;
-    Map            params;
+    MultiMap       params;
     MultipartFiles files;
     Match          matches;
     Progress       progress;
@@ -97,6 +96,7 @@ struct Request {
     void set_header(const char* key, const char* val);
 
     bool has_param(const char* key) const;
+    std::string get_param_value(const char* key) const;
 
     bool has_file(const char* key) const;
     MultipartFile get_file_value(const char* key) const;
@@ -189,7 +189,7 @@ public:
     std::shared_ptr<Response> get(const char* path, Progress callback = [](int64_t,int64_t){});
     std::shared_ptr<Response> head(const char* path);
     std::shared_ptr<Response> post(const char* path, const std::string& body, const char* content_type);
-    std::shared_ptr<Response> post(const char* path, const Map& params);
+    std::shared_ptr<Response> post(const char* path, const MultiMap& params);
 
     bool send(const Request& req, Response& res);
 
@@ -540,19 +540,19 @@ inline const char* status_message(int status)
     }
 }
 
-inline const char* get_header_value(const MultiMap& map, const char* key, const char* def)
+inline const char* get_header_value(const MultiMap& headers, const char* key, const char* def)
 {
-    auto it = map.find(key);
-    if (it != map.end()) {
+    auto it = headers.find(key);
+    if (it != headers.end()) {
         return it->second.c_str();
     }
     return def;
 }
 
-inline int get_header_value_int(const MultiMap& map, const char* key, int def)
+inline int get_header_value_int(const MultiMap& headers, const char* key, int def)
 {
-    auto it = map.find(key);
-    if (it != map.end()) {
+    auto it = headers.find(key);
+    if (it != headers.end()) {
         return std::stoi(it->second);
     }
     return def;
@@ -576,7 +576,7 @@ inline bool read_headers(Stream& strm, MultiMap& headers)
         if (std::regex_match(buf, m, re)) {
             auto key = std::string(m[1]);
             auto val = std::string(m[2]);
-            headers.insert(std::make_pair(key, val));
+            headers.emplace(key, val);
         }
     }
 
@@ -856,7 +856,7 @@ inline void write_request(Stream& strm, const Request& req, const char* ver)
     }
 }
 
-inline void parse_query_text(const std::string& s, Map& params)
+inline void parse_query_text(const std::string& s, MultiMap& params)
 {
     split(&s[0], &s[s.size()], '&', [&](const char* b, const char* e) {
         std::string key;
@@ -868,7 +868,7 @@ inline void parse_query_text(const std::string& s, Map& params)
                 val.assign(b, e);
             }
         });
-        params[key] = detail::decode_url(val);
+        params.emplace(key, detail::decode_url(val));
     });
 }
 
@@ -959,7 +959,7 @@ inline bool parse_multipart_formdata(
             return false;
         }
 
-        files.insert(std::make_pair(name, file));
+        files.emplace(name, file);
 
         pos = next_pos + crlf.size();
     }
@@ -998,12 +998,21 @@ inline std::string Request::get_header_value(const char* key) const
 
 inline void Request::set_header(const char* key, const char* val)
 {
-    headers.insert(std::make_pair(key, val));
+    headers.emplace(key, val);
 }
 
 inline bool Request::has_param(const char* key) const
 {
     return params.find(key) != params.end();
+}
+
+inline std::string Request::get_param_value(const char* key) const
+{
+    auto it = params.find(key);
+    if (it != params.end()) {
+        return it->second;
+    }
+    return std::string();
 }
 
 inline bool Request::has_file(const char* key) const
@@ -1033,7 +1042,7 @@ inline std::string Response::get_header_value(const char* key) const
 
 inline void Response::set_header(const char* key, const char* val)
 {
-    headers.insert(std::make_pair(key, val));
+    headers.emplace(key, val);
 }
 
 inline void Response::set_redirect(const char* url)
@@ -1421,7 +1430,7 @@ inline std::shared_ptr<Response> Client::post(
 }
 
 inline std::shared_ptr<Response> Client::post(
-    const char* path, const Map& params)
+    const char* path, const MultiMap& params)
 {
     std::string query;
     for (auto it = params.begin(); it != params.end(); ++it) {

@@ -32,7 +32,7 @@ TEST(StartupTest, WSAStartup)
 TEST(SplitTest, ParseQueryString)
 {
     string s = "key1=val1&key2=val2&key3=val3";
-    map<string, string> dic;
+    MultiMap dic;
 
     detail::split(s.c_str(), s.c_str() + s.size(), '&', [&](const char* b, const char* e) {
         string key, val;
@@ -43,24 +43,24 @@ TEST(SplitTest, ParseQueryString)
                 val.assign(b, e);
             }
         });
-        dic[key] = val;
+        dic.emplace(key, val);
     });
 
-    EXPECT_EQ("val1", dic["key1"]);
-    EXPECT_EQ("val2", dic["key2"]);
-    EXPECT_EQ("val3", dic["key3"]);
+    EXPECT_EQ("val1", dic.find("key1")->second);
+    EXPECT_EQ("val2", dic.find("key2")->second);
+    EXPECT_EQ("val3", dic.find("key3")->second);
 }
 
 TEST(ParseQueryTest, ParseQueryString)
 {
     string s = "key1=val1&key2=val2&key3=val3";
-    map<string, string> dic;
+    MultiMap dic;
 
     detail::parse_query_text(s, dic);
 
-    EXPECT_EQ("val1", dic["key1"]);
-    EXPECT_EQ("val2", dic["key2"]);
-    EXPECT_EQ("val3", dic["key3"]);
+    EXPECT_EQ("val1", dic.find("key1")->second);
+    EXPECT_EQ("val2", dic.find("key2")->second);
+    EXPECT_EQ("val3", dic.find("key3")->second);
 }
 
 TEST(SocketTest, OpenClose)
@@ -159,7 +159,7 @@ protected:
             })
             .post("/person", [&](const Request& req, Response& res) {
                 if (req.has_param("name") && req.has_param("note")) {
-                    persons_[req.params.at("name")] = req.params.at("note");
+                    persons_[req.get_param_value("name")] = req.get_param_value("note");
                 } else {
                     res.status = 400;
                 }
@@ -310,9 +310,9 @@ TEST_F(ServerTest, PostMethod2)
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(404, res->status);
 
-    Map params;
-    params["name"] = "john2";
-    params["note"] = "coder";
+    MultiMap params;
+    params.emplace("name", "john2");
+    params.emplace("note", "coder");
 
     res = cli_.post("/person", params);
     ASSERT_TRUE(res != nullptr);
