@@ -7,10 +7,10 @@ A C++11 header-only HTTP library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
 
+Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.com/visionmedia/express).
+
 Server Example
 --------------
-
-Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.com/visionmedia/express).
 
 ```c++
 #include <httplib.h>
@@ -71,8 +71,23 @@ svr.set_error_handler([](const auto& req, auto& res) {
 });
 ```
 
+### `multipart/form-data` POST data
+
+```cpp
+svr.post("/multipart", [&](const auto& req, auto& res) {
+    auto size = req.files.size();
+    auto ret = req.has_file("name1"));
+    const auto& file = req.get_file_value("name1");
+    // file.filename;
+    // file.content_type;
+    auto body = req.body.substr(file.offset, file.length));
+})
+```
+
 Client Example
 --------------
+
+### GET
 
 ```c++
 #include <httplib.h>
@@ -87,6 +102,22 @@ int main(void)
         std::cout << res->body << std::endl;
     }
 }
+```
+
+### POST
+
+```c++
+res = cli.post("/post", "text", "text/plain");
+res = cli.post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
+```
+
+### POST with parameters
+
+```c++
+httplib::Map params;
+params["name"] = "john";
+params["note"] = "coder";
+auto res = cli.post("/post", params);
 ```
 
 ### With Progress Callback
