@@ -173,6 +173,36 @@ protected:
                     res.status = 404;
                 }
             })
+            .post("/multipart", [&](const Request& req, Response& /*res*/) {
+                EXPECT_EQ(5u, req.files.size());
+                ASSERT_TRUE(!req.has_file("???"));
+
+                {
+                    const auto& file = req.get_file_value("text1");
+                    EXPECT_EQ("", file.filename);
+                    EXPECT_EQ("text default", req.body.substr(file.offset, file.length));
+                }
+
+                {
+                    const auto& file = req.get_file_value("text2");
+                    EXPECT_EQ("", file.filename);
+                    EXPECT_EQ("aωb", req.body.substr(file.offset, file.length));
+                }
+
+                {
+                    const auto& file = req.get_file_value("file1");
+                    EXPECT_EQ("hello.txt", file.filename);
+                    EXPECT_EQ("text/plain", file.content_type);
+                    EXPECT_EQ("h\ne\n\nl\nl\no\n", req.body.substr(file.offset, file.length));
+                }
+
+                {
+                    const auto& file = req.get_file_value("file3");
+                    EXPECT_EQ("", file.filename);
+                    EXPECT_EQ("application/octet-stream", file.content_type);
+                    EXPECT_EQ(0u, file.length);
+                }
+            })
             .get("/stop", [&](const Request& /*req*/, Response& /*res*/) {
                 svr_.stop();
             });
@@ -456,6 +486,31 @@ TEST_F(ServerTest, InvalidPercentEncodingUnicode)
     auto res = cli_.get("/%uendwith%");
     ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, MultipartFormData)
+{
+    Request req;
+    req.method = "POST";
+    req.path = "/multipart";
+
+    std::string host_and_port;
+    host_and_port += HOST;
+    host_and_port += ":";
+    host_and_port += std::to_string(PORT);
+
+    req.set_header("Host", host_and_port.c_str());
+    req.set_header("Accept", "*/*");
+    req.set_header("User-Agent", "cpp-httplib/0.1");
+    req.set_header("Content-Type", "multipart/form-data; boundary=----WebKitFormBoundarysBREP3G013oUrLB4");
+
+    req.body = "------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; name=\"text1\"\r\n\r\ntext default\r\n------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; name=\"text2\"\r\n\r\naωb\r\n------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; name=\"file1\"; filename=\"hello.txt\"\r\nContent-Type: text/plain\r\n\r\nh\ne\n\nl\nl\no\n\r\n------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; name=\"file2\"; filename=\"world.json\"\r\nContent-Type: application/json\r\n\r\n{\n  \"world\", true\n}\n\r\n------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; name=\"file3\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n------WebKitFormBoundarysBREP3G013oUrLB4--\r\n";
+
+    auto res = std::make_shared<Response>();
+    auto ret = cli_.send(req, *res);
+
+	ASSERT_TRUE(ret);
+	EXPECT_EQ(200, res->status);
 }
 
 class ServerTestWithAI_PASSIVE : public ::testing::Test {

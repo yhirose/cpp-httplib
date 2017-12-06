@@ -74,20 +74,32 @@ typedef std::multimap<std::string, std::string> MultiMap;
 typedef std::smatch                             Match;
 typedef std::function<void (int64_t current, int64_t total)> Progress;
 
+struct MultipartFile {
+    std::string filename;
+    std::string content_type;
+    size_t offset = 0;
+    size_t length = 0;
+};
+typedef std::multimap<std::string, MultipartFile> MultipartFiles;
+
 struct Request {
-    std::string method;
-    std::string path;
-    MultiMap    headers;
-    std::string body;
-    Map         params;
-    Match       matches;
-    Progress    progress;
+    std::string    method;
+    std::string    path;
+    MultiMap       headers;
+    std::string    body;
+    Map            params;
+    MultipartFiles files;
+    Match          matches;
+    Progress       progress;
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
     void set_header(const char* key, const char* val);
 
     bool has_param(const char* key) const;
+
+    bool has_file(const char* key) const;
+    MultipartFile get_file_value(const char* key) const;
 };
 
 struct Response {
@@ -860,6 +872,101 @@ inline void parse_query_text(const std::string& s, Map& params)
     });
 }
 
+inline bool parse_multipart_boundary(const std::string& content_type, std::string& boundary)
+{
+    auto pos = content_type.find("boundary=");
+    if (pos == std::string::npos) {
+        return false;
+    }
+
+    boundary = content_type.substr(pos + 9);
+    return true;
+}
+
+inline bool parse_multipart_formdata(
+    const std::string& boundary, const std::string& body, MultipartFiles& files)
+{
+    static std::string dash = "--";
+    static std::string crlf = "\r\n";
+
+    static std::regex re_content_type(
+        "Content-Type: (.*?)");
+
+    static std::regex re_content_disposition(
+        "Content-Disposition: form-data; name=\"(.*?)\"(?:; filename=\"(.*?)\")?");
+
+    auto dash_boundary = dash + boundary;
+
+    auto pos = body.find(dash_boundary);
+    if (pos != 0) {
+        return false;
+    }
+
+    pos += dash_boundary.size();
+
+    auto next_pos = body.find(crlf, pos);
+    if (next_pos == std::string::npos) {
+        return false;
+    }
+
+    pos = next_pos + crlf.size();
+
+    while (pos < body.size()) {
+        next_pos = body.find(crlf, pos);
+        if (next_pos == std::string::npos) {
+            return false;
+        }
+
+        std::string name;
+        MultipartFile file;
+
+        auto header = body.substr(pos, (next_pos - pos));
+
+        while (pos != next_pos) {
+            std::smatch m;
+            if (std::regex_match(header, m, re_content_type)) {
+                file.content_type = m[1];
+            } else if (std::regex_match(header, m, re_content_disposition)) {
+                name = m[1];
+                file.filename = m[2];
+            }
+
+            pos = next_pos + crlf.size();
+
+            next_pos = body.find(crlf, pos);
+            if (next_pos == std::string::npos) {
+                return false;
+            }
+
+            header = body.substr(pos, (next_pos - pos));
+        }
+
+        pos = next_pos + crlf.size();
+
+        next_pos = body.find(crlf + dash_boundary, pos);
+
+        if (next_pos == std::string::npos) {
+            return false;
+        }
+
+        file.offset = pos;
+        file.length = next_pos - pos;
+
+        pos = next_pos + crlf.size() + dash_boundary.size();
+
+        next_pos = body.find(crlf, pos);
+        if (next_pos == std::string::npos) {
+            return false;
+        }
+
+        files.insert(std::make_pair(name, file));
+
+        pos = next_pos + crlf.size();
+    }
+
+    return true;
+}
+
 #ifdef _MSC_VER
 class WSInit {
 public:
@@ -897,6 +1004,20 @@ inline void Request::set_header(const char* key, const char* val)
 inline bool Request::has_param(const char* key) const
 {
     return params.find(key) != params.end();
+}
+
+inline bool Request::has_file(const char* key) const
+{
+    return files.find(key) != files.end();
+}
+
+inline MultipartFile Request::get_file_value(const char* key) const
+{
+    auto it = files.find(key);
+    if (it != files.end()) {
+        return it->second;
+    }
+    return MultipartFile();
 }
 
 // Response implementation
@@ -1148,9 +1269,18 @@ inline void Server::process_request(Stream& strm)
             return;
         }
 
-        static std::string type = "application/x-www-form-urlencoded";
-        if (!req.get_header_value("Content-Type").compare(0, type.size(), type)) {
+        const auto& content_type = req.get_header_value("Content-Type");
+
+        if (!content_type.find("application/x-www-form-urlencoded")) {
             detail::parse_query_text(req.body, req.params);
+        } else if(!content_type.find("multipart/form-data")) {
+            std::string boundary;
+            if (!detail::parse_multipart_boundary(content_type, boundary) ||
+                !detail::parse_multipart_formdata(boundary, req.body, req.files)) {
+                res.status = 400;
+                write_response(strm, req, res);
+                return;
+            }
         }
     }
 
