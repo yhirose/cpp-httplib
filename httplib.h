@@ -11,12 +11,12 @@
 #ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
-#endif //_CRT_SECURE_NO_WARNINGS
+#endif
 #ifndef _CRT_NONSTDC_NO_DEPRECATE
 #define _CRT_NONSTDC_NO_DEPRECATE
-#endif //_CRT_NONSTDC_NO_DEPRECATE
+#endif
 
-#if (_MSC_VER && _MSC_VER < 1900)
+#if defined(_MSC_VER) && _MSC_VER < 1900
 #define snprintf _snprintf_s
 #endif
 
@@ -344,15 +344,21 @@ private:
 template <typename ...Args>
 inline void socket_printf(Stream& strm, const char* fmt, const Args& ...args)
 {
-    char buf[BUFSIZ];
-    auto n = snprintf(buf, BUFSIZ, fmt, args...);
-    if (n > 0) {
-        if (n >= BUFSIZ) {
-            std::vector<char> glowable_buf(BUFSIZ);
+    const auto bufsiz = 2048;
+    char buf[bufsiz];
 
-            while (n >= static_cast<int>(glowable_buf.size())) {
+    auto n = snprintf(buf, bufsiz - 1, fmt, args...);
+    if (n > 0) {
+        if (n >= bufsiz - 1) {
+            std::vector<char> glowable_buf(bufsiz);
+
+            while (n >= static_cast<int>(glowable_buf.size() - 1)) {
                 glowable_buf.resize(glowable_buf.size() * 2);
-                n = snprintf(&glowable_buf[0], glowable_buf.size(), fmt, args...);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+                n = _snprintf_s(&glowable_buf[0], glowable_buf.size(), glowable_buf.size() - 1, fmt, args...);
+#else
+                n = snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...);
+#endif
             }
             strm.write(&glowable_buf[0], n);
         } else {
@@ -763,7 +769,7 @@ inline std::string encode_url(const std::string& s)
             if (s[i] < 0) {
                 result += '%';
                 char hex[4];
-                size_t len = snprintf(hex, sizeof(hex), "%02X", (unsigned char)s[i]);
+                size_t len = snprintf(hex, sizeof(hex) - 1, "%02X", (unsigned char)s[i]);
                 assert(len == 2);
                 result.append(hex, len);
             } else {
