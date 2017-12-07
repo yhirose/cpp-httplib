@@ -727,19 +727,19 @@ bool read_content(Stream& strm, T& x, Progress progress = [](int64_t,int64_t){})
 }
 
 template <typename T>
-inline void write_headers(Stream& strm, const T& res)
+inline void write_headers(Stream& strm, const T& info)
 {
     strm.write("Connection: close\r\n");
 
-    for (const auto& x: res.headers) {
+    for (const auto& x: info.headers) {
         if (x.first != "Content-Type" && x.first != "Content-Length") {
             socket_printf(strm, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
         }
     }
 
-    auto t = get_header_value(res.headers, "Content-Type", "text/plain");
+    auto t = get_header_value(info.headers, "Content-Type", "text/plain");
     socket_printf(strm, "Content-Type: %s\r\n", t);
-    socket_printf(strm, "Content-Length: %ld\r\n", res.body.size());
+    socket_printf(strm, "Content-Length: %ld\r\n", info.body.size());
     strm.write("\r\n");
 }
 
