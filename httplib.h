@@ -271,41 +271,69 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
-inline bool socket_gets(Stream& strm, char* buf, size_t bufsiz)
-{
-    // TODO: buffering for better performance
-    size_t i = 0;
+class socket_reader {
+public:
+    socket_reader(Stream& strm, char* fixed_buffer, size_t fixed_buffer_size)
+        : strm_(strm)
+        , fixed_buffer_(fixed_buffer)
+        , fixed_buffer_size_(fixed_buffer_size) {
+    }
 
-    for (;;) {
-        char byte;
-        auto n = strm.read(&byte, 1);
+    const char* ptr() const {
+        if (glowable_buffer_.empty()) {
+            return fixed_buffer_;
+        } else {
+            return glowable_buffer_.data();
+        }
+    }
 
-        if (n < 1) {
-            if (i == 0) {
-                return false;
-            } else {
+    bool getline() {
+        fixed_buffer_used_size_ = 0;
+        glowable_buffer_.clear();
+
+        size_t i = 0;
+
+        for (;;) {
+            char byte;
+            auto n = strm_.read(&byte, 1);
+
+            if (n < 1) {
+                if (i == 0) {
+                    return false;
+                } else {
+                    break;
+                }
+            }
+
+            append(byte);
+
+            if (byte == '\n') {
                 break;
             }
         }
 
-        if (i == bufsiz) {
-            return false;
-        }
+        append('\0');
+        return true;
+    }
 
-        buf[i++] = byte;
-
-        if (byte == '\n') {
-            break;
+private:
+    void append(char c) {
+        if (fixed_buffer_used_size_ < fixed_buffer_size_) {
+            fixed_buffer_[fixed_buffer_used_size_++] = c;
+        } else {
+            if (glowable_buffer_.empty()) {
+                glowable_buffer_.assign(fixed_buffer_, fixed_buffer_size_);
+            }
+            glowable_buffer_ += c;
         }
     }
 
-    if (i == bufsiz) {
-        return false;
-    }
-
-    buf[i] = '\0';
-    return true;
-}
+    Stream& strm_;
+    char* fixed_buffer_;
+    const size_t fixed_buffer_size_;
+    size_t fixed_buffer_used_size_;
+    std::string glowable_buffer_;
+};
 
 template <typename ...Args>
 inline void socket_printf(Stream& strm, const char* fmt, const Args& ...args)
@@ -562,18 +590,20 @@ inline bool read_headers(Stream& strm, MultiMap& headers)
 {
     static std::regex re("(.+?): (.+?)\r\n");
 
-    const auto BUFSIZ_HEADER = 2048;
-    char buf[BUFSIZ_HEADER];
+    const auto bufsiz = 2048;
+    char buf[bufsiz];
+
+    socket_reader reader(strm, buf, bufsiz);
 
     for (;;) {
-        if (!socket_gets(strm, buf, BUFSIZ_HEADER)) {
+        if (!reader.getline()) {
             return false;
         }
-        if (!strcmp(buf, "\r\n")) {
+        if (!strcmp(reader.ptr(), "\r\n")) {
             break;
         }
         std::cmatch m;
-        if (std::regex_match(buf, m, re)) {
+        if (std::regex_match(reader.ptr(), m, re)) {
             auto key = std::string(m[1]);
             auto val = std::string(m[2]);
             headers.emplace(key, val);
@@ -622,14 +652,16 @@ bool read_content_without_length(Stream& strm, T& x)
 template <typename T>
 bool read_content_chunked(Stream& strm, T& x)
 {
-    const auto BUFSIZ_CHUNK_LEN = 16;
-    char buf[BUFSIZ_CHUNK_LEN];
+    const auto bufsiz = 16;
+    char buf[bufsiz];
 
-    if (!socket_gets(strm, buf, BUFSIZ_CHUNK_LEN)) {
+    socket_reader reader(strm, buf, bufsiz);
+
+    if (!reader.getline()) {
         return false;
     }
 
-    auto chunk_len = std::stoi(buf, 0, 16);
+    auto chunk_len = std::stoi(reader.ptr(), 0, 16);
 
     while (chunk_len > 0){
         std::string chunk(chunk_len, 0);
@@ -639,21 +671,21 @@ bool read_content_chunked(Stream& strm, T& x)
             return false;
         }
 
-        if (!socket_gets(strm, buf, BUFSIZ_CHUNK_LEN)) {
+        if (!reader.getline()) {
             return false;
         }
 
-        if (strcmp(buf, "\r\n")) {
+        if (strcmp(reader.ptr(), "\r\n")) {
             break;
         }
 
         x.body += chunk;
 
-        if (!socket_gets(strm, buf, BUFSIZ_CHUNK_LEN)) {
+        if (!reader.getline()) {
             return false;
         }
 
-        chunk_len = std::stoi(buf, 0, 16);
+        chunk_len = std::stoi(reader.ptr(), 0, 16);
     }
 
     return true;
@@ -1169,16 +1201,19 @@ inline void Server::stop()
 
 inline bool Server::read_request_line(Stream& strm, Request& req)
 {
-    const auto BUFSIZ_REQUESTLINE = 2048;
-    char buf[BUFSIZ_REQUESTLINE];
-    if (!detail::socket_gets(strm, buf, BUFSIZ_REQUESTLINE)) {
+    const auto bufsiz = 2048;
+    char buf[bufsiz];
+
+    detail::socket_reader reader(strm, buf, bufsiz);
+
+    if (!reader.getline()) {
         return false;
     }
 
     static std::regex re("(GET|HEAD|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.[01]\r\n");
 
     std::cmatch m;
-    if (std::regex_match(buf, m, re)) {
+    if (std::regex_match(reader.ptr(), m, re)) {
         req.method = std::string(m[1]);
         req.path = detail::decode_url(m[2]);
 
@@ -1327,16 +1362,19 @@ inline Client::~Client()
 
 inline bool Client::read_response_line(Stream& strm, Response& res)
 {
-    const auto BUFSIZ_RESPONSELINE = 2048;
-    char buf[BUFSIZ_RESPONSELINE];
-    if (!detail::socket_gets(strm, buf, BUFSIZ_RESPONSELINE)) {
+    const auto bufsiz = 2048;
+    char buf[bufsiz];
+
+    detail::socket_reader reader(strm, buf, bufsiz);
+
+    if (!reader.getline()) {
         return false;
     }
 
     const static std::regex re("HTTP/1\\.[01] (\\d+?) .+\r\n");
 
     std::cmatch m;
-    if (std::regex_match(buf, m, re)) {
+    if (std::regex_match(reader.ptr(), m, re)) {
         res.status = std::stoi(std::string(m[1]));
     }
 

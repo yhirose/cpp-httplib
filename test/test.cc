@@ -409,7 +409,7 @@ TEST_F(ServerTest, TooLongRequest)
 	auto res = cli_.get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ng___");
 
 	ASSERT_TRUE(res != nullptr);
-	EXPECT_EQ(400, res->status);
+	EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, LongHeader)
@@ -457,7 +457,7 @@ TEST_F(ServerTest, TooLongHeader)
     auto ret = cli_.send(req, *res);
 
 	ASSERT_TRUE(ret);
-	EXPECT_EQ(400, res->status);
+	EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, PercentEncoding)
