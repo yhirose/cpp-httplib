@@ -16,18 +16,16 @@
 #define _CRT_NONSTDC_NO_DEPRECATE
 #endif //_CRT_NONSTDC_NO_DEPRECATE
 
-#ifndef SO_SYNCHRONOUS_NONALERT
-#define SO_SYNCHRONOUS_NONALERT 0x20
-#endif
-#ifndef SO_OPENTYPE
-#define SO_OPENTYPE 0x7008
-#endif
-#if (_MSC_VER < 1900)
+#if (_MSC_VER && _MSC_VER < 1900)
 #define snprintf _snprintf_s
 #endif
 
+#ifndef S_ISREG
 #define S_ISREG(m)  (((m)&S_IFREG)==S_IFREG)
+#endif
+#ifndef S_ISDIR
 #define S_ISDIR(m)  (((m)&S_IFDIR)==S_IFDIR)
+#endif
 
 #include <fcntl.h>
 #include <io.h>
@@ -394,6 +392,9 @@ template <typename Fn>
 socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
 {
 #ifdef _WIN32
+#define SO_SYNCHRONOUS_NONALERT 0x20
+#define SO_OPENTYPE 0x7008
+
     int opt = SO_SYNCHRONOUS_NONALERT;
     setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
 #endif
