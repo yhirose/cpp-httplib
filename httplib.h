@@ -8,7 +8,7 @@
 #ifndef _CPPHTTPLIB_HTTPLIB_H_
 #define _CPPHTTPLIB_HTTPLIB_H_
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #endif //_CRT_SECURE_NO_WARNINGS
@@ -59,6 +59,14 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <assert.h>
+
+#ifdef __has_include
+#if __has_include(<openssl/ssl.h>)
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#endif
+#endif
+#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/ssl.h>
@@ -357,7 +365,7 @@ inline void socket_printf(Stream& strm, const char* fmt, const Args& ...args)
 
 inline int close_socket(socket_t sock)
 {
-#ifdef _MSC_VER
+#ifdef _WIN32
     return closesocket(sock);
 #else
     return close(sock);
@@ -375,7 +383,7 @@ inline bool read_and_close_socket(socket_t sock, T callback)
 
 inline int shutdown_socket(socket_t sock)
 {
-#ifdef _MSC_VER
+#ifdef _WIN32
     return shutdown(sock, SD_BOTH);
 #else
     return shutdown(sock, SHUT_RDWR);
@@ -385,7 +393,7 @@ inline int shutdown_socket(socket_t sock)
 template <typename Fn>
 socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
 {
-#ifdef _MSC_VER
+#ifdef _WIN32
     int opt = SO_SYNCHRONOUS_NONALERT;
     setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
 #endif
@@ -999,7 +1007,7 @@ inline bool parse_multipart_formdata(
     return true;
 }
 
-#ifdef _MSC_VER
+#ifdef _WIN32
 class WSInit {
 public:
     WSInit() {
@@ -1123,7 +1131,7 @@ inline int SocketStream::write(const char* ptr)
 inline Server::Server()
     : svr_sock_(-1)
 {
-#ifndef _MSC_VER
+#ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
 #endif
 }
