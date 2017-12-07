@@ -1383,6 +1383,10 @@ inline bool Client::read_response_line(Stream& strm, Response& res)
 
 inline bool Client::send(const Request& req, Response& res)
 {
+    if (req.path.empty()) {
+        return false;
+    }
+
     auto sock = detail::create_client_socket(host_.c_str(), port_);
     if (sock == -1) {
         return false;

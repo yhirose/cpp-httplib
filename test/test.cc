@@ -392,8 +392,7 @@ TEST_F(ServerTest, InvalidBaseDir)
 TEST_F(ServerTest, EmptyRequest)
 {
 	auto res = cli_.get("");
-	ASSERT_TRUE(res != nullptr);
-	EXPECT_EQ(400, res->status);
+	ASSERT_TRUE(res == nullptr);
 }
 
 TEST_F(ServerTest, LongRequest)
