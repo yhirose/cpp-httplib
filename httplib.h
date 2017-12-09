@@ -277,9 +277,9 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
-class socket_reader {
+class stream_line_reader {
 public:
-    socket_reader(Stream& strm, char* fixed_buffer, size_t fixed_buffer_size)
+    stream_line_reader(Stream& strm, char* fixed_buffer, size_t fixed_buffer_size)
         : strm_(strm)
         , fixed_buffer_(fixed_buffer)
         , fixed_buffer_size_(fixed_buffer_size) {
@@ -342,7 +342,7 @@ private:
 };
 
 template <typename ...Args>
-inline void socket_printf(Stream& strm, const char* fmt, const Args& ...args)
+inline void stream_write_format(Stream& strm, const char* fmt, const Args& ...args)
 {
     const auto bufsiz = 2048;
     char buf[bufsiz];
@@ -541,7 +541,7 @@ inline std::string file_extension(const std::string& path)
 
 inline const char* content_type(const std::string& path)
 {
-    auto ext = detail::file_extension(path);
+    auto ext = file_extension(path);
     if (ext == "txt") {
         return "text/plain";
     } else if (ext == "html") {
@@ -608,7 +608,7 @@ inline bool read_headers(Stream& strm, MultiMap& headers)
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
-    socket_reader reader(strm, buf, bufsiz);
+    stream_line_reader reader(strm, buf, bufsiz);
 
     for (;;) {
         if (!reader.getline()) {
@@ -670,7 +670,7 @@ bool read_content_chunked(Stream& strm, T& x)
     const auto bufsiz = 16;
     char buf[bufsiz];
 
-    socket_reader reader(strm, buf, bufsiz);
+    stream_line_reader reader(strm, buf, bufsiz);
 
     if (!reader.getline()) {
         return false;
@@ -733,19 +733,19 @@ inline void write_headers(Stream& strm, const T& info)
 
     for (const auto& x: info.headers) {
         if (x.first != "Content-Type" && x.first != "Content-Length") {
-            socket_printf(strm, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
+            stream_write_format(strm, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
         }
     }
 
     auto t = get_header_value(info.headers, "Content-Type", "text/plain");
-    socket_printf(strm, "Content-Type: %s\r\n", t);
-    socket_printf(strm, "Content-Length: %ld\r\n", info.body.size());
+    stream_write_format(strm, "Content-Type: %s\r\n", t);
+    stream_write_format(strm, "Content-Length: %ld\r\n", info.body.size());
     strm.write("\r\n");
 }
 
 inline void write_response(Stream& strm, const Request& req, const Response& res)
 {
-    socket_printf(strm, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
+    stream_write_format(strm, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
 
     write_headers(strm, res);
 
@@ -889,7 +889,7 @@ inline std::string decode_url(const std::string& s)
 inline void write_request(Stream& strm, const Request& req, const char* ver)
 {
     auto path = encode_url(req.path);
-    socket_printf(strm, "%s %s %s\r\n", req.method.c_str(), path.c_str(), ver);
+    stream_write_format(strm, "%s %s %s\r\n", req.method.c_str(), path.c_str(), ver);
 
     write_headers(strm, req);
 
@@ -915,7 +915,7 @@ inline void parse_query_text(const std::string& s, MultiMap& params)
                 val.assign(b, e);
             }
         });
-        params.emplace(key, detail::decode_url(val));
+        params.emplace(key, decode_url(val));
     });
 }
 
@@ -1219,7 +1219,7 @@ inline bool Server::read_request_line(Stream& strm, Request& req)
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
-    detail::socket_reader reader(strm, buf, bufsiz);
+    detail::stream_line_reader reader(strm, buf, bufsiz);
 
     if (!reader.getline()) {
         return false;
@@ -1380,7 +1380,7 @@ inline bool Client::read_response_line(Stream& strm, Response& res)
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
-    detail::socket_reader reader(strm, buf, bufsiz);
+    detail::stream_line_reader reader(strm, buf, bufsiz);
 
     if (!reader.getline()) {
         return false;
