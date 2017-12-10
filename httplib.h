@@ -130,6 +130,9 @@ public:
     virtual int read(char* ptr, size_t size) = 0;
     virtual int write(const char* ptr, size_t size1) = 0;
     virtual int write(const char* ptr) = 0;
+
+    template <typename ...Args>
+    void write_format(const char* fmt, const Args& ...args);
 };
 
 class SocketStream : public Stream {
@@ -209,7 +212,7 @@ protected:
 
 private:
     bool read_response_line(Stream& strm, Response& res);
-    void add_default_headers(Request& req);
+    void write_request(Stream& strm, const Request& req, const char* ver);
 
     virtual bool read_and_close_socket(socket_t sock, const Request& req, Response& res);
 };
@@ -277,6 +280,8 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
+// NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
+// to store data. The call can set memory on stack for performance.
 class stream_line_reader {
 public:
     stream_line_reader(Stream& strm, char* fixed_buffer, size_t fixed_buffer_size)
@@ -340,32 +345,6 @@ private:
     size_t fixed_buffer_used_size_;
     std::string glowable_buffer_;
 };
-
-template <typename ...Args>
-inline void stream_write_format(Stream& strm, const char* fmt, const Args& ...args)
-{
-    const auto bufsiz = 2048;
-    char buf[bufsiz];
-
-    auto n = snprintf(buf, bufsiz - 1, fmt, args...);
-    if (n > 0) {
-        if (n >= bufsiz - 1) {
-            std::vector<char> glowable_buf(bufsiz);
-
-            while (n >= static_cast<int>(glowable_buf.size() - 1)) {
-                glowable_buf.resize(glowable_buf.size() * 2);
-#if defined(_MSC_VER) && _MSC_VER < 1900
-                n = _snprintf_s(&glowable_buf[0], glowable_buf.size(), glowable_buf.size() - 1, fmt, args...);
-#else
-                n = snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...);
-#endif
-            }
-            strm.write(&glowable_buf[0], n);
-        } else {
-            strm.write(buf, n);
-        }
-    }
-}
 
 inline int close_socket(socket_t sock)
 {
@@ -733,25 +712,13 @@ inline void write_headers(Stream& strm, const T& info)
 
     for (const auto& x: info.headers) {
         if (x.first != "Content-Type" && x.first != "Content-Length") {
-            stream_write_format(strm, "%s: %s\r\n", x.first.c_str(), x.second.c_str());
+            strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
         }
     }
 
     auto t = get_header_value(info.headers, "Content-Type", "text/plain");
-    stream_write_format(strm, "Content-Type: %s\r\n", t);
-    stream_write_format(strm, "Content-Length: %ld\r\n", info.body.size());
-    strm.write("\r\n");
-}
-
-inline void write_response(Stream& strm, const Request& req, const Response& res)
-{
-    stream_write_format(strm, "HTTP/1.0 %d %s\r\n", res.status, status_message(res.status));
-
-    write_headers(strm, res);
-
-    if (!res.body.empty() && req.method != "HEAD") {
-        strm.write(res.body.c_str(), res.body.size());
-    }
+    strm.write_format("Content-Type: %s\r\n", t);
+    strm.write_format("Content-Length: %ld\r\n", info.body.size());
 }
 
 inline std::string encode_url(const std::string& s)
@@ -884,23 +851,6 @@ inline std::string decode_url(const std::string& s)
     }
 
     return result;
-}
-
-inline void write_request(Stream& strm, const Request& req, const char* ver)
-{
-    auto path = encode_url(req.path);
-    stream_write_format(strm, "%s %s %s\r\n", req.method.c_str(), path.c_str(), ver);
-
-    write_headers(strm, req);
-
-    if (!req.body.empty()) {
-        if (req.has_header("application/x-www-form-urlencoded")) {
-            auto str = encode_url(req.body);
-            strm.write(str.c_str(), str.size());
-        } else {
-            strm.write(req.body.c_str(), req.body.size());
-        }
-    }
 }
 
 inline void parse_query_text(const std::string& s, MultiMap& params)
@@ -1110,6 +1060,33 @@ inline void Response::set_content(const std::string& s, const char* content_type
     set_header("Content-Type", content_type);
 }
 
+// Rstream implementation
+template <typename ...Args>
+inline void Stream::write_format(const char* fmt, const Args& ...args)
+{
+    const auto bufsiz = 2048;
+    char buf[bufsiz];
+
+    auto n = snprintf(buf, bufsiz - 1, fmt, args...);
+    if (n > 0) {
+        if (n >= bufsiz - 1) {
+            std::vector<char> glowable_buf(bufsiz);
+
+            while (n >= static_cast<int>(glowable_buf.size() - 1)) {
+                glowable_buf.resize(glowable_buf.size() * 2);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+                n = _snprintf_s(&glowable_buf[0], glowable_buf.size(), glowable_buf.size() - 1, fmt, args...);
+#else
+                n = snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...);
+#endif
+            }
+            write(&glowable_buf[0], n);
+        } else {
+            write(buf, n);
+        }
+    }
+}
+
 // Socket stream implementation
 inline SocketStream::SocketStream(socket_t sock): sock_(sock)
 {
@@ -1252,7 +1229,16 @@ inline void Server::write_response(Stream& strm, const Request& req, Response& r
         error_handler_(req, res);
     }
 
-    detail::write_response(strm, req, res);
+    strm.write_format(
+        "HTTP/1.0 %d %s\r\n",
+        res.status, detail::status_message(res.status));
+
+    detail::write_headers(strm, res);
+    strm.write("\r\n");
+
+    if (!res.body.empty() && req.method != "HEAD") {
+        strm.write(res.body.c_str(), res.body.size());
+    }
 
     if (logger_) {
         logger_(req, res);
@@ -1410,11 +1396,45 @@ inline bool Client::send(const Request& req, Response& res)
     return read_and_close_socket(sock, req, res);
 }
 
+inline void Client::write_request(Stream& strm, const Request& req, const char* ver)
+{
+    auto path = detail::encode_url(req.path);
+
+    // Request line
+    strm.write_format(
+        "%s %s %s\r\n", req.method.c_str(), path.c_str(), ver);
+
+    // Headers
+    strm.write_format("Host: %s\r\n", host_and_port_.c_str());
+
+    if (!req.has_header("Accept")) {
+        strm.write("Accept: */*\r\n");
+    }
+
+    if (!req.has_header("User-Agent")) {
+        strm.write("User-Agent: cpp-httplib/0.1\r\n");
+    }
+
+    detail::write_headers(strm, req);
+
+    strm.write("\r\n");
+
+    // Body
+    if (!req.body.empty()) {
+        if (req.has_header("application/x-www-form-urlencoded")) {
+            auto str = detail::encode_url(req.body);
+            strm.write(str.c_str(), str.size());
+        } else {
+            strm.write(req.body.c_str(), req.body.size());
+        }
+    }
+}
+
 inline bool Client::process_request(Stream& strm, const Request& req, Response& res)
 {
     // Send request
     auto ver = detail::http_version_strings[static_cast<size_t>(http_version_)];
-    detail::write_request(strm, req, ver);
+    write_request(strm, req, ver);
 
     // Receive response
     if (!read_response_line(strm, res) ||
@@ -1438,20 +1458,12 @@ inline bool Client::read_and_close_socket(socket_t sock, const Request& req, Res
     });
 }
 
-inline void Client::add_default_headers(Request& req)
-{
-    req.set_header("Host", host_and_port_.c_str());
-    req.set_header("Accept", "*/*");
-    req.set_header("User-Agent", "cpp-httplib/0.1");
-}
-
 inline std::shared_ptr<Response> Client::get(const char* path, Progress callback)
 {
     Request req;
     req.method = "GET";
     req.path = path;
     req.progress = callback;
-    add_default_headers(req);
 
     auto res = std::make_shared<Response>();
 
@@ -1463,7 +1475,6 @@ inline std::shared_ptr<Response> Client::head(const char* path)
     Request req;
     req.method = "HEAD";
     req.path = path;
-    add_default_headers(req);
 
     auto res = std::make_shared<Response>();
 
@@ -1476,7 +1487,6 @@ inline std::shared_ptr<Response> Client::post(
     Request req;
     req.method = "POST";
     req.path = path;
-    add_default_headers(req);
 
     req.set_header("Content-Type", content_type);
     req.body = body;
