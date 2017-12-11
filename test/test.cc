@@ -32,7 +32,7 @@ TEST(StartupTest, WSAStartup)
 TEST(SplitTest, ParseQueryString)
 {
     string s = "key1=val1&key2=val2&key3=val3";
-    MultiMap dic;
+    Params dic;
 
     detail::split(s.c_str(), s.c_str() + s.size(), '&', [&](const char* b, const char* e) {
         string key, val;
@@ -54,7 +54,7 @@ TEST(SplitTest, ParseQueryString)
 TEST(ParseQueryTest, ParseQueryString)
 {
     string s = "key1=val1&key2=val2&key3=val3";
-    MultiMap dic;
+    Params dic;
 
     detail::parse_query_text(s, dic);
 
@@ -83,28 +83,28 @@ TEST(SocketTest, OpenCloseWithAI_PASSIVE)
 
 TEST(GetHeaderValueTest, DefaultValue)
 {
-    MultiMap map = {{"Dummy","Dummy"}};
+    Headers map = {{"Dummy","Dummy"}};
     auto val = detail::get_header_value(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/plain", val);
 }
 
 TEST(GetHeaderValueTest, DefaultValueInt)
 {
-    MultiMap map = {{"Dummy","Dummy"}};
+    Headers map = {{"Dummy","Dummy"}};
     auto val = detail::get_header_value_int(map, "Content-Length", 100);
     EXPECT_EQ(100, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue)
 {
-    MultiMap map = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
+    Headers map = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
     auto val = detail::get_header_value(map, "Content-Type", "text/plain");
     ASSERT_STREQ("text/html", val);
 }
 
 TEST(GetHeaderValueTest, RegularValueInt)
 {
-    MultiMap map = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
+    Headers map = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
     auto val = detail::get_header_value_int(map, "Content-Length", 0);
     EXPECT_EQ(100, val);
 }
@@ -310,7 +310,7 @@ TEST_F(ServerTest, PostMethod2)
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(404, res->status);
 
-    MultiMap params;
+    Params params;
     params.emplace("name", "john2");
     params.emplace("note", "coder");
 
@@ -510,6 +510,15 @@ TEST_F(ServerTest, MultipartFormData)
 
 	ASSERT_TRUE(ret);
 	EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, CaseInsensitiveHeaderName)
+{
+    auto res = cli_.get("/hi");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("content-type"));
+    EXPECT_EQ("Hello World!", res->body);
 }
 
 class ServerTestWithAI_PASSIVE : public ::testing::Test {

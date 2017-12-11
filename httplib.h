@@ -73,9 +73,25 @@ typedef int socket_t;
 namespace httplib
 {
 
+namespace detail {
+
+struct ci {
+    bool operator() (const std::string & s1, const std::string & s2) const {
+        return std::lexicographical_compare(
+            s1.begin(), s1.end(),
+            s2.begin(), s2.end(),
+            [](char c1, char c2) {
+                return std::tolower(c1) < std::tolower(c2);
+            });
+    }
+};
+
+} // namespace detail
+
 enum class HttpVersion { v1_0 = 0, v1_1 };
 
-typedef std::multimap<std::string, std::string>              MultiMap;
+typedef std::multimap<std::string, std::string, detail::ci>  Headers;
+typedef std::multimap<std::string, std::string>              Params;
 typedef std::smatch                                          Match;
 typedef std::function<void (int64_t current, int64_t total)> Progress;
 
@@ -90,9 +106,9 @@ typedef std::multimap<std::string, MultipartFile> MultipartFiles;
 struct Request {
     std::string    method;
     std::string    path;
-    MultiMap       headers;
+    Headers        headers;
     std::string    body;
-    MultiMap       params;
+    Params         params;
     MultipartFiles files;
     Match          matches;
     Progress       progress;
@@ -110,7 +126,7 @@ struct Request {
 
 struct Response {
     int         status;
-    MultiMap    headers;
+    Headers     headers;
     std::string body;
 
     bool has_header(const char* key) const;
@@ -198,7 +214,7 @@ public:
     std::shared_ptr<Response> get(const char* path, Progress callback = [](int64_t,int64_t){});
     std::shared_ptr<Response> head(const char* path);
     std::shared_ptr<Response> post(const char* path, const std::string& body, const char* content_type);
-    std::shared_ptr<Response> post(const char* path, const MultiMap& params);
+    std::shared_ptr<Response> post(const char* path, const Params& params);
 
     bool send(const Request& req, Response& res);
 
@@ -562,7 +578,7 @@ inline const char* status_message(int status)
     }
 }
 
-inline const char* get_header_value(const MultiMap& headers, const char* key, const char* def)
+inline const char* get_header_value(const Headers& headers, const char* key, const char* def)
 {
     auto it = headers.find(key);
     if (it != headers.end()) {
@@ -571,7 +587,7 @@ inline const char* get_header_value(const MultiMap& headers, const char* key, co
     return def;
 }
 
-inline int get_header_value_int(const MultiMap& headers, const char* key, int def)
+inline int get_header_value_int(const Headers& headers, const char* key, int def)
 {
     auto it = headers.find(key);
     if (it != headers.end()) {
@@ -580,7 +596,7 @@ inline int get_header_value_int(const MultiMap& headers, const char* key, int de
     return def;
 }
 
-inline bool read_headers(Stream& strm, MultiMap& headers)
+inline bool read_headers(Stream& strm, Headers& headers)
 {
     static std::regex re("(.+?): (.+?)\r\n");
 
@@ -853,7 +869,7 @@ inline std::string decode_url(const std::string& s)
     return result;
 }
 
-inline void parse_query_text(const std::string& s, MultiMap& params)
+inline void parse_query_text(const std::string& s, Params& params)
 {
     split(&s[0], &s[s.size()], '&', [&](const char* b, const char* e) {
         std::string key;
@@ -979,6 +995,17 @@ public:
 
 static WSInit wsinit_;
 #endif
+
+inline std::string to_lower(const char* beg, const char* end)
+{
+    std::string out;
+    auto it = beg;
+    while (it != end) {
+        out += ::tolower(*it);
+        it++;
+    }
+    return out;
+}
 
 } // namespace detail
 
@@ -1497,7 +1524,7 @@ inline std::shared_ptr<Response> Client::post(
 }
 
 inline std::shared_ptr<Response> Client::post(
-    const char* path, const MultiMap& params)
+    const char* path, const Params& params)
 {
     std::string query;
     for (auto it = params.begin(); it != params.end(); ++it) {

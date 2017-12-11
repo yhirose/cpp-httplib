@@ -15,7 +15,7 @@
 using namespace httplib;
 using namespace std;
 
-string dump_headers(const MultiMap& headers)
+string dump_headers(const Headers& headers)
 {
     string s;
     char buf[BUFSIZ];
