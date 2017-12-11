@@ -598,7 +598,7 @@ inline int get_header_value_int(const Headers& headers, const char* key, int def
 
 inline bool read_headers(Stream& strm, Headers& headers)
 {
-    static std::regex re("(.+?): (.+?)\r\n");
+    static std::regex re(R"((.+?):\s*(.+?)\s*\r\n)");
 
     const auto bufsiz = 2048;
     char buf[bufsiz];
