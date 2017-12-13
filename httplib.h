@@ -91,9 +91,13 @@ struct ci {
 enum class HttpVersion { v1_0 = 0, v1_1 };
 
 typedef std::multimap<std::string, std::string, detail::ci>  Headers;
+
+template<typename uint64_t, typename... Args>
+std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args);
+
 typedef std::multimap<std::string, std::string>              Params;
 typedef std::smatch                                          Match;
-typedef std::function<void (int64_t current, int64_t total)> Progress;
+typedef std::function<void (uint64_t current, uint64_t total)> Progress;
 
 struct MultipartFile {
     std::string filename;
@@ -111,11 +115,11 @@ struct Request {
     Params         params;
     MultipartFiles files;
     Match          matches;
+
     Progress       progress;
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
-    void set_header(const char* key, const char* val);
 
     bool has_param(const char* key) const;
     std::string get_param_value(const char* key) const;
@@ -211,10 +215,17 @@ public:
     Client(const char* host, int port, HttpVersion http_version = HttpVersion::v1_0);
     virtual ~Client();
 
-    std::shared_ptr<Response> get(const char* path, Progress callback = [](int64_t,int64_t){});
+    std::shared_ptr<Response> get(const char* path, Progress progress = nullptr);
+    std::shared_ptr<Response> get(const char* path, const Headers& headers, Progress progress = nullptr);
+
     std::shared_ptr<Response> head(const char* path);
+    std::shared_ptr<Response> head(const char* path, const Headers& headers);
+
     std::shared_ptr<Response> post(const char* path, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> post(const char* path, const Headers& headers, const std::string& body, const char* content_type);
+
     std::shared_ptr<Response> post(const char* path, const Params& params);
+    std::shared_ptr<Response> post(const char* path, const Headers& headers, const Params& params);
 
     bool send(const Request& req, Response& res);
 
@@ -633,7 +644,9 @@ bool read_content_with_length(Stream& strm, T& x, size_t len, Progress progress)
         if (r_incr <= 0) {
             return false;
         }
+
         r += r_incr;
+
         if (progress) {
             progress(r, len);
         }
@@ -702,7 +715,7 @@ bool read_content_chunked(Stream& strm, T& x)
 }
 
 template <typename T>
-bool read_content(Stream& strm, T& x, Progress progress = [](int64_t,int64_t){})
+bool read_content(Stream& strm, T& x, Progress progress = Progress())
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
 
@@ -980,6 +993,38 @@ inline bool parse_multipart_formdata(
     return true;
 }
 
+inline std::string to_lower(const char* beg, const char* end)
+{
+    std::string out;
+    auto it = beg;
+    while (it != end) {
+        out += ::tolower(*it);
+        it++;
+    }
+    return out;
+}
+
+inline void make_range_header_core(std::string&) {}
+
+template<typename uint64_t>
+inline void make_range_header_core(std::string& field, uint64_t value)
+{
+    if (!field.empty()) {
+        field += ", ";
+    }
+    field += std::to_string(value) + "-";
+}
+
+template<typename uint64_t, typename... Args>
+inline void make_range_header_core(std::string& field, uint64_t value1, uint64_t value2, Args... args)
+{
+    if (!field.empty()) {
+        field += ", ";
+    }
+    field += std::to_string(value1) + "-" + std::to_string(value2);
+    make_range_header_core(field, args...);
+}
+
 #ifdef _WIN32
 class WSInit {
 public:
@@ -996,18 +1041,17 @@ public:
 static WSInit wsinit_;
 #endif
 
-inline std::string to_lower(const char* beg, const char* end)
-{
-    std::string out;
-    auto it = beg;
-    while (it != end) {
-        out += ::tolower(*it);
-        it++;
-    }
-    return out;
-}
-
 } // namespace detail
+
+// Header utilities
+template<typename uint64_t, typename... Args>
+inline std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args)
+{
+    std::string field;
+    detail::make_range_header_core(field, value, args...);
+    field.insert(0, "bytes=");
+    return std::make_pair("Range", field);
+}
 
 // Request implementation
 inline bool Request::has_header(const char* key) const
@@ -1018,11 +1062,6 @@ inline bool Request::has_header(const char* key) const
 inline std::string Request::get_header_value(const char* key) const
 {
     return detail::get_header_value(headers, key, "");
-}
-
-inline void Request::set_header(const char* key, const char* val)
-{
-    headers.emplace(key, val);
 }
 
 inline bool Request::has_param(const char* key) const
@@ -1485,12 +1524,18 @@ inline bool Client::read_and_close_socket(socket_t sock, const Request& req, Res
     });
 }
 
-inline std::shared_ptr<Response> Client::get(const char* path, Progress callback)
+inline std::shared_ptr<Response> Client::get(const char* path, Progress progress)
+{
+    return get(path, Headers(), progress);
+}
+
+inline std::shared_ptr<Response> Client::get(const char* path, const Headers& headers, Progress progress)
 {
     Request req;
     req.method = "GET";
     req.path = path;
-    req.progress = callback;
+    req.headers = headers;
+    req.progress = progress;
 
     auto res = std::make_shared<Response>();
 
@@ -1499,8 +1544,14 @@ inline std::shared_ptr<Response> Client::get(const char* path, Progress callback
 
 inline std::shared_ptr<Response> Client::head(const char* path)
 {
+    return head(path, Headers());
+}
+
+inline std::shared_ptr<Response> Client::head(const char* path, const Headers& headers)
+{
     Request req;
     req.method = "HEAD";
+    req.headers = headers;
     req.path = path;
 
     auto res = std::make_shared<Response>();
@@ -1511,11 +1562,18 @@ inline std::shared_ptr<Response> Client::head(const char* path)
 inline std::shared_ptr<Response> Client::post(
     const char* path, const std::string& body, const char* content_type)
 {
+    return post(path, Headers(), body, content_type);
+}
+
+inline std::shared_ptr<Response> Client::post(
+    const char* path, const Headers& headers, const std::string& body, const char* content_type)
+{
     Request req;
     req.method = "POST";
+    req.headers = headers;
     req.path = path;
 
-    req.set_header("Content-Type", content_type);
+    req.headers.emplace("Content-Type", content_type);
     req.body = body;
 
     auto res = std::make_shared<Response>();
@@ -1523,8 +1581,12 @@ inline std::shared_ptr<Response> Client::post(
     return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::post(
-    const char* path, const Params& params)
+inline std::shared_ptr<Response> Client::post(const char* path, const Params& params)
+{
+    return post(path, Headers(), params);
+}
+
+inline std::shared_ptr<Response> Client::post(const char* path, const Headers& headers, const Params& params)
 {
     std::string query;
     for (auto it = params.begin(); it != params.end(); ++it) {
@@ -1536,7 +1598,7 @@ inline std::shared_ptr<Response> Client::post(
         query += it->second;
     }
 
-    return post(path, query, "application/x-www-form-urlencoded");
+    return post(path, headers, query, "application/x-www-form-urlencoded");
 }
 
 /*

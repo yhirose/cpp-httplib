@@ -126,13 +126,26 @@ auto res = cli.post("/post", params);
 httplib::Client client(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
-std::shared_ptr<httplib::Response> res = 
-    cli.get("/", [](int64_t len, int64_t total) {
-        printf("%lld / %lld bytes => %d%% complete\n", 
+std::shared_ptr<httplib::Response> res =
+    cli.get("/", [](uint64_t len, uint64_t total) {
+        printf("%lld / %lld bytes => %d%% complete\n",
             len, total,
             (int)((len/total)*100));
     }
 );
+```
+
+### Range (HTTP/1.1)
+
+```cpp
+httplib::Client cli("httpbin.org", 80, httplib::HttpVersion::v1_1);
+
+// 'Range: bytes=1-10'
+httplib::Headers headers = { httplib::make_range_header(1, 10) };
+
+auto res = cli.get("/range/32", headers);
+// res->status should be 206.
+// res->body should be "bcdefghijk".
 ```
 
 ![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
