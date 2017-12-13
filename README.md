@@ -71,7 +71,7 @@ svr.set_error_handler([](const auto& req, auto& res) {
 });
 ```
 
-### `multipart/form-data` POST data
+### 'multipart/form-data' POST data
 
 ```cpp
 svr.post("/multipart", [&](const auto& req, auto& res) {
@@ -135,6 +135,10 @@ std::shared_ptr<httplib::Response> res =
 );
 ```
 
+![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
+
+This feature was contributed by [underscorediscovery](https://github.com/yhirose/cpp-httplib/pull/23).
+
 ### Range (HTTP/1.1)
 
 ```cpp
@@ -147,10 +151,6 @@ auto res = cli.get("/range/32", headers);
 // res->status should be 206.
 // res->body should be "bcdefghijk".
 ```
-
-![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
-
-This feature was contributed by [underscorediscovery](https://github.com/yhirose/cpp-httplib/pull/23).
 
 OpenSSL Support
 ---------------
