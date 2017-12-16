@@ -58,14 +58,6 @@ typedef int socket_t;
 #include <sys/stat.h>
 #include <assert.h>
 
-#ifdef __has_include
-#if __has_include(<openssl/ssl.h>)
-#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-#endif
-#endif
-#endif
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/ssl.h>
 #endif
