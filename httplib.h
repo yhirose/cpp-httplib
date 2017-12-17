@@ -55,6 +55,7 @@ typedef int socket_t;
 #include <memory>
 #include <regex>
 #include <string>
+#include <thread>
 #include <sys/stat.h>
 #include <assert.h>
 
@@ -1236,7 +1237,13 @@ inline bool Server::listen(const char* host, int port, int socket_flags)
         }
 
         // TODO: should be async
+#ifdef CPPHTTPLIB_NO_MULTI_THREAD_SUPPORT
         read_and_close_socket(sock);
+#else
+        std::thread([=]() {
+            read_and_close_socket(sock);
+        }).detach();
+#endif
     }
 
     return ret;

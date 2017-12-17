@@ -7,6 +7,7 @@
 
 #include <httplib.h>
 #include <cstdio>
+#include <chrono>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
@@ -77,7 +78,13 @@ int main(void)
     });
 
     svr.get("/hi", [](const auto& /*req*/, auto& res) {
-        res.set_content("Hello World!", "text/plain");
+        res.set_content("Hello World!\n", "text/plain");
+    });
+
+    svr.get("/slow", [](const auto& /*req*/, auto& res) {
+        using namespace std::chrono_literals;
+        std::this_thread::sleep_for(2s);
+        res.set_content("Slow...\n", "text/plain");
     });
 
     svr.get("/dump", [](const auto& req, auto& res) {
