@@ -169,6 +169,8 @@ public:
     Server();
     virtual ~Server();
 
+    virtual bool is_valid() const;
+
     Server& get(const char* pattern, Handler handler);
     Server& post(const char* pattern, Handler handler);
 
@@ -207,6 +209,8 @@ class Client {
 public:
     Client(const char* host, int port, HttpVersion http_version = HttpVersion::v1_0);
     virtual ~Client();
+
+    virtual bool is_valid() const;
 
     std::shared_ptr<Response> get(const char* path, Progress progress = nullptr);
     std::shared_ptr<Response> get(const char* path, const Headers& headers, Progress progress = nullptr);
@@ -256,6 +260,8 @@ public:
     SSLServer(const char* cert_path, const char* private_key_path);
     virtual ~SSLServer();
 
+    virtual bool is_valid() const;
+
 private:
     virtual bool read_and_close_socket(socket_t sock);
 
@@ -266,6 +272,8 @@ class SSLClient : public Client {
 public:
     SSLClient(const char* host, int port, HttpVersion http_version = HttpVersion::v1_0);
     virtual ~SSLClient();
+
+    virtual bool is_valid() const;
 
 private:
     virtual bool read_and_close_socket(socket_t sock, const Request& req, Response& res);
@@ -1216,6 +1224,10 @@ inline void Server::set_logger(Logger logger)
 
 inline bool Server::listen(const char* host, int port, int socket_flags)
 {
+    if (!is_valid()) {
+        return false;
+    }
+
     svr_sock_ = detail::create_server_socket(host, port, socket_flags);
     if (svr_sock_ == -1) {
         return false;
@@ -1405,6 +1417,11 @@ inline void Server::process_request(Stream& strm)
     write_response(strm, req, res);
 }
 
+inline bool Server::is_valid() const
+{
+    return true;
+}
+
 inline bool Server::read_and_close_socket(socket_t sock)
 {
     return detail::read_and_close_socket(sock, [this](Stream& strm) {
@@ -1424,6 +1441,11 @@ inline Client::Client(const char* host, int port, HttpVersion http_version)
 
 inline Client::~Client()
 {
+}
+
+inline bool Client::is_valid() const
+{
+    return true;
 }
 
 inline bool Client::read_response_line(Stream& strm, Response& res)
@@ -1610,6 +1632,9 @@ template <typename U, typename V, typename T>
 inline bool read_and_close_socket_ssl(socket_t sock, SSL_CTX* ctx, U SSL_connect_or_accept, V setup, T callback)
 {
     auto ssl = SSL_new(ctx);
+    if (!ssl) {
+        return false;
+    }
 
     auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
     SSL_set_bio(ssl, bio, bio);
@@ -1693,6 +1718,11 @@ inline SSLServer::~SSLServer()
     }
 }
 
+inline bool SSLServer::is_valid() const
+{
+    return ctx_;
+}
+
 inline bool SSLServer::read_and_close_socket(socket_t sock)
 {
     return detail::read_and_close_socket_ssl(
@@ -1719,9 +1749,14 @@ inline SSLClient::~SSLClient()
     }
 }
 
+inline bool SSLClient::is_valid() const
+{
+    return ctx_;
+}
+
 inline bool SSLClient::read_and_close_socket(socket_t sock, const Request& req, Response& res)
 {
-    return detail::read_and_close_socket_ssl(
+    return is_valid() && detail::read_and_close_socket_ssl(
         sock, ctx_,
         SSL_connect,
         [&](SSL* ssl) {

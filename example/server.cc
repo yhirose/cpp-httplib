@@ -73,6 +73,11 @@ int main(void)
     Server svr;
 #endif
 
+    if (!svr.is_valid()) {
+        printf("server has an error...\n");
+        return -1;
+    }
+
     svr.get("/", [=](const auto& /*req*/, auto& res) {
         res.set_redirect("/hi");
     });
