@@ -2,7 +2,7 @@
 //  httplib.h
 //
 //  Copyright (c) 2017 Yuji Hirose. All rights reserved.
-//  The Boost Software License 1.0
+//  MIT License
 //
 
 #ifndef _CPPHTTPLIB_HTTPLIB_H_
@@ -63,6 +63,13 @@ typedef int socket_t;
 #include <openssl/ssl.h>
 #endif
 
+/*
+ * Configuration
+ */
+#define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
+#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
+#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
+
 namespace httplib
 {
 
@@ -74,7 +81,7 @@ struct ci {
             s1.begin(), s1.end(),
             s2.begin(), s2.end(),
             [](char c1, char c2) {
-                return std::tolower(c1) < std::tolower(c2);
+                return ::tolower(c1) < ::tolower(c2);
             });
     }
 };
@@ -88,8 +95,8 @@ typedef std::multimap<std::string, std::string, detail::ci>  Headers;
 template<typename uint64_t, typename... Args>
 std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args);
 
-typedef std::multimap<std::string, std::string>              Params;
-typedef std::smatch                                          Match;
+typedef std::multimap<std::string, std::string>                Params;
+typedef std::smatch                                            Match;
 typedef std::function<void (uint64_t current, uint64_t total)> Progress;
 
 struct MultipartFile {
@@ -101,6 +108,7 @@ struct MultipartFile {
 typedef std::multimap<std::string, MultipartFile> MultipartFiles;
 
 struct Request {
+    std::string    version;
     std::string    method;
     std::string    path;
     Headers        headers;
@@ -113,6 +121,7 @@ struct Request {
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
+    void set_header(const char* key, const char* val);
 
     bool has_param(const char* key) const;
     std::string get_param_value(const char* key) const;
@@ -122,6 +131,7 @@ struct Request {
 };
 
 struct Response {
+    std::string version;
     int         status;
     Headers     headers;
     std::string body;
@@ -166,7 +176,8 @@ public:
     typedef std::function<void (const Request&, Response&)> Handler;
     typedef std::function<void (const Request&, const Response&)> Logger;
 
-    Server();
+    Server(HttpVersion http_version = HttpVersion::v1_0);
+
     virtual ~Server();
 
     virtual bool is_valid() const;
@@ -180,10 +191,14 @@ public:
     void set_logger(Logger logger);
 
     bool listen(const char* host, int port, int socket_flags = 0);
+
+    bool is_running() const;
     void stop();
 
 protected:
-    void process_request(Stream& strm);
+    bool process_request(Stream& strm, bool last_connection);
+
+    const HttpVersion http_version_;
 
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
@@ -192,8 +207,8 @@ private:
     bool handle_file_request(Request& req, Response& res);
     bool dispatch_request(Request& req, Response& res, Handlers& handlers);
 
-    bool read_request_line(Stream& strm, Request& req);
-    void write_response(Stream& strm, const Request& req, Response& res);
+    bool parse_request_line(const char* s, Request& req);
+    void write_response(Stream& strm, bool last_connection, const Request& req, Response& res);
 
     virtual bool read_and_close_socket(socket_t sock);
 
@@ -224,10 +239,10 @@ public:
     std::shared_ptr<Response> post(const char* path, const Params& params);
     std::shared_ptr<Response> post(const char* path, const Headers& headers, const Params& params);
 
-    bool send(const Request& req, Response& res);
+    bool send(Request& req, Response& res);
 
 protected:
-    bool process_request(Stream& strm, const Request& req, Response& res);
+    bool process_request(Stream& strm, Request& req, Response& res);
 
     const std::string host_;
     const int         port_;
@@ -236,9 +251,9 @@ protected:
 
 private:
     bool read_response_line(Stream& strm, Response& res);
-    void write_request(Stream& strm, const Request& req, const char* ver);
+    void write_request(Stream& strm, Request& req);
 
-    virtual bool read_and_close_socket(socket_t sock, const Request& req, Response& res);
+    virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -257,7 +272,10 @@ private:
 
 class SSLServer : public Server {
 public:
-    SSLServer(const char* cert_path, const char* private_key_path);
+    SSLServer(
+        const char* cert_path, const char* private_key_path,
+        HttpVersion http_version = HttpVersion::v1_0);
+
     virtual ~SSLServer();
 
     virtual bool is_valid() const;
@@ -276,7 +294,7 @@ public:
     virtual bool is_valid() const;
 
 private:
-    virtual bool read_and_close_socket(socket_t sock, const Request& req, Response& res);
+    virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
 
     SSL_CTX* ctx_;
 };
@@ -330,13 +348,13 @@ public:
         fixed_buffer_used_size_ = 0;
         glowable_buffer_.clear();
 
-        size_t i = 0;
-
-        for (;;) {
+        for (size_t i = 0; ; i++) {
             char byte;
             auto n = strm_.read(&byte, 1);
 
-            if (n < 1) {
+            if (n < 0) {
+                return false;
+            } else if (n == 0) {
                 if (i == 0) {
                     return false;
                 } else {
@@ -351,17 +369,18 @@ public:
             }
         }
 
-        append('\0');
         return true;
     }
 
 private:
     void append(char c) {
-        if (fixed_buffer_used_size_ < fixed_buffer_size_) {
+        if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
             fixed_buffer_[fixed_buffer_used_size_++] = c;
+            fixed_buffer_[fixed_buffer_used_size_] = '\0';
         } else {
             if (glowable_buffer_.empty()) {
-                glowable_buffer_.assign(fixed_buffer_, fixed_buffer_size_);
+                assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
+                glowable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
             }
             glowable_buffer_ += c;
         }
@@ -383,11 +402,43 @@ inline int close_socket(socket_t sock)
 #endif
 }
 
-template <typename T>
-inline bool read_and_close_socket(socket_t sock, T callback)
+inline int select(socket_t sock, size_t sec, size_t usec)
 {
-    SocketStream strm(sock);
-    auto ret = callback(strm);
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(sock, &fds);
+
+    timeval tv;
+    tv.tv_sec = sec;
+    tv.tv_usec = usec;
+
+    return ::select(sock + 1, &fds, NULL, NULL, &tv);
+}
+
+template <typename T>
+inline bool read_and_close_socket(socket_t sock, bool keep_alive, T callback)
+{
+    bool ret = false;
+
+    if (keep_alive) {
+        auto count = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+        while (count > 0 &&
+               detail::select(sock,
+                   CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
+                   CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
+            auto last_connection = count == 1;
+            SocketStream strm(sock);
+            ret = callback(strm, last_connection);
+            if (!ret) {
+                break;
+            }
+            count--;
+        }
+    } else {
+        SocketStream strm(sock);
+        ret = callback(strm, true);
+    }
+
     close_socket(sock);
     return ret;
 }
@@ -641,12 +692,12 @@ bool read_content_with_length(Stream& strm, T& x, size_t len, Progress progress)
     x.body.assign(len, 0);
     size_t r = 0;
     while (r < len){
-        auto r_incr = strm.read(&x.body[r], len - r);
-        if (r_incr <= 0) {
+        auto n = strm.read(&x.body[r], len - r);
+        if (n <= 0) {
             return false;
         }
 
-        r += r_incr;
+        r += n;
 
         if (progress) {
             progress(r, len);
@@ -665,7 +716,7 @@ bool read_content_without_length(Stream& strm, T& x)
         if (n < 0) {
             return false;
         } else if (n == 0) {
-            break;
+            return true;
         }
         x.body += byte;
     }
@@ -738,17 +789,10 @@ bool read_content(Stream& strm, T& x, Progress progress = Progress())
 template <typename T>
 inline void write_headers(Stream& strm, const T& info)
 {
-    strm.write("Connection: close\r\n");
-
     for (const auto& x: info.headers) {
-        if (x.first != "Content-Type" && x.first != "Content-Length") {
-            strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
-        }
+        strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
     }
-
-    auto t = get_header_value(info.headers, "Content-Type", "text/plain");
-    strm.write_format("Content-Type: %s\r\n", t);
-    strm.write_format("Content-Length: %ld\r\n", info.body.size());
+    strm.write("\r\n");
 }
 
 inline std::string encode_url(const std::string& s)
@@ -1065,6 +1109,11 @@ inline std::string Request::get_header_value(const char* key) const
     return detail::get_header_value(headers, key, "");
 }
 
+inline void Request::set_header(const char* key, const char* val)
+{
+    headers.emplace(key, val);
+}
+
 inline bool Request::has_param(const char* key) const
 {
     return params.find(key) != params.end();
@@ -1134,7 +1183,11 @@ inline void Stream::write_format(const char* fmt, const Args& ...args)
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    auto n = _snprintf_s(buf, bufsiz, bufsiz - 1, fmt, args...);
+#else
     auto n = snprintf(buf, bufsiz - 1, fmt, args...);
+#endif
     if (n > 0) {
         if (n >= bufsiz - 1) {
             std::vector<char> glowable_buf(bufsiz);
@@ -1179,8 +1232,9 @@ inline int SocketStream::write(const char* ptr)
 }
 
 // HTTP server implementation
-inline Server::Server()
-    : svr_sock_(-1)
+inline Server::Server(HttpVersion http_version)
+    : http_version_(http_version)
+    , svr_sock_(-1)
 {
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
@@ -1236,6 +1290,16 @@ inline bool Server::listen(const char* host, int port, int socket_flags)
     auto ret = true;
 
     for (;;) {
+        auto val = detail::select(svr_sock_, 0, 100000);
+
+        if (val == 0) { // Timeout
+            if (svr_sock_ == -1) {
+                // The server socket was closed by 'stop' method.
+                break;
+            }
+            continue;
+        }
+
         socket_t sock = accept(svr_sock_, NULL, NULL);
 
         if (sock == -1) {
@@ -1248,17 +1312,18 @@ inline bool Server::listen(const char* host, int port, int socket_flags)
             break;
         }
 
-        // TODO: should be async
-#ifdef CPPHTTPLIB_NO_MULTI_THREAD_SUPPORT
-        read_and_close_socket(sock);
-#else
+        // TODO: Use thread pool...
         std::thread([=]() {
             read_and_close_socket(sock);
         }).detach();
-#endif
     }
 
     return ret;
+}
+
+inline bool Server::is_running() const
+{
+    return svr_sock_ != -1;
 }
 
 inline void Server::stop()
@@ -1268,21 +1333,13 @@ inline void Server::stop()
     svr_sock_ = -1;
 }
 
-inline bool Server::read_request_line(Stream& strm, Request& req)
+inline bool Server::parse_request_line(const char* s, Request& req)
 {
-    const auto bufsiz = 2048;
-    char buf[bufsiz];
-
-    detail::stream_line_reader reader(strm, buf, bufsiz);
-
-    if (!reader.getline()) {
-        return false;
-    }
-
-    static std::regex re("(GET|HEAD|POST) ([^?]+)(?:\\?(.+?))? HTTP/1\\.[01]\r\n");
+    static std::regex re("(GET|HEAD|POST) ([^?]+)(?:\\?(.+?))? (HTTP/1\\.[01])\r\n");
 
     std::cmatch m;
-    if (std::regex_match(reader.ptr(), m, re)) {
+    if (std::regex_match(s, m, re)) {
+        req.version = std::string(m[4]);
         req.method = std::string(m[1]);
         req.path = detail::decode_url(m[2]);
 
@@ -1298,7 +1355,7 @@ inline bool Server::read_request_line(Stream& strm, Request& req)
     return false;
 }
 
-inline void Server::write_response(Stream& strm, const Request& req, Response& res)
+inline void Server::write_response(Stream& strm, bool last_connection, const Request& req, Response& res)
 {
     assert(res.status != -1);
 
@@ -1306,17 +1363,34 @@ inline void Server::write_response(Stream& strm, const Request& req, Response& r
         error_handler_(req, res);
     }
 
-    strm.write_format(
-        "HTTP/1.0 %d %s\r\n",
-        res.status, detail::status_message(res.status));
+    // Response line
+    strm.write_format("%s %d %s\r\n",
+        detail::http_version_strings[static_cast<size_t>(http_version_)],
+        res.status,
+        detail::status_message(res.status));
+
+    // Headers
+    if (!res.has_header("Connection") && (last_connection || req.version == "HTTP/1.0")) {
+        res.set_header("Connection", "close");
+    }
+
+    if (!res.body.empty()) {
+        if (!res.has_header("Content-Type")) {
+            res.set_header("Content-Type", "application/octet-stream");
+        }
+
+        auto length = std::to_string(res.body.size());
+        res.set_header("Content-Length", length.c_str());
+    }
 
     detail::write_headers(strm, res);
-    strm.write("\r\n");
 
+    // Body
     if (!res.body.empty() && req.method != "HEAD") {
         strm.write(res.body.c_str(), res.body.size());
     }
 
+    // Log
     if (logger_) {
         logger_(req, res);
     }
@@ -1373,22 +1447,41 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
     return false;
 }
 
-inline void Server::process_request(Stream& strm)
+inline bool Server::process_request(Stream& strm, bool last_connection)
 {
+    const auto bufsiz = 2048;
+    char buf[bufsiz];
+
+    detail::stream_line_reader reader(strm, buf, bufsiz);
+
+    // Connection has been closed on client
+    if (!reader.getline()) {
+        return false;
+    }
+
     Request req;
     Response res;
 
-    if (!read_request_line(strm, req) || !detail::read_headers(strm, req.headers)) {
+    res.version = detail::http_version_strings[static_cast<size_t>(http_version_)];
+
+    // Request line and headers
+    if (!parse_request_line(reader.ptr(), req) || !detail::read_headers(strm, req.headers)) {
         res.status = 400;
-        write_response(strm, req, res);
-        return;
+        write_response(strm, last_connection, req, res);
+        return true;
     }
 
+    auto ret = true;
+    if (req.get_header_value("Connection") == "close") {
+        ret = false;
+    }
+
+    // Body
     if (req.method == "POST") {
         if (!detail::read_content(strm, req)) {
             res.status = 400;
-            write_response(strm, req, res);
-            return;
+            write_response(strm, last_connection, req, res);
+            return ret;
         }
 
         const auto& content_type = req.get_header_value("Content-Type");
@@ -1400,8 +1493,8 @@ inline void Server::process_request(Stream& strm)
             if (!detail::parse_multipart_boundary(content_type, boundary) ||
                 !detail::parse_multipart_formdata(boundary, req.body, req.files)) {
                 res.status = 400;
-                write_response(strm, req, res);
-                return;
+                write_response(strm, last_connection, req, res);
+                return ret;
             }
         }
     }
@@ -1414,7 +1507,8 @@ inline void Server::process_request(Stream& strm)
         res.status = 404;
     }
 
-    write_response(strm, req, res);
+    write_response(strm, last_connection, req, res);
+    return ret;
 }
 
 inline bool Server::is_valid() const
@@ -1424,10 +1518,14 @@ inline bool Server::is_valid() const
 
 inline bool Server::read_and_close_socket(socket_t sock)
 {
-    return detail::read_and_close_socket(sock, [this](Stream& strm) {
-        process_request(strm);
-        return true;
-    });
+    auto keep_alive = http_version_ == HttpVersion::v1_1;
+
+    return detail::read_and_close_socket(
+        sock,
+        keep_alive,
+        [this](Stream& strm, bool last_connection) {
+            return process_request(strm, last_connection);
+        });
 }
 
 // HTTP client implementation
@@ -1469,7 +1567,7 @@ inline bool Client::read_response_line(Stream& strm, Response& res)
     return true;
 }
 
-inline bool Client::send(const Request& req, Response& res)
+inline bool Client::send(Request& req, Response& res)
 {
     if (req.path.empty()) {
         return false;
@@ -1483,28 +1581,42 @@ inline bool Client::send(const Request& req, Response& res)
     return read_and_close_socket(sock, req, res);
 }
 
-inline void Client::write_request(Stream& strm, const Request& req, const char* ver)
+inline void Client::write_request(Stream& strm, Request& req)
 {
     auto path = detail::encode_url(req.path);
 
     // Request line
-    strm.write_format(
-        "%s %s %s\r\n", req.method.c_str(), path.c_str(), ver);
+    strm.write_format("%s %s %s\r\n",
+        req.method.c_str(),
+        path.c_str(),
+        detail::http_version_strings[static_cast<size_t>(http_version_)]);
 
     // Headers
-    strm.write_format("Host: %s\r\n", host_and_port_.c_str());
+    req.set_header("Host", host_and_port_.c_str());
 
     if (!req.has_header("Accept")) {
-        strm.write("Accept: */*\r\n");
+        req.set_header("Accept", "*/*");
     }
 
     if (!req.has_header("User-Agent")) {
-        strm.write("User-Agent: cpp-httplib/0.1\r\n");
+        req.set_header("User-Agent", "cpp-httplib/0.2");
+    }
+
+    // TODO: if (!req.has_header("Connection") && (last_connection || http_version_ == detail::HttpVersion::v1_0)) {
+    if (!req.has_header("Connection")) {
+        req.set_header("Connection", "close");
+    }
+
+    if (!req.body.empty()) {
+        if (!req.has_header("Content-Type")) {
+            req.set_header("Content-Type", "application/octet-stream");
+        }
+
+        auto length = std::to_string(req.body.size());
+        req.set_header("Content-Length", length.c_str());
     }
 
     detail::write_headers(strm, req);
-
-    strm.write("\r\n");
 
     // Body
     if (!req.body.empty()) {
@@ -1517,18 +1629,19 @@ inline void Client::write_request(Stream& strm, const Request& req, const char* 
     }
 }
 
-inline bool Client::process_request(Stream& strm, const Request& req, Response& res)
+inline bool Client::process_request(Stream& strm, Request& req, Response& res)
 {
     // Send request
-    auto ver = detail::http_version_strings[static_cast<size_t>(http_version_)];
-    write_request(strm, req, ver);
+    write_request(strm, req);
 
-    // Receive response
-    if (!read_response_line(strm, res) ||
-        !detail::read_headers(strm, res.headers)) {
+    // Receive response and headers
+    if (!read_response_line(strm, res) || !detail::read_headers(strm, res.headers)) {
         return false;
     }
 
+    // TODO: Check if 'Connection' header is 'close' or HTTP version is 1.0, then close socket...
+
+    // Body
     if (req.method != "HEAD") {
         if (!detail::read_content(strm, res, req.progress)) {
             return false;
@@ -1538,9 +1651,9 @@ inline bool Client::process_request(Stream& strm, const Request& req, Response& 
     return true;
 }
 
-inline bool Client::read_and_close_socket(socket_t sock, const Request& req, Response& res)
+inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response& res)
 {
-    return detail::read_and_close_socket(sock, [&](Stream& strm) {
+    return detail::read_and_close_socket(sock, false, [&](Stream& strm, bool /*last_connection*/) {
         return process_request(strm, req, res);
     });
 }
@@ -1629,7 +1742,10 @@ inline std::shared_ptr<Response> Client::post(const char* path, const Headers& h
 namespace detail {
 
 template <typename U, typename V, typename T>
-inline bool read_and_close_socket_ssl(socket_t sock, SSL_CTX* ctx, U SSL_connect_or_accept, V setup, T callback)
+inline bool read_and_close_socket_ssl(
+    socket_t sock, bool keep_alive,
+    SSL_CTX* ctx, U SSL_connect_or_accept, V setup,
+    T callback)
 {
     auto ssl = SSL_new(ctx);
     if (!ssl) {
@@ -1643,8 +1759,26 @@ inline bool read_and_close_socket_ssl(socket_t sock, SSL_CTX* ctx, U SSL_connect
 
     SSL_connect_or_accept(ssl);
 
-    SSLSocketStream strm(ssl);
-    auto ret = callback(strm);
+    bool ret = false;
+
+    if (keep_alive) {
+        auto count = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+        while (count > 0 &&
+               detail::select(sock,
+                   CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
+                   CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
+            auto last_connection = count == 1;
+            SSLSocketStream strm(ssl);
+            ret = callback(strm, last_connection);
+            if (!ret) {
+                break;
+            }
+            count--;
+        }
+    } else {
+        SSLSocketStream strm(ssl);
+        ret = callback(strm, true);
+    }
 
     SSL_shutdown(ssl);
     SSL_free(ssl);
@@ -1689,7 +1823,8 @@ inline int SSLSocketStream::write(const char* ptr)
 }
 
 // SSL HTTP server implementation
-inline SSLServer::SSLServer(const char* cert_path, const char* private_key_path)
+inline SSLServer::SSLServer(const char* cert_path, const char* private_key_path, HttpVersion http_version)
+    : Server(http_version)
 {
     ctx_ = SSL_CTX_new(SSLv23_server_method());
 
@@ -1725,13 +1860,16 @@ inline bool SSLServer::is_valid() const
 
 inline bool SSLServer::read_and_close_socket(socket_t sock)
 {
+    auto keep_alive = http_version_ == HttpVersion::v1_1;
+
     return detail::read_and_close_socket_ssl(
-        sock, ctx_,
+        sock,
+        keep_alive,
+        ctx_,
         SSL_accept,
         [](SSL* /*ssl*/) {},
-        [this](Stream& strm) {
-            process_request(strm);
-            return true;
+        [this](Stream& strm, bool last_connection) {
+            return process_request(strm, last_connection);
         });
 }
 
@@ -1754,15 +1892,15 @@ inline bool SSLClient::is_valid() const
     return ctx_;
 }
 
-inline bool SSLClient::read_and_close_socket(socket_t sock, const Request& req, Response& res)
+inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Response& res)
 {
     return is_valid() && detail::read_and_close_socket_ssl(
-        sock, ctx_,
-        SSL_connect,
+        sock, false,
+        ctx_, SSL_connect,
         [&](SSL* ssl) {
             SSL_set_tlsext_host_name(ssl, host_.c_str());
         },
-        [&](Stream& strm) {
+        [&](Stream& strm, bool /*last_connection*/) {
             return process_request(strm, req, res);
         });
 }

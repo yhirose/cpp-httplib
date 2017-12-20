@@ -67,7 +67,7 @@ string log(const Request& req, const Response& res)
 
     s += "================================\n";
 
-    snprintf(buf, sizeof(buf), "%s %s", req.method.c_str(), req.path.c_str());
+    snprintf(buf, sizeof(buf), "%s %s %s", req.method.c_str(), req.path.c_str(), req.version.c_str());
     s += buf;
 
     string query;
@@ -99,10 +99,12 @@ int main(int argc, const char** argv)
         return 1;
     }
 
+    auto version = httplib::HttpVersion::v1_1;
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, version);
 #else
-    Server svr;
+    Server svr(version);
 #endif
 
     svr.post("/multipart", [](const auto& req, auto& res) {

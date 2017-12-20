@@ -139,11 +139,12 @@ TEST(GetHeaderValueTest, Range)
 void testChunkedEncoding(httplib::HttpVersion ver)
 {
     auto host = "www.httpwatch.com";
-    auto port = 80;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
     httplib::SSLClient cli(host, port, ver);
 #else
+    auto port = 80;
     httplib::Client cli(host, port, ver);
 #endif
 
@@ -166,11 +167,12 @@ TEST(ChunkedEncodingTest, FromHTTPWatch)
 TEST(RangeTest, FromHTTPBin)
 {
     auto host = "httpbin.org";
-    auto port = 80;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
     httplib::SSLClient cli(host, port, httplib::HttpVersion::v1_1);
 #else
+    auto port = 80;
     httplib::Client cli(host, port, httplib::HttpVersion::v1_1);
 #endif
 
@@ -265,27 +267,23 @@ protected:
                     EXPECT_EQ("application/octet-stream", file.content_type);
                     EXPECT_EQ(0u, file.length);
                 }
-            })
-            .get("/stop", [&](const Request& /*req*/, Response& /*res*/) {
-                svr_.stop();
             });
 
         persons_["john"] = "programmer";
 
-        f_ = async([&](){
+        t_ = thread([&](){
             up_ = true;
             svr_.listen(HOST, PORT);
         });
 
-        while (!up_) {
+        while (!svr_.is_running()) {
             msleep(1);
         }
     }
 
     virtual void TearDown() {
-        //svr_.stop(); // NOTE: This causes dead lock on Windows.
-        cli_.get("/stop");
-        f_.get();
+        svr_.stop();
+        t_.join();
     }
 
     map<string, string> persons_;
@@ -296,7 +294,7 @@ protected:
     Client              cli_;
     Server              svr_;
 #endif
-    future<void>        f_;
+    thread              t_;
     bool                up_;
 };
 

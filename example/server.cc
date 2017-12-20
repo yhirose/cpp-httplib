@@ -35,7 +35,7 @@ std::string log(const Request& req, const Response& res)
 
     s += "================================\n";
 
-    snprintf(buf, sizeof(buf), "%s %s", req.method.c_str(), req.path.c_str());
+    snprintf(buf, sizeof(buf), "%s %s %s", req.method.c_str(), req.path.c_str(), req.version.c_str());
     s += buf;
 
     std::string query;
@@ -52,9 +52,10 @@ std::string log(const Request& req, const Response& res)
 
     s += "--------------------------------\n";
 
-    snprintf(buf, sizeof(buf), "%d\n", res.status);
+    snprintf(buf, sizeof(buf), "%d %s\n", res.status, res.version.c_str());
     s += buf;
     s += dump_headers(res.headers);
+    s += "\n";
 
     if (!res.body.empty()) {
         s += res.body;
@@ -67,10 +68,12 @@ std::string log(const Request& req, const Response& res)
 
 int main(void)
 {
+    auto version = httplib::HttpVersion::v1_1;
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, version);
 #else
-    Server svr;
+    Server svr(version);
 #endif
 
     if (!svr.is_valid()) {
