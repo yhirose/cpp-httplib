@@ -3,8 +3,6 @@ cpp-httplib
 
 A C++11 header-only HTTP library.
 
-[The Boost Software License 1.0](http://www.boost.org/LICENSE_1_0.txt)
-
 It's extremely easy to setup. Just include **httplib.h** file in your code!
 
 Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.com/visionmedia/express).
@@ -139,10 +137,10 @@ std::shared_ptr<httplib::Response> res =
 
 This feature was contributed by [underscorediscovery](https://github.com/yhirose/cpp-httplib/pull/23).
 
-### Range (HTTP/1.1)
+### Range
 
 ```cpp
-httplib::Client cli("httpbin.org", 80, httplib::HttpVersion::v1_1);
+httplib::Client cli("httpbin.org", 80);
 
 // 'Range: bytes=1-10'
 httplib::Headers headers = { httplib::make_range_header(1, 10) };
@@ -165,4 +163,7 @@ SSLServer svr("./cert.pem", "./key.pem");
 SSLClient cli("localhost", 8080);
 ```
 
-Copyright (c) 2017 Yuji Hirose. All rights reserved.
+License
+-------
+
+MIT license (© 2017 Yuji Hirose)
