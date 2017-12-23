@@ -1376,7 +1376,7 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
     if (!res.body.empty()) {
         if (!res.has_header("Content-Type")) {
-            res.set_header("Content-Type", "application/octet-stream");
+            res.set_header("Content-Type", "text/plain");
         }
 
         auto length = std::to_string(res.body.size());
@@ -1602,14 +1602,15 @@ inline void Client::write_request(Stream& strm, Request& req)
         req.set_header("User-Agent", "cpp-httplib/0.2");
     }
 
-    // TODO: if (!req.has_header("Connection") && (last_connection || http_version_ == detail::HttpVersion::v1_0)) {
+    // TODO: if (!req.has_header("Connection") &&
+    //           (last_connection || http_version_ == detail::HttpVersion::v1_0)) {
     if (!req.has_header("Connection")) {
         req.set_header("Connection", "close");
     }
 
     if (!req.body.empty()) {
         if (!req.has_header("Content-Type")) {
-            req.set_header("Content-Type", "application/octet-stream");
+            req.set_header("Content-Type", "text/plain");
         }
 
         auto length = std::to_string(req.body.size());
@@ -1620,7 +1621,7 @@ inline void Client::write_request(Stream& strm, Request& req)
 
     // Body
     if (!req.body.empty()) {
-        if (req.has_header("application/x-www-form-urlencoded")) {
+        if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
             auto str = detail::encode_url(req.body);
             strm.write(str.c_str(), str.size());
         } else {
