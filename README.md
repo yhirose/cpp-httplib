@@ -163,6 +163,20 @@ SSLServer svr("./cert.pem", "./key.pem");
 SSLClient cli("localhost", 8080);
 ```
 
+Zlib Support
+------------
+
+'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`.
+
+The server applies gzip compression to the following MIME type contents:
+
+  * all text types
+  * image/svg+xml
+  * application/javascript
+  * application/json
+  * application/xml
+  * application/xhtml+xml
+
 License
 -------
 

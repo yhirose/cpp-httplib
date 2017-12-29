@@ -267,7 +267,16 @@ protected:
                     EXPECT_EQ("application/octet-stream", file.content_type);
                     EXPECT_EQ(0u, file.length);
                 }
-            });
+            })
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+            .get("/gzip", [&](const Request& /*req*/, Response& res) {
+                res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "text/plain");
+            })
+            .get("/nogzip", [&](const Request& /*req*/, Response& res) {
+                res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "application/octet-stream");
+            })
+#endif
+            ;
 
         persons_["john"] = "programmer";
 
@@ -579,6 +588,34 @@ TEST_F(ServerTest, CaseInsensitiveHeaderName)
     EXPECT_EQ("text/plain", res->get_header_value("content-type"));
     EXPECT_EQ("Hello World!", res->body);
 }
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST_F(ServerTest, Gzip)
+{
+    Headers headers;
+    headers.emplace("Accept-Encoding", "gzip, deflate");
+    auto res = cli_.get("/gzip", headers);
+
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("33", res->get_header_value("Content-Length"));
+    EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, NoGzip)
+{
+    Headers headers;
+    headers.emplace("Accept-Encoding", "gzip, deflate");
+    auto res = cli_.get("/nogzip", headers);
+
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(false, res->has_header("Content-Encoding"));
+    EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
+    EXPECT_EQ("100", res->get_header_value("Content-Length"));
+    EXPECT_EQ(200, res->status);
+}
+#endif
 
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:

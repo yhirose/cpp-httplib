@@ -63,6 +63,10 @@ typedef int socket_t;
 #include <openssl/ssl.h>
 #endif
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+#include <zlib.h>
+#endif
+
 /*
  * Configuration
  */
@@ -597,19 +601,15 @@ inline std::string file_extension(const std::string& path)
     return std::string();
 }
 
-inline const char* content_type(const std::string& path)
+inline const char* find_content_type(const std::string& path)
 {
     auto ext = file_extension(path);
     if (ext == "txt") {
         return "text/plain";
     } else if (ext == "html") {
         return "text/html";
-    } else if (ext == "js") {
-        return "text/javascript";
     } else if (ext == "css") {
         return "text/css";
-    } else if (ext == "xml") {
-        return "text/xml";
     } else if (ext == "jpeg" || ext == "jpg") {
         return "image/jpg";
     } else if (ext == "png") {
@@ -624,6 +624,10 @@ inline const char* content_type(const std::string& path)
         return "application/json";
     } else if (ext == "pdf") {
         return "application/pdf";
+    } else if (ext == "js") {
+        return "application/javascript";
+    } else if (ext == "xml") {
+        return "application/xml";
     } else if (ext == "xhtml") {
         return "application/xhtml+xml";
     }
@@ -774,7 +778,7 @@ bool read_content(Stream& strm, T& x, Progress progress = Progress())
     if (len) {
         return read_content_with_length(strm, x, len, progress);
     } else {
-        auto encoding = get_header_value(x.headers, "Transfer-Encoding", "");
+        const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
 
         if (!strcmp(encoding, "chunked")) {
             return read_content_chunked(strm, x);
@@ -1069,6 +1073,59 @@ inline void make_range_header_core(std::string& field, uint64_t value1, uint64_t
     field += std::to_string(value1) + "-" + std::to_string(value2);
     make_range_header_core(field, args...);
 }
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+inline bool can_compress(const std::string& content_type) {
+    return !content_type.find("text/") ||
+        content_type == "image/svg+xml" ||
+        content_type == "application/javascript" ||
+        content_type == "application/json" ||
+        content_type == "application/xml" ||
+        content_type == "application/xhtml+xml";
+}
+
+inline void compress(const Request& req, Response& res)
+{
+    // TODO: Server version is HTTP/1.1 and 'Accpet-Encoding' has gzip, not gzip;q=0
+    const auto& encodings = req.get_header_value("Accept-Encoding");
+    if (encodings.find("gzip") == std::string::npos) {
+        return;
+    }
+
+    if (!can_compress(res.get_header_value("Content-Type"))) {
+        return;
+    }
+
+    z_stream strm;
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+
+    auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY);
+    if (ret != Z_OK) {
+        return;
+    }
+
+    strm.avail_in = res.body.size();
+    strm.next_in = (Bytef *)res.body.data();
+
+    std::string compressed;
+
+    const auto bufsiz = 16384;
+    char buff[bufsiz];
+    do {
+        strm.avail_out = bufsiz;
+        strm.next_out = (Bytef *)buff;
+        deflate(&strm, Z_FINISH);
+        compressed.append(buff, bufsiz - strm.avail_out);
+    } while (strm.avail_out == 0);
+
+    res.set_header("Content-Encoding", "gzip");
+    res.body.swap(compressed);
+
+    deflateEnd(&strm);
+}
+#endif
 
 #ifdef _WIN32
 class WSInit {
@@ -1375,6 +1432,10 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
     }
 
     if (!res.body.empty()) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+        detail::compress(req, res);
+#endif
+
         if (!res.has_header("Content-Type")) {
             res.set_header("Content-Type", "text/plain");
         }
@@ -1407,7 +1468,7 @@ inline bool Server::handle_file_request(Request& req, Response& res)
 
         if (detail::is_file(path)) {
             detail::read_file(path, res.body);
-            auto type = detail::content_type(path);
+            auto type = detail::find_content_type(path);
             if (type) {
                 res.set_header("Content-Type", type);
             }
