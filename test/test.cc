@@ -208,7 +208,7 @@ protected:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         , svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
-        , up_(false) {}
+        {}
 
     virtual void SetUp() {
 		svr_.set_base_dir("./www");
@@ -272,7 +272,6 @@ protected:
         persons_["john"] = "programmer";
 
         t_ = thread([&](){
-            up_ = true;
             svr_.listen(HOST, PORT);
         });
 
@@ -295,7 +294,6 @@ protected:
     Server              svr_;
 #endif
     thread              t_;
-    bool                up_;
 };
 
 TEST_F(ServerTest, GetMethod200)
@@ -589,31 +587,25 @@ protected:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         , svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
-        , up_(false) {}
+        {}
 
     virtual void SetUp() {
         svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
             res.set_content("Hello World!", "text/plain");
         });
 
-        svr_.get("/stop", [&](const Request& /*req*/, Response& /*res*/) {
-            svr_.stop();
-        });
-
-        f_ = async([&](){
-            up_ = true;
+        t_ = thread([&](){
             svr_.listen(nullptr, PORT, AI_PASSIVE);
         });
 
-        while (!up_) {
+        while (!svr_.is_running()) {
             msleep(1);
         }
     }
 
     virtual void TearDown() {
-        //svr_.stop(); // NOTE: This causes dead lock on Windows.
-        cli_.get("/stop");
-        f_.get();
+        svr_.stop();
+        t_.join();
     }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -623,8 +615,7 @@ protected:
     Client              cli_;
     Server              svr_;
 #endif
-    future<void>        f_;
-    bool                up_;
+    thread              t_;
 };
 
 TEST_F(ServerTestWithAI_PASSIVE, GetMethod200)
