@@ -63,24 +63,6 @@ TEST(ParseQueryTest, ParseQueryString)
     EXPECT_EQ("val3", dic.find("key3")->second);
 }
 
-TEST(SocketTest, OpenClose)
-{
-    socket_t sock = detail::create_server_socket(HOST, PORT, 0);
-    ASSERT_NE(-1, sock);
-
-    auto ret = detail::close_socket(sock);
-    EXPECT_EQ(0, ret);
-}
-
-TEST(SocketTest, OpenCloseWithAI_PASSIVE)
-{
-    socket_t sock = detail::create_server_socket(nullptr, PORT, AI_PASSIVE);
-    ASSERT_NE(-1, sock);
-
-    auto ret = detail::close_socket(sock);
-    EXPECT_EQ(0, ret);
-}
-
 TEST(GetHeaderValueTest, DefaultValue)
 {
     Headers headers = {{"Dummy","Dummy"}};
@@ -139,13 +121,14 @@ TEST(GetHeaderValueTest, Range)
 void testChunkedEncoding(httplib::HttpVersion ver)
 {
     auto host = "www.httpwatch.com";
+    auto sec = 5;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 443;
-    httplib::SSLClient cli(host, port, ver);
+    httplib::SSLClient cli(host, port, sec, ver);
 #else
     auto port = 80;
-    httplib::Client cli(host, port, ver);
+    httplib::Client cli(host, port, sec, ver);
 #endif
 
     auto res = cli.get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
@@ -167,13 +150,15 @@ TEST(ChunkedEncodingTest, FromHTTPWatch)
 TEST(RangeTest, FromHTTPBin)
 {
     auto host = "httpbin.org";
+    auto sec = 5;
+    auto ver = httplib::HttpVersion::v1_1;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 443;
-    httplib::SSLClient cli(host, port, httplib::HttpVersion::v1_1);
+    httplib::SSLClient cli(host, port, sec, ver);
 #else
     auto port = 80;
-    httplib::Client cli(host, port, httplib::HttpVersion::v1_1);
+    httplib::Client cli(host, port, sec, ver);
 #endif
 
     {
@@ -631,7 +616,7 @@ protected:
             res.set_content("Hello World!", "text/plain");
         });
 
-        t_ = thread([&](){
+        t_ = thread([&]() {
             svr_.listen(nullptr, PORT, AI_PASSIVE);
         });
 
