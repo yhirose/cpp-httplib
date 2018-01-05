@@ -118,6 +118,11 @@ params["note"] = "coder";
 auto res = cli.post("/post", params);
 ```
 
+### Connection Timeout
+
+```c++
+httplib::Client cli("localhost", 8080, 5); // timeouts in 5 seconds
+```
 ### With Progress Callback
 
 ```cpp
