@@ -157,6 +157,7 @@ public:
     virtual int read(char* ptr, size_t size) = 0;
     virtual int write(const char* ptr, size_t size1) = 0;
     virtual int write(const char* ptr) = 0;
+    virtual std::string get_remote_addr() = 0;
 
     template <typename ...Args>
     void write_format(const char* fmt, const Args& ...args);
@@ -170,6 +171,26 @@ public:
     virtual int read(char* ptr, size_t size);
     virtual int write(const char* ptr, size_t size);
     virtual int write(const char* ptr);
+    
+    std::string get_remote_addr() {
+        socklen_t len;
+        struct sockaddr_storage addr;
+        char ipstr[INET6_ADDRSTRLEN];
+
+        len = sizeof addr;
+        getpeername(sock_, (struct sockaddr*)&addr, &len);
+
+        // deal with both IPv4 and IPv6:
+        if (addr.ss_family == AF_INET) {
+            struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+            inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof ipstr);
+        } else { // AF_INET6
+            struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+            inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
+        }
+
+        return ipstr;
+    }
 
 private:
     socket_t sock_;
@@ -1582,6 +1603,8 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
     if (req.get_header_value("Connection") == "close") {
         ret = false;
     }
+
+    req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
 
     // Body
     if (req.method == "POST") {
