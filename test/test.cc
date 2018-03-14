@@ -201,6 +201,10 @@ protected:
         svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
+            .get("/remote_addr", [&](const Request& req, Response& res) {
+                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
+                res.set_content(remote_addr.c_str(), "text/plain");
+            })
             .get("/endwith%", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
@@ -572,6 +576,15 @@ TEST_F(ServerTest, CaseInsensitiveHeaderName)
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("content-type"));
     EXPECT_EQ("Hello World!", res->body);
+}
+
+TEST_F(ServerTest, GetMethodRemoteAddr)
+{
+    auto res = cli_.get("/remote_addr");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("::1", res->body);  // NOTE: depends on user's environment...
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
