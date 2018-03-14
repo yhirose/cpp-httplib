@@ -157,6 +157,7 @@ public:
     virtual int read(char* ptr, size_t size) = 0;
     virtual int write(const char* ptr, size_t size1) = 0;
     virtual int write(const char* ptr) = 0;
+    virtual std::string get_remote_addr() = 0;
 
     template <typename ...Args>
     void write_format(const char* fmt, const Args& ...args);
@@ -170,6 +171,7 @@ public:
     virtual int read(char* ptr, size_t size);
     virtual int write(const char* ptr, size_t size);
     virtual int write(const char* ptr);
+    virtual std::string get_remote_addr();
 
 private:
     socket_t sock_;
@@ -272,14 +274,16 @@ private:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class SSLSocketStream : public Stream {
 public:
-    SSLSocketStream(SSL* ssl);
+    SSLSocketStream(socket_t sock, SSL* ssl);
     virtual ~SSLSocketStream();
 
     virtual int read(char* ptr, size_t size);
     virtual int write(const char* ptr, size_t size);
     virtual int write(const char* ptr);
+    virtual std::string get_remote_addr();
 
 private:
+    socket_t sock_;
     SSL* ssl_;
 };
 
@@ -560,6 +564,24 @@ inline bool is_connection_error()
 #else
     return errno != EINPROGRESS;
 #endif
+}
+
+inline std::string get_remote_addr(socket_t sock) {
+    struct sockaddr_storage addr;
+    char ipstr[INET6_ADDRSTRLEN];
+    socklen_t len = sizeof(addr);
+    getpeername(sock, (struct sockaddr*)&addr, &len);
+
+    // deal with both IPv4 and IPv6:
+    if (addr.ss_family == AF_INET) {
+        auto s = (struct sockaddr_in *)&addr;
+        inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof(ipstr));
+    } else { // AF_INET6
+        auto s = (struct sockaddr_in6 *)&addr;
+        inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof(ipstr));
+    }
+
+    return ipstr;
 }
 
 inline bool is_file(const std::string& path)
@@ -1320,6 +1342,10 @@ inline int SocketStream::write(const char* ptr)
     return write(ptr, strlen(ptr));
 }
 
+inline std::string SocketStream::get_remote_addr() {
+    return detail::get_remote_addr(sock_);
+}
+
 // HTTP server implementation
 inline Server::Server(HttpVersion http_version)
     : http_version_(http_version)
@@ -1582,6 +1608,8 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
     if (req.get_header_value("Connection") == "close") {
         ret = false;
     }
+
+    req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
 
     // Body
     if (req.method == "POST") {
@@ -1895,7 +1923,7 @@ inline bool read_and_close_socket_ssl(
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
             auto last_connection = count == 1;
-            SSLSocketStream strm(ssl);
+            SSLSocketStream strm(sock, ssl);
             ret = callback(strm, last_connection);
             if (!ret) {
                 break;
@@ -1903,7 +1931,7 @@ inline bool read_and_close_socket_ssl(
             count--;
         }
     } else {
-        SSLSocketStream strm(ssl);
+        SSLSocketStream strm(sock, ssl);
         ret = callback(strm, true);
     }
 
@@ -1926,7 +1954,8 @@ static SSLInit sslinit_;
 } // namespace detail
 
 // SSL socket stream implementation
-inline SSLSocketStream::SSLSocketStream(SSL* ssl): ssl_(ssl)
+inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL* ssl)
+    : sock_(sock), ssl_(ssl)
 {
 }
 
@@ -1947,6 +1976,10 @@ inline int SSLSocketStream::write(const char* ptr, size_t size)
 inline int SSLSocketStream::write(const char* ptr)
 {
     return write(ptr, strlen(ptr));
+}
+
+inline std::string SSLSocketStream::get_remote_addr() {
+    return detail::get_remote_addr(sock_);
 }
 
 // SSL HTTP server implementation
