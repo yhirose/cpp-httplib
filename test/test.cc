@@ -121,7 +121,7 @@ TEST(GetHeaderValueTest, Range)
 void testChunkedEncoding(httplib::HttpVersion ver)
 {
     auto host = "www.httpwatch.com";
-    auto sec = 5;
+    auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 443;
@@ -184,6 +184,60 @@ TEST(RangeTest, FromHTTPBin)
         EXPECT_EQ(res->body, "bcdefghijk");
         EXPECT_EQ(206, res->status);
     }
+}
+
+TEST(ConnectionErrorTest, InvalidHost)
+{
+    auto host = "abcde.com";
+    auto sec = 2;
+    auto ver = httplib::HttpVersion::v1_1;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec, ver);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec, ver);
+#endif
+
+    auto res = cli.get("/");
+    ASSERT_TRUE(res == nullptr);
+}
+
+TEST(ConnectionErrorTest, InvalidPort)
+{
+    auto host = "localhost";
+    auto sec = 2;
+    auto ver = httplib::HttpVersion::v1_1;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 44380;
+    httplib::SSLClient cli(host, port, sec, ver);
+#else
+    auto port = 8080;
+    httplib::Client cli(host, port, sec, ver);
+#endif
+
+    auto res = cli.get("/");
+    ASSERT_TRUE(res == nullptr);
+}
+
+TEST(ConnectionErrorTest, Timeout)
+{
+    auto host = "google.com";
+    auto sec = 2;
+    auto ver = httplib::HttpVersion::v1_1;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 44380;
+    httplib::SSLClient cli(host, port, sec, ver);
+#else
+    auto port = 8080;
+    httplib::Client cli(host, port, sec, ver);
+#endif
+
+    auto res = cli.get("/");
+    ASSERT_TRUE(res == nullptr);
 }
 
 class ServerTest : public ::testing::Test {
@@ -584,7 +638,7 @@ TEST_F(ServerTest, GetMethodRemoteAddr)
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-    EXPECT_EQ("::1", res->body);  // NOTE: depends on user's environment...
+    EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT

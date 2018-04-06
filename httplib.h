@@ -437,25 +437,32 @@ inline int select_read(socket_t sock, size_t sec, size_t usec)
     return select(sock + 1, &fds, NULL, NULL, &tv);
 }
 
-inline bool is_socket_writable(socket_t sock, size_t sec, size_t usec)
+inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
 {
-    fd_set fdsw;
-    FD_ZERO(&fdsw);
-    FD_SET(sock, &fdsw);
+    fd_set fdsr;
+    FD_ZERO(&fdsr);
+    FD_SET(sock, &fdsr);
 
-    fd_set fdse;
-    FD_ZERO(&fdse);
-    FD_SET(sock, &fdse);
+    auto fdsw = fdsr;
+    auto fdse = fdsr;
 
     timeval tv;
     tv.tv_sec = sec;
     tv.tv_usec = usec;
 
-    if (select(sock + 1, NULL, &fdsw, &fdse, &tv) <= 0) {
+    if (select(sock + 1, &fdsr, &fdsw, &fdse, &tv) < 0) {
+        return false;
+    } else if (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw)) {
+        int error = 0;
+        socklen_t len = sizeof(error);
+        if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&error, &len) < 0 || error) {
+            return false;
+        }
+    } else {
         return false;
     }
 
-    return FD_ISSET(sock, &fdsw) != 0;
+    return true;
 }
 
 template <typename T>
@@ -1690,13 +1697,16 @@ inline socket_t Client::create_client_socket() const
             detail::set_nonblocking(sock, true);
 
             auto ret = connect(sock, ai.ai_addr, ai.ai_addrlen);
-            if (ret == -1 && detail::is_connection_error()) {
-                return false;
+            if (ret < 0) {
+                if (detail::is_connection_error() ||
+                    !detail::wait_until_socket_is_ready(sock, timeout_sec_, 0)) {
+                    detail::close_socket(sock);
+                    return false;
+                }
             }
 
             detail::set_nonblocking(sock, false);
-
-            return detail::is_socket_writable(sock, timeout_sec_, 0);
+            return true;
         });
 }
 
