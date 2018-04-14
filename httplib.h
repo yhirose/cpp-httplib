@@ -1026,10 +1026,11 @@ inline bool parse_multipart_formdata(
     static std::string crlf = "\r\n";
 
     static std::regex re_content_type(
-        "Content-Type: (.*?)");
+        "Content-Type: (.*?)", std::regex_constants::icase);
 
     static std::regex re_content_disposition(
-        "Content-Disposition: form-data; name=\"(.*?)\"(?:; filename=\"(.*?)\")?");
+        "Content-Disposition: form-data; name=\"(.*?)\"(?:; filename=\"(.*?)\")?",
+        std::regex_constants::icase);
 
     auto dash_boundary = dash + boundary;
 
