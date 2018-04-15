@@ -240,6 +240,13 @@ TEST(ConnectionErrorTest, Timeout)
     ASSERT_TRUE(res == nullptr);
 }
 
+TEST(Server, BindAndListenSeparately) {
+    Server svr(httplib::HttpVersion::v1_1);
+    int port = svr.bind_to_any_port("localhost");
+    ASSERT_TRUE(port > 0);
+    svr.stop();
+}
+
 class ServerTest : public ::testing::Test {
 protected:
     ServerTest()

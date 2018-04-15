@@ -196,6 +196,9 @@ public:
     void set_error_handler(Handler handler);
     void set_logger(Logger logger);
 
+    int bind_to_any_port(const char* host, int socket_flags = 0);
+    bool listen_after_bind();
+
     bool listen(const char* host, int port, int socket_flags = 0);
 
     bool is_running() const;
@@ -210,6 +213,8 @@ private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
 
     socket_t create_server_socket(const char* host, int port, int socket_flags) const;
+    int bind_internal(const char* host, int port, int socket_flags);
+    bool listen_internal();
 
     bool routing(Request& req, Response& res);
     bool handle_file_request(Request& req, Response& res);
@@ -1399,49 +1404,20 @@ inline void Server::set_logger(Logger logger)
     logger_ = logger;
 }
 
+inline int Server::bind_to_any_port(const char* host, int socket_flags)
+{
+    return bind_internal(host, 0, socket_flags);
+}
+
+inline bool Server::listen_after_bind() {
+    return listen_internal();
+}
+
 inline bool Server::listen(const char* host, int port, int socket_flags)
 {
-    if (!is_valid()) {
+    if (bind_internal(host, port, socket_flags) < 0)
         return false;
-    }
-
-    svr_sock_ = create_server_socket(host, port, socket_flags);
-    if (svr_sock_ == -1) {
-        return false;
-    }
-
-    auto ret = true;
-
-    for (;;) {
-        auto val = detail::select_read(svr_sock_, 0, 100000);
-
-        if (val == 0) { // Timeout
-            if (svr_sock_ == -1) {
-                // The server socket was closed by 'stop' method.
-                break;
-            }
-            continue;
-        }
-
-        socket_t sock = accept(svr_sock_, NULL, NULL);
-
-        if (sock == -1) {
-            if (svr_sock_ != -1) {
-                detail::close_socket(svr_sock_);
-                ret = false;
-            } else {
-                ; // The server socket was closed by user.
-            }
-            break;
-        }
-
-        // TODO: Use thread pool...
-        std::thread([=]() {
-            read_and_close_socket(sock);
-        }).detach();
-    }
-
-    return ret;
+    return listen_internal();
 }
 
 inline bool Server::is_running() const
@@ -1558,6 +1534,65 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
             }
             return true;
         }, socket_flags);
+}
+
+inline int Server::bind_internal(const char* host, int port, int socket_flags)
+{
+    if (!is_valid()) {
+        return -1;
+    }
+
+    svr_sock_ = create_server_socket(host, port, socket_flags);
+    if (svr_sock_ == -1) {
+        return -1;
+    }
+
+    if (port == 0) {
+        struct sockaddr_in sin;
+        socklen_t len = sizeof(sin);
+        if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&sin), &len) == -1) {
+            return -1;
+        }
+        return ntohs(sin.sin_port);
+    } else {
+        return port;
+    }
+}
+
+inline bool Server::listen_internal()
+{
+    auto ret = true;
+
+    for (;;) {
+        auto val = detail::select_read(svr_sock_, 0, 100000);
+
+        if (val == 0) { // Timeout
+            if (svr_sock_ == -1) {
+                // The server socket was closed by 'stop' method.
+                break;
+            }
+            continue;
+        }
+
+        socket_t sock = accept(svr_sock_, NULL, NULL);
+
+        if (sock == -1) {
+            if (svr_sock_ != -1) {
+                detail::close_socket(svr_sock_);
+                ret = false;
+            } else {
+                ; // The server socket was closed by user.
+            }
+            break;
+        }
+
+        // TODO: Use thread pool...
+        std::thread([=]() {
+            read_and_close_socket(sock);
+        }).detach();
+    }
+
+    return ret;
 }
 
 inline bool Server::routing(Request& req, Response& res)
