@@ -833,6 +833,12 @@ bool read_content_chunked(Stream& strm, T& x)
         chunk_len = std::stoi(reader.ptr(), 0, 16);
     }
 
+    if (chunk_len == 0) {
+        // Reader terminator after chunks
+        if (!reader.getline() || strcmp(reader.ptr(), "\r\n"))
+            return false;
+    }
+
     return true;
 }
 
