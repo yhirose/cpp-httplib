@@ -34,6 +34,10 @@
 #undef min
 #undef max
 
+#ifndef strcasecmp
+#define strcasecmp _stricmp
+#endif
+
 typedef SOCKET socket_t;
 #else
 #include <pthread.h>
@@ -860,7 +864,7 @@ bool read_content(Stream& strm, T& x, Progress progress = Progress())
     } else {
         const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
 
-        if (!strcmp(encoding, "chunked")) {
+        if (!strcasecmp(encoding, "chunked")) {
             return read_content_chunked(strm, x);
         } else {
             return read_content_without_length(strm, x);
