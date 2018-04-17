@@ -52,6 +52,7 @@ typedef int socket_t;
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <regex>
 #include <string>
 #include <thread>
@@ -204,6 +205,8 @@ public:
     bool is_running() const;
     void stop();
 
+    bool is_handling_requests() const;
+
 protected:
     bool process_request(Stream& strm, bool last_connection);
 
@@ -231,6 +234,10 @@ private:
     Handlers    post_handlers_;
     Handler     error_handler_;
     Logger      logger_;
+
+    // TODO: Use thread pool...
+    std::mutex  running_threads_mutex_;
+    int         running_threads_;
 };
 
 class Client {
@@ -1407,6 +1414,7 @@ inline std::string SocketStream::get_remote_addr() {
 inline Server::Server(HttpVersion http_version)
     : http_version_(http_version)
     , svr_sock_(-1)
+    , running_threads_(0)
 {
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
@@ -1474,6 +1482,11 @@ inline void Server::stop()
     detail::shutdown_socket(svr_sock_);
     detail::close_socket(svr_sock_);
     svr_sock_ = -1;
+}
+
+inline bool Server::is_handling_requests() const
+{
+    return running_threads_ > 0;
 }
 
 inline bool Server::parse_request_line(const char* s, Request& req)
@@ -1632,8 +1645,27 @@ inline bool Server::listen_internal()
 
         // TODO: Use thread pool...
         std::thread([=]() {
+            {
+                std::lock_guard<std::mutex> guard(running_threads_mutex_);
+                running_threads_++;
+            }
+
             read_and_close_socket(sock);
+
+            {
+                std::lock_guard<std::mutex> guard(running_threads_mutex_);
+                running_threads_--;
+            }
         }).detach();
+    }
+
+    // TODO: Use thread pool...
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::lock_guard<std::mutex> guard(running_threads_mutex_);
+        if (!running_threads_) {
+            break;
+        }
     }
 
     return ret;
