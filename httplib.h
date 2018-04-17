@@ -706,7 +706,7 @@ inline const char* status_message(int status)
     case 200: return "OK";
     case 400: return "Bad Request";
     case 404: return "Not Found";
-    case 406: return "Not Acceptable";
+    case 415: return "Unsupported Media Type";
     default:
         case 500: return "Internal Server Error";
     }
@@ -1712,7 +1712,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
         detail::decompress_request_body(req);
 #else
         if (req.get_header_value("Content-Encoding") == "gzip") {
-            res.status = 406;
+            res.status = 415;
             write_response(strm, last_connection, req, res);
             return ret;
         }
