@@ -706,6 +706,7 @@ inline const char* status_message(int status)
     case 200: return "OK";
     case 400: return "Bad Request";
     case 404: return "Not Found";
+    case 406: return "Not Acceptable";
     default:
         case 500: return "Internal Server Error";
     }
@@ -1198,6 +1199,43 @@ inline void compress(const Request& req, Response& res)
 
     deflateEnd(&strm);
 }
+
+inline void decompress_request_body(Request& req)
+{
+    if (req.get_header_value("Content-Encoding") != "gzip")
+        return;
+
+    z_stream strm;
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+
+    // 15 is the value of wbits, which should be at the maximum possible value to ensure
+    // that any gzip stream can be decoded. The offset of 16 specifies that the stream
+    // to decompress will be formatted with a gzip wrapper.
+    auto ret = inflateInit2(&strm, 16 + 15);
+    if (ret != Z_OK) {
+        return;
+    }
+
+    strm.avail_in = req.body.size();
+    strm.next_in = (Bytef *)req.body.data();
+
+    std::string decompressed;
+
+    const auto bufsiz = 16384;
+    char buff[bufsiz];
+    do {
+        strm.avail_out = bufsiz;
+        strm.next_out = (Bytef *)buff;
+        inflate(&strm, Z_NO_FLUSH);
+        decompressed.append(buff, bufsiz - strm.avail_out);
+    } while (strm.avail_out == 0);
+
+    req.body.swap(decompressed);
+
+    inflateEnd(&strm);
+}
 #endif
 
 #ifdef _WIN32
@@ -1669,6 +1707,16 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
         }
 
         const auto& content_type = req.get_header_value("Content-Type");
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+        detail::decompress_request_body(req);
+#else
+        if (req.get_header_value("Content-Encoding") == "gzip") {
+            res.status = 406;
+            write_response(strm, last_connection, req, res);
+            return ret;
+        }
+#endif
 
         if (!content_type.find("application/x-www-form-urlencoded")) {
             detail::parse_query_text(req.body, req.params);
