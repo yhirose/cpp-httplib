@@ -205,6 +205,8 @@ public:
     bool is_running() const;
     void stop();
 
+    bool is_handling_requests() const;
+
 protected:
     bool process_request(Stream& strm, bool last_connection);
 
@@ -1480,6 +1482,11 @@ inline void Server::stop()
     detail::shutdown_socket(svr_sock_);
     detail::close_socket(svr_sock_);
     svr_sock_ = -1;
+}
+
+inline bool Server::is_handling_requests() const
+{
+    return running_threads_ > 0;
 }
 
 inline bool Server::parse_request_line(const char* s, Request& req)

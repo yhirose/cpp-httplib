@@ -262,6 +262,10 @@ protected:
         svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
+            .get("/slow", [&](const Request& /*req*/, Response& res) {
+                msleep(3000);
+                res.set_content("slow", "text/plain");
+            })
             .get("/remote_addr", [&](const Request& req, Response& res) {
                 auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
                 res.set_content(remote_addr.c_str(), "text/plain");
@@ -358,6 +362,7 @@ protected:
     virtual void TearDown() {
         svr_.stop();
         t_.join();
+        EXPECT_EQ(false, svr_.is_handling_requests());
     }
 
     map<string, string> persons_;
@@ -662,6 +667,14 @@ TEST_F(ServerTest, GetMethodRemoteAddr)
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
     EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
+}
+
+TEST_F(ServerTest, SlowRequest)
+{
+    std::thread([=]() { auto res = cli_.get("/slow"); }).detach();
+    std::thread([=]() { auto res = cli_.get("/slow"); }).detach();
+    std::thread([=]() { auto res = cli_.get("/slow"); }).detach();
+    msleep(1000);
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
