@@ -292,6 +292,9 @@ protected:
                     res.status = 404;
                 }
             })
+            .post("/chunked", [&](const Request& req, Response& /*res*/) {
+                EXPECT_EQ(req.body, "dechunked post body");
+            })
             .post("/multipart", [&](const Request& req, Response& /*res*/) {
                 EXPECT_EQ(5u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
@@ -658,6 +661,34 @@ TEST_F(ServerTest, CaseInsensitiveHeaderName)
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("content-type"));
     EXPECT_EQ("Hello World!", res->body);
+}
+
+TEST_F(ServerTest, CaseInsensitiveTransferEncoding)
+{
+    Request req;
+    req.method = "POST";
+    req.path = "/chunked";
+
+    std::string host_and_port;
+    host_and_port += HOST;
+    host_and_port += ":";
+    host_and_port += std::to_string(PORT);
+
+    req.headers.emplace("Host", host_and_port.c_str());
+    req.headers.emplace("Accept", "*/*");
+    req.headers.emplace("User-Agent", "cpp-httplib/0.1");
+    req.headers.emplace("Content-Type", "text/plain");
+    req.headers.emplace("Content-Length", "0");
+    req.headers.emplace("Transfer-Encoding", "Chunked");  // Note, "Chunked" rather than typical "chunked".
+
+    // Client does not chunk, so make a chunked body manually.
+    req.body = "4\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n";
+
+    auto res = std::make_shared<Response>();
+    auto ret = cli_.send(req, *res);
+
+	ASSERT_TRUE(ret);
+	EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, GetMethodRemoteAddr)
