@@ -209,8 +209,6 @@ public:
     bool is_running() const;
     void stop();
 
-    bool is_handling_requests() const;
-
 protected:
     bool process_request(Stream& strm, bool last_connection);
 

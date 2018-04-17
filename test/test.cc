@@ -365,7 +365,6 @@ protected:
     virtual void TearDown() {
         svr_.stop();
         t_.join();
-        EXPECT_EQ(false, svr_.is_handling_requests());
     }
 
     map<string, string> persons_;
