@@ -230,6 +230,7 @@ private:
 
     virtual bool read_and_close_socket(socket_t sock);
 
+    bool        is_running_;
     socket_t    svr_sock_;
     std::string base_dir_;
     Handlers    get_handlers_;
@@ -1415,6 +1416,7 @@ inline std::string SocketStream::get_remote_addr() {
 // HTTP server implementation
 inline Server::Server(HttpVersion http_version)
     : http_version_(http_version)
+    , is_running_(false)
     , svr_sock_(-1)
     , running_threads_(0)
 {
@@ -1476,19 +1478,17 @@ inline bool Server::listen(const char* host, int port, int socket_flags)
 
 inline bool Server::is_running() const
 {
-    return svr_sock_ != -1;
+    return is_running_;
 }
 
 inline void Server::stop()
 {
-    detail::shutdown_socket(svr_sock_);
-    detail::close_socket(svr_sock_);
-    svr_sock_ = -1;
-}
-
-inline bool Server::is_handling_requests() const
-{
-    return running_threads_ > 0;
+    if (is_running_) {
+        assert(svr_sock_ != -1);
+        detail::shutdown_socket(svr_sock_);
+        detail::close_socket(svr_sock_);
+        svr_sock_ = -1;
+    }
 }
 
 inline bool Server::parse_request_line(const char* s, Request& req)
@@ -1622,6 +1622,8 @@ inline bool Server::listen_internal()
 {
     auto ret = true;
 
+    is_running_ = true;
+
     for (;;) {
         auto val = detail::select_read(svr_sock_, 0, 100000);
 
@@ -1669,6 +1671,8 @@ inline bool Server::listen_internal()
             break;
         }
     }
+
+    is_running_ = false;
 
     return ret;
 }

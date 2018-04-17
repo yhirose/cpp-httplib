@@ -835,6 +835,40 @@ TEST_F(ServerTestWithAI_PASSIVE, GetMethod200)
     EXPECT_EQ("Hello World!", res->body);
 }
 
+class ServerUpDownTest : public ::testing::Test {
+protected:
+    ServerUpDownTest()
+        : cli_(HOST, PORT)
+        {}
+
+    virtual void SetUp() {
+        t_ = thread([&](){
+            svr_.bind_to_any_port(HOST);
+            msleep(500);
+            svr_.listen_after_bind();
+        });
+
+        while (!svr_.is_running()) {
+            msleep(1);
+        }
+    }
+
+    virtual void TearDown() {
+        svr_.stop();
+        t_.join();
+    }
+
+    Client              cli_;
+    Server              svr_;
+    thread              t_;
+};
+
+TEST_F(ServerUpDownTest, QuickStartStop)
+{
+    // Should not crash, especially when run with
+    // --gtest_filter=ServerUpDownTest.QuickStartStop --gtest_repeat=1000
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(SSLClientTest, ServerNameIndication)
 {
