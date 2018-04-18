@@ -4,9 +4,12 @@ example/server
 example/client
 example/hello
 example/simplesvr
+example/benchmark
+example/*.pem
 test/test
 test/test.xcodeproj/xcuser*
 test/test.xcodeproj/*/xcuser*
+test/*.pem
 
 *.swp
 
@@ -16,5 +19,7 @@ Release
 *.sdf
 *.suo
 *.opensdf
+*.db
 ipch
 *.dSYM
+.*
