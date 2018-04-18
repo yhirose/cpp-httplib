@@ -817,10 +817,8 @@ bool read_content_chunked(Stream& strm, std::string& out)
     auto chunk_len = std::stoi(reader.ptr(), 0, 16);
 
     while (chunk_len > 0){
-        std::string chunk(chunk_len, 0);
-
-        auto n = strm.read(&chunk[0], chunk_len);
-        if (n <= 0) {
+        std::string chunk;
+        if (!read_content_with_length(strm, chunk, chunk_len, nullptr)) {
             return false;
         }
 
