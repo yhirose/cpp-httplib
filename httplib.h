@@ -767,13 +767,12 @@ inline bool read_headers(Stream& strm, Headers& headers)
     return true;
 }
 
-template <typename T>
-bool read_content_with_length(Stream& strm, T& x, size_t len, Progress progress)
+bool read_content_with_length(Stream& strm, std::string& out, size_t len, Progress progress)
 {
-    x.body.assign(len, 0);
+    out.assign(len, 0);
     size_t r = 0;
     while (r < len){
-        auto n = strm.read(&x.body[r], len - r);
+        auto n = strm.read(&out[r], len - r);
         if (n <= 0) {
             return false;
         }
@@ -788,8 +787,7 @@ bool read_content_with_length(Stream& strm, T& x, size_t len, Progress progress)
     return true;
 }
 
-template <typename T>
-bool read_content_without_length(Stream& strm, T& x)
+bool read_content_without_length(Stream& strm, std::string& out)
 {
     for (;;) {
         char byte;
@@ -799,14 +797,13 @@ bool read_content_without_length(Stream& strm, T& x)
         } else if (n == 0) {
             return true;
         }
-        x.body += byte;
+        out += byte;
     }
 
     return true;
 }
 
-template <typename T>
-bool read_content_chunked(Stream& strm, T& x)
+bool read_content_chunked(Stream& strm, std::string& out)
 {
     const auto bufsiz = 16;
     char buf[bufsiz];
@@ -835,7 +832,7 @@ bool read_content_chunked(Stream& strm, T& x)
             break;
         }
 
-        x.body += chunk;
+        out += chunk;
 
         if (!reader.getline()) {
             return false;
@@ -859,14 +856,14 @@ bool read_content(Stream& strm, T& x, Progress progress = Progress())
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
 
     if (len) {
-        return read_content_with_length(strm, x, len, progress);
+        return read_content_with_length(strm, x.body, len, progress);
     } else {
         const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
 
         if (!strcasecmp(encoding, "chunked")) {
-            return read_content_chunked(strm, x);
+            return read_content_chunked(strm, x.body);
         } else {
-            return read_content_without_length(strm, x);
+            return read_content_without_length(strm, x.body);
         }
     }
 
