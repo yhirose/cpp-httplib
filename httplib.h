@@ -316,6 +316,7 @@ private:
     virtual bool read_and_close_socket(socket_t sock);
 
     SSL_CTX* ctx_;
+    std::mutex ctx_mutex_;
 };
 
 class SSLClient : public Client {
@@ -334,6 +335,7 @@ private:
     virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
 
     SSL_CTX* ctx_;
+    std::mutex ctx_mutex_;
 };
 #endif
 
@@ -2029,18 +2031,17 @@ inline std::shared_ptr<Response> Client::post(const char* path, const Headers& h
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 namespace detail {
 
-// TODO: OpenSSL 1.0.2 occasionally crashes... The upcoming 1.1.0 is going to be thread safe.
-static std::mutex ssl_ctx_mutex_;
-
 template <typename U, typename V, typename T>
 inline bool read_and_close_socket_ssl(
     socket_t sock, bool keep_alive,
-    SSL_CTX* ctx, U SSL_connect_or_accept, V setup,
+    // TODO: OpenSSL 1.0.2 occasionally crashes... The upcoming 1.1.0 is going to be thread safe.
+    SSL_CTX* ctx, std::mutex& ctx_mutex,
+    U SSL_connect_or_accept, V setup,
     T callback)
 {
     SSL* ssl = nullptr;
     {
-        std::lock_guard<std::mutex> guard(ssl_ctx_mutex_);
+        std::lock_guard<std::mutex> guard(ctx_mutex);
 
         ssl = SSL_new(ctx);
         if (!ssl) {
@@ -2079,7 +2080,7 @@ inline bool read_and_close_socket_ssl(
     SSL_shutdown(ssl);
 
     {
-        std::lock_guard<std::mutex> guard(ssl_ctx_mutex_);
+        std::lock_guard<std::mutex> guard(ctx_mutex);
         SSL_free(ssl);
     }
 
@@ -2172,7 +2173,7 @@ inline bool SSLServer::read_and_close_socket(socket_t sock)
     return detail::read_and_close_socket_ssl(
         sock,
         keep_alive,
-        ctx_,
+        ctx_, ctx_mutex_,
         SSL_accept,
         [](SSL* /*ssl*/) {},
         [this](Stream& strm, bool last_connection) {
@@ -2204,7 +2205,8 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
 {
     return is_valid() && detail::read_and_close_socket_ssl(
         sock, false,
-        ctx_, SSL_connect,
+        ctx_, ctx_mutex_,
+        SSL_connect,
         [&](SSL* ssl) {
             SSL_set_tlsext_host_name(ssl, host_.c_str());
         },
