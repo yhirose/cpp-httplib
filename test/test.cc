@@ -263,7 +263,7 @@ protected:
                 res.set_content("Hello World!", "text/plain");
             })
             .get("/slow", [&](const Request& /*req*/, Response& res) {
-                msleep(3000);
+                msleep(2000);
                 res.set_content("slow", "text/plain");
             })
             .get("/remote_addr", [&](const Request& req, Response& res) {
@@ -368,6 +368,9 @@ protected:
 
     virtual void TearDown() {
         svr_.stop();
+        for (auto& t: request_threads_) {
+            t.join();
+        }
         t_.join();
     }
 
@@ -380,6 +383,7 @@ protected:
     Server              svr_;
 #endif
     thread              t_;
+    std::vector<thread> request_threads_;
 };
 
 TEST_F(ServerTest, GetMethod200)
@@ -736,10 +740,10 @@ TEST_F(ServerTest, GetMethodRemoteAddr)
 
 TEST_F(ServerTest, SlowRequest)
 {
-    std::thread([=]() { auto res = cli_.get("/slow"); }).detach();
-    std::thread([=]() { auto res = cli_.get("/slow"); }).detach();
-    std::thread([=]() { auto res = cli_.get("/slow"); }).detach();
-    msleep(1000);
+    request_threads_.push_back(std::thread([=]() { auto res = cli_.get("/slow"); }));
+    request_threads_.push_back(std::thread([=]() { auto res = cli_.get("/slow"); }));
+    request_threads_.push_back(std::thread([=]() { auto res = cli_.get("/slow"); }));
+    msleep(100);
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT

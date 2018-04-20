@@ -2029,15 +2029,23 @@ inline std::shared_ptr<Response> Client::post(const char* path, const Headers& h
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 namespace detail {
 
+// TODO: OpenSSL 1.0.2 occasionally crashes... The upcoming 1.1.0 is going to be thread safe.
+static std::mutex ssl_ctx_mutex_;
+
 template <typename U, typename V, typename T>
 inline bool read_and_close_socket_ssl(
     socket_t sock, bool keep_alive,
     SSL_CTX* ctx, U SSL_connect_or_accept, V setup,
     T callback)
 {
-    auto ssl = SSL_new(ctx);
-    if (!ssl) {
-        return false;
+    SSL* ssl = nullptr;
+    {
+        std::lock_guard<std::mutex> guard(ssl_ctx_mutex_);
+
+        ssl = SSL_new(ctx);
+        if (!ssl) {
+            return false;
+        }
     }
 
     auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
@@ -2069,8 +2077,14 @@ inline bool read_and_close_socket_ssl(
     }
 
     SSL_shutdown(ssl);
-    SSL_free(ssl);
+
+    {
+        std::lock_guard<std::mutex> guard(ssl_ctx_mutex_);
+        SSL_free(ssl);
+    }
+
     close_socket(sock);
+
     return ret;
 }
 
