@@ -1165,18 +1165,8 @@ inline bool can_compress(const std::string& content_type) {
         content_type == "application/xhtml+xml";
 }
 
-inline void compress(const Request& req, Response& res)
+inline void compress(std::string& content)
 {
-    // TODO: Server version is HTTP/1.1 and 'Accpet-Encoding' has gzip, not gzip;q=0
-    const auto& encodings = req.get_header_value("Accept-Encoding");
-    if (encodings.find("gzip") == std::string::npos) {
-        return;
-    }
-
-    if (!can_compress(res.get_header_value("Content-Type"))) {
-        return;
-    }
-
     z_stream strm;
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
@@ -1187,8 +1177,8 @@ inline void compress(const Request& req, Response& res)
         return;
     }
 
-    strm.avail_in = res.body.size();
-    strm.next_in = (Bytef *)res.body.data();
+    strm.avail_in = content.size();
+    strm.next_in = (Bytef *)content.data();
 
     std::string compressed;
 
@@ -1201,17 +1191,13 @@ inline void compress(const Request& req, Response& res)
         compressed.append(buff, bufsiz - strm.avail_out);
     } while (strm.avail_out == 0);
 
-    res.set_header("Content-Encoding", "gzip");
-    res.body.swap(compressed);
+    content.swap(compressed);
 
     deflateEnd(&strm);
 }
 
-inline void decompress_request_body(Request& req)
+inline void decompress(std::string& content)
 {
-    if (req.get_header_value("Content-Encoding") != "gzip")
-        return;
-
     z_stream strm;
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
@@ -1225,8 +1211,8 @@ inline void decompress_request_body(Request& req)
         return;
     }
 
-    strm.avail_in = req.body.size();
-    strm.next_in = (Bytef *)req.body.data();
+    strm.avail_in = content.size();
+    strm.next_in = (Bytef *)content.data();
 
     std::string decompressed;
 
@@ -1239,7 +1225,7 @@ inline void decompress_request_body(Request& req)
         decompressed.append(buff, bufsiz - strm.avail_out);
     } while (strm.avail_out == 0);
 
-    req.body.swap(decompressed);
+    content.swap(decompressed);
 
     inflateEnd(&strm);
 }
@@ -1531,7 +1517,13 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
     if (!res.body.empty()) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        detail::compress(req, res);
+        // TODO: Server version is HTTP/1.1 and 'Accpet-Encoding' has gzip, not gzip;q=0
+        const auto& encodings = req.get_header_value("Accept-Encoding");
+        if (encodings.find("gzip") != std::string::npos &&
+            detail::can_compress(res.get_header_value("Content-Type"))) {
+            detail::compress(res.body);
+            res.set_header("Content-Encoding", "gzip");
+        }
 #endif
 
         if (!res.has_header("Content-Type")) {
@@ -1743,15 +1735,15 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
 
         const auto& content_type = req.get_header_value("Content-Type");
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        detail::decompress_request_body(req);
-#else
         if (req.get_header_value("Content-Encoding") == "gzip") {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+            detail::decompress(req.body);
+#else
             res.status = 415;
             write_response(strm, last_connection, req, res);
             return ret;
-        }
 #endif
+        }
 
         if (!content_type.find("application/x-www-form-urlencoded")) {
             detail::parse_query_text(req.body, req.params);
@@ -1935,6 +1927,14 @@ inline bool Client::process_request(Stream& strm, Request& req, Response& res)
     if (req.method != "HEAD") {
         if (!detail::read_content(strm, res, req.progress)) {
             return false;
+        }
+
+        if (res.get_header_value("Content-Encoding") == "gzip") {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+            detail::decompress(res.body);
+#else
+            return false;
+#endif
         }
     }
 

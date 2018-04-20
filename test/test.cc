@@ -757,6 +757,7 @@ TEST_F(ServerTest, Gzip)
     EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
     EXPECT_EQ("33", res->get_header_value("Content-Length"));
+    EXPECT_EQ("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", res->body);
     EXPECT_EQ(200, res->status);
 }
 
@@ -770,6 +771,7 @@ TEST_F(ServerTest, NoGzip)
     EXPECT_EQ(false, res->has_header("Content-Encoding"));
     EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
     EXPECT_EQ("100", res->get_header_value("Content-Length"));
+    EXPECT_EQ("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", res->body);
     EXPECT_EQ(200, res->status);
 }
 
