@@ -769,7 +769,7 @@ inline bool read_headers(Stream& strm, Headers& headers)
     return true;
 }
 
-bool read_content_with_length(Stream& strm, std::string& out, size_t len, Progress progress)
+inline bool read_content_with_length(Stream& strm, std::string& out, size_t len, Progress progress)
 {
     out.assign(len, 0);
     size_t r = 0;
@@ -789,7 +789,7 @@ bool read_content_with_length(Stream& strm, std::string& out, size_t len, Progre
     return true;
 }
 
-bool read_content_without_length(Stream& strm, std::string& out)
+inline bool read_content_without_length(Stream& strm, std::string& out)
 {
     for (;;) {
         char byte;
@@ -805,7 +805,7 @@ bool read_content_without_length(Stream& strm, std::string& out)
     return true;
 }
 
-bool read_content_chunked(Stream& strm, std::string& out)
+inline bool read_content_chunked(Stream& strm, std::string& out)
 {
     const auto bufsiz = 16;
     char buf[bufsiz];
