@@ -592,20 +592,18 @@ inline bool is_connection_error()
 
 inline std::string get_remote_addr(socket_t sock) {
     struct sockaddr_storage addr;
-    char ipstr[INET6_ADDRSTRLEN];
     socklen_t len = sizeof(addr);
-    getpeername(sock, (struct sockaddr*)&addr, &len);
 
-    // deal with both IPv4 and IPv6:
-    if (addr.ss_family == AF_INET) {
-        auto s = (struct sockaddr_in *)&addr;
-        inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof(ipstr));
-    } else { // AF_INET6
-        auto s = (struct sockaddr_in6 *)&addr;
-        inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof(ipstr));
+    if (!getpeername(sock, (struct sockaddr*)&addr, &len)) {
+        char ipstr[NI_MAXHOST];
+
+        if (!getnameinfo((struct sockaddr*)&addr, len,
+            ipstr, sizeof(ipstr), nullptr, 0, NI_NUMERICHOST)) {
+            return ipstr;
+        }
     }
 
-    return ipstr;
+    return std::string();
 }
 
 inline bool is_file(const std::string& path)
