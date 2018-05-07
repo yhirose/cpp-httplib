@@ -1475,7 +1475,7 @@ inline void Server::stop()
 
 inline bool Server::parse_request_line(const char* s, Request& req)
 {
-    static std::regex re("(GET|HEAD|POST) ([^?]+)(?:\\?(.+?))? (HTTP/1\\.[01])\r\n");
+    static std::regex re("(GET|HEAD|POST|OPTIONS) ([^?]+)(?:\\?(.+?))? (HTTP/1\\.[01])\r\n");
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
@@ -1667,6 +1667,16 @@ inline bool Server::listen_internal()
 
 inline bool Server::routing(Request& req, Response& res)
 {
+    
+    if (req.method == "OPTIONS") {
+		res.status = 200;
+        res.set_header("Access-Control-Allow-Origin", req.get_header_value("Origin").c_str());
+        res.set_header("Allow", "GET, POST, HEAD, OPTIONS");
+        res.set_header("Access-Control-Allow-Headers", "X-Requested-With, Content-Type, Accept, Origin, Authorization");
+        res.set_header("Access-Control-Allow-Methods", "OPTIONS, GET, POST, HEAD");
+        return true;
+    }
+
     if (req.method == "GET" && handle_file_request(req, res)) {
         return true;
     }
