@@ -48,6 +48,7 @@ typedef SOCKET socket_t;
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 
 typedef int socket_t;
 #endif
@@ -61,7 +62,6 @@ typedef int socket_t;
 #include <string>
 #include <thread>
 #include <sys/stat.h>
-#include <sys/select.h>
 #include <fcntl.h>
 #include <assert.h>
 
