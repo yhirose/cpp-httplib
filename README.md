@@ -19,11 +19,11 @@ int main(void)
 
     Server svr;
 
-    svr.get("/hi", [](const Request& req, Response& res) {
+    svr.Get("/hi", [](const Request& req, Response& res) {
         res.set_content("Hello World!", "text/plain");
     });
 
-    svr.get(R"(/numbers/(\d+))", [&](const Request& req, Response& res) {
+    svr.Get(R"(/numbers/(\d+))", [&](const Request& req, Response& res) {
         auto numbers = req.matches[1];
         res.set_content(numbers, "text/plain");
     });
@@ -32,13 +32,15 @@ int main(void)
 }
 ```
 
+`Post`, `Put`, `Delete` and `Options` methods are also supported.
+
 ### Method Chain
 
 ```cpp
-svr.get("/get", [](const auto& req, auto& res) {
+svr.Get("/get", [](const auto& req, auto& res) {
         res.set_content("get", "text/plain");
     })
-    .post("/post", [](const auto& req, auto& res) {
+    .Post("/post", [](const auto& req, auto& res) {
         res.set_content(req.body(), "text/plain");
     })
     .listen("localhost", 1234);
@@ -72,7 +74,7 @@ svr.set_error_handler([](const auto& req, auto& res) {
 ### 'multipart/form-data' POST data
 
 ```cpp
-svr.post("/multipart", [&](const auto& req, auto& res) {
+svr.Post("/multipart", [&](const auto& req, auto& res) {
     auto size = req.files.size();
     auto ret = req.has_file("name1"));
     const auto& file = req.get_file_value("name1");
@@ -95,7 +97,7 @@ int main(void)
 {
     httplib::Client cli("localhost", 1234);
 
-    auto res = cli.get("/hi");
+    auto res = cli.Get("/hi");
     if (res && res->status == 200) {
         std::cout << res->body << std::endl;
     }
@@ -105,8 +107,8 @@ int main(void)
 ### POST
 
 ```c++
-res = cli.post("/post", "text", "text/plain");
-res = cli.post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
+res = cli.Post("/post", "text", "text/plain");
+res = cli.Post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
 ```
 
 ### POST with parameters
@@ -115,7 +117,26 @@ res = cli.post("/person", "name=john1&note=coder", "application/x-www-form-urlen
 httplib::Map params;
 params["name"] = "john";
 params["note"] = "coder";
-auto res = cli.post("/post", params);
+auto res = cli.Post("/post", params);
+```
+
+### PUT
+
+```c++
+res = cli.Post("/resource/foo", "text", "text/plain");
+```
+
+### DELETE
+
+```c++
+res = cli.Delete("/resource/foo");
+```
+
+### OPTIONS
+
+```c++
+res = cli.Options("*");
+res = cli.Options("/resource/foo");
 ```
 
 ### Connection Timeout
@@ -130,7 +151,7 @@ httplib::Client client(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
 std::shared_ptr<httplib::Response> res =
-    cli.get("/", [](uint64_t len, uint64_t total) {
+    cli.Get("/", [](uint64_t len, uint64_t total) {
         printf("%lld / %lld bytes => %d%% complete\n",
             len, total,
             (int)((len/total)*100));
@@ -150,7 +171,7 @@ httplib::Client cli("httpbin.org", 80);
 // 'Range: bytes=1-10'
 httplib::Headers headers = { httplib::make_range_header(1, 10) };
 
-auto res = cli.get("/range/32", headers);
+auto res = cli.Get("/range/32", headers);
 // res->status should be 206.
 // res->body should be "bcdefghijk".
 ```
@@ -185,4 +206,4 @@ The server applies gzip compression to the following MIME type contents:
 License
 -------
 
-MIT license (© 2017 Yuji Hirose)
+MIT license (© 2018 Yuji Hirose)

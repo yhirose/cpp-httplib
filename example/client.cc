@@ -18,7 +18,7 @@ int main(void)
     httplib::Client cli("localhost", 8080);
 #endif
 
-    auto res = cli.get("/hi");
+    auto res = cli.Get("/hi");
     if (res) {
         cout << res->status << endl;
         cout << res->get_header_value("Content-Type") << endl;

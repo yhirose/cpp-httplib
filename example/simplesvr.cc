@@ -107,7 +107,7 @@ int main(int argc, const char** argv)
     Server svr(version);
 #endif
 
-    svr.post("/multipart", [](const auto& req, auto& res) {
+    svr.Post("/multipart", [](const auto& req, auto& res) {
         auto body =
             dump_headers(req.headers) +
             dump_multipart_files(req.files);

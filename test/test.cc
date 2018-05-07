@@ -131,7 +131,7 @@ void testChunkedEncoding(httplib::HttpVersion ver)
     httplib::Client cli(host, port, sec, ver);
 #endif
 
-    auto res = cli.get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
+    auto res = cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
     ASSERT_TRUE(res != nullptr);
 
     std::string out;
@@ -163,7 +163,7 @@ TEST(RangeTest, FromHTTPBin)
 
     {
         httplib::Headers headers;
-        auto res = cli.get("/range/32", headers);
+        auto res = cli.Get("/range/32", headers);
         ASSERT_TRUE(res != nullptr);
         EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
         EXPECT_EQ(200, res->status);
@@ -171,7 +171,7 @@ TEST(RangeTest, FromHTTPBin)
 
     {
         httplib::Headers headers = { httplib::make_range_header(1) };
-        auto res = cli.get("/range/32", headers);
+        auto res = cli.Get("/range/32", headers);
         ASSERT_TRUE(res != nullptr);
         EXPECT_EQ(res->body, "bcdefghijklmnopqrstuvwxyzabcdef");
         EXPECT_EQ(206, res->status);
@@ -179,7 +179,7 @@ TEST(RangeTest, FromHTTPBin)
 
     {
         httplib::Headers headers = { httplib::make_range_header(1, 10) };
-        auto res = cli.get("/range/32", headers);
+        auto res = cli.Get("/range/32", headers);
         ASSERT_TRUE(res != nullptr);
         EXPECT_EQ(res->body, "bcdefghijk");
         EXPECT_EQ(206, res->status);
@@ -200,7 +200,7 @@ TEST(ConnectionErrorTest, InvalidHost)
     httplib::Client cli(host, port, sec, ver);
 #endif
 
-    auto res = cli.get("/");
+    auto res = cli.Get("/");
     ASSERT_TRUE(res == nullptr);
 }
 
@@ -218,7 +218,7 @@ TEST(ConnectionErrorTest, InvalidPort)
     httplib::Client cli(host, port, sec, ver);
 #endif
 
-    auto res = cli.get("/");
+    auto res = cli.Get("/");
     ASSERT_TRUE(res == nullptr);
 }
 
@@ -236,7 +236,7 @@ TEST(ConnectionErrorTest, Timeout)
     httplib::Client cli(host, port, sec, ver);
 #endif
 
-    auto res = cli.get("/");
+    auto res = cli.Get("/");
     ASSERT_TRUE(res == nullptr);
 }
 
@@ -259,31 +259,31 @@ protected:
     virtual void SetUp() {
 		svr_.set_base_dir("./www");
 
-        svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
+        svr_.Get("/hi", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
-            .get("/slow", [&](const Request& /*req*/, Response& res) {
+            .Get("/slow", [&](const Request& /*req*/, Response& res) {
                 msleep(2000);
                 res.set_content("slow", "text/plain");
             })
-            .get("/remote_addr", [&](const Request& req, Response& res) {
+            .Get("/remote_addr", [&](const Request& req, Response& res) {
                 auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
                 res.set_content(remote_addr.c_str(), "text/plain");
             })
-            .get("/endwith%", [&](const Request& /*req*/, Response& res) {
+            .Get("/endwith%", [&](const Request& /*req*/, Response& res) {
                 res.set_content("Hello World!", "text/plain");
             })
-            .get("/", [&](const Request& /*req*/, Response& res) {
+            .Get("/", [&](const Request& /*req*/, Response& res) {
                 res.set_redirect("/hi");
             })
-            .post("/person", [&](const Request& req, Response& res) {
+            .Post("/person", [&](const Request& req, Response& res) {
                 if (req.has_param("name") && req.has_param("note")) {
                     persons_[req.get_param_value("name")] = req.get_param_value("note");
                 } else {
                     res.status = 400;
                 }
             })
-            .get("/person/(.*)", [&](const Request& req, Response& res) {
+            .Get("/person/(.*)", [&](const Request& req, Response& res) {
                 string name = req.matches[1];
                 if (persons_.find(name) != persons_.end()) {
                     auto note = persons_[name];
@@ -292,14 +292,14 @@ protected:
                     res.status = 404;
                 }
             })
-            .post("/chunked", [&](const Request& req, Response& /*res*/) {
+            .Post("/chunked", [&](const Request& req, Response& /*res*/) {
                 EXPECT_EQ(req.body, "dechunked post body");
             })
-            .post("/largechunked", [&](const Request& req, Response& /*res*/) {
+            .Post("/largechunked", [&](const Request& req, Response& /*res*/) {
                 std::string expected(6 * 30 * 1024u, 'a');
                 EXPECT_EQ(req.body, expected);
             })
-            .post("/multipart", [&](const Request& req, Response& /*res*/) {
+            .Post("/multipart", [&](const Request& req, Response& /*res*/) {
                 EXPECT_EQ(5u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
 
@@ -329,14 +329,24 @@ protected:
                     EXPECT_EQ(0u, file.length);
                 }
             })
+            .Put("/put", [&](const Request& req, Response& res) {
+                EXPECT_EQ(req.body, "PUT");
+                res.set_content(req.body, "text/plain");
+            })
+            .Delete("/delete", [&](const Request& /*req*/, Response& res) {
+                res.set_content("DELETE", "text/plain");
+            })
+            .Options(R"(\*)", [&](const Request& /*req*/, Response& res) {
+                res.set_header("Allow", "GET, POST, HEAD, OPTIONS");
+            })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-            .get("/gzip", [&](const Request& /*req*/, Response& res) {
+            .Get("/gzip", [&](const Request& /*req*/, Response& res) {
                 res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "text/plain");
             })
-            .get("/nogzip", [&](const Request& /*req*/, Response& res) {
+            .Get("/nogzip", [&](const Request& /*req*/, Response& res) {
                 res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "application/octet-stream");
             })
-            .post("/gzipmultipart", [&](const Request& req, Response& /*res*/) {
+            .Post("/gzipmultipart", [&](const Request& req, Response& /*res*/) {
                 EXPECT_EQ(2u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
 
@@ -388,7 +398,7 @@ protected:
 
 TEST_F(ServerTest, GetMethod200)
 {
-    auto res = cli_.get("/hi");
+    auto res = cli_.Get("/hi");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -397,7 +407,7 @@ TEST_F(ServerTest, GetMethod200)
 
 TEST_F(ServerTest, GetMethod302)
 {
-    auto res = cli_.get("/");
+    auto res = cli_.Get("/");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(302, res->status);
     EXPECT_EQ("/hi", res->get_header_value("Location"));
@@ -405,14 +415,14 @@ TEST_F(ServerTest, GetMethod302)
 
 TEST_F(ServerTest, GetMethod404)
 {
-    auto res = cli_.get("/invalid");
+    auto res = cli_.Get("/invalid");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, HeadMethod200)
 {
-    auto res = cli_.head("/hi");
+    auto res = cli_.Head("/hi");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -421,7 +431,7 @@ TEST_F(ServerTest, HeadMethod200)
 
 TEST_F(ServerTest, HeadMethod404)
 {
-    auto res = cli_.head("/invalid");
+    auto res = cli_.Head("/invalid");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(404, res->status);
     EXPECT_EQ("", res->body);
@@ -429,7 +439,7 @@ TEST_F(ServerTest, HeadMethod404)
 
 TEST_F(ServerTest, GetMethodPersonJohn)
 {
-    auto res = cli_.get("/person/john");
+    auto res = cli_.Get("/person/john");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -438,15 +448,15 @@ TEST_F(ServerTest, GetMethodPersonJohn)
 
 TEST_F(ServerTest, PostMethod1)
 {
-    auto res = cli_.get("/person/john1");
+    auto res = cli_.Get("/person/john1");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(404, res->status);
 
-    res = cli_.post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
+    res = cli_.Post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
 
-    res = cli_.get("/person/john1");
+    res = cli_.Get("/person/john1");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
     ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -455,7 +465,7 @@ TEST_F(ServerTest, PostMethod1)
 
 TEST_F(ServerTest, PostMethod2)
 {
-    auto res = cli_.get("/person/john2");
+    auto res = cli_.Get("/person/john2");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(404, res->status);
 
@@ -463,11 +473,11 @@ TEST_F(ServerTest, PostMethod2)
     params.emplace("name", "john2");
     params.emplace("note", "coder");
 
-    res = cli_.post("/person", params);
+    res = cli_.Post("/person", params);
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
 
-    res = cli_.get("/person/john2");
+    res = cli_.Get("/person/john2");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
     ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -476,7 +486,7 @@ TEST_F(ServerTest, PostMethod2)
 
 TEST_F(ServerTest, GetMethodDir)
 {
-	auto res = cli_.get("/dir/");
+	auto res = cli_.Get("/dir/");
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -495,7 +505,7 @@ TEST_F(ServerTest, GetMethodDir)
 
 TEST_F(ServerTest, GetMethodDirTest)
 {
-	auto res = cli_.get("/dir/test.html");
+	auto res = cli_.Get("/dir/test.html");
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -504,7 +514,7 @@ TEST_F(ServerTest, GetMethodDirTest)
 
 TEST_F(ServerTest, GetMethodDirTestWithDoubleDots)
 {
-	auto res = cli_.get("/dir/../dir/test.html");
+	auto res = cli_.Get("/dir/../dir/test.html");
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 	EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -513,21 +523,21 @@ TEST_F(ServerTest, GetMethodDirTestWithDoubleDots)
 
 TEST_F(ServerTest, GetMethodInvalidPath)
 {
-	auto res = cli_.get("/dir/../test.html");
+	auto res = cli_.Get("/dir/../test.html");
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDir)
 {
-	auto res = cli_.get("/../www/dir/test.html");
+	auto res = cli_.Get("/../www/dir/test.html");
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDir2)
 {
-	auto res = cli_.get("/dir/../../www/dir/test.html");
+	auto res = cli_.Get("/dir/../../www/dir/test.html");
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
 }
@@ -540,13 +550,13 @@ TEST_F(ServerTest, InvalidBaseDir)
 
 TEST_F(ServerTest, EmptyRequest)
 {
-	auto res = cli_.get("");
+	auto res = cli_.Get("");
 	ASSERT_TRUE(res == nullptr);
 }
 
 TEST_F(ServerTest, LongRequest)
 {
-	auto res = cli_.get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ok__");
+	auto res = cli_.Get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ok__");
 
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
@@ -554,7 +564,7 @@ TEST_F(ServerTest, LongRequest)
 
 TEST_F(ServerTest, TooLongRequest)
 {
-	auto res = cli_.get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ng___");
+	auto res = cli_.Get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/__ng___");
 
 	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
@@ -610,28 +620,28 @@ TEST_F(ServerTest, TooLongHeader)
 
 TEST_F(ServerTest, PercentEncoding)
 {
-    auto res = cli_.get("/e%6edwith%");
+    auto res = cli_.Get("/e%6edwith%");
     ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, PercentEncodingUnicode)
 {
-    auto res = cli_.get("/e%u006edwith%");
+    auto res = cli_.Get("/e%u006edwith%");
     ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, InvalidPercentEncoding)
 {
-    auto res = cli_.get("/%endwith%");
+    auto res = cli_.Get("/%endwith%");
     ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, InvalidPercentEncodingUnicode)
 {
-    auto res = cli_.get("/%uendwith%");
+    auto res = cli_.Get("/%uendwith%");
     ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(404, res->status);
 }
@@ -663,7 +673,7 @@ TEST_F(ServerTest, MultipartFormData)
 
 TEST_F(ServerTest, CaseInsensitiveHeaderName)
 {
-    auto res = cli_.get("/hi");
+    auto res = cli_.Get("/hi");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("content-type"));
@@ -731,7 +741,7 @@ TEST_F(ServerTest, LargeChunkedPost) {
 
 TEST_F(ServerTest, GetMethodRemoteAddr)
 {
-    auto res = cli_.get("/remote_addr");
+    auto res = cli_.Get("/remote_addr");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -740,10 +750,35 @@ TEST_F(ServerTest, GetMethodRemoteAddr)
 
 TEST_F(ServerTest, SlowRequest)
 {
-    request_threads_.push_back(std::thread([=]() { auto res = cli_.get("/slow"); }));
-    request_threads_.push_back(std::thread([=]() { auto res = cli_.get("/slow"); }));
-    request_threads_.push_back(std::thread([=]() { auto res = cli_.get("/slow"); }));
+    request_threads_.push_back(std::thread([=]() { auto res = cli_.Get("/slow"); }));
+    request_threads_.push_back(std::thread([=]() { auto res = cli_.Get("/slow"); }));
+    request_threads_.push_back(std::thread([=]() { auto res = cli_.Get("/slow"); }));
     msleep(100);
+}
+
+TEST_F(ServerTest, Put)
+{
+    auto res = cli_.Put("/put", "PUT", "text/plain");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, Delete)
+{
+    auto res = cli_.Delete("/delete");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("DELETE", res->body);
+}
+
+TEST_F(ServerTest, Options)
+{
+    auto res = cli_.Options("*");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("GET, POST, HEAD, OPTIONS", res->get_header_value("Allow"));
+    EXPECT_TRUE(res->body.empty());
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -751,7 +786,7 @@ TEST_F(ServerTest, Gzip)
 {
     Headers headers;
     headers.emplace("Accept-Encoding", "gzip, deflate");
-    auto res = cli_.get("/gzip", headers);
+    auto res = cli_.Get("/gzip", headers);
 
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -765,7 +800,7 @@ TEST_F(ServerTest, NoGzip)
 {
     Headers headers;
     headers.emplace("Accept-Encoding", "gzip, deflate");
-    auto res = cli_.get("/nogzip", headers);
+    auto res = cli_.Get("/nogzip", headers);
 
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(false, res->has_header("Content-Encoding"));
@@ -839,7 +874,7 @@ protected:
         {}
 
     virtual void SetUp() {
-        svr_.get("/hi", [&](const Request& /*req*/, Response& res) {
+        svr_.Get("/hi", [&](const Request& /*req*/, Response& res) {
             res.set_content("Hello World!", "text/plain");
         });
 
@@ -869,7 +904,7 @@ protected:
 
 TEST_F(ServerTestWithAI_PASSIVE, GetMethod200)
 {
-    auto res = cli_.get("/hi");
+    auto res = cli_.Get("/hi");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -914,7 +949,7 @@ TEST_F(ServerUpDownTest, QuickStartStop)
 TEST(SSLClientTest, ServerNameIndication)
 {
     SSLClient cli("httpbin.org", 443);
-    auto res = cli.get("/get");
+    auto res = cli.Get("/get");
     ASSERT_TRUE(res != nullptr);
     ASSERT_EQ(200, res->status);
 }

@@ -194,8 +194,12 @@ public:
 
     virtual bool is_valid() const;
 
-    Server& get(const char* pattern, Handler handler);
-    Server& post(const char* pattern, Handler handler);
+    Server& Get(const char* pattern, Handler handler);
+    Server& Post(const char* pattern, Handler handler);
+
+    Server& Put(const char* pattern, Handler handler);
+    Server& Delete(const char* pattern, Handler handler);
+    Server& Options(const char* pattern, Handler handler);
 
     bool set_base_dir(const char* path);
 
@@ -236,6 +240,9 @@ private:
     std::string base_dir_;
     Handlers    get_handlers_;
     Handlers    post_handlers_;
+    Handlers    put_handlers_;
+    Handlers    delete_handlers_;
+    Handlers    options_handlers_;
     Handler     error_handler_;
     Logger      logger_;
 
@@ -256,17 +263,26 @@ public:
 
     virtual bool is_valid() const;
 
-    std::shared_ptr<Response> get(const char* path, Progress progress = nullptr);
-    std::shared_ptr<Response> get(const char* path, const Headers& headers, Progress progress = nullptr);
+    std::shared_ptr<Response> Get(const char* path, Progress progress = nullptr);
+    std::shared_ptr<Response> Get(const char* path, const Headers& headers, Progress progress = nullptr);
 
-    std::shared_ptr<Response> head(const char* path);
-    std::shared_ptr<Response> head(const char* path, const Headers& headers);
+    std::shared_ptr<Response> Head(const char* path);
+    std::shared_ptr<Response> Head(const char* path, const Headers& headers);
 
-    std::shared_ptr<Response> post(const char* path, const std::string& body, const char* content_type);
-    std::shared_ptr<Response> post(const char* path, const Headers& headers, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> Post(const char* path, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> Post(const char* path, const Headers& headers, const std::string& body, const char* content_type);
 
-    std::shared_ptr<Response> post(const char* path, const Params& params);
-    std::shared_ptr<Response> post(const char* path, const Headers& headers, const Params& params);
+    std::shared_ptr<Response> Post(const char* path, const Params& params);
+    std::shared_ptr<Response> Post(const char* path, const Headers& headers, const Params& params);
+
+    std::shared_ptr<Response> Put(const char* path, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> Put(const char* path, const Headers& headers, const std::string& body, const char* content_type);
+
+    std::shared_ptr<Response> Delete(const char* path);
+    std::shared_ptr<Response> Delete(const char* path, const Headers& headers);
+
+    std::shared_ptr<Response> Options(const char* path);
+    std::shared_ptr<Response> Options(const char* path, const Headers& headers);
 
     bool send(Request& req, Response& res);
 
@@ -1411,15 +1427,33 @@ inline Server::~Server()
 {
 }
 
-inline Server& Server::get(const char* pattern, Handler handler)
+inline Server& Server::Get(const char* pattern, Handler handler)
 {
     get_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
-inline Server& Server::post(const char* pattern, Handler handler)
+inline Server& Server::Post(const char* pattern, Handler handler)
 {
     post_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+    return *this;
+}
+
+inline Server& Server::Put(const char* pattern, Handler handler)
+{
+    put_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+    return *this;
+}
+
+inline Server& Server::Delete(const char* pattern, Handler handler)
+{
+    delete_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+    return *this;
+}
+
+inline Server& Server::Options(const char* pattern, Handler handler)
+{
+    options_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
@@ -1475,7 +1509,7 @@ inline void Server::stop()
 
 inline bool Server::parse_request_line(const char* s, Request& req)
 {
-    static std::regex re("(GET|HEAD|POST) ([^?]+)(?:\\?(.+?))? (HTTP/1\\.[01])\r\n");
+    static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) ([^?]+)(?:\\?(.+?))? (HTTP/1\\.[01])\r\n");
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
@@ -1675,6 +1709,12 @@ inline bool Server::routing(Request& req, Response& res)
         return dispatch_request(req, res, get_handlers_);
     } else if (req.method == "POST") {
         return dispatch_request(req, res, post_handlers_);
+    } else if (req.method == "PUT") {
+        return dispatch_request(req, res, put_handlers_);
+    } else if (req.method == "DELETE") {
+        return dispatch_request(req, res, delete_handlers_);
+    } else if (req.method == "OPTIONS") {
+        return dispatch_request(req, res, options_handlers_);
     }
     return false;
 }
@@ -1725,7 +1765,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
     req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
 
     // Body
-    if (req.method == "POST") {
+    if (req.method == "POST" || req.method == "PUT") {
         if (!detail::read_content(strm, req)) {
             res.status = 400;
             write_response(strm, last_connection, req, res);
@@ -1947,12 +1987,12 @@ inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response&
     });
 }
 
-inline std::shared_ptr<Response> Client::get(const char* path, Progress progress)
+inline std::shared_ptr<Response> Client::Get(const char* path, Progress progress)
 {
-    return get(path, Headers(), progress);
+    return Get(path, Headers(), progress);
 }
 
-inline std::shared_ptr<Response> Client::get(const char* path, const Headers& headers, Progress progress)
+inline std::shared_ptr<Response> Client::Get(const char* path, const Headers& headers, Progress progress)
 {
     Request req;
     req.method = "GET";
@@ -1965,12 +2005,12 @@ inline std::shared_ptr<Response> Client::get(const char* path, const Headers& he
     return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::head(const char* path)
+inline std::shared_ptr<Response> Client::Head(const char* path)
 {
-    return head(path, Headers());
+    return Head(path, Headers());
 }
 
-inline std::shared_ptr<Response> Client::head(const char* path, const Headers& headers)
+inline std::shared_ptr<Response> Client::Head(const char* path, const Headers& headers)
 {
     Request req;
     req.method = "HEAD";
@@ -1982,13 +2022,13 @@ inline std::shared_ptr<Response> Client::head(const char* path, const Headers& h
     return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::post(
+inline std::shared_ptr<Response> Client::Post(
     const char* path, const std::string& body, const char* content_type)
 {
-    return post(path, Headers(), body, content_type);
+    return Post(path, Headers(), body, content_type);
 }
 
-inline std::shared_ptr<Response> Client::post(
+inline std::shared_ptr<Response> Client::Post(
     const char* path, const Headers& headers, const std::string& body, const char* content_type)
 {
     Request req;
@@ -2004,12 +2044,12 @@ inline std::shared_ptr<Response> Client::post(
     return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::post(const char* path, const Params& params)
+inline std::shared_ptr<Response> Client::Post(const char* path, const Params& params)
 {
-    return post(path, Headers(), params);
+    return Post(path, Headers(), params);
 }
 
-inline std::shared_ptr<Response> Client::post(const char* path, const Headers& headers, const Params& params)
+inline std::shared_ptr<Response> Client::Post(const char* path, const Headers& headers, const Params& params)
 {
     std::string query;
     for (auto it = params.begin(); it != params.end(); ++it) {
@@ -2021,7 +2061,63 @@ inline std::shared_ptr<Response> Client::post(const char* path, const Headers& h
         query += it->second;
     }
 
-    return post(path, headers, query, "application/x-www-form-urlencoded");
+    return Post(path, headers, query, "application/x-www-form-urlencoded");
+}
+
+inline std::shared_ptr<Response> Client::Put(
+    const char* path, const std::string& body, const char* content_type)
+{
+    return Put(path, Headers(), body, content_type);
+}
+
+inline std::shared_ptr<Response> Client::Put(
+    const char* path, const Headers& headers, const std::string& body, const char* content_type)
+{
+    Request req;
+    req.method = "PUT";
+    req.headers = headers;
+    req.path = path;
+
+    req.headers.emplace("Content-Type", content_type);
+    req.body = body;
+
+    auto res = std::make_shared<Response>();
+
+    return send(req, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::Delete(const char* path)
+{
+    return Delete(path, Headers());
+}
+
+inline std::shared_ptr<Response> Client::Delete(const char* path, const Headers& headers)
+{
+    Request req;
+    req.method = "DELETE";
+    req.path = path;
+    req.headers = headers;
+
+    auto res = std::make_shared<Response>();
+
+    return send(req, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::Options(const char* path)
+{
+    return Options(path, Headers());
+}
+
+inline std::shared_ptr<Response> Client::Options(const char* path, const Headers& headers)
+{
+    Request req;
+    req.method = "OPTIONS";
+    req.path = path;
+    req.headers = headers;
+
+    auto res = std::make_shared<Response>();
+
+    return send(req, *res) ? res : nullptr;
 }
 
 /*
