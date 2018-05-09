@@ -81,25 +81,25 @@ int main(void)
         return -1;
     }
 
-    svr.get("/", [=](const auto& /*req*/, auto& res) {
+    svr.Get("/", [=](const auto& /*req*/, auto& res) {
         res.set_redirect("/hi");
     });
 
-    svr.get("/hi", [](const auto& /*req*/, auto& res) {
+    svr.Get("/hi", [](const auto& /*req*/, auto& res) {
         res.set_content("Hello World!\n", "text/plain");
     });
 
-    svr.get("/slow", [](const auto& /*req*/, auto& res) {
+    svr.Get("/slow", [](const auto& /*req*/, auto& res) {
         using namespace std::chrono_literals;
         std::this_thread::sleep_for(2s);
         res.set_content("Slow...\n", "text/plain");
     });
 
-    svr.get("/dump", [](const auto& req, auto& res) {
+    svr.Get("/dump", [](const auto& req, auto& res) {
         res.set_content(dump_headers(req.headers), "text/plain");
     });
 
-    svr.get("/stop", [&](const auto& /*req*/, auto& /*res*/) {
+    svr.Get("/stop", [&](const auto& /*req*/, auto& /*res*/) {
         svr.stop();
     });
 
