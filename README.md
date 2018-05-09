@@ -114,7 +114,7 @@ res = cli.Post("/person", "name=john1&note=coder", "application/x-www-form-urlen
 ### POST with parameters
 
 ```c++
-httplib::Map params;
+httplib::Params params;
 params["name"] = "john";
 params["note"] = "coder";
 auto res = cli.Post("/post", params);
@@ -123,7 +123,7 @@ auto res = cli.Post("/post", params);
 ### PUT
 
 ```c++
-res = cli.Post("/resource/foo", "text", "text/plain");
+res = cli.Put("/resource/foo", "text", "text/plain");
 ```
 
 ### DELETE
