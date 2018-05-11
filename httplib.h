@@ -39,7 +39,6 @@
 #endif
 
 typedef SOCKET socket_t;
-constexpr socket_t kInvalidSocket = INVALID_SOCKET;
 #else
 #include <pthread.h>
 #include <unistd.h>
@@ -52,7 +51,7 @@ constexpr socket_t kInvalidSocket = INVALID_SOCKET;
 #include <sys/select.h>
 
 typedef int socket_t;
-constexpr socket_t kInvalidSocket = -1;
+#define INVALID_SOCKET (-1)
 #endif
 
 #include <fstream>
@@ -562,13 +561,13 @@ socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
     auto service = std::to_string(port);
 
     if (getaddrinfo(host, service.c_str(), &hints, &result)) {
-        return kInvalidSocket;
+        return INVALID_SOCKET;
     }
 
     for (auto rp = result; rp; rp = rp->ai_next) {
        // Create a socket
        auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-       if (sock == kInvalidSocket) {
+       if (sock == INVALID_SOCKET) {
           continue;
        }
 
@@ -586,7 +585,7 @@ socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
     }
 
     freeaddrinfo(result);
-    return kInvalidSocket;
+    return INVALID_SOCKET;
 }
 
 inline void set_nonblocking(socket_t sock, bool nonblocking)
@@ -1417,7 +1416,7 @@ inline std::string SocketStream::get_remote_addr() {
 inline Server::Server(HttpVersion http_version)
     : http_version_(http_version)
     , is_running_(false)
-    , svr_sock_(kInvalidSocket)
+    , svr_sock_(INVALID_SOCKET)
     , running_threads_(0)
 {
 #ifndef _WIN32
@@ -1502,10 +1501,10 @@ inline bool Server::is_running() const
 inline void Server::stop()
 {
     if (is_running_) {
-        assert(svr_sock_ != kInvalidSocket);
+        assert(svr_sock_ != INVALID_SOCKET);
         detail::shutdown_socket(svr_sock_);
         detail::close_socket(svr_sock_);
-        svr_sock_ = kInvalidSocket;
+        svr_sock_ = INVALID_SOCKET;
     }
 }
 
@@ -1626,7 +1625,7 @@ inline int Server::bind_internal(const char* host, int port, int socket_flags)
     }
 
     svr_sock_ = create_server_socket(host, port, socket_flags);
-    if (svr_sock_ == kInvalidSocket) {
+    if (svr_sock_ == INVALID_SOCKET) {
         return -1;
     }
 
@@ -1652,7 +1651,7 @@ inline bool Server::listen_internal()
         auto val = detail::select_read(svr_sock_, 0, 100000);
 
         if (val == 0) { // Timeout
-            if (svr_sock_ == kInvalidSocket) {
+            if (svr_sock_ == INVALID_SOCKET) {
                 // The server socket was closed by 'stop' method.
                 break;
             }
@@ -1661,8 +1660,8 @@ inline bool Server::listen_internal()
 
         socket_t sock = accept(svr_sock_, NULL, NULL);
 
-        if (sock == kInvalidSocket) {
-            if (svr_sock_ != kInvalidSocket) {
+        if (sock == INVALID_SOCKET) {
+            if (svr_sock_ != INVALID_SOCKET) {
                 detail::close_socket(svr_sock_);
                 ret = false;
             } else {
@@ -1896,7 +1895,7 @@ inline bool Client::send(Request& req, Response& res)
     }
 
     auto sock = create_client_socket();
-    if (sock == kInvalidSocket) {
+    if (sock == INVALID_SOCKET) {
         return false;
     }
 
