@@ -68,12 +68,10 @@ std::string log(const Request& req, const Response& res)
 
 int main(void)
 {
-    auto version = httplib::HttpVersion::v1_1;
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, version);
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 #else
-    Server svr(version);
+    Server svr;
 #endif
 
     if (!svr.is_valid()) {

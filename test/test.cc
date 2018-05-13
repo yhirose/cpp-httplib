@@ -118,17 +118,17 @@ TEST(GetHeaderValueTest, Range)
     }
 }
 
-void testChunkedEncoding(httplib::HttpVersion ver)
+TEST(ChunkedEncodingTest, FromHTTPWatch)
 {
     auto host = "www.httpwatch.com";
     auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 443;
-    httplib::SSLClient cli(host, port, sec, ver);
+    httplib::SSLClient cli(host, port, sec);
 #else
     auto port = 80;
-    httplib::Client cli(host, port, sec, ver);
+    httplib::Client cli(host, port, sec);
 #endif
 
     auto res = cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
@@ -141,24 +141,17 @@ void testChunkedEncoding(httplib::HttpVersion ver)
     EXPECT_EQ(out, res->body);
 }
 
-TEST(ChunkedEncodingTest, FromHTTPWatch)
-{
-    testChunkedEncoding(httplib::HttpVersion::v1_0);
-    testChunkedEncoding(httplib::HttpVersion::v1_1);
-}
-
 TEST(RangeTest, FromHTTPBin)
 {
     auto host = "httpbin.org";
     auto sec = 5;
-    auto ver = httplib::HttpVersion::v1_1;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 443;
-    httplib::SSLClient cli(host, port, sec, ver);
+    httplib::SSLClient cli(host, port, sec);
 #else
     auto port = 80;
-    httplib::Client cli(host, port, sec, ver);
+    httplib::Client cli(host, port, sec);
 #endif
 
     {
@@ -190,14 +183,13 @@ TEST(ConnectionErrorTest, InvalidHost)
 {
     auto host = "abcde.com";
     auto sec = 2;
-    auto ver = httplib::HttpVersion::v1_1;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 443;
-    httplib::SSLClient cli(host, port, sec, ver);
+    httplib::SSLClient cli(host, port, sec);
 #else
     auto port = 80;
-    httplib::Client cli(host, port, sec, ver);
+    httplib::Client cli(host, port, sec);
 #endif
 
     auto res = cli.Get("/");
@@ -208,14 +200,13 @@ TEST(ConnectionErrorTest, InvalidPort)
 {
     auto host = "localhost";
     auto sec = 2;
-    auto ver = httplib::HttpVersion::v1_1;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 44380;
-    httplib::SSLClient cli(host, port, sec, ver);
+    httplib::SSLClient cli(host, port, sec);
 #else
     auto port = 8080;
-    httplib::Client cli(host, port, sec, ver);
+    httplib::Client cli(host, port, sec);
 #endif
 
     auto res = cli.Get("/");
@@ -226,14 +217,13 @@ TEST(ConnectionErrorTest, Timeout)
 {
     auto host = "google.com";
     auto sec = 2;
-    auto ver = httplib::HttpVersion::v1_1;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto port = 44380;
-    httplib::SSLClient cli(host, port, sec, ver);
+    httplib::SSLClient cli(host, port, sec);
 #else
     auto port = 8080;
-    httplib::Client cli(host, port, sec, ver);
+    httplib::Client cli(host, port, sec);
 #endif
 
     auto res = cli.Get("/");
@@ -241,7 +231,7 @@ TEST(ConnectionErrorTest, Timeout)
 }
 
 TEST(Server, BindAndListenSeparately) {
-    Server svr(httplib::HttpVersion::v1_1);
+    Server svr;
     int port = svr.bind_to_any_port("localhost");
     ASSERT_TRUE(port > 0);
     svr.stop();
@@ -400,6 +390,7 @@ TEST_F(ServerTest, GetMethod200)
 {
     auto res = cli_.Get("/hi");
     ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ("HTTP/1.1", res->version);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
     EXPECT_EQ("Hello World!", res->body);

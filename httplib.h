@@ -189,7 +189,7 @@ public:
     typedef std::function<void (const Request&, Response&)> Handler;
     typedef std::function<void (const Request&, const Response&)> Logger;
 
-    Server(HttpVersion http_version = HttpVersion::v1_0);
+    Server();
 
     virtual ~Server();
 
@@ -217,8 +217,6 @@ public:
 
 protected:
     bool process_request(Stream& strm, bool last_connection);
-
-    const HttpVersion http_version_;
 
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
@@ -257,8 +255,7 @@ public:
     Client(
         const char* host,
         int port = 80,
-        size_t timeout_sec = 300,
-        HttpVersion http_version = HttpVersion::v1_0);
+        size_t timeout_sec = 300);
 
     virtual ~Client();
 
@@ -293,7 +290,6 @@ protected:
     const std::string host_;
     const int         port_;
     size_t            timeout_sec_;
-    const HttpVersion http_version_;
     const std::string host_and_port_;
 
 private:
@@ -323,8 +319,7 @@ private:
 class SSLServer : public Server {
 public:
     SSLServer(
-        const char* cert_path, const char* private_key_path,
-        HttpVersion http_version = HttpVersion::v1_0);
+        const char* cert_path, const char* private_key_path);
 
     virtual ~SSLServer();
 
@@ -342,8 +337,7 @@ public:
     SSLClient(
         const char* host,
         int port = 80,
-        size_t timeout_sec = 300,
-        HttpVersion http_version = HttpVersion::v1_0);
+        size_t timeout_sec = 300);
 
     virtual ~SSLClient();
 
@@ -361,8 +355,6 @@ private:
  * Implementation
  */
 namespace detail {
-
-static std::vector<const char*> http_version_strings = { "HTTP/1.0", "HTTP/1.1" };
 
 template <class Fn>
 void split(const char* b, const char* e, char d, Fn fn)
@@ -1413,9 +1405,8 @@ inline std::string SocketStream::get_remote_addr() {
 }
 
 // HTTP server implementation
-inline Server::Server(HttpVersion http_version)
-    : http_version_(http_version)
-    , is_running_(false)
+inline Server::Server()
+    : is_running_(false)
     , svr_sock_(INVALID_SOCKET)
     , running_threads_(0)
 {
@@ -1539,8 +1530,7 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
     }
 
     // Response line
-    strm.write_format("%s %d %s\r\n",
-        detail::http_version_strings[static_cast<size_t>(http_version_)],
+    strm.write_format("HTTP/1.1 %d %s\r\n",
         res.status,
         detail::status_message(res.status));
 
@@ -1551,7 +1541,7 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
     if (!res.body.empty()) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        // TODO: Server version is HTTP/1.1 and 'Accpet-Encoding' has gzip, not gzip;q=0
+        // TODO: 'Accpet-Encoding' has gzip, not gzip;q=0
         const auto& encodings = req.get_header_value("Accept-Encoding");
         if (encodings.find("gzip") != std::string::npos &&
             detail::can_compress(res.get_header_value("Content-Type"))) {
@@ -1749,7 +1739,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
     Request req;
     Response res;
 
-    res.version = detail::http_version_strings[static_cast<size_t>(http_version_)];
+    res.version = "HTTP/1.1";
 
     // Request line and headers
     if (!parse_request_line(reader.ptr(), req) || !detail::read_headers(strm, req.headers)) {
@@ -1817,11 +1807,9 @@ inline bool Server::is_valid() const
 
 inline bool Server::read_and_close_socket(socket_t sock)
 {
-    auto keep_alive = http_version_ == HttpVersion::v1_1;
-
     return detail::read_and_close_socket(
         sock,
-        keep_alive,
+        true,
         [this](Stream& strm, bool last_connection) {
             return process_request(strm, last_connection);
         });
@@ -1829,11 +1817,10 @@ inline bool Server::read_and_close_socket(socket_t sock)
 
 // HTTP client implementation
 inline Client::Client(
-    const char* host, int port, size_t timeout_sec, HttpVersion http_version)
+    const char* host, int port, size_t timeout_sec)
     : host_(host)
     , port_(port)
     , timeout_sec_(timeout_sec)
-    , http_version_(http_version)
     , host_and_port_(host_ + ":" + std::to_string(port_))
 {
 }
@@ -1878,11 +1865,12 @@ inline bool Client::read_response_line(Stream& strm, Response& res)
         return false;
     }
 
-    const static std::regex re("HTTP/1\\.[01] (\\d+?) .+\r\n");
+    const static std::regex re("(HTTP/1\\.[01]) (\\d+?) .+\r\n");
 
     std::cmatch m;
     if (std::regex_match(reader.ptr(), m, re)) {
-        res.status = std::stoi(std::string(m[1]));
+        res.version = std::string(m[1]);
+        res.status = std::stoi(std::string(m[2]));
     }
 
     return true;
@@ -1907,10 +1895,9 @@ inline void Client::write_request(Stream& strm, Request& req)
     auto path = detail::encode_url(req.path);
 
     // Request line
-    strm.write_format("%s %s %s\r\n",
+    strm.write_format("%s %s HTTP/1.1\r\n",
         req.method.c_str(),
-        path.c_str(),
-        detail::http_version_strings[static_cast<size_t>(http_version_)]);
+        path.c_str());
 
     // Headers
     req.set_header("Host", host_and_port_.c_str());
@@ -1961,7 +1948,8 @@ inline bool Client::process_request(Stream& strm, Request& req, Response& res)
         return false;
     }
 
-    // TODO: Check if 'Connection' header is 'close' or HTTP version is 1.0, then close socket...
+    // TODO: Check if 'Connection' header is 'close' or HTTP version is 1.0,
+    // then close socket...
 
     // Body
     if (req.method != "HEAD") {
@@ -2227,8 +2215,7 @@ inline std::string SSLSocketStream::get_remote_addr() {
 }
 
 // SSL HTTP server implementation
-inline SSLServer::SSLServer(const char* cert_path, const char* private_key_path, HttpVersion http_version)
-    : Server(http_version)
+inline SSLServer::SSLServer(const char* cert_path, const char* private_key_path)
 {
     ctx_ = SSL_CTX_new(SSLv23_server_method());
 
@@ -2264,11 +2251,9 @@ inline bool SSLServer::is_valid() const
 
 inline bool SSLServer::read_and_close_socket(socket_t sock)
 {
-    auto keep_alive = http_version_ == HttpVersion::v1_1;
-
     return detail::read_and_close_socket_ssl(
         sock,
-        keep_alive,
+        true,
         ctx_, ctx_mutex_,
         SSL_accept,
         [](SSL* /*ssl*/) {},
@@ -2278,9 +2263,8 @@ inline bool SSLServer::read_and_close_socket(socket_t sock)
 }
 
 // SSL HTTP client implementation
-inline SSLClient::SSLClient(
-    const char* host, int port, size_t timeout_sec, HttpVersion http_version)
-    : Client(host, port, timeout_sec, http_version)
+inline SSLClient::SSLClient(const char* host, int port, size_t timeout_sec)
+    : Client(host, port, timeout_sec)
 {
     ctx_ = SSL_CTX_new(SSLv23_client_method());
 }

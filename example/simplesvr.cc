@@ -99,12 +99,10 @@ int main(int argc, const char** argv)
         return 1;
     }
 
-    auto version = httplib::HttpVersion::v1_1;
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, version);
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 #else
-    Server svr(version);
+    Server svr;
 #endif
 
     svr.Post("/multipart", [](const auto& req, auto& res) {
