@@ -216,7 +216,7 @@ public:
     void stop();
 
 protected:
-    bool process_request(Stream& strm, bool last_connection);
+    bool process_request(Stream& strm, bool last_connection, bool& connection_close);
 
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
@@ -285,7 +285,7 @@ public:
     bool send(Request& req, Response& res);
 
 protected:
-    bool process_request(Stream& strm, Request& req, Response& res);
+    bool process_request(Stream& strm, Request& req, Response& res, bool& connection_close);
 
     const std::string host_;
     const int         port_;
@@ -503,17 +503,21 @@ inline bool read_and_close_socket(socket_t sock, bool keep_alive, T callback)
                detail::select_read(sock,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
-            auto last_connection = count == 1;
             SocketStream strm(sock);
-            ret = callback(strm, last_connection);
-            if (!ret) {
+            auto last_connection = count == 1;
+            auto connection_close = false;
+
+            ret = callback(strm, last_connection, connection_close);
+            if (!ret || connection_close) {
                 break;
             }
+
             count--;
         }
     } else {
         SocketStream strm(sock);
-        ret = callback(strm, true);
+        auto dummy_connection_close = false;
+        ret = callback(strm, true, dummy_connection_close);
     }
 
     close_socket(sock);
@@ -1535,7 +1539,9 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
         detail::status_message(res.status));
 
     // Headers
-    if (!res.has_header("Connection") && (last_connection || req.version == "HTTP/1.0")) {
+    if (last_connection ||
+        req.version == "HTTP/1.0" ||
+        req.get_header_value("Connection") == "close") {
         res.set_header("Connection", "close");
     }
 
@@ -1724,7 +1730,7 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
     return false;
 }
 
-inline bool Server::process_request(Stream& strm, bool last_connection)
+inline bool Server::process_request(Stream& strm, bool last_connection, bool& connection_close)
 {
     const auto bufsiz = 2048;
     char buf[bufsiz];
@@ -1750,7 +1756,8 @@ inline bool Server::process_request(Stream& strm, bool last_connection)
 
     auto ret = true;
     if (req.get_header_value("Connection") == "close") {
-        ret = false;
+        // ret = false;
+        connection_close = true;
     }
 
     req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
@@ -1810,8 +1817,8 @@ inline bool Server::read_and_close_socket(socket_t sock)
     return detail::read_and_close_socket(
         sock,
         true,
-        [this](Stream& strm, bool last_connection) {
-            return process_request(strm, last_connection);
+        [this](Stream& strm, bool last_connection, bool& connection_close) {
+            return process_request(strm, last_connection, connection_close);
         });
 }
 
@@ -1910,11 +1917,10 @@ inline void Client::write_request(Stream& strm, Request& req)
         req.set_header("User-Agent", "cpp-httplib/0.2");
     }
 
-    // TODO: if (!req.has_header("Connection") &&
-    //           (last_connection || http_version_ == detail::HttpVersion::v1_0)) {
-    if (!req.has_header("Connection")) {
+    // TODO: Support KeepAlive connection
+    // if (!req.has_header("Connection")) {
         req.set_header("Connection", "close");
-    }
+    // }
 
     if (!req.body.empty()) {
         if (!req.has_header("Content-Type")) {
@@ -1938,7 +1944,7 @@ inline void Client::write_request(Stream& strm, Request& req)
     }
 }
 
-inline bool Client::process_request(Stream& strm, Request& req, Response& res)
+inline bool Client::process_request(Stream& strm, Request& req, Response& res, bool& connection_close)
 {
     // Send request
     write_request(strm, req);
@@ -1948,8 +1954,9 @@ inline bool Client::process_request(Stream& strm, Request& req, Response& res)
         return false;
     }
 
-    // TODO: Check if 'Connection' header is 'close' or HTTP version is 1.0,
-    // then close socket...
+    if (res.get_header_value("Connection") == "close" || res.version == "HTTP/1.0") {
+        connection_close = true;
+    }
 
     // Body
     if (req.method != "HEAD") {
@@ -1971,9 +1978,12 @@ inline bool Client::process_request(Stream& strm, Request& req, Response& res)
 
 inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response& res)
 {
-    return detail::read_and_close_socket(sock, false, [&](Stream& strm, bool /*last_connection*/) {
-        return process_request(strm, req, res);
-    });
+    return detail::read_and_close_socket(
+        sock,
+        false,
+        [&](Stream& strm, bool /*last_connection*/, bool& connection_close) {
+            return process_request(strm, req, res, connection_close);
+        });
 }
 
 inline std::shared_ptr<Response> Client::Get(const char* path, Progress progress)
@@ -2118,7 +2128,8 @@ namespace detail {
 template <typename U, typename V, typename T>
 inline bool read_and_close_socket_ssl(
     socket_t sock, bool keep_alive,
-    // TODO: OpenSSL 1.0.2 occasionally crashes... The upcoming 1.1.0 is going to be thread safe.
+    // TODO: OpenSSL 1.0.2 occasionally crashes...
+    // The upcoming 1.1.0 is going to be thread safe.
     SSL_CTX* ctx, std::mutex& ctx_mutex,
     U SSL_connect_or_accept, V setup,
     T callback)
@@ -2148,17 +2159,21 @@ inline bool read_and_close_socket_ssl(
                detail::select_read(sock,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
-            auto last_connection = count == 1;
             SSLSocketStream strm(sock, ssl);
-            ret = callback(strm, last_connection);
-            if (!ret) {
+            auto last_connection = count == 1;
+            auto connection_close = false;
+
+            ret = callback(strm, last_connection, connection_close);
+            if (!ret || connection_close) {
                 break;
             }
+
             count--;
         }
     } else {
         SSLSocketStream strm(sock, ssl);
-        ret = callback(strm, true);
+        auto dummy_connection_close = false;
+        ret = callback(strm, true, dummy_connection_close);
     }
 
     SSL_shutdown(ssl);
@@ -2257,8 +2272,8 @@ inline bool SSLServer::read_and_close_socket(socket_t sock)
         ctx_, ctx_mutex_,
         SSL_accept,
         [](SSL* /*ssl*/) {},
-        [this](Stream& strm, bool last_connection) {
-            return process_request(strm, last_connection);
+        [this](Stream& strm, bool last_connection, bool& connection_close) {
+            return process_request(strm, last_connection, connection_close);
         });
 }
 
@@ -2290,8 +2305,8 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
         [&](SSL* ssl) {
             SSL_set_tlsext_host_name(ssl, host_.c_str());
         },
-        [&](Stream& strm, bool /*last_connection*/) {
-            return process_request(strm, req, res);
+        [&](Stream& strm, bool /*last_connection*/, bool& connection_close) {
+            return process_request(strm, req, res, connection_close);
         });
 }
 #endif
