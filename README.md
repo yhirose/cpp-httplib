@@ -115,8 +115,19 @@ res = cli.Post("/person", "name=john1&note=coder", "application/x-www-form-urlen
 
 ```c++
 httplib::Params params;
-params["name"] = "john";
-params["note"] = "coder";
+params.emplace("name", "john");
+params.emplace("note", "coder");
+
+auto res = cli.Post("/post", params);
+```
+ or
+
+```c++
+httplib::Params params{
+  { "name", "john" },
+  { "note", "coder" }
+};
+
 auto res = cli.Post("/post", params);
 ```
 
