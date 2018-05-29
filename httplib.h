@@ -1626,12 +1626,18 @@ inline int Server::bind_internal(const char* host, int port, int socket_flags)
     }
 
     if (port == 0) {
-        struct sockaddr_in sin;
-        socklen_t len = sizeof(sin);
-        if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&sin), &len) == -1) {
+        struct sockaddr_storage address;
+        socklen_t len = sizeof(address);
+        if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&address), &len) == -1) {
             return -1;
         }
-        return ntohs(sin.sin_port);
+        if (address.ss_family == AF_INET) {
+          return ntohs(reinterpret_cast<struct sockaddr_in*>(&address)->sin_port);
+        } else if (address.ss_family == AF_INET6) {
+          return ntohs(reinterpret_cast<struct sockaddr_in6*>(&address)->sin6_port);
+        } else {
+          return -1;
+        }
     } else {
         return port;
     }
