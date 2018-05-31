@@ -77,7 +77,6 @@ typedef int socket_t;
 /*
  * Configuration
  */
-#define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
 
@@ -207,6 +206,8 @@ public:
     void set_error_handler(Handler handler);
     void set_logger(Logger logger);
 
+    void set_keep_alive_max_count(size_t count);
+
     int bind_to_any_port(const char* host, int socket_flags = 0);
     bool listen_after_bind();
 
@@ -217,6 +218,8 @@ public:
 
 protected:
     bool process_request(Stream& strm, bool last_connection, bool& connection_close);
+
+    size_t keep_alive_max_count_;
 
 private:
     typedef std::vector<std::pair<std::regex, Handler>> Handlers;
@@ -493,12 +496,12 @@ inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
 }
 
 template <typename T>
-inline bool read_and_close_socket(socket_t sock, bool keep_alive, T callback)
+inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T callback)
 {
     bool ret = false;
 
-    if (keep_alive) {
-        auto count = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+    if (keep_alive_max_count > 0) {
+        auto count = keep_alive_max_count;
         while (count > 0 &&
                detail::select_read(sock,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
@@ -1410,7 +1413,8 @@ inline std::string SocketStream::get_remote_addr() {
 
 // HTTP server implementation
 inline Server::Server()
-    : is_running_(false)
+    : keep_alive_max_count_(5)
+    , is_running_(false)
     , svr_sock_(INVALID_SOCKET)
     , running_threads_(0)
 {
@@ -1470,6 +1474,11 @@ inline void Server::set_error_handler(Handler handler)
 inline void Server::set_logger(Logger logger)
 {
     logger_ = logger;
+}
+
+inline void Server::set_keep_alive_max_count(size_t count)
+{
+    keep_alive_max_count_ = count;
 }
 
 inline int Server::bind_to_any_port(const char* host, int socket_flags)
@@ -1822,7 +1831,7 @@ inline bool Server::read_and_close_socket(socket_t sock)
 {
     return detail::read_and_close_socket(
         sock,
-        true,
+        keep_alive_max_count_,
         [this](Stream& strm, bool last_connection, bool& connection_close) {
             return process_request(strm, last_connection, connection_close);
         });
@@ -1986,7 +1995,7 @@ inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response&
 {
     return detail::read_and_close_socket(
         sock,
-        false,
+        0,
         [&](Stream& strm, bool /*last_connection*/, bool& connection_close) {
             return process_request(strm, req, res, connection_close);
         });
@@ -2133,7 +2142,7 @@ namespace detail {
 
 template <typename U, typename V, typename T>
 inline bool read_and_close_socket_ssl(
-    socket_t sock, bool keep_alive,
+    socket_t sock, size_t keep_alive_max_count,
     // TODO: OpenSSL 1.0.2 occasionally crashes...
     // The upcoming 1.1.0 is going to be thread safe.
     SSL_CTX* ctx, std::mutex& ctx_mutex,
@@ -2159,8 +2168,8 @@ inline bool read_and_close_socket_ssl(
 
     bool ret = false;
 
-    if (keep_alive) {
-        auto count = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+    if (keep_alive_max_count > 0) {
+        auto count = keep_alive_max_count;
         while (count > 0 &&
                detail::select_read(sock,
                    CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
@@ -2274,7 +2283,7 @@ inline bool SSLServer::read_and_close_socket(socket_t sock)
 {
     return detail::read_and_close_socket_ssl(
         sock,
-        true,
+        keep_alive_max_count_,
         ctx_, ctx_mutex_,
         SSL_accept,
         [](SSL* /*ssl*/) {},
@@ -2305,7 +2314,7 @@ inline bool SSLClient::is_valid() const
 inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Response& res)
 {
     return is_valid() && detail::read_and_close_socket_ssl(
-        sock, false,
+        sock, 0,
         ctx_, ctx_mutex_,
         SSL_connect,
         [&](SSL* ssl) {
