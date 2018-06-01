@@ -120,6 +120,7 @@ typedef std::multimap<std::string, MultipartFile> MultipartFiles;
 struct Request {
     std::string    version;
     std::string    method;
+    std::string    target;
     std::string    path;
     Headers        headers;
     std::string    body;
@@ -150,7 +151,7 @@ struct Response {
     std::string get_header_value(const char* key) const;
     void set_header(const char* key, const char* val);
 
-    void set_redirect(const char* url);
+    void set_redirect(const char* uri);
     void set_content(const char* s, size_t n, const char* content_type);
     void set_content(const std::string& s, const char* content_type);
 
@@ -1514,18 +1515,19 @@ inline void Server::stop()
 
 inline bool Server::parse_request_line(const char* s, Request& req)
 {
-    static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) ([^?]+)(?:\\?(.+?))? (HTTP/1\\.[01])\r\n");
+    static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
         req.version = std::string(m[4]);
         req.method = std::string(m[1]);
-        req.path = detail::decode_url(m[2]);
+        req.target = std::string(m[2]);
+        req.path = detail::decode_url(m[3]);
 
         // Parse query text
-        auto len = std::distance(m[3].first, m[3].second);
+        auto len = std::distance(m[4].first, m[4].second);
         if (len > 0) {
-            detail::parse_query_text(m[3], req.params);
+            detail::parse_query_text(m[4], req.params);
         }
 
         return true;

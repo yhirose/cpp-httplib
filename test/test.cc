@@ -329,6 +329,11 @@ protected:
             .Options(R"(\*)", [&](const Request& /*req*/, Response& res) {
                 res.set_header("Allow", "GET, POST, HEAD, OPTIONS");
             })
+            .Get("/request-target", [&](const Request& req, Response& /*res*/) {
+                EXPECT_EQ("/request-target?aaa=bbb&ccc=ddd", req.target);
+                EXPECT_EQ("bbb", req.get_param_value("aaa"));
+                EXPECT_EQ("ddd", req.get_param_value("ccc"));
+            })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
             .Get("/gzip", [&](const Request& /*req*/, Response& res) {
                 res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "text/plain");
@@ -771,6 +776,13 @@ TEST_F(ServerTest, Options)
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("GET, POST, HEAD, OPTIONS", res->get_header_value("Allow"));
     EXPECT_TRUE(res->body.empty());
+}
+
+TEST_F(ServerTest, URL)
+{
+    auto res = cli_.Get("/request-target?aaa=bbb&ccc=ddd");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
