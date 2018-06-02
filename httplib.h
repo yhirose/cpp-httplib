@@ -732,7 +732,12 @@ inline const char* status_message(int status)
 {
     switch (status) {
     case 200: return "OK";
+    case 301: return "Moved Permanently";
+    case 302: return "Found";
+    case 303: return "See Other";
+    case 304: return "Not Modified";
     case 400: return "Bad Request";
+    case 403: return "Forbidden";
     case 404: return "Not Found";
     case 415: return "Unsupported Media Type";
     default:
