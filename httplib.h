@@ -1001,9 +1001,9 @@ inline std::string decode_url(const std::string& s)
 {
     std::string result;
 
-    for (size_t i = 0; s[i]; i++) {
+    for (size_t i = 0; i < s.size(); i++) {
         if (s[i] == '%' && i + 1 < s.size()) {
-            if (s[i + 1] && s[i + 1] == 'u') {
+            if (s[i + 1] == 'u') {
                 int val = 0;
                 if (from_hex_to_i(s, i + 2, 4, val)) {
                     // 4 digits Unicode codes
