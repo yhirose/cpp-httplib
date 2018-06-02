@@ -643,6 +643,13 @@ TEST_F(ServerTest, InvalidPercentEncodingUnicode)
 	EXPECT_EQ(404, res->status);
 }
 
+TEST_F(ServerTest, EndWithPercentCharacterInQuery)
+{
+    auto res = cli_.Get("/hello?aaa=bbb%");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(404, res->status);
+}
+
 TEST_F(ServerTest, MultipartFormData)
 {
     Request req;

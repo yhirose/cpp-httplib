@@ -938,8 +938,12 @@ inline bool is_hex(char c, int& v)
     return false;
 }
 
-inline bool from_hex_to_i(const std::string& s, int i, int cnt, int& val)
+inline bool from_hex_to_i(const std::string& s, size_t i, size_t cnt, int& val)
 {
+    if (i >= s.size()) {
+        return false;
+    }
+
     val = 0;
     for (; cnt; i++, cnt--) {
         if (!s[i]) {
@@ -992,8 +996,8 @@ inline std::string decode_url(const std::string& s)
 {
     std::string result;
 
-    for (int i = 0; s[i]; i++) {
-        if (s[i] == '%') {
+    for (size_t i = 0; s[i]; i++) {
+        if (s[i] == '%' && i + 1 < s.size()) {
             if (s[i + 1] && s[i + 1] == 'u') {
                 int val = 0;
                 if (from_hex_to_i(s, i + 2, 4, val)) {
