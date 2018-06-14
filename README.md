@@ -187,10 +187,10 @@ auto res = cli.Get("/range/32", headers);
 // res->body should be "bcdefghijk".
 ```
 
-OpenSSL Support
----------------
+OpenSSL 1.0.2 Support
+---------------------
 
-SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
+SSL (OpenSSL 1.0.2) support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
