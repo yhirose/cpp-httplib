@@ -2270,11 +2270,24 @@ inline SSLServer::SSLServer(const char* cert_path, const char* private_key_path)
         // SSL_CTX_set_tmp_ecdh(ctx_, ecdh);
         // EC_KEY_free(ecdh);
 
-        if (SSL_CTX_use_certificate_file(ctx_, cert_path, SSL_FILETYPE_PEM) != 1 ||
-            SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) != 1) {
-            SSL_CTX_free(ctx_);
-            ctx_ = nullptr;
-        }
+		{
+			int eccert = SSL_CTX_use_certificate_file(ctx_, cert_path, SSL_FILETYPE_PEM);
+			if (!eccert) {
+				printf("Error - check the path to your cert. Your cert may also be invalid.\n\n");
+			}
+
+			int ecpkey = SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM);
+			if (!ecpkey) {
+				printf("Error - check the path to your private key. Your private key may also be invalid\n\n");
+			}
+
+			if (!eccert || !ecpkey) {
+				SSL_CTX_free(ctx_);
+				printf("The program will exit.\n\n\t");
+				system("pause");
+				ctx_ = nullptr;
+			}
+		}
     }
 }
 
