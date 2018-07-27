@@ -1528,7 +1528,7 @@ inline bool Server::parse_request_line(const char* s, Request& req)
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
-        req.version = std::string(m[4]);
+        req.version = std::string(m[5]);
         req.method = std::string(m[1]);
         req.target = std::string(m[2]);
         req.path = detail::decode_url(m[3]);
@@ -1560,9 +1560,13 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
     // Headers
     if (last_connection ||
-        req.version == "HTTP/1.0" ||
         req.get_header_value("Connection") == "close") {
         res.set_header("Connection", "close");
+    }
+    
+    if (!last_connection &&
+        req.get_header_value("Connection") == "Keep-Alive") {
+        res.set_header("Connection", "Keep-Alive");
     }
 
     if (!res.body.empty()) {
