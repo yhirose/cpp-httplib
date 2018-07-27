@@ -1528,7 +1528,7 @@ inline bool Server::parse_request_line(const char* s, Request& req)
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
-        req.version = std::string(m[4]);
+        req.version = std::string(m[5]);
         req.method = std::string(m[1]);
         req.target = std::string(m[2]);
         req.path = detail::decode_url(m[3]);
