@@ -1560,9 +1560,13 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
     // Headers
     if (last_connection ||
-        req.version == "HTTP/1.0" ||
         req.get_header_value("Connection") == "close") {
         res.set_header("Connection", "close");
+    }
+    
+    if (!last_connection &&
+        req.get_header_value("Connection") == "Keep-Alive") {
+        res.set_header("Connection", "Keep-Alive");
     }
 
     if (!res.body.empty()) {
