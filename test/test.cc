@@ -282,6 +282,25 @@ protected:
                     res.status = 404;
                 }
             })
+            .Get("/streamedchunked", [&](const Request& /*req*/, Response& res) {
+                res.streamcb = [] (uint64_t offset) {
+                    if (offset < 3)
+                        return "a";
+                    if (offset < 6)
+                        return "b";
+                    return "";
+                };
+            })
+            .Get("/streamed", [&](const Request& /*req*/, Response& res) {
+                res.set_header("Content-Length", "6");
+                res.streamcb = [] (uint64_t offset) {
+                    if (offset < 3)
+                        return "a";
+                    if (offset < 6)
+                        return "b";
+                    return "";
+                };
+            })
             .Post("/chunked", [&](const Request& req, Response& /*res*/) {
                 EXPECT_EQ(req.body, "dechunked post body");
             })
@@ -710,6 +729,23 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding)
 
 	ASSERT_TRUE(ret);
 	EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, GetStreamed)
+{
+    auto res = cli_.Get("/streamed");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("6", res->get_header_value("Content-Length"));
+    EXPECT_TRUE(res->body == "aaabbb");
+}
+
+TEST_F(ServerTest, GetStreamedChunked)
+{
+    auto res = cli_.Get("/streamedchunked");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_TRUE(res->body == "aaabbb");
 }
 
 TEST_F(ServerTest, LargeChunkedPost) {
