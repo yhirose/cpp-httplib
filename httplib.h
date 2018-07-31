@@ -1516,9 +1516,10 @@ inline void Server::stop()
 {
     if (is_running_) {
         assert(svr_sock_ != INVALID_SOCKET);
-        detail::shutdown_socket(svr_sock_);
-        detail::close_socket(svr_sock_);
+        auto sock = svr_sock_;
         svr_sock_ = INVALID_SOCKET;
+        detail::shutdown_socket(sock);
+        detail::close_socket(sock);
     }
 }
 
