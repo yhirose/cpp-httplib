@@ -363,7 +363,7 @@ protected:
         persons_["john"] = "programmer";
 
         t_ = thread([&](){
-            svr_.listen(HOST, PORT);
+            ASSERT_TRUE(svr_.listen(HOST, PORT));
         });
 
         while (!svr_.is_running()) {
@@ -890,7 +890,7 @@ protected:
         });
 
         t_ = thread([&]() {
-            svr_.listen(nullptr, PORT, AI_PASSIVE);
+            ASSERT_TRUE(svr_.listen(nullptr, PORT, AI_PASSIVE));
         });
 
         while (!svr_.is_running()) {
@@ -932,7 +932,7 @@ protected:
         t_ = thread([&](){
             svr_.bind_to_any_port(HOST);
             msleep(500);
-            svr_.listen_after_bind();
+            ASSERT_TRUE(svr_.listen_after_bind());
         });
 
         while (!svr_.is_running()) {
