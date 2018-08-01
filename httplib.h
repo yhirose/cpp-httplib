@@ -146,6 +146,7 @@ struct Response {
     int         status;
     Headers     headers;
     std::string body;
+    std::function<std::string (uint64_t offset)> streamcb;
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
@@ -964,6 +965,17 @@ inline bool from_hex_to_i(const std::string& s, size_t i, size_t cnt, int& val)
     return true;
 }
 
+inline std::string from_i_to_hex(uint64_t n)
+{
+    const char *charset = "0123456789abcdef";
+    std::string ret;
+    do {
+        ret = charset[n & 15] + ret;
+        n >>= 4;
+    } while (n > 0);
+    return ret;
+}
+
 inline size_t to_utf8(int code, char* buff)
 {
     if (code < 0x0080) {
@@ -1587,13 +1599,34 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
         auto length = std::to_string(res.body.size());
         res.set_header("Content-Length", length.c_str());
+    } else if (res.streamcb) {
+        // Streamed response
+        bool chunked_response = !res.has_header("Content-Length");
+        if (chunked_response)
+            res.set_header("Transfer-Encoding", "chunked");
     }
 
     detail::write_headers(strm, res);
 
     // Body
-    if (!res.body.empty() && req.method != "HEAD") {
-        strm.write(res.body.c_str(), res.body.size());
+    if (req.method != "HEAD") {
+        if (!res.body.empty()) {
+            strm.write(res.body.c_str(), res.body.size());
+        } else if (res.streamcb) {
+            bool chunked_response = !res.has_header("Content-Length");
+            uint64_t offset = 0;
+            bool data_available = true;
+            while (data_available) {
+                std::string chunk = res.streamcb(offset);
+                offset += chunk.size();
+                data_available = !chunk.empty();
+                // Emit chunked response header and footer for each chunk
+                if (chunked_response)
+                    chunk = detail::from_i_to_hex(chunk.size()) + "\r\n" + chunk + "\r\n";
+                if (strm.write(chunk.c_str(), chunk.size()) < 0)
+                    break;  // Stop on error
+            }
+        }
     }
 
     // Log
