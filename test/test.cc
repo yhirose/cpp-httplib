@@ -230,6 +230,66 @@ TEST(ConnectionErrorTest, Timeout)
     ASSERT_TRUE(res == nullptr);
 }
 
+TEST(CancelTest, NoCancel) {
+    auto host = "httpbin.org";
+    auto sec = 5;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec);
+#endif
+
+    httplib::Headers headers;
+    auto res = cli.Get("/range/32", headers, [](uint64_t, uint64_t) {
+        return true;
+    });
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ(200, res->status);
+}
+
+TEST(CancelTest, WithCancelSmallPayload) {
+    auto host = "httpbin.org";
+    auto sec = 5;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec);
+#endif
+
+    httplib::Headers headers;
+    auto res = cli.Get("/range/32", headers, [](uint64_t, uint64_t) {
+        return false;
+    });
+    ASSERT_TRUE(res == nullptr);
+}
+
+TEST(CancelTest, WithCancelLargePayload) {
+    auto host = "httpbin.org";
+    auto sec = 5;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec);
+#endif
+
+    uint32_t count = 0;
+    httplib::Headers headers;
+    auto res = cli.Get("/range/65536", headers, [&count](uint64_t, uint64_t) {
+        return (count++ == 0);
+    });
+    ASSERT_TRUE(res == nullptr);
+}
+
 TEST(Server, BindAndListenSeparately) {
     Server svr;
     int port = svr.bind_to_any_port("localhost");

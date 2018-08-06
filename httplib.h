@@ -107,7 +107,7 @@ std::pair<std::string, std::string> make_range_header(uint64_t value, Args... ar
 
 typedef std::multimap<std::string, std::string>                Params;
 typedef std::smatch                                            Match;
-typedef std::function<void (uint64_t current, uint64_t total)> Progress;
+typedef std::function<bool (uint64_t current, uint64_t total)> Progress;
 
 struct MultipartFile {
     std::string filename;
@@ -804,7 +804,9 @@ inline bool read_content_with_length(Stream& strm, std::string& out, size_t len,
         r += n;
 
         if (progress) {
-            progress(r, len);
+            if (!progress(r, len)) {
+                return false;
+            }
         }
     }
 
