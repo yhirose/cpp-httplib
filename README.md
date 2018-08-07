@@ -166,6 +166,7 @@ std::shared_ptr<httplib::Response> res =
         printf("%lld / %lld bytes => %d%% complete\n",
             len, total,
             (int)((len/total)*100));
+        return true; // return 'false' if you want to cancel the request.
     }
 );
 ```
