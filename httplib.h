@@ -8,10 +8,24 @@
 #ifndef _CPPHTTPLIB_HTTPLIB_H_
 #define _CPPHTTPLIB_HTTPLIB_H_
 
+//windows code for a few pages
 #ifdef _WIN32
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+#pragma warning (disable:4127)
+
+#ifdef _IA64_
+#pragma warning(disable:4267)
+#endif 
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #endif
+
 #ifndef _CRT_NONSTDC_NO_DEPRECATE
 #define _CRT_NONSTDC_NO_DEPRECATE
 #endif
@@ -39,20 +53,6 @@
 #endif
 
 typedef SOCKET socket_t;
-#else
-#include <pthread.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <cstring>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <signal.h>
-#include <sys/socket.h>
-#include <sys/select.h>
-
-typedef int socket_t;
-#define INVALID_SOCKET (-1)
-#endif
 
 #include <fstream>
 #include <functional>
@@ -70,6 +70,138 @@ typedef int socket_t;
 #include <openssl/ssl.h>
 #endif
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+#define xmalloc(s) HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,(s))
+#define xfree(p) HeapFree(GetProcessHeap(),0,(p))
+#include <mswsock.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <strsafe.h>
+
+//dump iocpserver.h... #include "iocpserver.h"
+#define DEFAULT_PORT        "5001"
+#define MAX_BUFF_SIZE       8192
+#define MAX_WORKER_THREAD   16
+
+typedef enum _IO_OPERATION {
+	ClientIoAccept,
+	ClientIoRead,
+	ClientIoWrite
+} IO_OPERATION, *PIO_OPERATION;
+
+//
+// data to be associated for every I/O operation on a socket
+//
+typedef struct _PER_IO_CONTEXT {
+	WSAOVERLAPPED               Overlapped;
+	char                        Buffer[MAX_BUFF_SIZE];
+	WSABUF                      wsabuf;
+	int                         nTotalBytes;
+	int                         nSentBytes;
+	IO_OPERATION                IOOperation;
+	SOCKET                      SocketAccept;
+
+	struct _PER_IO_CONTEXT      *pIOContextForward;
+} PER_IO_CONTEXT, *PPER_IO_CONTEXT;
+
+//
+// For AcceptEx, the IOCP key is the PER_SOCKET_CONTEXT for the listening socket,
+// so we need to another field SocketAccept in PER_IO_CONTEXT. When the outstanding
+// AcceptEx completes, this field is our connection socket handle.
+//
+
+//
+// data to be associated with every socket added to the IOCP
+//
+typedef struct _PER_SOCKET_CONTEXT {
+	SOCKET                      Socket;
+
+	LPFN_ACCEPTEX               fnAcceptEx;
+
+	//
+	//linked list for all outstanding i/o on the socket
+	//
+	PPER_IO_CONTEXT             pIOContext;
+	struct _PER_SOCKET_CONTEXT  *pCtxtBack;
+	struct _PER_SOCKET_CONTEXT  *pCtxtForward;
+} PER_SOCKET_CONTEXT, *PPER_SOCKET_CONTEXT;
+
+BOOL CreateListenSocket(void);
+
+BOOL CreateAcceptSocket(
+	BOOL fUpdateIOCP
+);
+
+DWORD WINAPI WorkerThread(
+	LPVOID WorkContext
+);
+
+PPER_SOCKET_CONTEXT UpdateCompletionPort(
+	SOCKET s,
+	IO_OPERATION ClientIo,
+	BOOL bAddToList
+);
+//
+// bAddToList is FALSE for listening socket, and TRUE for connection sockets.
+// As we maintain the context for listening socket in a global structure, we
+// don't need to add it to the list.
+//
+
+VOID CloseClient(
+	PPER_SOCKET_CONTEXT lpPerSocketContext,
+	BOOL bGraceful
+);
+
+PPER_SOCKET_CONTEXT CtxtAllocate(
+	SOCKET s,
+	IO_OPERATION ClientIO
+);
+
+VOID CtxtListFree(
+);
+
+VOID CtxtListAddTo(
+	PPER_SOCKET_CONTEXT lpPerSocketContext
+);
+
+VOID CtxtListDeleteFrom(
+	PPER_SOCKET_CONTEXT lpPerSocketContext
+);
+
+//IOCP GLOBALS
+char *g_Port = (char*)DEFAULT_PORT;
+BOOL g_bEndServer = FALSE;			// set to TRUE on CTRL-C
+BOOL g_bRestart = TRUE;				// set to TRUE to CTRL-BRK
+BOOL g_bVerbose = FALSE;
+HANDLE g_hIOCP = INVALID_HANDLE_VALUE;
+SOCKET g_sdListen = INVALID_SOCKET;
+HANDLE g_ThreadHandles[MAX_WORKER_THREAD];
+WSAEVENT g_hCleanupEvent[1];
+PPER_SOCKET_CONTEXT g_pCtxtListenSocket = NULL;
+PPER_SOCKET_CONTEXT g_pCtxtList = NULL;		// linked list of context info structures
+											// maintained to allow the the cleanup 
+											// handler to cleanly close all sockets and 
+											// free resources.
+
+CRITICAL_SECTION g_CriticalSection;		// guard access to the global context list
+
+int myprintf(const char *lpFormat, ...);
+#endif
+#else
+#include <pthread.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <cstring>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+
+typedef int socket_t;
+#define INVALID_SOCKET (-1)
+#endif
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 #include <zlib.h>
 #endif
@@ -83,282 +215,1109 @@ typedef int socket_t;
 namespace httplib
 {
 
-namespace detail {
+	namespace detail {
 
-struct ci {
-    bool operator() (const std::string & s1, const std::string & s2) const {
-        return std::lexicographical_compare(
-            s1.begin(), s1.end(),
-            s2.begin(), s2.end(),
-            [](char c1, char c2) {
-                return ::tolower(c1) < ::tolower(c2);
-            });
-    }
-};
+		struct ci {
+			bool operator() (const std::string & s1, const std::string & s2) const {
+				return std::lexicographical_compare(
+					s1.begin(), s1.end(),
+					s2.begin(), s2.end(),
+					[](char c1, char c2) {
+					return ::tolower(c1) < ::tolower(c2);
+				});
+			}
+		};
 
-} // namespace detail
+	} // namespace detail
 
-enum class HttpVersion { v1_0 = 0, v1_1 };
+	enum class HttpVersion { v1_0 = 0, v1_1 };
 
-typedef std::multimap<std::string, std::string, detail::ci>  Headers;
+	typedef std::multimap<std::string, std::string, detail::ci>  Headers;
 
-template<typename uint64_t, typename... Args>
-std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args);
+	template<typename uint64_t, typename... Args>
+	std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args);
 
-typedef std::multimap<std::string, std::string>                Params;
-typedef std::smatch                                            Match;
-typedef std::function<bool (uint64_t current, uint64_t total)> Progress;
+	typedef std::multimap<std::string, std::string>                Params;
+	typedef std::smatch                                            Match;
+	typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
 
-struct MultipartFile {
-    std::string filename;
-    std::string content_type;
-    size_t offset = 0;
-    size_t length = 0;
-};
-typedef std::multimap<std::string, MultipartFile> MultipartFiles;
+	struct MultipartFile {
+		std::string filename;
+		std::string content_type;
+		size_t offset = 0;
+		size_t length = 0;
+	};
+	typedef std::multimap<std::string, MultipartFile> MultipartFiles;
 
-struct Request {
-    std::string    version;
-    std::string    method;
-    std::string    target;
-    std::string    path;
-    Headers        headers;
-    std::string    body;
-    Params         params;
-    MultipartFiles files;
-    Match          matches;
+	struct Request {
+		std::string    version;
+		std::string    method;
+		std::string    target;
+		std::string    path;
+		Headers        headers;
+		std::string    body;
+		Params         params;
+		MultipartFiles files;
+		Match          matches;
 
-    Progress       progress;
+		Progress       progress;
 
-    bool has_header(const char* key) const;
-    std::string get_header_value(const char* key) const;
-    void set_header(const char* key, const char* val);
+		bool has_header(const char* key) const;
+		std::string get_header_value(const char* key) const;
+		void set_header(const char* key, const char* val);
 
-    bool has_param(const char* key) const;
-    std::string get_param_value(const char* key) const;
+		bool has_param(const char* key) const;
+		std::string get_param_value(const char* key) const;
 
-    bool has_file(const char* key) const;
-    MultipartFile get_file_value(const char* key) const;
-};
+		bool has_file(const char* key) const;
+		MultipartFile get_file_value(const char* key) const;
+	};
 
-struct Response {
-    std::string version;
-    int         status;
-    Headers     headers;
-    std::string body;
-    std::function<std::string (uint64_t offset)> streamcb;
+	struct Response {
+		std::string version;
+		int         status;
+		Headers     headers;
+		std::string body;
+		std::function<std::string(uint64_t offset)> streamcb;
 
-    bool has_header(const char* key) const;
-    std::string get_header_value(const char* key) const;
-    void set_header(const char* key, const char* val);
+		bool has_header(const char* key) const;
+		std::string get_header_value(const char* key) const;
+		void set_header(const char* key, const char* val);
 
-    void set_redirect(const char* uri);
-    void set_content(const char* s, size_t n, const char* content_type);
-    void set_content(const std::string& s, const char* content_type);
+		void set_redirect(const char* uri);
+		void set_content(const char* s, size_t n, const char* content_type);
+		void set_content(const std::string& s, const char* content_type);
 
-    Response() : status(-1) {}
-};
+		Response() : status(-1) {}
+	};
 
-class Stream {
-public:
-    virtual ~Stream() {}
-    virtual int read(char* ptr, size_t size) = 0;
-    virtual int write(const char* ptr, size_t size1) = 0;
-    virtual int write(const char* ptr) = 0;
-    virtual std::string get_remote_addr() = 0;
+	class Stream {
+	public:
+		virtual ~Stream() {}
+		virtual int read(char* ptr, size_t size) = 0;
+		virtual int write(const char* ptr, size_t size1) = 0;
+		virtual int write(const char* ptr) = 0;
+		virtual std::string get_remote_addr() = 0;
 
-    template <typename ...Args>
-    void write_format(const char* fmt, const Args& ...args);
-};
+		template <typename ...Args>
+		void write_format(const char* fmt, const Args& ...args);
+	};
 
-class SocketStream : public Stream {
-public:
-    SocketStream(socket_t sock);
-    virtual ~SocketStream();
+	class SocketStream : public Stream {
+	public:
+		SocketStream(socket_t sock);
+		virtual ~SocketStream();
 
-    virtual int read(char* ptr, size_t size);
-    virtual int write(const char* ptr, size_t size);
-    virtual int write(const char* ptr);
-    virtual std::string get_remote_addr();
+		virtual int read(char* ptr, size_t size);
+		virtual int write(const char* ptr, size_t size);
+		virtual int write(const char* ptr);
+		virtual std::string get_remote_addr();
 
-private:
-    socket_t sock_;
-};
+	private:
+		socket_t sock_;
+	};
 
-class Server {
-public:
-    typedef std::function<void (const Request&, Response&)> Handler;
-    typedef std::function<void (const Request&, const Response&)> Logger;
+	class Server {
+	public:
+		typedef std::function<void(const Request&, Response&)> Handler;
+		typedef std::function<void(const Request&, const Response&)> Logger;
 
-    Server();
+		Server();
 
-    virtual ~Server();
+		virtual ~Server();
 
-    virtual bool is_valid() const;
+		virtual bool is_valid() const;
 
-    Server& Get(const char* pattern, Handler handler);
-    Server& Post(const char* pattern, Handler handler);
+		Server& Get(const char* pattern, Handler handler);
+		Server& Post(const char* pattern, Handler handler);
 
-    Server& Put(const char* pattern, Handler handler);
-    Server& Delete(const char* pattern, Handler handler);
-    Server& Options(const char* pattern, Handler handler);
+		Server& Put(const char* pattern, Handler handler);
+		Server& Delete(const char* pattern, Handler handler);
+		Server& Options(const char* pattern, Handler handler);
 
-    bool set_base_dir(const char* path);
+		bool set_base_dir(const char* path);
 
-    void set_error_handler(Handler handler);
-    void set_logger(Logger logger);
+		void set_error_handler(Handler handler);
+		void set_logger(Logger logger);
 
-    void set_keep_alive_max_count(size_t count);
+		void set_keep_alive_max_count(size_t count);
 
-    int bind_to_any_port(const char* host, int socket_flags = 0);
-    bool listen_after_bind();
+		int bind_to_any_port(const char* host, int socket_flags = 0);
+		bool listen_after_bind();
 
-    bool listen(const char* host, int port, int socket_flags = 0);
+		bool listen(const char* host, int port, int socket_flags = 0);
 
-    bool is_running() const;
-    void stop();
+		bool is_running() const;
+		void stop();
 
-protected:
-    bool process_request(Stream& strm, bool last_connection, bool& connection_close);
+	protected:
+		bool process_request(Stream& strm, bool last_connection, bool& connection_close);
 
-    size_t keep_alive_max_count_;
+		size_t keep_alive_max_count_;
 
-private:
-    typedef std::vector<std::pair<std::regex, Handler>> Handlers;
+	private:
+		typedef std::vector<std::pair<std::regex, Handler>> Handlers;
 
-    socket_t create_server_socket(const char* host, int port, int socket_flags) const;
-    int bind_internal(const char* host, int port, int socket_flags);
-    bool listen_internal();
+		socket_t create_server_socket(const char* host, int port, int socket_flags) const;
+		int bind_internal(const char* host, int port, int socket_flags);
+		bool listen_internal();
 
-    bool routing(Request& req, Response& res);
-    bool handle_file_request(Request& req, Response& res);
-    bool dispatch_request(Request& req, Response& res, Handlers& handlers);
+		bool routing(Request& req, Response& res);
+		bool handle_file_request(Request& req, Response& res);
+		bool dispatch_request(Request& req, Response& res, Handlers& handlers);
 
-    bool parse_request_line(const char* s, Request& req);
-    void write_response(Stream& strm, bool last_connection, const Request& req, Response& res);
+		bool parse_request_line(const char* s, Request& req);
+		void write_response(Stream& strm, bool last_connection, const Request& req, Response& res);
 
-    virtual bool read_and_close_socket(socket_t sock);
+		virtual bool read_and_close_socket(socket_t sock);
 
-    bool        is_running_;
-    socket_t    svr_sock_;
-    std::string base_dir_;
-    Handlers    get_handlers_;
-    Handlers    post_handlers_;
-    Handlers    put_handlers_;
-    Handlers    delete_handlers_;
-    Handlers    options_handlers_;
-    Handler     error_handler_;
-    Logger      logger_;
+		std::string base_dir_;
+		Handlers    get_handlers_;
+		Handlers    post_handlers_;
+		Handlers    put_handlers_;
+		Handlers    delete_handlers_;
+		Handlers    options_handlers_;
+		Handler     error_handler_;
+		Logger      logger_;
 
-    // TODO: Use thread pool...
-    std::mutex  running_threads_mutex_;
-    int         running_threads_;
-};
+		// TODO: Use thread pool... (Windows IOCP is as good as it gets on the platform!)
+#ifndef CPPHTTPLIB_IOCP_SUPPORT 
+		std::mutex  running_threads_mutex_;
+		int         running_threads_;
+		socket_t    svr_sock_;
+		bool        is_running_;
+#endif
+	};
 
-class Client {
-public:
-    Client(
-        const char* host,
-        int port = 80,
-        size_t timeout_sec = 300);
+	class Client {
+	public:
+		Client(
+			const char* host,
+			int port = 80,
+			size_t timeout_sec = 300);
 
-    virtual ~Client();
+		virtual ~Client();
 
-    virtual bool is_valid() const;
+		virtual bool is_valid() const;
 
-    std::shared_ptr<Response> Get(const char* path, Progress progress = nullptr);
-    std::shared_ptr<Response> Get(const char* path, const Headers& headers, Progress progress = nullptr);
+		std::shared_ptr<Response> Get(const char* path, Progress progress = nullptr);
+		std::shared_ptr<Response> Get(const char* path, const Headers& headers, Progress progress = nullptr);
 
-    std::shared_ptr<Response> Head(const char* path);
-    std::shared_ptr<Response> Head(const char* path, const Headers& headers);
+		std::shared_ptr<Response> Head(const char* path);
+		std::shared_ptr<Response> Head(const char* path, const Headers& headers);
 
-    std::shared_ptr<Response> Post(const char* path, const std::string& body, const char* content_type);
-    std::shared_ptr<Response> Post(const char* path, const Headers& headers, const std::string& body, const char* content_type);
+		std::shared_ptr<Response> Post(const char* path, const std::string& body, const char* content_type);
+		std::shared_ptr<Response> Post(const char* path, const Headers& headers, const std::string& body, const char* content_type);
 
-    std::shared_ptr<Response> Post(const char* path, const Params& params);
-    std::shared_ptr<Response> Post(const char* path, const Headers& headers, const Params& params);
+		std::shared_ptr<Response> Post(const char* path, const Params& params);
+		std::shared_ptr<Response> Post(const char* path, const Headers& headers, const Params& params);
 
-    std::shared_ptr<Response> Put(const char* path, const std::string& body, const char* content_type);
-    std::shared_ptr<Response> Put(const char* path, const Headers& headers, const std::string& body, const char* content_type);
+		std::shared_ptr<Response> Put(const char* path, const std::string& body, const char* content_type);
+		std::shared_ptr<Response> Put(const char* path, const Headers& headers, const std::string& body, const char* content_type);
 
-    std::shared_ptr<Response> Delete(const char* path);
-    std::shared_ptr<Response> Delete(const char* path, const Headers& headers);
+		std::shared_ptr<Response> Delete(const char* path);
+		std::shared_ptr<Response> Delete(const char* path, const Headers& headers);
 
-    std::shared_ptr<Response> Options(const char* path);
-    std::shared_ptr<Response> Options(const char* path, const Headers& headers);
+		std::shared_ptr<Response> Options(const char* path);
+		std::shared_ptr<Response> Options(const char* path, const Headers& headers);
 
-    bool send(Request& req, Response& res);
+		bool send(Request& req, Response& res);
 
-protected:
-    bool process_request(Stream& strm, Request& req, Response& res, bool& connection_close);
+	protected:
+		bool process_request(Stream& strm, Request& req, Response& res, bool& connection_close);
 
-    const std::string host_;
-    const int         port_;
-    size_t            timeout_sec_;
-    const std::string host_and_port_;
+		const std::string host_;
+		const int         port_;
+		size_t            timeout_sec_;
+		const std::string host_and_port_;
 
-private:
-    socket_t create_client_socket() const;
-    bool read_response_line(Stream& strm, Response& res);
-    void write_request(Stream& strm, Request& req);
+	private:
+		socket_t create_client_socket() const;
+		bool read_response_line(Stream& strm, Response& res);
+		void write_request(Stream& strm, Request& req);
 
-    virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
-};
+		virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
+	};
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-class SSLSocketStream : public Stream {
-public:
-    SSLSocketStream(socket_t sock, SSL* ssl);
-    virtual ~SSLSocketStream();
+	class SSLSocketStream : public Stream {
+	public:
+		SSLSocketStream(socket_t sock, SSL* ssl);
+		virtual ~SSLSocketStream();
 
-    virtual int read(char* ptr, size_t size);
-    virtual int write(const char* ptr, size_t size);
-    virtual int write(const char* ptr);
-    virtual std::string get_remote_addr();
+		virtual int read(char* ptr, size_t size);
+		virtual int write(const char* ptr, size_t size);
+		virtual int write(const char* ptr);
+		virtual std::string get_remote_addr();
 
-private:
-    socket_t sock_;
-    SSL* ssl_;
-};
+	private:
+		socket_t sock_;
+		SSL* ssl_;
+	};
 
-class SSLServer : public Server {
-public:
-    SSLServer(
-        const char* cert_path, const char* private_key_path);
+	class SSLServer : public Server {
+	public:
+		SSLServer(
+			const char* cert_path, const char* private_key_path);
 
-    virtual ~SSLServer();
+		virtual ~SSLServer();
 
-    virtual bool is_valid() const;
+		virtual bool is_valid() const;
 
-private:
-    virtual bool read_and_close_socket(socket_t sock);
+	private:
+		virtual bool read_and_close_socket(socket_t sock);
 
-    SSL_CTX* ctx_;
-    std::mutex ctx_mutex_;
-};
+		SSL_CTX* ctx_;
+		std::mutex ctx_mutex_;
+	};
 
-class SSLClient : public Client {
-public:
-    SSLClient(
-        const char* host,
-        int port = 80,
-        size_t timeout_sec = 300);
+	class SSLClient : public Client {
+	public:
+		SSLClient(
+			const char* host,
+			int port = 80,
+			size_t timeout_sec = 300);
 
-    virtual ~SSLClient();
+		virtual ~SSLClient();
 
-    virtual bool is_valid() const;
+		virtual bool is_valid() const;
 
-private:
-    virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
+	private:
+		virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
 
-    SSL_CTX* ctx_;
-    std::mutex ctx_mutex_;
-};
+		SSL_CTX* ctx_;
+		std::mutex ctx_mutex_;
+	};
 #endif
+}; //end httplib namespace
+
+
 
 /*
  * Implementation
  */
+
+
+//couple pages of IOCP function implementations
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+//
+// Create a socket with all the socket options we need, namely disable buffering
+// and set linger.
+//
+SOCKET CreateSocket(void) {
+	int nRet = 0;
+	int nZero = 0;
+	SOCKET sdSocket = INVALID_SOCKET;
+
+	sdSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_IP, NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (sdSocket == INVALID_SOCKET) {
+		myprintf("WSASocket(sdSocket) failed: %d\n", WSAGetLastError());
+		return(sdSocket);
+	}
+
+	//
+	// Disable send buffering on the socket.  Setting SO_SNDBUF
+	// to 0 causes winsock to stop buffering sends and perform
+	// sends directly from our buffers, thereby save one memory copy.
+	//
+	// However, this does prevent the socket from ever filling the
+	// send pipeline. This can lead to packets being sent that are
+	// not full (i.e. the overhead of the IP and TCP headers is 
+	// great compared to the amount of data being carried).
+	//
+	// Disabling the send buffer has less serious repercussions 
+	// than disabling the receive buffer.
+	//
+	nZero = 0;
+	nRet = setsockopt(sdSocket, SOL_SOCKET, SO_SNDBUF, (char *)&nZero, sizeof(nZero));
+	if (nRet == SOCKET_ERROR) {
+		myprintf("setsockopt(SNDBUF) failed: %d\n", WSAGetLastError());
+		return(sdSocket);
+	}
+
+	//
+	// Don't disable receive buffering. This will cause poor network
+	// performance since if no receive is posted and no receive buffers,
+	// the TCP stack will set the window size to zero and the peer will
+	// no longer be allowed to send data.
+	//
+
+	// 
+	// Do not set a linger value...especially don't set it to an abortive
+	// close. If you set abortive close and there happens to be a bit of
+	// data remaining to be transfered (or data that has not been 
+	// acknowledged by the peer), the connection will be forcefully reset
+	// and will lead to a loss of data (i.e. the peer won't get the last
+	// bit of data). This is BAD. If you are worried about malicious
+	// clients connecting and then not sending or receiving, the server
+	// should maintain a timer on each connection. If after some point,
+	// the server deems a connection is "stale" it can then set linger
+	// to be abortive and close the connection.
+	//
+
+	/*
+	LINGER lingerStruct;
+	lingerStruct.l_onoff = 1;
+	lingerStruct.l_linger = 0;
+	nRet = setsockopt(sdSocket, SOL_SOCKET, SO_LINGER,
+	(char *)&lingerStruct, sizeof(lingerStruct));
+	if( nRet == SOCKET_ERROR ) {
+	myprintf("setsockopt(SO_LINGER) failed: %d\n", WSAGetLastError());
+	return(sdSocket);
+	}
+	*/
+
+	return(sdSocket);
+}
+
+//
+//  Create a listening socket, bind, and set up its listening backlog.
+//
+BOOL CreateListenSocket(void) {
+
+	int nRet = 0;
+	LINGER lingerStruct;
+	struct addrinfo hints = { 0 };
+	struct addrinfo *addrlocal = NULL;
+
+	lingerStruct.l_onoff = 1;
+	lingerStruct.l_linger = 0;
+
+	//
+	// Resolve the interface
+	//
+	hints.ai_flags = AI_PASSIVE;
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_IP;
+
+	if (getaddrinfo(NULL, g_Port, &hints, &addrlocal) != 0) {
+		myprintf("getaddrinfo() failed with error %d\n", WSAGetLastError());
+		return(FALSE);
+	}
+
+	if (addrlocal == NULL) {
+		myprintf("getaddrinfo() failed to resolve/convert the interface\n");
+		return(FALSE);
+	}
+
+	g_sdListen = CreateSocket();
+	if (g_sdListen == INVALID_SOCKET) {
+		freeaddrinfo(addrlocal);
+		return(FALSE);
+	}
+
+	nRet = bind(g_sdListen, addrlocal->ai_addr, (int)addrlocal->ai_addrlen);
+	if (nRet == SOCKET_ERROR) {
+		myprintf("bind() failed: %d\n", WSAGetLastError());
+		freeaddrinfo(addrlocal);
+		return(FALSE);
+	}
+
+	nRet = listen(g_sdListen, 5);
+	if (nRet == SOCKET_ERROR) {
+		myprintf("listen() failed: %d\n", WSAGetLastError());
+		freeaddrinfo(addrlocal);
+		return(FALSE);
+	}
+
+	freeaddrinfo(addrlocal);
+
+	return(TRUE);
+}
+
+//
+// Create a socket and invoke AcceptEx.  Only the original call to to this
+// function needs to be added to the IOCP.
+//
+// If the expected behaviour of connecting client applications is to NOT
+// send data right away, then only posting one AcceptEx can cause connection
+// attempts to be refused if a client connects without sending some initial
+// data (notice that the associated iocpclient does not operate this way 
+// but instead makes a connection and starts sending data write away).  
+// This is because the IOCP packet does not get delivered without the initial
+// data (as implemented in this sample) thus preventing the worker thread 
+// from posting another AcceptEx and eventually the backlog value set in 
+// listen() will be exceeded if clients continue to try to connect.
+//
+// One technique to address this situation is to simply cause AcceptEx
+// to return right away upon accepting a connection without returning any
+// data.  This can be done by setting dwReceiveDataLength=0 when calling AcceptEx.
+//
+// Another technique to address this situation is to post multiple calls 
+// to AcceptEx.  Posting multiple calls to AcceptEx is similar in concept to 
+// increasing the backlog value in listen(), though posting AcceptEx is 
+// dynamic (i.e. during the course of running your application you can adjust 
+// the number of AcceptEx calls you post).  It is important however to keep
+// your backlog value in listen() high in your server to ensure that the 
+// stack can accept connections even if your application does not get enough 
+// CPU cycles to repost another AcceptEx under stress conditions.
+// 
+// This sample implements neither of these techniques and is therefore
+// susceptible to the behaviour described above.
+//
+BOOL CreateAcceptSocket(BOOL fUpdateIOCP) {
+
+	int nRet = 0;
+	DWORD dwRecvNumBytes = 0;
+	DWORD bytes = 0;
+
+	//
+	// GUID to Microsoft specific extensions
+	//
+	GUID acceptex_guid = WSAID_ACCEPTEX;
+
+	//
+	//The context for listening socket uses the SockAccept member to store the
+	//socket for client connection. 
+	//
+	if (fUpdateIOCP) {
+		g_pCtxtListenSocket = UpdateCompletionPort(g_sdListen, ClientIoAccept, FALSE);
+		if (g_pCtxtListenSocket == NULL) {
+			myprintf("failed to update listen socket to IOCP\n");
+			return(FALSE);
+		}
+
+		// Load the AcceptEx extension function from the provider for this socket
+		nRet = WSAIoctl(
+			g_sdListen,
+			SIO_GET_EXTENSION_FUNCTION_POINTER,
+			&acceptex_guid,
+			sizeof(acceptex_guid),
+			&g_pCtxtListenSocket->fnAcceptEx,
+			sizeof(g_pCtxtListenSocket->fnAcceptEx),
+			&bytes,
+			NULL,
+			NULL
+		);
+		if (nRet == SOCKET_ERROR)
+		{
+			myprintf("failed to load AcceptEx: %d\n", WSAGetLastError());
+			return (FALSE);
+		}
+	}
+
+	g_pCtxtListenSocket->pIOContext->SocketAccept = CreateSocket();
+	if (g_pCtxtListenSocket->pIOContext->SocketAccept == INVALID_SOCKET) {
+		myprintf("failed to create new accept socket\n");
+		return(FALSE);
+	}
+
+	//
+	// pay close attention to these parameters and buffer lengths
+	//
+	nRet = g_pCtxtListenSocket->fnAcceptEx(g_sdListen, g_pCtxtListenSocket->pIOContext->SocketAccept,
+		(LPVOID)(g_pCtxtListenSocket->pIOContext->Buffer),
+		MAX_BUFF_SIZE - (2 * (sizeof(SOCKADDR_STORAGE) + 16)),
+		sizeof(SOCKADDR_STORAGE) + 16, sizeof(SOCKADDR_STORAGE) + 16,
+		&dwRecvNumBytes,
+		(LPOVERLAPPED) &(g_pCtxtListenSocket->pIOContext->Overlapped));
+	if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+		myprintf("AcceptEx() failed: %d\n", WSAGetLastError());
+		return(FALSE);
+	}
+
+	return(TRUE);
+}
+
+//
+// Worker thread that handles all I/O requests on any socket handle added to the IOCP.
+//
+DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
+
+	HANDLE hIOCP = (HANDLE)WorkThreadContext;
+	BOOL bSuccess = FALSE;
+	int nRet = 0;
+	LPWSAOVERLAPPED lpOverlapped = NULL;
+	PPER_SOCKET_CONTEXT lpPerSocketContext = NULL;
+	PPER_SOCKET_CONTEXT lpAcceptSocketContext = NULL;
+	PPER_IO_CONTEXT lpIOContext = NULL;
+	WSABUF buffRecv;
+	WSABUF buffSend;
+	DWORD dwRecvNumBytes = 0;
+	DWORD dwSendNumBytes = 0;
+	DWORD dwFlags = 0;
+	DWORD dwIoSize = 0;
+	HRESULT hRet;
+
+	while (TRUE) {
+
+		//
+		// continually loop to service io completion packets
+		//
+		bSuccess = GetQueuedCompletionStatus(
+			hIOCP,
+			&dwIoSize,
+			(PDWORD_PTR)&lpPerSocketContext,
+			(LPOVERLAPPED *)&lpOverlapped,
+			INFINITE
+		);
+		if (!bSuccess)
+			myprintf("GetQueuedCompletionStatus() failed: %d\n", GetLastError());
+
+		if (lpPerSocketContext == NULL) {
+
+			//
+			// CTRL-C handler used PostQueuedCompletionStatus to post an I/O packet with
+			// a NULL CompletionKey (or if we get one for any reason).  It is time to exit.
+			//
+			return(0);
+		}
+
+		if (g_bEndServer) {
+
+			//
+			// main thread will do all cleanup needed - see finally block
+			//
+			return(0);
+		}
+
+		lpIOContext = (PPER_IO_CONTEXT)lpOverlapped;
+
+		//
+		//We should never skip the loop and not post another AcceptEx if the current
+		//completion packet is for previous AcceptEx
+		//
+		if (lpIOContext->IOOperation != ClientIoAccept) {
+			if (!bSuccess || (bSuccess && (0 == dwIoSize))) {
+
+				//
+				// client connection dropped, continue to service remaining (and possibly 
+				// new) client connections
+				//
+				CloseClient(lpPerSocketContext, FALSE);
+				continue;
+			}
+		}
+
+		//
+		// determine what type of IO packet has completed by checking the PER_IO_CONTEXT 
+		// associated with this socket.  This will determine what action to take.
+		//
+		switch (lpIOContext->IOOperation) {
+		case ClientIoAccept:
+
+			//
+			// When the AcceptEx function returns, the socket sAcceptSocket is 
+			// in the default state for a connected socket. The socket sAcceptSocket 
+			// does not inherit the properties of the socket associated with 
+			// sListenSocket parameter until SO_UPDATE_ACCEPT_CONTEXT is set on 
+			// the socket. Use the setsockopt function to set the SO_UPDATE_ACCEPT_CONTEXT 
+			// option, specifying sAcceptSocket as the socket handle and sListenSocket 
+			// as the option value. 
+			//
+			nRet = setsockopt(
+				lpPerSocketContext->pIOContext->SocketAccept,
+				SOL_SOCKET,
+				SO_UPDATE_ACCEPT_CONTEXT,
+				(char *)&g_sdListen,
+				sizeof(g_sdListen)
+			);
+
+			if (nRet == SOCKET_ERROR) {
+
+				//
+				//just warn user here.
+				//
+				myprintf("setsockopt(SO_UPDATE_ACCEPT_CONTEXT) failed to update accept socket\n");
+				WSASetEvent(g_hCleanupEvent[0]);
+				return(0);
+			}
+
+			lpAcceptSocketContext = UpdateCompletionPort(
+				lpPerSocketContext->pIOContext->SocketAccept,
+				ClientIoAccept, TRUE);
+
+			if (lpAcceptSocketContext == NULL) {
+
+				//
+				//just warn user here.
+				//
+				myprintf("failed to update accept socket to IOCP\n");
+				WSASetEvent(g_hCleanupEvent[0]);
+				return(0);
+			}
+
+			if (dwIoSize) {
+				lpAcceptSocketContext->pIOContext->IOOperation = ClientIoWrite;
+				lpAcceptSocketContext->pIOContext->nTotalBytes = dwIoSize;
+				lpAcceptSocketContext->pIOContext->nSentBytes = 0;
+				lpAcceptSocketContext->pIOContext->wsabuf.len = dwIoSize;
+				hRet = StringCbCopyN((STRSAFE_LPWSTR)lpAcceptSocketContext->pIOContext->Buffer,
+					MAX_BUFF_SIZE,
+					(STRSAFE_PCNZWCH)lpPerSocketContext->pIOContext->Buffer,
+					sizeof(lpPerSocketContext->pIOContext->Buffer)
+				);
+				lpAcceptSocketContext->pIOContext->wsabuf.buf = lpAcceptSocketContext->pIOContext->Buffer;
+
+				nRet = WSASend(
+					lpPerSocketContext->pIOContext->SocketAccept,
+					&lpAcceptSocketContext->pIOContext->wsabuf, 1,
+					&dwSendNumBytes,
+					0,
+					&(lpAcceptSocketContext->pIOContext->Overlapped), NULL);
+
+				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+					myprintf("WSASend() failed: %d\n", WSAGetLastError());
+					CloseClient(lpAcceptSocketContext, FALSE);
+				}
+				else if (g_bVerbose) {
+					myprintf("WorkerThread %d: Socket(%d) AcceptEx completed (%d bytes), Send posted\n",
+						GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
+				}
+			}
+			else {
+
+				//
+				// AcceptEx completes but doesn't read any data so we need to post
+				// an outstanding overlapped read.
+				//
+				lpAcceptSocketContext->pIOContext->IOOperation = ClientIoRead;
+				dwRecvNumBytes = 0;
+				dwFlags = 0;
+				buffRecv.buf = lpAcceptSocketContext->pIOContext->Buffer,
+					buffRecv.len = MAX_BUFF_SIZE;
+				nRet = WSARecv(
+					lpAcceptSocketContext->Socket,
+					&buffRecv, 1,
+					&dwRecvNumBytes,
+					&dwFlags,
+					&lpAcceptSocketContext->pIOContext->Overlapped, NULL);
+				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+					myprintf("WSARecv() failed: %d\n", WSAGetLastError());
+					CloseClient(lpAcceptSocketContext, FALSE);
+				}
+			}
+
+			//
+			//Time to post another outstanding AcceptEx
+			//
+			if (!CreateAcceptSocket(FALSE)) {
+				myprintf("Please shut down and reboot the server.\n");
+				WSASetEvent(g_hCleanupEvent[0]);
+				return(0);
+			}
+			break;
+
+
+		case ClientIoRead:
+
+			//
+			// a read operation has completed, post a write operation to echo the
+			// data back to the client using the same data buffer.
+			//
+			lpIOContext->IOOperation = ClientIoWrite;
+			lpIOContext->nTotalBytes = dwIoSize;
+			lpIOContext->nSentBytes = 0;
+			lpIOContext->wsabuf.len = dwIoSize;
+			dwFlags = 0;
+			nRet = WSASend(
+				lpPerSocketContext->Socket,
+				&lpIOContext->wsabuf, 1, &dwSendNumBytes,
+				dwFlags,
+				&(lpIOContext->Overlapped), NULL);
+			if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+				myprintf("WSASend() failed: %d\n", WSAGetLastError());
+				CloseClient(lpPerSocketContext, FALSE);
+			}
+			else if (g_bVerbose) {
+				myprintf("WorkerThread %d: Socket(%d) Recv completed (%d bytes), Send posted\n",
+					GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
+			}
+			break;
+
+		case ClientIoWrite:
+
+			//
+			// a write operation has completed, determine if all the data intended to be
+			// sent actually was sent.
+			//
+			lpIOContext->IOOperation = ClientIoWrite;
+			lpIOContext->nSentBytes += dwIoSize;
+			dwFlags = 0;
+			if (lpIOContext->nSentBytes < lpIOContext->nTotalBytes) {
+
+				//
+				// the previous write operation didn't send all the data,
+				// post another send to complete the operation
+				//
+				buffSend.buf = lpIOContext->Buffer + lpIOContext->nSentBytes;
+				buffSend.len = lpIOContext->nTotalBytes - lpIOContext->nSentBytes;
+				nRet = WSASend(
+					lpPerSocketContext->Socket,
+					&buffSend, 1, &dwSendNumBytes,
+					dwFlags,
+					&(lpIOContext->Overlapped), NULL);
+				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+					myprintf("WSASend() failed: %d\n", WSAGetLastError());
+					CloseClient(lpPerSocketContext, FALSE);
+				}
+				else if (g_bVerbose) {
+					myprintf("WorkerThread %d: Socket(%d) Send partially completed (%d bytes), Recv posted\n",
+						GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
+				}
+			}
+			else {
+
+				//
+				// previous write operation completed for this socket, post another recv
+				//
+				lpIOContext->IOOperation = ClientIoRead;
+				dwRecvNumBytes = 0;
+				dwFlags = 0;
+				buffRecv.buf = lpIOContext->Buffer,
+					buffRecv.len = MAX_BUFF_SIZE;
+				nRet = WSARecv(
+					lpPerSocketContext->Socket,
+					&buffRecv, 1, &dwRecvNumBytes,
+					&dwFlags,
+					&lpIOContext->Overlapped, NULL);
+				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+					myprintf("WSARecv() failed: %d\n", WSAGetLastError());
+					CloseClient(lpPerSocketContext, FALSE);
+				}
+				else if (g_bVerbose) {
+					myprintf("WorkerThread %d: Socket(%d) Send completed (%d bytes), Recv posted\n",
+						GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
+				}
+			}
+			break;
+
+		} //switch
+	} //while
+	return(0);
+}
+
+//
+//  Allocate a context structures for the socket and add the socket to the IOCP.  
+//  Additionally, add the context structure to the global list of context structures.
+//
+PPER_SOCKET_CONTEXT UpdateCompletionPort(SOCKET sd, IO_OPERATION ClientIo,
+	BOOL bAddToList) {
+
+	PPER_SOCKET_CONTEXT lpPerSocketContext;
+
+	lpPerSocketContext = CtxtAllocate(sd, ClientIo);
+	if (lpPerSocketContext == NULL)
+		return(NULL);
+
+	g_hIOCP = CreateIoCompletionPort((HANDLE)sd, g_hIOCP, (DWORD_PTR)lpPerSocketContext, 0);
+	if (g_hIOCP == NULL) {
+		myprintf("CreateIoCompletionPort() failed: %d\n", GetLastError());
+		if (lpPerSocketContext->pIOContext)
+			xfree(lpPerSocketContext->pIOContext);
+		xfree(lpPerSocketContext);
+		return(NULL);
+	}
+
+	//
+	//The listening socket context (bAddToList is FALSE) is not added to the list.
+	//All other socket contexts are added to the list.
+	//
+	if (bAddToList) CtxtListAddTo(lpPerSocketContext);
+
+	if (g_bVerbose)
+		myprintf("UpdateCompletionPort: Socket(%d) added to IOCP\n", lpPerSocketContext->Socket);
+
+	return(lpPerSocketContext);
+}
+
+//
+//  Close down a connection with a client.  This involves closing the socket (when 
+//  initiated as a result of a CTRL-C the socket closure is not graceful).  Additionally, 
+//  any context data associated with that socket is free'd.
+//
+VOID CloseClient(PPER_SOCKET_CONTEXT lpPerSocketContext, BOOL bGraceful) {
+
+	__try
+	{
+		EnterCriticalSection(&g_CriticalSection);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		myprintf("EnterCriticalSection raised an exception.\n");
+		return;
+	}
+
+	if (lpPerSocketContext) {
+		if (g_bVerbose)
+			myprintf("CloseClient: Socket(%d) connection closing (graceful=%s)\n",
+				lpPerSocketContext->Socket, (bGraceful ? "TRUE" : "FALSE"));
+		if (!bGraceful) {
+
+			//
+			// force the subsequent closesocket to be abortative.
+			//
+			LINGER  lingerStruct;
+
+			lingerStruct.l_onoff = 1;
+			lingerStruct.l_linger = 0;
+			setsockopt(lpPerSocketContext->Socket, SOL_SOCKET, SO_LINGER,
+				(char *)&lingerStruct, sizeof(lingerStruct));
+		}
+		if (lpPerSocketContext->pIOContext->SocketAccept != INVALID_SOCKET) {
+			closesocket(lpPerSocketContext->pIOContext->SocketAccept);
+			lpPerSocketContext->pIOContext->SocketAccept = INVALID_SOCKET;
+		};
+
+		closesocket(lpPerSocketContext->Socket);
+		lpPerSocketContext->Socket = INVALID_SOCKET;
+		CtxtListDeleteFrom(lpPerSocketContext);
+		lpPerSocketContext = NULL;
+	}
+	else {
+		myprintf("CloseClient: lpPerSocketContext is NULL\n");
+	}
+
+	LeaveCriticalSection(&g_CriticalSection);
+
+	return;
+}
+
+//
+// Allocate a socket context for the new connection.  
+//
+PPER_SOCKET_CONTEXT CtxtAllocate(SOCKET sd, IO_OPERATION ClientIO) {
+
+	PPER_SOCKET_CONTEXT lpPerSocketContext;
+
+	__try
+	{
+		EnterCriticalSection(&g_CriticalSection);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		myprintf("EnterCriticalSection raised an exception.\n");
+		return NULL;
+	}
+
+	lpPerSocketContext = (PPER_SOCKET_CONTEXT)xmalloc(sizeof(PER_SOCKET_CONTEXT));
+	if (lpPerSocketContext) {
+		lpPerSocketContext->pIOContext = (PPER_IO_CONTEXT)xmalloc(sizeof(PER_IO_CONTEXT));
+		if (lpPerSocketContext->pIOContext) {
+			lpPerSocketContext->Socket = sd;
+			lpPerSocketContext->pCtxtBack = NULL;
+			lpPerSocketContext->pCtxtForward = NULL;
+
+			lpPerSocketContext->pIOContext->Overlapped.Internal = 0;
+			lpPerSocketContext->pIOContext->Overlapped.InternalHigh = 0;
+			lpPerSocketContext->pIOContext->Overlapped.Offset = 0;
+			lpPerSocketContext->pIOContext->Overlapped.OffsetHigh = 0;
+			lpPerSocketContext->pIOContext->Overlapped.hEvent = NULL;
+			lpPerSocketContext->pIOContext->IOOperation = ClientIO;
+			lpPerSocketContext->pIOContext->pIOContextForward = NULL;
+			lpPerSocketContext->pIOContext->nTotalBytes = 0;
+			lpPerSocketContext->pIOContext->nSentBytes = 0;
+			lpPerSocketContext->pIOContext->wsabuf.buf = lpPerSocketContext->pIOContext->Buffer;
+			lpPerSocketContext->pIOContext->wsabuf.len = sizeof(lpPerSocketContext->pIOContext->Buffer);
+			lpPerSocketContext->pIOContext->SocketAccept = INVALID_SOCKET;
+
+			ZeroMemory(lpPerSocketContext->pIOContext->wsabuf.buf, lpPerSocketContext->pIOContext->wsabuf.len);
+		}
+		else {
+			xfree(lpPerSocketContext);
+			myprintf("HeapAlloc() PER_IO_CONTEXT failed: %d\n", GetLastError());
+		}
+
+	}
+	else {
+		myprintf("HeapAlloc() PER_SOCKET_CONTEXT failed: %d\n", GetLastError());
+		return(NULL);
+	}
+
+	LeaveCriticalSection(&g_CriticalSection);
+
+	return(lpPerSocketContext);
+}
+
+//
+//  Add a client connection context structure to the global list of context structures.
+//
+VOID CtxtListAddTo(PPER_SOCKET_CONTEXT lpPerSocketContext) {
+
+	PPER_SOCKET_CONTEXT pTemp;
+
+	__try
+	{
+		EnterCriticalSection(&g_CriticalSection);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		myprintf("EnterCriticalSection raised an exception.\n");
+		return;
+	}
+
+	if (g_pCtxtList == NULL) {
+
+		//
+		// add the first node to the linked list
+		//
+		lpPerSocketContext->pCtxtBack = NULL;
+		lpPerSocketContext->pCtxtForward = NULL;
+		g_pCtxtList = lpPerSocketContext;
+	}
+	else {
+
+		//
+		// add node to head of list
+		//
+		pTemp = g_pCtxtList;
+
+		g_pCtxtList = lpPerSocketContext;
+		lpPerSocketContext->pCtxtBack = pTemp;
+		lpPerSocketContext->pCtxtForward = NULL;
+
+		pTemp->pCtxtForward = lpPerSocketContext;
+	}
+
+	LeaveCriticalSection(&g_CriticalSection);
+
+	return;
+}
+
+//
+//  Remove a client context structure from the global list of context structures.
+//
+VOID CtxtListDeleteFrom(PPER_SOCKET_CONTEXT lpPerSocketContext) {
+
+	PPER_SOCKET_CONTEXT pBack;
+	PPER_SOCKET_CONTEXT pForward;
+	PPER_IO_CONTEXT     pNextIO = NULL;
+	PPER_IO_CONTEXT     pTempIO = NULL;
+
+	__try
+	{
+		EnterCriticalSection(&g_CriticalSection);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		myprintf("EnterCriticalSection raised an exception.\n");
+		return;
+	}
+
+	if (lpPerSocketContext) {
+		pBack = lpPerSocketContext->pCtxtBack;
+		pForward = lpPerSocketContext->pCtxtForward;
+
+		if (pBack == NULL && pForward == NULL) {
+
+			//
+			// This is the only node in the list to delete
+			//
+			g_pCtxtList = NULL;
+		}
+		else if (pBack == NULL && pForward != NULL) {
+
+			//
+			// This is the start node in the list to delete
+			//
+			pForward->pCtxtBack = NULL;
+			g_pCtxtList = pForward;
+		}
+		else if (pBack != NULL && pForward == NULL) {
+
+			//
+			// This is the end node in the list to delete
+			//
+			pBack->pCtxtForward = NULL;
+		}
+		else if (pBack && pForward) {
+
+			//
+			// Neither start node nor end node in the list
+			//
+			pBack->pCtxtForward = pForward;
+			pForward->pCtxtBack = pBack;
+		}
+
+		//
+		// Free all i/o context structures per socket
+		//
+		pTempIO = (PPER_IO_CONTEXT)(lpPerSocketContext->pIOContext);
+		do {
+			pNextIO = (PPER_IO_CONTEXT)(pTempIO->pIOContextForward);
+			if (pTempIO) {
+
+				//
+				//The overlapped structure is safe to free when only the posted i/o has
+				//completed. Here we only need to test those posted but not yet received 
+				//by PQCS in the shutdown process.
+				//
+				if (g_bEndServer)
+					while (!HasOverlappedIoCompleted((LPOVERLAPPED)pTempIO)) Sleep(0);
+				xfree(pTempIO);
+				pTempIO = NULL;
+			}
+			pTempIO = pNextIO;
+		} while (pNextIO);
+
+		xfree(lpPerSocketContext);
+		lpPerSocketContext = NULL;
+	}
+	else {
+		myprintf("CtxtListDeleteFrom: lpPerSocketContext is NULL\n");
+	}
+
+	LeaveCriticalSection(&g_CriticalSection);
+
+	return;
+}
+
+//
+//  Free all context structure in the global list of context structures.
+//
+VOID CtxtListFree() {
+	PPER_SOCKET_CONTEXT pTemp1, pTemp2;
+
+	__try
+	{
+		EnterCriticalSection(&g_CriticalSection);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		myprintf("EnterCriticalSection raised an exception.\n");
+		return;
+	}
+
+	pTemp1 = g_pCtxtList;
+	while (pTemp1) {
+		pTemp2 = pTemp1->pCtxtBack;
+		CloseClient(pTemp1, FALSE);
+		pTemp1 = pTemp2;
+	}
+
+	LeaveCriticalSection(&g_CriticalSection);
+
+	return;
+}
+
+int myprintf(const char *lpFormat, ...) {
+
+	int nLen = 0;
+	int nRet = 0;
+	char cBuffer[512];
+	va_list arglist;
+	HANDLE hOut = NULL;
+	HRESULT hRet;
+
+	ZeroMemory(cBuffer, sizeof(cBuffer));
+
+	va_start(arglist, lpFormat);
+
+	nLen = strlen(lpFormat);
+	hRet = StringCchVPrintf((STRSAFE_LPWSTR)cBuffer, 512, (STRSAFE_LPWSTR)lpFormat, arglist);
+
+	if (nRet >= nLen || GetLastError() == 0) {
+		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (hOut != INVALID_HANDLE_VALUE)
+			WriteConsole(hOut, cBuffer, strlen(cBuffer), (LPDWORD)&nLen, NULL);
+	}
+
+	return nLen;
+}
+#endif //end CPPHTTPLIB_IOCP_SUPPORT
+
+namespace httplib {
 namespace detail {
 
 template <class Fn>
@@ -1438,9 +2397,11 @@ inline std::string SocketStream::get_remote_addr() {
 // HTTP server implementation
 inline Server::Server()
     : keep_alive_max_count_(5)
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
     , is_running_(false)
     , svr_sock_(INVALID_SOCKET)
     , running_threads_(0)
+#endif
 {
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
@@ -1521,6 +2482,7 @@ inline bool Server::listen(const char* host, int port, int socket_flags)
     return listen_internal();
 }
 
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
 inline bool Server::is_running() const
 {
     return is_running_;
@@ -1536,6 +2498,24 @@ inline void Server::stop()
         detail::close_socket(sock);
     }
 }
+#else
+inline bool Server::is_running() const
+{
+	return g_bRestart;
+}
+
+inline void Server::stop()
+{
+	if (g_bRestart) {
+		assert(g_sdListen != INVALID_SOCKET);
+		auto sock = g_sdListen;
+		g_sdListen = INVALID_SOCKET;
+		
+		detail::shutdown_socket(sock);
+		detail::close_socket(sock);
+	}
+}
+#endif
 
 inline bool Server::parse_request_line(const char* s, Request& req)
 {
@@ -1680,6 +2660,7 @@ inline int Server::bind_internal(const char* host, int port, int socket_flags)
         return -1;
     }
 
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
     svr_sock_ = create_server_socket(host, port, socket_flags);
     if (svr_sock_ == INVALID_SOCKET) {
         return -1;
@@ -1701,12 +2682,39 @@ inline int Server::bind_internal(const char* host, int port, int socket_flags)
     } else {
         return port;
     }
+#else
+	g_sdListen = create_server_socket(host, port, socket_flags);
+	if (g_sdListen == INVALID_SOCKET) {
+		return -1;
+	}
+
+	if (port == 0) {
+		struct sockaddr_storage address;
+		socklen_t len = sizeof(address);
+		if (getsockname(g_sdListen, reinterpret_cast<struct sockaddr *>(&address), &len) == -1) {
+			return -1;
+		}
+		if (address.ss_family == AF_INET) {
+			return ntohs(reinterpret_cast<struct sockaddr_in*>(&address)->sin_port);
+		}
+		else if (address.ss_family == AF_INET6) {
+			return ntohs(reinterpret_cast<struct sockaddr_in6*>(&address)->sin6_port);
+		}
+		else {
+			return -1;
+		}
+	}
+	else {
+		return port;
+	}
+#endif
 }
 
 inline bool Server::listen_internal()
 {
     auto ret = true;
 
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
     is_running_ = true;
 
     for (;;) {
@@ -1758,6 +2766,170 @@ inline bool Server::listen_internal()
     }
 
     is_running_ = false;
+#else //IOCP init and listen!
+	SYSTEM_INFO systemInfo;
+	WSADATA wsaData;
+	DWORD dwThreadCount = 0;
+	int nRet = 0;
+
+	g_ThreadHandles[0] = (HANDLE)WSA_INVALID_EVENT;
+
+	for (int i = 0; i < MAX_WORKER_THREAD; i++) {
+		g_ThreadHandles[i] = INVALID_HANDLE_VALUE;
+	}
+
+	GetSystemInfo(&systemInfo);
+	dwThreadCount = systemInfo.dwNumberOfProcessors * 2;
+
+	if (WSA_INVALID_EVENT == (g_hCleanupEvent[0] = WSACreateEvent()))
+	{
+		myprintf("WSACreateEvent() failed: %d\n", WSAGetLastError());
+		return ret;
+	}
+
+	if ((nRet = WSAStartup(0x202, &wsaData)) != 0) {
+		myprintf("WSAStartup() failed: %d\n", nRet);
+		if (g_hCleanupEvent[0] != WSA_INVALID_EVENT) {
+			WSACloseEvent(g_hCleanupEvent[0]);
+			g_hCleanupEvent[0] = WSA_INVALID_EVENT;
+		}
+		return ret;
+	}
+
+	__try
+	{
+		InitializeCriticalSection(&g_CriticalSection);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		myprintf("InitializeCriticalSection raised an exception.\n");
+		if (g_hCleanupEvent[0] != WSA_INVALID_EVENT) {
+			WSACloseEvent(g_hCleanupEvent[0]);
+			g_hCleanupEvent[0] = WSA_INVALID_EVENT;
+		}
+		return ret;
+	}
+
+	while (g_bRestart) {
+		g_bRestart = FALSE;
+		g_bEndServer = FALSE;
+		WSAResetEvent(g_hCleanupEvent[0]);
+
+		__try {
+
+			//
+			// notice that we will create more worker threads (dwThreadCount) than 
+			// the thread concurrency limit on the IOCP.
+			//
+			g_hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+			if (g_hIOCP == NULL) {
+				myprintf("CreateIoCompletionPort() failed to create I/O completion port: %d\n",
+					GetLastError());
+				__leave;
+			}
+
+			for (DWORD dwCPU = 0; dwCPU<dwThreadCount; dwCPU++) {
+
+				//
+				// Create worker threads to service the overlapped I/O requests.  The decision
+				// to create 2 worker threads per CPU in the system is a heuristic.  Also,
+				// note that thread handles are closed right away, because we will not need them
+				// and the worker threads will continue to execute.
+				//
+				HANDLE  hThread;
+				DWORD   dwThreadId;
+
+				hThread = CreateThread(NULL, 0, WorkerThread, g_hIOCP, 0, &dwThreadId);
+				if (hThread == NULL) {
+					myprintf("CreateThread() failed to create worker thread: %d\n",
+						GetLastError());
+					__leave;
+				}
+				g_ThreadHandles[dwCPU] = hThread;
+				hThread = INVALID_HANDLE_VALUE;
+			}
+
+			if (!CreateListenSocket())
+				__leave;
+
+			if (!CreateAcceptSocket(TRUE))
+				__leave;
+
+			WSAWaitForMultipleEvents(1, g_hCleanupEvent, TRUE, WSA_INFINITE, FALSE);
+		}
+
+		__finally {
+
+			g_bEndServer = TRUE;
+
+			//
+			// Cause worker threads to exit
+			//
+			if (g_hIOCP) {
+				for (DWORD i = 0; i < dwThreadCount; i++)
+					PostQueuedCompletionStatus(g_hIOCP, 0, 0, NULL);
+			}
+
+			//
+			// Make sure worker threads exits.
+			//
+			if (WAIT_OBJECT_0 != WaitForMultipleObjects(dwThreadCount, g_ThreadHandles, TRUE, 1000))
+				myprintf("WaitForMultipleObjects() failed: %d\n", GetLastError());
+			else
+				for (DWORD i = 0; i<dwThreadCount; i++) {
+					if (g_ThreadHandles[i] != INVALID_HANDLE_VALUE)
+						CloseHandle(g_ThreadHandles[i]);
+					g_ThreadHandles[i] = INVALID_HANDLE_VALUE;
+				}
+
+			if (g_sdListen != INVALID_SOCKET) {
+				closesocket(g_sdListen);
+				g_sdListen = INVALID_SOCKET;
+			}
+
+			if (g_pCtxtListenSocket) {
+				while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
+					Sleep(0);
+
+				if (g_pCtxtListenSocket->pIOContext->SocketAccept != INVALID_SOCKET)
+					closesocket(g_pCtxtListenSocket->pIOContext->SocketAccept);
+				g_pCtxtListenSocket->pIOContext->SocketAccept = INVALID_SOCKET;
+
+				//
+				// We know there is only one overlapped I/O on the listening socket
+				//
+				if (g_pCtxtListenSocket->pIOContext)
+					xfree(g_pCtxtListenSocket->pIOContext);
+
+				if (g_pCtxtListenSocket)
+					xfree(g_pCtxtListenSocket);
+				g_pCtxtListenSocket = NULL;
+			}
+
+			CtxtListFree();
+
+			if (g_hIOCP) {
+				CloseHandle(g_hIOCP);
+				g_hIOCP = NULL;
+			}
+		} //finally
+
+		if (g_bRestart) {
+			myprintf("\niocpserverex is restarting...\n");
+		}
+		else {
+			ret = false;
+			myprintf("\niocpserverex is exiting...\n");
+		}
+	} //while (g_bRestart)
+
+	DeleteCriticalSection(&g_CriticalSection);
+	if (g_hCleanupEvent[0] != WSA_INVALID_EVENT) {
+		WSACloseEvent(g_hCleanupEvent[0]);
+		g_hCleanupEvent[0] = WSA_INVALID_EVENT;
+	}
+	WSACleanup();
+#endif
 
     return ret;
 }
