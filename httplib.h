@@ -107,7 +107,7 @@ std::pair<std::string, std::string> make_range_header(uint64_t value, Args... ar
 
 typedef std::multimap<std::string, std::string>                Params;
 typedef std::smatch                                            Match;
-typedef std::function<void (uint64_t current, uint64_t total)> Progress;
+typedef std::function<bool (uint64_t current, uint64_t total)> Progress;
 
 struct MultipartFile {
     std::string filename;
@@ -146,6 +146,7 @@ struct Response {
     int         status;
     Headers     headers;
     std::string body;
+    std::function<std::string (uint64_t offset)> streamcb;
 
     bool has_header(const char* key) const;
     std::string get_header_value(const char* key) const;
@@ -803,7 +804,9 @@ inline bool read_content_with_length(Stream& strm, std::string& out, size_t len,
         r += n;
 
         if (progress) {
-            progress(r, len);
+            if (!progress(r, len)) {
+                return false;
+            }
         }
     }
 
@@ -962,6 +965,17 @@ inline bool from_hex_to_i(const std::string& s, size_t i, size_t cnt, int& val)
         }
     }
     return true;
+}
+
+inline std::string from_i_to_hex(uint64_t n)
+{
+    const char *charset = "0123456789abcdef";
+    std::string ret;
+    do {
+        ret = charset[n & 15] + ret;
+        n >>= 4;
+    } while (n > 0);
+    return ret;
 }
 
 inline size_t to_utf8(int code, char* buff)
@@ -1516,9 +1530,10 @@ inline void Server::stop()
 {
     if (is_running_) {
         assert(svr_sock_ != INVALID_SOCKET);
-        detail::shutdown_socket(svr_sock_);
-        detail::close_socket(svr_sock_);
+        auto sock = svr_sock_;
         svr_sock_ = INVALID_SOCKET;
+        detail::shutdown_socket(sock);
+        detail::close_socket(sock);
     }
 }
 
@@ -1528,7 +1543,7 @@ inline bool Server::parse_request_line(const char* s, Request& req)
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
-        req.version = std::string(m[4]);
+        req.version = std::string(m[5]);
         req.method = std::string(m[1]);
         req.target = std::string(m[2]);
         req.path = detail::decode_url(m[3]);
@@ -1560,9 +1575,13 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
     // Headers
     if (last_connection ||
-        req.version == "HTTP/1.0" ||
         req.get_header_value("Connection") == "close") {
         res.set_header("Connection", "close");
+    }
+    
+    if (!last_connection &&
+        req.get_header_value("Connection") == "Keep-Alive") {
+        res.set_header("Connection", "Keep-Alive");
     }
 
     if (!res.body.empty()) {
@@ -1582,13 +1601,34 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 
         auto length = std::to_string(res.body.size());
         res.set_header("Content-Length", length.c_str());
+    } else if (res.streamcb) {
+        // Streamed response
+        bool chunked_response = !res.has_header("Content-Length");
+        if (chunked_response)
+            res.set_header("Transfer-Encoding", "chunked");
     }
 
     detail::write_headers(strm, res);
 
     // Body
-    if (!res.body.empty() && req.method != "HEAD") {
-        strm.write(res.body.c_str(), res.body.size());
+    if (req.method != "HEAD") {
+        if (!res.body.empty()) {
+            strm.write(res.body.c_str(), res.body.size());
+        } else if (res.streamcb) {
+            bool chunked_response = !res.has_header("Content-Length");
+            uint64_t offset = 0;
+            bool data_available = true;
+            while (data_available) {
+                std::string chunk = res.streamcb(offset);
+                offset += chunk.size();
+                data_available = !chunk.empty();
+                // Emit chunked response header and footer for each chunk
+                if (chunked_response)
+                    chunk = detail::from_i_to_hex(chunk.size()) + "\r\n" + chunk + "\r\n";
+                if (strm.write(chunk.c_str(), chunk.size()) < 0)
+                    break;  // Stop on error
+            }
+        }
     }
 
     // Log

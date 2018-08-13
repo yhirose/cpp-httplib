@@ -230,6 +230,66 @@ TEST(ConnectionErrorTest, Timeout)
     ASSERT_TRUE(res == nullptr);
 }
 
+TEST(CancelTest, NoCancel) {
+    auto host = "httpbin.org";
+    auto sec = 5;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec);
+#endif
+
+    httplib::Headers headers;
+    auto res = cli.Get("/range/32", headers, [](uint64_t, uint64_t) {
+        return true;
+    });
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ(200, res->status);
+}
+
+TEST(CancelTest, WithCancelSmallPayload) {
+    auto host = "httpbin.org";
+    auto sec = 5;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec);
+#endif
+
+    httplib::Headers headers;
+    auto res = cli.Get("/range/32", headers, [](uint64_t, uint64_t) {
+        return false;
+    });
+    ASSERT_TRUE(res == nullptr);
+}
+
+TEST(CancelTest, WithCancelLargePayload) {
+    auto host = "httpbin.org";
+    auto sec = 5;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port, sec);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port, sec);
+#endif
+
+    uint32_t count = 0;
+    httplib::Headers headers;
+    auto res = cli.Get("/range/65536", headers, [&count](uint64_t, uint64_t) {
+        return (count++ == 0);
+    });
+    ASSERT_TRUE(res == nullptr);
+}
+
 TEST(Server, BindAndListenSeparately) {
     Server svr;
     int port = svr.bind_to_any_port("localhost");
@@ -281,6 +341,25 @@ protected:
                 } else {
                     res.status = 404;
                 }
+            })
+            .Get("/streamedchunked", [&](const Request& /*req*/, Response& res) {
+                res.streamcb = [] (uint64_t offset) {
+                    if (offset < 3)
+                        return "a";
+                    if (offset < 6)
+                        return "b";
+                    return "";
+                };
+            })
+            .Get("/streamed", [&](const Request& /*req*/, Response& res) {
+                res.set_header("Content-Length", "6");
+                res.streamcb = [] (uint64_t offset) {
+                    if (offset < 3)
+                        return "a";
+                    if (offset < 6)
+                        return "b";
+                    return "";
+                };
             })
             .Post("/chunked", [&](const Request& req, Response& /*res*/) {
                 EXPECT_EQ(req.body, "dechunked post body");
@@ -363,7 +442,7 @@ protected:
         persons_["john"] = "programmer";
 
         t_ = thread([&](){
-            svr_.listen(HOST, PORT);
+            ASSERT_TRUE(svr_.listen(HOST, PORT));
         });
 
         while (!svr_.is_running()) {
@@ -712,6 +791,23 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding)
 	EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, GetStreamed)
+{
+    auto res = cli_.Get("/streamed");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("6", res->get_header_value("Content-Length"));
+    EXPECT_TRUE(res->body == "aaabbb");
+}
+
+TEST_F(ServerTest, GetStreamedChunked)
+{
+    auto res = cli_.Get("/streamedchunked");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_TRUE(res->body == "aaabbb");
+}
+
 TEST_F(ServerTest, LargeChunkedPost) {
     Request req;
     req.method = "POST";
@@ -890,7 +986,7 @@ protected:
         });
 
         t_ = thread([&]() {
-            svr_.listen(nullptr, PORT, AI_PASSIVE);
+            ASSERT_TRUE(svr_.listen(nullptr, PORT, AI_PASSIVE));
         });
 
         while (!svr_.is_running()) {
@@ -932,7 +1028,7 @@ protected:
         t_ = thread([&](){
             svr_.bind_to_any_port(HOST);
             msleep(500);
-            svr_.listen_after_bind();
+            ASSERT_TRUE(svr_.listen_after_bind());
         });
 
         while (!svr_.is_running()) {
