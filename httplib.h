@@ -2056,7 +2056,7 @@ inline bool read_content_chunked(Stream& strm, std::string& out)
 }
 
 template <typename T>
-bool read_content(Stream& strm, T& x, Progress progress = Progress())
+bool read_content(Stream& strm, T& x, Progress progress)
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
 
@@ -2952,8 +2952,13 @@ inline void write_response_iocp(httplib::Stream& strm, bool last_connection, con
 
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
     if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
         std::string path = base_dir_ + req.path;
+#else
+	if (!g_base_dir.empty() && detail::is_valid_path(req.path)) {
+		std::string path = g_base_dir + req.path;
+#endif
         if (!path.empty() && path.back() == '/') {
             path += "index.html";
         }
