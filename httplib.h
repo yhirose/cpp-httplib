@@ -170,6 +170,7 @@ VOID CtxtListDeleteFrom(
 
 //IOCP GLOBALS
 char *g_Port = (char*)DEFAULT_PORT;
+std::string g_base_dir;
 BOOL g_bEndServer = FALSE;			// set to TRUE on CTRL-C
 BOOL g_bRestart = TRUE;				// set to TRUE to CTRL-BRK
 BOOL g_bVerbose = FALSE;
@@ -227,7 +228,6 @@ namespace httplib
 				});
 			}
 		};
-
 	} // namespace detail
 
 	enum class HttpVersion { v1_0 = 0, v1_1 };
@@ -317,10 +317,30 @@ namespace httplib
 		socket_t sock_;
 	};
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+	class IOCPStream : public Stream {
+	public:
+		IOCPStream(PPER_SOCKET_CONTEXT _lpPerSocketContext, PPER_IO_CONTEXT _lpIOContext,
+			DWORD& _dwSendNumBytes, DWORD& _dwFlags);
+		virtual ~IOCPStream();
+
+		virtual int read(char* ptr, size_t size);
+		virtual int write(const char* ptr, size_t size);
+		virtual int write(const char* ptr);
+		virtual std::string get_remote_addr();
+
+	private:
+		PPER_SOCKET_CONTEXT lpPerSocketContext;
+		PPER_IO_CONTEXT lpIOContext;
+		DWORD& dwSendNumBytes;
+		DWORD& dwFlags;
+	};
+#endif
+
 	class Server {
 	public:
-		typedef std::function<void(const Request&, Response&)> Handler;
-		typedef std::function<void(const Request&, const Response&)> Logger;
+		typedef std::function<void(const httplib::Request&, httplib::Response&)> Handler;
+		typedef std::function<void(const httplib::Request&, const httplib::Response&)> Logger;
 
 		Server();
 
@@ -371,7 +391,9 @@ namespace httplib
 
 		virtual bool read_and_close_socket(socket_t sock);
 
-		std::string base_dir_;
+
+		// TODO: Use thread pool... (Windows IOCP is as good as it gets on the platform!)
+#ifndef CPPHTTPLIB_IOCP_SUPPORT 
 		Handlers    get_handlers_;
 		Handlers    post_handlers_;
 		Handlers    put_handlers_;
@@ -379,15 +401,38 @@ namespace httplib
 		Handlers    options_handlers_;
 		Handler     error_handler_;
 		Logger      logger_;
-
-		// TODO: Use thread pool... (Windows IOCP is as good as it gets on the platform!)
-#ifndef CPPHTTPLIB_IOCP_SUPPORT 
+		std::string base_dir_;
 		std::mutex  running_threads_mutex_;
 		int         running_threads_;
 		socket_t    svr_sock_;
 		bool        is_running_;
 #endif
 	};
+	typedef std::function<void(const httplib::Request&, httplib::Response&)> Handler;
+	typedef std::function<void(const httplib::Request&, const httplib::Response&)> Logger;
+	typedef std::vector<std::pair<std::regex, Handler>> Handlers;
+
+	template<typename T>
+	inline bool read_and_close_socket_iocp(PPER_SOCKET_CONTEXT _lpPerSocketContext,
+		PPER_IO_CONTEXT _lpIOContext, size_t _keep_alive_max_count, T callback);
+
+	inline bool process_request_iocp(httplib::Stream& strm, bool last_connection, bool& connection_close);
+
+	inline bool parse_request_line_iocp(const char* s, httplib::Request& req);
+
+	inline void write_response_iocp(httplib::Stream& strm, bool last_connection,
+		const httplib::Request& req, httplib::Response& res);
+
+	inline bool routing_iocp(httplib::Request& req, httplib::Response& res);
+
+	inline bool dispatch_request_iocp(httplib::Request& req, httplib::Response& res, Handlers& handlers);
+	Handlers    get_handlers_;
+	Handlers    post_handlers_;
+	Handlers    put_handlers_;
+	Handlers    delete_handlers_;
+	Handlers    options_handlers_;
+	Handler     error_handler_;
+	Logger      logger_;
 
 	class Client {
 	public:
@@ -496,10 +541,227 @@ namespace httplib
 /*
  * Implementation
  */
+namespace httplib {
+	namespace detail {
+		inline bool read_headers(Stream& strm, Headers& headers);
+		
+		template <typename T>
+		bool read_content(Stream& strm, T& x, Progress progress = Progress());
+		
+		inline void parse_query_text(const std::string& s, Params& params);
 
+		inline bool parse_multipart_boundary(const std::string& content_type, std::string& boundary);
+
+		inline bool parse_multipart_formdata(
+			const std::string& boundary, const std::string& body, MultipartFiles& files);
+
+		inline std::string get_remote_addr(socket_t sock);
+
+		template <typename T>
+		inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
+			PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
+			size_t keep_alive_max_count, T callback);
+
+		// NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
+		// to store data. The call can set memory on stack for performance.
+		class stream_line_reader {
+		public:
+			stream_line_reader(Stream& strm, char* fixed_buffer, size_t fixed_buffer_size)
+				: strm_(strm)
+				, fixed_buffer_(fixed_buffer)
+				, fixed_buffer_size_(fixed_buffer_size) {
+			}
+
+			const char* ptr() const {
+				if (glowable_buffer_.empty()) {
+					return fixed_buffer_;
+				}
+				else {
+					return glowable_buffer_.data();
+				}
+			}
+
+			bool getline() {
+				fixed_buffer_used_size_ = 0;
+				glowable_buffer_.clear();
+
+				for (size_t i = 0; ; i++) {
+					char byte;
+					auto n = strm_.read(&byte, 1);
+
+					if (n < 0) {
+						return false;
+					}
+					else if (n == 0) {
+						if (i == 0) {
+							return false;
+						}
+						else {
+							break;
+						}
+					}
+
+					append(byte);
+
+					if (byte == '\n') {
+						break;
+					}
+				}
+
+				return true;
+			}
+
+		private:
+			void append(char c) {
+				if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
+					fixed_buffer_[fixed_buffer_used_size_++] = c;
+					fixed_buffer_[fixed_buffer_used_size_] = '\0';
+				}
+				else {
+					if (glowable_buffer_.empty()) {
+						assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
+						glowable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
+					}
+					glowable_buffer_ += c;
+				}
+			}
+
+			Stream& strm_;
+			char* fixed_buffer_;
+			const size_t fixed_buffer_size_;
+			size_t fixed_buffer_used_size_;
+			std::string glowable_buffer_;
+		};
+	};
+};
 
 //couple pages of IOCP function implementations
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
+inline bool process_iocp_request(httplib::Stream& strm, bool last_connection, bool& connection_close)
+{
+	const auto bufsiz = 2048;
+	char buf[bufsiz];
+
+	httplib::detail::stream_line_reader reader(strm, buf, bufsiz);
+
+	// Connection has been closed on client
+	if (!reader.getline()) {
+		return false;
+	}
+
+	httplib::Request req;
+	httplib::Response res;
+
+	res.version = "HTTP/1.1";
+
+	// Request line and headers
+	if (!parse_request_line_iocp(reader.ptr(), req) || !httplib::detail::read_headers(strm, req.headers)) {
+		res.status = 400;
+		httplib::write_response_iocp(strm, last_connection, req, res);
+		return true;
+	}
+
+	auto ret = true;
+	if (req.get_header_value("Connection") == "close") {
+		// ret = false;
+		connection_close = true;
+	}
+
+	req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
+
+	// Body
+	if (req.method == "POST" || req.method == "PUT") {
+		if (!httplib::detail::read_content(strm, req)) {
+			res.status = 400;
+			httplib::write_response_iocp(strm, last_connection, req, res);
+			return ret;
+		}
+
+		const auto& content_type = req.get_header_value("Content-Type");
+
+		if (req.get_header_value("Content-Encoding") == "gzip") {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+			detail::decompress(req.body);
+#else
+			res.status = 415;
+			httplib::write_response_iocp(strm, last_connection, req, res);
+			return ret;
+#endif
+		}
+
+		if (!content_type.find("application/x-www-form-urlencoded")) {
+			httplib::detail::parse_query_text(req.body, req.params);
+		}
+		else if (!content_type.find("multipart/form-data")) {
+			std::string boundary;
+			if (!httplib::detail::parse_multipart_boundary(content_type, boundary) ||
+				!httplib::detail::parse_multipart_formdata(boundary, req.body, req.files)) {
+				res.status = 400;
+				httplib::write_response_iocp(strm, last_connection, req, res);
+				return ret;
+			}
+		}
+	}
+
+	if (routing_iocp(req, res)) {
+		if (res.status == -1) {
+			res.status = 200;
+		}
+	}
+	else {
+		res.status = 404;
+	}
+
+	httplib::write_response_iocp(strm, last_connection, req, res);
+	return ret;
+}
+
+
+httplib::IOCPStream::IOCPStream(PPER_SOCKET_CONTEXT _lpPerSocketContext, PPER_IO_CONTEXT _lpIOContext,
+	DWORD& _dwSendNumBytes, DWORD& _dwFlags) :
+	lpPerSocketContext(_lpPerSocketContext), lpIOContext(_lpIOContext),
+	dwSendNumBytes(_dwSendNumBytes), dwFlags(_dwFlags) {}
+
+httplib::IOCPStream::~IOCPStream() {}
+
+inline int httplib::IOCPStream::read(char* ptr, size_t size)
+{
+	int i = 0;
+	for (; i < size && i < lpIOContext->wsabuf.len; ++i)
+	{
+		ptr[i] = lpIOContext->wsabuf.buf[i];
+	}
+	return i;
+}
+
+inline int httplib::IOCPStream::write(const char* ptr, size_t size)
+{
+	lpIOContext->wsabuf.buf = (char*)ptr;
+	lpIOContext->wsabuf.len = size;
+
+	int nRet = WSASend(
+		lpPerSocketContext->Socket,
+		&lpIOContext->wsabuf, 1, &dwSendNumBytes,
+		dwFlags,
+		&(lpIOContext->Overlapped), NULL);
+	if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
+		//myprintf(L"WSASend() failed: %d\n", WSAGetLastError());
+		CloseClient(lpPerSocketContext, FALSE);
+	}
+	return nRet;
+}
+
+inline int httplib::IOCPStream::write(const char* ptr)
+{
+	return write(ptr, strlen(ptr));
+}
+
+inline std::string httplib::IOCPStream::get_remote_addr()
+{
+	return detail::get_remote_addr(lpPerSocketContext->Socket);
+}
+#endif
+
 //
 // Create a socket with all the socket options we need, namely disable buffering
 // and set linger.
@@ -903,27 +1165,22 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 		case ClientIoRead:
 
 			//
-			// a read operation has completed, post a write operation to echo the
-			// data back to the client using the same data buffer.
+			// a read operation has completed, feed the wsadata
+			// to the httplib system, plugin the WSASend
+			// inside the httplib system as replacement for
+			// to send the response
 			//
 			lpIOContext->IOOperation = ClientIoWrite;
 			lpIOContext->nTotalBytes = dwIoSize;
 			lpIOContext->nSentBytes = 0;
 			lpIOContext->wsabuf.len = dwIoSize;
 			dwFlags = 0;
-			nRet = WSASend(
-				lpPerSocketContext->Socket,
-				&lpIOContext->wsabuf, 1, &dwSendNumBytes,
-				dwFlags,
-				&(lpIOContext->Overlapped), NULL);
-			if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-				myprintf("WSASend() failed: %d\n", WSAGetLastError());
-				CloseClient(lpPerSocketContext, FALSE);
-			}
-			else if (g_bVerbose) {
-				myprintf("WorkerThread %d: Socket(%d) Recv completed (%d bytes), Send posted\n",
-					GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
-			}
+
+			httplib::detail::read_and_close_iocp_socket(lpPerSocketContext, lpIOContext,
+				dwRecvNumBytes, dwFlags,  5,
+				[](httplib::Stream& strm, bool last_connection, bool& connection_close) {
+					return process_iocp_request(strm, last_connection, connection_close);
+				});
 			break;
 
 		case ClientIoWrite:
@@ -1339,73 +1596,6 @@ void split(const char* b, const char* e, char d, Fn fn)
     }
 }
 
-// NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
-// to store data. The call can set memory on stack for performance.
-class stream_line_reader {
-public:
-    stream_line_reader(Stream& strm, char* fixed_buffer, size_t fixed_buffer_size)
-        : strm_(strm)
-        , fixed_buffer_(fixed_buffer)
-        , fixed_buffer_size_(fixed_buffer_size) {
-    }
-
-    const char* ptr() const {
-        if (glowable_buffer_.empty()) {
-            return fixed_buffer_;
-        } else {
-            return glowable_buffer_.data();
-        }
-    }
-
-    bool getline() {
-        fixed_buffer_used_size_ = 0;
-        glowable_buffer_.clear();
-
-        for (size_t i = 0; ; i++) {
-            char byte;
-            auto n = strm_.read(&byte, 1);
-
-            if (n < 0) {
-                return false;
-            } else if (n == 0) {
-                if (i == 0) {
-                    return false;
-                } else {
-                    break;
-                }
-            }
-
-            append(byte);
-
-            if (byte == '\n') {
-                break;
-            }
-        }
-
-        return true;
-    }
-
-private:
-    void append(char c) {
-        if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
-            fixed_buffer_[fixed_buffer_used_size_++] = c;
-            fixed_buffer_[fixed_buffer_used_size_] = '\0';
-        } else {
-            if (glowable_buffer_.empty()) {
-                assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
-                glowable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
-            }
-            glowable_buffer_ += c;
-        }
-    }
-
-    Stream& strm_;
-    char* fixed_buffer_;
-    const size_t fixed_buffer_size_;
-    size_t fixed_buffer_used_size_;
-    std::string glowable_buffer_;
-};
-
 inline int close_socket(socket_t sock)
 {
 #ifdef _WIN32
@@ -1456,6 +1646,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
     return true;
 }
 
+
 template <typename T>
 inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T callback)
 {
@@ -1486,6 +1677,28 @@ inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T 
 
     close_socket(sock);
     return ret;
+}
+
+template <typename T>
+inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
+	PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
+	size_t keep_alive_max_count, T callback)
+{
+	bool ret = false;
+
+	IOCPStream strm(_lpPerSocketContext, _lpIOContext,
+		_dwSendNumBytes, _dwFlags);
+	if (keep_alive_max_count > 0) {
+		auto last_connection = keep_alive_max_count == 1;
+		auto connection_close = false;
+		ret = callback(strm, last_connection, connection_close);
+	}
+	else {
+		auto dummy_connection_close = false;
+		ret = callback(strm, true, dummy_connection_close);
+	}
+
+	return ret;
 }
 
 inline int shutdown_socket(socket_t sock)
@@ -1568,7 +1781,8 @@ inline bool is_connection_error()
 #endif
 }
 
-inline std::string get_remote_addr(socket_t sock) {
+inline std::string get_remote_addr(socket_t sock)
+{
     struct sockaddr_storage addr;
     socklen_t len = sizeof(addr);
 
@@ -1834,7 +2048,7 @@ inline bool read_content_chunked(Stream& strm, std::string& out)
 }
 
 template <typename T>
-bool read_content(Stream& strm, T& x, Progress progress = Progress())
+bool read_content(Stream& strm, T& x, Progress progress)
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
 
@@ -2445,7 +2659,11 @@ inline Server& Server::Options(const char* pattern, Handler handler)
 inline bool Server::set_base_dir(const char* path)
 {
     if (detail::is_dir(path)) {
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
         base_dir_ = path;
+#else
+		g_base_dir = path;
+#endif
         return true;
     }
     return false;
@@ -2517,7 +2735,7 @@ inline void Server::stop()
 }
 #endif
 
-inline bool Server::parse_request_line(const char* s, Request& req)
+inline bool Server::parse_request_line(const char* s, httplib::Request& req)
 {
     static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
@@ -2538,6 +2756,29 @@ inline bool Server::parse_request_line(const char* s, Request& req)
     }
 
     return false;
+}
+
+inline bool parse_request_line_iocp(const char* s, httplib::Request& req)
+{
+	static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
+
+	std::cmatch m;
+	if (std::regex_match(s, m, re)) {
+		req.version = std::string(m[5]);
+		req.method = std::string(m[1]);
+		req.target = std::string(m[2]);
+		req.path = detail::decode_url(m[3]);
+
+		// Parse query text
+		auto len = std::distance(m[4].first, m[4].second);
+		if (len > 0) {
+			detail::parse_query_text(m[4], req.params);
+		}
+
+		return true;
+	}
+
+	return false;
 }
 
 inline void Server::write_response(Stream& strm, bool last_connection, const Request& req, Response& res)
@@ -2617,10 +2858,94 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
     }
 }
 
+inline void write_response_iocp(httplib::Stream& strm, bool last_connection, const httplib::Request& req, httplib::Response& res)
+{
+	assert(res.status != -1);
+
+	if (400 <= res.status && error_handler_) {
+		error_handler_(req, res);
+	}
+
+	// Response line
+	strm.write_format("HTTP/1.1 %d %s\r\n",
+		res.status,
+		detail::status_message(res.status));
+
+	// Headers
+	if (last_connection ||
+		req.get_header_value("Connection") == "close") {
+		res.set_header("Connection", "close");
+	}
+
+	if (!last_connection &&
+		req.get_header_value("Connection") == "Keep-Alive") {
+		res.set_header("Connection", "Keep-Alive");
+	}
+
+	if (!res.body.empty()) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+		// TODO: 'Accpet-Encoding' has gzip, not gzip;q=0
+		const auto& encodings = req.get_header_value("Accept-Encoding");
+		if (encodings.find("gzip") != std::string::npos &&
+			detail::can_compress(res.get_header_value("Content-Type"))) {
+			detail::compress(res.body);
+			res.set_header("Content-Encoding", "gzip");
+		}
+#endif
+
+		if (!res.has_header("Content-Type")) {
+			res.set_header("Content-Type", "text/plain");
+		}
+
+		auto length = std::to_string(res.body.size());
+		res.set_header("Content-Length", length.c_str());
+	}
+	else if (res.streamcb) {
+		// Streamed response
+		bool chunked_response = !res.has_header("Content-Length");
+		if (chunked_response)
+			res.set_header("Transfer-Encoding", "chunked");
+	}
+
+	detail::write_headers(strm, res);
+
+	// Body
+	if (req.method != "HEAD") {
+		if (!res.body.empty()) {
+			strm.write(res.body.c_str(), res.body.size());
+		}
+		else if (res.streamcb) {
+			bool chunked_response = !res.has_header("Content-Length");
+			uint64_t offset = 0;
+			bool data_available = true;
+			while (data_available) {
+				std::string chunk = res.streamcb(offset);
+				offset += chunk.size();
+				data_available = !chunk.empty();
+				// Emit chunked response header and footer for each chunk
+				if (chunked_response)
+					chunk = detail::from_i_to_hex(chunk.size()) + "\r\n" + chunk + "\r\n";
+				if (strm.write(chunk.c_str(), chunk.size()) < 0)
+					break;  // Stop on error
+			}
+		}
+	}
+
+	// Log
+	if (logger_) {
+		logger_(req, res);
+	}
+}
+
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
     if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
         std::string path = base_dir_ + req.path;
+#else
+	if (!g_base_dir.empty() && detail::is_valid_path(req.path)) {
+		std::string path = g_base_dir + req.path;
+#endif
 
         if (!path.empty() && path.back() == '/') {
             path += "index.html";
@@ -2638,6 +2963,29 @@ inline bool Server::handle_file_request(Request& req, Response& res)
     }
 
     return false;
+}
+
+inline bool handle_file_request_iocp(Request& req, Response& res)
+{
+	if (!g_base_dir.empty() && detail::is_valid_path(req.path)) {
+		std::string path = g_base_dir + req.path;
+
+		if (!path.empty() && path.back() == '/') {
+			path += "index.html";
+		}
+
+		if (detail::is_file(path)) {
+			detail::read_file(path, res.body);
+			auto type = detail::find_content_type(path);
+			if (type) {
+				res.set_header("Content-Type", type);
+			}
+			res.status = 200;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 inline socket_t Server::create_server_socket(const char* host, int port, int socket_flags) const
@@ -2954,6 +3302,30 @@ inline bool Server::routing(Request& req, Response& res)
     return false;
 }
 
+inline bool routing_iocp(Request& req, Response& res)
+{
+	if (req.method == "GET" && handle_file_request_iocp(req, res)) {
+		return true;
+	}
+
+	if (req.method == "GET" || req.method == "HEAD") {
+		return dispatch_request_iocp(req, res, get_handlers_);
+	}
+	else if (req.method == "POST") {
+		return dispatch_request_iocp(req, res, post_handlers_);
+	}
+	else if (req.method == "PUT") {
+		return dispatch_request_iocp(req, res, put_handlers_);
+	}
+	else if (req.method == "DELETE") {
+		return dispatch_request_iocp(req, res, delete_handlers_);
+	}
+	else if (req.method == "OPTIONS") {
+		return dispatch_request_iocp(req, res, options_handlers_);
+	}
+	return false;
+}
+
 inline bool Server::dispatch_request(Request& req, Response& res, Handlers& handlers)
 {
     for (const auto& x: handlers) {
@@ -2966,6 +3338,20 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
         }
     }
     return false;
+}
+
+inline bool dispatch_request_iocp(Request& req, Response& res, Handlers& handlers)
+{
+	for (const auto& x : handlers) {
+		const auto& pattern = x.first;
+		const auto& handler = x.second;
+
+		if (std::regex_match(req.path, req.matches, pattern)) {
+			handler(req, res);
+			return true;
+		}
+	}
+	return false;
 }
 
 inline bool Server::process_request(Stream& strm, bool last_connection, bool& connection_close)
@@ -3043,6 +3429,85 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
 
     write_response(strm, last_connection, req, res);
     return ret;
+}
+
+inline bool process_request_iocp(Stream& strm, bool last_connection, bool& connection_close)
+{
+	const auto bufsiz = 2048;
+	char buf[bufsiz];
+
+	detail::stream_line_reader reader(strm, buf, bufsiz);
+
+	// Connection has been closed on client
+	if (!reader.getline()) {
+		return false;
+	}
+
+	Request req;
+	Response res;
+
+	res.version = "HTTP/1.1";
+
+	// Request line and headers
+	if (!parse_request_line_iocp(reader.ptr(), req) || !detail::read_headers(strm, req.headers)) {
+		res.status = 400;
+		write_response_iocp(strm, last_connection, req, res);
+		return true;
+	}
+
+	auto ret = true;
+	if (req.get_header_value("Connection") == "close") {
+		// ret = false;
+		connection_close = true;
+	}
+
+	req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
+
+	// Body
+	if (req.method == "POST" || req.method == "PUT") {
+		if (!detail::read_content(strm, req)) {
+			res.status = 400;
+			write_response_iocp(strm, last_connection, req, res);
+			return ret;
+		}
+
+		const auto& content_type = req.get_header_value("Content-Type");
+
+		if (req.get_header_value("Content-Encoding") == "gzip") {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+			detail::decompress(req.body);
+#else
+			res.status = 415;
+			write_response_iocp(strm, last_connection, req, res);
+			return ret;
+#endif
+		}
+
+		if (!content_type.find("application/x-www-form-urlencoded")) {
+			detail::parse_query_text(req.body, req.params);
+		}
+		else if (!content_type.find("multipart/form-data")) {
+			std::string boundary;
+			if (!detail::parse_multipart_boundary(content_type, boundary) ||
+				!detail::parse_multipart_formdata(boundary, req.body, req.files)) {
+				res.status = 400;
+				write_response_iocp(strm, last_connection, req, res);
+				return ret;
+			}
+		}
+	}
+
+	if (routing_iocp(req, res)) {
+		if (res.status == -1) {
+			res.status = 200;
+		}
+	}
+	else {
+		res.status = 404;
+	}
+
+	write_response_iocp(strm, last_connection, req, res);
+	return ret;
 }
 
 inline bool Server::is_valid() const
@@ -3560,7 +4025,6 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
             return process_request(strm, req, res, connection_close);
         });
 }
-#endif
 
 } // namespace httplib
 
