@@ -408,6 +408,8 @@ namespace httplib
 		bool        is_running_;
 #endif
 	};
+
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 	typedef std::function<void(const httplib::Request&, httplib::Response&)> Handler;
 	typedef std::function<void(const httplib::Request&, const httplib::Response&)> Logger;
 	typedef std::vector<std::pair<std::regex, Handler>> Handlers;
@@ -433,6 +435,7 @@ namespace httplib
 	Handlers    options_handlers_;
 	Handler     error_handler_;
 	Logger      logger_;
+#endif
 
 	class Client {
 	public:
@@ -541,8 +544,11 @@ namespace httplib
 /*
  * Implementation
  */
+
+
 namespace httplib {
 	namespace detail {
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 		inline bool read_headers(Stream& strm, Headers& headers);
 		
 		template <typename T>
@@ -561,7 +567,7 @@ namespace httplib {
 		inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
 			PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
 			size_t keep_alive_max_count, T callback);
-
+#endif
 		// NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
 		// to store data. The call can set memory on stack for performance.
 		class stream_line_reader {
@@ -760,7 +766,7 @@ inline std::string httplib::IOCPStream::get_remote_addr()
 {
 	return detail::get_remote_addr(lpPerSocketContext->Socket);
 }
-#endif
+
 
 //
 // Create a socket with all the socket options we need, namely disable buffering
@@ -1679,6 +1685,7 @@ inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T 
     return ret;
 }
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 template <typename T>
 inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
 	PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
@@ -1700,6 +1707,7 @@ inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
 
 	return ret;
 }
+#endif
 
 inline int shutdown_socket(socket_t sock)
 {
@@ -2048,7 +2056,7 @@ inline bool read_content_chunked(Stream& strm, std::string& out)
 }
 
 template <typename T>
-bool read_content(Stream& strm, T& x, Progress progress)
+bool read_content(Stream& strm, T& x, Progress progress = Progress())
 {
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
 
@@ -2758,6 +2766,8 @@ inline bool Server::parse_request_line(const char* s, httplib::Request& req)
     return false;
 }
 
+
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool parse_request_line_iocp(const char* s, httplib::Request& req)
 {
 	static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
@@ -2780,6 +2790,7 @@ inline bool parse_request_line_iocp(const char* s, httplib::Request& req)
 
 	return false;
 }
+#endif
 
 inline void Server::write_response(Stream& strm, bool last_connection, const Request& req, Response& res)
 {
@@ -2858,6 +2869,7 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
     }
 }
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline void write_response_iocp(httplib::Stream& strm, bool last_connection, const httplib::Request& req, httplib::Response& res)
 {
 	assert(res.status != -1);
@@ -2936,17 +2948,12 @@ inline void write_response_iocp(httplib::Stream& strm, bool last_connection, con
 		logger_(req, res);
 	}
 }
+#endif
 
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
-#ifndef CPPHTTPLIB_IOCP_SUPPORT
     if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
         std::string path = base_dir_ + req.path;
-#else
-	if (!g_base_dir.empty() && detail::is_valid_path(req.path)) {
-		std::string path = g_base_dir + req.path;
-#endif
-
         if (!path.empty() && path.back() == '/') {
             path += "index.html";
         }
@@ -2965,6 +2972,7 @@ inline bool Server::handle_file_request(Request& req, Response& res)
     return false;
 }
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool handle_file_request_iocp(Request& req, Response& res)
 {
 	if (!g_base_dir.empty() && detail::is_valid_path(req.path)) {
@@ -2987,6 +2995,7 @@ inline bool handle_file_request_iocp(Request& req, Response& res)
 
 	return false;
 }
+#endif
 
 inline socket_t Server::create_server_socket(const char* host, int port, int socket_flags) const
 {
@@ -3302,6 +3311,7 @@ inline bool Server::routing(Request& req, Response& res)
     return false;
 }
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool routing_iocp(Request& req, Response& res)
 {
 	if (req.method == "GET" && handle_file_request_iocp(req, res)) {
@@ -3325,6 +3335,7 @@ inline bool routing_iocp(Request& req, Response& res)
 	}
 	return false;
 }
+#endif
 
 inline bool Server::dispatch_request(Request& req, Response& res, Handlers& handlers)
 {
@@ -3340,6 +3351,7 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
     return false;
 }
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool dispatch_request_iocp(Request& req, Response& res, Handlers& handlers)
 {
 	for (const auto& x : handlers) {
@@ -3353,6 +3365,7 @@ inline bool dispatch_request_iocp(Request& req, Response& res, Handlers& handler
 	}
 	return false;
 }
+#endif
 
 inline bool Server::process_request(Stream& strm, bool last_connection, bool& connection_close)
 {
@@ -3431,6 +3444,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
     return ret;
 }
 
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool process_request_iocp(Stream& strm, bool last_connection, bool& connection_close)
 {
 	const auto bufsiz = 2048;
@@ -3509,6 +3523,7 @@ inline bool process_request_iocp(Stream& strm, bool last_connection, bool& conne
 	write_response_iocp(strm, last_connection, req, res);
 	return ret;
 }
+#endif
 
 inline bool Server::is_valid() const
 {
@@ -4025,6 +4040,7 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
             return process_request(strm, req, res, connection_close);
         });
 }
+#endif
 
 } // namespace httplib
 
