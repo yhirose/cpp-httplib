@@ -172,7 +172,7 @@ VOID CtxtListDeleteFrom(
 );
 
 //IOCP GLOBALS
-char *g_Port = (char*)DEFAULT_PORT;
+char g_Port[10] = DEFAULT_PORT;
 std::string g_base_dir;
 BOOL g_bEndServer = FALSE;			// set to TRUE on CTRL-C
 BOOL g_bRestart = TRUE;				// set to TRUE to CTRL-BRK
@@ -841,7 +841,9 @@ SOCKET CreateSocket(void) {
 //
 //  Create a listening socket, bind, and set up its listening backlog.
 //
-BOOL CreateListenSocket(void) {
+BOOL CreateListenSocket(int port) {
+	std::string p = std::to_string(port);
+	strcpy(g_Port, p.c_str());
 	int nRet = 0;
 	LINGER lingerStruct;
 	struct addrinfo hints = { 0 };
@@ -1646,10 +1648,6 @@ socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
 
     int opt = SO_SYNCHRONOUS_NONALERT;
     setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
-#endif
-#ifdef CPPHTTPLIB_IOCP_SUPPORT
-	std::string p = std::to_string(port);
-	strcpy(g_Port, p.c_str());
 #endif
 
     // Get address info
@@ -3002,7 +3000,7 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 		hThread = INVALID_HANDLE_VALUE;
 	}
 
-	if (!CreateListenSocket())
+	if (!CreateListenSocket(port))
 	{
 	}
 
