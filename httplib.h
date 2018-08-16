@@ -188,59 +188,6 @@ PPER_SOCKET_CONTEXT g_pCtxtList = NULL;		// linked list of context info structur
 											// free resources.
 
 CRITICAL_SECTION g_CriticalSection;		// guard access to the global context list
-
-int debug(const char* _file, int line, const char *lpFormat, ...) {
-
-	std::string file = _file;
-	unsigned int index = file.size();
-	for (int i = index - 1; i >= 0; --i)
-	{
-		if (file[i] == '\\')
-		{
-			index = i;
-			break;
-		}
-	}
-	file[index] = '/';
-	for (int i = index - 1; i >= 0; --i)
-	{
-		if (file[i] == '\\')
-		{
-			index = i;
-			break;
-		}
-}
-	file[index] = '/';
-	file += ":" + std::to_string(line) + " ";
-	std::string prepend = &file[index];
-	std::string format = lpFormat;
-	prepend += format;
-	prepend += "\n";
-	int nLen = 0;
-	int nRet = 0;
-	wchar_t cBuffer[512];
-	va_list arglist;
-	HANDLE hOut = NULL;
-	HRESULT hRet;
-
-	ZeroMemory(cBuffer, sizeof(cBuffer));
-
-	va_start(arglist, lpFormat);
-
-	nLen = prepend.size();
-	wchar_t* wlpFormat = new wchar_t[nLen+1];
-	mbstowcs(wlpFormat, prepend.c_str(), nLen+1);
-	hRet = StringCchVPrintf(cBuffer, 512, wlpFormat, arglist);
-
-	if (nRet >= nLen || GetLastError() == 0) {
-		hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-		if (hOut != INVALID_HANDLE_VALUE)
-			WriteConsole(hOut, cBuffer, lstrlenW(cBuffer), (LPDWORD)&nLen, NULL);
-	}
-	delete[] wlpFormat;
-	return nLen;
-}
-#define debug(x, ...) debug(__FILE__, __LINE__, (x), __VA_ARGS__)
 #endif
 #else
 #include <pthread.h>
@@ -633,7 +580,6 @@ namespace httplib {
 			}
 
 			const char* ptr() const {
-				debug("stream_line_reader ptr()");
 				if (glowable_buffer_.empty()) {
 					return fixed_buffer_;
 				}
@@ -643,7 +589,6 @@ namespace httplib {
 			}
 
 			bool getline() {
-				debug("stream_line_reader getline()");
 				fixed_buffer_used_size_ = 0;
 				glowable_buffer_.clear();
 
@@ -675,7 +620,6 @@ namespace httplib {
 
 		private:
 			void append(char c) {
-				debug("stream_line_reader append()");
 				if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
 					fixed_buffer_[fixed_buffer_used_size_++] = c;
 					fixed_buffer_[fixed_buffer_used_size_] = '\0';
@@ -702,7 +646,6 @@ namespace httplib {
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool process_iocp_request(httplib::Stream& strm, bool last_connection, bool& connection_close)
 {
-	debug("process_iocp_request");
 	const auto bufsiz = 2048;
 	char buf[bufsiz];
 
@@ -785,15 +728,12 @@ httplib::IOCPStream::IOCPStream(PPER_SOCKET_CONTEXT _lpPerSocketContext, PPER_IO
 	DWORD& _dwSendNumBytes, DWORD& _dwFlags) :
 	lpPerSocketContext(_lpPerSocketContext), lpIOContext(_lpIOContext),
 	dwSendNumBytes(_dwSendNumBytes), dwFlags(_dwFlags)
-{
-	debug("create iocp stream object");
-}
+{}
 
 httplib::IOCPStream::~IOCPStream() {}
 
 inline int httplib::IOCPStream::read(char* ptr, size_t size)
 {
-	debug("iocpstream read()");
 	int i = 0;
 	for (; i < size && i < lpIOContext->wsabuf.len; ++i)
 	{
@@ -804,7 +744,6 @@ inline int httplib::IOCPStream::read(char* ptr, size_t size)
 
 inline int httplib::IOCPStream::write(const char* ptr, size_t size)
 {
-	debug("iocpstream write()");
 	lpIOContext->wsabuf.buf = (char*)ptr;
 	lpIOContext->wsabuf.len = size;
 
@@ -822,13 +761,11 @@ inline int httplib::IOCPStream::write(const char* ptr, size_t size)
 
 inline int httplib::IOCPStream::write(const char* ptr)
 {
-	debug("iocpstream write()");
 	return write(ptr, strlen(ptr));
 }
 
 inline std::string httplib::IOCPStream::get_remote_addr()
 {
-	debug("iocpstream get remote addr()");
 	return detail::get_remote_addr(lpPerSocketContext->Socket);
 }
 
@@ -838,14 +775,12 @@ inline std::string httplib::IOCPStream::get_remote_addr()
 // and set linger.
 //
 SOCKET CreateSocket(void) {
-	debug("iocp createsocket()");
 	int nRet = 0;
 	int nZero = 0;
 	SOCKET sdSocket = INVALID_SOCKET;
 
-	sdSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_IP, NULL, 0, WSA_FLAG_OVERLAPPED);
+	sdSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
 	if (sdSocket == INVALID_SOCKET) {
-		debug("WSASocket(sdSocket) failed: %d\n", WSAGetLastError());
 		return(sdSocket);
 	}
 
@@ -865,7 +800,6 @@ SOCKET CreateSocket(void) {
 	nZero = 0;
 	nRet = setsockopt(sdSocket, SOL_SOCKET, SO_SNDBUF, (char *)&nZero, sizeof(nZero));
 	if (nRet == SOCKET_ERROR) {
-		debug("setsockopt(SNDBUF) failed: %d\n", WSAGetLastError());
 		return(sdSocket);
 	}
 
@@ -908,7 +842,6 @@ SOCKET CreateSocket(void) {
 //  Create a listening socket, bind, and set up its listening backlog.
 //
 BOOL CreateListenSocket(void) {
-	debug("iocp create listen socket()");
 	int nRet = 0;
 	LINGER lingerStruct;
 	struct addrinfo hints = { 0 };
@@ -920,18 +853,16 @@ BOOL CreateListenSocket(void) {
 	//
 	// Resolve the interface
 	//
-	hints.ai_flags = AI_PASSIVE;
+	hints.ai_flags = 0; //0? AI_PASSIVE
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_IP;
+	hints.ai_protocol = IPPROTO_TCP;
 
 	if (getaddrinfo(NULL, g_Port, &hints, &addrlocal) != 0) {
-		debug("getaddrinfo() failed with error %d\n", WSAGetLastError());
 		return(FALSE);
 	}
 
 	if (addrlocal == NULL) {
-		debug("getaddrinfo() failed to resolve/convert the interface\n");
 		return(FALSE);
 	}
 
@@ -943,14 +874,12 @@ BOOL CreateListenSocket(void) {
 
 	nRet = bind(g_sdListen, addrlocal->ai_addr, (int)addrlocal->ai_addrlen);
 	if (nRet == SOCKET_ERROR) {
-		debug("bind() failed: %d\n", WSAGetLastError());
 		freeaddrinfo(addrlocal);
 		return(FALSE);
 	}
 
 	nRet = listen(g_sdListen, 5);
 	if (nRet == SOCKET_ERROR) {
-		debug("listen() failed: %d\n", WSAGetLastError());
 		freeaddrinfo(addrlocal);
 		return(FALSE);
 	}
@@ -991,7 +920,6 @@ BOOL CreateListenSocket(void) {
 // susceptible to the behaviour described above.
 //
 BOOL CreateAcceptSocket(BOOL fUpdateIOCP) {
-	debug("iocp create accept socket()");
 	int nRet = 0;
 	DWORD dwRecvNumBytes = 0;
 	DWORD bytes = 0;
@@ -1008,7 +936,6 @@ BOOL CreateAcceptSocket(BOOL fUpdateIOCP) {
 	if (fUpdateIOCP) {
 		g_pCtxtListenSocket = UpdateCompletionPort(g_sdListen, ClientIoAccept, FALSE);
 		if (g_pCtxtListenSocket == NULL) {
-			debug("failed to update listen socket to IOCP\n");
 			return(FALSE);
 		}
 
@@ -1026,14 +953,12 @@ BOOL CreateAcceptSocket(BOOL fUpdateIOCP) {
 		);
 		if (nRet == SOCKET_ERROR)
 		{
-			debug("failed to load AcceptEx: %d\n", WSAGetLastError());
 			return (FALSE);
 		}
 	}
 
 	g_pCtxtListenSocket->pIOContext->SocketAccept = CreateSocket();
 	if (g_pCtxtListenSocket->pIOContext->SocketAccept == INVALID_SOCKET) {
-		debug("failed to create new accept socket\n");
 		return(FALSE);
 	}
 
@@ -1047,7 +972,6 @@ BOOL CreateAcceptSocket(BOOL fUpdateIOCP) {
 		&dwRecvNumBytes,
 		(LPOVERLAPPED) &(g_pCtxtListenSocket->pIOContext->Overlapped));
 	if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-		debug("AcceptEx() failed: %d\n", WSAGetLastError());
 		return(FALSE);
 	}
 
@@ -1074,7 +998,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 	DWORD dwIoSize = 0;
 	HRESULT hRet;
 
-	debug("Entering worker thread");
 	while (TRUE) {
 
 		//
@@ -1087,8 +1010,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			(LPOVERLAPPED *)&lpOverlapped,
 			INFINITE
 		);
-		if (!bSuccess)
-			debug("GetQueuedCompletionStatus() failed: %d\n", GetLastError());
 
 		if (lpPerSocketContext == NULL) {
 
@@ -1120,7 +1041,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 				// client connection dropped, continue to service remaining (and possibly 
 				// new) client connections
 				//
-				debug("client connection dropped");
 				CloseClient(lpPerSocketContext, FALSE);
 				continue;
 			}
@@ -1132,7 +1052,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 		//
 		switch (lpIOContext->IOOperation) {
 		case ClientIoAccept:
-			debug("connection attempt!");
 			//
 			// When the AcceptEx function returns, the socket sAcceptSocket is 
 			// in the default state for a connected socket. The socket sAcceptSocket 
@@ -1155,7 +1074,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 				//
 				//just warn user here.
 				//
-				debug("setsockopt(SO_UPDATE_ACCEPT_CONTEXT) failed to update accept socket\n");
 				WSASetEvent(g_hCleanupEvent[0]);
 				return(0);
 			}
@@ -1169,7 +1087,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 				//
 				//just warn user here.
 				//
-				debug("failed to update accept socket to IOCP\n");
 				WSASetEvent(g_hCleanupEvent[0]);
 				return(0);
 			}
@@ -1194,12 +1111,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 					&(lpAcceptSocketContext->pIOContext->Overlapped), NULL);
 
 				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-					debug("WSASend() failed: %d\n", WSAGetLastError());
 					CloseClient(lpAcceptSocketContext, FALSE);
-				}
-				else if (g_bVerbose) {
-					debug("WorkerThread %d: Socket(%d) AcceptEx completed (%d bytes), Send posted\n",
-						GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
 				}
 			}
 			else {
@@ -1220,7 +1132,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 					&dwFlags,
 					&lpAcceptSocketContext->pIOContext->Overlapped, NULL);
 				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-					debug("WSARecv() failed: %d\n", WSAGetLastError());
 					CloseClient(lpAcceptSocketContext, FALSE);
 				}
 			}
@@ -1229,7 +1140,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			//Time to post another outstanding AcceptEx
 			//
 			if (!CreateAcceptSocket(FALSE)) {
-				debug("Please shut down and reboot the server.\n");
 				WSASetEvent(g_hCleanupEvent[0]);
 				return(0);
 			}
@@ -1237,7 +1147,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 
 
 		case ClientIoRead:
-			debug("read completed");
 			//
 			// a read operation has completed, feed the wsadata
 			// to the httplib system, plugin the WSASend
@@ -1258,7 +1167,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			break;
 
 		case ClientIoWrite:
-			debug("write completed");
 			//
 			// a write operation has completed, determine if all the data intended to be
 			// sent actually was sent.
@@ -1280,12 +1188,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 					dwFlags,
 					&(lpIOContext->Overlapped), NULL);
 				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-					debug("WSASend() failed: %d\n", WSAGetLastError());
 					CloseClient(lpPerSocketContext, FALSE);
-				}
-				else if (g_bVerbose) {
-					debug("WorkerThread %d: Socket(%d) Send partially completed (%d bytes), Recv posted\n",
-						GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
 				}
 			}
 			else {
@@ -1304,12 +1207,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 					&dwFlags,
 					&lpIOContext->Overlapped, NULL);
 				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-					debug("WSARecv() failed: %d\n", WSAGetLastError());
 					CloseClient(lpPerSocketContext, FALSE);
-				}
-				else if (g_bVerbose) {
-					debug("WorkerThread %d: Socket(%d) Send completed (%d bytes), Recv posted\n",
-						GetCurrentThreadId(), lpPerSocketContext->Socket, dwIoSize);
 				}
 			}
 			break;
@@ -1326,7 +1224,6 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 PPER_SOCKET_CONTEXT UpdateCompletionPort(SOCKET sd, IO_OPERATION ClientIo,
 	BOOL bAddToList)
 {
-	debug("iocp update completion port()");
 	PPER_SOCKET_CONTEXT lpPerSocketContext;
 
 	lpPerSocketContext = CtxtAllocate(sd, ClientIo);
@@ -1335,7 +1232,6 @@ PPER_SOCKET_CONTEXT UpdateCompletionPort(SOCKET sd, IO_OPERATION ClientIo,
 
 	g_hIOCP = CreateIoCompletionPort((HANDLE)sd, g_hIOCP, (DWORD_PTR)lpPerSocketContext, 0);
 	if (g_hIOCP == NULL) {
-		debug("CreateIoCompletionPort() failed: %d\n", GetLastError());
 		if (lpPerSocketContext->pIOContext)
 			xfree(lpPerSocketContext->pIOContext);
 		xfree(lpPerSocketContext);
@@ -1348,9 +1244,6 @@ PPER_SOCKET_CONTEXT UpdateCompletionPort(SOCKET sd, IO_OPERATION ClientIo,
 	//
 	if (bAddToList) CtxtListAddTo(lpPerSocketContext);
 
-	if (g_bVerbose)
-		debug("UpdateCompletionPort: Socket(%d) added to IOCP\n", lpPerSocketContext->Socket);
-
 	return(lpPerSocketContext);
 }
 
@@ -1361,21 +1254,16 @@ PPER_SOCKET_CONTEXT UpdateCompletionPort(SOCKET sd, IO_OPERATION ClientIo,
 //
 VOID CloseClient(PPER_SOCKET_CONTEXT lpPerSocketContext, BOOL bGraceful)
 {
-	debug("iocp close client()");
 	__try
 	{
 		EnterCriticalSection(&g_CriticalSection);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		debug("EnterCriticalSection raised an exception.\n");
 		return;
 	}
 
 	if (lpPerSocketContext) {
-		if (g_bVerbose)
-			debug("CloseClient: Socket(%d) connection closing (graceful=%s)\n",
-				lpPerSocketContext->Socket, (bGraceful ? "TRUE" : "FALSE"));
 		if (!bGraceful) {
 
 			//
@@ -1398,9 +1286,6 @@ VOID CloseClient(PPER_SOCKET_CONTEXT lpPerSocketContext, BOOL bGraceful)
 		CtxtListDeleteFrom(lpPerSocketContext);
 		lpPerSocketContext = NULL;
 	}
-	else {
-		debug("CloseClient: lpPerSocketContext is NULL\n");
-	}
 
 	LeaveCriticalSection(&g_CriticalSection);
 
@@ -1412,7 +1297,6 @@ VOID CloseClient(PPER_SOCKET_CONTEXT lpPerSocketContext, BOOL bGraceful)
 //
 PPER_SOCKET_CONTEXT CtxtAllocate(SOCKET sd, IO_OPERATION ClientIO)
 {
-	debug("iocp ctxt allocate()");
 	PPER_SOCKET_CONTEXT lpPerSocketContext;
 
 	__try
@@ -1421,7 +1305,6 @@ PPER_SOCKET_CONTEXT CtxtAllocate(SOCKET sd, IO_OPERATION ClientIO)
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		debug("EnterCriticalSection raised an exception.\n");
 		return NULL;
 	}
 
@@ -1450,12 +1333,10 @@ PPER_SOCKET_CONTEXT CtxtAllocate(SOCKET sd, IO_OPERATION ClientIO)
 		}
 		else {
 			xfree(lpPerSocketContext);
-			debug("HeapAlloc() PER_IO_CONTEXT failed: %d\n", GetLastError());
 		}
 
 	}
 	else {
-		debug("HeapAlloc() PER_SOCKET_CONTEXT failed: %d\n", GetLastError());
 		return(NULL);
 	}
 
@@ -1468,7 +1349,6 @@ PPER_SOCKET_CONTEXT CtxtAllocate(SOCKET sd, IO_OPERATION ClientIO)
 //  Add a client connection context structure to the global list of context structures.
 //
 VOID CtxtListAddTo(PPER_SOCKET_CONTEXT lpPerSocketContext) {
-	debug("iocp ctxt list add to()");
 	PPER_SOCKET_CONTEXT pTemp;
 
 	__try
@@ -1477,7 +1357,6 @@ VOID CtxtListAddTo(PPER_SOCKET_CONTEXT lpPerSocketContext) {
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		debug("EnterCriticalSection raised an exception.\n");
 		return;
 	}
 
@@ -1513,7 +1392,6 @@ VOID CtxtListAddTo(PPER_SOCKET_CONTEXT lpPerSocketContext) {
 //  Remove a client context structure from the global list of context structures.
 //
 VOID CtxtListDeleteFrom(PPER_SOCKET_CONTEXT lpPerSocketContext) {
-	debug("iocp ctxt list delete from()");
 	PPER_SOCKET_CONTEXT pBack;
 	PPER_SOCKET_CONTEXT pForward;
 	PPER_IO_CONTEXT     pNextIO = NULL;
@@ -1525,7 +1403,6 @@ VOID CtxtListDeleteFrom(PPER_SOCKET_CONTEXT lpPerSocketContext) {
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		debug("EnterCriticalSection raised an exception.\n");
 		return;
 	}
 
@@ -1588,9 +1465,6 @@ VOID CtxtListDeleteFrom(PPER_SOCKET_CONTEXT lpPerSocketContext) {
 		xfree(lpPerSocketContext);
 		lpPerSocketContext = NULL;
 	}
-	else {
-		debug("CtxtListDeleteFrom: lpPerSocketContext is NULL\n");
-	}
 
 	LeaveCriticalSection(&g_CriticalSection);
 
@@ -1601,7 +1475,6 @@ VOID CtxtListDeleteFrom(PPER_SOCKET_CONTEXT lpPerSocketContext) {
 //  Free all context structure in the global list of context structures.
 //
 VOID CtxtListFree() {
-	debug("iocp ctxt list free()");
 	PPER_SOCKET_CONTEXT pTemp1, pTemp2;
 
 	__try
@@ -1610,7 +1483,6 @@ VOID CtxtListFree() {
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		debug("EnterCriticalSection raised an exception.\n");
 		return;
 	}
 
@@ -1633,7 +1505,6 @@ namespace detail {
 template <class Fn>
 void split(const char* b, const char* e, char d, Fn fn)
 {
-	debug("split()");
     int i = 0;
     int beg = 0;
 
@@ -1661,7 +1532,6 @@ inline int close_socket(socket_t sock)
 
 inline int select_read(socket_t sock, size_t sec, size_t usec)
 {
-	debug("select_read()");
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(sock, &fds);
@@ -1675,7 +1545,6 @@ inline int select_read(socket_t sock, size_t sec, size_t usec)
 
 inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
 {
-	debug("wait until socket is ready()");
     fd_set fdsr;
     FD_ZERO(&fdsr);
     FD_SET(sock, &fdsr);
@@ -1706,7 +1575,6 @@ inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
 template <typename T>
 inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T callback)
 {
-	debug("read and close socket()");
     bool ret = false;
 
     if (keep_alive_max_count > 0) {
@@ -1742,7 +1610,6 @@ inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
 	PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
 	size_t keep_alive_max_count, T callback)
 {
-	debug("read and close iocp socket()");
 	bool ret = false;
 
 	IOCPStream strm(_lpPerSocketContext, _lpIOContext,
@@ -1763,7 +1630,6 @@ inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
 
 inline int shutdown_socket(socket_t sock)
 {
-	debug("shutdown socket()");
 #ifdef _WIN32
     return shutdown(sock, SD_BOTH);
 #else
@@ -1774,13 +1640,16 @@ inline int shutdown_socket(socket_t sock)
 template <typename Fn>
 socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
 {
-	debug("create socket()");
 #ifdef _WIN32
 #define SO_SYNCHRONOUS_NONALERT 0x20
 #define SO_OPENTYPE 0x7008
 
     int opt = SO_SYNCHRONOUS_NONALERT;
     setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char*)&opt, sizeof(opt));
+#endif
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+	std::string p = std::to_string(port);
+	strcpy(g_Port, p.c_str());
 #endif
 
     // Get address info
@@ -1825,7 +1694,6 @@ socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
 
 inline void set_nonblocking(socket_t sock, bool nonblocking)
 {
-	debug("set nonblocking()");
 #ifdef _WIN32
     auto flags = nonblocking ? 1UL : 0UL;
     ioctlsocket(sock, FIONBIO, &flags);
@@ -1837,7 +1705,6 @@ inline void set_nonblocking(socket_t sock, bool nonblocking)
 
 inline bool is_connection_error()
 {
-	debug("is connection error()");
 #ifdef _WIN32
     return WSAGetLastError() != WSAEWOULDBLOCK;
 #else
@@ -1847,7 +1714,6 @@ inline bool is_connection_error()
 
 inline std::string get_remote_addr(socket_t sock)
 {
-	debug("get remote addr()");
     struct sockaddr_storage addr;
     socklen_t len = sizeof(addr);
 
@@ -1865,20 +1731,17 @@ inline std::string get_remote_addr(socket_t sock)
 
 inline bool is_file(const std::string& path)
 {
-	debug("is file()");
     struct stat st;
     return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
 }
 
 inline bool is_dir(const std::string& path)
 {
-	debug("is dir");
     struct stat st;
     return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
 }
 
 inline bool is_valid_path(const std::string& path) {
-	debug("is valid path()");
     size_t level = 0;
     size_t i = 0;
 
@@ -1919,7 +1782,6 @@ inline bool is_valid_path(const std::string& path) {
 
 inline void read_file(const std::string& path, std::string& out)
 {
-	debug("read file()");
     std::ifstream fs(path, std::ios_base::binary);
     fs.seekg(0, std::ios_base::end);
     auto size = fs.tellg();
@@ -1930,7 +1792,6 @@ inline void read_file(const std::string& path, std::string& out)
 
 inline std::string file_extension(const std::string& path)
 {
-	debug("file_extension");
     std::smatch m;
     auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
     if (std::regex_search(path, m, pat)) {
@@ -1941,7 +1802,6 @@ inline std::string file_extension(const std::string& path)
 
 inline const char* find_content_type(const std::string& path)
 {
-	debug("find content type()");
     auto ext = file_extension(path);
     if (ext == "txt") {
         return "text/plain";
@@ -1975,7 +1835,6 @@ inline const char* find_content_type(const std::string& path)
 
 inline const char* status_message(int status)
 {
-	debug("status_message()");
     switch (status) {
     case 200: return "OK";
     case 301: return "Moved Permanently";
@@ -1993,7 +1852,6 @@ inline const char* status_message(int status)
 
 inline const char* get_header_value(const Headers& headers, const char* key, const char* def)
 {
-	debug("get header value()");
     auto it = headers.find(key);
     if (it != headers.end()) {
         return it->second.c_str();
@@ -2003,7 +1861,6 @@ inline const char* get_header_value(const Headers& headers, const char* key, con
 
 inline int get_header_value_int(const Headers& headers, const char* key, int def)
 {
-	debug("get header value int()");
     auto it = headers.find(key);
     if (it != headers.end()) {
         return std::stoi(it->second);
@@ -2013,7 +1870,6 @@ inline int get_header_value_int(const Headers& headers, const char* key, int def
 
 inline bool read_headers(Stream& strm, Headers& headers)
 {
-	debug("read headers()");
     static std::regex re(R"((.+?):\s*(.+?)\s*\r\n)");
 
     const auto bufsiz = 2048;
@@ -2041,7 +1897,6 @@ inline bool read_headers(Stream& strm, Headers& headers)
 
 inline bool read_content_with_length(Stream& strm, std::string& out, size_t len, Progress progress)
 {
-	debug("read content with length()");
     out.assign(len, 0);
     size_t r = 0;
     while (r < len){
@@ -2064,7 +1919,6 @@ inline bool read_content_with_length(Stream& strm, std::string& out, size_t len,
 
 inline bool read_content_without_length(Stream& strm, std::string& out)
 {
-	debug("read content without length()");
     for (;;) {
         char byte;
         auto n = strm.read(&byte, 1);
@@ -2081,7 +1935,6 @@ inline bool read_content_without_length(Stream& strm, std::string& out)
 
 inline bool read_content_chunked(Stream& strm, std::string& out)
 {
-	debug("read content chunked");
     const auto bufsiz = 16;
     char buf[bufsiz];
 
@@ -2128,7 +1981,6 @@ inline bool read_content_chunked(Stream& strm, std::string& out)
 template <typename T>
 bool read_content(Stream& strm, T& x, Progress progress)
 {
-	debug("read content");
     auto len = get_header_value_int(x.headers, "Content-Length", 0);
 
     if (len) {
@@ -2149,7 +2001,6 @@ bool read_content(Stream& strm, T& x, Progress progress)
 template <typename T>
 inline void write_headers(Stream& strm, const T& info)
 {
-	debug("write headers()");
     for (const auto& x: info.headers) {
         strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
     }
@@ -2158,7 +2009,6 @@ inline void write_headers(Stream& strm, const T& info)
 
 inline std::string encode_url(const std::string& s)
 {
-	debug("encode_url");
     std::string result;
 
     for (auto i = 0; s[i]; i++) {
@@ -2187,7 +2037,6 @@ inline std::string encode_url(const std::string& s)
 
 inline bool is_hex(char c, int& v)
 {
-	debug("is hex()");
     if (0x20 <= c && isdigit(c)) {
         v = c - '0';
         return true;
@@ -2203,7 +2052,6 @@ inline bool is_hex(char c, int& v)
 
 inline bool from_hex_to_i(const std::string& s, size_t i, size_t cnt, int& val)
 {
-	debug("from hex to i()");
     if (i >= s.size()) {
         return false;
     }
@@ -2225,7 +2073,6 @@ inline bool from_hex_to_i(const std::string& s, size_t i, size_t cnt, int& val)
 
 inline std::string from_i_to_hex(uint64_t n)
 {
-	debug("from i to hex()");
     const char *charset = "0123456789abcdef";
     std::string ret;
     do {
@@ -2237,7 +2084,6 @@ inline std::string from_i_to_hex(uint64_t n)
 
 inline size_t to_utf8(int code, char* buff)
 {
-	debug("to utf8");
     if (code < 0x0080) {
         buff[0] = (code & 0x7F);
         return 1;
@@ -2271,7 +2117,6 @@ inline size_t to_utf8(int code, char* buff)
 
 inline std::string decode_url(const std::string& s)
 {
-	debug("decode url()");
     std::string result;
 
     for (size_t i = 0; i < s.size(); i++) {
@@ -2311,7 +2156,6 @@ inline std::string decode_url(const std::string& s)
 
 inline void parse_query_text(const std::string& s, Params& params)
 {
-	debug("parse query text()");
     split(&s[0], &s[s.size()], '&', [&](const char* b, const char* e) {
         std::string key;
         std::string val;
@@ -2328,7 +2172,6 @@ inline void parse_query_text(const std::string& s, Params& params)
 
 inline bool parse_multipart_boundary(const std::string& content_type, std::string& boundary)
 {
-	debug("parse multipart boundary()");
     auto pos = content_type.find("boundary=");
     if (pos == std::string::npos) {
         return false;
@@ -2341,7 +2184,6 @@ inline bool parse_multipart_boundary(const std::string& content_type, std::strin
 inline bool parse_multipart_formdata(
     const std::string& boundary, const std::string& body, MultipartFiles& files)
 {
-	debug("parse multipart formdata()");
     static std::string dash = "--";
     static std::string crlf = "\r\n";
 
@@ -2426,7 +2268,6 @@ inline bool parse_multipart_formdata(
 
 inline std::string to_lower(const char* beg, const char* end)
 {
-	debug("to lower()");
     std::string out;
     auto it = beg;
     while (it != end) {
@@ -2441,7 +2282,6 @@ inline void make_range_header_core(std::string&) {}
 template<typename uint64_t>
 inline void make_range_header_core(std::string& field, uint64_t value)
 {
-	debug("make range header core()");
     if (!field.empty()) {
         field += ", ";
     }
@@ -2451,7 +2291,6 @@ inline void make_range_header_core(std::string& field, uint64_t value)
 template<typename uint64_t, typename... Args>
 inline void make_range_header_core(std::string& field, uint64_t value1, uint64_t value2, Args... args)
 {
-	debug("make range header core");
     if (!field.empty()) {
         field += ", ";
     }
@@ -2539,13 +2378,11 @@ inline void decompress(std::string& content)
 class WSInit {
 public:
     WSInit() {
-		debug("wsinit!");
         WSADATA wsaData;
         WSAStartup(0x0002, &wsaData);
     }
 
     ~WSInit() {
-		debug("wsclewanup!");
         WSACleanup();
     }
 };
@@ -2559,7 +2396,6 @@ static WSInit wsinit_;
 template<typename uint64_t, typename... Args>
 inline std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args)
 {
-	debug("make range header()");
     std::string field;
     detail::make_range_header_core(field, value, args...);
     field.insert(0, "bytes=");
@@ -2569,31 +2405,26 @@ inline std::pair<std::string, std::string> make_range_header(uint64_t value, Arg
 // Request implementation
 inline bool Request::has_header(const char* key) const
 {
-	debug("has header");
     return headers.find(key) != headers.end();
 }
 
 inline std::string Request::get_header_value(const char* key) const
 {
-	debug("get header value");
-    return detail::get_header_value(headers, key, "");
+	return detail::get_header_value(headers, key, "");
 }
 
 inline void Request::set_header(const char* key, const char* val)
 {
-	debug("set haeder()");
     headers.emplace(key, val);
 }
 
 inline bool Request::has_param(const char* key) const
 {
-	debug("has param()");
     return params.find(key) != params.end();
 }
 
 inline std::string Request::get_param_value(const char* key) const
 {
-	debug("get param value");
     auto it = params.find(key);
     if (it != params.end()) {
         return it->second;
@@ -2603,13 +2434,11 @@ inline std::string Request::get_param_value(const char* key) const
 
 inline bool Request::has_file(const char* key) const
 {
-	debug("has file()");
     return files.find(key) != files.end();
 }
 
 inline MultipartFile Request::get_file_value(const char* key) const
 {
-	debug("get file value()");
     auto it = files.find(key);
     if (it != files.end()) {
         return it->second;
@@ -2620,8 +2449,7 @@ inline MultipartFile Request::get_file_value(const char* key) const
 // Response implementation
 inline bool Response::has_header(const char* key) const
 {
-	debug("has header()");
-    return headers.find(key) != headers.end();
+	return headers.find(key) != headers.end();
 }
 
 inline std::string Response::get_header_value(const char* key) const
@@ -2656,7 +2484,6 @@ inline void Response::set_content(const std::string& s, const char* content_type
 template <typename ...Args>
 inline void Stream::write_format(const char* fmt, const Args& ...args)
 {
-	debug("stream write format()");
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
@@ -2687,7 +2514,6 @@ inline void Stream::write_format(const char* fmt, const Args& ...args)
 // Socket stream implementation
 inline SocketStream::SocketStream(socket_t sock): sock_(sock)
 {
-	debug("create sockstream");
 }
 
 inline SocketStream::~SocketStream()
@@ -2696,24 +2522,21 @@ inline SocketStream::~SocketStream()
 
 inline int SocketStream::read(char* ptr, size_t size)
 {
-	debug("sockstream");
     return recv(sock_, ptr, size, 0);
 }
 
 inline int SocketStream::write(const char* ptr, size_t size)
 {
-	debug("sockstream");
     return send(sock_, ptr, size, 0);
 }
 
 inline int SocketStream::write(const char* ptr)
 {
-	debug("sockstream");
     return write(ptr, strlen(ptr));
 }
 
-inline std::string SocketStream::get_remote_addr() {
-	debug("sockstream");
+inline std::string SocketStream::get_remote_addr() 
+{
     return detail::get_remote_addr(sock_);
 }
 
@@ -2726,7 +2549,6 @@ inline Server::Server()
     , running_threads_(0)
 #endif
 {
-	debug("create server!");
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
 #endif
@@ -2734,47 +2556,40 @@ inline Server::Server()
 
 inline Server::~Server()
 {
-	debug("destruct server!");
 }
 
 inline Server& Server::Get(const char* pattern, Handler handler)
 {
-	debug("get()");
     get_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
 inline Server& Server::Post(const char* pattern, Handler handler)
 {
-	debug("post()");
     post_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
 inline Server& Server::Put(const char* pattern, Handler handler)
 {
-	debug("put()");
     put_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
 inline Server& Server::Delete(const char* pattern, Handler handler)
 {
-	debug("delete()");
     delete_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
 inline Server& Server::Options(const char* pattern, Handler handler)
 {
-	debug("options()");
     options_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
     return *this;
 }
 
 inline bool Server::set_base_dir(const char* path)
 {
-	debug("set base dir()");
     if (detail::is_dir(path)) {
 #ifndef CPPHTTPLIB_IOCP_SUPPORT
         base_dir_ = path;
@@ -2788,36 +2603,30 @@ inline bool Server::set_base_dir(const char* path)
 
 inline void Server::set_error_handler(Handler handler)
 {
-	debug("set error handler()");
     error_handler_ = handler;
 }
 
 inline void Server::set_logger(Logger logger)
 {
-	debug("set logger()");
     logger_ = logger;
 }
 
 inline void Server::set_keep_alive_max_count(size_t count)
 {
-	debug("set keep alive max count()");
     keep_alive_max_count_ = count;
 }
 
 inline int Server::bind_to_any_port(const char* host, int socket_flags)
 {
-	debug("bind to any port()");
     return bind_internal(host, 0, socket_flags);
 }
 
 inline bool Server::listen_after_bind() {
-	debug("listen after bind()");
     return listen_internal();
 }
 
 inline bool Server::listen(const char* host, int port, int socket_flags)
 {
-	debug("listen()");
     if (bind_internal(host, port, socket_flags) < 0)
         return false;
     return listen_internal();
@@ -2842,13 +2651,11 @@ inline void Server::stop()
 #else
 inline bool Server::is_running() const
 {
-	debug("is running()");
 	return g_bRestart;
 }
 
 inline void Server::stop()
 {
-	debug("stop()");
 	if (g_bRestart) {
 		assert(g_sdListen != INVALID_SOCKET);
 		auto sock = g_sdListen;
@@ -2862,7 +2669,6 @@ inline void Server::stop()
 
 inline bool Server::parse_request_line(const char* s, httplib::Request& req)
 {
-	debug("parse request line()");
     static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
     std::cmatch m;
@@ -2888,7 +2694,6 @@ inline bool Server::parse_request_line(const char* s, httplib::Request& req)
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool parse_request_line_iocp(const char* s, httplib::Request& req)
 {
-	debug("parse request line iocp()");
 	static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
 	std::cmatch m;
@@ -2913,7 +2718,6 @@ inline bool parse_request_line_iocp(const char* s, httplib::Request& req)
 
 inline void Server::write_response(Stream& strm, bool last_connection, const Request& req, Response& res)
 {
-	debug("write_response()");
     assert(res.status != -1);
 
     if (400 <= res.status && error_handler_) {
@@ -2992,7 +2796,6 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline void write_response_iocp(httplib::Stream& strm, bool last_connection, const httplib::Request& req, httplib::Response& res)
 {
-	debug("write response iocp()");
 	assert(res.status != -1);
 
 	if (400 <= res.status && error_handler_) {
@@ -3073,7 +2876,6 @@ inline void write_response_iocp(httplib::Stream& strm, bool last_connection, con
 
 inline bool Server::handle_file_request(Request& req, Response& res)
 {
-	debug("handle file request()");
 #ifndef CPPHTTPLIB_IOCP_SUPPORT
     if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
         std::string path = base_dir_ + req.path;
@@ -3102,7 +2904,6 @@ inline bool Server::handle_file_request(Request& req, Response& res)
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool handle_file_request_iocp(Request& req, Response& res)
 {
-	debug("handle file request iocp()");
 	if (!g_base_dir.empty() && detail::is_valid_path(req.path)) {
 		std::string path = g_base_dir + req.path;
 
@@ -3127,7 +2928,6 @@ inline bool handle_file_request_iocp(Request& req, Response& res)
 
 inline socket_t Server::create_server_socket(const char* host, int port, int socket_flags) const
 {
-	debug("create server socket()");
 #ifndef CPPHTTPLIB_IOCP_SUPPORT
     return detail::create_socket(host, port,
         [](socket_t sock, struct addrinfo& ai) -> bool {
@@ -3156,11 +2956,9 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 
 	if (WSA_INVALID_EVENT == (g_hCleanupEvent[0] = WSACreateEvent()))
 	{
-		debug("WSACreateEvent() failed: %d\n", WSAGetLastError());
 	}
 
 	if ((nRet = WSAStartup(0x202, &wsaData)) != 0) {
-		debug("WSAStartup() failed: %d\n", nRet);
 		if (g_hCleanupEvent[0] != WSA_INVALID_EVENT) {
 			WSACloseEvent(g_hCleanupEvent[0]);
 			g_hCleanupEvent[0] = WSA_INVALID_EVENT;
@@ -3173,7 +2971,6 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		debug("InitializeCriticalSection raised an exception.\n");
 		if (g_hCleanupEvent[0] != WSA_INVALID_EVENT) {
 			WSACloseEvent(g_hCleanupEvent[0]);
 			g_hCleanupEvent[0] = WSA_INVALID_EVENT;
@@ -3185,8 +2982,6 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 	//
 	g_hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	if (g_hIOCP == NULL) {
-		debug("CreateIoCompletionPort() failed to create I/O completion port: %d\n",
-			GetLastError());
 	}
 
 	for (DWORD dwCPU = 0; dwCPU<dwThreadCount; dwCPU++) {
@@ -3202,8 +2997,6 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 
 		hThread = CreateThread(NULL, 0, WorkerThread, g_hIOCP, 0, &dwThreadId);
 		if (hThread == NULL) {
-			debug("CreateThread() failed to create worker thread: %d\n",
-				GetLastError());
 		}
 		g_ThreadHandles[dwCPU] = hThread;
 		hThread = INVALID_HANDLE_VALUE;
@@ -3211,12 +3004,10 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 
 	if (!CreateListenSocket())
 	{
-		debug("failed create listen socket in the main");
 	}
 
 	if (!CreateAcceptSocket(TRUE))
 	{
-		debug("failed create accept socket in the main");
 	}
 	return g_sdListen;
 #endif
@@ -3224,7 +3015,6 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 
 inline int Server::bind_internal(const char* host, int port, int socket_flags)
 {
-	debug("bind internal()");
     if (!is_valid()) {
         return -1;
     }
@@ -3281,7 +3071,6 @@ inline int Server::bind_internal(const char* host, int port, int socket_flags)
 
 inline bool Server::listen_internal()
 {
-	debug("listen internal()");
     auto ret = true;
 
 #ifndef CPPHTTPLIB_IOCP_SUPPORT
@@ -3347,7 +3136,6 @@ inline bool Server::listen_internal()
 		WSAResetEvent(g_hCleanupEvent[0]);
 
 		__try {
-			debug("LISTENING?...");
 			WSAWaitForMultipleEvents(1, g_hCleanupEvent, TRUE, WSA_INFINITE, FALSE);
 		}
 
@@ -3366,8 +3154,7 @@ inline bool Server::listen_internal()
 			//
 			// Make sure worker threads exits.
 			//
-			if (WAIT_OBJECT_0 != WaitForMultipleObjects(dwThreadCount, g_ThreadHandles, TRUE, 1000))
-				debug("WaitForMultipleObjects() failed: %d\n", GetLastError());
+			if (WAIT_OBJECT_0 != WaitForMultipleObjects(dwThreadCount, g_ThreadHandles, TRUE, 1000)) {}
 			else
 				for (DWORD i = 0; i<dwThreadCount; i++) {
 					if (g_ThreadHandles[i] != INVALID_HANDLE_VALUE)
@@ -3406,13 +3193,6 @@ inline bool Server::listen_internal()
 				g_hIOCP = NULL;
 			}
 		} //finally
-
-		if (g_bRestart) {
-			debug("\niocpserverex is restarting...\n");
-		}
-		else {
-			debug("\niocpserverex is exiting...\n");
-		}
 	} //while (g_bRestart)
 
 	DeleteCriticalSection(&g_CriticalSection);
@@ -3428,7 +3208,6 @@ inline bool Server::listen_internal()
 
 inline bool Server::routing(Request& req, Response& res)
 {
-	debug("routing()");
     if (req.method == "GET" && handle_file_request(req, res)) {
         return true;
     }
@@ -3450,7 +3229,6 @@ inline bool Server::routing(Request& req, Response& res)
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool routing_iocp(Request& req, Response& res)
 {
-	debug("routing iocp()");
 	if (req.method == "GET" && handle_file_request_iocp(req, res)) {
 		return true;
 	}
@@ -3476,7 +3254,6 @@ inline bool routing_iocp(Request& req, Response& res)
 
 inline bool Server::dispatch_request(Request& req, Response& res, Handlers& handlers)
 {
-	debug("dispatch_requets()");
     for (const auto& x: handlers) {
         const auto& pattern = x.first;
         const auto& handler = x.second;
@@ -3492,7 +3269,6 @@ inline bool Server::dispatch_request(Request& req, Response& res, Handlers& hand
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool dispatch_request_iocp(Request& req, Response& res, Handlers& handlers)
 {
-	debug("dispatch_request_iocp()");
 	for (const auto& x : handlers) {
 		const auto& pattern = x.first;
 		const auto& handler = x.second;
@@ -3508,7 +3284,6 @@ inline bool dispatch_request_iocp(Request& req, Response& res, Handlers& handler
 
 inline bool Server::process_request(Stream& strm, bool last_connection, bool& connection_close)
 {
-	debug("process request");
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
@@ -3541,7 +3316,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
 
     // Body
     if (req.method == "POST" || req.method == "PUT") {
-        if (!detail::read_content(strm, req)) {
+        if (!detail::read_content(strm, req, req.progress)) {
             res.status = 400;
             write_response(strm, last_connection, req, res);
             return ret;
@@ -3587,7 +3362,6 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 inline bool process_request_iocp(Stream& strm, bool last_connection, bool& connection_close)
 {
-	debug("process request iocp()");
 	const auto bufsiz = 2048;
 	char buf[bufsiz];
 
@@ -3689,23 +3463,19 @@ inline Client::Client(
     , timeout_sec_(timeout_sec)
     , host_and_port_(host_ + ":" + std::to_string(port_))
 {
-	debug("create client!");
 }
 
 inline Client::~Client()
 {
-	debug("destroying client!");
 }
 
 inline bool Client::is_valid() const
 {
-	debug("client is valid()");
     return true;
 }
 
 inline socket_t Client::create_client_socket() const
 {
-	debug("client create client socket");
     return detail::create_socket(host_.c_str(), port_,
         [=](socket_t sock, struct addrinfo& ai) -> bool {
             detail::set_nonblocking(sock, true);
@@ -3726,7 +3496,6 @@ inline socket_t Client::create_client_socket() const
 
 inline bool Client::read_response_line(Stream& strm, Response& res)
 {
-	debug("client read response line()");
     const auto bufsiz = 2048;
     char buf[bufsiz];
 
@@ -3749,7 +3518,6 @@ inline bool Client::read_response_line(Stream& strm, Response& res)
 
 inline bool Client::send(Request& req, Response& res)
 {
-	debug("client send()");
     if (req.path.empty()) {
         return false;
     }
@@ -3764,7 +3532,6 @@ inline bool Client::send(Request& req, Response& res)
 
 inline void Client::write_request(Stream& strm, Request& req)
 {
-	debug("client write request()");
     auto path = detail::encode_url(req.path);
 
     // Request line
@@ -3812,7 +3579,6 @@ inline void Client::write_request(Stream& strm, Request& req)
 
 inline bool Client::process_request(Stream& strm, Request& req, Response& res, bool& connection_close)
 {
-	debug("client process request()");
     // Send request
     write_request(strm, req);
 
@@ -3845,7 +3611,6 @@ inline bool Client::process_request(Stream& strm, Request& req, Response& res, b
 
 inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response& res)
 {
-	debug("client read and close socket");
     return detail::read_and_close_socket(
         sock,
         0,
@@ -3856,13 +3621,11 @@ inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response&
 
 inline std::shared_ptr<Response> Client::Get(const char* path, Progress progress)
 {
-	debug("client GET");
     return Get(path, Headers(), progress);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char* path, const Headers& headers, Progress progress)
 {
-	debug("client GET");
     Request req;
     req.method = "GET";
     req.path = path;
@@ -3876,13 +3639,11 @@ inline std::shared_ptr<Response> Client::Get(const char* path, const Headers& he
 
 inline std::shared_ptr<Response> Client::Head(const char* path)
 {
-	debug("client Head()");
     return Head(path, Headers());
 }
 
 inline std::shared_ptr<Response> Client::Head(const char* path, const Headers& headers)
 {
-	debug("client Head()");
     Request req;
     req.method = "HEAD";
     req.headers = headers;
@@ -3896,14 +3657,12 @@ inline std::shared_ptr<Response> Client::Head(const char* path, const Headers& h
 inline std::shared_ptr<Response> Client::Post(
     const char* path, const std::string& body, const char* content_type)
 {
-	debug("client Post");
     return Post(path, Headers(), body, content_type);
 }
 
 inline std::shared_ptr<Response> Client::Post(
     const char* path, const Headers& headers, const std::string& body, const char* content_type)
 {
-	debug("client Post");
     Request req;
     req.method = "POST";
     req.headers = headers;
@@ -3919,13 +3678,11 @@ inline std::shared_ptr<Response> Client::Post(
 
 inline std::shared_ptr<Response> Client::Post(const char* path, const Params& params)
 {
-	debug("client Post");
     return Post(path, Headers(), params);
 }
 
 inline std::shared_ptr<Response> Client::Post(const char* path, const Headers& headers, const Params& params)
 {
-	debug("client Post");
     std::string query;
     for (auto it = params.begin(); it != params.end(); ++it) {
         if (it != params.begin()) {
@@ -3942,14 +3699,12 @@ inline std::shared_ptr<Response> Client::Post(const char* path, const Headers& h
 inline std::shared_ptr<Response> Client::Put(
     const char* path, const std::string& body, const char* content_type)
 {
-	debug("client put()");
     return Put(path, Headers(), body, content_type);
 }
 
 inline std::shared_ptr<Response> Client::Put(
     const char* path, const Headers& headers, const std::string& body, const char* content_type)
 {
-	debug("client put()");
     Request req;
     req.method = "PUT";
     req.headers = headers;
@@ -3965,13 +3720,11 @@ inline std::shared_ptr<Response> Client::Put(
 
 inline std::shared_ptr<Response> Client::Delete(const char* path)
 {
-	debug("client delete()");
     return Delete(path, Headers());
 }
 
 inline std::shared_ptr<Response> Client::Delete(const char* path, const Headers& headers)
 {
-	debug("client delete()");
     Request req;
     req.method = "DELETE";
     req.path = path;
@@ -3984,7 +3737,6 @@ inline std::shared_ptr<Response> Client::Delete(const char* path, const Headers&
 
 inline std::shared_ptr<Response> Client::Options(const char* path)
 {
-	debug("client options()");
     return Options(path, Headers());
 }
 
