@@ -335,6 +335,7 @@ namespace httplib
 		PPER_IO_CONTEXT lpIOContext;
 		DWORD& dwSendNumBytes;
 		DWORD& dwFlags;
+		int strm_index = 0;
 	};
 #endif
 
@@ -734,12 +735,12 @@ httplib::IOCPStream::~IOCPStream() {}
 
 inline int httplib::IOCPStream::read(char* ptr, size_t size)
 {
-	int i = 0;
-	for (; i < size && i < lpIOContext->wsabuf.len; ++i)
+	int start_i = strm_index;
+	for (; strm_index < size && strm_index < lpIOContext->wsabuf.len; ++strm_index)
 	{
-		ptr[i] = lpIOContext->wsabuf.buf[i];
+		ptr[strm_index] = lpIOContext->wsabuf.buf[strm_index];
 	}
-	return i;
+	return strm_index - start_i;
 }
 
 inline int httplib::IOCPStream::write(const char* ptr, size_t size)
@@ -2662,6 +2663,11 @@ inline void Server::stop()
 		detail::shutdown_socket(sock);
 		detail::close_socket(sock);
 	}
+	else
+	{
+		g_bEndServer = TRUE;
+		WSASetEvent(g_hCleanupEvent[0]);
+	}
 }
 #endif
 
@@ -3078,7 +3084,7 @@ inline bool Server::listen_internal()
         auto val = detail::select_read(svr_sock_, 0, 100000);
 
         if (val == 0) { // Timeout
-            if (svr_sock_ == INVALID_SOCKET) {
+            if (svr_sock_ == INVALID_SOCKET) { //it just keeps going to read completed, change iocp method
                 // The server socket was closed by 'stop' method.
                 break;
             }
