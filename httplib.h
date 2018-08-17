@@ -329,6 +329,10 @@ namespace httplib
 		virtual int write(const char* ptr, size_t size);
 		virtual int write(const char* ptr);
 		virtual std::string get_remote_addr();
+		PPER_SOCKET_CONTEXT getLpPerSocketContext()
+		{
+			return lpPerSocketContext;
+		}
 
 	private:
 		PPER_SOCKET_CONTEXT lpPerSocketContext;
@@ -1107,12 +1111,10 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 				}
 			}
 			else {
-
 				//
 				// previous write operation completed for this socket,
 				//Time to post another outstanding AcceptEx
 				//
-				//CloseClient(lpPerSocketContext, FALSE); //don't i need to close the socket?
 				if (!CreateAcceptSocket(FALSE)) {
 					WSASetEvent(g_hCleanupEvent[0]);
 					return(0);
@@ -2780,6 +2782,9 @@ inline void write_response_iocp(httplib::Stream& strm, bool last_connection, con
 	if (logger_) {
 		logger_(req, res);
 	}
+
+	IOCPStream* s = dynamic_cast<IOCPStream*>(&strm);
+	CloseClient(s->getLpPerSocketContext(), TRUE);
 }
 #endif
 
