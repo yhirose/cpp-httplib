@@ -755,6 +755,10 @@ inline int httplib::IOCPStream::write(const char* ptr, size_t size)
 		&lpIOContext->wsabuf, 1, &dwSendNumBytes,
 		dwFlags,
 		&(lpIOContext->Overlapped), NULL);
+	if (nRet == SOCKET_ERROR)
+	{
+		return nRet;
+	}
 	return nRet;
 }
 
@@ -1188,7 +1192,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 				// previous write operation completed for this socket,
 				//Time to post another outstanding AcceptEx
 				//
-				CloseClient(lpPerSocketContext, FALSE);
+				//CloseClient(lpPerSocketContext, FALSE); //don't i need to close the socket?
 				if (!CreateAcceptSocket(FALSE)) {
 					WSASetEvent(g_hCleanupEvent[0]);
 					return(0);
