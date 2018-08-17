@@ -672,8 +672,6 @@ inline int httplib::IOCPStream::write(const char* ptr, size_t size)
 	lpIOContext->wsabuf.buf = (char*)ptr;
 	lpIOContext->wsabuf.len = size;
 
-	lpIOContext->IOOperation = ClientIoWrite;
-
 	int nRet = WSASend(
 		lpPerSocketContext->Socket,
 		&lpIOContext->wsabuf, 1, &dwSendNumBytes,
@@ -1064,6 +1062,14 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 					CloseClient(lpAcceptSocketContext, FALSE);
 				}
 			}
+
+			//
+			//Time to post another outstanding AcceptEx
+			//
+			if (!CreateAcceptSocket(FALSE)) {
+				WSASetEvent(g_hCleanupEvent[0]);
+				return(0);
+			}
 			break;
 
 		case ClientIoRead:
@@ -1113,12 +1119,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			else {
 				//
 				// previous write operation completed for this socket,
-				//Time to post another outstanding AcceptEx
 				//
-				if (!CreateAcceptSocket(FALSE)) {
-					WSASetEvent(g_hCleanupEvent[0]);
-					return(0);
-				}
 			}
 			break;
 
@@ -2784,7 +2785,8 @@ inline void write_response_iocp(httplib::Stream& strm, bool last_connection, con
 	}
 
 	IOCPStream* s = dynamic_cast<IOCPStream*>(&strm);
-	CloseClient(s->getLpPerSocketContext(), TRUE);
+	//CloseClient(s->getLpPerSocketContext(), TRUE);
+	closesocket(s->getLpPerSocketContext()->Socket);
 }
 #endif
 
@@ -3082,12 +3084,10 @@ inline bool Server::listen_internal()
 			}
 
 			if (g_pCtxtListenSocket) {
-				//while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
-				//{
-				//	CancelIo((HANDLE)g_pCtxtListenSocket->pIOContext->Overlapped.Internal);
-				//	SleepEx(0, TRUE); // the completion will be called here
-				//	Sleep(0);
-				//}
+				while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
+				{
+					Sleep(0);
+				}
 
 				if (g_pCtxtListenSocket->pIOContext->SocketAccept != INVALID_SOCKET)
 					closesocket(g_pCtxtListenSocket->pIOContext->SocketAccept);
