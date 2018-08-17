@@ -736,9 +736,9 @@ httplib::IOCPStream::~IOCPStream() {}
 inline int httplib::IOCPStream::read(char* ptr, size_t size)
 {
 	int start_i = strm_index;
-	for (; strm_index < size && strm_index < lpIOContext->wsabuf.len; ++strm_index)
+	for (; strm_index < (size + start_i) && strm_index < lpIOContext->wsabuf.len; ++strm_index)
 	{
-		ptr[strm_index] = lpIOContext->wsabuf.buf[strm_index];
+		ptr[strm_index - start_i] = lpIOContext->wsabuf.buf[strm_index];
 	}
 	return strm_index - start_i;
 }
@@ -748,15 +748,13 @@ inline int httplib::IOCPStream::write(const char* ptr, size_t size)
 	lpIOContext->wsabuf.buf = (char*)ptr;
 	lpIOContext->wsabuf.len = size;
 
+	lpIOContext->IOOperation = ClientIoWrite;
+
 	int nRet = WSASend(
 		lpPerSocketContext->Socket,
 		&lpIOContext->wsabuf, 1, &dwSendNumBytes,
 		dwFlags,
 		&(lpIOContext->Overlapped), NULL);
-	if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-		//debug(L"WSASend() failed: %d\n", WSAGetLastError());
-		CloseClient(lpPerSocketContext, FALSE);
-	}
 	return nRet;
 }
 
@@ -1138,16 +1136,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 					CloseClient(lpAcceptSocketContext, FALSE);
 				}
 			}
-
-			//
-			//Time to post another outstanding AcceptEx
-			//
-			if (!CreateAcceptSocket(FALSE)) {
-				WSASetEvent(g_hCleanupEvent[0]);
-				return(0);
-			}
 			break;
-
 
 		case ClientIoRead:
 			//
@@ -1174,15 +1163,14 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			// a write operation has completed, determine if all the data intended to be
 			// sent actually was sent.
 			//
-			lpIOContext->IOOperation = ClientIoWrite;
 			lpIOContext->nSentBytes += dwIoSize;
 			dwFlags = 0;
 			if (lpIOContext->nSentBytes < lpIOContext->nTotalBytes) {
-
 				//
 				// the previous write operation didn't send all the data,
 				// post another send to complete the operation
 				//
+				lpIOContext->IOOperation = ClientIoWrite;
 				buffSend.buf = lpIOContext->Buffer + lpIOContext->nSentBytes;
 				buffSend.len = lpIOContext->nTotalBytes - lpIOContext->nSentBytes;
 				nRet = WSASend(
@@ -1197,20 +1185,13 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			else {
 
 				//
-				// previous write operation completed for this socket, post another recv
+				// previous write operation completed for this socket,
+				//Time to post another outstanding AcceptEx
 				//
-				lpIOContext->IOOperation = ClientIoRead;
-				dwRecvNumBytes = 0;
-				dwFlags = 0;
-				buffRecv.buf = lpIOContext->Buffer,
-					buffRecv.len = MAX_BUFF_SIZE;
-				nRet = WSARecv(
-					lpPerSocketContext->Socket,
-					&buffRecv, 1, &dwRecvNumBytes,
-					&dwFlags,
-					&lpIOContext->Overlapped, NULL);
-				if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-					CloseClient(lpPerSocketContext, FALSE);
+				CloseClient(lpPerSocketContext, FALSE);
+				if (!CreateAcceptSocket(FALSE)) {
+					WSASetEvent(g_hCleanupEvent[0]);
+					return(0);
 				}
 			}
 			break;
@@ -2650,7 +2631,7 @@ inline void Server::stop()
 #else
 inline bool Server::is_running() const
 {
-	return g_bRestart;
+	return !g_bEndServer;
 }
 
 inline void Server::stop()
@@ -3172,8 +3153,12 @@ inline bool Server::listen_internal()
 			}
 
 			if (g_pCtxtListenSocket) {
-				while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
-					Sleep(0);
+				//while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
+				//{
+				//	CancelIo((HANDLE)g_pCtxtListenSocket->pIOContext->Overlapped.Internal);
+				//	SleepEx(0, TRUE); // the completion will be called here
+				//	Sleep(0);
+				//}
 
 				if (g_pCtxtListenSocket->pIOContext->SocketAccept != INVALID_SOCKET)
 					closesocket(g_pCtxtListenSocket->pIOContext->SocketAccept);
