@@ -78,13 +78,34 @@ typedef SOCKET socket_t;
 #include <stdlib.h>
 #include <strsafe.h>
 
-//get these out when it works
-#include <string>
-
+#define MAXTHREADS 64
 //dump iocpserver.h... #include "iocpserver.h"
-#define DEFAULT_PORT        "5001"
+#define DEFAULT_PORT        "1234"
 #define MAX_BUFF_SIZE       8192
 #define MAX_WORKER_THREAD   16
+
+typedef struct _OPTIONS {
+	char szHostname[64];
+	int nTotalThreads;
+	int nBufSize;
+	char port[6];
+} OPTIONS;
+
+typedef struct THREADINFO {
+	HANDLE hThread[MAXTHREADS];
+	SOCKET sd[MAXTHREADS];
+} THREADINFO;
+
+static OPTIONS cdefault_options = { "localhost", 1, MAX_BUFF_SIZE, "1234" };
+static OPTIONS cg_Options;
+static THREADINFO cg_ThreadInfo;
+static BOOL cg_bEndClient = FALSE;
+static WSAEVENT cg_hCleanupEvent[1];
+static DWORD WINAPI cWorkerThread(LPVOID lpParameter);
+static BOOL cCreateConnectedSocket(int nThreadNum);
+static BOOL cSendBuffer(int nThreadNum, char *outbuf);
+static BOOL cRecvBuffer(int nThreadNum, char *inbuf);
+
 
 typedef enum _IO_OPERATION {
 	ClientIoAccept,
@@ -1366,9 +1387,14 @@ VOID CtxtListDeleteFrom(PPER_SOCKET_CONTEXT lpPerSocketContext) {
 				//by PQCS in the shutdown process.
 				//
 				if (g_bEndServer)
-					while (!HasOverlappedIoCompleted((LPOVERLAPPED)pTempIO)) Sleep(0);
-				xfree(pTempIO);
-				pTempIO = NULL;
+				{
+					while (!HasOverlappedIoCompleted((LPOVERLAPPED)pTempIO))
+					{
+						Sleep(0);
+					}
+					xfree(pTempIO);
+					pTempIO = NULL;
+				}
 			}
 			pTempIO = pNextIO;
 		} while (pNextIO);
@@ -1564,7 +1590,7 @@ socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
     struct addrinfo *result;
 
     memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = socket_flags;
     hints.ai_protocol = 0;
@@ -2558,7 +2584,7 @@ inline void Server::stop()
 #else
 inline bool Server::is_running() const
 {
-	return !g_bEndServer;
+	return !g_bEndServer || g_bRestart;
 }
 
 inline void Server::stop()
@@ -3119,9 +3145,9 @@ inline bool Server::listen_internal()
 		g_hCleanupEvent[0] = WSA_INVALID_EVENT;
 	}
 	WSACleanup();
+	g_bRestart = TRUE;
 #endif
 
-	g_bRestart = TRUE;
     return ret;
 }
 
@@ -3875,6 +3901,164 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
         });
 }
 #endif
+
+//
+// Abstract:
+//     This is the thread that continually sends and receives a specific size
+//     buffer to the server.  Upon receipt of the echo from the server, a
+//     simple check is performed to check the integrity of the transfer.
+//
+static DWORD WINAPI cWorkerThread(LPVOID lpParameter) {
+
+	char *inbuf = NULL;
+	char *outbuf = NULL;
+	int *pArg = (int *)lpParameter;
+	int nThreadNum = *pArg;
+
+	inbuf = (char *)xmalloc(cg_Options.nBufSize);
+	outbuf = (char *)xmalloc(cg_Options.nBufSize);
+
+	if ((inbuf) && (outbuf)) {
+
+		//
+		// NOTE data possible data loss with INT conversion to BYTE
+		//
+		FillMemory(outbuf, cg_Options.nBufSize, (BYTE)nThreadNum);
+
+		while (TRUE) {
+
+			//
+			// just continually send and wait for the server to echo the data
+			// back.  Just do a simple minded comparison.
+			//
+			if (SendBuffer(nThreadNum, outbuf) &&
+				RecvBuffer(nThreadNum, inbuf)) {
+				if ((inbuf[0] == outbuf[0]) &&
+					(inbuf[cg_Options.nBufSize - 1] == outbuf[cg_Options.nBufSize - 1])) {
+				}
+				else {
+					break;
+				}
+			}
+			else
+				break;
+		}
+	}
+
+	if (inbuf)
+		xfree(inbuf);
+	if (outbuf)
+		xfree(outbuf);
+
+	return(TRUE);
+}
+
+//
+// Abstract:
+//     Create a socket and connect to the server process.
+//
+static BOOL CreateConnectedSocket(int nThreadNum) {
+
+	BOOL bRet = TRUE;
+	int nRet = 0;
+	struct addrinfo hints = { 0 };
+	struct addrinfo *addr_srv = NULL;
+
+	//
+	// Resolve the interface
+	//
+	hints.ai_flags = 0;
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+
+	if (getaddrinfo(cg_Options.szHostname, cg_Options.port, &hints, &addr_srv) != 0) {
+		bRet = FALSE;
+	}
+
+	if (addr_srv == NULL) {
+		bRet = FALSE;
+	}
+	else {
+		cg_ThreadInfo.sd[nThreadNum] = socket(addr_srv->ai_family, addr_srv->ai_socktype, addr_srv->ai_protocol);
+		if (cg_ThreadInfo.sd[nThreadNum] == INVALID_SOCKET) {
+			bRet = FALSE;
+		}
+	}
+
+	if (bRet != FALSE) {
+		nRet = connect(cg_ThreadInfo.sd[nThreadNum], addr_srv->ai_addr, (int)addr_srv->ai_addrlen);
+		if (nRet == SOCKET_ERROR) {
+			bRet = FALSE;
+		}
+
+		freeaddrinfo(addr_srv);
+	}
+
+	return(bRet);
+}
+
+//
+// Abstract:
+//     Send a buffer - keep send'ing until the requested amount of
+//     data has been sent or the socket has been closed or error.
+//
+static BOOL SendBuffer(int nThreadNum, char *outbuf) {
+
+	BOOL bRet = TRUE;
+	char *bufp = outbuf;
+	int nTotalSend = 0;
+	int nSend = 0;
+
+	while (nTotalSend < cg_Options.nBufSize) {
+		nSend = send(cg_ThreadInfo.sd[nThreadNum], bufp, cg_Options.nBufSize - nTotalSend, 0);
+		if (nSend == SOCKET_ERROR) {
+			bRet = FALSE;
+			break;
+		}
+		else if (nSend == 0) {
+			bRet = FALSE;
+			break;
+		}
+		else {
+			nTotalSend += nSend;
+			bufp += nSend;
+		}
+	}
+
+	return(bRet);
+}
+
+//
+// Abstract:
+//     Receive a buffer - keep recv'ing until the requested amount of
+//     data has been received or the socket has been closed or error.
+//
+static BOOL RecvBuffer(int nThreadNum, char *inbuf) {
+
+	BOOL bRet = TRUE;
+	char *bufp = inbuf;
+	int nTotalRecv = 0;
+	int nRecv = 0;
+
+	while (nTotalRecv < cg_Options.nBufSize) {
+		nRecv = recv(cg_ThreadInfo.sd[nThreadNum], bufp, cg_Options.nBufSize - nTotalRecv, 0);
+		if (nRecv == SOCKET_ERROR) {
+			bRet = FALSE;
+			break;
+		}
+		else if (nRecv == 0) {
+			bRet = FALSE;
+			break;
+		}
+		else {
+			nTotalRecv += nRecv;
+			bufp += nRecv;
+		}
+	}
+
+	return(bRet);
+}
 
 } // namespace httplib
 
