@@ -260,7 +260,7 @@ public:
     Client(
         const char* host,
         int port = 80,
-        size_t timeout_sec = 300);
+        time_t timeout_sec = 300);
 
     virtual ~Client();
 
@@ -294,7 +294,7 @@ protected:
 
     const std::string host_;
     const int         port_;
-    size_t            timeout_sec_;
+    time_t            timeout_sec_;
     const std::string host_and_port_;
 
 private:
@@ -342,7 +342,7 @@ public:
     SSLClient(
         const char* host,
         int port = 80,
-        size_t timeout_sec = 300);
+        time_t timeout_sec = 300);
 
     virtual ~SSLClient();
 
@@ -456,7 +456,7 @@ inline int close_socket(socket_t sock)
 #endif
 }
 
-inline int select_read(socket_t sock, size_t sec, size_t usec)
+inline int select_read(socket_t sock, time_t sec, time_t usec)
 {
     fd_set fds;
     FD_ZERO(&fds);
@@ -469,7 +469,7 @@ inline int select_read(socket_t sock, size_t sec, size_t usec)
     return select(sock + 1, &fds, NULL, NULL, &tv);
 }
 
-inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
+inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec)
 {
     fd_set fdsr;
     FD_ZERO(&fdsr);
@@ -1890,7 +1890,7 @@ inline bool Server::read_and_close_socket(socket_t sock)
 
 // HTTP client implementation
 inline Client::Client(
-    const char* host, int port, size_t timeout_sec)
+    const char* host, int port, time_t timeout_sec)
     : host_(host)
     , port_(port)
     , timeout_sec_(timeout_sec)
@@ -2344,7 +2344,7 @@ inline bool SSLServer::read_and_close_socket(socket_t sock)
 }
 
 // SSL HTTP client implementation
-inline SSLClient::SSLClient(const char* host, int port, size_t timeout_sec)
+inline SSLClient::SSLClient(const char* host, int port, time_t timeout_sec)
     : Client(host, port, timeout_sec)
 {
     ctx_ = SSL_CTX_new(SSLv23_client_method());
