@@ -645,86 +645,6 @@ namespace httplib {
 
 //couple pages of IOCP function implementations
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
-inline bool process_iocp_request(httplib::Stream& strm, bool last_connection, bool& connection_close)
-{
-	const auto bufsiz = 2048;
-	char buf[bufsiz];
-
-	httplib::detail::stream_line_reader reader(strm, buf, bufsiz);
-
-	// Connection has been closed on client
-	if (!reader.getline()) {
-		return false;
-	}
-
-	httplib::Request req;
-	httplib::Response res;
-
-	res.version = "HTTP/1.1";
-
-	// Request line and headers
-	if (!parse_request_line_iocp(reader.ptr(), req) || !httplib::detail::read_headers(strm, req.headers)) {
-		res.status = 400;
-		httplib::write_response_iocp(strm, last_connection, req, res);
-		return true;
-	}
-
-	auto ret = true;
-	if (req.get_header_value("Connection") == "close") {
-		// ret = false;
-		connection_close = true;
-	}
-
-	req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
-
-	// Body
-	if (req.method == "POST" || req.method == "PUT") {
-		if (!httplib::detail::read_content(strm, req)) {
-			res.status = 400;
-			httplib::write_response_iocp(strm, last_connection, req, res);
-			return ret;
-		}
-
-		const auto& content_type = req.get_header_value("Content-Type");
-
-		if (req.get_header_value("Content-Encoding") == "gzip") {
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-			detail::decompress(req.body);
-#else
-			res.status = 415;
-			httplib::write_response_iocp(strm, last_connection, req, res);
-			return ret;
-#endif
-		}
-
-		if (!content_type.find("application/x-www-form-urlencoded")) {
-			httplib::detail::parse_query_text(req.body, req.params);
-		}
-		else if (!content_type.find("multipart/form-data")) {
-			std::string boundary;
-			if (!httplib::detail::parse_multipart_boundary(content_type, boundary) ||
-				!httplib::detail::parse_multipart_formdata(boundary, req.body, req.files)) {
-				res.status = 400;
-				httplib::write_response_iocp(strm, last_connection, req, res);
-				return ret;
-			}
-		}
-	}
-
-	if (routing_iocp(req, res)) {
-		if (res.status == -1) {
-			res.status = 200;
-		}
-	}
-	else {
-		res.status = 404;
-	}
-
-	httplib::write_response_iocp(strm, last_connection, req, res);
-	return ret;
-}
-
-
 httplib::IOCPStream::IOCPStream(PPER_SOCKET_CONTEXT _lpPerSocketContext, PPER_IO_CONTEXT _lpIOContext,
 	DWORD& _dwSendNumBytes, DWORD& _dwFlags) :
 	lpPerSocketContext(_lpPerSocketContext), lpIOContext(_lpIOContext),
@@ -1158,7 +1078,7 @@ DWORD WINAPI WorkerThread(LPVOID WorkThreadContext) {
 			httplib::detail::read_and_close_iocp_socket(lpPerSocketContext, lpIOContext,
 				dwRecvNumBytes, dwFlags,  5,
 				[](httplib::Stream& strm, bool last_connection, bool& connection_close) {
-					return process_iocp_request(strm, last_connection, connection_close);
+					return process_request_iocp(strm, last_connection, connection_close);
 				});
 			break;
 
