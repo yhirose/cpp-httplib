@@ -3084,10 +3084,10 @@ inline bool Server::listen_internal()
 			}
 
 			if (g_pCtxtListenSocket) {
-				while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
-				{
-					Sleep(0);
-				}
+				//while (!HasOverlappedIoCompleted((LPOVERLAPPED)&g_pCtxtListenSocket->pIOContext->Overlapped))
+				//{
+				//	Sleep(0);
+				//}
 
 				if (g_pCtxtListenSocket->pIOContext->SocketAccept != INVALID_SOCKET)
 					closesocket(g_pCtxtListenSocket->pIOContext->SocketAccept);
@@ -3121,6 +3121,7 @@ inline bool Server::listen_internal()
 	WSACleanup();
 #endif
 
+	g_bRestart = TRUE;
     return ret;
 }
 
