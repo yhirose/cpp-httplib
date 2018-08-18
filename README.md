@@ -201,6 +201,11 @@ SSLServer svr("./cert.pem", "./key.pem");
 SSLClient cli("localhost", 8080);
 ```
 
+Windows IOCP Support
+--------------------
+
+Windows IOCP (IO Completion Ports) is a threading model implemented by Windows OS. Overlapped IO operations occur at the OS level. Context switching is minimized. Define `CPPHTTPLIB_IOCP_SUPPORT`, `oldnames.lib` and `mswsock.lib` should be linked.
+
 Zlib Support
 ------------
 
