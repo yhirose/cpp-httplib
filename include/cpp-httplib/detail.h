@@ -1,4 +1,5 @@
 #pragma once
+#include "str_case_cmp.h"
 #include "configuration.h"
 #include "httplib_typedefs.h"
 #include "iocp_types.h"

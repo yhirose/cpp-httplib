@@ -14,7 +14,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "include", "include", "{DE73
 		include\cpp-httplib\iocp_mem.h = include\cpp-httplib\iocp_mem.h
 		include\cpp-httplib\iocp_types.h = include\cpp-httplib\iocp_types.h
 		include\cpp-httplib\IOCPStream.h = include\cpp-httplib\IOCPStream.h
-		include\cpp-httplib\pure_preprocessor.h = include\cpp-httplib\pure_preprocessor.h
 		include\cpp-httplib\Request.h = include\cpp-httplib\Request.h
 		include\cpp-httplib\Response.h = include\cpp-httplib\Response.h
 		include\cpp-httplib\Server.h = include\cpp-httplib\Server.h
@@ -23,6 +22,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "include", "include", "{DE73
 		include\cpp-httplib\SSLINIT.h = include\cpp-httplib\SSLINIT.h
 		include\cpp-httplib\SSLServer.h = include\cpp-httplib\SSLServer.h
 		include\cpp-httplib\SSLSocketStream.h = include\cpp-httplib\SSLSocketStream.h
+		include\cpp-httplib\str_case_cmp.h = include\cpp-httplib\str_case_cmp.h
 		include\cpp-httplib\Stream.h = include\cpp-httplib\Stream.h
 		include\cpp-httplib\stream_line_reader.h = include\cpp-httplib\stream_line_reader.h
 	EndProjectSection

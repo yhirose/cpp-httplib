@@ -6,12 +6,6 @@
 //
 #pragma once
 
-//pre processor directives to set
-//up compiler, etc.
-//
-//always comes first!
-#include "pure_preprocessor.h"
-
 
 
 //Simply including this file
