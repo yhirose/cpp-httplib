@@ -3,7 +3,11 @@ Fork Notes:
 
 Adding IOCP Server and IOCP Client
 
-httplib::Server::is_listening_ is always false - Server closes immediately. (since killing globals/refactoring)
+TEST STATUS
+-plain compilation: 100%
+-w/ IOCP:              ?
+-w/ SSL:               ?
+-w/ IOCP + SSL         ?
 
 The browser seems very functional with GET - need to test fully.
 
