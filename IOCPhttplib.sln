@@ -3,35 +3,33 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27703.2042
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IOCPhttplib", "IOCPhttplib\IOCPhttplib.vcxproj", "{40033010-D309-4031-B19C-BC5F4DC01B0A}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "include", "include", "{DE73E94C-9624-430D-AFAD-2D9E7D14A8A6}"
 	ProjectSection(SolutionItems) = preProject
-		include\Client.h = include\Client.h
-		include\configuration.h = include\configuration.h
-		include\detail.h = include\detail.h
-		include\httplib.h = include\httplib.h
-		include\httplib_typedefs.h = include\httplib_typedefs.h
-		include\iocp_mem.h = include\iocp_mem.h
-		include\iocp_types.h = include\iocp_types.h
-		include\IOCPStream.h = include\IOCPStream.h
-		include\pure_preprocessor.h = include\pure_preprocessor.h
-		include\Request.h = include\Request.h
-		include\Response.h = include\Response.h
-		include\Server.h = include\Server.h
-		include\SocketStream.h = include\SocketStream.h
-		include\SSLClient.h = include\SSLClient.h
-		include\SSLServer.h = include\SSLServer.h
-		include\SSLSocketStream.h = include\SSLSocketStream.h
-		include\Stream.h = include\Stream.h
-		include\stream_line_reader.h = include\stream_line_reader.h
+		include\cpp-httplib\Client.h = include\cpp-httplib\Client.h
+		include\cpp-httplib\configuration.h = include\cpp-httplib\configuration.h
+		include\cpp-httplib\detail.h = include\cpp-httplib\detail.h
+		include\cpp-httplib\httplib.h = include\cpp-httplib\httplib.h
+		include\cpp-httplib\httplib_typedefs.h = include\cpp-httplib\httplib_typedefs.h
+		include\cpp-httplib\iocp_mem.h = include\cpp-httplib\iocp_mem.h
+		include\cpp-httplib\iocp_types.h = include\cpp-httplib\iocp_types.h
+		include\cpp-httplib\IOCPStream.h = include\cpp-httplib\IOCPStream.h
+		include\cpp-httplib\pure_preprocessor.h = include\cpp-httplib\pure_preprocessor.h
+		include\cpp-httplib\Request.h = include\cpp-httplib\Request.h
+		include\cpp-httplib\Response.h = include\cpp-httplib\Response.h
+		include\cpp-httplib\Server.h = include\cpp-httplib\Server.h
+		include\cpp-httplib\SocketStream.h = include\cpp-httplib\SocketStream.h
+		include\cpp-httplib\SSLClient.h = include\cpp-httplib\SSLClient.h
+		include\cpp-httplib\SSLServer.h = include\cpp-httplib\SSLServer.h
+		include\cpp-httplib\SSLSocketStream.h = include\cpp-httplib\SSLSocketStream.h
+		include\cpp-httplib\Stream.h = include\cpp-httplib\Stream.h
+		include\cpp-httplib\stream_line_reader.h = include\cpp-httplib\stream_line_reader.h
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "client", "example\client.vcxproj", "{6DB1FC63-B153-4279-92B7-D8A11AF285D6}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "server", "example\server.vcxproj", "{864CD288-050A-4C8B-9BEF-3048BD876C5B}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test-httplib\test-httplib.vcxproj", "{079CD202-C102-4DAE-87B8-A4C43742834F}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj", "{079CD202-C102-4DAE-87B8-A4C43742834F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -41,14 +39,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Debug|x64.ActiveCfg = Debug|x64
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Debug|x64.Build.0 = Debug|x64
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Debug|x86.ActiveCfg = Debug|Win32
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Debug|x86.Build.0 = Debug|Win32
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Release|x64.ActiveCfg = Release|x64
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Release|x64.Build.0 = Release|x64
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Release|x86.ActiveCfg = Release|Win32
-		{40033010-D309-4031-B19C-BC5F4DC01B0A}.Release|x86.Build.0 = Release|Win32
 		{6DB1FC63-B153-4279-92B7-D8A11AF285D6}.Debug|x64.ActiveCfg = Debug|x64
 		{6DB1FC63-B153-4279-92B7-D8A11AF285D6}.Debug|x64.Build.0 = Debug|x64
 		{6DB1FC63-B153-4279-92B7-D8A11AF285D6}.Debug|x86.ActiveCfg = Debug|Win32
