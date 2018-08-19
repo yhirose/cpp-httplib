@@ -24,12 +24,14 @@ namespace httplib {
 		struct ci;
 	}
 
-	enum class HttpVersion { v1_0 = 0, v1_1 };
+	enum class HttpVersion { 
+		v1_0 = 0, 
+		v1_1
+	};
 
-	typedef std::multimap<std::string, std::string, detail::ci>  Headers;
-
-	typedef std::multimap<std::string, std::string>                Params;
-	typedef std::smatch                                            Match;
+	typedef std::multimap<std::string, std::string, detail::ci>   Headers;
+	typedef std::multimap<std::string, std::string>               Params;
+	typedef std::smatch                                           Match;
 	typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
 
 	struct MultipartFile {
@@ -40,25 +42,10 @@ namespace httplib {
 	};
 	typedef std::multimap<std::string, MultipartFile> MultipartFiles;
 
-#ifdef _WIN32
+	#ifdef _WIN32
 	typedef SOCKET socket_t;
-#else
+	#else
 	typedef int socket_t;
-#endif
+	#endif
 
-	namespace detail {
-		typedef std::multimap<std::string, std::string, ci>  Headers;
-
-		typedef std::multimap<std::string, std::string>                Params;
-		typedef std::smatch                                            Match;
-		typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
-
-		typedef std::multimap<std::string, MultipartFile> MultipartFiles;
-
-#ifdef _WIN32
-		typedef SOCKET socket_t;
-#else
-		typedef int socket_t;
-#endif
-	};
 };

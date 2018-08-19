@@ -31,8 +31,7 @@
 #define INVALID_SOCKET (-1)
 #endif
 
-#define MAX_BUFF_SIZE   8192
-#define MAX_WORKER_THREAD 16
+#define MAX_WORKER_THREAD 64
 
 namespace httplib {
 	class Server {

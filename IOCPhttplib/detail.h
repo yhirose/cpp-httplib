@@ -40,10 +40,11 @@
 
 namespace httplib
 {
+
 	namespace detail
 	{
-		struct ci
-		{
+
+		struct ci {
 			bool operator() (const std::string & s1, const std::string & s2) const
 			{
 				return std::lexicographical_compare(
@@ -55,90 +56,96 @@ namespace httplib
 			}
 		};
 
+		bool read_headers(Stream& strm, Headers& headers);
+		template <typename T>
+		bool read_content(Stream& strm, T& x, Progress progress = Progress());
+		void parse_query_text(const std::string& s, Params& params);
+		bool parse_multipart_boundary(const std::string& content_type, std::string& boundary);
+		bool parse_multipart_formdata(const std::string& boundary,
+			const std::string& body, MultipartFiles& files);
+		std::string get_remote_addr(socket_t sock);
+		template <class Fn>
+		void split(const char* b, const char* e, char d, Fn fn);
+		int close_socket(socket_t sock);
+		inline int select_read(socket_t sock, size_t sec, size_t usec);
+		inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec);
+		template <typename T>
+		inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T callback);
+		inline int shutdown_socket(socket_t sock);
+		template <typename Fn>
+		socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0);
+		inline void set_nonblocking(socket_t sock, bool nonblocking);
+		inline bool is_connection_error(void);
+		inline std::string get_remote_addr(socket_t sock);
+		inline bool is_file(const std::string& path);
+		inline bool is_dir(const std::string& path);
+		inline bool is_valid_path(const std::string& path);
+		inline void read_file(const std::string& path, std::string& out);
+		inline std::string file_extension(const std::string& path);
+		inline const char* find_content_type(const std::string& path);
+		inline const char* status_message(int status);
+		inline const char* get_header_value(const Headers& headers, const char* key, const char* def);
+		inline int get_header_value_int(const Headers& headers, const char* key, int def);
+		inline bool read_headers(Stream& strm, Headers& headers);
+		inline bool read_content_with_length(Stream& strm, std::string& out, size_t len, Progress progress);
+		inline bool read_content_without_length(Stream& strm, std::string& out);
+		inline bool read_content_chunked(Stream& strm, std::string& out);
+		template <typename T>
+		bool read_content(Stream& strm, T& x, Progress progress);
+		template <typename T>
+		inline void write_headers(Stream& strm, const T& info);
+		inline std::string encode_url(const std::string& s);
+		inline bool is_hex(char c, int& v);
+		inline bool from_hex_to_i(const std::string& s, size_t i, size_t cnt, int& val);		
+		inline std::string from_i_to_hex(uint64_t n);		
+		inline size_t to_utf8(int code, char* buff);		
+		inline std::string decode_url(const std::string& s);		
+		inline void parse_query_text(const std::string& s, Params& params);
+		inline bool parse_multipart_boundary(const std::string& content_type, std::string& boundary);		
+		inline bool parse_multipart_formdata(const std::string& boundary,
+			const std::string& body, MultipartFiles& files);
+		inline std::string to_lower(const char* beg, const char* end);
+		inline void make_range_header_core(std::string&);
+		template<typename uint64_t>
+		inline void make_range_header_core(std::string& field, uint64_t value);
+		template<typename uint64_t, typename... Args>
+		inline void make_range_header_core(std::string& field, uint64_t value1, uint64_t value2, Args... args);
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+		inline bool can_compress(const std::string& content_type);
+		inline void compress(std::string& content);
+		inline void decompress(std::string& content);
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+		template <typename U, typename V, typename T>
+		inline bool read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
+			// TODO: OpenSSL 1.0.2 occasionally crashes...
+			// The upcoming 1.1.0 is going to be thread safe.
+			SSL_CTX* ctx, std::mutex& ctx_mutex,
+			U SSL_connect_or_accept, V setup,
+			T callback);
+
+		class SSLInit {
+		public:
+			SSLInit() {
+				SSL_load_error_strings();
+				SSL_library_init();
+			}
+		};
+
+		static SSLInit sslinit_;
+#endif
+
+		template<typename uint64_t, typename... Args>
+		inline std::pair<std::string, std::string> make_range_header(uint64_t value, Args... args);
+
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
+		SOCKET CreateSocket(void);
 		template <typename T>
 		inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
 			PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
 			size_t keep_alive_max_count, T callback);
-#endif
-
-		bool read_headers(Stream& strm, Headers& headers);
-
-		template <typename T>
-		bool read_content(Stream& strm, T& x, Progress progress = Progress());
-
-		void parse_query_text(const std::string& s, Params& params);
-
-		bool parse_multipart_boundary(const std::string& content_type, std::string& boundary);
-
-		bool parse_multipart_formdata(
-			const std::string& boundary, const std::string& body, MultipartFiles& files);
-
-		std::string get_remote_addr(socket_t sock);
-
-#ifdef CPPHTTPLIB_IOCP_SUPPORT
-		SOCKET CreateSocket(void);
-
-		//
-		// Create a socket with all the socket options we need, namely disable buffering
-		// and set linger.
-		//
-		SOCKET CreateSocket(void) {
-			int nRet = 0;
-			int nZero = 0;
-			SOCKET sdSocket = INVALID_SOCKET;
-
-			sdSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
-			if (sdSocket == INVALID_SOCKET) {
-				return(sdSocket);
-			}
-
-			//
-			// Disable send buffering on the socket.  Setting SO_SNDBUF
-			// to 0 causes winsock to stop buffering sends and perform
-			// sends directly from our buffers, thereby save one memory copy.
-			//
-			// However, this does prevent the socket from ever filling the
-			// send pipeline. This can lead to packets being sent that are
-			// not full (i.e. the overhead of the IP and TCP headers is 
-			// great compared to the amount of data being carried).
-			//
-			// Disabling the send buffer has less serious repercussions 
-			// than disabling the receive buffer.
-			//
-			nZero = 0;
-			nRet = setsockopt(sdSocket, SOL_SOCKET, SO_SNDBUF, (char *)&nZero, sizeof(nZero));
-			if (nRet == SOCKET_ERROR) {
-				return(sdSocket);
-			}
-
-			// 
-			// Do not set a linger value...especially don't set it to an abortive
-			// close. If you set abortive close and there happens to be a bit of
-			// data remaining to be transfered (or data that has not been 
-			// acknowledged by the peer), the connection will be forcefully reset
-			// and will lead to a loss of data (i.e. the peer won't get the last
-			// bit of data). This is BAD. If you are worried about malicious
-			// clients connecting and then not sending or receiving, the server
-			// should maintain a timer on each connection. If after some point,
-			// the server deems a connection is "stale" it can then set linger
-			// to be abortive and close the connection.
-			//
-
-			/*
-			LINGER lingerStruct;
-			lingerStruct.l_onoff = 1;
-			lingerStruct.l_linger = 0;
-			nRet = setsockopt(sdSocket, SOL_SOCKET, SO_LINGER,
-			(char *)&lingerStruct, sizeof(lingerStruct));
-			if( nRet == SOCKET_ERROR ) {
-			debug("setsockopt(SO_LINGER) failed: %d\n", WSAGetLastError());
-			return(sdSocket);
-			}
-			*/
-
-			return(sdSocket);
-		}
 #endif
 
 		template <class Fn>
@@ -162,11 +169,13 @@ namespace httplib
 
 		inline int close_socket(socket_t sock)
 		{
+
 #ifdef _WIN32
 			return closesocket(sock);
 #else
 			return close(sock);
 #endif
+
 		}
 
 		inline int select_read(socket_t sock, size_t sec, size_t usec)
@@ -246,42 +255,21 @@ namespace httplib
 			return ret;
 		}
 
-#ifdef CPPHTTPLIB_IOCP_SUPPORT
-		template <typename T>
-		inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
-			PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
-			size_t keep_alive_max_count, T callback)
-		{
-			bool ret = false;
-
-			IOCPStream strm(_lpPerSocketContext, _lpIOContext,
-				_dwSendNumBytes, _dwFlags);
-			if (keep_alive_max_count > 0) {
-				auto last_connection = keep_alive_max_count == 1;
-				auto connection_close = false;
-				ret = callback(strm, last_connection, connection_close);
-			}
-			else {
-				auto dummy_connection_close = false;
-				ret = callback(strm, true, dummy_connection_close);
-			}
-
-			return ret;
-		}
-#endif
-
 		inline int shutdown_socket(socket_t sock)
 		{
+
 #ifdef _WIN32
 			return shutdown(sock, SD_BOTH);
 #else
 			return shutdown(sock, SHUT_RDWR);
 #endif
+
 		}
 
 		template <typename Fn>
-		socket_t create_socket(const char* host, int port, Fn fn, int socket_flags = 0)
+		socket_t create_socket(const char* host, int port, Fn fn, int socket_flags)
 		{
+
 #ifdef _WIN32
 #define SO_SYNCHRONOUS_NONALERT 0x20
 #define SO_OPENTYPE 0x7008
@@ -332,6 +320,7 @@ namespace httplib
 
 		inline void set_nonblocking(socket_t sock, bool nonblocking)
 		{
+
 #ifdef _WIN32
 			auto flags = nonblocking ? 1UL : 0UL;
 			ioctlsocket(sock, FIONBIO, &flags);
@@ -339,15 +328,18 @@ namespace httplib
 			auto flags = fcntl(sock, F_GETFL, 0);
 			fcntl(sock, F_SETFL, nonblocking ? (flags | O_NONBLOCK) : (flags & (~O_NONBLOCK)));
 #endif
+
 		}
 
 		inline bool is_connection_error()
 		{
+
 #ifdef _WIN32
 			return WSAGetLastError() != WSAEWOULDBLOCK;
 #else
 			return errno != EINPROGRESS;
 #endif
+
 		}
 
 		inline std::string get_remote_addr(socket_t sock)
@@ -1129,5 +1121,87 @@ namespace httplib
 			field.insert(0, "bytes=");
 			return std::make_pair("Range", field);
 		}
-	}
-}
+
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+		SOCKET CreateSocket(void) {
+			int nRet = 0;
+			int nZero = 0;
+			SOCKET sdSocket = INVALID_SOCKET;
+
+			sdSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+			if (sdSocket == INVALID_SOCKET) {
+				return(sdSocket);
+			}
+
+			//
+			// Disable send buffering on the socket.  Setting SO_SNDBUF
+			// to 0 causes winsock to stop buffering sends and perform
+			// sends directly from our buffers, thereby save one memory copy.
+			//
+			// However, this does prevent the socket from ever filling the
+			// send pipeline. This can lead to packets being sent that are
+			// not full (i.e. the overhead of the IP and TCP headers is 
+			// great compared to the amount of data being carried).
+			//
+			// Disabling the send buffer has less serious repercussions 
+			// than disabling the receive buffer.
+			//
+			nZero = 0;
+			nRet = setsockopt(sdSocket, SOL_SOCKET, SO_SNDBUF, (char *)&nZero, sizeof(nZero));
+			if (nRet == SOCKET_ERROR) {
+				return(sdSocket);
+			}
+
+			// 
+			// Do not set a linger value...especially don't set it to an abortive
+			// close. If you set abortive close and there happens to be a bit of
+			// data remaining to be transfered (or data that has not been 
+			// acknowledged by the peer), the connection will be forcefully reset
+			// and will lead to a loss of data (i.e. the peer won't get the last
+			// bit of data). This is BAD. If you are worried about malicious
+			// clients connecting and then not sending or receiving, the server
+			// should maintain a timer on each connection. If after some point,
+			// the server deems a connection is "stale" it can then set linger
+			// to be abortive and close the connection.
+			//
+
+			/*
+			LINGER lingerStruct;
+			lingerStruct.l_onoff = 1;
+			lingerStruct.l_linger = 0;
+			nRet = setsockopt(sdSocket, SOL_SOCKET, SO_LINGER,
+			(char *)&lingerStruct, sizeof(lingerStruct));
+			if( nRet == SOCKET_ERROR ) {
+			debug("setsockopt(SO_LINGER) failed: %d\n", WSAGetLastError());
+			return(sdSocket);
+			}
+			*/
+
+			return(sdSocket);
+		}
+
+		template <typename T>
+		inline bool read_and_close_iocp_socket(PPER_SOCKET_CONTEXT _lpPerSocketContext,
+			PPER_IO_CONTEXT _lpIOContext, DWORD& _dwSendNumBytes, DWORD& _dwFlags,
+			size_t keep_alive_max_count, T callback)
+		{
+			bool ret = false;
+
+			IOCPStream strm(_lpPerSocketContext, _lpIOContext,
+				_dwSendNumBytes, _dwFlags);
+			if (keep_alive_max_count > 0) {
+				auto last_connection = keep_alive_max_count == 1;
+				auto connection_close = false;
+				ret = callback(strm, last_connection, connection_close);
+			}
+			else {
+				auto dummy_connection_close = false;
+				ret = callback(strm, true, dummy_connection_close);
+			}
+
+			return ret;
+		}
+#endif
+
+	} //detail
+} //httplib
