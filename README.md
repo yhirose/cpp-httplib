@@ -1,3 +1,22 @@
+Fork Notes:
+-----------
+
+Adding IOCP Server and IOCP Client
+
+httplib::Server::is_listening_ is always false - Server closes immediately. (since killing globals/refactoring)
+
+The browser seems very functional with GET - need to test fully.
+
+The client cannot connect to the IOCP Server... something is wrong with the client.
+
+Adding IOCP to the client should resolve the issue well enough that it is solved for most purposes.
+
+I want to provide chunked encoding with IOCP... idk how yet.
+
+I really want a good HTTP/2 Server... this looks great to extend.
+
+I will keep working on this for a while, if it could do HTTP/2 and just simple requests and responses then it would be perfect for the login server and login client for my game!
+
 cpp-httplib
 ===========
 
