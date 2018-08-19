@@ -17,6 +17,8 @@ I really want a good HTTP/2 Server... this looks great to extend.
 
 I will keep working on this for a while, if it could do HTTP/2 and just simple requests and responses then it would be perfect for the login server and login client for my game!
 
+If I can pass most tests somehow I will do a Linux epoll implementation!
+
 cpp-httplib
 ===========
 
