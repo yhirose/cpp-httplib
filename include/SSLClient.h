@@ -16,7 +16,7 @@ namespace httplib {
 		SSLClient(
 			const char* host,
 			int port = 80,
-			size_t timeout_sec = 300);
+			time_t timeout_sec = 300);
 
 		virtual ~SSLClient();
 
@@ -29,7 +29,7 @@ namespace httplib {
 		std::mutex ctx_mutex_;
 	};
 
-	inline SSLClient::SSLClient(const char* host, int port, size_t timeout_sec)
+	inline SSLClient::SSLClient(const char* host, int port, time_t timeout_sec)
 		: Client(host, port, timeout_sec)
 	{
 		ctx_ = SSL_CTX_new(SSLv23_client_method());

@@ -67,8 +67,8 @@ namespace httplib
 		template <class Fn>
 		void split(const char* b, const char* e, char d, Fn fn);
 		int close_socket(socket_t sock);
-		inline int select_read(socket_t sock, size_t sec, size_t usec);
-		inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec);
+		inline int select_read(socket_t sock, time_t sec, time_t usec);
+		inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec);
 		template <typename T>
 		inline bool read_and_close_socket(socket_t sock, size_t keep_alive_max_count, T callback);
 		inline int shutdown_socket(socket_t sock);
@@ -178,7 +178,7 @@ namespace httplib
 
 		}
 
-		inline int select_read(socket_t sock, size_t sec, size_t usec)
+		inline int select_read(socket_t sock, time_t sec, time_t usec)
 		{
 			fd_set fds;
 			FD_ZERO(&fds);
@@ -191,7 +191,7 @@ namespace httplib
 			return select(sock + 1, &fds, NULL, NULL, &tv);
 		}
 
-		inline bool wait_until_socket_is_ready(socket_t sock, size_t sec, size_t usec)
+		inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec)
 		{
 			fd_set fdsr;
 			FD_ZERO(&fdsr);

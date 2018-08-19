@@ -12,7 +12,7 @@ namespace httplib {
 		Client(
 			const char* host,
 			int port = 80,
-			size_t timeout_sec = 300);
+			time_t timeout_sec = 300);
 
 		virtual ~Client();
 
@@ -46,7 +46,7 @@ namespace httplib {
 
 		const std::string host_;
 		const int         port_;
-		size_t            timeout_sec_;
+		time_t            timeout_sec_;
 		const std::string host_and_port_;
 
 	private:
@@ -58,7 +58,7 @@ namespace httplib {
 	};
 
 	inline Client::Client(
-		const char* host, int port, size_t timeout_sec)
+		const char* host, int port, time_t timeout_sec)
 		: host_(host)
 		, port_(port)
 		, timeout_sec_(timeout_sec)

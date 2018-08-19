@@ -79,36 +79,35 @@ int main(void)
         return -1;
     }
 
-    svr.Get("/", [=](const auto& /*req*/, auto& res) {
+    svr.Get("/", [=](const Request& /*req*/, Response& res) {
         res.set_redirect("/hi");
     });
 
-    svr.Get("/hi", [](const auto& /*req*/, auto& res) {
+    svr.Get("/hi", [](const Request& /*req*/, Response& res) {
         res.set_content("Hello World!\n", "text/plain");
     });
 
-    svr.Get("/slow", [](const auto& /*req*/, auto& res) {
-        using namespace std::chrono_literals;
-        std::this_thread::sleep_for(2s);
+    svr.Get("/slow", [](const Request& /*req*/, Response& res) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         res.set_content("Slow...\n", "text/plain");
     });
 
-    svr.Get("/dump", [](const auto& req, auto& res) {
+    svr.Get("/dump", [](const Request& req, Response& res) {
         res.set_content(dump_headers(req.headers), "text/plain");
     });
 
-    svr.Get("/stop", [&](const auto& /*req*/, auto& /*res*/) {
+    svr.Get("/stop", [&](const Request& /*req*/, Response& res) {
         svr.stop();
     });
 
-    svr.set_error_handler([](const auto& /*req*/, auto& res) {
+    svr.set_error_handler([](const Request& /*req*/, Response& res) {
         const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
         char buf[BUFSIZ];
         snprintf(buf, sizeof(buf), fmt, res.status);
         res.set_content(buf, "text/html");
     });
 
-    svr.set_logger([](const auto& req, const auto& res) {
+    svr.set_logger([](const Request& req, const Response& res) {
         printf("%s", log(req, res).c_str());
     });
 
