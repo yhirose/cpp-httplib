@@ -4,10 +4,10 @@ Fork Notes:
 Adding IOCP Server and IOCP Client
 
 TEST STATUS
--plain compilation: 100%
--w/ IOCP:              ?
--w/ SSL:               ?
--w/ IOCP + SSL         ?
+- plain compilation: 100%
+- w/ IOCP:              ?
+- w/ SSL:               ?
+- w/ IOCP + SSL         ?
 
 The browser seems very functional with GET - need to test fully.
 
