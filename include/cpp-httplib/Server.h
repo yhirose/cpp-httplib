@@ -39,12 +39,6 @@ namespace httplib {
 		typedef std::function<void(const httplib::Request&, httplib::Response&)> Handler;
 		typedef std::function<void(const httplib::Request&, const httplib::Response&)> Logger;
 
-#ifdef _WIN32
-		typedef SOCKET socket_t;
-#else
-		typedef int socket_t;
-#endif
-
 		Server();
 
 		virtual ~Server();
@@ -135,11 +129,9 @@ namespace httplib {
 
 	inline Server::Server()
 		: keep_alive_max_count_(5)
-#ifndef CPPHTTPLIB_IOCP_SUPPORT
 		, is_running_(false)
 		, svr_sock_(INVALID_SOCKET)
 		, running_threads_(0)
-#endif
 	{
 #ifndef _WIN32
 		signal(SIGPIPE, SIG_IGN);
@@ -231,6 +223,9 @@ namespace httplib {
 			svr_sock_ = INVALID_SOCKET;
 			detail::shutdown_socket(sock);
 			detail::close_socket(sock);
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+			WSASetEvent(hCleanupEvent_[0]);
+#endif
 		}
 	}
 
@@ -541,13 +536,13 @@ namespace httplib {
 #ifndef CPPHTTPLIB_IOCP_SUPPORT
 		is_running_ = true;
 
-		for (;;) {
+		for (;;)
+		{
 			auto val = detail::select_read(svr_sock_, 0, 100000);
 
 			if (val == 0) { // Timeout
-				if (svr_sock_ == INVALID_SOCKET) { //it just keeps going to read completed, change iocp method
-												   // The server socket was closed by 'stop' method.
-					break;
+				if (svr_sock_ == INVALID_SOCKET) {
+					break; // The server socket was closed by 'stop' method.
 				}
 				continue;
 			}
@@ -592,16 +587,18 @@ namespace httplib {
 
 		is_running_ = false;
 #else //IOCP init and listen!
+		BOOL should_restart = TRUE;
 		SYSTEM_INFO systemInfo;
 		DWORD dwThreadCount = 0;
 		GetSystemInfo(&systemInfo);
 		dwThreadCount = systemInfo.dwNumberOfProcessors * 2;
-		while (is_running_)
+		while (should_restart)
 		{
 			WSAResetEvent(hCleanupEvent_[0]);
 
 			__try
 			{
+				is_running_ = true;
 				WSAWaitForMultipleEvents(1, hCleanupEvent_, TRUE, WSA_INFINITE, FALSE);
 			}
 
@@ -631,6 +628,8 @@ namespace httplib {
 				if (svr_sock_ != INVALID_SOCKET) {
 					closesocket(svr_sock_);
 					svr_sock_ = INVALID_SOCKET;
+				} else {
+					should_restart = FALSE;
 				}
 
 				if (pCtxtListenSocket_) {
@@ -669,6 +668,7 @@ namespace httplib {
 			hCleanupEvent_[0] = WSA_INVALID_EVENT;
 		}
 		WSACleanup();
+		is_running_ = FALSE;
 #endif
 
 		return ret;
@@ -1222,7 +1222,6 @@ namespace httplib {
 		HRESULT hRet;
 
 		while (TRUE) {
-
 			//
 			// continually loop to service io completion packets
 			//
@@ -1243,8 +1242,7 @@ namespace httplib {
 				return(0);
 			}
 
-			if (!lpPerSocketContext->lpIOCPServer->is_running_) {
-
+			if (!lpPerSocketContext->lpIOCPServer->svr_sock_ == INVALID_SOCKET) {
 				//
 				// main thread will do all cleanup needed - see finally block
 				//

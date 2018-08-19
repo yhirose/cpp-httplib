@@ -14,6 +14,16 @@
 
 
 
+//Simply including this file
+//does the WSAStartup routine
+//on Windows platform, fire and forget!
+#include "INITWINSOCK.h"
+
+//initialize openssl things the same way!
+#include "SSLINIT.h"
+
+
+
 //malloc and free macro for iocp
 #include "iocp_mem.h"
 

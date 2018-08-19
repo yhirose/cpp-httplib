@@ -283,10 +283,10 @@ namespace httplib
 			struct addrinfo *result;
 
 			memset(&hints, 0, sizeof(struct addrinfo));
-			hints.ai_family = AF_INET;
+			hints.ai_family = AF_UNSPEC;
 			hints.ai_socktype = SOCK_STREAM;
 			hints.ai_flags = socket_flags;
-			hints.ai_protocol = 0;
+			hints.ai_protocol = IPPROTO_IP;
 
 			auto service = std::to_string(port);
 
