@@ -1,10 +1,12 @@
 #pragma once
+#include "str_case_cmp.h"
 #include "httplib_typedefs.h"
 #include "Request.h"
 #include "Response.h"
 #include "Stream.h"
 #include <string>
 #include <map>
+
 
 namespace httplib {
 	class Client {

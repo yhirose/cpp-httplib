@@ -5,7 +5,7 @@
 //  The Boost Software License 1.0
 //
 
-#include <cpp-httplib/httplib.h>
+#include <cpp-httplib/Client.h>
 #include <iostream>
 
 using namespace std;
