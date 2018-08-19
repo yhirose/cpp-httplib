@@ -667,7 +667,6 @@ namespace httplib {
 			WSACloseEvent(hCleanupEvent_[0]);
 			hCleanupEvent_[0] = WSA_INVALID_EVENT;
 		}
-		WSACleanup();
 		is_running_ = FALSE;
 #endif
 
