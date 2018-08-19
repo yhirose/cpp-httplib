@@ -9,7 +9,7 @@ TEST STATUS
 - w/ SSL:               ?
 - w/ IOCP + SSL         ?
 
-If I can pass most tests somehow I will do a Linux epoll implementation!
+If I can pass most tests somehow I will do a Linux epoll implementation! It would be very important to write a Linux build then =[]
 
 cpp-httplib
 ===========
