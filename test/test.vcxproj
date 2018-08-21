@@ -73,7 +73,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(SolutionDir)/include;$(SolutionDir)/googletest/googletest/include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\Program Files\OpenSSL\include;$(SolutionDir)/include;$(SolutionDir)/googletest/googletest/include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Program Files\OpenSSL\lib;$(SolutionDir)/googletest/googletest/msvc/2010/gtest/x64-Debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">

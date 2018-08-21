@@ -5,12 +5,14 @@
 #include "iocp_types.h"
 #include "Stream.h"
 #include "SocketStream.h"
+#include "SSLSocketStream.h"
 #include "IOCPStream.h"
 #include "stream_line_reader.h"
 #include <string>
 #include <assert.h>
 #include <fstream>
 #include <regex>
+#include <mutex>
 
 #ifdef _WIN32
 #include <WS2tcpip.h>
@@ -1102,16 +1104,6 @@ namespace httplib
 
 			return ret;
 		}
-
-		class SSLInit {
-		public:
-			SSLInit() {
-				SSL_load_error_strings();
-				SSL_library_init();
-			}
-		};
-
-		static SSLInit sslinit_;
 #endif
 
 		template<typename uint64_t, typename... Args>
