@@ -6,7 +6,7 @@ Adding IOCP Server and IOCP Client
 TEST STATUS
 - plain compilation: 100%
 - w/ IOCP:              ?
-- w/ SSL:               ?
+- w/ SSL:            100%
 - w/ IOCP + SSL         ?
 
 If I can pass most tests somehow I will do a Linux epoll implementation!
