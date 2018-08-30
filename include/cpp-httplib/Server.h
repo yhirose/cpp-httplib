@@ -358,9 +358,9 @@ namespace httplib {
 		}
 
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
-		IOCPStream* s = dynamic_cast<IOCPStream*>(&strm);
+		//IOCPStream* s = dynamic_cast<IOCPStream*>(&strm);
 		//CloseClient(s->getLpPerSocketContext(), TRUE);
-		closesocket(s->getLpPerSocketContext()->Socket);
+		//closesocket(s->getLpPerSocketContext()->Socket);
 #endif
 	}
 
