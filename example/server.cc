@@ -5,12 +5,18 @@
 //  The Boost Software License 1.0
 //
 
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#define CPPHTTPLIB_IOCP_SUPPORT
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <cpp-httplib/Server.h>
+#else
+#include <Auth/auth.h>
+#include <cpp-httplib/SSLServer.h>
+#endif
 #include <cstdio>
 #include <chrono>
 
-#define SERVER_CERT_FILE "./cert.pem"
-#define SERVER_PRIVATE_KEY_FILE "./key.pem"
+
 
 using namespace httplib;
 

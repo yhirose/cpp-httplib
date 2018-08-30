@@ -1,5 +1,6 @@
 #pragma once
 #include "httplib_typedefs.h"
+#include "iocp_mem.h"
 #include "detail.h"
 #include "iocp_types.h"
 #include "Request.h"
@@ -131,7 +132,9 @@ namespace httplib {
 		: keep_alive_max_count_(5)
 		, is_running_(false)
 		, svr_sock_(INVALID_SOCKET)
+#ifndef CPPHTTPLIB_IOCP_SUPPORT
 		, running_threads_(0)
+#endif
 	{
 #ifndef _WIN32
 		signal(SIGPIPE, SIG_IGN);

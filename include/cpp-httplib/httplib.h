@@ -18,25 +18,6 @@
 
 
 
-//malloc and free macro for iocp
-#include "iocp_mem.h"
-
-
-
-//httplib and detail namespace typedefs
-#include "httplib_typedefs.h"
-
-//Custom Overlapped IO Context Structs
-//and iocp enum
-#include "iocp_types.h"
-
-
-
-//code shared between classes
-#include "detail.h"
-
-
-
 //The http server class
 #include "Server.h"
 
@@ -48,27 +29,6 @@
 
 //SSL Server class
 #include "SSLServer.h"
-
-
-
-//Abstract base class for streams
-//e.g. Subclass this to integrate new
-//set of socket calls for process_request
-//process_response
-#include "Stream.h"
-
-//socket stream class
-#include "SocketStream.h"
-
-//SSL socket stream class
-#include "SSLSocketStream.h"
-
-//stream for iocp support
-#include "IOCPStream.h"
-
-//class to get lines from streams
-//and build buffers
-#include "stream_line_reader.h"
 
 
 
