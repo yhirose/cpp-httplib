@@ -1192,6 +1192,7 @@ namespace httplib
 				ret = callback(strm, true, dummy_connection_close);
 			}
 
+			close_socket(_lpPerSocketContext->Socket);
 			return ret;
 		}
 #endif
