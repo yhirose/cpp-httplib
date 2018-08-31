@@ -7,23 +7,23 @@ Possibly set up some Scapy attacks and add some more tests
 
 To use the jmeter test plan file:
 
-`jmeter -n -t "jmeter_load_test.jmx" -l jmeter.jtl
+`jmeter -n -t "jmeter_load_test.jmx" -l jmeter.jtl`
 
  ...it tests you for long time...
  
  ...then:
  
- mkdir jresults
+ `mkdir jresults`
  
- jmeter -g jmeter.jtl -o jresults
+ `jmeter -g jmeter.jtl -o jresults`
  
  --it makes a webpage out of your results...
  
  ...then:
  
- cd jresults
+ `cd jresults`
  
- index.html`
+ `index.html`
  
 
 TEST STATUS
