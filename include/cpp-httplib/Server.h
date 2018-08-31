@@ -1237,10 +1237,7 @@ namespace httplib {
 
 			if (lpPerSocketContext == NULL) {
 
-				//
-				// CTRL-C handler used PostQueuedCompletionStatus to post an I/O packet with
-				// a NULL CompletionKey (or if we get one for any reason).  It is time to exit.
-				//
+				//shouldn't happen?
 				return(0);
 			}
 
@@ -1264,7 +1261,7 @@ namespace httplib {
 					// client connection dropped, continue to service remaining (and possibly 
 					// new) client connections
 					//
-					lpPerSocketContext->lpIOCPServer->CloseClient(lpPerSocketContext, FALSE);
+					closesocket(lpPerSocketContext->Socket);
 					continue;
 				}
 			}
@@ -1334,7 +1331,7 @@ namespace httplib {
 						&(lpAcceptSocketContext->pIOContext->Overlapped), NULL);
 
 					if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-						lpPerSocketContext->lpIOCPServer->CloseClient(lpAcceptSocketContext, FALSE);
+						closesocket(lpAcceptSocketContext->Socket);
 					}
 				}
 				else {
@@ -1355,7 +1352,7 @@ namespace httplib {
 						&dwFlags,
 						&lpAcceptSocketContext->pIOContext->Overlapped, NULL);
 					if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-						lpPerSocketContext->lpIOCPServer->CloseClient(lpAcceptSocketContext, FALSE);
+						closesocket(lpAcceptSocketContext->Socket);
 					}
 				}
 
@@ -1409,7 +1406,7 @@ namespace httplib {
 						dwFlags,
 						&(lpIOContext->Overlapped), NULL);
 					if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
-						lpPerSocketContext->lpIOCPServer->CloseClient(lpPerSocketContext, FALSE);
+						closesocket(lpPerSocketContext->Socket);
 					}
 				}
 				else {
