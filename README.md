@@ -5,9 +5,11 @@ Adding IOCP Server and IOCP Client
 
 TEST STATUS
 - plain compilation: 100%
-- w/ IOCP:              ?
+- w/ IOCP: FAIL ~35 TESTS*
 - w/ SSL:            100%
 - w/ IOCP + SSL         ?
+
+*I think it only fails the tests with IOCP support because the client can't connect for some reason. A simple browser test of the IOCP server shows that it is working. IOCP should be considered experimental and highly unreliable for the reason that it is barely tested at all.
 
 If I can pass most tests somehow I will do a Linux epoll implementation!
 
