@@ -8,13 +8,21 @@ Possibly set up some Scapy attacks and add some more tests
 To use the jmeter test plan file:
 
 `jmeter -n -t "Backend Listener.jmx" -l jmeter.jtl
+
  ...it tests you for long time...
+ 
  ...then:
+ 
  mkdir jresults
+ 
  jmeter -g jmeter.jtl -o jresults
+ 
  --it makes a webpage out of your results...
+ 
  ...then:
+ 
  cd jresults
+ 
  index.html`
  
 
