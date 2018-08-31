@@ -12,6 +12,7 @@
 #include <Auth/auth.h>
 #include <cpp-httplib/SSLServer.h>
 #endif
+#include <cpp-httplib/INITWINSOCK.h>
 #include <cstdio>
 #include <chrono>
 

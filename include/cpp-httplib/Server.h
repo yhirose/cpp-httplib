@@ -237,29 +237,6 @@ namespace httplib {
 		}
 	}
 
-	/*
-	inline bool Server::is_running() const
-	{
-	return !g_bEndServer || g_bRestart;
-	}
-
-	inline void Server::stop()
-	{
-	if (g_bRestart) {
-	assert(svr_sock_ != INVALID_SOCKET);
-	auto sock = svr_sock_;
-	svr_sock_ = INVALID_SOCKET;
-
-	detail::shutdown_socket(sock);
-	detail::close_socket(sock);
-	}
-	else
-	{
-	g_bEndServer = TRUE;
-	WSASetEvent(hCleanupEvent_[0]);
-	}
-	}
-	*/
 
 	inline bool Server::parse_request_line(const char* s, httplib::Request& req)
 	{
@@ -361,12 +338,6 @@ namespace httplib {
 		if (logger_) {
 			logger_(req, res);
 		}
-
-#ifdef CPPHTTPLIB_IOCP_SUPPORT
-		//IOCPStream* s = dynamic_cast<IOCPStream*>(&strm);
-		//CloseClient(s->getLpPerSocketContext(), TRUE);
-		//closesocket(s->getLpPerSocketContext()->Socket);
-#endif
 	}
 
 	inline bool Server::handle_file_request(Request& req, Response& res)
@@ -405,7 +376,7 @@ namespace httplib {
 			return true;
 		}, socket_flags);
 #else
-		WSADATA wsaData;
+		//WSADATA wsaData;
 		int nRet = 0;
 		SYSTEM_INFO systemInfo;
 		DWORD dwThreadCount = 0;
@@ -423,12 +394,6 @@ namespace httplib {
 		{
 		}
 
-		if ((nRet = WSAStartup(0x202, &wsaData)) != 0) {
-			if (hCleanupEvent_[0] != WSA_INVALID_EVENT) {
-				WSACloseEvent(hCleanupEvent_[0]);
-				hCleanupEvent_[0] = WSA_INVALID_EVENT;
-			}
-		}
 
 		__try
 		{
@@ -481,16 +446,16 @@ namespace httplib {
 	inline int Server::bind_internal(const char* host, int port, int socket_flags)
 	{
 
+		if (!is_valid()) {
+			return -1;
+		}
+
 #ifdef CPPHTTPLIB_IOCP_SUPPORT
 		if (host)
 			host_ = host;
 		port_ = port;
 		socket_flags_ = socket_flags;
 #endif
-
-		if (!is_valid()) {
-			return -1;
-		}
 
 		svr_sock_ = create_server_socket(host, port, socket_flags);
 		if (svr_sock_ == INVALID_SOCKET) {
@@ -1211,7 +1176,7 @@ namespace httplib {
 		DWORD dwSendNumBytes = 0;
 		DWORD dwFlags = 0;
 		DWORD dwIoSize = 0;
-		HRESULT hRet;
+		HRESULT hRet;		
 
 		while (TRUE) {
 			//
@@ -1226,14 +1191,12 @@ namespace httplib {
 			);
 
 			if (lpPerSocketContext == NULL) {
-				//shouldn't happen?
+				//got a null completion packet
 				return(0);
 			}
 
-			if (!lpPerSocketContext->lpIOCPServer->svr_sock_ == INVALID_SOCKET) {
-				//
-				// main thread will do all cleanup needed - see finally block
-				//
+			if (lpPerSocketContext->lpIOCPServer->svr_sock_ == INVALID_SOCKET) {
+				WSASetEvent(lpPerSocketContext->lpIOCPServer->hCleanupEvent_[0]);
 				return(0);
 			}
 
@@ -1251,6 +1214,7 @@ namespace httplib {
 					// new) client connections
 					//
 					closesocket(lpPerSocketContext->Socket);
+					lpPerSocketContext->Socket = INVALID_SOCKET;
 					continue;
 				}
 			}
@@ -1321,6 +1285,7 @@ namespace httplib {
 
 					if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
 						closesocket(lpAcceptSocketContext->Socket);
+						lpAcceptSocketContext->Socket = INVALID_SOCKET;
 					}
 				}
 				else {
@@ -1342,6 +1307,7 @@ namespace httplib {
 						&lpAcceptSocketContext->pIOContext->Overlapped, NULL);
 					if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
 						closesocket(lpAcceptSocketContext->Socket);
+						lpAcceptSocketContext->Socket = INVALID_SOCKET;
 					}
 				}
 
@@ -1379,7 +1345,7 @@ namespace httplib {
 				// a write operation has completed, determine if all the data intended to be
 				// sent actually was sent.
 				//
-				lpIOContext->nSentBytes += dwIoSize;
+				/*lpIOContext->nSentBytes += dwIoSize;
 				dwFlags = 0;
 				if (lpIOContext->nSentBytes < lpIOContext->nTotalBytes) {
 					//
@@ -1396,6 +1362,7 @@ namespace httplib {
 						&(lpIOContext->Overlapped), NULL);
 					if (nRet == SOCKET_ERROR && (ERROR_IO_PENDING != WSAGetLastError())) {
 						closesocket(lpPerSocketContext->Socket);
+						lpPerSocketContext->Socket = INVALID_SOCKET;
 					}
 				}
 				else {
@@ -1403,10 +1370,12 @@ namespace httplib {
 					// previous write operation completed for this socket,
 					//
 				}
+				*/
 				break;
 
 			} //switch
 		} //while
+		WSASetEvent(lpPerSocketContext->lpIOCPServer->hCleanupEvent_[0]);
 		return(0);
 	}
 #endif
