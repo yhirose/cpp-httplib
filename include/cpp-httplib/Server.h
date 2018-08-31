@@ -1150,15 +1150,12 @@ namespace httplib {
 					//completed. Here we only need to test those posted but not yet received 
 					//by PQCS in the shutdown process.
 					//
-					if (!is_running_)
-					{
-						while (!HasOverlappedIoCompleted((LPOVERLAPPED)pTempIO))
-						{
-							Sleep(0);
-						}
-						xfree(pTempIO);
-						pTempIO = NULL;
-					}
+					//while (!HasOverlappedIoCompleted((LPOVERLAPPED)pTempIO))
+					//{
+					//	Sleep(0);
+					//}
+					xfree(pTempIO);
+					pTempIO = NULL;
 				}
 				pTempIO = pNextIO;
 			} while (pNextIO);
@@ -1229,7 +1226,6 @@ namespace httplib {
 			);
 
 			if (lpPerSocketContext == NULL) {
-
 				//shouldn't happen?
 				return(0);
 			}
