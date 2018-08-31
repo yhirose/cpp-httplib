@@ -3,6 +3,8 @@ Fork Notes:
 
 Adding IOCP Server and IOCP Client
 
+Possibly set up some Scapy attacks and add some more tests
+
 TEST STATUS
 - plain compilation: 100%
 - w/ IOCP: FAIL ~35 TESTS*
