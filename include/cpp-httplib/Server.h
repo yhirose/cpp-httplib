@@ -106,6 +106,11 @@ namespace httplib {
 		std::mutex  running_threads_mutex_;
 		int         running_threads_;
 #else
+
+		std::string host_;
+		unsigned int port_;
+		int socket_flags_;
+
 		//ADD IOCP GLOBALS IF IOCP SUPPORT
 		BOOL CreateListenSocket(int port);
 		BOOL CreateAcceptSocket(BOOL fUpdateIOCP);
@@ -475,11 +480,18 @@ namespace httplib {
 
 	inline int Server::bind_internal(const char* host, int port, int socket_flags)
 	{
+
+#ifdef CPPHTTPLIB_IOCP_SUPPORT
+		if (host)
+			host_ = host;
+		port_ = port;
+		socket_flags_ = socket_flags;
+#endif
+
 		if (!is_valid()) {
 			return -1;
 		}
 
-#ifndef CPPHTTPLIB_IOCP_SUPPORT
 		svr_sock_ = create_server_socket(host, port, socket_flags);
 		if (svr_sock_ == INVALID_SOCKET) {
 			return -1;
@@ -504,32 +516,6 @@ namespace httplib {
 		else {
 			return port;
 		}
-#else
-		svr_sock_ = create_server_socket(host, port, socket_flags);
-		if (svr_sock_ == INVALID_SOCKET) {
-			return -1;
-		}
-
-		if (port == 0) {
-			struct sockaddr_storage address;
-			socklen_t len = sizeof(address);
-			if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&address), &len) == -1) {
-				return -1;
-			}
-			if (address.ss_family == AF_INET) {
-				return ntohs(reinterpret_cast<struct sockaddr_in*>(&address)->sin_port);
-			}
-			else if (address.ss_family == AF_INET6) {
-				return ntohs(reinterpret_cast<struct sockaddr_in6*>(&address)->sin6_port);
-			}
-			else {
-				return -1;
-			}
-		}
-		else {
-			return port;
-		}
-#endif
 	}
 
 	inline bool Server::listen_internal()
@@ -597,6 +583,11 @@ namespace httplib {
 		dwThreadCount = systemInfo.dwNumberOfProcessors * 2;
 		while (should_restart)
 		{
+			if (svr_sock_ == INVALID_SOCKET)
+			{
+				bind_internal(host_.c_str(), port_, socket_flags_);
+			}
+
 			WSAResetEvent(hCleanupEvent_[0]);
 
 			__try
@@ -622,11 +613,13 @@ namespace httplib {
 				//
 				if (WAIT_OBJECT_0 != WaitForMultipleObjects(dwThreadCount, hThreadHandles_, TRUE, 1000)) {}
 				else
-					for (DWORD i = 0; i<dwThreadCount; i++) {
+				{
+					for (DWORD i = 0; i < dwThreadCount; i++) {
 						if (hThreadHandles_[i] != INVALID_HANDLE_VALUE)
 							CloseHandle(hThreadHandles_[i]);
 						hThreadHandles_[i] = INVALID_HANDLE_VALUE;
 					}
+				}
 
 				if (svr_sock_ != INVALID_SOCKET) {
 					closesocket(svr_sock_);
@@ -636,10 +629,10 @@ namespace httplib {
 				}
 
 				if (pCtxtListenSocket_) {
-					//while (!HasOverlappedIoCompleted((LPOVERLAPPED)&pCtxtListenSocket_->pIOContext->Overlapped))
-					//{
-					//	Sleep(0);
-					//}
+					while (!HasOverlappedIoCompleted((LPOVERLAPPED)&pCtxtListenSocket_->pIOContext->Overlapped))
+					{
+						Sleep(0);
+					}
 
 					if (pCtxtListenSocket_->pIOContext->SocketAccept != INVALID_SOCKET)
 						closesocket(pCtxtListenSocket_->pIOContext->SocketAccept);
@@ -845,7 +838,7 @@ namespace httplib {
 			return(FALSE);
 		}
 
-		nRet = bind(svr_sock_, addrlocal->ai_addr, (int)addrlocal->ai_addrlen);
+		nRet = ::bind(svr_sock_, addrlocal->ai_addr, (int)addrlocal->ai_addrlen);
 		if (nRet == SOCKET_ERROR) {
 			freeaddrinfo(addrlocal);
 			return(FALSE);
