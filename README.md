@@ -11,7 +11,7 @@ TEST STATUS
 - w/ SSL:            100%
 - w/ IOCP + SSL         ?
 
-*I think it only fails the tests with IOCP support because the client can't connect for some reason. A simple browser test of the IOCP server shows that it is working. IOCP should be considered experimental and highly unreliable for the reason that it is barely tested at all. **The issue with the client connecting may be related to not using a WSA call on the client to connect... I think I remember reading something about that. Seems quite odd... will work on it.
+* !!!IOCP server is not stable under load. I think the fix is simple.!!! I think it only fails the tests with IOCP support because the client can't connect for some reason. A simple browser test of the IOCP server shows that it is working. IOCP should be considered experimental and highly unreliable for the reason that it is barely tested at all. **The issue with the client connecting may be related to not using a WSA call on the client to connect... I think I remember reading something about that. Seems quite odd... will work on it.
 
 If I can pass most tests somehow I will do a Linux epoll implementation!
 
