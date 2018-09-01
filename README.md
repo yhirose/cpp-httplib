@@ -1,6 +1,8 @@
 Fork Notes:
 -----------
 
+!!!GOING TO USE BOOST.ASIO BECAUSE OF STRANGE ERRORS UNDER LOAD!!!
+
 Adding IOCP Server and IOCP Client
 
 Possibly set up some Scapy attacks and add some more tests
