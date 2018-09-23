@@ -398,6 +398,10 @@ protected:
                     EXPECT_EQ(0u, file.length);
                 }
             })
+            .Post("/empty", [&](const Request& req, Response& res) {
+                EXPECT_EQ(req.body, "");
+                res.set_content("empty", "text/plain");
+            })
             .Put("/put", [&](const Request& req, Response& res) {
                 EXPECT_EQ(req.body, "PUT");
                 res.set_content(req.body, "text/plain");
@@ -558,6 +562,14 @@ TEST_F(ServerTest, PostMethod2)
     ASSERT_EQ(200, res->status);
     ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
     ASSERT_EQ("coder", res->body);
+}
+
+TEST_F(ServerTest, PostEmptyContent)
+{
+    auto res = cli_.Post("/empty", "", "text/plain");
+    ASSERT_TRUE(res != nullptr);
+    ASSERT_EQ(200, res->status);
+    ASSERT_EQ("empty", res->body);
 }
 
 TEST_F(ServerTest, GetMethodDir)

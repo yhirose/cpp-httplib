@@ -746,7 +746,13 @@ inline const char* status_message(int status)
     }
 }
 
-inline const char* get_header_value(const Headers& headers, const char* key, const char* def)
+inline bool has_header(const Headers& headers, const char* key)
+{
+    return headers.find(key) != headers.end();
+}
+
+inline const char* get_header_value(
+    const Headers& headers, const char* key, const char* def = nullptr)
 {
     auto it = headers.find(key);
     if (it != headers.end()) {
@@ -755,7 +761,7 @@ inline const char* get_header_value(const Headers& headers, const char* key, con
     return def;
 }
 
-inline int get_header_value_int(const Headers& headers, const char* key, int def)
+inline int get_header_value_int(const Headers& headers, const char* key, int def = 0)
 {
     auto it = headers.find(key);
     if (it != headers.end()) {
@@ -877,20 +883,22 @@ inline bool read_content_chunked(Stream& strm, std::string& out)
 template <typename T>
 bool read_content(Stream& strm, T& x, Progress progress = Progress())
 {
-    auto len = get_header_value_int(x.headers, "Content-Length", 0);
-
-    if (len) {
+    if (has_header(x.headers, "Content-Length")) {
+        auto len = get_header_value_int(x.headers, "Content-Length", 0);
+        if (len == 0) {
+            const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
+            if (!strcasecmp(encoding, "chunked")) {
+                return read_content_chunked(strm, x.body);
+            }
+        }
         return read_content_with_length(strm, x.body, len, progress);
     } else {
         const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
-
         if (!strcasecmp(encoding, "chunked")) {
             return read_content_chunked(strm, x.body);
-        } else {
-            return read_content_without_length(strm, x.body);
         }
+        return read_content_without_length(strm, x.body);
     }
-
     return true;
 }
 
@@ -1301,7 +1309,7 @@ inline std::pair<std::string, std::string> make_range_header(uint64_t value, Arg
 // Request implementation
 inline bool Request::has_header(const char* key) const
 {
-    return headers.find(key) != headers.end();
+    return detail::has_header(headers, key);
 }
 
 inline std::string Request::get_header_value(const char* key) const
@@ -1578,7 +1586,7 @@ inline void Server::write_response(Stream& strm, bool last_connection, const Req
         req.get_header_value("Connection") == "close") {
         res.set_header("Connection", "close");
     }
-    
+
     if (!last_connection &&
         req.get_header_value("Connection") == "Keep-Alive") {
         res.set_header("Connection", "Keep-Alive");
@@ -1988,7 +1996,11 @@ inline void Client::write_request(Stream& strm, Request& req)
         req.set_header("Connection", "close");
     // }
 
-    if (!req.body.empty()) {
+    if (req.body.empty()) {
+        if (req.method == "POST" || req.method == "PUT") {
+            req.set_header("Content-Length", "0");
+        }
+    } else {
         if (!req.has_header("Content-Type")) {
             req.set_header("Content-Type", "text/plain");
         }
