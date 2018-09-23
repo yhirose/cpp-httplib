@@ -1828,9 +1828,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
         return true;
     }
 
-    auto ret = true;
     if (req.get_header_value("Connection") == "close") {
-        // ret = false;
         connection_close = true;
     }
 
@@ -1841,7 +1839,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
         if (!detail::read_content(strm, req)) {
             res.status = 400;
             write_response(strm, last_connection, req, res);
-            return ret;
+            return true;
         }
 
         const auto& content_type = req.get_header_value("Content-Type");
@@ -1852,7 +1850,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
 #else
             res.status = 415;
             write_response(strm, last_connection, req, res);
-            return ret;
+            return true;
 #endif
         }
 
@@ -1864,7 +1862,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
                 !detail::parse_multipart_formdata(boundary, req.body, req.files)) {
                 res.status = 400;
                 write_response(strm, last_connection, req, res);
-                return ret;
+                return true;
             }
         }
     }
@@ -1878,7 +1876,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
     }
 
     write_response(strm, last_connection, req, res);
-    return ret;
+    return true;
 }
 
 inline bool Server::is_valid() const

@@ -96,7 +96,7 @@ int main(void)
         res.set_content(dump_headers(req.headers), "text/plain");
     });
 
-    svr.Get("/stop", [&](const Request& /*req*/, Response& res) {
+    svr.Get("/stop", [&](const Request& /*req*/, Response& /*res*/) {
         svr.stop();
     });
 
