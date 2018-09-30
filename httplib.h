@@ -923,10 +923,11 @@ inline std::string encode_url(const std::string& s)
         case ':':  result += "%3A"; break;
         case ';':  result += "%3B"; break;
         default:
-            if (s[i] < 0) {
+            auto c = static_cast<uint8_t>(s[i]);
+            if (c >= 0x80) {
                 result += '%';
                 char hex[4];
-                size_t len = snprintf(hex, sizeof(hex) - 1, "%02X", (unsigned char)s[i]);
+                size_t len = snprintf(hex, sizeof(hex) - 1, "%02X", c);
                 assert(len == 2);
                 result.append(hex, len);
             } else {
