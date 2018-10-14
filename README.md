@@ -1,11 +1,15 @@
 Fork Notes:
 -----------
 
-!!!GOING TO USE BOOST.ASIO BECAUSE OF STRANGE ERRORS UNDER LOAD!!!
+Hello again! I'm working on a linux epoll implementation now. The windows project files are probably all broken. I'll fix that later. Things didn't look very well kept on linux so I had to clean it up and break things. Got rid of the auth.h, definitely bloat. Hopefully everything goes well with this attempt. I failed with both IOCP and ASIO somehow.
 
-Adding IOCP Server and IOCP Client
 
-Possibly set up some Scapy attacks and add some more tests
+TEST STATUS
+- plain compilation: 100%
+- w/ IOCP:              ?
+- w/ SSL:            100%
+- w/ IOCP + SSL         ?
+
 
 To use the jmeter test plan file:
 
@@ -26,17 +30,7 @@ To use the jmeter test plan file:
  `cd jresults`
  
  `index.html`
- 
 
-TEST STATUS
-- plain compilation: 100%
-- w/ IOCP: FAIL ~35 TESTS*
-- w/ SSL:            100%
-- w/ IOCP + SSL         ?
-
-* !!!IOCP server is not stable under load. I think the fix is simple.!!! I think it only fails the tests with IOCP support because the client can't connect for some reason. A simple browser test of the IOCP server shows that it is working. IOCP should be considered experimental and highly unreliable for the reason that it is barely tested at all. **The issue with the client connecting may be related to not using a WSA call on the client to connect... I think I remember reading something about that. Seems quite odd... will work on it.
-
-If I can pass most tests somehow I will do a Linux epoll implementation!
 
 cpp-httplib
 ===========
