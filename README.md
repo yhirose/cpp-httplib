@@ -6,9 +6,9 @@ Hello again! I'm working on a linux epoll implementation now. The windows projec
 
 TEST STATUS
 - plain compilation: 100%
-- w/ IOCP:              ?
+- w/ epoll:              ?
 - w/ SSL:            100%
-- w/ IOCP + SSL         ?
+- w/ epoll + SSL         ?
 
 
 To use the jmeter test plan file:
