@@ -5,38 +5,39 @@
 //  MIT License
 //
 
-#ifndef _CPPHTTPLIB_HTTPLIB_H_
-#define _CPPHTTPLIB_HTTPLIB_H_
+#ifndef CPPHTTPLIB_HTTPLIB_H
+#define CPPHTTPLIB_HTTPLIB_H
 
 #ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
-#endif
+#endif //_CRT_SECURE_NO_WARNINGS
+
 #ifndef _CRT_NONSTDC_NO_DEPRECATE
 #define _CRT_NONSTDC_NO_DEPRECATE
-#endif
+#endif //_CRT_NONSTDC_NO_DEPRECATE
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
 #define snprintf _snprintf_s
-#endif
+#endif // _MSC_VER
 
 #ifndef S_ISREG
 #define S_ISREG(m)  (((m)&S_IFREG)==S_IFREG)
-#endif
+#endif //S_ISREG
+
 #ifndef S_ISDIR
 #define S_ISDIR(m)  (((m)&S_IFDIR)==S_IFDIR)
-#endif
+#endif //S_ISDIR
+
+#define NOMINMAX
 
 #include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-#undef min
-#undef max
-
 #ifndef strcasecmp
 #define strcasecmp _stricmp
-#endif
+#endif //strcasecmp
 
 typedef SOCKET socket_t;
 #else
@@ -52,7 +53,7 @@ typedef SOCKET socket_t;
 
 typedef int socket_t;
 #define INVALID_SOCKET (-1)
-#endif
+#endif //_WIN32
 
 #include <fstream>
 #include <functional>
@@ -2390,6 +2391,6 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
 
 } // namespace httplib
 
-#endif
+#endif //CPPHTTPLIB_HTTPLIB_H
 
 // vim: et ts=4 sw=4 cin cino={1s ff=unix
