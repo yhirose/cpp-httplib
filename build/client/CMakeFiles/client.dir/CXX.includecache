@@ -1,0 +1,16 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/jacob/programs/cpp-httplib/client/client.cpp
+cpp-httplib/Client.h
+-
+cpp-httplib/SSLClient.h
+-
+iostream
+-
+
