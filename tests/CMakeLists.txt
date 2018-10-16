@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.4)
 
 # The project
-project (httplibtest)
+project (tests)
 
 # The version number.
 set (test_VERSION_MAJOR 1)
@@ -19,7 +19,7 @@ set (OPENSSL_USE_STATIC_LIBS TRUE)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include ${GTEST_INCLUDE_DIRS} ${OPENSSL_INCLUDE_DIR})
 
 # Cpp files
-set(SOURCE_FILES httplibtest.cpp)
+set(SOURCE_FILES tests.cpp)
 
 # Libs
 set(LIBRARY_FILES ${CMAKE_THREAD_LIBS_INIT} gtest_main gtest OpenSSL::Crypto OpenSSL::SSL)
@@ -30,4 +30,4 @@ add_executable (${PROJECT_NAME} ${SOURCE_FILES})
 # Link the libs
 target_link_libraries(${PROJECT_NAME} ${LIBRARY_FILES})
 
-add_test(AllTestsInHttpLibTest ${PROJECT_NAME})
+add_test(AllTestsInTests ${PROJECT_NAME})

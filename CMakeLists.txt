@@ -43,4 +43,4 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "./../../bin")
 # Call sub CMakeLists.txt !
 add_subdirectory(client)
 add_subdirectory(server)
-add_subdirectory(httplibtest)
+add_subdirectory(tests)
