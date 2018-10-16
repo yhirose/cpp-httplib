@@ -1,12 +1,9 @@
 #pragma once
 #include "httplib_typedefs.h"
-#include "iocp_mem.h"
 #include "detail.h"
-#include "iocp_types.h"
 #include "Request.h"
 #include "Response.h"
 #include "Stream.h"
-#include "IOCPStream.h"
 #include "stream_line_reader.h"
 #include <functional>
 #include <regex>
@@ -14,13 +11,13 @@
 #include <string>
 #include <assert.h>
 #include <vector>
+#include <thread>
 
 #ifdef _WIN32
 #include <WS2tcpip.h>
 #include <strsafe.h>
 #include <MSWSock.h>
 #else
-#include <pthread.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <cstring>

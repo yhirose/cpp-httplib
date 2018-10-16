@@ -2,11 +2,9 @@
 #include "str_case_cmp.h"
 #include "configuration.h"
 #include "httplib_typedefs.h"
-#include "iocp_types.h"
 #include "Stream.h"
 #include "SocketStream.h"
 #include "SSLSocketStream.h"
-#include "IOCPStream.h"
 #include "stream_line_reader.h"
 #include <string>
 #include <assert.h>
@@ -20,12 +18,14 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <fcntl.h>
 #include <cstring>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #define INVALID_SOCKET (-1)
 #endif
 

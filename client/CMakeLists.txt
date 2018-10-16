@@ -12,7 +12,7 @@ find_package(OpenSSL REQUIRED)
 # Use static libs
 set (OPENSSL_USE_STATIC_LIBS TRUE)
 
-include_directories(${OPENSSL_INCLUDE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include ${OPENSSL_INCLUDE_DIR})
 
 # Cpp files
 set(SOURCE_FILES client.cpp)
@@ -25,5 +25,3 @@ add_executable (${PROJECT_NAME} ${SOURCE_FILES})
 
 # Link the libs
 target_link_libraries(${PROJECT_NAME} ${LIBRARY_FILES})
-
-add_test(AllTestsInTest ${PROJECT_NAME})

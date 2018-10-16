@@ -1,7 +1,11 @@
 Fork Notes:
 -----------
+TO BUILD ON LINUX:
+`source run`
 
-Hello again! I'm working on a linux epoll implementation now. The windows project files are probably all broken. I'll fix that later. Things didn't look very well kept on linux so I had to clean it up and break things. Got rid of the auth.h, definitely bloat. Hopefully everything goes well with this attempt. I failed with both IOCP and ASIO somehow.
+executables are in bin lol
+
+Hello again! I'm working on a linux epoll implementation now. The build is finished and should be cross-platform. Might have to iron out some Windows issues. Hopefully everything goes well with this attempt. I failed with both IOCP and ASIO somehow.
 
 
 TEST STATUS

@@ -1,1 +1,0 @@
-/usr/bin/c++      CMakeFiles/client.dir/client.cpp.o  -o ../../bin/client /usr/lib/x86_64-linux-gnu/libcrypto.so /usr/lib/x86_64-linux-gnu/libssl.so /usr/lib/x86_64-linux-gnu/libcrypto.so 

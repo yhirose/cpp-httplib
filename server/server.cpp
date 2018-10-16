@@ -4,8 +4,6 @@
 //  Copyright (c) 2012 Yuji Hirose. All rights reserved.
 //  The Boost Software License 1.0
 //
-
-#define CPPHTTPLIB_IOCP_SUPPORT
 #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <cpp-httplib/Server.h>
 #else
