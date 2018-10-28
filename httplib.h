@@ -166,7 +166,7 @@ public:
     virtual int read(char* ptr, size_t size) = 0;
     virtual int write(const char* ptr, size_t size1) = 0;
     virtual int write(const char* ptr) = 0;
-    virtual std::string get_remote_addr() = 0;
+    virtual std::string get_remote_addr() const = 0;
 
     template <typename ...Args>
     void write_format(const char* fmt, const Args& ...args);
@@ -180,10 +180,26 @@ public:
     virtual int read(char* ptr, size_t size);
     virtual int write(const char* ptr, size_t size);
     virtual int write(const char* ptr);
-    virtual std::string get_remote_addr();
+    virtual std::string get_remote_addr() const;
 
 private:
     socket_t sock_;
+};
+
+class BufferStream : public Stream {
+public:
+    BufferStream() {}
+    virtual ~BufferStream() {}
+
+    virtual int read(char* ptr, size_t size);
+    virtual int write(const char* ptr, size_t size);
+    virtual int write(const char* ptr);
+    virtual std::string get_remote_addr() const;
+
+    const std::string& get_buffer() const;
+
+private:
+    std::string buffer;
 };
 
 class Server {
@@ -315,7 +331,7 @@ public:
     virtual int read(char* ptr, size_t size);
     virtual int write(const char* ptr, size_t size);
     virtual int write(const char* ptr);
-    virtual std::string get_remote_addr();
+    virtual std::string get_remote_addr() const;
 
 private:
     socket_t sock_;
@@ -1441,9 +1457,41 @@ inline int SocketStream::write(const char* ptr)
     return write(ptr, strlen(ptr));
 }
 
-inline std::string SocketStream::get_remote_addr() {
+inline std::string SocketStream::get_remote_addr() const {
     return detail::get_remote_addr(sock_);
 }
+
+// Buffer stream implementation
+inline int BufferStream::read(char* ptr, size_t size)
+{
+#ifdef _WIN32
+    return static_cast<int>(buffer._Copy_s(ptr, size, size));
+#else
+    return static_cast<int>(buffer.copy(ptr, size));
+#endif
+}
+
+inline int BufferStream::write(const char* ptr, size_t size)
+{
+    buffer.append(ptr, size);
+    return static_cast<int>(size);
+}
+
+inline int BufferStream::write(const char* ptr)
+{
+    size_t size = strlen(ptr);
+    buffer.append(ptr, size);
+    return static_cast<int>(size);
+}
+
+inline std::string BufferStream::get_remote_addr() const {
+    return "";
+}
+
+inline const std::string& BufferStream::get_buffer() const {
+    return buffer;
+}
+
 
 // HTTP server implementation
 inline Server::Server()
@@ -1973,10 +2021,12 @@ inline bool Client::send(Request& req, Response& res)
 
 inline void Client::write_request(Stream& strm, Request& req)
 {
-    auto path = detail::encode_url(req.path);
+    BufferStream bstrm;
 
     // Request line
-    strm.write_format("%s %s HTTP/1.1\r\n",
+    auto path = detail::encode_url(req.path);
+
+    bstrm.write_format("%s %s HTTP/1.1\r\n",
         req.method.c_str(),
         path.c_str());
 
@@ -2009,17 +2059,21 @@ inline void Client::write_request(Stream& strm, Request& req)
         req.set_header("Content-Length", length.c_str());
     }
 
-    detail::write_headers(strm, req);
+    detail::write_headers(bstrm, req);
 
     // Body
     if (!req.body.empty()) {
         if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
             auto str = detail::encode_url(req.body);
-            strm.write(str.c_str(), str.size());
+            bstrm.write(str.c_str(), str.size());
         } else {
-            strm.write(req.body.c_str(), req.body.size());
+            bstrm.write(req.body.c_str(), req.body.size());
         }
     }
+
+    // Flush buffer
+    auto& data = bstrm.get_buffer();
+    strm.write(data.data(), data.size());
 }
 
 inline bool Client::process_request(Stream& strm, Request& req, Response& res, bool& connection_close)
@@ -2303,7 +2357,7 @@ inline int SSLSocketStream::write(const char* ptr)
     return write(ptr, strlen(ptr));
 }
 
-inline std::string SSLSocketStream::get_remote_addr() {
+inline std::string SSLSocketStream::get_remote_addr() const {
     return detail::get_remote_addr(sock_);
 }
 
