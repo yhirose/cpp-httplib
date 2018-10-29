@@ -934,7 +934,8 @@ inline std::string encode_url(const std::string& s)
 
     for (auto i = 0; s[i]; i++) {
         switch (s[i]) {
-        case ' ':  result += "+"; break;
+        case ' ':  result += "%20"; break;
+        case '+':  result += "%2B"; break;
         case '\'': result += "%27"; break;
         case ',':  result += "%2C"; break;
         case ':':  result += "%3A"; break;
