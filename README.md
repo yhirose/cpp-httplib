@@ -34,6 +34,13 @@ int main(void)
 
 `Post`, `Put`, `Delete` and `Options` methods are also supported.
 
+### Bind a socket to multiple interfaces and any available port
+
+```cpp
+svr.bind_to_any_port("0.0.0.0");
+svr.listen_after_bind();
+```
+
 ### Method Chain
 
 ```cpp
