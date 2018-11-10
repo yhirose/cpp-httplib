@@ -37,7 +37,7 @@ int main(void)
 ### Bind a socket to multiple interfaces and any available port
 
 ```cpp
-svr.bind_to_any_port("0.0.0.0");
+int port = svr.bind_to_any_port("0.0.0.0");
 svr.listen_after_bind();
 ```
 
