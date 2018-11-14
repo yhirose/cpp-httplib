@@ -20,6 +20,9 @@ using namespace httplib;
 const char* HOST = "localhost";
 const int   PORT = 1234;
 
+const string LONG_QUERY_VALUE = string(25000, '@');
+const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
+
 #ifdef _WIN32
 TEST(StartupTest, WSAStartup)
 {
@@ -417,6 +420,11 @@ protected:
                 EXPECT_EQ("bbb", req.get_param_value("aaa"));
                 EXPECT_EQ("ddd", req.get_param_value("ccc"));
             })
+            .Get("/long-query-value", [&](const Request& req, Response& /*res*/) {
+                EXPECT_EQ(LONG_QUERY_URL, req.target);
+                EXPECT_EQ(LONG_QUERY_VALUE, req.get_param_value("key"));
+            })
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
             .Get("/gzip", [&](const Request& /*req*/, Response& res) {
                 res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "text/plain");
@@ -679,6 +687,14 @@ TEST_F(ServerTest, LongHeader)
     auto ret = cli_.send(req, *res);
 
 	ASSERT_TRUE(ret);
+	EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, LongQueryValue)
+{
+	auto res = cli_.Get(LONG_QUERY_URL.c_str());
+
+	ASSERT_TRUE(res != nullptr);
 	EXPECT_EQ(200, res->status);
 }
 
