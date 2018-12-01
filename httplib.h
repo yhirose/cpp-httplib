@@ -2068,12 +2068,7 @@ inline void Client::write_request(Stream& strm, Request& req)
 
     // Body
     if (!req.body.empty()) {
-        if (req.get_header_value("Content-Type") == "application/x-www-form-urlencoded") {
-            auto str = detail::encode_url(req.body);
-            bstrm.write(str.c_str(), str.size());
-        } else {
-            bstrm.write(req.body.c_str(), req.body.size());
-        }
+        bstrm.write(req.body.c_str(), req.body.size());
     }
 
     // Flush buffer

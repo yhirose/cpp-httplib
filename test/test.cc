@@ -23,6 +23,8 @@ const int   PORT = 1234;
 const string LONG_QUERY_VALUE = string(25000, '@');
 const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
 
+const std::string JSON_DATA = "{\"hello\":\"world\"}";
+
 #ifdef _WIN32
 TEST(StartupTest, WSAStartup)
 {
@@ -345,6 +347,12 @@ protected:
                     res.status = 404;
                 }
             })
+            .Post("/x-www-form-urlencoded-json", [&](const Request& req, Response& res) {
+                auto json = req.get_param_value("json");
+                ASSERT_EQ(JSON_DATA, json);
+                res.set_content(json, "appliation/json");
+                res.status = 200;
+            })
             .Get("/streamedchunked", [&](const Request& /*req*/, Response& res) {
                 res.streamcb = [] (uint64_t offset) {
                     if (offset < 3)
@@ -570,6 +578,18 @@ TEST_F(ServerTest, PostMethod2)
     ASSERT_EQ(200, res->status);
     ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
     ASSERT_EQ("coder", res->body);
+}
+
+TEST_F(ServerTest, PostWwwFormUrlEncodedJson)
+{
+    Params params;
+    params.emplace("json", JSON_DATA);
+
+    auto res = cli_.Post("/x-www-form-urlencoded-json", params);
+
+    ASSERT_TRUE(res != nullptr);
+    ASSERT_EQ(200, res->status);
+    ASSERT_EQ(JSON_DATA, res->body);
 }
 
 TEST_F(ServerTest, PostEmptyContent)
