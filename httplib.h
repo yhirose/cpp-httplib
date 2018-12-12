@@ -81,6 +81,8 @@ typedef int socket_t;
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
 
+
+
 namespace httplib
 {
 
@@ -282,6 +284,8 @@ public:
     virtual ~Client();
 
     virtual bool is_valid() const;
+
+    std::string token;
 
     std::shared_ptr<Response> Get(const char* path, Progress progress = nullptr);
     std::shared_ptr<Response> Get(const char* path, const Headers& headers, Progress progress = nullptr);
@@ -2045,6 +2049,8 @@ inline void Client::write_request(Stream& strm, Request& req)
     if (!req.has_header("User-Agent")) {
         req.set_header("User-Agent", "cpp-httplib/0.2");
     }
+
+    req.set_header("Authorization",("Basic "+ this->token).c_str());
 
     // TODO: Support KeepAlive connection
     // if (!req.has_header("Connection")) {
