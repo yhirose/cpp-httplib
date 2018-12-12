@@ -23,3 +23,5 @@ Release
 ipch
 *.dSYM
 .*
+
+build/
