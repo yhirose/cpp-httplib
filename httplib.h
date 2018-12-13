@@ -2036,7 +2036,7 @@ inline void Client::write_request(Stream& strm, Request& req)
         path.c_str());
 
     // Headers
-    req.set_header("Host", host_and_port_.c_str());
+    req.set_header("Host", host_.c_str());
 
     if (!req.has_header("Accept")) {
         req.set_header("Accept", "*/*");
