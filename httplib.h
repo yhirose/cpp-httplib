@@ -320,6 +320,7 @@ private:
     void write_request(Stream& strm, Request& req);
 
     virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
+    virtual bool is_ssl() const;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -358,7 +359,7 @@ class SSLClient : public Client {
 public:
     SSLClient(
         const char* host,
-        int port = 80,
+        int port = 443,
         time_t timeout_sec = 300);
 
     virtual ~SSLClient();
@@ -367,6 +368,7 @@ public:
 
 private:
     virtual bool read_and_close_socket(socket_t sock, Request& req, Response& res);
+    virtual bool is_ssl() const;
 
     SSL_CTX* ctx_;
     std::mutex ctx_mutex_;
@@ -2036,7 +2038,19 @@ inline void Client::write_request(Stream& strm, Request& req)
         path.c_str());
 
     // Headers
-    req.set_header("Host", host_and_port_.c_str());
+    if (is_ssl()) {
+        if (port_ == 443) {
+            req.set_header("Host", host_.c_str());
+        } else {
+            req.set_header("Host", host_and_port_.c_str());
+        }
+    } else {
+        if (port_ == 80) {
+            req.set_header("Host", host_.c_str());
+        } else {
+            req.set_header("Host", host_and_port_.c_str());
+        }
+    }
 
     if (!req.has_header("Accept")) {
         req.set_header("Accept", "*/*");
@@ -2116,6 +2130,11 @@ inline bool Client::read_and_close_socket(socket_t sock, Request& req, Response&
         [&](Stream& strm, bool /*last_connection*/, bool& connection_close) {
             return process_request(strm, req, res, connection_close);
         });
+}
+
+inline bool Client::is_ssl() const
+{
+    return false;
 }
 
 inline std::shared_ptr<Response> Client::Get(const char* path, Progress progress)
@@ -2440,6 +2459,11 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request& req, Respon
         [&](Stream& strm, bool /*last_connection*/, bool& connection_close) {
             return process_request(strm, req, res, connection_close);
         });
+}
+
+inline bool SSLClient::is_ssl() const
+{
+    return true;
 }
 #endif
 
