@@ -71,7 +71,7 @@ TEST(ParseQueryTest, ParseQueryString)
 TEST(GetHeaderValueTest, DefaultValue)
 {
     Headers headers = {{"Dummy","Dummy"}};
-    auto val = detail::get_header_value(headers, "Content-Type", "text/plain");
+    auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
     EXPECT_STREQ("text/plain", val);
 }
 
@@ -85,7 +85,7 @@ TEST(GetHeaderValueTest, DefaultValueInt)
 TEST(GetHeaderValueTest, RegularValue)
 {
     Headers headers = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
-    auto val = detail::get_header_value(headers, "Content-Type", "text/plain");
+    auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
     EXPECT_STREQ("text/html", val);
 }
 
@@ -100,25 +100,25 @@ TEST(GetHeaderValueTest, Range)
 {
     {
         Headers headers = { make_range_header(1) };
-        auto val = detail::get_header_value(headers, "Range", 0);
+        auto val = detail::get_header_value(headers, "Range", 0, 0);
         EXPECT_STREQ("bytes=1-", val);
     }
 
     {
         Headers headers = { make_range_header(1, 10) };
-        auto val = detail::get_header_value(headers, "Range", 0);
+        auto val = detail::get_header_value(headers, "Range", 0, 0);
         EXPECT_STREQ("bytes=1-10", val);
     }
 
     {
         Headers headers = { make_range_header(1, 10, 100) };
-        auto val = detail::get_header_value(headers, "Range", 0);
+        auto val = detail::get_header_value(headers, "Range", 0, 0);
         EXPECT_STREQ("bytes=1-10, 100-", val);
     }
 
     {
         Headers headers = { make_range_header(1, 10, 100, 200) };
-        auto val = detail::get_header_value(headers, "Range", 0);
+        auto val = detail::get_header_value(headers, "Range", 0, 0);
         EXPECT_STREQ("bytes=1-10, 100-200", val);
     }
 }
@@ -432,7 +432,12 @@ protected:
                 EXPECT_EQ(LONG_QUERY_URL, req.target);
                 EXPECT_EQ(LONG_QUERY_VALUE, req.get_param_value("key"));
             })
-
+            .Get("/array-param", [&](const Request& req, Response& /*res*/) {
+                EXPECT_EQ(3u, req.get_param_value_count("array"));
+                EXPECT_EQ("value1", req.get_param_value("array", 0));
+                EXPECT_EQ("value2", req.get_param_value("array", 1));
+                EXPECT_EQ("value3", req.get_param_value("array", 2));
+            })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
             .Get("/gzip", [&](const Request& /*req*/, Response& res) {
                 res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "text/plain");
@@ -497,6 +502,7 @@ TEST_F(ServerTest, GetMethod200)
     EXPECT_EQ("HTTP/1.1", res->version);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
     EXPECT_EQ("close", res->get_header_value("Connection"));
     EXPECT_EQ("Hello World!", res->body);
 }
@@ -932,6 +938,13 @@ TEST_F(ServerTest, Options)
 TEST_F(ServerTest, URL)
 {
     auto res = cli_.Get("/request-target?aaa=bbb&ccc=ddd");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, ArrayParam)
+{
+    auto res = cli_.Get("/array-param?array=value1&array=value2&array=value3");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
 }

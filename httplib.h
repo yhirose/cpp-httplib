@@ -132,11 +132,13 @@ struct Request {
     Progress       progress;
 
     bool has_header(const char* key) const;
-    std::string get_header_value(const char* key) const;
+    std::string get_header_value(const char* key, size_t id = 0) const;
+    size_t get_header_value_count(const char* key) const;
     void set_header(const char* key, const char* val);
 
     bool has_param(const char* key) const;
-    std::string get_param_value(const char* key) const;
+    std::string get_param_value(const char* key, size_t id = 0) const;
+    size_t get_param_value_count(const char* key) const;
 
     bool has_file(const char* key) const;
     MultipartFile get_file_value(const char* key) const;
@@ -150,7 +152,8 @@ struct Response {
     std::function<std::string (uint64_t offset)> streamcb;
 
     bool has_header(const char* key) const;
-    std::string get_header_value(const char* key) const;
+    std::string get_header_value(const char* key, size_t id = 0) const;
+    size_t get_header_value_count(const char* key) const;
     void set_header(const char* key, const char* val);
 
     void set_redirect(const char* uri);
@@ -771,9 +774,10 @@ inline bool has_header(const Headers& headers, const char* key)
 }
 
 inline const char* get_header_value(
-    const Headers& headers, const char* key, const char* def = nullptr)
+    const Headers& headers, const char* key, size_t id = 0, const char* def = nullptr)
 {
     auto it = headers.find(key);
+    std::advance(it, id);
     if (it != headers.end()) {
         return it->second.c_str();
     }
@@ -905,14 +909,14 @@ bool read_content(Stream& strm, T& x, Progress progress = Progress())
     if (has_header(x.headers, "Content-Length")) {
         auto len = get_header_value_int(x.headers, "Content-Length", 0);
         if (len == 0) {
-            const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
+            const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", 0, "");
             if (!strcasecmp(encoding, "chunked")) {
                 return read_content_chunked(strm, x.body);
             }
         }
         return read_content_with_length(strm, x.body, len, progress);
     } else {
-        const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", "");
+        const auto& encoding = get_header_value(x.headers, "Transfer-Encoding", 0, "");
         if (!strcasecmp(encoding, "chunked")) {
             return read_content_chunked(strm, x.body);
         }
@@ -1333,9 +1337,15 @@ inline bool Request::has_header(const char* key) const
     return detail::has_header(headers, key);
 }
 
-inline std::string Request::get_header_value(const char* key) const
+inline std::string Request::get_header_value(const char* key, size_t id) const
 {
-    return detail::get_header_value(headers, key, "");
+    return detail::get_header_value(headers, key, id, "");
+}
+
+inline size_t Request::get_header_value_count(const char* key) const
+{
+    auto r = headers.equal_range(key);
+    return std::distance(r.first, r.second);
 }
 
 inline void Request::set_header(const char* key, const char* val)
@@ -1348,13 +1358,20 @@ inline bool Request::has_param(const char* key) const
     return params.find(key) != params.end();
 }
 
-inline std::string Request::get_param_value(const char* key) const
+inline std::string Request::get_param_value(const char* key, size_t id) const
 {
     auto it = params.find(key);
+    std::advance(it, id);
     if (it != params.end()) {
         return it->second;
     }
     return std::string();
+}
+
+inline size_t Request::get_param_value_count(const char* key) const
+{
+    auto r = params.equal_range(key);
+    return std::distance(r.first, r.second);
 }
 
 inline bool Request::has_file(const char* key) const
@@ -1377,9 +1394,15 @@ inline bool Response::has_header(const char* key) const
     return headers.find(key) != headers.end();
 }
 
-inline std::string Response::get_header_value(const char* key) const
+inline std::string Response::get_header_value(const char* key, size_t id) const
 {
-    return detail::get_header_value(headers, key, "");
+    return detail::get_header_value(headers, key, id, "");
+}
+
+inline size_t Response::get_header_value_count(const char* key) const
+{
+    auto r = headers.equal_range(key);
+    return std::distance(r.first, r.second);
 }
 
 inline void Response::set_header(const char* key, const char* val)
