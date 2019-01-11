@@ -1,0 +1,9 @@
+version: 1.0.{build}
+image: Visual Studio 2017
+build_script:
+- cmd: >-
+    cd test
+
+    msbuild.exe test.sln /verbosity:minimal /t:Build /p:Configuration=Debug;Platform=Win32
+test_script:
+- cmd: Debug\test.exe
