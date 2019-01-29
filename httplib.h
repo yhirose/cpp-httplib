@@ -2418,7 +2418,7 @@ inline SSLServer::SSLServer(const char* cert_path, const char* private_key_path)
         // SSL_CTX_set_tmp_ecdh(ctx_, ecdh);
         // EC_KEY_free(ecdh);
 
-        if (SSL_CTX_use_certificate_file(ctx_, cert_path, SSL_FILETYPE_PEM) != 1 ||
+        if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
             SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) != 1) {
             SSL_CTX_free(ctx_);
             ctx_ = nullptr;
