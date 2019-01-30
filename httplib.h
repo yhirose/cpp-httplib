@@ -2024,7 +2024,7 @@ inline bool Client::read_response_line(Stream& strm, Response& res)
         return false;
     }
 
-    const static std::regex re("(HTTP/1\\.[01]) (\\d+?) .+\r\n");
+    const static std::regex re("(HTTP/1\\.[01]) (\\d+?) .*\r\n");
 
     std::cmatch m;
     if (std::regex_match(reader.ptr(), m, re)) {
