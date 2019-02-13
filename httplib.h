@@ -485,10 +485,10 @@ inline int select_read(socket_t sock, time_t sec, time_t usec)
     FD_SET(sock, &fds);
 
     timeval tv;
-    tv.tv_sec = sec;
-    tv.tv_usec = usec;
+    tv.tv_sec = static_cast<long>(sec);
+    tv.tv_usec = static_cast<long>(usec);
 
-    return select(sock + 1, &fds, NULL, NULL, &tv);
+    return select(static_cast<int>(sock + 1), &fds, NULL, NULL, &tv);
 }
 
 inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec)
@@ -501,10 +501,10 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec)
     auto fdse = fdsr;
 
     timeval tv;
-    tv.tv_sec = sec;
-    tv.tv_usec = usec;
+    tv.tv_sec = static_cast<long>(sec);
+    tv.tv_usec = static_cast<long>(usec);
 
-    if (select(sock + 1, &fdsr, &fdsw, &fdse, &tv) < 0) {
+    if (select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) < 0) {
         return false;
     } else if (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw)) {
         int error = 0;
@@ -1470,12 +1470,12 @@ inline SocketStream::~SocketStream()
 
 inline int SocketStream::read(char* ptr, size_t size)
 {
-    return recv(sock_, ptr, size, 0);
+    return recv(sock_, ptr, static_cast<int>(size), 0);
 }
 
 inline int SocketStream::write(const char* ptr, size_t size)
 {
-    return send(sock_, ptr, size, 0);
+    return send(sock_, ptr, static_cast<int>(size), 0);
 }
 
 inline int SocketStream::write(const char* ptr)
@@ -1752,7 +1752,7 @@ inline socket_t Server::create_server_socket(const char* host, int port, int soc
 {
     return detail::create_socket(host, port,
         [](socket_t sock, struct addrinfo& ai) -> bool {
-            if (::bind(sock, ai.ai_addr, ai.ai_addrlen)) {
+            if (::bind(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen))) {
                   return false;
             }
             if (::listen(sock, 5)) { // Listen through 5 channels
@@ -1999,7 +1999,7 @@ inline socket_t Client::create_client_socket() const
         [=](socket_t sock, struct addrinfo& ai) -> bool {
             detail::set_nonblocking(sock, true);
 
-            auto ret = connect(sock, ai.ai_addr, ai.ai_addrlen);
+            auto ret = connect(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen));
             if (ret < 0) {
                 if (detail::is_connection_error() ||
                     !detail::wait_until_socket_is_ready(sock, timeout_sec_, 0)) {

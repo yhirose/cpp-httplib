@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <future>
-#include <iostream>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
