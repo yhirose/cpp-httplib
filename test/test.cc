@@ -294,6 +294,35 @@ TEST(CancelTest, WithCancelLargePayload) {
     ASSERT_TRUE(res == nullptr);
 }
 
+TEST(BaseAuthTest, FromHTTPWatch)
+{
+    auto host = "httpbin.org";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    auto port = 443;
+    httplib::SSLClient cli(host, port);
+#else
+    auto port = 80;
+    httplib::Client cli(host, port);
+#endif
+
+    {
+        auto res = cli.Get("/basic-auth/hello/world");
+        ASSERT_TRUE(res != nullptr);
+        EXPECT_EQ(401, res->status);
+    }
+
+    {
+        httplib::Headers headers = {
+            { "Authorization", "Basic aGVsbG86d29ybGQ=" }
+        };
+        auto res = cli.Get("/basic-auth/hello/world", headers);
+        ASSERT_TRUE(res != nullptr);
+        EXPECT_EQ(res->body, "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
+        EXPECT_EQ(200, res->status);
+    }
+}
+
 TEST(Server, BindAndListenSeparately) {
     Server svr;
     int port = svr.bind_to_any_port("localhost");
