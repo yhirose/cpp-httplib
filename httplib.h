@@ -69,6 +69,7 @@ typedef int socket_t;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #endif
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -2367,6 +2368,10 @@ public:
     SSLInit() {
         SSL_load_error_strings();
         SSL_library_init();
+    }
+
+    ~SSLInit() {
+        ERR_free_strings();
     }
 };
 
