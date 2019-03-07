@@ -2066,12 +2066,11 @@ inline void Client::write_request(Stream& strm, Request& req)
         path.c_str());
 
     // Headers
-     if (!req.has_header("Host")) 
-	 {
-		 if (is_ssl()) {
-			if (port_ == 443) {
+    if (!req.has_header("Host")) {
+        if (is_ssl()) {
+            if (port_ == 443) {
 				req.set_header("Host", host_.c_str());
-			} else {
+            } else {
 				req.set_header("Host", host_and_port_.c_str());
 			}
 		} else {
@@ -2080,8 +2079,8 @@ inline void Client::write_request(Stream& strm, Request& req)
 			} else {
 				req.set_header("Host", host_and_port_.c_str());
 			}
-		}
-	 }
+        }
+    }
 
     if (!req.has_header("Accept")) {
         req.set_header("Accept", "*/*");
