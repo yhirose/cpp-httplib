@@ -445,6 +445,10 @@ protected:
                 EXPECT_EQ(req.body, "PUT");
                 res.set_content(req.body, "text/plain");
             })
+            .Patch("/patch", [&](const Request& req, Response& res) {
+                EXPECT_EQ(req.body, "PATCH");
+                res.set_content(req.body, "text/plain");
+            })
             .Delete("/delete", [&](const Request& /*req*/, Response& res) {
                 res.set_content("DELETE", "text/plain");
             })
@@ -944,6 +948,14 @@ TEST_F(ServerTest, Put)
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, Patch)
+{
+    auto res = cli_.Patch("/patch", "PATCH", "text/plain");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("PATCH", res->body);
 }
 
 TEST_F(ServerTest, Delete)

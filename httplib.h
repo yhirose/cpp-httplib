@@ -223,7 +223,8 @@ public:
     Server& Post(const char* pattern, Handler handler);
 
     Server& Put(const char* pattern, Handler handler);
-    Server& Delete(const char* pattern, Handler handler);
+    Server& Patch(const char *pattern, Handler handler);
+    Server& Delete(const char *pattern, Handler handler);
     Server& Options(const char* pattern, Handler handler);
 
     bool set_base_dir(const char* path);
@@ -268,6 +269,7 @@ private:
     Handlers    get_handlers_;
     Handlers    post_handlers_;
     Handlers    put_handlers_;
+    Handlers    patch_handlers_;
     Handlers    delete_handlers_;
     Handlers    options_handlers_;
     Handler     error_handler_;
@@ -303,6 +305,9 @@ public:
 
     std::shared_ptr<Response> Put(const char* path, const std::string& body, const char* content_type);
     std::shared_ptr<Response> Put(const char* path, const Headers& headers, const std::string& body, const char* content_type);
+
+    std::shared_ptr<Response> Patch(const char* path, const std::string& body, const char* content_type);
+    std::shared_ptr<Response> Patch(const char* path, const Headers& headers, const std::string& body, const char* content_type);
 
     std::shared_ptr<Response> Delete(const char* path);
     std::shared_ptr<Response> Delete(const char* path, const Headers& headers);
@@ -1558,6 +1563,12 @@ inline Server& Server::Put(const char* pattern, Handler handler)
     return *this;
 }
 
+inline Server& Server::Patch(const char* pattern, Handler handler)
+{
+    patch_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+    return *this;
+}
+
 inline Server& Server::Delete(const char* pattern, Handler handler)
 {
     delete_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
@@ -1628,7 +1639,7 @@ inline void Server::stop()
 
 inline bool Server::parse_request_line(const char* s, Request& req)
 {
-    static std::regex re("(GET|HEAD|POST|PUT|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
+    static std::regex re("(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) (([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
     std::cmatch m;
     if (std::regex_match(s, m, re)) {
@@ -1867,6 +1878,8 @@ inline bool Server::routing(Request& req, Response& res)
         return dispatch_request(req, res, post_handlers_);
     } else if (req.method == "PUT") {
         return dispatch_request(req, res, put_handlers_);
+    } else if (req.method == "PATCH") {
+        return dispatch_request(req, res, patch_handlers_);
     } else if (req.method == "DELETE") {
         return dispatch_request(req, res, delete_handlers_);
     } else if (req.method == "OPTIONS") {
@@ -1920,7 +1933,7 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
     req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
 
     // Body
-    if (req.method == "POST" || req.method == "PUT") {
+    if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
         if (!detail::read_content(strm, req)) {
             res.status = 400;
             write_response(strm, last_connection, req, res);
@@ -2096,7 +2109,7 @@ inline void Client::write_request(Stream& strm, Request& req)
     // }
 
     if (req.body.empty()) {
-        if (req.method == "POST" || req.method == "PUT") {
+        if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
             req.set_header("Content-Length", "0");
         }
     } else {
@@ -2255,6 +2268,28 @@ inline std::shared_ptr<Response> Client::Put(
 {
     Request req;
     req.method = "PUT";
+    req.headers = headers;
+    req.path = path;
+
+    req.headers.emplace("Content-Type", content_type);
+    req.body = body;
+
+    auto res = std::make_shared<Response>();
+
+    return send(req, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::Patch(
+    const char* path, const std::string& body, const char* content_type)
+{
+    return Patch(path, Headers(), body, content_type);
+}
+
+inline std::shared_ptr<Response> Client::Patch(
+    const char* path, const Headers& headers, const std::string& body, const char* content_type)
+{
+    Request req;
+    req.method = "PATCH";
     req.headers = headers;
     req.path = path;
 
