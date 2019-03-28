@@ -2119,8 +2119,10 @@ inline void Client::write_request(Stream& strm, Request& req)
             req.set_header("Content-Type", "text/plain");
         }
 
-        auto length = std::to_string(req.body.size());
-        req.set_header("Content-Length", length.c_str());
+        if (!req.has_header("Content-Length")) {
+            auto length = std::to_string(req.body.size());
+            req.set_header("Content-Length", length.c_str());
+        }
     }
 
     detail::write_headers(bstrm, req);

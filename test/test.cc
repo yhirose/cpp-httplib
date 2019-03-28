@@ -470,6 +470,10 @@ protected:
                 EXPECT_EQ("value2", req.get_param_value("array", 1));
                 EXPECT_EQ("value3", req.get_param_value("array", 2));
             })
+            .Post("/validate-no-multiple-headers", [&](const Request& req, Response& res) {
+                EXPECT_EQ(1u, req.get_header_value_count("Content-Length"));
+                EXPECT_EQ("5", req.get_header_value("Content-Length"));
+            })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
             .Get("/gzip", [&](const Request& /*req*/, Response& res) {
                 res.set_content("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "text/plain");
@@ -985,6 +989,15 @@ TEST_F(ServerTest, URL)
 TEST_F(ServerTest, ArrayParam)
 {
     auto res = cli_.Get("/array-param?array=value1&array=value2&array=value3");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, NoMultipleHeaders)
+{
+    Headers headers;
+    headers.emplace("Content-Length", "5");
+    auto res = cli_.Post("/validate-no-multiple-headers", headers, "hello", "text/plain");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
 }
