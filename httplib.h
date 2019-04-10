@@ -85,6 +85,7 @@ typedef int socket_t;
  */
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
+#define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
 
 namespace httplib
 {
@@ -430,6 +431,14 @@ public:
         }
     }
 
+    size_t size() const {
+        if (glowable_buffer_.empty()) {
+            return fixed_buffer_used_size_;
+        } else {
+            return glowable_buffer_.size();
+        }
+    }
+
     bool getline() {
         fixed_buffer_used_size_ = 0;
         glowable_buffer_.clear();
@@ -772,6 +781,7 @@ inline const char* status_message(int status)
     case 400: return "Bad Request";
     case 403: return "Forbidden";
     case 404: return "Not Found";
+    case 414: return "Request-URI Too Long";
     case 415: return "Unsupported Media Type";
     default:
         case 500: return "Internal Server Error";
@@ -1920,6 +1930,13 @@ inline bool Server::process_request(Stream& strm, bool last_connection, bool& co
     Response res;
 
     res.version = "HTTP/1.1";
+
+    // Check if the request URI doesn't exceed the limit
+    if (reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+        res.status = 414;
+        write_response(strm, last_connection, req, res);
+        return true;
+    }
 
     // Request line and headers
     if (!parse_request_line(reader.ptr(), req) || !detail::read_headers(strm, req.headers)) {

@@ -757,7 +757,7 @@ TEST_F(ServerTest, LongQueryValue)
 	auto res = cli_.Get(LONG_QUERY_URL.c_str());
 
 	ASSERT_TRUE(res != nullptr);
-	EXPECT_EQ(200, res->status);
+	EXPECT_EQ(414, res->status);
 }
 
 TEST_F(ServerTest, TooLongHeader)
