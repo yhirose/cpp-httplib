@@ -788,6 +788,15 @@ inline int get_header_value_int(const Headers &headers, const char *key,
   return def;
 }
 
+inline unsigned long long get_header_value_uint64(const Headers &headers, const char *key,
+								int def = 0) {
+	auto it = headers.find(key);
+	if (it != headers.end()) {
+		return std::strtoull(it->second.data(), nullptr, 10);
+	}
+	return def;
+}
+
 inline bool read_headers(Stream &strm, Headers &headers) {
   static std::regex re(R"((.+?):\s*(.+?)\s*\r\n)");
 
@@ -881,7 +890,7 @@ inline bool read_content_chunked(Stream &strm, std::string &out) {
 template <typename T>
 bool read_content(Stream &strm, T &x, Progress progress = Progress()) {
   if (has_header(x.headers, "Content-Length")) {
-    auto len = get_header_value_int(x.headers, "Content-Length", 0);
+    auto len = get_header_value_uint64(x.headers, "Content-Length", 0);
     if (len == 0) {
       const auto &encoding =
           get_header_value(x.headers, "Transfer-Encoding", 0, "");
