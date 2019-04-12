@@ -781,14 +781,7 @@ inline const char *get_header_value(const Headers &headers, const char *key,
   return def;
 }
 
-inline int get_header_value_int(const Headers &headers, const char *key,
-                                int def = 0) {
-  auto it = headers.find(key);
-  if (it != headers.end()) { return std::stoi(it->second); }
-  return def;
-}
-
-inline unsigned long long get_header_value_uint64(const Headers &headers, const char *key,
+inline uint64_t get_header_value_uint64(const Headers &headers, const char *key,
 								int def = 0) {
 	auto it = headers.find(key);
 	if (it != headers.end()) {
