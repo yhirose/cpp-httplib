@@ -72,8 +72,8 @@ TEST(GetHeaderValueTest, DefaultValue) {
 
 TEST(GetHeaderValueTest, DefaultValueInt) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_int(headers, "Content-Length", 100);
-  EXPECT_EQ(100, val);
+  auto val = detail::get_header_value_uint64(headers, "Content-Length", 100);
+  EXPECT_EQ(100ull, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue) {
@@ -84,8 +84,8 @@ TEST(GetHeaderValueTest, RegularValue) {
 
 TEST(GetHeaderValueTest, RegularValueInt) {
   Headers headers = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_int(headers, "Content-Length", 0);
-  EXPECT_EQ(100, val);
+  auto val = detail::get_header_value_uint64(headers, "Content-Length", 0);
+  EXPECT_EQ(100ull, val);
 }
 
 TEST(GetHeaderValueTest, Range) {
@@ -474,7 +474,7 @@ protected:
                EXPECT_EQ("value3", req.get_param_value("array", 2));
              })
         .Post("/validate-no-multiple-headers",
-              [&](const Request &req, Response &res) {
+              [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(1u, req.get_header_value_count("Content-Length"));
                 EXPECT_EQ("5", req.get_header_value("Content-Length"));
               })
