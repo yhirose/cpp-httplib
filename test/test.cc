@@ -1288,6 +1288,56 @@ TEST_F(ServerUpDownTest, QuickStartStop) {
   // --gtest_filter=ServerUpDownTest.QuickStartStop --gtest_repeat=1000
 }
 
+class PayloadMaxLengthTest : public ::testing::Test {
+protected:
+  PayloadMaxLengthTest()
+      : cli_(HOST, PORT)
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        ,
+        svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
+#endif
+  {
+  }
+
+  virtual void SetUp() {
+    svr_.set_payload_max_length(8);
+
+    svr_.Post("/test", [&](const Request & /*req*/, Response &res) {
+      res.set_content("test", "text/plain");
+    });
+
+    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
+
+    while (!svr_.is_running()) {
+      msleep(1);
+    }
+  }
+
+  virtual void TearDown() {
+    svr_.stop();
+    t_.join();
+  }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli_;
+  SSLServer svr_;
+#else
+  Client cli_;
+  Server svr_;
+#endif
+  thread t_;
+};
+
+TEST_F(PayloadMaxLengthTest, ExceedLimit) {
+  auto res = cli_.Post("/test", "123456789", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(413, res->status);
+
+  res = cli_.Post("/test", "12345678", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(SSLClientTest, ServerNameIndication) {
   SSLClient cli("httpbin.org", 443);
