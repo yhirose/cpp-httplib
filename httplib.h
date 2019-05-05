@@ -324,8 +324,12 @@ public:
                                   const std::string &body,
                                   const char *content_type);
 
-  std::shared_ptr<Response> Delete(const char *path);
-  std::shared_ptr<Response> Delete(const char *path, const Headers &headers);
+  std::shared_ptr<Response> Delete(const char *path,
+                                   const std::string &body = std::string(),
+                                   const char *content_type = nullptr);
+  std::shared_ptr<Response> Delete(const char *path, const Headers &headers,
+                                   const std::string &body = std::string(),
+                                   const char *content_type = nullptr);
 
   std::shared_ptr<Response> Options(const char *path);
   std::shared_ptr<Response> Options(const char *path, const Headers &headers);
@@ -2147,16 +2151,23 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
   return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::Delete(const char *path) {
-  return Delete(path, Headers());
+inline std::shared_ptr<Response> Client::Delete(const char *path,
+                                                const std::string &body,
+                                                const char *content_type) {
+  return Delete(path, Headers(), body, content_type);
 }
 
 inline std::shared_ptr<Response> Client::Delete(const char *path,
-                                                const Headers &headers) {
+                                                const Headers &headers,
+                                                const std::string &body,
+                                                const char *content_type) {
   Request req;
   req.method = "DELETE";
-  req.path = path;
   req.headers = headers;
+  req.path = path;
+
+  if (content_type) { req.headers.emplace("Content-Type", content_type); }
+  req.body = body;
 
   auto res = std::make_shared<Response>();
 
