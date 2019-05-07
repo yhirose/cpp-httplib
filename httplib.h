@@ -74,6 +74,7 @@ typedef int socket_t;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <openssl/x509v3.h>
 #endif
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -394,13 +395,24 @@ public:
 
   virtual bool is_valid() const;
 
+  void set_ca_cert_path(const char *ca_cert_path);
+  void skip_server_certificate_verification(bool skip);
+
+  long get_openssl_verify_result() const;
+
 private:
   virtual bool read_and_close_socket(socket_t sock, Request &req,
                                      Response &res);
   virtual bool is_ssl() const;
 
+  bool check_host(const std::string &host, const char *pattern) const;
+  bool verify_host(const std::string &host, X509 *server_cert) const;
+
+  std::string ca_cert_path_;
+  bool skip_server_certificate_verification_ = true;
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
+  long verify_result_ = 0;
 };
 #endif
 
@@ -1727,7 +1739,8 @@ inline bool Server::listen_internal() {
         std::lock_guard<std::mutex> guard(running_threads_mutex_);
         running_threads_--;
       }
-    }).detach();
+    })
+        .detach();
   }
 
   // TODO: Use thread pool...
@@ -2214,40 +2227,40 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
   auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
   SSL_set_bio(ssl, bio, bio);
 
-  setup(ssl);
-
-  SSL_connect_or_accept(ssl);
+  if (!setup(ssl)) { return false; }
 
   bool ret = false;
 
-  if (keep_alive_max_count > 0) {
-    auto count = keep_alive_max_count;
-    while (count > 0 &&
-           detail::select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
-                               CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
+  if (SSL_connect_or_accept(ssl) == 1) {
+    if (keep_alive_max_count > 0) {
+      auto count = keep_alive_max_count;
+      while (count > 0 &&
+             detail::select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
+                                 CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0) {
+        SSLSocketStream strm(sock, ssl);
+        auto last_connection = count == 1;
+        auto connection_close = false;
+
+        ret = callback(strm, last_connection, connection_close);
+        if (!ret || connection_close) { break; }
+
+        count--;
+      }
+    } else {
       SSLSocketStream strm(sock, ssl);
-      auto last_connection = count == 1;
-      auto connection_close = false;
-
-      ret = callback(strm, last_connection, connection_close);
-      if (!ret || connection_close) { break; }
-
-      count--;
+      auto dummy_connection_close = false;
+      ret = callback(strm, true, dummy_connection_close);
     }
-  } else {
-    SSLSocketStream strm(sock, ssl);
-    auto dummy_connection_close = false;
-    ret = callback(strm, true, dummy_connection_close);
+
+    SSL_shutdown(ssl);
+
+    {
+      std::lock_guard<std::mutex> guard(ctx_mutex);
+      SSL_free(ssl);
+    }
+
+    close_socket(sock);
   }
-
-  SSL_shutdown(ssl);
-
-  {
-    std::lock_guard<std::mutex> guard(ctx_mutex);
-    SSL_free(ssl);
-  }
-
-  close_socket(sock);
 
   return ret;
 }
@@ -2321,7 +2334,7 @@ inline bool SSLServer::is_valid() const { return ctx_; }
 inline bool SSLServer::read_and_close_socket(socket_t sock) {
   return detail::read_and_close_socket_ssl(
       sock, keep_alive_max_count_, ctx_, ctx_mutex_, SSL_accept,
-      [](SSL * /*ssl*/) {},
+      [](SSL * /*ssl*/) { return true; },
       [this](Stream &strm, bool last_connection, bool &connection_close) {
         return process_request(strm, last_connection, connection_close);
       });
@@ -2339,12 +2352,55 @@ inline SSLClient::~SSLClient() {
 
 inline bool SSLClient::is_valid() const { return ctx_; }
 
+inline void SSLClient::set_ca_cert_path(const char *ca_cert_path) {
+  ca_cert_path_ = ca_cert_path;
+}
+
+inline void SSLClient::skip_server_certificate_verification(bool skip) {
+  skip_server_certificate_verification_ = skip;
+}
+
+inline long SSLClient::get_openssl_verify_result() const {
+  return verify_result_;
+}
+
 inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
                                              Response &res) {
+
   return is_valid() &&
          detail::read_and_close_socket_ssl(
-             sock, 0, ctx_, ctx_mutex_, SSL_connect,
-             [&](SSL *ssl) { SSL_set_tlsext_host_name(ssl, host_.c_str()); },
+             sock, 0, ctx_, ctx_mutex_,
+             [&](SSL *ssl) {
+               if (ca_cert_path_.empty()) {
+                 SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
+               } else {
+                 if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_path_.c_str(),
+                                                    nullptr)) {
+                   return false;
+                 }
+                 SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
+               }
+
+               if (SSL_connect(ssl) != 1) { return false; }
+
+               if (!skip_server_certificate_verification_) {
+                 verify_result_ = SSL_get_verify_result(ssl);
+
+                 if (verify_result_ != X509_V_OK) { return false; }
+
+                 auto server_cert = SSL_get_peer_certificate(ssl);
+
+                 if (server_cert == nullptr) { return false; }
+
+                 if (!verify_host(host_, server_cert)) { return false; }
+               }
+
+               return true;
+             },
+             [&](SSL *ssl) {
+               SSL_set_tlsext_host_name(ssl, host_.c_str());
+               return true;
+             },
              [&](Stream &strm, bool /*last_connection*/,
                  bool &connection_close) {
                return process_request(strm, req, res, connection_close);
@@ -2352,6 +2408,109 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
 }
 
 inline bool SSLClient::is_ssl() const { return true; }
+
+inline bool SSLClient::check_host(const std::string &host,
+                                  const char *pattern) const {
+  printf("host: %s, pattern: %s\n", host.c_str(), pattern);
+  // TODO: Wildcard
+  return host == pattern;
+}
+
+inline bool SSLClient::verify_host(const std::string &host,
+                                   X509 *server_cert) const {
+  /* Quote from RFC2818 section 3.1 "Server Identity"
+
+     If a subjectAltName extension of type dNSName is present, that MUST
+     be used as the identity. Otherwise, the (most specific) Common Name
+     field in the Subject field of the certificate MUST be used. Although
+     the use of the Common Name is existing practice, it is deprecated and
+     Certification Authorities are encouraged to use the dNSName instead.
+
+     Matching is performed using the matching rules specified by
+     [RFC2459].  If more than one identity of a given type is present in
+     the certificate (e.g., more than one dNSName name, a match in any one
+     of the set is considered acceptable.) Names may contain the wildcard
+     character * which is considered to match any single domain name
+     component or component fragment. E.g., *.a.com matches foo.a.com but
+     not bar.foo.a.com. f*.com matches foo.com but not bar.com.
+
+     In some cases, the URI is specified as an IP address rather than a
+     hostname. In this case, the iPAddress subjectAltName must be present
+     in the certificate and must exactly match the IP in the URI.
+
+  */
+  auto matched = false;
+
+  // Subject Alt Name check
+  {
+    struct in6_addr addr6;
+    struct in_addr addr;
+    size_t addrlen = 0;
+    auto target = GEN_DNS;
+
+    if (inet_pton(AF_INET6, host.c_str(), &addr6)) {
+      target = GEN_IPADD;
+      addrlen = sizeof(struct in6_addr);
+    } else if (inet_pton(AF_INET, host.c_str(), &addr)) {
+      target = GEN_IPADD;
+      addrlen = sizeof(struct in_addr);
+    }
+
+    auto alt_names =
+        X509_get_ext_d2i(server_cert, NID_subject_alt_name, NULL, NULL);
+
+    if (alt_names) {
+      auto dnsmatched = false;
+      auto ipmatched = false;
+
+      auto numalts = sk_GENERAL_NAME_num(alt_names);
+
+      for (auto i = 0; (i < numalts) && !dnsmatched; i++) {
+        auto val = sk_GENERAL_NAME_value(alt_names, i);
+        if (val->type == target) {
+          auto alt_name = (const char *)ASN1_STRING_data(val->d.ia5);
+          auto alt_name_len = (size_t)ASN1_STRING_length(val->d.ia5);
+
+          if (strlen(alt_name) == alt_name_len) {
+            switch (target) {
+            case GEN_DNS: /* name/pattern comparison */
+              dnsmatched = check_host(host, alt_name);
+              break;
+
+            case GEN_IPADD: /* IP address comparison */
+              if (!memcmp(&addr6, alt_name, addrlen) ||
+                  !memcmp(&addr, alt_name, addrlen)) {
+                ipmatched = true;
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      if (dnsmatched || ipmatched) { matched = true; }
+    }
+
+    GENERAL_NAMES_free((STACK_OF(GENERAL_NAME) *)alt_names);
+  }
+
+  if (!matched) {
+    // Common Name check
+    {
+      const auto subject_name = X509_get_subject_name(server_cert);
+
+      if (subject_name == nullptr) { return false; }
+
+      char common_name[BUFSIZ];
+      auto common_name_len = X509_NAME_get_text_by_NID(
+          subject_name, NID_commonName, common_name, sizeof(common_name));
+
+      if (common_name_len != -1) { matched = check_host(host, common_name); }
+    }
+  }
+
+  return matched;
+}
 #endif
 
 } // namespace httplib
