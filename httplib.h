@@ -2422,8 +2422,8 @@ inline bool SSLClient::is_ssl() const { return true; }
 
 inline bool SSLClient::check_host(const std::string &host,
                                   const char *pattern) const {
-  printf("host: %s, pattern: %s\n", host.c_str(), pattern);
   // TODO: Wildcard
+  // printf("host: %s, pattern: %s\n", host.c_str(), pattern);
   return host == pattern;
 }
 
