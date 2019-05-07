@@ -851,6 +851,16 @@ inline bool read_content_with_length(Stream &strm, std::string &out, size_t len,
   return true;
 }
 
+inline void skip_content_with_length(Stream &strm, size_t len) {
+  char buf[BUFSIZ];
+  size_t r = 0;
+  while (r < len) {
+    auto n = strm.read(buf, BUFSIZ);
+    if (n <= 0) { return; }
+    r += n;
+  }
+}
+
 inline bool read_content_without_length(Stream &strm, std::string &out) {
   for (;;) {
     char byte;
@@ -920,6 +930,7 @@ bool read_content(Stream &strm, T &x, uint64_t payload_max_length,
         (sizeof(size_t) < sizeof(uint64_t) &&
          len > std::numeric_limits<size_t>::max())) {
       exceed_payload_max_length = true;
+      skip_content_with_length(strm, len);
       return false;
     }
 
