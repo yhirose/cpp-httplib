@@ -17,7 +17,7 @@ int main(void) {
   httplib::SSLClient cli("localhost", 8080);
   // httplib::SSLClient cli("google.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
-  cli.skip_server_certificate_verification(true);
+  cli.enable_server_certificate_verification(true);
 #else
   httplib::Client cli("localhost", 8080);
 #endif

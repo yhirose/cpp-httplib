@@ -396,7 +396,7 @@ public:
   virtual bool is_valid() const;
 
   void set_ca_cert_path(const char *ca_cert_path);
-  void skip_server_certificate_verification(bool skip);
+  void enable_server_certificate_verification(bool enabled);
 
   long get_openssl_verify_result() const;
 
@@ -409,7 +409,7 @@ private:
   bool verify_host(const std::string &host, X509 *server_cert) const;
 
   std::string ca_cert_path_;
-  bool skip_server_certificate_verification_ = true;
+  bool server_certificate_verification_ = false;
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
   long verify_result_ = 0;
@@ -2367,8 +2367,8 @@ inline void SSLClient::set_ca_cert_path(const char *ca_cert_path) {
   ca_cert_path_ = ca_cert_path;
 }
 
-inline void SSLClient::skip_server_certificate_verification(bool skip) {
-  skip_server_certificate_verification_ = skip;
+inline void SSLClient::enable_server_certificate_verification(bool enabled) {
+  server_certificate_verification_ = enabled;
 }
 
 inline long SSLClient::get_openssl_verify_result() const {
@@ -2394,7 +2394,7 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
 
                if (SSL_connect(ssl) != 1) { return false; }
 
-               if (!skip_server_certificate_verification_) {
+               if (server_certificate_verification_) {
                  verify_result_ = SSL_get_verify_result(ssl);
 
                  if (verify_result_ != X509_V_OK) { return false; }

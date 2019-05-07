@@ -209,6 +209,8 @@ SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcry
 SSLServer svr("./cert.pem", "./key.pem");
 
 SSLClient cli("localhost", 8080);
+cli.set_ca_cert_path("./ca-bundle.crt");
+cli.enable_server_certificate_verification(true);
 ```
 
 Zlib Support
