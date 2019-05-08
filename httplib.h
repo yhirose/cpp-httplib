@@ -405,15 +405,16 @@ private:
                                      Response &res);
   virtual bool is_ssl() const;
 
-  bool check_host_name(const std::string &host, const char *pattern) const;
-  bool check_subject_alt_name(const std::string &host, X509 *server_cert) const;
-  bool check_common_name(const std::string &host, X509 *server_cert) const;
-  bool verify_host(const std::string &host, X509 *server_cert) const;
+  bool verify_host(X509 *server_cert) const;
+  bool verify_host_with_subject_alt_name(X509 *server_cert) const;
+  bool verify_host_with_common_name(X509 *server_cert) const;
+  bool check_host_name(const char *pattern, size_t pattern_len) const;
 
-  std::string ca_cert_path_;
-  bool server_certificate_verification_ = false;
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
+  std::vector<std::string> host_components_;
+  std::string ca_cert_path_;
+  bool server_certificate_verification_ = false;
   long verify_result_ = 0;
 };
 #endif
@@ -2356,6 +2357,11 @@ inline bool SSLServer::read_and_close_socket(socket_t sock) {
 inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec)
     : Client(host, port, timeout_sec) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
+
+  detail::split(&host_[0], &host_[host_.size()], '.',
+                [&](const char *b, const char *e) {
+                  host_components_.emplace_back(std::string(b, e));
+                });
 }
 
 inline SSLClient::~SSLClient() {
@@ -2404,7 +2410,7 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
 
                  if (server_cert == nullptr) { return false; }
 
-                 if (!verify_host(host_, server_cert)) { return false; }
+                 if (!verify_host(server_cert)) { return false; }
                }
 
                return true;
@@ -2421,86 +2427,7 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
 
 inline bool SSLClient::is_ssl() const { return true; }
 
-inline bool SSLClient::check_host_name(const std::string &host,
-                                       const char *pattern) const {
-  // TODO: Support wildcard match
-  // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
-  return host == pattern;
-}
-
-inline bool SSLClient::check_subject_alt_name(const std::string &host,
-                                              X509 *server_cert) const {
-  auto ret = false;
-
-  auto type = GEN_DNS;
-
-  struct in6_addr addr6;
-  struct in_addr addr;
-  size_t addr_len = 0;
-
-  if (inet_pton(AF_INET6, host.c_str(), &addr6)) {
-    type = GEN_IPADD;
-    addr_len = sizeof(struct in6_addr);
-  } else if (inet_pton(AF_INET, host.c_str(), &addr)) {
-    type = GEN_IPADD;
-    addr_len = sizeof(struct in_addr);
-  }
-
-  auto alt_names =
-      X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr);
-
-  if (alt_names) {
-    auto dsn_matched = false;
-    auto ip_mached = false;
-
-    auto alts_count = sk_GENERAL_NAME_num(alt_names);
-
-    for (auto i = 0; i < alts_count && !dsn_matched; i++) {
-      auto val = sk_GENERAL_NAME_value(alt_names, i);
-      if (val->type == type) {
-        auto alt_name = (const char *)ASN1_STRING_data(val->d.ia5);
-        auto alt_name_len = (size_t)ASN1_STRING_length(val->d.ia5);
-
-        if (strlen(alt_name) == alt_name_len) {
-          switch (type) {
-          case GEN_DNS: dsn_matched = check_host_name(host, alt_name); break;
-
-          case GEN_IPADD:
-            if (!memcmp(&addr6, alt_name, addr_len) ||
-                !memcmp(&addr, alt_name, addr_len)) {
-              ip_mached = true;
-            }
-            break;
-          }
-        }
-      }
-    }
-
-    if (dsn_matched || ip_mached) { ret = true; }
-  }
-
-  GENERAL_NAMES_free((STACK_OF(GENERAL_NAME) *)alt_names);
-
-  return ret;
-}
-
-inline bool SSLClient::check_common_name(const std::string &host,
-                                         X509 *server_cert) const {
-  const auto subject_name = X509_get_subject_name(server_cert);
-
-  if (subject_name != nullptr) {
-    char name[BUFSIZ];
-    auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
-                                              name, sizeof(name));
-
-    if (name_len != -1) { return check_host_name(host, name); }
-  }
-
-  return false;
-}
-
-inline bool SSLClient::verify_host(const std::string &host,
-                                   X509 *server_cert) const {
+inline bool SSLClient::verify_host(X509 *server_cert) const {
   /* Quote from RFC2818 section 3.1 "Server Identity"
 
      If a subjectAltName extension of type dNSName is present, that MUST
@@ -2522,8 +2449,108 @@ inline bool SSLClient::verify_host(const std::string &host,
      in the certificate and must exactly match the IP in the URI.
 
   */
-  return check_subject_alt_name(host, server_cert) ||
-         check_common_name(host, server_cert);
+  return verify_host_with_subject_alt_name(server_cert) ||
+         verify_host_with_common_name(server_cert);
+}
+
+inline bool
+SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
+  auto ret = false;
+
+  auto type = GEN_DNS;
+
+  struct in6_addr addr6;
+  struct in_addr addr;
+  size_t addr_len = 0;
+
+  if (inet_pton(AF_INET6, host_.c_str(), &addr6)) {
+    type = GEN_IPADD;
+    addr_len = sizeof(struct in6_addr);
+  } else if (inet_pton(AF_INET, host_.c_str(), &addr)) {
+    type = GEN_IPADD;
+    addr_len = sizeof(struct in_addr);
+  }
+
+  auto alt_names =
+      X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr);
+
+  if (alt_names) {
+    auto dsn_matched = false;
+    auto ip_mached = false;
+
+    auto count = sk_GENERAL_NAME_num(alt_names);
+
+    for (auto i = 0; i < count && !dsn_matched; i++) {
+      auto val = sk_GENERAL_NAME_value(alt_names, i);
+      if (val->type == type) {
+        auto name = (const char *)ASN1_STRING_data(val->d.ia5);
+        auto name_len = (size_t)ASN1_STRING_length(val->d.ia5);
+
+        if (strlen(name) == name_len) {
+          switch (type) {
+          case GEN_DNS: dsn_matched = check_host_name(name, name_len); break;
+
+          case GEN_IPADD:
+            if (!memcmp(&addr6, name, addr_len) ||
+                !memcmp(&addr, name, addr_len)) {
+              ip_mached = true;
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    if (dsn_matched || ip_mached) { ret = true; }
+  }
+
+  GENERAL_NAMES_free((STACK_OF(GENERAL_NAME) *)alt_names);
+
+  return ret;
+}
+
+inline bool SSLClient::verify_host_with_common_name(X509 *server_cert) const {
+  const auto subject_name = X509_get_subject_name(server_cert);
+
+  if (subject_name != nullptr) {
+    char name[BUFSIZ];
+    auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
+                                              name, sizeof(name));
+
+    if (name_len != -1) { return check_host_name(name, name_len); }
+  }
+
+  return false;
+}
+
+inline bool SSLClient::check_host_name(const char *pattern,
+                                       size_t pattern_len) const {
+  if (host_.size() == pattern_len && host_ == pattern) {
+    return true;
+  }
+
+  // Wildcard match
+  // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
+  std::vector<std::string> pattern_components;
+  detail::split(&pattern[0], &pattern[pattern_len], '.',
+                [&](const char *b, const char *e) {
+                  pattern_components.emplace_back(std::string(b, e));
+                });
+
+  if (host_components_.size() != pattern_components.size()) { return false; }
+
+  auto itr = pattern_components.begin();
+  for (const auto &h : host_components_) {
+    auto &p = *itr;
+    if (p != h && p != "*") {
+      auto partial_match = (p.size() > 0 && p[p.size() - 1] == '*' &&
+                            !p.compare(0, p.size() - 1, h));
+      if (!partial_match) { return false; }
+    }
+    ++itr;
+  }
+
+  return true;
 }
 #endif
 

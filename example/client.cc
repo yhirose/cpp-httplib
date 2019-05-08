@@ -16,6 +16,7 @@ int main(void) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   httplib::SSLClient cli("localhost", 8080);
   // httplib::SSLClient cli("google.com");
+  // httplib::SSLClient cli("www.youtube.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
   cli.enable_server_certificate_verification(true);
 #else

@@ -4,6 +4,7 @@
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
+#define CA_CERT_FILE "./ca-bundle.crt"
 
 #ifdef _WIN32
 #include <process.h>
@@ -1342,6 +1343,34 @@ TEST_F(PayloadMaxLengthTest, ExceedLimit) {
 TEST(SSLClientTest, ServerNameIndication) {
   SSLClient cli("httpbin.org", 443);
   auto res = cli.Get("/get");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+}
+
+TEST(SSLClientTest, ServerCertificateVerification) {
+  SSLClient cli("google.com");
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(301, res->status);
+
+  cli.enable_server_certificate_verification(true);
+  res = cli.Get("/");
+  ASSERT_TRUE(res == nullptr);
+
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(301, res->status);
+}
+
+TEST(SSLClientTest, WildcardHostNameMatch) {
+  SSLClient cli("www.youtube.com");
+
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.enable_server_certificate_verification(true);
+
+  auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 }
