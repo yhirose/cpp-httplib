@@ -405,7 +405,9 @@ private:
                                      Response &res);
   virtual bool is_ssl() const;
 
-  bool check_host(const std::string &host, const char *pattern) const;
+  bool check_host_name(const std::string &host, const char *pattern) const;
+  bool check_subject_alt_name(const std::string &host, X509 *server_cert) const;
+  bool check_common_name(const std::string &host, X509 *server_cert) const;
   bool verify_host(const std::string &host, X509 *server_cert) const;
 
   std::string ca_cert_path_;
@@ -524,7 +526,7 @@ inline int select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<long>(usec);
 
-  return select(static_cast<int>(sock + 1), &fds, NULL, NULL, &tv);
+  return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
 }
 
 inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
@@ -1725,7 +1727,7 @@ inline bool Server::listen_internal() {
       continue;
     }
 
-    socket_t sock = accept(svr_sock_, NULL, NULL);
+    socket_t sock = accept(svr_sock_, nullptr, nullptr);
 
     if (sock == INVALID_SOCKET) {
       if (svr_sock_ != INVALID_SOCKET) {
@@ -1750,8 +1752,7 @@ inline bool Server::listen_internal() {
         std::lock_guard<std::mutex> guard(running_threads_mutex_);
         running_threads_--;
       }
-    })
-        .detach();
+    }).detach();
   }
 
   // TODO: Use thread pool...
@@ -2420,11 +2421,82 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
 
 inline bool SSLClient::is_ssl() const { return true; }
 
-inline bool SSLClient::check_host(const std::string &host,
-                                  const char *pattern) const {
-  // TODO: Wildcard
-  // printf("host: %s, pattern: %s\n", host.c_str(), pattern);
+inline bool SSLClient::check_host_name(const std::string &host,
+                                       const char *pattern) const {
+  // TODO: Support wildcard match
+  // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
   return host == pattern;
+}
+
+inline bool SSLClient::check_subject_alt_name(const std::string &host,
+                                              X509 *server_cert) const {
+  auto ret = false;
+
+  auto type = GEN_DNS;
+
+  struct in6_addr addr6;
+  struct in_addr addr;
+  size_t addr_len = 0;
+
+  if (inet_pton(AF_INET6, host.c_str(), &addr6)) {
+    type = GEN_IPADD;
+    addr_len = sizeof(struct in6_addr);
+  } else if (inet_pton(AF_INET, host.c_str(), &addr)) {
+    type = GEN_IPADD;
+    addr_len = sizeof(struct in_addr);
+  }
+
+  auto alt_names =
+      X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr);
+
+  if (alt_names) {
+    auto dsn_matched = false;
+    auto ip_mached = false;
+
+    auto alts_count = sk_GENERAL_NAME_num(alt_names);
+
+    for (auto i = 0; i < alts_count && !dsn_matched; i++) {
+      auto val = sk_GENERAL_NAME_value(alt_names, i);
+      if (val->type == type) {
+        auto alt_name = (const char *)ASN1_STRING_data(val->d.ia5);
+        auto alt_name_len = (size_t)ASN1_STRING_length(val->d.ia5);
+
+        if (strlen(alt_name) == alt_name_len) {
+          switch (type) {
+          case GEN_DNS: dsn_matched = check_host_name(host, alt_name); break;
+
+          case GEN_IPADD:
+            if (!memcmp(&addr6, alt_name, addr_len) ||
+                !memcmp(&addr, alt_name, addr_len)) {
+              ip_mached = true;
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    if (dsn_matched || ip_mached) { ret = true; }
+  }
+
+  GENERAL_NAMES_free((STACK_OF(GENERAL_NAME) *)alt_names);
+
+  return ret;
+}
+
+inline bool SSLClient::check_common_name(const std::string &host,
+                                         X509 *server_cert) const {
+  const auto subject_name = X509_get_subject_name(server_cert);
+
+  if (subject_name != nullptr) {
+    char name[BUFSIZ];
+    auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
+                                              name, sizeof(name));
+
+    if (name_len != -1) { return check_host_name(host, name); }
+  }
+
+  return false;
 }
 
 inline bool SSLClient::verify_host(const std::string &host,
@@ -2450,77 +2522,8 @@ inline bool SSLClient::verify_host(const std::string &host,
      in the certificate and must exactly match the IP in the URI.
 
   */
-  auto matched = false;
-
-  // Subject Alt Name check
-  {
-    struct in6_addr addr6;
-    struct in_addr addr;
-    size_t addrlen = 0;
-    auto target = GEN_DNS;
-
-    if (inet_pton(AF_INET6, host.c_str(), &addr6)) {
-      target = GEN_IPADD;
-      addrlen = sizeof(struct in6_addr);
-    } else if (inet_pton(AF_INET, host.c_str(), &addr)) {
-      target = GEN_IPADD;
-      addrlen = sizeof(struct in_addr);
-    }
-
-    auto alt_names =
-        X509_get_ext_d2i(server_cert, NID_subject_alt_name, NULL, NULL);
-
-    if (alt_names) {
-      auto dnsmatched = false;
-      auto ipmatched = false;
-
-      auto numalts = sk_GENERAL_NAME_num(alt_names);
-
-      for (auto i = 0; (i < numalts) && !dnsmatched; i++) {
-        auto val = sk_GENERAL_NAME_value(alt_names, i);
-        if (val->type == target) {
-          auto alt_name = (const char *)ASN1_STRING_data(val->d.ia5);
-          auto alt_name_len = (size_t)ASN1_STRING_length(val->d.ia5);
-
-          if (strlen(alt_name) == alt_name_len) {
-            switch (target) {
-            case GEN_DNS: /* name/pattern comparison */
-              dnsmatched = check_host(host, alt_name);
-              break;
-
-            case GEN_IPADD: /* IP address comparison */
-              if (!memcmp(&addr6, alt_name, addrlen) ||
-                  !memcmp(&addr, alt_name, addrlen)) {
-                ipmatched = true;
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      if (dnsmatched || ipmatched) { matched = true; }
-    }
-
-    GENERAL_NAMES_free((STACK_OF(GENERAL_NAME) *)alt_names);
-  }
-
-  if (!matched) {
-    // Common Name check
-    {
-      const auto subject_name = X509_get_subject_name(server_cert);
-
-      if (subject_name == nullptr) { return false; }
-
-      char common_name[BUFSIZ];
-      auto common_name_len = X509_NAME_get_text_by_NID(
-          subject_name, NID_commonName, common_name, sizeof(common_name));
-
-      if (common_name_len != -1) { matched = check_host(host, common_name); }
-    }
-  }
-
-  return matched;
+  return check_subject_alt_name(host, server_cert) ||
+         check_common_name(host, server_cert);
 }
 #endif
 
