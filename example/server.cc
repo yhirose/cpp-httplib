@@ -111,5 +111,3 @@ int main(void) {
 
   return 0;
 }
-
-// vim: et ts=4 sw=4 cin cino={1s ff=unix

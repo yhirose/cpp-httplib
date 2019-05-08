@@ -133,5 +133,3 @@ int main(int argc, const char **argv) {
 
   return 0;
 }
-
-// vim: et ts=4 sw=4 cin cino={1s ff=unix

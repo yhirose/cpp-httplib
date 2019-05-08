@@ -17,5 +17,3 @@ int main(void) {
 
   svr.listen("localhost", 1234);
 }
-
-// vim: et ts=4 sw=4 cin cino={1s ff=unix

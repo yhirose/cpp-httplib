@@ -2557,5 +2557,3 @@ inline bool SSLClient::check_host_name(const char *pattern,
 } // namespace httplib
 
 #endif // CPPHTTPLIB_HTTPLIB_H
-
-// vim: et ts=4 sw=4 cin cino={1s ff=unix

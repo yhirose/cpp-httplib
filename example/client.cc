@@ -32,12 +32,10 @@ int main(void) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto result = cli.get_openssl_verify_result();
     if (result) {
-        cout << "verify error: " << X509_verify_cert_error_string(result) << endl;
+      cout << "verify error: " << X509_verify_cert_error_string(result) << endl;
     }
 #endif
   }
 
   return 0;
 }
-
-// vim: et ts=4 sw=4 cin cino={1s ff=unix
