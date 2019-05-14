@@ -88,7 +88,7 @@ typedef int socket_t;
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
 #define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
 #define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
-#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH std::numeric_limits<uint64_t>::max()
+#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH std::numeric_limits<size_t>::max()
 
 namespace httplib {
 
