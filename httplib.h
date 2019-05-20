@@ -2125,7 +2125,7 @@ Client::Post(const char *path, const Headers &headers, const Params &params) {
     if (it != params.begin()) { query += "&"; }
     query += it->first;
     query += "=";
-    query += it->second;
+    query += detail::encode_url(it->second);
   }
 
   return Post(path, headers, query, "application/x-www-form-urlencoded");
