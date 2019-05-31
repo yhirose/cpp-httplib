@@ -2472,7 +2472,8 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
   }
 
   auto alt_names =
-      X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr);
+    static_cast<const struct stack_st_GENERAL_NAME *>(
+      X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr));
 
   if (alt_names) {
     auto dsn_matched = false;
