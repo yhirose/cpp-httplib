@@ -2232,15 +2232,27 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
   SSL *ssl = nullptr;
   {
     std::lock_guard<std::mutex> guard(ctx_mutex);
-
     ssl = SSL_new(ctx);
-    if (!ssl) { return false; }
+  }
+
+  if (!ssl) {
+    close_socket(sock);
+    return false;
   }
 
   auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
   SSL_set_bio(ssl, bio, bio);
 
-  if (!setup(ssl)) { return false; }
+  if (!setup(ssl)) {
+    SSL_shutdown(ssl);
+    {
+      std::lock_guard<std::mutex> guard(ctx_mutex);
+      SSL_free(ssl);
+    }
+
+    close_socket(sock);
+    return false;
+  }
 
   bool ret = false;
 
@@ -2264,16 +2276,15 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
       auto dummy_connection_close = false;
       ret = callback(strm, true, dummy_connection_close);
     }
-
-    SSL_shutdown(ssl);
-
-    {
-      std::lock_guard<std::mutex> guard(ctx_mutex);
-      SSL_free(ssl);
-    }
-
-    close_socket(sock);
   }
+
+  SSL_shutdown(ssl);
+  {
+    std::lock_guard<std::mutex> guard(ctx_mutex);
+    SSL_free(ssl);
+  }
+
+  close_socket(sock);
 
   return ret;
 }
