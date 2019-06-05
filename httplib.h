@@ -374,7 +374,7 @@ private:
 
 class SSLServer : public Server {
 public:
-  SSLServer(const char *cert_path, const char *private_key_path, const char *client_cert_path);
+  SSLServer(const char *cert_path, const char *private_key_path, const char *client_cert_path, const char *trusted_cert_path);
 
   virtual ~SSLServer();
 
@@ -386,6 +386,7 @@ private:
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
   const char *client_cert_path_;
+  const char *trusted_cert_path_;
 };
 
 class SSLClient : public Client {
@@ -2230,7 +2231,8 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
                           // The upcoming 1.1.0 is going to be thread safe.
                           SSL_CTX *ctx, std::mutex &ctx_mutex,
                           U SSL_connect_or_accept, V setup, T callback,
-                          const char* client_cert_path = nullptr) {
+                          const char* client_cert_path = nullptr,
+                          const char* trusted_cert_path = nullptr) {
   SSL *ssl = nullptr;
   {
     std::lock_guard<std::mutex> guard(ctx_mutex);
@@ -2256,11 +2258,14 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
     return false;
   }
 
-  if(client_cert_path){
+  if(trusted_cert_path && client_cert_path){
     STACK_OF(X509_NAME)* list;
+    //list of client CAs to request from client
     list = SSL_load_client_CA_file(client_cert_path);
     SSL_set_client_CA_list(ssl, list);
-    SSL_CTX_load_verify_locations(ctx,client_cert_path,nullptr);
+    //certificate chain to verify received client certificate against
+    //please run c_rehash in the cert folder first
+    SSL_CTX_load_verify_locations(ctx,client_cert_path,trusted_cert_path);
   }
 
   bool ret = false;
@@ -2337,8 +2342,10 @@ inline std::string SSLSocketStream::get_remote_addr() const {
 // SSL HTTP server implementation
 inline SSLServer::SSLServer(const char *cert_path,
                             const char *private_key_path,
-                            const char *client_cert_path = nullptr)
-  : client_cert_path_(client_cert_path){
+                            const char *client_cert_path = nullptr,
+                            const char *trusted_cert_path = nullptr)
+  : client_cert_path_(client_cert_path),
+    trusted_cert_path_(trusted_cert_path){
   ctx_ = SSL_CTX_new(SSLv23_server_method());
 
   if (ctx_) {
@@ -2356,7 +2363,7 @@ inline SSLServer::SSLServer(const char *cert_path,
             1) {
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
-    } else if(client_cert_path_) {
+    } else if(client_cert_path_ && trusted_cert_path_) {
       SSL_CTX_set_verify(ctx_,
         SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, //SSL_VERIFY_CLIENT_ONCE,
         nullptr
@@ -2378,7 +2385,8 @@ inline bool SSLServer::read_and_close_socket(socket_t sock) {
       [this](Stream &strm, bool last_connection, bool &connection_close) {
         return process_request(strm, last_connection, connection_close);
       },
-      client_cert_path_);
+      client_cert_path_,
+      trusted_cert_path_);
 }
 
 // SSL HTTP client implementation
