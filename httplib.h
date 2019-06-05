@@ -391,7 +391,8 @@ private:
 
 class SSLClient : public Client {
 public:
-  SSLClient(const char *host, int port = 443, time_t timeout_sec = 300);
+  SSLClient(const char *host, int port = 443, time_t timeout_sec = 300,
+            const char *client_cert_path = nullptr, const char *client_key_path = nullptr);
 
   virtual ~SSLClient();
 
@@ -2390,7 +2391,8 @@ inline bool SSLServer::read_and_close_socket(socket_t sock) {
 }
 
 // SSL HTTP client implementation
-inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec)
+inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec,
+                            const char *client_cert_path, const char *client_key_path)
     : Client(host, port, timeout_sec) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
 
@@ -2398,6 +2400,13 @@ inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec)
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(std::string(b, e));
                 });
+  if(client_cert_path && client_key_path) {
+    if (SSL_CTX_use_certificate_file(ctx_, client_cert_path, SSL_FILETYPE_PEM) != 1
+      ||SSL_CTX_use_PrivateKey_file(ctx_, client_key_path, SSL_FILETYPE_PEM) != 1) {
+      SSL_CTX_free(ctx_);
+      ctx_ = nullptr;
+    }
+  }
 }
 
 inline SSLClient::~SSLClient() {
