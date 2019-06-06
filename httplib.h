@@ -2259,7 +2259,7 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
     return false;
   }
 
-  if(trusted_cert_path && client_cert_path){
+  if(client_cert_path){
     STACK_OF(X509_NAME)* list;
     //list of client CAs to request from client
     list = SSL_load_client_CA_file(client_cert_path);
@@ -2272,6 +2272,11 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
   bool ret = false;
 
   if (SSL_connect_or_accept(ssl) == 1) {
+    /*
+    auto client_cert = SSL_get_peer_certificate(ssl);
+    if(client_cert)
+      printf("Connected client: %s\n", client_cert->name);
+    */
     if (keep_alive_max_count > 0) {
       auto count = keep_alive_max_count;
       while (count > 0 &&
@@ -2364,7 +2369,7 @@ inline SSLServer::SSLServer(const char *cert_path,
             1) {
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
-    } else if(client_cert_path_ && trusted_cert_path_) {
+    } else if(client_cert_path_) {
       SSL_CTX_set_verify(ctx_,
         SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, //SSL_VERIFY_CLIENT_ONCE,
         nullptr
