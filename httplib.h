@@ -87,6 +87,8 @@ typedef int socket_t;
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
 #define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
+#define CPPHTTPLIB_READ_TIMEOUT_SECOND 5
+#define CPPHTTPLIB_READ_TIMEOUT_USECOND 0
 #define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH std::numeric_limits<size_t>::max()
 
@@ -379,7 +381,9 @@ private:
 
 class SSLServer : public Server {
 public:
-  SSLServer(const char *cert_path, const char *private_key_path, const char *client_CA_cert_path, const char *trusted_cert_path);
+  SSLServer(const char *cert_path, const char *private_key_path,
+            const char *client_ca_cert_file_path = nullptr,
+            const char *client_ca_cert_dir_path = nullptr);
 
   virtual ~SSLServer();
 
@@ -390,20 +394,20 @@ private:
 
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
-  const char *client_CA_cert_path_;
-  const char *trusted_cert_path_;
 };
 
 class SSLClient : public Client {
 public:
   SSLClient(const char *host, int port = 443, time_t timeout_sec = 300,
-            const char *client_cert_path = nullptr, const char *client_key_path = nullptr);
+            const char *client_cert_path = nullptr,
+            const char *client_key_path = nullptr);
 
   virtual ~SSLClient();
 
   virtual bool is_valid() const;
 
-  void set_ca_cert_path(const char *ca_cert_path);
+  void set_ca_cert_path(const char *ca_ceert_file_path,
+                        const char *ca_cert_dir_path = nullptr);
   void enable_server_certificate_verification(bool enabled);
 
   long get_openssl_verify_result() const;
@@ -421,7 +425,8 @@ private:
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
   std::vector<std::string> host_components_;
-  std::string ca_cert_path_;
+  std::string ca_cert_file_path_;
+  std::string ca_cert_dir_path_;
   bool server_certificate_verification_ = false;
   long verify_result_ = 0;
 };
@@ -1440,7 +1445,11 @@ inline SocketStream::SocketStream(socket_t sock) : sock_(sock) {}
 inline SocketStream::~SocketStream() {}
 
 inline int SocketStream::read(char *ptr, size_t size) {
-  return recv(sock_, ptr, static_cast<int>(size), 0);
+  if (detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
+                          CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
+    return recv(sock_, ptr, static_cast<int>(size), 0);
+  }
+  return -1;
 }
 
 inline int SocketStream::write(const char *ptr, size_t size) {
@@ -2241,9 +2250,7 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
                           // TODO: OpenSSL 1.0.2 occasionally crashes...
                           // The upcoming 1.1.0 is going to be thread safe.
                           SSL_CTX *ctx, std::mutex &ctx_mutex,
-                          U SSL_connect_or_accept, V setup, T callback,
-                          const char* client_CA_cert_path = nullptr,
-                          const char* trusted_cert_path = nullptr) {
+                          U SSL_connect_or_accept, V setup, T callback) {
   SSL *ssl = nullptr;
   {
     std::lock_guard<std::mutex> guard(ctx_mutex);
@@ -2267,16 +2274,6 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
 
     close_socket(sock);
     return false;
-  }
-
-  if(client_CA_cert_path){
-    STACK_OF(X509_NAME)* list;
-    //list of client CAs to request from client
-    list = SSL_load_client_CA_file(client_CA_cert_path);
-    SSL_set_client_CA_list(ssl, list);
-    //certificate chain to verify received client certificate against
-    //please run c_rehash in the cert folder first
-    SSL_CTX_load_verify_locations(ctx,client_CA_cert_path,trusted_cert_path);
   }
 
   bool ret = false;
@@ -2340,7 +2337,12 @@ inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl)
 inline SSLSocketStream::~SSLSocketStream() {}
 
 inline int SSLSocketStream::read(char *ptr, size_t size) {
-  return SSL_read(ssl_, ptr, size);
+  if (SSL_pending(ssl_) > 0 ||
+      detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
+                          CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
+    return SSL_read(ssl_, ptr, size);
+  }
+  return -1;
 }
 
 inline int SSLSocketStream::write(const char *ptr, size_t size) {
@@ -2361,12 +2363,9 @@ inline std::string SSLSocketStream::get_name() const {
 }
 
 // SSL HTTP server implementation
-inline SSLServer::SSLServer(const char *cert_path,
-                            const char *private_key_path,
-                            const char *client_CA_cert_path = nullptr,
-                            const char *trusted_cert_path = nullptr)
-  : client_CA_cert_path_(client_CA_cert_path),
-    trusted_cert_path_(trusted_cert_path){
+inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
+                            const char *client_ca_cert_file_path,
+                            const char *client_ca_cert_dir_path) {
   ctx_ = SSL_CTX_new(SSLv23_server_method());
 
   if (ctx_) {
@@ -2384,11 +2383,20 @@ inline SSLServer::SSLServer(const char *cert_path,
             1) {
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
-    } else if(client_CA_cert_path_) {
-      SSL_CTX_set_verify(ctx_,
-        SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, //SSL_VERIFY_CLIENT_ONCE,
-        nullptr
-      );
+    } else if (client_ca_cert_file_path || client_ca_cert_dir_path) {
+      // if (client_ca_cert_file_path) {
+      //   auto list = SSL_load_client_CA_file(client_ca_cert_file_path);
+      //   SSL_CTX_set_client_CA_list(ctx_, list);
+      // }
+
+      SSL_CTX_load_verify_locations(ctx_, client_ca_cert_file_path,
+                                    client_ca_cert_dir_path);
+
+      SSL_CTX_set_verify(
+          ctx_,
+          SSL_VERIFY_PEER |
+              SSL_VERIFY_FAIL_IF_NO_PEER_CERT, // SSL_VERIFY_CLIENT_ONCE,
+          nullptr);
     }
   }
 }
@@ -2408,14 +2416,13 @@ inline bool SSLServer::read_and_close_socket(socket_t sock) {
         Response res;
         req.X509_name = strm.get_name();
         return process_request(strm, last_connection, connection_close, req, res);
-      },
-      client_CA_cert_path_,
-      trusted_cert_path_);
+      });
 }
 
 // SSL HTTP client implementation
 inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec,
-                            const char *client_cert_path, const char *client_key_path)
+                            const char *client_cert_path,
+                            const char *client_key_path)
     : Client(host, port, timeout_sec) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
 
@@ -2423,9 +2430,11 @@ inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec,
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(std::string(b, e));
                 });
-  if(client_cert_path && client_key_path) {
-    if (SSL_CTX_use_certificate_file(ctx_, client_cert_path, SSL_FILETYPE_PEM) != 1
-      ||SSL_CTX_use_PrivateKey_file(ctx_, client_key_path, SSL_FILETYPE_PEM) != 1) {
+  if (client_cert_path && client_key_path) {
+    if (SSL_CTX_use_certificate_file(ctx_, client_cert_path,
+                                     SSL_FILETYPE_PEM) != 1 ||
+        SSL_CTX_use_PrivateKey_file(ctx_, client_key_path, SSL_FILETYPE_PEM) !=
+            1) {
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
     }
@@ -2438,8 +2447,10 @@ inline SSLClient::~SSLClient() {
 
 inline bool SSLClient::is_valid() const { return ctx_; }
 
-inline void SSLClient::set_ca_cert_path(const char *ca_cert_path) {
-  ca_cert_path_ = ca_cert_path;
+inline void SSLClient::set_ca_cert_path(const char *ca_cert_file_path,
+                                        const char *ca_cert_dir_path) {
+  if (ca_cert_file_path) { ca_cert_file_path_ = ca_cert_file_path; }
+  if (ca_cert_dir_path) { ca_cert_dir_path_ = ca_cert_dir_path; }
 }
 
 inline void SSLClient::enable_server_certificate_verification(bool enabled) {
@@ -2457,11 +2468,11 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
          detail::read_and_close_socket_ssl(
              sock, 0, ctx_, ctx_mutex_,
              [&](SSL *ssl) {
-               if (ca_cert_path_.empty()) {
+               if (ca_cert_file_path_.empty()) {
                  SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
                } else {
-                 if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_path_.c_str(),
-                                                    nullptr)) {
+                 if (!SSL_CTX_load_verify_locations(
+                         ctx_, ca_cert_file_path_.c_str(), nullptr)) {
                    return false;
                  }
                  SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
@@ -2539,8 +2550,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
     addr_len = sizeof(struct in_addr);
   }
 
-  auto alt_names =
-    static_cast<const struct stack_st_GENERAL_NAME *>(
+  auto alt_names = static_cast<const struct stack_st_GENERAL_NAME *>(
       X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr));
 
   if (alt_names) {
@@ -2594,9 +2604,7 @@ inline bool SSLClient::verify_host_with_common_name(X509 *server_cert) const {
 
 inline bool SSLClient::check_host_name(const char *pattern,
                                        size_t pattern_len) const {
-  if (host_.size() == pattern_len && host_ == pattern) {
-    return true;
-  }
+  if (host_.size() == pattern_len && host_ == pattern) { return true; }
 
   // Wildcard match
   // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
