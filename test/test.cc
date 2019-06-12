@@ -5,6 +5,10 @@
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
 #define CA_CERT_FILE "./ca-bundle.crt"
+#define CLIENT_CA_CERT_FILE "./rootCA.cert.pem"
+#define CLIENT_CERT_FILE "./client.cert.pem"
+#define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
+#define TRUST_CERT_DIR "."
 
 #ifdef _WIN32
 #include <process.h>
@@ -1374,6 +1378,70 @@ TEST(SSLClientTest, WildcardHostNameMatch) {
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 }
+
+TEST(SSLClientServerTest, ClientCertPresent) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE, TRUST_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &, Response &res){
+      res.set_content("test", "text/plain");
+      svr.stop();
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+
+  httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+
+  t.join();
+}
+
+TEST(SSLClientServerTest, ClientCertMissing) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE, TRUST_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &, Response &res){
+      res.set_content("test", "text/plain");
+      svr.stop();
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+
+  httplib::SSLClient cli(HOST, PORT, 30);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res == nullptr);
+
+  svr.stop();
+
+  t.join();
+}
+
+TEST(SSLClientServerTest, TrustDirOptional) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &, Response &res){
+      res.set_content("test", "text/plain");
+      svr.stop();
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+
+  httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+
+  t.join();
+}
+
+/* Cannot test this case as there is no external access to SSL object to check SSL_get_peer_certificate() == NULL
+TEST(SSLClientServerTest, ClientCAPathRequired) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, nullptr, TRUST_CERT_DIR);
+}
+*/
 #endif
 
 #ifdef _WIN32
