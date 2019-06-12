@@ -1437,11 +1437,29 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   t.join();
 }
 
-/* Cannot test this case as there is no external access to SSL object to check SSL_get_peer_certificate() == NULL
 TEST(SSLClientServerTest, ClientCAPathRequired) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, nullptr, TRUST_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &req, Response &res){
+      res.set_content("test", "text/plain");
+      /*
+      since no client CA file was given, client certificate authentication
+      will not be enabled. Client will not send certificate, hence empty string
+       */
+      ASSERT_TRUE(req.X509_name.empty());
+      svr.stop();
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+
+  httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+
+  t.join();
 }
-*/
 #endif
 
 #ifdef _WIN32

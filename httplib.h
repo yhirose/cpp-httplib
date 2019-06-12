@@ -129,6 +129,7 @@ struct Request {
   std::string method;
   std::string target;
   std::string path;
+  std::string X509_name;
   Headers headers;
   std::string body;
   Params params;
@@ -249,6 +250,9 @@ public:
 protected:
   bool process_request(Stream &strm, bool last_connection,
                        bool &connection_close);
+  bool process_request(Stream &strm, bool last_connection,
+                       bool &connection_close,
+                       Request &req, Response &res);
 
   size_t keep_alive_max_count_;
   size_t payload_max_length_;
@@ -366,6 +370,7 @@ public:
   virtual int write(const char *ptr, size_t size);
   virtual int write(const char *ptr);
   virtual std::string get_remote_addr() const;
+  virtual std::string get_name() const;
 
 private:
   socket_t sock_;
@@ -1806,6 +1811,14 @@ inline bool Server::dispatch_request(Request &req, Response &res,
 
 inline bool Server::process_request(Stream &strm, bool last_connection,
                                     bool &connection_close) {
+  Request req;
+  Response res;
+  return process_request(strm, last_connection, connection_close, req, res);
+}
+
+inline bool Server::process_request(Stream &strm, bool last_connection,
+                                    bool &connection_close,
+                                    Request &req, Response &res) {
   const auto bufsiz = 2048;
   char buf[bufsiz];
 
@@ -1813,9 +1826,6 @@ inline bool Server::process_request(Stream &strm, bool last_connection,
 
   // Connection has been closed on client
   if (!reader.getline()) { return false; }
-
-  Request req;
-  Response res;
 
   res.version = "HTTP/1.1";
 
@@ -2345,6 +2355,11 @@ inline std::string SSLSocketStream::get_remote_addr() const {
   return detail::get_remote_addr(sock_);
 }
 
+inline std::string SSLSocketStream::get_name() const {
+  X509 *peer_cert = SSL_get_peer_certificate(ssl_);
+  return peer_cert == nullptr ? "" : peer_cert->name;
+}
+
 // SSL HTTP server implementation
 inline SSLServer::SSLServer(const char *cert_path,
                             const char *private_key_path,
@@ -2388,8 +2403,11 @@ inline bool SSLServer::read_and_close_socket(socket_t sock) {
   return detail::read_and_close_socket_ssl(
       sock, keep_alive_max_count_, ctx_, ctx_mutex_, SSL_accept,
       [](SSL * /*ssl*/) { return true; },
-      [this](Stream &strm, bool last_connection, bool &connection_close) {
-        return process_request(strm, last_connection, connection_close);
+      [this](SSLSocketStream &strm, bool last_connection, bool &connection_close) {
+        Request req;
+        Response res;
+        req.X509_name = strm.get_name();
+        return process_request(strm, last_connection, connection_close, req, res);
       },
       client_CA_cert_path_,
       trusted_cert_path_);
