@@ -276,6 +276,7 @@ private:
 
   std::atomic<bool> is_running_;
   std::atomic<socket_t> svr_sock_;
+  std::mutex svr_sock_guard;
   std::string base_dir_;
   Handlers get_handlers_;
   Handlers post_handlers_;
@@ -1563,10 +1564,13 @@ inline bool Server::is_running() const { return is_running_; }
 
 inline void Server::stop() {
   if (is_running_) {
-    assert(svr_sock_ != INVALID_SOCKET);
-    detail::shutdown_socket(svr_sock_);
-    detail::close_socket(svr_sock_);
-    svr_sock_ = INVALID_SOCKET;
+      assert(svr_sock_ != INVALID_SOCKET);
+      {
+        std::lock_guard<std::mutex> lock(svr_sock_guard);
+        detail::shutdown_socket(svr_sock_);
+        detail::close_socket(svr_sock_);
+        svr_sock_ = INVALID_SOCKET;
+      }
   }
 }
 
@@ -1700,16 +1704,21 @@ inline socket_t Server::create_server_socket(const char *host, int port,
 
 inline int Server::bind_internal(const char *host, int port, int socket_flags) {
   if (!is_valid()) { return -1; }
-
-  svr_sock_ = create_server_socket(host, port, socket_flags);
-  if (svr_sock_ == INVALID_SOCKET) { return -1; }
+  {
+    std::lock_guard<std::mutex> lock(svr_sock_guard);
+    svr_sock_ = create_server_socket(host, port, socket_flags);
+    if (svr_sock_ == INVALID_SOCKET) { return -1; }
+  }
 
   if (port == 0) {
     struct sockaddr_storage address;
     socklen_t len = sizeof(address);
-    if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&address),
+    {
+      std::lock_guard<std::mutex> lock(svr_sock_guard);
+      if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&address),
                     &len) == -1) {
-      return -1;
+        return -1;
+      }
     }
     if (address.ss_family == AF_INET) {
       return ntohs(reinterpret_cast<struct sockaddr_in *>(&address)->sin_port);
@@ -1744,7 +1753,10 @@ inline bool Server::listen_internal() {
 
     if (sock == INVALID_SOCKET) {
       if (svr_sock_ != INVALID_SOCKET) {
-        detail::close_socket(svr_sock_);
+        {
+          std::lock_guard<std::mutex> lock(svr_sock_guard);
+          detail::close_socket(svr_sock_);
+        }
         ret = false;
       } else {
         ; // The server socket was closed by user.
