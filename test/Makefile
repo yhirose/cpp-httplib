@@ -9,7 +9,7 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 all : test
 	./test
 
-test : test.cc ../httplib.h Makefile cert.pem
+test : test.cc ../include/httplib.h Makefile cert.pem
 	$(CC) -o test $(CFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -lpthread
 
 cert.pem:
