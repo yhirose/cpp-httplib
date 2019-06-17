@@ -1,11 +1,11 @@
-#include <httplib.h>
 #include <chrono>
+#include <httplib.h>
 #include <iostream>
 
 using namespace std;
 
 struct StopWatch {
-  StopWatch(const string& label) : label_(label) {
+  StopWatch(const string &label) : label_(label) {
     start_ = chrono::system_clock::now();
   }
   ~StopWatch() {

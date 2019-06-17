@@ -10,6 +10,7 @@ test/test
 test/test.xcodeproj/xcuser*
 test/test.xcodeproj/*/xcuser*
 test/*.pem
+test/*.srl
 
 *.swp
 
@@ -25,3 +26,4 @@ ipch
 .*
 
 build/
+!/.travis.yml
