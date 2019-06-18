@@ -1,15 +1,15 @@
 
-CC = clang++
-#CC = g++
+#CC = clang++
+CC = g++
 
 CFLAGS = -ggdb -O0 -std=c++11 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I. -Wall -Wextra -Wtype-limits
-OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -lcrypto
+OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -lcrypto -I../include
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
 all : test
 	./test
 
-test : test.cc ../httplib.h Makefile cert.pem
+test : test.cc ../include/httplib.h Makefile cert.pem
 	$(CC) -o test $(CFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -lpthread
 
 cert.pem:
