@@ -2284,11 +2284,6 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
   bool ret = false;
 
   if (SSL_connect_or_accept(ssl) == 1) {
-    /*
-    auto client_cert = SSL_get_peer_certificate(ssl);
-    if(client_cert)
-      printf("Connected client: %s\n", client_cert->name);
-    */
     if (keep_alive_max_count > 0) {
       auto count = keep_alive_max_count;
       while (count > 0 &&
@@ -2486,7 +2481,11 @@ inline bool SSLClient::read_and_close_socket(socket_t sock, Request &req,
 
                  if (server_cert == nullptr) { return false; }
 
-                 if (!verify_host(server_cert)) { return false; }
+                 if (!verify_host(server_cert)) {
+                   X509_free(server_cert);
+                   return false;
+                 }
+                 X509_free(server_cert);
                }
 
                return true;
