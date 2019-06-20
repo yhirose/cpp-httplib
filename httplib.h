@@ -1736,13 +1736,14 @@ inline bool Server::listen_internal() {
   is_running_ = true;
 
   for (;;) {
+    if (svr_sock_ == INVALID_SOCKET) {
+      // The server socket was closed by 'stop' method.
+      break;
+    }
+
     auto val = detail::select_read(svr_sock_, 0, 100000);
 
     if (val == 0) { // Timeout
-      if (svr_sock_ == INVALID_SOCKET) {
-        // The server socket was closed by 'stop' method.
-        break;
-      }
       continue;
     }
 
