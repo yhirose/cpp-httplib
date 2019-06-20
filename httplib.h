@@ -75,6 +75,12 @@ typedef int socket_t;
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+static const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
+  return M_ASN1_STRING_data(asn1);
+}
+#endif
 #endif
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -2544,7 +2550,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
     for (auto i = 0; i < count && !dsn_matched; i++) {
       auto val = sk_GENERAL_NAME_value(alt_names, i);
       if (val->type == type) {
-        auto name = (const char *)ASN1_STRING_data(val->d.ia5);
+        auto name = (const char *)ASN1_STRING_get0_data(val->d.ia5);
         auto name_len = (size_t)ASN1_STRING_length(val->d.ia5);
 
         if (strlen(name) == name_len) {
