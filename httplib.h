@@ -639,8 +639,16 @@ socket_t create_socket(const char *host, int port, Fn fn,
 
   for (auto rp = result; rp; rp = rp->ai_next) {
     // Create a socket
+#ifdef _WIN32
+    auto sock = WSASocket(rp->ai_family, rp->ai_socktype, rp->ai_protocol, nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT);
+#else
     auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+#endif
     if (sock == INVALID_SOCKET) { continue; }
+
+#ifndef _WIN32
+    if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) { continue; }
+#endif
 
     // Make 'reuse address' option available
     int yes = 1;
