@@ -1384,9 +1384,28 @@ TEST(SSLClientServerTest, ClientCertPresent) {
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
 
-  svr.Get("/test", [&](const Request &, Response &res) {
+  svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
     svr.stop();
+    ASSERT_TRUE(true);
+
+    auto peer_cert = SSL_get_peer_certificate(req.ssl);
+    ASSERT_TRUE(peer_cert != nullptr);
+
+    auto subject_name = X509_get_subject_name(peer_cert);
+    ASSERT_TRUE(subject_name != nullptr);
+
+    std::string common_name;
+    {
+      char name[BUFSIZ];
+      auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
+                                                name, sizeof(name));
+      common_name.assign(name, name_len);
+    }
+
+    EXPECT_EQ("Common Name", common_name);
+
+    X509_free(peer_cert);
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
@@ -1405,10 +1424,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
 
-  svr.Get("/test", [&](const Request &, Response &res) {
-    res.set_content("test", "text/plain");
-    svr.stop();
-  });
+  svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
 
