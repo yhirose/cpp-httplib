@@ -645,7 +645,8 @@ socket_t create_socket(const char *host, int port, Fn fn,
   for (auto rp = result; rp; rp = rp->ai_next) {
     // Create a socket
 #ifdef _WIN32
-    auto sock = WSASocket(rp->ai_family, rp->ai_socktype, rp->ai_protocol, nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT);
+    auto sock = WSASocket(rp->ai_family, rp->ai_socktype, rp->ai_protocol,
+                          nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT);
 #else
     auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
 #endif
