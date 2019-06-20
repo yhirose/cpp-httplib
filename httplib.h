@@ -77,7 +77,7 @@ typedef int socket_t;
 #include <openssl/x509v3.h>
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-static const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
+inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
   return M_ASN1_STRING_data(asn1);
 }
 #endif
