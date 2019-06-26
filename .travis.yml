@@ -1,12 +1,15 @@
 # Environment
 language: cpp
-os: osx
+os:
+  - osx
+  - linux
 
 # Compiler selection
 compiler:
   - clang
+  - gcc
 
 # Build/test steps
-script: 
+script:
   - cd ${TRAVIS_BUILD_DIR}/test
   - make all
