@@ -7,7 +7,7 @@ os:
 # Compiler selection
 compiler:
   - clang
-  - gcc
+  - gcc-4.9
 
 # Build/test steps
 script:
