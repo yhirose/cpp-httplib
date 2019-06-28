@@ -1,8 +1,8 @@
 //
 //  simplesvr.cc
 //
-//  Copyright (c) 2013 Yuji Hirose. All rights reserved.
-//  The Boost Software License 1.0
+//  Copyright (c) 2019 Yuji Hirose. All rights reserved.
+//  MIT License
 //
 
 #include <cstdio>
