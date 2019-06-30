@@ -5,6 +5,7 @@ example/client
 example/hello
 example/simplesvr
 example/benchmark
+example/redirect
 example/*.pem
 test/test
 test/test.xcodeproj/xcuser*
