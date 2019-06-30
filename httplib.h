@@ -97,6 +97,7 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #define CPPHTTPLIB_READ_TIMEOUT_USECOND 0
 #define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max)()
+#define CPPHTTPLIB_RECV_BUFSIZ 4096
 
 namespace httplib {
 
@@ -886,19 +887,19 @@ inline bool read_content_with_length(Stream &strm, std::string &out, size_t len,
 }
 
 inline void skip_content_with_length(Stream &strm, size_t len) {
-  char buf[BUFSIZ];
+  char buf[CPPHTTPLIB_RECV_BUFSIZ];
   size_t r = 0;
   while (r < len) {
-    auto n = strm.read(buf, BUFSIZ);
+    auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
     if (n <= 0) { return; }
     r += n;
   }
 }
 
 inline bool read_content_without_length(Stream &strm, std::string &out) {
-  char buf[BUFSIZ];
+  char buf[CPPHTTPLIB_RECV_BUFSIZ];
   for (;;) {
-    auto n = strm.read(buf, BUFSIZ);
+    auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
     if (n < 0) {
       return false;
     } else if (n == 0) {
