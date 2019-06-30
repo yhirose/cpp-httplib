@@ -1570,7 +1570,7 @@ GTEST_DEFINE_string_(
     stream_result_to,
     internal::StringFromGTestEnv("stream_result_to", ""),
     "This flag specifies the host name and the port number on which to stream "
-    "test results. Example: \"localhost:555\". The flag is effective only on "
+    "test results. Example: \"0.0.0.0:555\". The flag is effective only on "
     "Linux.");
 
 GTEST_DEFINE_bool_(

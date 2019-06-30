@@ -15,5 +15,5 @@ int main(void) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  svr.listen("localhost", 1234);
+  svr.listen("0.0.0.0", 1234);
 }

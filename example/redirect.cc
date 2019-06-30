@@ -21,7 +21,7 @@ int main(void) {
   });
 
   http.set_error_handler([](const Request & /*req*/, Response &res) {
-    res.set_redirect("https://localhost:8081/");
+    res.set_redirect("https://0.0.0.0:8081/");
   });
 
   // HTTPS server
@@ -42,11 +42,11 @@ int main(void) {
 
   // Run servers
   auto httpThread = std::thread([&]() {
-    http.listen("localhost", 8080);
+    http.listen("0.0.0.0", 8080);
   });
 
   auto httpsThread = std::thread([&]() {
-    https.listen("localhost", 8081);
+    https.listen("0.0.0.0", 8081);
   });
 
   httpThread.join();

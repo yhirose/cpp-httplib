@@ -20,7 +20,7 @@
 using namespace std;
 using namespace httplib;
 
-const char *HOST = "localhost";
+const char *HOST = "0.0.0.0";
 const int PORT = 1234;
 
 const string LONG_QUERY_VALUE = string(25000, '@');
@@ -196,7 +196,7 @@ TEST(ConnectionErrorTest, InvalidHost) {
 }
 
 TEST(ConnectionErrorTest, InvalidPort) {
-  auto host = "localhost";
+  auto host = "0.0.0.0";
   auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -313,7 +313,7 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 
 TEST(Server, BindAndListenSeparately) {
   Server svr;
-  int port = svr.bind_to_any_port("localhost");
+  int port = svr.bind_to_any_port("0.0.0.0");
   ASSERT_TRUE(port > 0);
   svr.stop();
 }

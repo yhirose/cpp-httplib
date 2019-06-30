@@ -31,7 +31,7 @@ int main(void)
         res.set_content(numbers, "text/plain");
     });
 
-    svr.listen("localhost", 1234);
+    svr.listen("0.0.0.0", 1234);
 }
 ```
 
@@ -53,7 +53,7 @@ svr.Get("/get", [](const auto& req, auto& res) {
     .Post("/post", [](const auto& req, auto& res) {
         res.set_content(req.body(), "text/plain");
     })
-    .listen("localhost", 1234);
+    .listen("0.0.0.0", 1234);
 ```
 
 ### Static File Server
@@ -105,7 +105,7 @@ Client Example
 
 int main(void)
 {
-    httplib::Client cli("localhost", 1234);
+    httplib::Client cli("0.0.0.0", 1234);
 
     auto res = cli.Get("/hi");
     if (res && res->status == 200) {
@@ -163,7 +163,7 @@ res = cli.Options("/resource/foo");
 ### Connection Timeout
 
 ```c++
-httplib::Client cli("localhost", 8080, 5); // timeouts in 5 seconds
+httplib::Client cli("0.0.0.0", 8080, 5); // timeouts in 5 seconds
 ```
 ### With Progress Callback
 
@@ -208,7 +208,7 @@ SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcry
 
 SSLServer svr("./cert.pem", "./key.pem");
 
-SSLClient cli("localhost", 8080);
+SSLClient cli("0.0.0.0", 8080);
 cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(true);
 ```

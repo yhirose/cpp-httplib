@@ -129,7 +129,7 @@ int main(int argc, const char **argv) {
 
   cout << "The server started at port " << port << "...";
 
-  svr.listen("localhost", port);
+  svr.listen("0.0.0.0", port);
 
   return 0;
 }
