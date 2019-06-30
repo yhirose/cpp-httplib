@@ -896,15 +896,15 @@ inline void skip_content_with_length(Stream &strm, size_t len) {
 }
 
 inline bool read_content_without_length(Stream &strm, std::string &out) {
+  char buf[BUFSIZ];
   for (;;) {
-    char byte;
-    auto n = strm.read(&byte, 1);
+    auto n = strm.read(buf, BUFSIZ);
     if (n < 0) {
       return false;
     } else if (n == 0) {
       return true;
     }
-    out += byte;
+    out.append(buf, n);
   }
 
   return true;
