@@ -145,6 +145,8 @@ struct Request {
   Match matches;
 
   Progress progress;
+  std::function<bool(std::string chunk)> recv_streamcb;
+  std::function<std::string(uint64_t offset)> send_streamcb;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   const SSL *ssl;
@@ -319,8 +321,14 @@ public:
 
   std::shared_ptr<Response> Post(const char *path, const std::string &body,
                                  const char *content_type);
+  std::shared_ptr<Response> Post(const char *path,
+                                 std::function<std::string(uint64_t offset)> send_streamcb,
+                                 const char *content_type);
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const std::string &body,
+                                 const char *content_type);
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 std::function<std::string(uint64_t offset)> send_streamcb,
                                  const char *content_type);
 
   std::shared_ptr<Response> Post(const char *path, const Params &params);
@@ -2027,7 +2035,10 @@ inline void Client::write_request(Stream &strm, Request &req) {
   // }
 
   if (req.body.empty()) {
-    if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
+    if(req.send_streamcb && req.get_header_value("Transfer-Encoding") != "chunked") {
+      req.set_header("Transfer-Encoding", "chunked");
+    }
+    else if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
       req.set_header("Content-Length", "0");
     }
   } else {
@@ -2045,6 +2056,25 @@ inline void Client::write_request(Stream &strm, Request &req) {
 
   // Body
   if (!req.body.empty()) { bstrm.write(req.body.c_str(), req.body.size()); }
+  else if (req.send_streamcb) {
+    //Flush headers; do not buffer chunked upload
+    auto &data = bstrm.get_buffer();
+    strm.write(data.data(), data.size());
+
+    uint64_t offset = 0;
+    bool data_available = true;
+    bool chunked_response = !req.has_header("Content-Length");
+    while (data_available) {
+      std::string chunk = req.send_streamcb(offset);
+      offset += chunk.size();
+      data_available = !chunk.empty();
+      // Emit chunked request header and footer for each chunk
+      if (chunked_response)
+        chunk = detail::from_i_to_hex(chunk.size()) + "\r\n" + chunk + "\r\n";
+      if (strm.write(chunk.c_str(), chunk.size()) < 0) break; // Stop on error
+    }
+    return;
+  }
 
   // Flush buffer
   auto &data = bstrm.get_buffer();
@@ -2136,6 +2166,29 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const std::string &body,
                                               const char *content_type) {
   return Post(path, Headers(), body, content_type);
+}
+
+inline std::shared_ptr<Response> Client::Post(const char *path,
+                                              std::function<std::string(uint64_t offset)> send_streamcb,
+                                              const char *content_type) {
+  return Post(path, Headers(), send_streamcb, content_type);
+}
+
+inline std::shared_ptr<Response> Client::Post(const char *path,
+                                              const Headers &headers,
+                                              std::function<std::string(uint64_t offset)> send_streamcb,
+                                              const char *content_type) {
+  Request req;
+  req.method = "POST";
+  req.headers = headers;
+  req.path = path;
+
+  req.headers.emplace("Content-Type", content_type);
+  req.send_streamcb = send_streamcb;
+
+  auto res = std::make_shared<Response>();
+
+  return send(req, *res) ? res : nullptr;
 }
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
