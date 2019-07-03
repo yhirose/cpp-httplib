@@ -769,6 +769,76 @@ inline bool is_valid_path(const std::string &path) {
   return true;
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+inline bool can_compress(const std::string &content_type) {
+  return !content_type.find("text/") || content_type == "image/svg+xml" ||
+         content_type == "application/javascript" ||
+         content_type == "application/json" ||
+         content_type == "application/xml" ||
+         content_type == "application/xhtml+xml";
+}
+
+inline void compress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+                          Z_DEFAULT_STRATEGY);
+  if (ret != Z_OK) { return; }
+
+  strm.avail_in = content.size();
+  strm.next_in = (Bytef *)content.data();
+
+  std::string compressed;
+
+  const auto bufsiz = 16384;
+  char buff[bufsiz];
+  do {
+    strm.avail_out = bufsiz;
+    strm.next_out = (Bytef *)buff;
+    deflate(&strm, Z_FINISH);
+    compressed.append(buff, bufsiz - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  content.swap(compressed);
+
+  deflateEnd(&strm);
+}
+
+inline void decompress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  // 15 is the value of wbits, which should be at the maximum possible value to
+  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
+  // the stream to decompress will be formatted with a gzip wrapper.
+  auto ret = inflateInit2(&strm, 16 + 15);
+  if (ret != Z_OK) { return; }
+
+  strm.avail_in = content.size();
+  strm.next_in = (Bytef *)content.data();
+
+  std::string decompressed;
+
+  const auto bufsiz = 16384;
+  char buff[bufsiz];
+  do {
+    strm.avail_out = bufsiz;
+    strm.next_out = (Bytef *)buff;
+    inflate(&strm, Z_NO_FLUSH);
+    decompressed.append(buff, bufsiz - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  content.swap(decompressed);
+
+  inflateEnd(&strm);
+}
+#endif
+
 inline void read_file(const std::string &path, std::string &out) {
   std::ifstream fs(path, std::ios_base::binary);
   fs.seekg(0, std::ios_base::end);
@@ -922,7 +992,8 @@ inline bool read_content_without_length(Stream &strm, std::string &out) {
 }
 
 inline bool read_content_chunked(Stream &strm,
-                  std::function<bool(std::string chunk)> recv_streamcb) {
+                  std::function<bool(std::string chunk)> recv_streamcb,
+                  bool decompress = false) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -941,6 +1012,14 @@ inline bool read_content_chunked(Stream &strm,
     if (!reader.getline()) { return false; }
 
     if (strcmp(reader.ptr(), "\r\n")) { break; }
+
+    if (decompress) {
+    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+      detail::decompress(chunk);
+    #else
+      return false;
+    #endif
+    }
 
     if (!recv_streamcb(chunk)) { return false; }
 
@@ -994,7 +1073,7 @@ bool read_content(Stream &strm, T &x, uint64_t payload_max_length,
         get_header_value(x.headers, "Transfer-Encoding", 0, "");
     if (!strcasecmp(encoding, "chunked")) {
       if (recv_streamcb) {
-        return read_content_chunked(strm, recv_streamcb);
+        return read_content_chunked(strm, recv_streamcb, x.get_header_value("Content-Encoding") == "gzip");
       } else {
         return read_content_chunked(strm, x.body);
       }
@@ -1273,76 +1352,6 @@ inline void make_range_header_core(std::string &field, uint64_t value1,
   field += std::to_string(value1) + "-" + std::to_string(value2);
   make_range_header_core(field, args...);
 }
-
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-inline bool can_compress(const std::string &content_type) {
-  return !content_type.find("text/") || content_type == "image/svg+xml" ||
-         content_type == "application/javascript" ||
-         content_type == "application/json" ||
-         content_type == "application/xml" ||
-         content_type == "application/xhtml+xml";
-}
-
-inline void compress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-
-  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
-                          Z_DEFAULT_STRATEGY);
-  if (ret != Z_OK) { return; }
-
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string compressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
-  do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-    deflate(&strm, Z_FINISH);
-    compressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(compressed);
-
-  deflateEnd(&strm);
-}
-
-inline void decompress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-
-  // 15 is the value of wbits, which should be at the maximum possible value to
-  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
-  // the stream to decompress will be formatted with a gzip wrapper.
-  auto ret = inflateInit2(&strm, 16 + 15);
-  if (ret != Z_OK) { return; }
-
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string decompressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
-  do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-    inflate(&strm, Z_NO_FLUSH);
-    decompressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(decompressed);
-
-  inflateEnd(&strm);
-}
-#endif
 
 #ifdef _WIN32
 class WSInit {
@@ -2121,7 +2130,7 @@ inline bool Client::process_request(Stream &strm, Request &req, Response &res,
       return false;
     }
 
-    if (res.get_header_value("Content-Encoding") == "gzip") {
+    if (res.get_header_value("Content-Encoding") == "gzip" && !req.recv_streamcb) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
       detail::decompress(res.body);
 #else
