@@ -312,9 +312,11 @@ public:
 
   virtual bool is_valid() const;
 
-  std::shared_ptr<Response> Get(const char *path, Progress progress = nullptr);
+  std::shared_ptr<Response> Get(const char *path, Progress progress = nullptr,
+                                std::function<bool(std::string chunk)> recv_streamcb = nullptr);
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                Progress progress = nullptr);
+                                Progress progress = nullptr,
+                                std::function<bool(std::string chunk)> recv_streamcb = nullptr);
 
   std::shared_ptr<Response> Head(const char *path);
   std::shared_ptr<Response> Head(const char *path, const Headers &headers);
@@ -919,7 +921,8 @@ inline bool read_content_without_length(Stream &strm, std::string &out) {
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm, std::string &out) {
+inline bool read_content_chunked(Stream &strm,
+                  std::function<bool(std::string chunk)> recv_streamcb) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -939,7 +942,7 @@ inline bool read_content_chunked(Stream &strm, std::string &out) {
 
     if (strcmp(reader.ptr(), "\r\n")) { break; }
 
-    out += chunk;
+    if (!recv_streamcb(chunk)) { return false; }
 
     if (!reader.getline()) { return false; }
 
@@ -954,10 +957,18 @@ inline bool read_content_chunked(Stream &strm, std::string &out) {
   return true;
 }
 
+inline bool read_content_chunked(Stream &strm, std::string &out) {
+  return read_content_chunked(strm, [&out](std::string chunk) {
+    out += chunk;
+    return true;
+  });
+}
+
 template <typename T>
 bool read_content(Stream &strm, T &x, uint64_t payload_max_length,
                   bool &exceed_payload_max_length,
-                  Progress progress = Progress()) {
+                  Progress progress = Progress(),
+                  std::function<bool(std::string chunk)> recv_streamcb = nullptr) {
   if (has_header(x.headers, "Content-Length")) {
     auto len = get_header_value_uint64(x.headers, "Content-Length", 0);
     if (len == 0) {
@@ -982,7 +993,11 @@ bool read_content(Stream &strm, T &x, uint64_t payload_max_length,
     const auto &encoding =
         get_header_value(x.headers, "Transfer-Encoding", 0, "");
     if (!strcasecmp(encoding, "chunked")) {
-      return read_content_chunked(strm, x.body);
+      if (recv_streamcb) {
+        return read_content_chunked(strm, recv_streamcb);
+      } else {
+        return read_content_chunked(strm, x.body);
+      }
     }
     return read_content_without_length(strm, x.body);
   }
@@ -2101,7 +2116,8 @@ inline bool Client::process_request(Stream &strm, Request &req, Response &res,
   if (req.method != "HEAD") {
     bool exceed_payload_max_length = false;
     if (!detail::read_content(strm, res, std::numeric_limits<uint64_t>::max(),
-                              exceed_payload_max_length, req.progress)) {
+                              exceed_payload_max_length, req.progress,
+                              req.recv_streamcb)) {
       return false;
     }
 
@@ -2129,17 +2145,19 @@ inline bool Client::read_and_close_socket(socket_t sock, Request &req,
 inline bool Client::is_ssl() const { return false; }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
-                                             Progress progress) {
-  return Get(path, Headers(), progress);
+                                             Progress progress,
+                                             std::function<bool(std::string chunk)> recv_streamcb) {
+  return Get(path, Headers(), progress, recv_streamcb);
 }
 
 inline std::shared_ptr<Response>
-Client::Get(const char *path, const Headers &headers, Progress progress) {
+Client::Get(const char *path, const Headers &headers, Progress progress, std::function<bool(std::string chunk)> recv_streamcb) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
   req.progress = progress;
+  req.recv_streamcb = recv_streamcb;
 
   auto res = std::make_shared<Response>();
 
