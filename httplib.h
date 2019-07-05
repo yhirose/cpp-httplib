@@ -70,6 +70,7 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <atomic>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -285,8 +286,8 @@ private:
 
   virtual bool read_and_close_socket(socket_t sock);
 
-  bool is_running_;
-  socket_t svr_sock_;
+  std::atomic<bool> is_running_;
+  std::atomic<socket_t> svr_sock_;
   std::string base_dir_;
   Handlers get_handlers_;
   Handlers post_handlers_;
@@ -1587,8 +1588,7 @@ inline bool Server::is_running() const { return is_running_; }
 inline void Server::stop() {
   if (is_running_) {
     assert(svr_sock_ != INVALID_SOCKET);
-    auto sock = svr_sock_;
-    svr_sock_ = INVALID_SOCKET;
+    std::atomic<socket_t> sock (svr_sock_.exchange(INVALID_SOCKET));
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
