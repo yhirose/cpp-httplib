@@ -1,6 +1,6 @@
 
 #CXX = clang++
-CXXFLAGS = -std=c++14 -I.. -Wall -Wextra -lpthread
+CXXFLAGS = -std=c++14 -I.. -Wall -Wextra -pthread
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -lcrypto
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
