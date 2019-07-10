@@ -8,7 +8,7 @@ all : test
 	./test
 
 test : test.cc ../httplib.h Makefile cert.pem
-	$(CXX) -o test $(CXXFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -lpthread
+	$(CXX) -o test $(CXXFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -pthread
 
 cert.pem:
 	openssl genrsa 2048 > key.pem
