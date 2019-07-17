@@ -60,6 +60,7 @@ typedef int socket_t;
 #endif //_WIN32
 
 #include <assert.h>
+#include <atomic>
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
@@ -70,7 +71,6 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
-#include <atomic>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -98,7 +98,7 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #define CPPHTTPLIB_READ_TIMEOUT_USECOND 0
 #define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max)()
-#define CPPHTTPLIB_RECV_BUFSIZ 4096
+#define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 
 namespace httplib {
 
@@ -444,6 +444,76 @@ private:
  * Implementation
  */
 namespace detail {
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+inline bool can_compress(const std::string &content_type) {
+  return !content_type.find("text/") || content_type == "image/svg+xml" ||
+         content_type == "application/javascript" ||
+         content_type == "application/json" ||
+         content_type == "application/xml" ||
+         content_type == "application/xhtml+xml";
+}
+
+inline void compress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+                          Z_DEFAULT_STRATEGY);
+  if (ret != Z_OK) { return; }
+
+  strm.avail_in = content.size();
+  strm.next_in = (Bytef *)content.data();
+
+  std::string compressed;
+
+  const auto bufsiz = 16384;
+  char buff[bufsiz];
+  do {
+    strm.avail_out = bufsiz;
+    strm.next_out = (Bytef *)buff;
+    deflate(&strm, Z_FINISH);
+    compressed.append(buff, bufsiz - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  content.swap(compressed);
+
+  deflateEnd(&strm);
+}
+
+inline void decompress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  // 15 is the value of wbits, which should be at the maximum possible value to
+  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
+  // the stream to decompress will be formatted with a gzip wrapper.
+  auto ret = inflateInit2(&strm, 16 + 15);
+  if (ret != Z_OK) { return; }
+
+  strm.avail_in = content.size();
+  strm.next_in = (Bytef *)content.data();
+
+  std::string decompressed;
+
+  const auto bufsiz = 16384;
+  char buff[bufsiz];
+  do {
+    strm.avail_out = bufsiz;
+    strm.next_out = (Bytef *)buff;
+    inflate(&strm, Z_NO_FLUSH);
+    decompressed.append(buff, bufsiz - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  content.swap(decompressed);
+
+  inflateEnd(&strm);
+}
+#endif
 
 template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   int i = 0;
@@ -869,13 +939,17 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   return true;
 }
 
-inline bool read_content_with_length(Stream &strm, std::string &out, size_t len,
-                                     Progress progress) {
-  out.assign(len, 0);
+template <typename T>
+inline bool read_content_with_length(Stream &strm, size_t len,
+                                     Progress progress, T callback) {
+  char buf[CPPHTTPLIB_RECV_BUFSIZ];
+
   size_t r = 0;
   while (r < len) {
-    auto n = strm.read(&out[r], len - r);
+    auto n = strm.read(buf, std::min((len - r), CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return false; }
+
+    callback(buf, n);
 
     r += n;
 
@@ -891,13 +965,14 @@ inline void skip_content_with_length(Stream &strm, size_t len) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   size_t r = 0;
   while (r < len) {
-    auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
+    auto n = strm.read(buf, std::min((len - r), CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return; }
     r += n;
   }
 }
 
-inline bool read_content_without_length(Stream &strm, std::string &out) {
+template <typename T>
+inline bool read_content_without_length(Stream &strm, T callback) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   for (;;) {
     auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
@@ -906,13 +981,14 @@ inline bool read_content_without_length(Stream &strm, std::string &out) {
     } else if (n == 0) {
       return true;
     }
-    out.append(buf, n);
+    callback(buf, n);
   }
 
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm, std::string &out) {
+template <typename T>
+inline bool read_content_chunked(Stream &strm, T callback) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -923,16 +999,13 @@ inline bool read_content_chunked(Stream &strm, std::string &out) {
   auto chunk_len = std::stoi(reader.ptr(), 0, 16);
 
   while (chunk_len > 0) {
-    std::string chunk;
-    if (!read_content_with_length(strm, chunk, chunk_len, nullptr)) {
+    if (!read_content_with_length(strm, chunk_len, nullptr, callback)) {
       return false;
     }
 
     if (!reader.getline()) { return false; }
 
     if (strcmp(reader.ptr(), "\r\n")) { break; }
-
-    out += chunk;
 
     if (!reader.getline()) { return false; }
 
@@ -947,39 +1020,61 @@ inline bool read_content_chunked(Stream &strm, std::string &out) {
   return true;
 }
 
+inline bool is_chunked_transfer_encoding(const Headers &headers) {
+  return !strcasecmp(get_header_value(headers, "Transfer-Encoding", 0, ""),
+                     "chunked");
+}
+
 template <typename T>
-bool read_content(Stream &strm, T &x, uint64_t payload_max_length,
-                  bool &exceed_payload_max_length,
-                  Progress progress = Progress()) {
-  if (has_header(x.headers, "Content-Length")) {
+bool read_content(Stream &strm, T &x, uint64_t payload_max_length, int &status,
+                  Progress progress) {
+
+#ifndef CPPHTTPLIB_ZLIB_SUPPORT
+  if (x.get_header_value("Content-Encoding") == "gzip") {
+    status = 415;
+    return false;
+  }
+#endif
+
+  auto callback = [&](const char *buf, size_t n) { x.body.append(buf, n); };
+
+  auto ret = true;
+  auto exceed_payload_max_length = false;
+
+  if (is_chunked_transfer_encoding(x.headers)) {
+    ret = read_content_chunked(strm, callback);
+  } else if (!has_header(x.headers, "Content-Length")) {
+    ret = read_content_without_length(strm, callback);
+  } else {
     auto len = get_header_value_uint64(x.headers, "Content-Length", 0);
-    if (len == 0) {
-      const auto &encoding =
-          get_header_value(x.headers, "Transfer-Encoding", 0, "");
-      if (!strcasecmp(encoding, "chunked")) {
-        return read_content_chunked(strm, x.body);
+    if (len > 0) {
+      if ((len > payload_max_length) ||
+          // For 32-bit platform
+          (sizeof(size_t) < sizeof(uint64_t) &&
+           len > std::numeric_limits<size_t>::max())) {
+        exceed_payload_max_length = true;
+        skip_content_with_length(strm, len);
+        ret = false;
+      } else {
+        // NOTE: We can remove it if it doesn't give us enough better
+        // performance.
+        x.body.reserve(len);
+        ret = read_content_with_length(strm, len, progress, callback);
       }
     }
-
-    if ((len > payload_max_length) ||
-        // For 32-bit platform
-        (sizeof(size_t) < sizeof(uint64_t) &&
-         len > std::numeric_limits<size_t>::max())) {
-      exceed_payload_max_length = true;
-      skip_content_with_length(strm, len);
-      return false;
-    }
-
-    return read_content_with_length(strm, x.body, len, progress);
-  } else {
-    const auto &encoding =
-        get_header_value(x.headers, "Transfer-Encoding", 0, "");
-    if (!strcasecmp(encoding, "chunked")) {
-      return read_content_chunked(strm, x.body);
-    }
-    return read_content_without_length(strm, x.body);
   }
-  return true;
+
+  if (ret) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    if (x.get_header_value("Content-Encoding") == "gzip") {
+      detail::decompress(x.body);
+    }
+#endif
+  } else {
+    status = exceed_payload_max_length ? 413 : 400;
+  }
+
+  return ret;
 }
 
 template <typename T> inline void write_headers(Stream &strm, const T &info) {
@@ -1252,76 +1347,6 @@ inline void make_range_header_core(std::string &field, uint64_t value1,
   make_range_header_core(field, args...);
 }
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-inline bool can_compress(const std::string &content_type) {
-  return !content_type.find("text/") || content_type == "image/svg+xml" ||
-         content_type == "application/javascript" ||
-         content_type == "application/json" ||
-         content_type == "application/xml" ||
-         content_type == "application/xhtml+xml";
-}
-
-inline void compress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-
-  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
-                          Z_DEFAULT_STRATEGY);
-  if (ret != Z_OK) { return; }
-
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string compressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
-  do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-    deflate(&strm, Z_FINISH);
-    compressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(compressed);
-
-  deflateEnd(&strm);
-}
-
-inline void decompress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-
-  // 15 is the value of wbits, which should be at the maximum possible value to
-  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
-  // the stream to decompress will be formatted with a gzip wrapper.
-  auto ret = inflateInit2(&strm, 16 + 15);
-  if (ret != Z_OK) { return; }
-
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string decompressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
-  do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-    inflate(&strm, Z_NO_FLUSH);
-    decompressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(decompressed);
-
-  inflateEnd(&strm);
-}
-#endif
-
 #ifdef _WIN32
 class WSInit {
 public:
@@ -1588,7 +1613,7 @@ inline bool Server::is_running() const { return is_running_; }
 inline void Server::stop() {
   if (is_running_) {
     assert(svr_sock_ != INVALID_SOCKET);
-    std::atomic<socket_t> sock (svr_sock_.exchange(INVALID_SOCKET));
+    std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
@@ -1878,25 +1903,13 @@ Server::process_request(Stream &strm, bool last_connection,
 
   // Body
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
-    bool exceed_payload_max_length = false;
-    if (!detail::read_content(strm, req, payload_max_length_,
-                              exceed_payload_max_length)) {
-      res.status = exceed_payload_max_length ? 413 : 400;
+    if (!detail::read_content(strm, req, payload_max_length_, res.status,
+                              Progress())) {
       write_response(strm, last_connection, req, res);
-      return !exceed_payload_max_length;
+      return true;
     }
 
     const auto &content_type = req.get_header_value("Content-Type");
-
-    if (req.get_header_value("Content-Encoding") == "gzip") {
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-      detail::decompress(req.body);
-#else
-      res.status = 415;
-      write_response(strm, last_connection, req, res);
-      return true;
-#endif
-    }
 
     if (!content_type.find("application/x-www-form-urlencoded")) {
       detail::parse_query_text(req.body, req.params);
@@ -2069,18 +2082,10 @@ inline bool Client::process_request(Stream &strm, Request &req, Response &res,
 
   // Body
   if (req.method != "HEAD") {
-    bool exceed_payload_max_length = false;
+    int dummy_status;
     if (!detail::read_content(strm, res, std::numeric_limits<uint64_t>::max(),
-                              exceed_payload_max_length, req.progress)) {
+                              dummy_status, req.progress)) {
       return false;
-    }
-
-    if (res.get_header_value("Content-Encoding") == "gzip") {
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-      detail::decompress(res.body);
-#else
-      return false;
-#endif
     }
   }
 
