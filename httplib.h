@@ -445,75 +445,141 @@ private:
  */
 namespace detail {
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-inline bool can_compress(const std::string &content_type) {
-  return !content_type.find("text/") || content_type == "image/svg+xml" ||
-         content_type == "application/javascript" ||
-         content_type == "application/json" ||
-         content_type == "application/xml" ||
-         content_type == "application/xhtml+xml";
+inline bool is_hex(char c, int &v) {
+  if (0x20 <= c && isdigit(c)) {
+    v = c - '0';
+    return true;
+  } else if ('A' <= c && c <= 'F') {
+    v = c - 'A' + 10;
+    return true;
+  } else if ('a' <= c && c <= 'f') {
+    v = c - 'a' + 10;
+    return true;
+  }
+  return false;
 }
 
-inline void compress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
+inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
+                          int &val) {
+  if (i >= s.size()) { return false; }
 
-  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
-                          Z_DEFAULT_STRATEGY);
-  if (ret != Z_OK) { return; }
+  val = 0;
+  for (; cnt; i++, cnt--) {
+    if (!s[i]) { return false; }
+    int v = 0;
+    if (is_hex(s[i], v)) {
+      val = val * 16 + v;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
 
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string compressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
+inline std::string from_i_to_hex(uint64_t n) {
+  const char *charset = "0123456789abcdef";
+  std::string ret;
   do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-    deflate(&strm, Z_FINISH);
-    compressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(compressed);
-
-  deflateEnd(&strm);
+    ret = charset[n & 15] + ret;
+    n >>= 4;
+  } while (n > 0);
+  return ret;
 }
 
-inline void decompress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
+inline size_t to_utf8(int code, char *buff) {
+  if (code < 0x0080) {
+    buff[0] = (code & 0x7F);
+    return 1;
+  } else if (code < 0x0800) {
+    buff[0] = (0xC0 | ((code >> 6) & 0x1F));
+    buff[1] = (0x80 | (code & 0x3F));
+    return 2;
+  } else if (code < 0xD800) {
+    buff[0] = (0xE0 | ((code >> 12) & 0xF));
+    buff[1] = (0x80 | ((code >> 6) & 0x3F));
+    buff[2] = (0x80 | (code & 0x3F));
+    return 3;
+  } else if (code < 0xE000) { // D800 - DFFF is invalid...
+    return 0;
+  } else if (code < 0x10000) {
+    buff[0] = (0xE0 | ((code >> 12) & 0xF));
+    buff[1] = (0x80 | ((code >> 6) & 0x3F));
+    buff[2] = (0x80 | (code & 0x3F));
+    return 3;
+  } else if (code < 0x110000) {
+    buff[0] = (0xF0 | ((code >> 18) & 0x7));
+    buff[1] = (0x80 | ((code >> 12) & 0x3F));
+    buff[2] = (0x80 | ((code >> 6) & 0x3F));
+    buff[3] = (0x80 | (code & 0x3F));
+    return 4;
+  }
 
-  // 15 is the value of wbits, which should be at the maximum possible value to
-  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
-  // the stream to decompress will be formatted with a gzip wrapper.
-  auto ret = inflateInit2(&strm, 16 + 15);
-  if (ret != Z_OK) { return; }
-
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string decompressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
-  do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-    inflate(&strm, Z_NO_FLUSH);
-    decompressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(decompressed);
-
-  inflateEnd(&strm);
+  // NOTREACHED
+  return 0;
 }
-#endif
+
+inline bool is_file(const std::string &path) {
+  struct stat st;
+  return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+}
+
+inline bool is_dir(const std::string &path) {
+  struct stat st;
+  return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
+}
+
+inline bool is_valid_path(const std::string &path) {
+  size_t level = 0;
+  size_t i = 0;
+
+  // Skip slash
+  while (i < path.size() && path[i] == '/') {
+    i++;
+  }
+
+  while (i < path.size()) {
+    // Read component
+    auto beg = i;
+    while (i < path.size() && path[i] != '/') {
+      i++;
+    }
+
+    auto len = i - beg;
+    assert(len > 0);
+
+    if (!path.compare(beg, len, ".")) {
+      ;
+    } else if (!path.compare(beg, len, "..")) {
+      if (level == 0) { return false; }
+      level--;
+    } else {
+      level++;
+    }
+
+    // Skip slash
+    while (i < path.size() && path[i] == '/') {
+      i++;
+    }
+  }
+
+  return true;
+}
+
+inline void read_file(const std::string &path, std::string &out) {
+  std::ifstream fs(path, std::ios_base::binary);
+  fs.seekg(0, std::ios_base::end);
+  auto size = fs.tellg();
+  fs.seekg(0);
+  out.resize(static_cast<size_t>(size));
+  fs.read(&out[0], size);
+}
+
+inline std::string file_extension(const std::string &path) {
+  std::smatch m;
+  auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
+  if (std::regex_search(path, m, pat)) { return m[1].str(); }
+  return std::string();
+}
 
 template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   int i = 0;
@@ -783,69 +849,6 @@ inline std::string get_remote_addr(socket_t sock) {
   return std::string();
 }
 
-inline bool is_file(const std::string &path) {
-  struct stat st;
-  return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
-}
-
-inline bool is_dir(const std::string &path) {
-  struct stat st;
-  return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
-}
-
-inline bool is_valid_path(const std::string &path) {
-  size_t level = 0;
-  size_t i = 0;
-
-  // Skip slash
-  while (i < path.size() && path[i] == '/') {
-    i++;
-  }
-
-  while (i < path.size()) {
-    // Read component
-    auto beg = i;
-    while (i < path.size() && path[i] != '/') {
-      i++;
-    }
-
-    auto len = i - beg;
-    assert(len > 0);
-
-    if (!path.compare(beg, len, ".")) {
-      ;
-    } else if (!path.compare(beg, len, "..")) {
-      if (level == 0) { return false; }
-      level--;
-    } else {
-      level++;
-    }
-
-    // Skip slash
-    while (i < path.size() && path[i] == '/') {
-      i++;
-    }
-  }
-
-  return true;
-}
-
-inline void read_file(const std::string &path, std::string &out) {
-  std::ifstream fs(path, std::ios_base::binary);
-  fs.seekg(0, std::ios_base::end);
-  auto size = fs.tellg();
-  fs.seekg(0);
-  out.resize(static_cast<size_t>(size));
-  fs.read(&out[0], size);
-}
-
-inline std::string file_extension(const std::string &path) {
-  std::smatch m;
-  auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
-  if (std::regex_search(path, m, pat)) { return m[1].str(); }
-  return std::string();
-}
-
 inline const char *find_content_type(const std::string &path) {
   auto ext = file_extension(path);
   if (ext == "txt") {
@@ -895,6 +898,76 @@ inline const char *status_message(int status) {
   case 500: return "Internal Server Error";
   }
 }
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+inline bool can_compress(const std::string &content_type) {
+  return !content_type.find("text/") || content_type == "image/svg+xml" ||
+         content_type == "application/javascript" ||
+         content_type == "application/json" ||
+         content_type == "application/xml" ||
+         content_type == "application/xhtml+xml";
+}
+
+inline void compress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+                          Z_DEFAULT_STRATEGY);
+  if (ret != Z_OK) { return; }
+
+  strm.avail_in = content.size();
+  strm.next_in = (Bytef *)content.data();
+
+  std::string compressed;
+
+  const auto bufsiz = 16384;
+  char buff[bufsiz];
+  do {
+    strm.avail_out = bufsiz;
+    strm.next_out = (Bytef *)buff;
+    deflate(&strm, Z_FINISH);
+    compressed.append(buff, bufsiz - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  content.swap(compressed);
+
+  deflateEnd(&strm);
+}
+
+inline void decompress(std::string &content) {
+  z_stream strm;
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+
+  // 15 is the value of wbits, which should be at the maximum possible value to
+  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
+  // the stream to decompress will be formatted with a gzip wrapper.
+  auto ret = inflateInit2(&strm, 16 + 15);
+  if (ret != Z_OK) { return; }
+
+  strm.avail_in = content.size();
+  strm.next_in = (Bytef *)content.data();
+
+  std::string decompressed;
+
+  const auto bufsiz = 16384;
+  char buff[bufsiz];
+  do {
+    strm.avail_out = bufsiz;
+    strm.next_out = (Bytef *)buff;
+    inflate(&strm, Z_NO_FLUSH);
+    decompressed.append(buff, bufsiz - strm.avail_out);
+  } while (strm.avail_out == 0);
+
+  content.swap(decompressed);
+
+  inflateEnd(&strm);
+}
+#endif
 
 inline bool has_header(const Headers &headers, const char *key) {
   return headers.find(key) != headers.end();
@@ -1084,6 +1157,27 @@ template <typename T> inline void write_headers(Stream &strm, const T &info) {
   strm.write("\r\n");
 }
 
+template <typename T>
+inline void write_content_chunked(Stream &strm, const T& x) {
+  auto chunked_response = !x.has_header("Content-Length");
+  uint64_t offset = 0;
+  auto data_available = true;
+  while (data_available) {
+    auto chunk = x.streamcb(offset);
+    offset += chunk.size();
+    data_available = !chunk.empty();
+
+    // Emit chunked response header and footer for each chunk
+    if (chunked_response) {
+      chunk = from_i_to_hex(chunk.size()) + "\r\n" + chunk + "\r\n";
+    }
+
+    if (strm.write(chunk.c_str(), chunk.size()) < 0) {
+      break; // Stop on error
+    }
+  }
+}
+
 inline std::string encode_url(const std::string &s) {
   std::string result;
 
@@ -1113,79 +1207,6 @@ inline std::string encode_url(const std::string &s) {
   }
 
   return result;
-}
-
-inline bool is_hex(char c, int &v) {
-  if (0x20 <= c && isdigit(c)) {
-    v = c - '0';
-    return true;
-  } else if ('A' <= c && c <= 'F') {
-    v = c - 'A' + 10;
-    return true;
-  } else if ('a' <= c && c <= 'f') {
-    v = c - 'a' + 10;
-    return true;
-  }
-  return false;
-}
-
-inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
-                          int &val) {
-  if (i >= s.size()) { return false; }
-
-  val = 0;
-  for (; cnt; i++, cnt--) {
-    if (!s[i]) { return false; }
-    int v = 0;
-    if (is_hex(s[i], v)) {
-      val = val * 16 + v;
-    } else {
-      return false;
-    }
-  }
-  return true;
-}
-
-inline std::string from_i_to_hex(uint64_t n) {
-  const char *charset = "0123456789abcdef";
-  std::string ret;
-  do {
-    ret = charset[n & 15] + ret;
-    n >>= 4;
-  } while (n > 0);
-  return ret;
-}
-
-inline size_t to_utf8(int code, char *buff) {
-  if (code < 0x0080) {
-    buff[0] = (code & 0x7F);
-    return 1;
-  } else if (code < 0x0800) {
-    buff[0] = (0xC0 | ((code >> 6) & 0x1F));
-    buff[1] = (0x80 | (code & 0x3F));
-    return 2;
-  } else if (code < 0xD800) {
-    buff[0] = (0xE0 | ((code >> 12) & 0xF));
-    buff[1] = (0x80 | ((code >> 6) & 0x3F));
-    buff[2] = (0x80 | (code & 0x3F));
-    return 3;
-  } else if (code < 0xE000) { // D800 - DFFF is invalid...
-    return 0;
-  } else if (code < 0x10000) {
-    buff[0] = (0xE0 | ((code >> 12) & 0xF));
-    buff[1] = (0x80 | ((code >> 6) & 0x3F));
-    buff[2] = (0x80 | (code & 0x3F));
-    return 3;
-  } else if (code < 0x110000) {
-    buff[0] = (0xF0 | ((code >> 18) & 0x7));
-    buff[1] = (0x80 | ((code >> 12) & 0x3F));
-    buff[2] = (0x80 | ((code >> 6) & 0x3F));
-    buff[3] = (0x80 | (code & 0x3F));
-    return 4;
-  }
-
-  // NOTREACHED
-  return 0;
 }
 
 inline std::string decode_url(const std::string &s) {
@@ -1694,18 +1715,7 @@ inline void Server::write_response(Stream &strm, bool last_connection,
     if (!res.body.empty()) {
       strm.write(res.body.c_str(), res.body.size());
     } else if (res.streamcb) {
-      bool chunked_response = !res.has_header("Content-Length");
-      uint64_t offset = 0;
-      bool data_available = true;
-      while (data_available) {
-        std::string chunk = res.streamcb(offset);
-        offset += chunk.size();
-        data_available = !chunk.empty();
-        // Emit chunked response header and footer for each chunk
-        if (chunked_response)
-          chunk = detail::from_i_to_hex(chunk.size()) + "\r\n" + chunk + "\r\n";
-        if (strm.write(chunk.c_str(), chunk.size()) < 0) break; // Stop on error
-      }
+      detail::write_content_chunked(strm, res);
     }
   }
 
