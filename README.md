@@ -114,6 +114,15 @@ int main(void)
 }
 ```
 
+### GET with Content Receiver
+
+```c++
+  std::string body;
+  auto res = cli.Get("/large-data", [&](const char *data, size_t len) {
+    body.append(data, len);
+  });
+```
+
 ### POST
 
 ```c++

@@ -142,6 +142,31 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
   EXPECT_EQ(out, res->body);
 }
 
+TEST(ChunkedEncodingTest, WithContentReceiver) {
+  auto host = "www.httpwatch.com";
+  auto sec = 2;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  auto port = 443;
+  httplib::SSLClient cli(host, port, sec);
+#else
+  auto port = 80;
+  httplib::Client cli(host, port, sec);
+#endif
+
+  std::string body;
+  auto res =
+      cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
+              [&](const char *data, size_t len) { body.append(data, len); });
+  ASSERT_TRUE(res != nullptr);
+
+  std::string out;
+  httplib::detail::read_file("./image.jpg", out);
+
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(out, body);
+}
+
 TEST(RangeTest, FromHTTPBin) {
   auto host = "httpbin.org";
   auto sec = 5;
@@ -380,7 +405,7 @@ protected:
               })
         .Get("/streamedchunked",
              [&](const Request & /*req*/, Response &res) {
-               res.streamcb = [](uint64_t offset) {
+               res.content_producer = [](uint64_t offset) {
                  if (offset < 3) return "a";
                  if (offset < 6) return "b";
                  return "";
@@ -389,7 +414,7 @@ protected:
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_header("Content-Length", "6");
-               res.streamcb = [](uint64_t offset) {
+               res.content_producer = [](uint64_t offset) {
                  if (offset < 3) return "a";
                  if (offset < 6) return "b";
                  return "";
@@ -1146,6 +1171,24 @@ TEST_F(ServerTest, Gzip) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, GzipWithContentReceiver) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+  std::string body;
+  auto res = cli_.Get("/gzip", headers, [&](const char *data, size_t len) {
+    body.append(data, len);
+  });
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("33", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            body);
+  EXPECT_EQ(200, res->status);
+}
+
 TEST_F(ServerTest, NoGzip) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
@@ -1158,6 +1201,24 @@ TEST_F(ServerTest, NoGzip) {
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             res->body);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, NoGzipWithContentReceiver) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+  std::string body;
+  auto res = cli_.Get("/nogzip", headers, [&](const char *data, size_t len) {
+    body.append(data, len);
+  });
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(false, res->has_header("Content-Encoding"));
+  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            body);
   EXPECT_EQ(200, res->status);
 }
 
