@@ -1009,46 +1009,6 @@ private:
   bool is_valid_;
   z_stream strm;
 };
-
-inline bool decompress(std::string &content) {
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-
-  // 15 is the value of wbits, which should be at the maximum possible value to
-  // ensure that any gzip stream can be decoded. The offset of 16 specifies that
-  // the stream to decompress will be formatted with a gzip wrapper.
-  auto ret = inflateInit2(&strm, 16 + 15);
-  if (ret != Z_OK) { return false; }
-
-  strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
-
-  std::string decompressed;
-
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
-  do {
-    strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
-
-    ret = inflate(&strm, Z_NO_FLUSH);
-    assert(ret != Z_STREAM_ERROR);
-    switch (ret) {
-    case Z_NEED_DICT:
-    case Z_DATA_ERROR:
-    case Z_MEM_ERROR: inflateEnd(&strm); return ret;
-    }
-
-    decompressed.append(buff, bufsiz - strm.avail_out);
-  } while (strm.avail_out == 0);
-
-  content.swap(decompressed);
-
-  inflateEnd(&strm);
-  return ret == Z_STREAM_END;
-}
 #endif
 
 inline bool has_header(const Headers &headers, const char *key) {
