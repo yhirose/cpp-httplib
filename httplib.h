@@ -78,6 +78,7 @@ typedef int socket_t;
 #include <openssl/x509v3.h>
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
+#include <openssl/crypto.h>
 inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
   return M_ASN1_STRING_data(asn1);
 }
@@ -2397,8 +2398,6 @@ namespace detail {
 template <typename U, typename V, typename T>
 inline bool
 read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
-                          // TODO: OpenSSL 1.0.2 occasionally crashes...
-                          // The upcoming 1.1.0 is going to be thread safe.
                           SSL_CTX *ctx, std::mutex &ctx_mutex,
                           U SSL_connect_or_accept, V setup, T callback) {
   SSL *ssl = nullptr;
@@ -2461,6 +2460,32 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
   return ret;
 }
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+class SSLThreadLocks {
+public:
+  SSLThreadLocks() {
+    CRYPTO_set_locking_callback(locking_callback);
+  }
+
+  ~SSLThreadLocks() {
+    CRYPTO_set_locking_callback(nullptr);
+  }
+
+private:
+  static void locking_callback(int mode, int type, const char * /*file*/, int /*line*/) {
+    if (mode & CRYPTO_LOCK) {
+      locks_[type].lock();
+    } else {
+      locks_[type].unlock();
+    }
+  }
+
+  static std::vector<std::mutex> locks_;
+};
+
+std::vector<std::mutex> SSLThreadLocks::locks_(CRYPTO_num_locks());
+#endif
+
 class SSLInit {
 public:
   SSLInit() {
@@ -2469,6 +2494,11 @@ public:
   }
 
   ~SSLInit() { ERR_free_strings(); }
+
+private:
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  SSLThreadLocks thread_init_;
+#endif
 };
 
 static SSLInit sslinit_;
