@@ -327,8 +327,9 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   }
 
   {
-    httplib::Headers headers = {{"Authorization", "Basic aGVsbG86d29ybGQ="}};
-    auto res = cli.Get("/basic-auth/hello/world", headers);
+    auto res = cli.Get("/basic-auth/hello/world", {
+      httplib::make_basic_authentication_header("hello", "world")
+    });
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body,
               "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");

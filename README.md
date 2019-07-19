@@ -195,15 +195,26 @@ std::shared_ptr<httplib::Response> res =
 
 This feature was contributed by [underscorediscovery](https://github.com/yhirose/cpp-httplib/pull/23).
 
+### Basic Authentication
+
+```cpp
+httplib::Client cli("httplib.org");
+
+auto res = cli.Get("/basic-auth/hello/world", {
+  httplib::make_basic_authentication_header("hello", "world")
+});
+// res->status should be 200
+// res->body should be "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n".
+```
+
 ### Range
 
 ```cpp
-httplib::Client cli("httpbin.org", 80);
+httplib::Client cli("httpbin.org");
 
-// 'Range: bytes=1-10'
-httplib::Headers headers = { httplib::make_range_header(1, 10) };
-
-auto res = cli.Get("/range/32", headers);
+auto res = cli.Get("/range/32", {
+  httplib::make_range_header(1, 10) // 'Range: bytes=1-10'
+});
 // res->status should be 206.
 // res->body should be "bcdefghijk".
 ```
