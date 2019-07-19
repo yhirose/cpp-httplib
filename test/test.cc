@@ -976,27 +976,36 @@ TEST_F(ServerTest, MultipartFormData) {
   req.headers.emplace("Host", host_and_port.c_str());
   req.headers.emplace("Accept", "*/*");
   req.headers.emplace("User-Agent", "cpp-httplib/0.1");
+
   req.headers.emplace(
       "Content-Type",
       "multipart/form-data; boundary=----WebKitFormBoundarysBREP3G013oUrLB4");
 
   req.body =
-      "------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: "
-      "form-data; name=\"text1\"\r\n\r\ntext "
-      "default\r\n------WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-"
-      "Disposition: form-data; "
-      "name=\"text2\"\r\n\r\naωb\r\n------"
-      "WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; "
-      "name=\"file1\"; filename=\"hello.txt\"\r\nContent-Type: "
-      "text/"
-      "plain\r\n\r\nh\ne\n\nl\nl\no\n\r\n------"
-      "WebKitFormBoundarysBREP3G013oUrLB4\r\nContent-Disposition: form-data; "
-      "name=\"file2\"; filename=\"world.json\"\r\nContent-Type: "
-      "application/json\r\n\r\n{\n  \"world\", "
-      "true\n}\n\r\n------WebKitFormBoundarysBREP3G013oUrLB4\r\ncontent-"
-      "disposition: form-data; name=\"file3\"; filename=\"\"\r\ncontent-type: "
-      "application/"
-      "octet-stream\r\n\r\n\r\n------WebKitFormBoundarysBREP3G013oUrLB4--\r\n";
+      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
+      "Content-Disposition: form-data; name=\"text1\"\r\n"
+      "\r\n"
+      "text default\r\n"
+      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
+      "Content-Disposition: form-data; name=\"text2\"\r\n"
+      "\r\n"
+      "aωb\r\n"
+      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
+      "Content-Disposition: form-data; name=\"file1\"; filename=\"hello.txt\"\r\n"
+      "Content-Type: text/plain\r\n"
+      "\r\n"
+      "h\ne\n\nl\nl\no\n\r\n"
+      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
+      "Content-Disposition: form-data; name=\"file2\"; filename=\"world.json\"\r\n"
+      "Content-Type: application/json\r\n"
+      "\r\n"
+      "{\n  \"world\", true\n}\n\r\n"
+      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
+      "content-disposition: form-data; name=\"file3\"; filename=\"\"\r\n"
+      "content-type: application/octet-stream\r\n"
+      "\r\n"
+      "\r\n"
+      "------WebKitFormBoundarysBREP3G013oUrLB4--\r\n";
 
   auto res = std::make_shared<Response>();
   auto ret = cli_.send(req, *res);
