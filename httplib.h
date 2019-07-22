@@ -2482,29 +2482,30 @@ read_and_close_socket_ssl(socket_t sock, size_t keep_alive_max_count,
 }
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
+static std::shared_ptr<std::vector<std::mutex>> openSSL_locks_;
+
 class SSLThreadLocks {
 public:
   SSLThreadLocks() {
+    openSSL_locks_ =
+        std::make_shared<std::vector<std::mutex>>(CRYPTO_num_locks());
     CRYPTO_set_locking_callback(locking_callback);
   }
 
-  ~SSLThreadLocks() {
-    CRYPTO_set_locking_callback(nullptr);
-  }
+  ~SSLThreadLocks() { CRYPTO_set_locking_callback(nullptr); }
 
 private:
-  static void locking_callback(int mode, int type, const char * /*file*/, int /*line*/) {
+  static void locking_callback(int mode, int type, const char * /*file*/,
+                               int /*line*/) {
+    auto &locks = *openSSL_locks_;
     if (mode & CRYPTO_LOCK) {
-      locks_[type].lock();
+      locks[type].lock();
     } else {
-      locks_[type].unlock();
+      locks[type].unlock();
     }
   }
-
-  static std::vector<std::mutex> locks_;
 };
 
-std::vector<std::mutex> SSLThreadLocks::locks_(CRYPTO_num_locks());
 #endif
 
 class SSLInit {
