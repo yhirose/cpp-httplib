@@ -31,6 +31,10 @@ int main(void)
         res.set_content(numbers, "text/plain");
     });
 
+    svr.Get("/stop", [&](const Request& req, Response& res) {
+      svr.stop();
+    });
+
     svr.listen("localhost", 1234);
 }
 ```
@@ -42,18 +46,6 @@ int main(void)
 ```cpp
 int port = svr.bind_to_any_port("0.0.0.0");
 svr.listen_after_bind();
-```
-
-### Method Chain
-
-```cpp
-svr.Get("/get", [](const auto& req, auto& res) {
-        res.set_content("get", "text/plain");
-    })
-    .Post("/post", [](const auto& req, auto& res) {
-        res.set_content(req.body(), "text/plain");
-    })
-    .listen("localhost", 1234);
 ```
 
 ### Static File Server
@@ -112,6 +104,15 @@ int main(void)
         std::cout << res->body << std::endl;
     }
 }
+```
+
+### GET with HTTP headers
+
+```c++
+  httplib::Headers headers = {
+    { "Content-Length", "5" }
+  };
+  auto res = cli.Post("/validate-no-multiple-headers", headers, "hello", "text/plain");
 ```
 
 ### GET with Content Receiver

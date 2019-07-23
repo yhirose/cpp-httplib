@@ -1157,8 +1157,9 @@ TEST_F(ServerTest, ArrayParam) {
 }
 
 TEST_F(ServerTest, NoMultipleHeaders) {
-  Headers headers;
-  headers.emplace("Content-Length", "5");
+  Headers headers = {
+    { "Content-Length", "5" }
+  };
   auto res = cli_.Post("/validate-no-multiple-headers", headers, "hello",
                        "text/plain");
   ASSERT_TRUE(res != nullptr);
