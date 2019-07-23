@@ -30,7 +30,7 @@ int main(void)
     });
 
     svr.Get("/stop", [&](const Request& req, Response& res) {
-      svr.stop();
+        svr.stop();
     });
 
     svr.listen("localhost", 1234);
@@ -128,15 +128,6 @@ int main(void)
 ```c++
 res = cli.Post("/post", "text", "text/plain");
 res = cli.Post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
-```
-
-### POST with HTTP headers
-
-```c++
-  httplib::Headers headers = {
-    { "Content-Length", "5" }
-  };
-  auto res = cli.Post("/hi", headers, "hello", "text/plain");
 ```
 
 ### POST with parameters
