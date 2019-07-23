@@ -8,8 +8,6 @@ A C++ header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
 
-Inspired by [Sinatra](http://www.sinatrarb.com/) and [express](https://github.com/visionmedia/express).
-
 Server Example
 --------------
 
@@ -110,9 +108,9 @@ int main(void)
 
 ```c++
   httplib::Headers headers = {
-    { "Content-Length", "5" }
+    { "Accept-Encoding", "gzip, deflate" }
   };
-  auto res = cli.Post("/validate-no-multiple-headers", headers, "hello", "text/plain");
+  auto res = cli.Get("/hi", headers);
 ```
 
 ### GET with Content Receiver
@@ -130,6 +128,15 @@ int main(void)
 ```c++
 res = cli.Post("/post", "text", "text/plain");
 res = cli.Post("/person", "name=john1&note=coder", "application/x-www-form-urlencoded");
+```
+
+### POST with HTTP headers
+
+```c++
+  httplib::Headers headers = {
+    { "Content-Length", "5" }
+  };
+  auto res = cli.Post("/hi", headers, "hello", "text/plain");
 ```
 
 ### POST with parameters
