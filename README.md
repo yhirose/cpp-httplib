@@ -150,6 +150,20 @@ httplib::Params params{
 auto res = cli.Post("/post", params);
 ```
 
+### POST with Multipart Form Data
+
+```c++
+  httplib::MultipartFormDataItems items = {
+    { "text1", "text default", "", "" },
+    { "text2", "aωb", "", "" },
+    { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
+    { "file2", "{\n  \"world\", true\n}\n", "world.json", "application/json" },
+    { "file3", "", "", "application/octet-stream" },
+  };
+
+  auto res = cli.Post("/multipart", items);
+```
+
 ### PUT
 
 ```c++

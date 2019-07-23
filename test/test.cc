@@ -264,9 +264,8 @@ TEST(CancelTest, NoCancel) {
   httplib::Client cli(host, port, sec);
 #endif
 
-  httplib::Headers headers;
   auto res =
-      cli.Get("/range/32", headers, [](uint64_t, uint64_t) { return true; });
+      cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
   EXPECT_EQ(200, res->status);
@@ -284,9 +283,8 @@ TEST(CancelTest, WithCancelSmallPayload) {
   httplib::Client cli(host, port, sec);
 #endif
 
-  httplib::Headers headers;
   auto res =
-      cli.Get("/range/32", headers, [](uint64_t, uint64_t) { return false; });
+      cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(res == nullptr);
 }
 
@@ -964,53 +962,17 @@ TEST_F(ServerTest, EndWithPercentCharacterInQuery) {
 }
 
 TEST_F(ServerTest, MultipartFormData) {
-  Request req;
-  req.method = "POST";
-  req.path = "/multipart";
+  MultipartFormDataItems items = {
+    { "text1", "text default", "", "" },
+    { "text2", "aωb", "", "" },
+    { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
+    { "file2", "{\n  \"world\", true\n}\n", "world.json", "application/json" },
+    { "file3", "", "", "application/octet-stream" },
+  };
 
-  std::string host_and_port;
-  host_and_port += HOST;
-  host_and_port += ":";
-  host_and_port += std::to_string(PORT);
+  auto res = cli_.Post("/multipart", items);
 
-  req.headers.emplace("Host", host_and_port.c_str());
-  req.headers.emplace("Accept", "*/*");
-  req.headers.emplace("User-Agent", "cpp-httplib/0.1");
-
-  req.headers.emplace(
-      "Content-Type",
-      "multipart/form-data; boundary=----WebKitFormBoundarysBREP3G013oUrLB4");
-
-  req.body =
-      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
-      "Content-Disposition: form-data; name=\"text1\"\r\n"
-      "\r\n"
-      "text default\r\n"
-      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
-      "Content-Disposition: form-data; name=\"text2\"\r\n"
-      "\r\n"
-      "aωb\r\n"
-      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
-      "Content-Disposition: form-data; name=\"file1\"; filename=\"hello.txt\"\r\n"
-      "Content-Type: text/plain\r\n"
-      "\r\n"
-      "h\ne\n\nl\nl\no\n\r\n"
-      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
-      "Content-Disposition: form-data; name=\"file2\"; filename=\"world.json\"\r\n"
-      "Content-Type: application/json\r\n"
-      "\r\n"
-      "{\n  \"world\", true\n}\n\r\n"
-      "------WebKitFormBoundarysBREP3G013oUrLB4\r\n"
-      "content-disposition: form-data; name=\"file3\"; filename=\"\"\r\n"
-      "content-type: application/octet-stream\r\n"
-      "\r\n"
-      "\r\n"
-      "------WebKitFormBoundarysBREP3G013oUrLB4--\r\n";
-
-  auto res = std::make_shared<Response>();
-  auto ret = cli_.send(req, *res);
-
-  ASSERT_TRUE(ret);
+  ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
 

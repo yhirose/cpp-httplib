@@ -67,6 +67,7 @@ typedef int socket_t;
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <regex>
 #include <string>
 #include <sys/stat.h>
@@ -137,6 +138,14 @@ struct MultipartFile {
   size_t length = 0;
 };
 typedef std::multimap<std::string, MultipartFile> MultipartFiles;
+
+struct MultipartFormData {
+  std::string name;
+  std::string content;
+  std::string filename;
+  std::string content_type;
+};
+typedef std::vector<MultipartFormData> MultipartFormDataItems;
 
 struct Request {
   std::string version;
@@ -339,6 +348,11 @@ public:
   std::shared_ptr<Response> Post(const char *path, const Params &params);
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const Params &params);
+
+  std::shared_ptr<Response> Post(const char *path,
+                                 const MultipartFormDataItems &items);
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 const MultipartFormDataItems &items);
 
   std::shared_ptr<Response> Put(const char *path, const std::string &body,
                                 const char *content_type);
@@ -551,9 +565,7 @@ inline std::string base64_encode(const std::string &in) {
     }
   }
 
-  if (valb > -6) {
-    out.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]);
-  }
+  if (valb > -6) { out.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]); }
 
   while (out.size() % 4) {
     out.push_back('=');
@@ -1231,16 +1243,13 @@ bool read_content(Stream &strm, T &x, uint64_t payload_max_length, int &status,
 template <typename T> inline int write_headers(Stream &strm, const T &info) {
   auto write_len = 0;
   for (const auto &x : info.headers) {
-    auto len = strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
-    if (len < 0) {
-      return len;
-    }
+    auto len =
+        strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
+    if (len < 0) { return len; }
     write_len += len;
   }
   auto len = strm.write("\r\n");
-  if (len < 0) {
-    return len;
-  }
+  if (len < 0) { return len; }
   write_len += len;
   return write_len;
 }
@@ -1262,9 +1271,7 @@ inline int write_content_chunked(Stream &strm, const T &x) {
     }
 
     auto len = strm.write(chunk.c_str(), chunk.size());
-    if (len < 0) {
-      return len;
-    }
+    if (len < 0) { return len; }
     write_len += len;
   }
   return write_len;
@@ -1444,6 +1451,22 @@ inline std::string to_lower(const char *beg, const char *end) {
   return out;
 }
 
+inline std::string make_multipart_data_boundary() {
+  static const char data[] =
+      "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+  std::random_device seed_gen;
+  std::mt19937 engine(seed_gen());
+
+  std::string result = "--cpp-httplib-form-data-";
+
+  for (auto i = 0; i < 16; i++) {
+    result += data[engine() % (sizeof(data) - 1)];
+  }
+
+  return result;
+}
+
 inline void make_range_header_core(std::string &) {}
 
 template <typename uint64_t>
@@ -1486,9 +1509,9 @@ inline std::pair<std::string, std::string> make_range_header(uint64_t value,
   return std::make_pair("Range", field);
 }
 
-
-inline std::pair<std::string, std::string> 
-make_basic_authentication_header(const std::string& username, const std::string& password) {
+inline std::pair<std::string, std::string>
+make_basic_authentication_header(const std::string &username,
+                                 const std::string &password) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
   return std::make_pair("Authorization", field);
 }
@@ -1583,9 +1606,7 @@ inline int Stream::write_format(const char *fmt, const Args &... args) {
 #else
   auto n = snprintf(buf, bufsiz - 1, fmt, args...);
 #endif
-  if (n <= 0) {
-    return n;
-  }
+  if (n <= 0) { return n; }
 
   if (n >= bufsiz - 1) {
     std::vector<char> glowable_buf(bufsiz);
@@ -1769,7 +1790,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
 
   // Response line
   if (!strm.write_format("HTTP/1.1 %d %s\r\n", res.status,
-                    detail::status_message(res.status))) {
+                         detail::status_message(res.status))) {
     return false;
   }
 
@@ -1811,20 +1832,14 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
     res.set_header("Content-Length", length.c_str());
   }
 
-  if (!detail::write_headers(strm, res)) {
-    return false;
-  }
+  if (!detail::write_headers(strm, res)) { return false; }
 
   // Body
   if (req.method != "HEAD") {
     if (!res.body.empty()) {
-      if (!strm.write(res.body.c_str(), res.body.size())) {
-        return false;
-      }
+      if (!strm.write(res.body.c_str(), res.body.size())) { return false; }
     } else if (res.content_producer) {
-      if (!detail::write_content_chunked(strm, res)) {
-        return false;
-      }
+      if (!detail::write_content_chunked(strm, res)) { return false; }
     }
   }
 
@@ -2323,6 +2338,45 @@ Client::Post(const char *path, const Headers &headers, const Params &params) {
   }
 
   return Post(path, headers, query, "application/x-www-form-urlencoded");
+}
+
+inline std::shared_ptr<Response>
+Client::Post(const char *path, const MultipartFormDataItems &items) {
+  return Post(path, Headers(), items);
+}
+
+inline std::shared_ptr<Response>
+Client::Post(const char *path, const Headers &headers,
+             const MultipartFormDataItems &items) {
+  Request req;
+  req.method = "POST";
+  req.headers = headers;
+  req.path = path;
+
+  auto boundary = detail::make_multipart_data_boundary();
+
+  req.headers.emplace("Content-Type",
+                      "multipart/form-data; boundary=" + boundary);
+
+  for (const auto &item : items) {
+    req.body += "--" + boundary + "\r\n";
+    req.body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+    if (!item.filename.empty()) {
+      req.body += "; filename=\"" + item.filename + "\"";
+    }
+    req.body += "\r\n";
+    if (!item.content_type.empty()) {
+      req.body += "Content-Type: " + item.content_type + "\r\n";
+    }
+    req.body += "\r\n";
+    req.body += item.content + "\r\n";
+  }
+
+  req.body += "--" + boundary + "--\r\n";
+
+  auto res = std::make_shared<Response>();
+
+  return send(req, *res) ? res : nullptr;
 }
 
 inline std::shared_ptr<Response> Client::Put(const char *path,
