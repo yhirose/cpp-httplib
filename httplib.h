@@ -2033,6 +2033,11 @@ Server::process_request(Stream &strm, bool last_connection,
     connection_close = true;
   }
 
+  if (req.version == "HTTP/1.0" &&
+      req.get_header_value("Connection") != "Keep-Alive") {
+    connection_close = true;
+  }
+
   req.set_header("REMOTE_ADDR", strm.get_remote_addr().c_str());
 
   // Body
