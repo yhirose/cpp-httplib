@@ -1018,10 +1018,7 @@ public:
   template <typename T>
   bool decompress(const char *data, size_t data_len, T callback) {
     int ret = Z_OK;
-    std::string decompressed;
 
-    // strm.avail_in = content.size();
-    // strm.next_in = (Bytef *)content.data();
     strm.avail_in = data_len;
     strm.next_in = (Bytef *)data;
 
@@ -1039,15 +1036,10 @@ public:
       case Z_MEM_ERROR: inflateEnd(&strm); return false;
       }
 
-      decompressed.append(buff, bufsiz - strm.avail_out);
+      callback(buff, bufsiz - strm.avail_out);
     } while (strm.avail_out == 0);
 
-    if (ret == Z_STREAM_END) {
-      callback(decompressed.data(), decompressed.size());
-      return true;
-    }
-
-    return false;
+    return ret == Z_STREAM_END;
   }
 
 private:
