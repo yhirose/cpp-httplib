@@ -6,13 +6,76 @@ cpp-httplib
 
 A C++ single-file header-only cross platform HTTP/HTTPS library.
 
-It's extremely easy to setup. Just include **httplib.h** file in your code!
+It's extremely easy to setup. Just include **httplib.h** file in your code or use a package manager.
+
+Installation
+------------
+
+### Package managers
+
+If you are using Conan to manage your dependencies, merely add `httplib/x.y.z@omaralvarez/public-conan` to your requires, where x.y.z is the release version you want to use. Please file issues in [conan-httplib](https://github.com/omaralvarez/conan-httplib) if you experience problems with the packages. Sample `conanfile.txt`:
+
+```
+[requires]
+httplib/0.2.1@omaralvarez/public-conan
+
+[generators]
+cmake
+```
+
+### Install from sources
+
+`httplib` is a header-only library. 
+
+You can directly install it from the sources:
+
+```bash
+cmake -D CMAKE_INSTALL_PREFIX=your_install_prefix
+make install
+```
+
+CMake Example
+-------------
+
+When using Conan:
+
+```cmake
+project(Test CXX)
+cmake_minimum_required(VERSION 3.7)
+
+set(CMAKE_CXX_STANDARD 11)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+
+find_package(Threads REQUIRED)
+include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+conan_basic_setup()
+
+add_executable(example main.cpp)
+target_link_libraries(example Threads::Threads ${CONAN_LIBS})
+```
+
+If not:
+
+```cmake
+project(Test CXX)
+cmake_minimum_required(VERSION 3.7)
+
+set(CMAKE_CXX_STANDARD 11)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+
+find_package(Threads REQUIRED)
+
+add_executable(example main.cpp)
+target_link_libraries(example Threads::Threads)
+```
 
 Server Example
 --------------
 
 ```c++
 #include <httplib.h>
+// When using Conan or CMake
+// #include <httplib/httplib.h>
 
 int main(void)
 {
