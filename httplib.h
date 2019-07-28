@@ -1246,8 +1246,7 @@ template <typename T> inline int write_headers(Stream &strm, const T &info) {
   return write_len;
 }
 
-template <typename T>
-inline int write_content_chunked(Stream &strm, const T &x) {
+template <typename T> inline int write_content(Stream &strm, const T &x) {
   auto chunked_response = !x.has_header("Content-Length");
   uint64_t offset = 0;
   auto data_available = true;
@@ -1831,7 +1830,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
     if (!res.body.empty()) {
       if (!strm.write(res.body.c_str(), res.body.size())) { return false; }
     } else if (res.content_producer) {
-      if (!detail::write_content_chunked(strm, res)) { return false; }
+      if (!detail::write_content(strm, res)) { return false; }
     }
   }
 
