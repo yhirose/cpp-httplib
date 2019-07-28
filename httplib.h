@@ -277,7 +277,7 @@ public:
 protected:
   bool process_request(Stream &strm, bool last_connection,
                        bool &connection_close,
-                       std::function<void(Request &)> setup_request = nullptr);
+                       std::function<void(Request &)> setup_request);
 
   size_t keep_alive_max_count_;
   size_t payload_max_length_;
@@ -2053,7 +2053,6 @@ Server::process_request(Stream &strm, bool last_connection,
     }
   }
 
-  // TODO: Add additional request info
   if (setup_request) { setup_request(req); }
 
   if (routing(req, res)) {
@@ -2071,7 +2070,7 @@ inline bool Server::read_and_close_socket(socket_t sock) {
   return detail::read_and_close_socket(
       sock, keep_alive_max_count_,
       [this](Stream &strm, bool last_connection, bool &connection_close) {
-        return process_request(strm, last_connection, connection_close);
+        return process_request(strm, last_connection, connection_close, nullptr);
       });
 }
 
