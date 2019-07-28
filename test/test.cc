@@ -202,6 +202,29 @@ TEST(RangeTest, FromHTTPBin) {
     EXPECT_EQ(res->body, "bcdefghijk");
     EXPECT_EQ(206, res->status);
   }
+
+  {
+    httplib::Headers headers = {httplib::make_range_header(0, 31)};
+    auto res = cli.Get("/range/32", headers);
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ(200, res->status);
+  }
+
+  {
+    httplib::Headers headers = {httplib::make_range_header(0)};
+    auto res = cli.Get("/range/32", headers);
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ(200, res->status);
+  }
+
+  {
+    httplib::Headers headers = {httplib::make_range_header(0, 32)};
+    auto res = cli.Get("/range/32", headers);
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(416, res->status);
+  }
 }
 
 TEST(ConnectionErrorTest, InvalidHost) {
