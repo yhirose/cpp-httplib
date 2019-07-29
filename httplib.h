@@ -1249,13 +1249,12 @@ template <typename T> inline int write_headers(Stream &strm, const T &info) {
   return write_len;
 }
 
-template <typename T> inline int write_content(Stream &strm, const T &x) {
-  auto chunked_response = !x.has_header("Content-Length");
+inline int write_content(Stream &strm, ContentProducer content_producer, bool chunked_response) {
   uint64_t offset = 0;
   auto data_available = true;
   auto write_len = 0;
   while (data_available) {
-    auto chunk = x.content_producer(offset);
+    auto chunk = content_producer(offset);
     offset += chunk.size();
     data_available = !chunk.empty();
 
@@ -1833,7 +1832,8 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
     if (!res.body.empty()) {
       if (!strm.write(res.body.c_str(), res.body.size())) { return false; }
     } else if (res.content_producer) {
-      if (!detail::write_content(strm, res)) { return false; }
+      auto chunked_response = !res.has_header("Content-Length");
+      if (!detail::write_content(strm, res.content_producer, chunked_response)) { return false; }
     }
   }
 
