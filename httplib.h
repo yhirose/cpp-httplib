@@ -940,6 +940,7 @@ inline const char *find_content_type(const std::string &path) {
 inline const char *status_message(int status) {
   switch (status) {
   case 200: return "OK";
+  case 206: return "Partial Content";
   case 301: return "Moved Permanently";
   case 302: return "Found";
   case 303: return "See Other";
@@ -950,6 +951,8 @@ inline const char *status_message(int status) {
   case 413: return "Payload Too Large";
   case 414: return "Request-URI Too Long";
   case 415: return "Unsupported Media Type";
+  case 416: return "Range Not Satisfiable";
+
   default:
   case 500: return "Internal Server Error";
   }
