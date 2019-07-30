@@ -1466,6 +1466,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  msleep(1);
 
   httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE,
                          CLIENT_PRIVATE_KEY_FILE);
@@ -1484,6 +1485,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  msleep(1);
 
   httplib::SSLClient cli(HOST, PORT, 30);
   auto res = cli.Get("/test");
@@ -1504,6 +1506,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  msleep(1);
 
   httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE,
                          CLIENT_PRIVATE_KEY_FILE);
