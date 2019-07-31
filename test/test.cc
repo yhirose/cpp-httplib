@@ -378,7 +378,7 @@ protected:
 
   virtual void SetUp() {
     svr_.set_base_dir("./www");
-
+    svr_.set_thread_pool_size(12);
     svr_.Get("/hi",
              [&](const Request & /*req*/, Response &res) {
                res.set_content("Hello World!", "text/plain");
