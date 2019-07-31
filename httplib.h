@@ -177,7 +177,7 @@ public:
             std::unique_lock<std::mutex> lck(mtx);
             quit = true;
         }
-        codv.notify_all(); // 唤醒线程池所有线程
+        codv.notify_all(); 
 
         for (auto& t : threads) {
             t.join();
@@ -187,8 +187,8 @@ public:
 public:
     std::mutex mtx;
     std::queue<std::function<void()>> queue;
-    std::condition_variable codv; // 唤醒线程池
-    std::condition_variable codv_que; // 唤醒add 等待队列
+    std::condition_variable codv;
+    std::condition_variable codv_que;
     bool quit;
 
 private:
