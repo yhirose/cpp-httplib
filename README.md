@@ -52,6 +52,13 @@ svr.listen_after_bind();
 svr.set_base_dir("./www");
 ```
 
+
+### Using thread pool
+
+```cpp
+svr.set_thread_pool_size(4);
+```
+
 ### Logging
 
 ```cpp

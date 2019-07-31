@@ -72,6 +72,11 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <condition_variable>
+#include <future>
+#include <queue>
+#include <stdexcept>
+#include <vector>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -103,6 +108,96 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 
 namespace httplib {
+
+// thread pool from https://github.com/xinyu391/octopus.git
+namespace octopus {
+
+class Pool {
+public:
+    Pool(int pool_size)
+        : poolSize(pool_size)
+        , queueSize(-1)
+        ,idle_thread_count(0)
+        , quit(false){
+
+        };
+    Pool(int pool_size, int queue_size)
+        : poolSize(pool_size)
+        , queueSize(queue_size)
+        ,idle_thread_count(0)
+        , quit(false){};
+
+    template <class Fn, class... Args>
+    auto enqueue(Fn&& f, Args&&... args) -> std::future<typename std::result_of<Fn(Args...)>::type> {
+        std::unique_lock<std::mutex> lck(mtx);
+        while (queueSize > 0 && queue.size() >= queueSize) {
+            codv_que.wait(lck);
+        }
+        using return_type = typename std::result_of<Fn(Args...)>::type;
+        auto task = std::make_shared<std::packaged_task<return_type()>>(std::bind(std::forward<Fn>(f), std::forward<Args>(args)...));
+        std::future<return_type> ret = task->get_future();
+        // check thread add to queue,
+        queue.emplace([task]() { (*task)(); });
+        if (threads.size() == poolSize) { // notify one
+
+            codv.notify_one();
+        } else {
+            if (idle_thread_count<1) {
+                std::thread t([this]() {
+                    while (1) {
+                        std::function<void()> task;
+                        {
+                            std::unique_lock<std::mutex> lck(this->mtx);
+                            idle_thread_count++;
+                            this->codv.wait(lck,
+                                [this] { return this->quit || !this->queue.empty(); });
+                            if (this->quit && this->queue.empty())
+                                return;
+                            idle_thread_count--;
+                            task = std::move(this->queue.front());
+                            this->queue.pop();
+                            if (queueSize > 0) {
+                                this->codv_que.notify_all();
+                            }
+                        }
+                        task();
+                    }
+                });
+                threads.push_back(std::move(t));
+            }else{
+                 codv.notify_one();
+            }
+        }
+        return ret;
+    };
+
+    //  wait all thread  quit friendly.
+    ~Pool() {
+        {
+            std::unique_lock<std::mutex> lck(mtx);
+            quit = true;
+        }
+        codv.notify_all(); // 唤醒线程池所有线程
+
+        for (auto& t : threads) {
+            t.join();
+        }
+    };
+
+public:
+    std::mutex mtx;
+    std::queue<std::function<void()>> queue;
+    std::condition_variable codv; // 唤醒线程池
+    std::condition_variable codv_que; // 唤醒add 等待队列
+    bool quit;
+
+private:
+    int poolSize;
+    int queueSize;
+    int idle_thread_count;
+    std::vector<std::thread> threads;
+};
+} // namespace octopus thread_pool
 
 namespace detail {
 
@@ -265,7 +360,8 @@ public:
 
   void set_keep_alive_max_count(size_t count);
   void set_payload_max_length(uint64_t length);
-
+  void set_thread_pool_size(int n);
+  
   int bind_to_any_port(const char *host, int socket_flags = 0);
   bool listen_after_bind();
 
@@ -312,7 +408,7 @@ private:
   Handler error_handler_;
   Logger logger_;
 
-  // TODO: Use thread pool...
+  int thread_pool_size;
   std::mutex running_threads_mutex_;
   int running_threads_;
 };
@@ -1732,6 +1828,10 @@ inline void Server::set_payload_max_length(uint64_t length) {
   payload_max_length_ = length;
 }
 
+inline void Server::set_thread_pool_size(int n){
+  thread_pool_size = n;
+}
+
 inline int Server::bind_to_any_port(const char *host, int socket_flags) {
   return bind_internal(host, 0, socket_flags);
 }
@@ -1907,7 +2007,10 @@ inline bool Server::listen_internal() {
   auto ret = true;
 
   is_running_ = true;
-
+  octopus::Pool * thread_pool = nullptr;
+  if(thread_pool_size>0){
+    thread_pool = new octopus::Pool(thread_pool_size);
+  }
   for (;;) {
     if (svr_sock_ == INVALID_SOCKET) {
       // The server socket was closed by 'stop' method.
@@ -1932,27 +2035,33 @@ inline bool Server::listen_internal() {
       break;
     }
 
-    // TODO: Use thread pool...
-    std::thread([=]() {
-      {
-        std::lock_guard<std::mutex> guard(running_threads_mutex_);
-        running_threads_++;
-      }
+    if(thread_pool){
+        thread_pool->enqueue([=](){read_and_close_socket(sock);});
+    }else{
+      std::thread([=]() {
+        {
+          std::lock_guard<std::mutex> guard(running_threads_mutex_);
+          running_threads_++;
+        }
 
-      read_and_close_socket(sock);
+        read_and_close_socket(sock);
 
-      {
-        std::lock_guard<std::mutex> guard(running_threads_mutex_);
-        running_threads_--;
-      }
-    }).detach();
+        {
+          std::lock_guard<std::mutex> guard(running_threads_mutex_);
+          running_threads_--;
+        }
+      }).detach();
+    }  
   }
 
-  // TODO: Use thread pool...
-  for (;;) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    std::lock_guard<std::mutex> guard(running_threads_mutex_);
-    if (!running_threads_) { break; }
+  if(thread_pool){
+     delete thread_pool;
+  }else{
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      std::lock_guard<std::mutex> guard(running_threads_mutex_);
+      if (!running_threads_) { break; }
+    }
   }
 
   is_running_ = false;
