@@ -95,27 +95,99 @@ TEST(GetHeaderValueTest, RegularValueInt) {
 
 TEST(GetHeaderValueTest, Range) {
   {
-    Headers headers = {make_range_header(1)};
+    Headers headers = {make_range_header({{1, -1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-", val);
   }
 
   {
-    Headers headers = {make_range_header(1, 10)};
+    Headers headers = {make_range_header({{-1, 1}})};
+    auto val = detail::get_header_value(headers, "Range", 0, 0);
+    EXPECT_STREQ("bytes=-1", val);
+  }
+
+  {
+    Headers headers = {make_range_header({{1, 10}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-10", val);
   }
 
   {
-    Headers headers = {make_range_header(1, 10, 100)};
+    Headers headers = {make_range_header({{1, 10}, {100, -1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-10, 100-", val);
   }
 
   {
-    Headers headers = {make_range_header(1, 10, 100, 200)};
+    Headers headers = {make_range_header({{1, 10}, {100, 200}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-10, 100-200", val);
+  }
+
+  {
+    Headers headers = {make_range_header({{0, 0}, {-1, 1}})};
+    auto val = detail::get_header_value(headers, "Range", 0, 0);
+    EXPECT_STREQ("bytes=0-0, -1", val);
+  }
+}
+
+TEST(ParseHeaderValueTest, Range) {
+  {
+    Ranges ranges;
+    auto ret = detail::parse_range_header("bytes=1-", ranges);
+    EXPECT_TRUE(ret);
+    EXPECT_EQ(1u, ranges.size());
+    EXPECT_EQ(1u, ranges[0].first);
+    EXPECT_EQ(-1, ranges[0].second);
+  }
+
+  {
+    Ranges ranges;
+    auto ret = detail::parse_range_header("bytes=-1", ranges);
+    EXPECT_TRUE(ret);
+    EXPECT_EQ(1u, ranges.size());
+    EXPECT_EQ(-1, ranges[0].first);
+    EXPECT_EQ(1u, ranges[0].second);
+  }
+
+  {
+    Ranges ranges;
+    auto ret = detail::parse_range_header("bytes=1-10", ranges);
+    EXPECT_TRUE(ret);
+    EXPECT_EQ(1u, ranges.size());
+    EXPECT_EQ(1u, ranges[0].first);
+    EXPECT_EQ(10u, ranges[0].second);
+  }
+
+  {
+    Ranges ranges;
+    auto ret = detail::parse_range_header("bytes=10-1", ranges);
+    EXPECT_FALSE(ret);
+  }
+
+  {
+    Ranges ranges;
+    auto ret = detail::parse_range_header("bytes=1-10, 100-", ranges);
+    EXPECT_TRUE(ret);
+    EXPECT_EQ(2u, ranges.size());
+    EXPECT_EQ(1u, ranges[0].first);
+    EXPECT_EQ(10u, ranges[0].second);
+    EXPECT_EQ(100u, ranges[1].first);
+    EXPECT_EQ(-1, ranges[1].second);
+  }
+
+  {
+    Ranges ranges;
+    auto ret =
+        detail::parse_range_header("bytes=1-10, 100-200, 300-400", ranges);
+    EXPECT_TRUE(ret);
+    EXPECT_EQ(3u, ranges.size());
+    EXPECT_EQ(1u, ranges[0].first);
+    EXPECT_EQ(10u, ranges[0].second);
+    EXPECT_EQ(100u, ranges[1].first);
+    EXPECT_EQ(200u, ranges[1].second);
+    EXPECT_EQ(300u, ranges[2].first);
+    EXPECT_EQ(400u, ranges[2].second);
   }
 }
 
@@ -188,7 +260,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header(1)};
+    httplib::Headers headers = {httplib::make_range_header({{1, -1}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body, "bcdefghijklmnopqrstuvwxyzabcdef");
@@ -196,7 +268,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header(1, 10)};
+    httplib::Headers headers = {httplib::make_range_header({{1, 10}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body, "bcdefghijk");
@@ -204,7 +276,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header(0, 31)};
+    httplib::Headers headers = {httplib::make_range_header({{0, 31}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
@@ -212,7 +284,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header(0)};
+    httplib::Headers headers = {httplib::make_range_header({{0, -1}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
@@ -220,7 +292,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header(0, 32)};
+    httplib::Headers headers = {httplib::make_range_header({{0, 32}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(416, res->status);
@@ -287,8 +359,7 @@ TEST(CancelTest, NoCancel) {
   httplib::Client cli(host, port, sec);
 #endif
 
-  auto res =
-      cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
+  auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
   EXPECT_EQ(200, res->status);
@@ -306,8 +377,7 @@ TEST(CancelTest, WithCancelSmallPayload) {
   httplib::Client cli(host, port, sec);
 #endif
 
-  auto res =
-      cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(res == nullptr);
 }
 
@@ -348,9 +418,9 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   }
 
   {
-    auto res = cli.Get("/basic-auth/hello/world", {
-      httplib::make_basic_authentication_header("hello", "world")
-    });
+    auto res =
+        cli.Get("/basic-auth/hello/world",
+                {httplib::make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body,
               "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
@@ -425,28 +495,47 @@ protected:
                 res.set_content(json, "appliation/json");
                 res.status = 200;
               })
-        .Get("/streamedchunked",
+        .Get("/streamed-chunked",
              [&](const Request & /*req*/, Response &res) {
-               res.content_producer = [](uint64_t offset) {
-                 if (offset < 3) return "a";
-                 if (offset < 6) return "b";
-                 return "";
-               };
+               res.set_chunked_content_provider(
+                   [](uint64_t /*offset*/, Out out, Done done) {
+                     out("123", 3);
+                     out("456", 3);
+                     out("789", 3);
+                     done();
+                   });
              })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
-               res.set_header("Content-Length", "6");
-               res.content_producer = [](uint64_t offset) {
-                 if (offset < 3) return "a";
-                 if (offset < 6) return "b";
-                 return "";
-               };
+               res.set_content_provider(
+                   6, [](uint64_t offset, uint64_t /*length*/, Out out) {
+                     if (offset < 3) {
+                       out("a", 1);
+                     } else {
+                       out("b", 1);
+                     }
+                   });
+             })
+        .Get("/streamed-with-range",
+             [&](const Request & /*req*/, Response &res) {
+               auto data = std::make_shared<std::string>("abcdefg");
+               res.set_content_provider(
+                   data->size(),
+                   [data](uint64_t offset, uint64_t length, Out out) {
+                     const uint64_t DATA_CHUNK_SIZE = 4;
+                     const auto &d = *data;
+                     out(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+                   });
+             })
+        .Get("/with-range",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content("abcdefg", "text/plain");
              })
         .Post("/chunked",
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(req.body, "dechunked post body");
               })
-        .Post("/largechunked",
+        .Post("/large-chunked",
               [&](const Request &req, Response & /*res*/) {
                 std::string expected(6 * 30 * 1024u, 'a');
                 EXPECT_EQ(req.body, expected);
@@ -986,11 +1075,11 @@ TEST_F(ServerTest, EndWithPercentCharacterInQuery) {
 
 TEST_F(ServerTest, MultipartFormData) {
   MultipartFormDataItems items = {
-    { "text1", "text default", "", "" },
-    { "text2", "aωb", "", "" },
-    { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
-    { "file2", "{\n  \"world\", true\n}\n", "world.json", "application/json" },
-    { "file3", "", "", "application/octet-stream" },
+      {"text1", "text default", "", ""},
+      {"text2", "aωb", "", ""},
+      {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+      {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"file3", "", "", "application/octet-stream"},
   };
 
   auto res = cli_.Post("/multipart", items);
@@ -1036,25 +1125,98 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, GetStreamed2) {
+  auto res = cli_.Get("/streamed", {{make_range_header({{2, 3}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("ab"), res->body);
+}
+
 TEST_F(ServerTest, GetStreamed) {
   auto res = cli_.Get("/streamed");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
-  EXPECT_TRUE(res->body == "aaabbb");
+  EXPECT_EQ(std::string("aaabbb"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedWithRange1) {
+  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{3, 5}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("def"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedWithRange2) {
+  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{1, -1}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("bcdefg"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
+  auto res =
+      cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ(269, res->body.size());
+}
+
+TEST_F(ServerTest, GetWithRange1) {
+  auto res = cli_.Get("/with-range", {{make_range_header({{3, 5}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("def"), res->body);
+}
+
+TEST_F(ServerTest, GetWithRange2) {
+  auto res = cli_.Get("/with-range", {{make_range_header({{1, -1}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("bcdefg"), res->body);
+}
+
+TEST_F(ServerTest, GetWithRange3) {
+  auto res = cli_.Get("/with-range", {{make_range_header({{0, 0}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("1", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("a"), res->body);
+}
+
+TEST_F(ServerTest, GetWithRange4) {
+  auto res = cli_.Get("/with-range", {{make_range_header({{-1, 2}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("fg"), res->body);
+}
+
+TEST_F(ServerTest, GetWithRangeMultipart) {
+  auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ(269, res->body.size());
 }
 
 TEST_F(ServerTest, GetStreamedChunked) {
-  auto res = cli_.Get("/streamedchunked");
+  auto res = cli_.Get("/streamed-chunked");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
-  EXPECT_TRUE(res->body == "aaabbb");
+  EXPECT_EQ(std::string("123456789"), res->body);
 }
 
 TEST_F(ServerTest, LargeChunkedPost) {
   Request req;
   req.method = "POST";
-  req.path = "/largechunked";
+  req.path = "/large-chunked";
 
   std::string host_and_port;
   host_and_port += HOST;
@@ -1142,9 +1304,7 @@ TEST_F(ServerTest, ArrayParam) {
 }
 
 TEST_F(ServerTest, NoMultipleHeaders) {
-  Headers headers = {
-    { "Content-Length", "5" }
-  };
+  Headers headers = {{"Content-Length", "5"}};
   auto res = cli_.Post("/validate-no-multiple-headers", headers, "hello",
                        "text/plain");
   ASSERT_TRUE(res != nullptr);

@@ -84,6 +84,38 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 })
 ```
 
+### Stream content with Content provider
+
+```cpp
+const uint64_t DATA_CHUNK_SIZE = 4;
+
+svr.Get("/stream", [&](const Request &req, Response &res) {
+  auto data = std::make_shared<std::string>("abcdefg");
+
+  res.set_content_provider(
+    data->size(), // Content length
+    [data](uint64_t offset, uint64_t length, Out out) {
+      const auto &d = *data;
+      out(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+    });
+});
+```
+
+### Chunked transfer encoding
+
+```cpp
+svr.Get("/chunked", [&](const Request& req, Response& res) {
+  res.set_chunked_content_provider(
+    [](uint64_t offset, Out out, Done done) {
+       out("123", 3);
+       out("345", 3);
+       out("789", 3);
+       done();
+    }
+  );
+});
+```
+
 Client Example
 --------------
 
@@ -226,10 +258,16 @@ auto res = cli.Get("/basic-auth/hello/world", {
 httplib::Client cli("httpbin.org");
 
 auto res = cli.Get("/range/32", {
-  httplib::make_range_header(1, 10) // 'Range: bytes=1-10'
+  httplib::make_range_header({{1, 10}}) // 'Range: bytes=1-10'
 });
 // res->status should be 206.
 // res->body should be "bcdefghijk".
+```
+
+```cpp
+httplib::make_range_header({{1, 10}, {20, -1}})      // 'Range: bytes=1-10, 20-'
+httplib::make_range_header({{100, 199}, {500, 599}}) // 'Range: bytes=100-199, 500-599'
+httplib::make_range_header({{0, 0}, {-1, 1}})        // 'Range: bytes=0-0, -1'
 ```
 
 OpenSSL Support
