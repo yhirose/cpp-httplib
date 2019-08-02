@@ -29,8 +29,6 @@ int main(void) {
 
   // HTTPS server
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  SSLServer https(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-
   https.Get("/", [=](const Request & /*req*/, Response &res) {
     res.set_redirect("/hi");
   });
