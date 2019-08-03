@@ -1146,6 +1146,7 @@ TEST_F(ServerTest, GetStreamedWithRange1) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("def"), res->body);
 }
 
@@ -1154,6 +1155,7 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
@@ -1163,6 +1165,7 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(269, res->body.size());
 }
 
@@ -1171,6 +1174,7 @@ TEST_F(ServerTest, GetWithRange1) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("def"), res->body);
 }
 
@@ -1179,6 +1183,7 @@ TEST_F(ServerTest, GetWithRange2) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
@@ -1187,6 +1192,7 @@ TEST_F(ServerTest, GetWithRange3) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("1", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("a"), res->body);
 }
 
@@ -1195,6 +1201,7 @@ TEST_F(ServerTest, GetWithRange4) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("fg"), res->body);
 }
 
@@ -1203,6 +1210,7 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(269, res->body.size());
 }
 

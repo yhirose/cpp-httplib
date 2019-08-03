@@ -65,10 +65,10 @@ typedef int socket_t;
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <list>
 #include <random>
 #include <regex>
 #include <string>
@@ -1690,6 +1690,18 @@ get_range_offset_and_length(const Request &req, uint64_t content_length,
   return std::make_pair(r.first, r.second - r.first + 1);
 }
 
+inline std::string make_content_range_header_field(uint64_t offset,
+                                                   uint64_t length,
+                                                   uint64_t content_length) {
+  std::string field = "bytes ";
+  field += std::to_string(offset);
+  field += "-";
+  field += std::to_string(offset + length - 1);
+  field += "/";
+  field += std::to_string(content_length);
+  return field;
+}
+
 template <typename SToken, typename CToken, typename Content>
 bool process_multipart_ranges_data(const Request &req, Response &res,
                                    const std::string &boundary,
@@ -1710,12 +1722,8 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
     auto offset = offsets.first;
     auto length = offsets.second;
 
-    ctoken("Content-Range: bytes ");
-    stoken(std::to_string(offset));
-    ctoken("-");
-    stoken(std::to_string(offset + length - 1));
-    ctoken("/");
-    stoken(std::to_string(res.body.size()));
+    ctoken("Content-Range: ");
+    stoken(make_content_range_header_field(offset, length, res.body.size()));
     ctoken("\r\n");
     ctoken("\r\n");
     if (!content(offset, length)) { return false; }
@@ -1824,6 +1832,7 @@ make_basic_authentication_header(const std::string &username,
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
   return std::make_pair("Authorization", field);
 }
+
 // Request implementation
 inline bool Request::has_header(const char *key) const {
   return detail::has_header(headers, key);
@@ -2182,7 +2191,11 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
       } else if (req.ranges.size() == 1) {
         auto offsets =
             detail::get_range_offset_and_length(req, res.content_length, 0);
+        auto offset = offsets.first;
         length = offsets.second;
+        auto content_range = detail::make_content_range_header_field(
+            offset, length, res.content_length);
+        res.set_header("Content-Range", content_range);
       } else {
         length = detail::get_multipart_ranges_data_length(req, res, boundary,
                                                           content_type);
@@ -2203,6 +2216,9 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
           detail::get_range_offset_and_length(req, res.body.size(), 0);
       auto offset = offsets.first;
       auto length = offsets.second;
+      auto content_range = detail::make_content_range_header_field(
+          offset, length, res.body.size());
+      res.set_header("Content-Range", content_range);
       res.body = res.body.substr(offset, length);
     } else {
       res.body =
