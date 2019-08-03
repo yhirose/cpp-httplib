@@ -207,7 +207,8 @@ struct Response {
   void set_content(const char *s, size_t n, const char *content_type);
   void set_content(const std::string &s, const char *content_type);
   void set_content_producer(uint64_t length, ContentProvider producer);
-  void set_chunked_content_producer(std::function<std::string(uint64_t offset)> producer);
+  void set_chunked_content_producer(
+      std::function<std::string(uint64_t offset)> producer);
 
   void set_content_provider(
       uint64_t length,
@@ -290,8 +291,7 @@ public:
 
   void set_keep_alive_max_count(size_t count);
   void set_payload_max_length(uint64_t length);
-  void set_thread_pool_size(int n);
-  
+
   int bind_to_any_port(const char *host, int socket_flags = 0);
   bool listen_after_bind();
 
@@ -1649,12 +1649,12 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
       });
 }
 
-inline std::pair<uint64_t, uint64_t> get_range_offset_and_length(const Request& req, const Response& res, size_t index) {
+inline std::pair<uint64_t, uint64_t>
+get_range_offset_and_length(const Request &req, const Response &res,
+                            size_t index) {
   auto r = req.ranges[index];
 
-  if (r.second == -1) {
-    r.second = res.content_length - 1;
-  }
+  if (r.second == -1) { r.second = res.content_length - 1; }
 
   return std::make_pair(r.first, r.second - r.first + 1);
 }
