@@ -792,7 +792,15 @@ TEST_F(ServerTest, GetMethodDir) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
 
-  auto body = "<html>\r\n<head>\r\n</head>\r\n<body>\r\n  <a href=\"/dir/test.html\">Test</a>\r\n  <a href=\"/hi\">hi</a>\r\n</body>\r\n</html>\r\n";
+  auto body = R"(<html>
+<head>
+</head>
+<body>
+  <a href="/dir/test.html">Test</a>
+  <a href="/hi">hi</a>
+</body>
+</html>
+)";
   EXPECT_EQ(body, res->body);
 }
 
