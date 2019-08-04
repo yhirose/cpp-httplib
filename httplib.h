@@ -1410,7 +1410,7 @@ inline int write_content(Stream &strm, ContentProvider content_provider,
   uint64_t begin_offset = offset;
   uint64_t end_offset = offset + length;
   while (offset < end_offset) {
-    uint64_t written_length = 0;
+    int64_t written_length = 0;
     content_provider(
         offset, end_offset - offset,
         [&](const char *d, uint64_t l) {
@@ -1418,18 +1418,18 @@ inline int write_content(Stream &strm, ContentProvider content_provider,
           written_length = strm.write(d, l);
         },
         [&](void) { written_length = -1; });
-    if (written_length < 0) { return written_length; }
+    if (written_length < 0) { return static_cast<int>(written_length); }
   }
-  return offset - begin_offset;
+  return static_cast<int>(offset - begin_offset);
 }
 
 inline int write_content_chunked(Stream &strm,
                                  ContentProvider content_provider) {
   uint64_t offset = 0;
   auto data_available = true;
-  auto total_written_length = 0;
+  uint64_t total_written_length = 0;
   while (data_available) {
-    uint64_t written_length = 0;
+    int64_t written_length = 0;
     content_provider(
         offset, 0,
         [&](const char *d, uint64_t l) {
@@ -1445,10 +1445,10 @@ inline int write_content_chunked(Stream &strm,
           written_length = strm.write("0\r\n\r\n");
         });
 
-    if (written_length < 0) { return written_length; }
+    if (written_length < 0) { return static_cast<int>(written_length); }
     total_written_length += written_length;
   }
-  return total_written_length;
+  return static_cast<int>(total_written_length);
 }
 
 inline std::string encode_url(const std::string &s) {
