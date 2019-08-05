@@ -90,14 +90,15 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 const uint64_t DATA_CHUNK_SIZE = 4;
 
 svr.Get("/stream", [&](const Request &req, Response &res) {
-  auto data = std::make_shared<std::string>("abcdefg");
+  auto data = new std::string("abcdefg");
 
   res.set_content_provider(
     data->size(), // Content length
     [data](uint64_t offset, uint64_t length, Out out) {
       const auto &d = *data;
       out(&d[offset], std::min(length, DATA_CHUNK_SIZE));
-    });
+    },
+    [data] { delete data; });
 });
 ```
 
