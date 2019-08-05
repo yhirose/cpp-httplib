@@ -117,6 +117,46 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 });
 ```
 
+### Default thread pool supporet
+
+Set thread count to 8:
+
+```cpp
+#define CPPHTTPLIB_THREAD_POOL_COUNT 8
+```
+
+Disable the default thread pool:
+
+```cpp
+#define CPPHTTPLIB_THREAD_POOL_COUNT 0
+```
+
+### Override the default thread pool with yours
+
+```cpp
+class YourThreadPoolTaskQueue : public TaskQueue {
+public:
+  YourThreadPoolTaskQueue(size_t n) {
+    pool_.start_with_thread_count(n);
+  }
+
+  virtual void enqueue(std::function<void()> fn) override {
+    pool_.enqueue(fn);
+  }
+
+  virtual void shutdown() override {
+    pool_.shutdown_gracefully();
+  }
+
+private:
+  YourThreadPool pool_;
+};
+
+svr.new_task_queue = [] {
+  return new YourThreadPoolTaskQueue(12);
+};
+```
+
 Client Example
 --------------
 
