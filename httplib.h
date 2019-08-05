@@ -335,15 +335,18 @@ private:
 
     void operator()() {
       for (;;) {
-        std::unique_lock<std::mutex> lock(pool_.mutex_);
+        std::function<void()> fn;
+        {
+          std::unique_lock<std::mutex> lock(pool_.mutex_);
 
-        pool_.cond_.wait(
-            lock, [&] { return !pool_.jobs_.empty() || pool_.shutdown_; });
+          pool_.cond_.wait(
+              lock, [&] { return !pool_.jobs_.empty() || pool_.shutdown_; });
 
-        if (pool_.shutdown_) { break; }
+          if (pool_.shutdown_) { break; }
 
-        auto fn = pool_.jobs_.front();
-        pool_.jobs_.pop_front();
+          fn = pool_.jobs_.front();
+          pool_.jobs_.pop_front();
+        }
 
         assert(true == (bool)fn);
         fn();
