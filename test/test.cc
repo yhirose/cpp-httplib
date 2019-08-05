@@ -229,7 +229,10 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   std::string body;
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
-              [&](const char *data, size_t len) { body.append(data, len); });
+              [&](const char *data, uint64_t data_length, uint64_t, uint64_t) {
+                body.append(data, data_length);
+                return true;
+              });
   ASSERT_TRUE(res != nullptr);
 
   std::string out;
@@ -508,23 +511,30 @@ protected:
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   6, [](uint64_t offset, uint64_t /*length*/, Out out) {
-                     if (offset < 3) {
-                       out("a", 1);
-                     } else {
-                       out("b", 1);
-                     }
+                   6,
+                   [](uint64_t offset, uint64_t /*length*/, Out out) {
+                     out(offset < 3 ? "a" : "b", 1);
                    });
              })
         .Get("/streamed-with-range",
              [&](const Request & /*req*/, Response &res) {
-               auto data = std::make_shared<std::string>("abcdefg");
+               auto data = new std::string("abcdefg");
                res.set_content_provider(
                    data->size(),
                    [data](uint64_t offset, uint64_t length, Out out) {
                      const uint64_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
                      out(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+                   },
+                   [data] { delete data; });
+             })
+        .Get("/streamed-cancel",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content_provider(
+                   uint64_t(-1),
+                   [](uint64_t /*offset*/, uint64_t /*length*/, Out out) {
+                     std::string data = "data_chunk";
+                     out(data.data(), data.size());
                    });
              })
         .Get("/with-range",
@@ -849,85 +859,29 @@ TEST_F(ServerTest, EmptyRequest) {
 }
 
 TEST_F(ServerTest, LongRequest) {
-  auto res =
-      cli_.Get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/__ok__");
+  std::string request;
+  for (size_t i = 0; i < 545; i++) {
+    request += "/TooLongRequest";
+  }
+  request += "OK";
+
+  auto res = cli_.Get(request.c_str());
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, TooLongRequest) {
-  auto res =
-      cli_.Get("/TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/TooLongRequest/"
-               "TooLongRequest/TooLongRequest/TooLongRequest/__ng___");
+  std::string request;
+  for (size_t i = 0; i < 545; i++) {
+    request += "/TooLongRequest";
+  }
+  request += "_NG";
+
+  auto res = cli_.Get(request.c_str());
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(414, res->status);
 }
 
 TEST_F(ServerTest, LongHeader) {
@@ -1169,6 +1123,14 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   EXPECT_EQ(269, res->body.size());
 }
 
+TEST_F(ServerTest, GetStreamedEndless) {
+  auto res = cli_.Get("/streamed-cancel",
+                      [](const char * /*data*/, uint64_t /*data_length*/,
+                         uint64_t offset,
+                         uint64_t /*content_length*/) { return offset < 100; });
+  ASSERT_TRUE(res == nullptr);
+}
+
 TEST_F(ServerTest, GetWithRange1) {
   auto res = cli_.Get("/with-range", {{make_range_header({{3, 5}})}});
   ASSERT_TRUE(res != nullptr);
@@ -1339,9 +1301,12 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res = cli_.Get("/gzip", headers, [&](const char *data, size_t len) {
-    body.append(data, len);
-  });
+  auto res = cli_.Get("/gzip", headers,
+                      [&](const char *data, uint64_t data_length,
+                          uint64_t /*offset*/, uint64_t /*content_length*/) {
+                        body.append(data, data_length);
+                        return true;
+                      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -1372,9 +1337,12 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res = cli_.Get("/nogzip", headers, [&](const char *data, size_t len) {
-    body.append(data, len);
-  });
+  auto res = cli_.Get("/nogzip", headers,
+                      [&](const char *data, uint64_t data_length,
+                          uint64_t /*offset*/, uint64_t /*content_length*/) {
+                        body.append(data, data_length);
+                        return true;
+                      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(false, res->has_header("Content-Encoding"));
