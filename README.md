@@ -190,9 +190,12 @@ int main(void)
 
 ```c++
   std::string body;
-  auto res = cli.Get("/large-data", [&](const char *data, size_t len) {
-    body.append(data, len);
-  });
+
+  auto res = cli.Get("/large-data",
+    [&](const char *data, uint64_t data_length, uint64_t offset, uint64_t content_length) {
+      body.append(data, data_length);
+    });
+
   assert(res->body.empty());
 ```
 
