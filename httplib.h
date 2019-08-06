@@ -285,7 +285,7 @@ public:
 #if CPPHTTPLIB_THREAD_POOL_COUNT > 0
 class ThreadPool : public TaskQueue {
 public:
-  ThreadPool(size_t n) : shutdown_(false), remaining_(0) {
+  ThreadPool(size_t n) : shutdown_(false) {
     while (n) {
       auto t = std::make_shared<std::thread>(worker(*this));
       threads_.push_back(t);
@@ -303,25 +303,13 @@ public:
   }
 
   virtual void shutdown() override {
-    // Handle all remaining jobs...
-    for (;;) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (jobs_.empty()) break;
-      cond_.notify_one();
-    }
-
     // Stop all worker threads...
     {
       std::unique_lock<std::mutex> lock(mutex_);
       shutdown_ = true;
-      remaining_ = threads_.size();
     }
 
-    for (;;) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (!remaining_) break;
-      cond_.notify_all();
-    }
+    cond_.notify_all();
 
     // Join...
     for (auto t : threads_) {
@@ -342,7 +330,7 @@ private:
           pool_.cond_.wait(
               lock, [&] { return !pool_.jobs_.empty() || pool_.shutdown_; });
 
-          if (pool_.shutdown_) { break; }
+          if (pool_.shutdown_ && pool_.jobs_.empty()) { break; }
 
           fn = pool_.jobs_.front();
           pool_.jobs_.pop_front();
@@ -351,9 +339,6 @@ private:
         assert(true == (bool)fn);
         fn();
       }
-
-      std::unique_lock<std::mutex> lock(pool_.mutex_);
-      pool_.remaining_--;
     }
 
     ThreadPool &pool_;
@@ -364,7 +349,6 @@ private:
   std::list<std::function<void()>> jobs_;
 
   bool shutdown_;
-  size_t remaining_;
 
   std::condition_variable cond_;
   std::mutex mutex_;
