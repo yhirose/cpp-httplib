@@ -511,8 +511,7 @@ protected:
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   6,
-                   [](uint64_t offset, uint64_t /*length*/, Out out) {
+                   6, [](uint64_t offset, uint64_t /*length*/, Out out) {
                      out(offset < 3 ? "a" : "b", 1);
                    });
              })

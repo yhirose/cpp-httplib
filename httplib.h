@@ -212,16 +212,18 @@ struct Response {
   void set_content_provider(
       uint64_t length,
       std::function<void(uint64_t offset, uint64_t length, Out out)> provider,
-      std::function<void()> resource_releaser = []{});
+      std::function<void()> resource_releaser = [] {});
 
   void set_chunked_content_provider(
       std::function<void(uint64_t offset, Out out, Done done)> provider,
-      std::function<void()> resource_releaser = []{});
+      std::function<void()> resource_releaser = [] {});
 
   Response() : status(-1), content_provider_resource_length(0) {}
 
   ~Response() {
-    if (content_provider_resource_releaser) { content_provider_resource_releaser(); }
+    if (content_provider_resource_releaser) {
+      content_provider_resource_releaser();
+    }
   }
 
   uint64_t content_provider_resource_length;
@@ -2192,8 +2194,8 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
       if (req.ranges.empty()) {
         length = res.content_provider_resource_length;
       } else if (req.ranges.size() == 1) {
-        auto offsets =
-            detail::get_range_offset_and_length(req, res.content_provider_resource_length, 0);
+        auto offsets = detail::get_range_offset_and_length(
+            req, res.content_provider_resource_length, 0);
         auto offset = offsets.first;
         length = offsets.second;
         auto content_range = detail::make_content_range_header_field(
@@ -2274,8 +2276,8 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
         return false;
       }
     } else if (req.ranges.size() == 1) {
-      auto offsets =
-          detail::get_range_offset_and_length(req, res.content_provider_resource_length, 0);
+      auto offsets = detail::get_range_offset_and_length(
+          req, res.content_provider_resource_length, 0);
       auto offset = offsets.first;
       auto length = offsets.second;
       if (detail::write_content(strm, res.content_provider, offset, length) <
