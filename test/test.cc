@@ -530,7 +530,7 @@ protected:
         .Get("/streamed-cancel",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   uint64_t(-1),
+                   size_t(-1),
                    [](uint64_t /*offset*/, uint64_t /*length*/, Out out) {
                      std::string data = "data_chunk";
                      out(data.data(), data.size());
