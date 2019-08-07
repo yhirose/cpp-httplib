@@ -2451,8 +2451,9 @@ Server::process_request(Stream &strm, bool last_connection,
 
   // Check if the request URI doesn't exceed the limit
   if (reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+    Headers dummy;
+    detail::read_headers(strm, dummy);
     res.status = 414;
-    connection_close = true;
     return write_response(strm, last_connection, req, res);
   }
 
@@ -2460,7 +2461,6 @@ Server::process_request(Stream &strm, bool last_connection,
   if (!parse_request_line(reader.ptr(), req) ||
       !detail::read_headers(strm, req.headers)) {
     res.status = 400;
-    connection_close = true;
     return write_response(strm, last_connection, req, res);
   }
 
