@@ -3252,6 +3252,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
   struct in_addr addr;
   size_t addr_len = 0;
 
+#ifndef __MINGW32__
   if (inet_pton(AF_INET6, host_.c_str(), &addr6)) {
     type = GEN_IPADD;
     addr_len = sizeof(struct in6_addr);
@@ -3259,6 +3260,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
     type = GEN_IPADD;
     addr_len = sizeof(struct in_addr);
   }
+#endif
 
   auto alt_names = static_cast<const struct stack_st_GENERAL_NAME *>(
       X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr));
