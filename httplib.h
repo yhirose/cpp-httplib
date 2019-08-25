@@ -411,6 +411,7 @@ public:
   Server &Options(const char *pattern, Handler handler);
 
   bool set_base_dir(const char *path);
+  void set_file_request_handler(Handler handler);
 
   void set_error_handler(Handler handler);
   void set_logger(Logger logger);
@@ -460,6 +461,7 @@ private:
   std::atomic<bool> is_running_;
   std::atomic<socket_t> svr_sock_;
   std::string base_dir_;
+  Handler file_request_handler_;
   Handlers get_handlers_;
   Handlers post_handlers_;
   Handlers put_handlers_;
@@ -2086,6 +2088,10 @@ inline bool Server::set_base_dir(const char *path) {
   return false;
 }
 
+inline void Server::set_file_request_handler(Handler handler) {
+  file_request_handler_ = handler;
+}
+
 inline void Server::set_error_handler(Handler handler) {
   error_handler_ = handler;
 }
@@ -2309,6 +2315,9 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
       auto type = detail::find_content_type(path);
       if (type) { res.set_header("Content-Type", type); }
       res.status = 200;
+      if (file_request_handler_) {
+        file_request_handler_(req, res);
+      }
       return true;
     }
   }
