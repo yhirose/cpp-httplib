@@ -1280,6 +1280,42 @@ TEST_F(ServerTest, NoMultipleHeaders) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, KeepAlive) {
+  cli_.set_keep_alive_max_count(4);
+
+  std::vector<Request> requests;
+  Get(requests, "/hi");
+  Get(requests, "/hi");
+  Get(requests, "/hi");
+  Get(requests, "/not-exist");
+  Post(requests, "/empty", "", "text/plain");
+
+  std::vector<Response> responses;
+  auto ret = cli_.send(requests, responses);
+
+  ASSERT_TRUE(ret == true);
+  ASSERT_TRUE(requests.size() == responses.size());
+
+  for (int i = 0; i < 3; i++) {
+    auto& res = responses[i];
+    EXPECT_EQ(200, res.status);
+    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+    EXPECT_EQ("Hello World!", res.body);
+  }
+
+  {
+    auto& res = responses[3];
+    EXPECT_EQ(404, res.status);
+  }
+
+  {
+    auto& res = responses[4];
+    EXPECT_EQ(200, res.status);
+    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+    EXPECT_EQ("empty", res.body);
+  }
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, Gzip) {
   Headers headers;
