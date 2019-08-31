@@ -314,6 +314,25 @@ httplib::make_range_header({{100, 199}, {500, 599}}) // 'Range: bytes=100-199, 5
 httplib::make_range_header({{0, 0}, {-1, 1}})        // 'Range: bytes=0-0, -1'
 ```
 
+### Keep-Alive connection
+
+```cpp
+cli.set_keep_alive_max_count(2); // Default is 5
+
+std::vector<Request> requests;
+Get(requests, "/get-request1");
+Get(requests, "/get-request2");
+Post(requests, "/post-request1", "text", "text/plain");
+Post(requests, "/post-request2", "text", "text/plain");
+
+std::vector<Response> responses;
+if (cli.send(requests, responses)) {
+  for (const auto& res: responses) {
+    ...
+  }
+}
+```
+
 OpenSSL Support
 ---------------
 
