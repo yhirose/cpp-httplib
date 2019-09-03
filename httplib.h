@@ -2697,11 +2697,6 @@ inline void Client::write_request(Stream &strm, Request &req) {
     req.set_header("User-Agent", "cpp-httplib/0.2");
   }
 
-  // TODO: Support KeepAlive connection
-  // if (!req.has_header("Connection")) {
-  req.set_header("Connection", "close");
-  // }
-
   if (req.body.empty()) {
     if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
       req.set_header("Content-Length", "0");
