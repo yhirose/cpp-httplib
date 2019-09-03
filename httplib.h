@@ -17,8 +17,16 @@
 #define _CRT_NONSTDC_NO_DEPRECATE
 #endif //_CRT_NONSTDC_NO_DEPRECATE
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
+#if defined(_MSC_VER)
+#ifdef _WIN64
+typedef int64_t ssize_t;
+#else
+typedef int ssize_t;
+#endif
+
+#if _MSC_VER < 1900
 #define snprintf _snprintf_s
+#endif
 #endif // _MSC_VER
 
 #ifndef S_ISREG
@@ -130,16 +138,16 @@ typedef std::multimap<std::string, std::string, detail::ci> Headers;
 typedef std::multimap<std::string, std::string> Params;
 typedef std::smatch Match;
 
-typedef std::function<void(const char *data, uint64_t len)> Out;
+typedef std::function<void(const char *data, size_t data_len)> DataSink;
 
 typedef std::function<void()> Done;
 
-typedef std::function<void(uint64_t offset, uint64_t length, Out out,
+typedef std::function<void(size_t offset, size_t length, DataSink sink,
                            Done done)>
     ContentProvider;
 
-typedef std::function<bool(const char *data, uint64_t data_length,
-                           uint64_t offset, uint64_t content_length)>
+typedef std::function<bool(const char *data, size_t data_length,
+                           size_t offset, uint64_t content_length)>
     ContentReceiver;
 
 typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
@@ -160,7 +168,7 @@ struct MultipartFormData {
 };
 typedef std::vector<MultipartFormData> MultipartFormDataItems;
 
-typedef std::pair<int64_t, int64_t> Range;
+typedef std::pair<ssize_t, ssize_t> Range;
 typedef std::vector<Range> Ranges;
 
 struct Request {
@@ -213,12 +221,12 @@ struct Response {
   void set_content(const std::string &s, const char *content_type);
 
   void set_content_provider(
-      uint64_t length,
-      std::function<void(uint64_t offset, uint64_t length, Out out)> provider,
+      size_t length,
+      std::function<void(size_t offset, size_t length, DataSink sink)> provider,
       std::function<void()> resource_releaser = [] {});
 
   void set_chunked_content_provider(
-      std::function<void(uint64_t offset, Out out, Done done)> provider,
+      std::function<void(size_t offset, DataSink sink, Done done)> provider,
       std::function<void()> resource_releaser = [] {});
 
   Response() : status(-1), content_provider_resource_length(0) {}
@@ -229,7 +237,7 @@ struct Response {
     }
   }
 
-  uint64_t content_provider_resource_length;
+  size_t content_provider_resource_length;
   ContentProvider content_provider;
   std::function<void()> content_provider_resource_releaser;
 };
@@ -420,7 +428,7 @@ public:
   void set_logger(Logger logger);
 
   void set_keep_alive_max_count(size_t count);
-  void set_payload_max_length(uint64_t length);
+  void set_payload_max_length(size_t length);
 
   int bind_to_any_port(const char *host, int socket_flags = 0);
   bool listen_after_bind();
@@ -699,7 +707,7 @@ inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
   return true;
 }
 
-inline std::string from_i_to_hex(uint64_t n) {
+inline std::string from_i_to_hex(size_t n) {
   const char *charset = "0123456789abcdef";
   std::string ret;
   do {
@@ -1294,17 +1302,18 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   return true;
 }
 
-typedef std::function<bool(const char *data, uint64_t data_length)>
+typedef std::function<bool(const char *data, size_t data_length)>
     ContentReceiverCore;
 
-inline bool read_content_with_length(Stream &strm, size_t len,
+inline bool read_content_with_length(Stream &strm, uint64_t len,
                                      Progress progress,
                                      ContentReceiverCore out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
-  size_t r = 0;
+  uint64_t r = 0;
   while (r < len) {
-    auto n = strm.read(buf, std::min((len - r), CPPHTTPLIB_RECV_BUFSIZ));
+    auto read_len = static_cast<size_t>(len - r);
+    auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return false; }
 
     if (!out(buf, n)) { return false; }
@@ -1319,11 +1328,12 @@ inline bool read_content_with_length(Stream &strm, size_t len,
   return true;
 }
 
-inline void skip_content_with_length(Stream &strm, size_t len) {
+inline void skip_content_with_length(Stream &strm, uint64_t len) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
-  size_t r = 0;
+  uint64_t r = 0;
   while (r < len) {
-    auto n = strm.read(buf, std::min((len - r), CPPHTTPLIB_RECV_BUFSIZ));
+    auto read_len = static_cast<size_t>(len - r);
+    auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return; }
     r += n;
   }
@@ -1382,7 +1392,7 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
 }
 
 template <typename T>
-bool read_content(Stream &strm, T &x, uint64_t payload_max_length, int &status,
+bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
                   Progress progress, ContentReceiverCore receiver) {
 
   ContentReceiverCore out = [&](const char *buf, size_t n) {
@@ -1419,17 +1429,12 @@ bool read_content(Stream &strm, T &x, uint64_t payload_max_length, int &status,
     ret = read_content_without_length(strm, out);
   } else {
     auto len = get_header_value_uint64(x.headers, "Content-Length", 0);
-    if (len > 0) {
-      if ((len > payload_max_length) ||
-          // For 32-bit platform
-          (sizeof(size_t) < sizeof(uint64_t) &&
-           len > std::numeric_limits<size_t>::max())) {
-        exceed_payload_max_length = true;
-        skip_content_with_length(strm, len);
-        ret = false;
-      } else {
-        ret = read_content_with_length(strm, len, progress, out);
-      }
+    if (len > payload_max_length) {
+      exceed_payload_max_length = true;
+      skip_content_with_length(strm, len);
+      ret = false;
+    } else if (len > 0) {
+      ret = read_content_with_length(strm, len, progress, out);
     }
   }
 
@@ -1452,34 +1457,34 @@ template <typename T> inline int write_headers(Stream &strm, const T &info) {
   return write_len;
 }
 
-inline int write_content(Stream &strm, ContentProvider content_provider,
-                         uint64_t offset, uint64_t length) {
-  uint64_t begin_offset = offset;
-  uint64_t end_offset = offset + length;
+inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
+                         size_t offset, size_t length) {
+  size_t begin_offset = offset;
+  size_t end_offset = offset + length;
   while (offset < end_offset) {
-    int64_t written_length = 0;
+    ssize_t written_length = 0;
     content_provider(
         offset, end_offset - offset,
-        [&](const char *d, uint64_t l) {
+        [&](const char *d, size_t l) {
           offset += l;
           written_length = strm.write(d, l);
         },
         [&](void) { written_length = -1; });
-    if (written_length < 0) { return static_cast<int>(written_length); }
+    if (written_length < 0) { return written_length; }
   }
-  return static_cast<int>(offset - begin_offset);
+  return static_cast<ssize_t>(offset - begin_offset);
 }
 
-inline int write_content_chunked(Stream &strm,
+inline ssize_t write_content_chunked(Stream &strm,
                                  ContentProvider content_provider) {
-  uint64_t offset = 0;
+  size_t offset = 0;
   auto data_available = true;
-  uint64_t total_written_length = 0;
+  ssize_t total_written_length = 0;
   while (data_available) {
-    int64_t written_length = 0;
+    ssize_t written_length = 0;
     content_provider(
         offset, 0,
-        [&](const char *d, uint64_t l) {
+        [&](const char *d, size_t l) {
           data_available = l > 0;
           offset += l;
 
@@ -1492,10 +1497,10 @@ inline int write_content_chunked(Stream &strm,
           written_length = strm.write("0\r\n\r\n");
         });
 
-    if (written_length < 0) { return static_cast<int>(written_length); }
+    if (written_length < 0) { written_length; }
     total_written_length += written_length;
   }
-  return static_cast<int>(total_written_length);
+  return total_written_length;
 }
 
 inline std::string encode_url(const std::string &s) {
@@ -1674,13 +1679,13 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
             static auto re = std::regex(R"(\s*(\d*)-(\d*))");
             std::cmatch m;
             if (std::regex_match(b, e, m, re)) {
-              uint64_t first = -1;
-              if (!m.str(1).empty()) { first = std::stoll(m.str(1)); }
+              ssize_t first = -1;
+              if (!m.str(1).empty()) { first = static_cast<ssize_t>(std::stoll(m.str(1))); }
 
-              uint64_t last = -1;
-              if (!m.str(2).empty()) { last = std::stoll(m.str(2)); }
+              ssize_t last = -1;
+              if (!m.str(2).empty()) { last = static_cast<ssize_t>(std::stoll(m.str(2))); }
 
-              if (int64_t(first) != -1 && int64_t(last) != -1 && first > last) {
+              if (first != -1 && last != -1 && first > last) {
                 throw std::runtime_error("invalid range error");
               }
               ranges.emplace_back(std::make_pair(first, last));
@@ -1718,8 +1723,8 @@ inline std::string make_multipart_data_boundary() {
   return result;
 }
 
-inline std::pair<uint64_t, uint64_t>
-get_range_offset_and_length(const Request &req, uint64_t content_length,
+inline std::pair<size_t, size_t>
+get_range_offset_and_length(const Request &req, size_t content_length,
                             size_t index) {
   auto r = req.ranges[index];
 
@@ -1737,9 +1742,9 @@ get_range_offset_and_length(const Request &req, uint64_t content_length,
   return std::make_pair(r.first, r.second - r.first + 1);
 }
 
-inline std::string make_content_range_header_field(uint64_t offset,
-                                                   uint64_t length,
-                                                   uint64_t content_length) {
+inline std::string make_content_range_header_field(size_t offset,
+                                                   size_t length,
+                                                   size_t content_length) {
   std::string field = "bytes ";
   field += std::to_string(offset);
   field += "-";
@@ -1793,7 +1798,7 @@ inline std::string make_multipart_ranges_data(const Request &req, Response &res,
       req, res, boundary, content_type,
       [&](const std::string &token) { data += token; },
       [&](const char *token) { data += token; },
-      [&](uint64_t offset, uint64_t length) {
+      [&](size_t offset, size_t length) {
         data += res.body.substr(offset, length);
         return true;
       });
@@ -1801,17 +1806,17 @@ inline std::string make_multipart_ranges_data(const Request &req, Response &res,
   return data;
 }
 
-inline uint64_t
+inline size_t
 get_multipart_ranges_data_length(const Request &req, Response &res,
                                  const std::string &boundary,
                                  const std::string &content_type) {
-  uint64_t data_length = 0;
+  size_t data_length = 0;
 
   process_multipart_ranges_data(
       req, res, boundary, content_type,
       [&](const std::string &token) { data_length += token.size(); },
       [&](const char *token) { data_length += strlen(token); },
-      [&](uint64_t /*offset*/, uint64_t length) {
+      [&](size_t /*offset*/, size_t length) {
         data_length += length;
         return true;
       });
@@ -1827,13 +1832,13 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
       req, res, boundary, content_type,
       [&](const std::string &token) { strm.write(token); },
       [&](const char *token) { strm.write(token); },
-      [&](uint64_t offset, uint64_t length) {
+      [&](size_t offset, size_t length) {
         return detail::write_content(strm, res.content_provider, offset,
                                      length) >= 0;
       });
 }
 
-inline std::pair<uint64_t, uint64_t>
+inline std::pair<size_t, size_t>
 get_range_offset_and_length(const Request &req, const Response &res,
                             size_t index) {
   auto r = req.ranges[index];
@@ -1969,22 +1974,22 @@ inline void Response::set_content(const std::string &s,
 }
 
 inline void Response::set_content_provider(
-    uint64_t length,
-    std::function<void(uint64_t offset, uint64_t length, Out out)> provider,
+    size_t length,
+    std::function<void(size_t offset, size_t length, DataSink sink)> provider,
     std::function<void()> resource_releaser) {
   assert(length > 0);
   content_provider_resource_length = length;
-  content_provider = [provider](uint64_t offset, uint64_t length, Out out,
-                                Done) { provider(offset, length, out); };
+  content_provider = [provider](size_t offset, size_t length, DataSink sink,
+                                Done) { provider(offset, length, sink); };
   content_provider_resource_releaser = resource_releaser;
 }
 
 inline void Response::set_chunked_content_provider(
-    std::function<void(uint64_t offset, Out out, Done done)> provider,
+    std::function<void(size_t offset, DataSink sink, Done done)> provider,
     std::function<void()> resource_releaser) {
   content_provider_resource_length = 0;
-  content_provider = [provider](uint64_t offset, uint64_t, Out out, Done done) {
-    provider(offset, out, done);
+  content_provider = [provider](size_t offset, size_t, DataSink sink, Done done) {
+    provider(offset, sink, done);
   };
   content_provider_resource_releaser = resource_releaser;
 }
@@ -2146,7 +2151,7 @@ inline void Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
 }
 
-inline void Server::set_payload_max_length(uint64_t length) {
+inline void Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
 }
 
@@ -2240,7 +2245,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
 
   if (res.body.empty()) {
     if (res.content_provider_resource_length > 0) {
-      uint64_t length = 0;
+      size_t length = 0;
       if (req.ranges.empty()) {
         length = res.content_provider_resource_length;
       } else if (req.ranges.size() == 1) {
@@ -2530,6 +2535,9 @@ Server::process_request(Stream &strm, bool last_connection,
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
     if (!detail::read_content(strm, req, payload_max_length_, res.status,
                               Progress(), [&](const char *buf, size_t n) {
+                                if (req.body.size() + n > req.body.max_size()) {
+                                  return false;
+                                }
                                 req.body.append(buf, n);
                                 return true;
                               })) {
@@ -2741,12 +2749,15 @@ inline bool Client::process_request(Stream &strm, Request &req, Response &res,
   // Body
   if (req.method != "HEAD") {
     detail::ContentReceiverCore out = [&](const char *buf, size_t n) {
+      if (res.body.size() + n > res.body.max_size()) {
+        return false;
+      }
       res.body.append(buf, n);
       return true;
     };
 
     if (req.content_receiver) {
-      auto offset = std::make_shared<uint64_t>();
+      auto offset = std::make_shared<size_t>();
       auto length = get_header_value_uint64(res.headers, "Content-Length", 0);
       auto receiver = req.content_receiver;
       out = [offset, length, receiver](const char *buf, size_t n) {
@@ -2757,7 +2768,7 @@ inline bool Client::process_request(Stream &strm, Request &req, Response &res,
     }
 
     int dummy_status;
-    if (!detail::read_content(strm, res, std::numeric_limits<uint64_t>::max(),
+    if (!detail::read_content(strm, res, std::numeric_limits<size_t>::max(),
                               dummy_status, req.progress, out)) {
       return false;
     }

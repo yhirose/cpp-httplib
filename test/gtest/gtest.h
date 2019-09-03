@@ -54,6 +54,9 @@
 #include <limits>
 #include <vector>
 
+#pragma warning( push )
+#pragma warning( disable : 4996)
+
 // Copyright 2005, Google Inc.
 // All rights reserved.
 //
@@ -19543,5 +19546,7 @@ bool StaticAssertTypeEq() {
   (::testing::UnitTest::GetInstance()->Run())
 
 }  // namespace testing
+
+#pragma warning( pop )
 
 #endif  // GTEST_INCLUDE_GTEST_GTEST_H_

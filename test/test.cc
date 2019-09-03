@@ -229,7 +229,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   std::string body;
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
-              [&](const char *data, uint64_t data_length, uint64_t, uint64_t) {
+              [&](const char *data, size_t data_length, uint64_t, uint64_t) {
                 body.append(data, data_length);
                 return true;
               });
@@ -501,18 +501,18 @@ protected:
         .Get("/streamed-chunked",
              [&](const Request & /*req*/, Response &res) {
                res.set_chunked_content_provider(
-                   [](uint64_t /*offset*/, Out out, Done done) {
-                     out("123", 3);
-                     out("456", 3);
-                     out("789", 3);
+                   [](uint64_t /*offset*/, DataSink sink, Done done) {
+                     sink("123", 3);
+                     sink("456", 3);
+                     sink("789", 3);
                      done();
                    });
              })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   6, [](uint64_t offset, uint64_t /*length*/, Out out) {
-                     out(offset < 3 ? "a" : "b", 1);
+                   6, [](uint64_t offset, uint64_t /*length*/, DataSink sink) {
+                     sink(offset < 3 ? "a" : "b", 1);
                    });
              })
         .Get("/streamed-with-range",
@@ -520,10 +520,11 @@ protected:
                auto data = new std::string("abcdefg");
                res.set_content_provider(
                    data->size(),
-                   [data](uint64_t offset, uint64_t length, Out out) {
-                     const uint64_t DATA_CHUNK_SIZE = 4;
+                   [data](uint64_t offset, uint64_t length, DataSink sink) {
+                     size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
-                     out(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+                     auto out_len = std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
+                     sink(&d[offset], out_len);
                    },
                    [data] { delete data; });
              })
@@ -531,9 +532,9 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
                    size_t(-1),
-                   [](uint64_t /*offset*/, uint64_t /*length*/, Out out) {
+                   [](uint64_t /*offset*/, uint64_t /*length*/, DataSink sink) {
                      std::string data = "data_chunk";
-                     out(data.data(), data.size());
+                     sink(data.data(), data.size());
                    });
              })
         .Get("/with-range",
