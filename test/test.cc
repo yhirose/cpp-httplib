@@ -701,7 +701,6 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
-  EXPECT_EQ("close", res->get_header_value("Connection"));
   EXPECT_EQ("Hello World!", res->body);
 }
 
