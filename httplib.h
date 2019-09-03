@@ -1497,7 +1497,7 @@ inline ssize_t write_content_chunked(Stream &strm,
           written_length = strm.write("0\r\n\r\n");
         });
 
-    if (written_length < 0) { written_length; }
+    if (written_length < 0) { return written_length; }
     total_written_length += written_length;
   }
   return total_written_length;
