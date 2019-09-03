@@ -54,8 +54,10 @@
 #include <limits>
 #include <vector>
 
-#pragma warning( push )
-#pragma warning( disable : 4996)
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
 
 // Copyright 2005, Google Inc.
 // All rights reserved.
@@ -19547,6 +19549,8 @@ bool StaticAssertTypeEq() {
 
 }  // namespace testing
 
+#if defined(_MSC_VER)
 #pragma warning( pop )
+#endif
 
 #endif  // GTEST_INCLUDE_GTEST_GTEST_H_
