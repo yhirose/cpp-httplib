@@ -19,7 +19,7 @@
 
 #if defined(_MSC_VER)
 #ifdef _WIN64
-typedef int64_t ssize_t;
+typedef __int64 ssize_t;
 #else
 typedef int ssize_t;
 #endif
