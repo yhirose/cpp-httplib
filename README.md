@@ -338,7 +338,8 @@ if (cli.send(requests, responses)) {
 ```cpp
 httplib::Client cli("yahoo.com");
 cli.follow_location(true);
-auto ret = cli.Get("/");
+auto res = cli.Get("/");
+res->status; // 200
 ```
 
 OpenSSL Support

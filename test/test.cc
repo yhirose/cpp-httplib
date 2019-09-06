@@ -441,8 +441,9 @@ TEST(AbsoluteRedirectTest, Redirect) {
 #endif
 
   cli.follow_location(true);
-  auto ret = cli.Get("/absolute-redirect/3");
-  ASSERT_TRUE(ret != nullptr);
+  auto res = cli.Get("/absolute-redirect/3");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST(RedirectTest, Redirect) {
@@ -455,8 +456,9 @@ TEST(RedirectTest, Redirect) {
 #endif
 
   cli.follow_location(true);
-  auto ret = cli.Get("/redirect/3");
-  ASSERT_TRUE(ret != nullptr);
+  auto res = cli.Get("/redirect/3");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST(RelativeRedirectTest, Redirect) {
@@ -469,8 +471,9 @@ TEST(RelativeRedirectTest, Redirect) {
 #endif
 
   cli.follow_location(true);
-  auto ret = cli.Get("/relative-redirect/3");
-  ASSERT_TRUE(ret != nullptr);
+  auto res = cli.Get("/relative-redirect/3");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST(TooManyRedirectTest, Redirect) {
@@ -483,23 +486,24 @@ TEST(TooManyRedirectTest, Redirect) {
 #endif
 
   cli.follow_location(true);
-  auto ret = cli.Get("/redirect/21");
-  ASSERT_TRUE(ret == nullptr);
+  auto res = cli.Get("/redirect/21");
+  ASSERT_TRUE(res == nullptr);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest, Redirect) {
   httplib::Client cli("yahoo.com");
   cli.follow_location(true);
-  auto ret = cli.Get("/");
-  ASSERT_TRUE(ret != nullptr);
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST(Https2HttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.follow_location(true);
-  auto ret = cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
-  ASSERT_TRUE(ret != nullptr);
+  auto res = cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  ASSERT_TRUE(res != nullptr);
 }
 #endif
 
