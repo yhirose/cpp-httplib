@@ -337,8 +337,12 @@ if (cli.send(requests, responses)) {
 
 ```cpp
 httplib::Client cli("yahoo.com");
-cli.follow_location(true);
+
 auto res = cli.Get("/");
+res->status; // 301
+
+cli.follow_location(true);
+res = cli.Get("/");
 res->status; // 200
 ```
 

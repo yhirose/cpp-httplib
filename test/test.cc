@@ -493,8 +493,13 @@ TEST(TooManyRedirectTest, Redirect) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest, Redirect) {
   httplib::Client cli("yahoo.com");
-  cli.follow_location(true);
+
   auto res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(301, res->status);
+
+  cli.follow_location(true);
+  res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
