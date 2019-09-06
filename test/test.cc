@@ -431,6 +431,78 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   }
 }
 
+TEST(AbsoluteRedirectTest, Redirect) {
+  auto host = "httpbin.org";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  httplib::SSLClient cli(host);
+#else
+  httplib::Client cli(host);
+#endif
+
+  cli.follow_location(true);
+  auto ret = cli.Get("/absolute-redirect/3");
+  ASSERT_TRUE(ret != nullptr);
+}
+
+TEST(RedirectTest, Redirect) {
+  auto host = "httpbin.org";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  httplib::SSLClient cli(host);
+#else
+  httplib::Client cli(host);
+#endif
+
+  cli.follow_location(true);
+  auto ret = cli.Get("/redirect/3");
+  ASSERT_TRUE(ret != nullptr);
+}
+
+TEST(RelativeRedirectTest, Redirect) {
+  auto host = "httpbin.org";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  httplib::SSLClient cli(host);
+#else
+  httplib::Client cli(host);
+#endif
+
+  cli.follow_location(true);
+  auto ret = cli.Get("/relative-redirect/3");
+  ASSERT_TRUE(ret != nullptr);
+}
+
+TEST(TooManyRedirectTest, Redirect) {
+  auto host = "httpbin.org";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  httplib::SSLClient cli(host);
+#else
+  httplib::Client cli(host);
+#endif
+
+  cli.follow_location(true);
+  auto ret = cli.Get("/redirect/21");
+  ASSERT_TRUE(ret == nullptr);
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(YahooRedirectTest, Redirect) {
+  httplib::Client cli("yahoo.com");
+  cli.follow_location(true);
+  auto ret = cli.Get("/");
+  ASSERT_TRUE(ret != nullptr);
+}
+
+TEST(Https2HttpRedirectTest, Redirect) {
+  httplib::SSLClient cli("httpbin.org");
+  cli.follow_location(true);
+  auto ret = cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  ASSERT_TRUE(ret != nullptr);
+}
+#endif
+
 TEST(Server, BindAndListenSeparately) {
   Server svr;
   int port = svr.bind_to_any_port("localhost");

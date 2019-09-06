@@ -333,6 +333,14 @@ if (cli.send(requests, responses)) {
 }
 ```
 
+### Redirect
+
+```cpp
+httplib::Client cli("yahoo.com");
+cli.follow_location(true);
+auto ret = cli.Get("/");
+```
+
 OpenSSL Support
 ---------------
 
