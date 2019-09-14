@@ -153,6 +153,9 @@ typedef std::function<bool(const char *data, size_t data_length, size_t offset,
 
 typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
 
+struct Response;
+typedef std::function<bool(const Response& response)> ResponseHandler;
+
 struct MultipartFile {
   std::string filename;
   std::string content_type;
@@ -188,6 +191,7 @@ struct Request {
 
   // for client
   size_t redirect_count = CPPHTTPLIB_REDIRECT_MAX_COUNT;
+  ResponseHandler response_handler;
   ContentReceiver content_receiver;
   Progress progress;
 
@@ -515,6 +519,15 @@ public:
   Get(const char *path, ContentReceiver content_receiver, Progress progress);
 
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ContentReceiver content_receiver,
+                                Progress progress);
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver);
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ResponseHandler response_handler,
                                 ContentReceiver content_receiver,
                                 Progress progress);
 
@@ -2869,6 +2882,12 @@ inline bool Client::process_request(Stream &strm, const Request &req,
     connection_close = true;
   }
 
+  if (req.response_handler) {
+    if(!req.response_handler(res)) {
+      return false;
+    }
+  }
+
   // Body
   if (req.method != "HEAD") {
     detail::ContentReceiverCore out = [&](const char *buf, size_t n) {
@@ -2940,30 +2959,47 @@ Client::Get(const char *path, const Headers &headers, Progress progress) {
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, Headers(), content_receiver, dummy);
+  return Get(path, Headers(), nullptr, content_receiver, dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, Headers(), content_receiver, progress);
+  return Get(path, Headers(), nullptr, content_receiver, progress);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, headers, content_receiver, dummy);
+  return Get(path, headers, nullptr, content_receiver, dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
+  return Get(path, headers, nullptr, content_receiver, progress);
+}
+
+inline std::shared_ptr<Response> Client::Get(const char *path,
+                                             const Headers &headers,
+                                             ResponseHandler response_handler,
+                                             ContentReceiver content_receiver) {
+  Progress dummy;
+  return Get(path, headers, response_handler, content_receiver, dummy);
+}
+
+inline std::shared_ptr<Response> Client::Get(const char *path,
+                                             const Headers &headers,
+                                             ResponseHandler response_handler,
+                                             ContentReceiver content_receiver,
+                                             Progress progress) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
+  req.response_handler = response_handler;
   req.content_receiver = content_receiver;
   req.progress = progress;
 

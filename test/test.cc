@@ -242,6 +242,38 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   EXPECT_EQ(out, body);
 }
 
+TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
+  auto host = "www.httpwatch.com";
+  auto sec = 2;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  auto port = 443;
+  httplib::SSLClient cli(host, port, sec);
+#else
+  auto port = 80;
+  httplib::Client cli(host, port, sec);
+#endif
+
+  std::string body;
+  auto res =
+      cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137", Headers(),
+              [&](const Response& response) {
+                EXPECT_EQ(200, response.status);
+                return true;
+              },
+              [&](const char *data, size_t data_length, uint64_t, uint64_t) {
+                body.append(data, data_length);
+                return true;
+              });
+  ASSERT_TRUE(res != nullptr);
+
+  std::string out;
+  httplib::detail::read_file("./image.jpg", out);
+
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(out, body);
+}
+
 TEST(RangeTest, FromHTTPBin) {
   auto host = "httpbin.org";
   auto sec = 5;
