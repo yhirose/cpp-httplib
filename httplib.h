@@ -1568,6 +1568,7 @@ inline bool redirect(T &cli, const Request &req, Response &res,
   new_req.headers = req.headers;
   new_req.body = req.body;
   new_req.redirect_count = req.redirect_count - 1;
+  new_req.response_handler = req.response_handler;
   new_req.content_receiver = req.content_receiver;
   new_req.progress = req.progress;
 
