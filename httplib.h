@@ -154,7 +154,7 @@ typedef std::function<bool(const char *data, size_t data_length, size_t offset,
 typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
 
 struct Response;
-typedef std::function<bool(const Response& response)> ResponseHandler;
+typedef std::function<bool(const Response &response)> ResponseHandler;
 
 struct MultipartFile {
   std::string filename;
@@ -2884,9 +2884,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
   }
 
   if (req.response_handler) {
-    if(!req.response_handler(res)) {
-      return false;
-    }
+    if (!req.response_handler(res)) { return false; }
   }
 
   // Body
