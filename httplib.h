@@ -8,6 +8,21 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
+/*
+ * Configuration
+ */
+#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
+#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
+#define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
+#define CPPHTTPLIB_READ_TIMEOUT_SECOND 5
+#define CPPHTTPLIB_READ_TIMEOUT_USECOND 0
+#define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
+#define CPPHTTPLIB_REDIRECT_MAX_COUNT 20
+#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max)()
+#define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
+#define CPPHTTPLIB_THREAD_POOL_COUNT 8
+#define CPPHTTPLIB_USE_POLL
+
 #ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
@@ -52,11 +67,19 @@ typedef int ssize_t;
 #endif // strcasecmp
 
 typedef SOCKET socket_t;
-#else
+#ifdef CPPHTTPLIB_USE_POLL
+#define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
+#endif
+
+#else // not _WIN32
+
 #include <arpa/inet.h>
 #include <cstring>
 #include <netdb.h>
 #include <netinet/in.h>
+#ifdef CPPHTTPLIB_USE_POLL
+#include <poll.h>
+#endif
 #include <pthread.h>
 #include <signal.h>
 #include <sys/select.h>
@@ -104,20 +127,6 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #include <zlib.h>
 #endif
 
-/*
- * Configuration
- */
-#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
-#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
-#define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
-#define CPPHTTPLIB_READ_TIMEOUT_SECOND 5
-#define CPPHTTPLIB_READ_TIMEOUT_USECOND 0
-#define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
-#define CPPHTTPLIB_REDIRECT_MAX_COUNT 20
-#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max)()
-#define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
-#define CPPHTTPLIB_THREAD_POOL_COUNT 8
-
 namespace httplib {
 
 namespace detail {
@@ -154,7 +163,7 @@ typedef std::function<bool(const char *data, size_t data_length, size_t offset,
 typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
 
 struct Response;
-typedef std::function<bool(const Response& response)> ResponseHandler;
+typedef std::function<bool(const Response &response)> ResponseHandler;
 
 struct MultipartFile {
   std::string filename;
@@ -986,6 +995,15 @@ inline int close_socket(socket_t sock) {
 }
 
 inline int select_read(socket_t sock, time_t sec, time_t usec) {
+#ifdef CPPHTTPLIB_USE_POLL
+  struct pollfd pfd_read;
+  pfd_read.fd = sock;
+  pfd_read.events = POLLIN;
+
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
+
+  return poll(&pfd_read, 1, timeout);
+#else
   fd_set fds;
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
@@ -995,9 +1013,26 @@ inline int select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_usec = static_cast<long>(usec);
 
   return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
+#endif
 }
 
 inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
+#ifdef CPPHTTPLIB_USE_POLL
+  struct pollfd pfd_read;
+  pfd_read.fd = sock;
+  pfd_read.events = POLLIN | POLLOUT;
+
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
+
+  if (poll(&pfd_read, 1, timeout) > 0 &&
+      pfd_read.revents & (POLLIN | POLLOUT)) {
+    int error = 0;
+    socklen_t len = sizeof(error);
+    return getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len) >= 0 &&
+           !error;
+  }
+  return false;
+#else
   fd_set fdsr;
   FD_ZERO(&fdsr);
   FD_SET(sock, &fdsr);
@@ -1009,20 +1044,15 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<long>(usec);
 
-  if (select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) < 0) {
-    return false;
-  } else if (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw)) {
+  if (select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) > 0 &&
+      (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
     socklen_t len = sizeof(error);
-    if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len) < 0 ||
-        error) {
-      return false;
-    }
-  } else {
-    return false;
+    return getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len) >= 0 &&
+           !error;
   }
-
-  return true;
+  return false;
+#endif
 }
 
 template <typename T>
@@ -2884,9 +2914,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
   }
 
   if (req.response_handler) {
-    if(!req.response_handler(res)) {
-      return false;
-    }
+    if (!req.response_handler(res)) { return false; }
   }
 
   // Body
