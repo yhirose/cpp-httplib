@@ -706,6 +706,8 @@ public:
 
   long get_openssl_verify_result() const;
 
+  SSL_CTX* ssl_context() const noexcept;
+
 private:
   virtual bool process_and_close_socket(
       socket_t sock, size_t request_count,
@@ -3480,6 +3482,10 @@ inline void SSLClient::enable_server_certificate_verification(bool enabled) {
 
 inline long SSLClient::get_openssl_verify_result() const {
   return verify_result_;
+}
+
+inline SSL_CTX* SSLClient::ssl_context() const noexcept {
+	return ctx_;
 }
 
 inline bool SSLClient::process_and_close_socket(
