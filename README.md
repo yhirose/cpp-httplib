@@ -1,7 +1,7 @@
 cpp-httplib
 ===========
 
-[![](https://github.com/yhirose/cpp-httplib/workflows/.github/workflows/test.yml/badge.svg)](https://github.com/yhirose/cpp-httplib/actions)
+[![](https://github.com/yhirose/cpp-httplib/workflows/test/badge.svg)](https://github.com/yhirose/cpp-httplib/actions)
 [![Build Status](https://travis-ci.org/yhirose/cpp-httplib.svg?branch=master)](https://travis-ci.org/yhirose/cpp-httplib)
 [![Bulid Status](https://ci.appveyor.com/api/projects/status/github/yhirose/cpp-httplib?branch=master&svg=true)](https://ci.appveyor.com/project/yhirose/cpp-httplib)
 
