@@ -1,0 +1,17 @@
+name: test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macOS-latest, ubuntu-latest]
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@master
+    - name: make
+      run: cd test && make
