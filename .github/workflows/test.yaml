@@ -12,6 +12,6 @@ jobs:
 
     steps:
     - name: checkout
-      uses: actions/checkout@master
+      uses: actions/checkout@v1
     - name: make
       run: cd test && make
