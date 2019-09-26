@@ -3259,7 +3259,7 @@ inline bool process_and_close_socket_ssl(bool is_client_request, socket_t sock,
     return false;
   }
 
-  auto bio = BIO_new_socket(sock, BIO_NOCLOSE);
+  auto bio = BIO_new_socket(static_cast<int>(sock), BIO_NOCLOSE);
   SSL_set_bio(ssl, bio, bio);
 
   if (!setup(ssl)) {
@@ -3365,13 +3365,13 @@ inline int SSLSocketStream::read(char *ptr, size_t size) {
   if (SSL_pending(ssl_) > 0 ||
       detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
                           CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
-    return SSL_read(ssl_, ptr, size);
+    return SSL_read(ssl_, ptr, static_cast<int>(size));
   }
   return -1;
 }
 
 inline int SSLSocketStream::write(const char *ptr, size_t size) {
-  return SSL_write(ssl_, ptr, size);
+  return SSL_write(ssl_, ptr, static_cast<int>(size));
 }
 
 inline int SSLSocketStream::write(const char *ptr) {
