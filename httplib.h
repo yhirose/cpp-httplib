@@ -367,7 +367,7 @@ private:
           pool_.jobs_.pop_front();
         }
 
-        assert(true == (bool)fn);
+        assert(true == static_cast<bool>(fn));
         fn();
       }
     }
@@ -1030,7 +1030,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
       pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
-    return getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len) >= 0 &&
+    return getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &len) >= 0 &&
            !error;
   }
   return false;
@@ -1141,9 +1141,9 @@ socket_t create_socket(const char *host, int port, Fn fn,
 
     // Make 'reuse address' option available
     int yes = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&yes, sizeof(yes));
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&yes), sizeof(yes));
 #ifdef SO_REUSEPORT
-    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, (char *)&yes, sizeof(yes));
+    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char*>(&yes), sizeof(yes));
 #endif
 
     // bind or connect
@@ -1182,10 +1182,10 @@ inline std::string get_remote_addr(socket_t sock) {
   struct sockaddr_storage addr;
   socklen_t len = sizeof(addr);
 
-  if (!getpeername(sock, (struct sockaddr *)&addr, &len)) {
+  if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr), &len)) {
     char ipstr[NI_MAXHOST];
 
-    if (!getnameinfo((struct sockaddr *)&addr, len, ipstr, sizeof(ipstr),
+    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr, sizeof(ipstr),
                      nullptr, 0, NI_NUMERICHOST)) {
       return ipstr;
     }
@@ -1267,7 +1267,7 @@ inline bool compress(std::string &content) {
   if (ret != Z_OK) { return false; }
 
   strm.avail_in = content.size();
-  strm.next_in = (Bytef *)content.data();
+  strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(content.data()));
 
   std::string compressed;
 
@@ -1275,7 +1275,7 @@ inline bool compress(std::string &content) {
   char buff[bufsiz];
   do {
     strm.avail_out = bufsiz;
-    strm.next_out = (Bytef *)buff;
+    strm.next_out = reinterpret_cast<Bytef*>(buff);
     ret = deflate(&strm, Z_FINISH);
     assert(ret != Z_STREAM_ERROR);
     compressed.append(buff, bufsiz - strm.avail_out);
@@ -1312,13 +1312,13 @@ public:
     int ret = Z_OK;
 
     strm.avail_in = data_length;
-    strm.next_in = (Bytef *)data;
+    strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef *>(data));
 
     const auto bufsiz = 16384;
     char buff[bufsiz];
     do {
       strm.avail_out = bufsiz;
-      strm.next_out = (Bytef *)buff;
+      strm.next_out = reinterpret_cast<Bytef*>(buff);
 
       ret = inflate(&strm, Z_NO_FLUSH);
       assert(ret != Z_STREAM_ERROR);
