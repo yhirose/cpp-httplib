@@ -1267,7 +1267,7 @@ inline bool compress(std::string &content) {
   if (ret != Z_OK) { return false; }
 
   strm.avail_in = content.size();
-  strm.next_in = reinterpret_cast<Bytef*>(content.data());
+  strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(content.data()));
 
   std::string compressed;
 
