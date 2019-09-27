@@ -2773,7 +2773,7 @@ inline bool Client::send(const std::vector<Request> &requests,
 
     if (!process_and_close_socket(
             sock, requests.size() - i,
-            [&](Stream &strm, bool last_connection, bool &connection_close) {
+            [&](Stream &strm, bool last_connection, bool &connection_close) -> bool {
               auto &req = requests[i];
               auto res = Response();
               i++;
