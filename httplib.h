@@ -60,7 +60,13 @@ typedef int ssize_t;
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#ifndef WSA_FLAG_NO_HANDLE_INHERIT
+#define WSA_FLAG_NO_HANDLE_INHERIT 0x80
+#endif
+
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 
 #ifndef strcasecmp
 #define strcasecmp _stricmp
