@@ -140,6 +140,7 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <array>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -269,7 +270,7 @@ struct Response {
   void set_header(const char *key, const char *val);
   void set_header(const char *key, const std::string &val);
 
-  void set_redirect(const char *uri);
+  void set_redirect(const char *url);
   void set_content(const char *s, size_t n, const char *content_type);
   void set_content(const std::string &s, const char *content_type);
 
@@ -496,7 +497,7 @@ public:
 protected:
   bool process_request(Stream &strm, bool last_connection,
                        bool &connection_close,
-                       std::function<void(Request &)> setup_request);
+                       const std::function<void(Request &)>& setup_request);
 
   size_t keep_alive_max_count_;
   size_t payload_max_length_;
@@ -1019,7 +1020,7 @@ private:
   Stream &strm_;
   char *fixed_buffer_;
   const size_t fixed_buffer_size_;
-  size_t fixed_buffer_used_size_;
+  size_t fixed_buffer_used_size_ = 0;
   std::string glowable_buffer_;
 };
 
@@ -1218,11 +1219,11 @@ inline std::string get_remote_addr(socket_t sock) {
   socklen_t len = sizeof(addr);
 
   if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr), &len)) {
-    char ipstr[NI_MAXHOST];
+    std::array<char, NI_MAXHOST> ipstr{};
 
-    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr, sizeof(ipstr),
+    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr.data(), ipstr.size(),
                      nullptr, 0, NI_NUMERICHOST)) {
-      return ipstr;
+      return ipstr.data();
     }
   }
 
@@ -1306,14 +1307,13 @@ inline bool compress(std::string &content) {
 
   std::string compressed;
 
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
+  std::array<char, 16384> buff{};
   do {
-    strm.avail_out = bufsiz;
-    strm.next_out = reinterpret_cast<Bytef*>(buff);
+    strm.avail_out = buff.size();
+    strm.next_out = reinterpret_cast<Bytef*>(buff.data());
     ret = deflate(&strm, Z_FINISH);
     assert(ret != Z_STREAM_ERROR);
-    compressed.append(buff, bufsiz - strm.avail_out);
+    compressed.append(buff.data(), buff.size() - strm.avail_out);
   } while (strm.avail_out == 0);
 
   assert(ret == Z_STREAM_END);
@@ -1349,11 +1349,10 @@ public:
     strm.avail_in = data_length;
     strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef *>(data));
 
-    const auto bufsiz = 16384;
-    char buff[bufsiz];
+    std::array<char, 16384> buff{};
     do {
-      strm.avail_out = bufsiz;
-      strm.next_out = reinterpret_cast<Bytef*>(buff);
+      strm.avail_out = buff.size();
+      strm.next_out = reinterpret_cast<Bytef*>(buff.data());
 
       ret = inflate(&strm, Z_NO_FLUSH);
       assert(ret != Z_STREAM_ERROR);
@@ -1363,7 +1362,7 @@ public:
       case Z_MEM_ERROR: inflateEnd(&strm); return false;
       }
 
-      if (!callback(buff, bufsiz - strm.avail_out)) { return false; }
+      if (!callback(buff.data(), buff.size() - strm.avail_out)) { return false; }
     } while (strm.avail_out == 0);
 
     return ret == Z_STREAM_END;
@@ -2141,18 +2140,17 @@ inline void Response::set_chunked_content_provider(
 // Rstream implementation
 template <typename... Args>
 inline int Stream::write_format(const char *fmt, const Args &... args) {
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
+  std::array<char, 2048> buf;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  auto n = _snprintf_s(buf, bufsiz, bufsiz - 1, fmt, args...);
+  auto n = _snprintf_s(buf, bufsiz, buf.size() - 1, fmt, args...);
 #else
-  auto n = snprintf(buf, bufsiz - 1, fmt, args...);
+  auto n = snprintf(buf.data(), buf.size() - 1, fmt, args...);
 #endif
   if (n <= 0) { return n; }
 
-  if (n >= bufsiz - 1) {
-    std::vector<char> glowable_buf(bufsiz);
+  if (n >= buf.size() - 1) {
+    std::vector<char> glowable_buf(buf.size());
 
     while (n >= static_cast<int>(glowable_buf.size() - 1)) {
       glowable_buf.resize(glowable_buf.size() * 2);
@@ -2165,7 +2163,7 @@ inline int Stream::write_format(const char *fmt, const Args &... args) {
     }
     return write(&glowable_buf[0], n);
   } else {
-    return write(buf, n);
+    return write(buf.data(), n);
   }
 }
 
@@ -2282,14 +2280,14 @@ inline bool Server::set_base_dir(const char *path) {
 }
 
 inline void Server::set_file_request_handler(Handler handler) {
-  file_request_handler_ = handler;
+  file_request_handler_ = std::move(handler);
 }
 
 inline void Server::set_error_handler(Handler handler) {
-  error_handler_ = handler;
+  error_handler_ = std::move(handler);
 }
 
-inline void Server::set_logger(Logger logger) { logger_ = logger; }
+inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
 
 inline void Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
@@ -2548,8 +2546,7 @@ inline int Server::bind_internal(const char *host, int port, int socket_flags) {
     if (address.ss_family == AF_INET) {
       return ntohs(reinterpret_cast<struct sockaddr_in *>(&address)->sin_port);
     } else if (address.ss_family == AF_INET6) {
-      return ntohs(
-          reinterpret_cast<struct sockaddr_in6 *>(&address)->sin6_port);
+      return ntohs(reinterpret_cast<struct sockaddr_in6 *>(&address)->sin6_port);
     } else {
       return -1;
     }
@@ -2643,11 +2640,10 @@ inline bool Server::dispatch_request(Request &req, Response &res,
 inline bool
 Server::process_request(Stream &strm, bool last_connection,
                         bool &connection_close,
-                        std::function<void(Request &)> setup_request) {
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
+                        const std::function<void(Request &)>& setup_request) {
+  std::array<char, 2048> buf{};
 
-  detail::stream_line_reader reader(strm, buf, bufsiz);
+  detail::stream_line_reader reader(strm, buf.data(), buf.size());
 
   // Connection has been closed on client
   if (!reader.getline()) { return false; }
@@ -2770,10 +2766,9 @@ inline socket_t Client::create_client_socket() const {
 }
 
 inline bool Client::read_response_line(Stream &strm, Response &res) {
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
+  std::array<char, 2048> buf;
 
-  detail::stream_line_reader reader(strm, buf, bufsiz);
+  detail::stream_line_reader reader(strm, buf.data(), buf.size());
 
   if (!reader.getline()) { return false; }
 
@@ -2997,7 +2992,7 @@ inline bool Client::process_and_close_socket(
                        bool &connection_close)>
         callback) {
   request_count = std::min(request_count, keep_alive_max_count_);
-  return detail::process_and_close_socket(true, sock, request_count, callback);
+  return detail::process_and_close_socket(true, sock, request_count, std::move(callback));
 }
 
 inline bool Client::is_ssl() const { return false; }
@@ -3009,7 +3004,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path) {
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              Progress progress) {
-  return Get(path, Headers(), progress);
+  return Get(path, Headers(), std::move(progress));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3024,7 +3019,7 @@ Client::Get(const char *path, const Headers &headers, Progress progress) {
   req.method = "GET";
   req.path = path;
   req.headers = headers;
-  req.progress = progress;
+  req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
@@ -3033,27 +3028,27 @@ Client::Get(const char *path, const Headers &headers, Progress progress) {
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, Headers(), nullptr, content_receiver, dummy);
+  return Get(path, Headers(), nullptr, std::move(content_receiver), dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, Headers(), nullptr, content_receiver, progress);
+  return Get(path, Headers(), nullptr, std::move(content_receiver), progress);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, headers, nullptr, content_receiver, dummy);
+  return Get(path, headers, nullptr, std::move(content_receiver), dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, headers, nullptr, content_receiver, progress);
+  return Get(path, headers, nullptr, std::move(content_receiver), progress);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3061,7 +3056,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ResponseHandler response_handler,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, headers, response_handler, content_receiver, dummy);
+  return Get(path, headers, std::move(response_handler), content_receiver, dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3073,9 +3068,9 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
   req.method = "GET";
   req.path = path;
   req.headers = headers;
-  req.response_handler = response_handler;
-  req.content_receiver = content_receiver;
-  req.progress = progress;
+  req.response_handler = std::move(response_handler);
+  req.content_receiver = std::move(content_receiver);
+  req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
