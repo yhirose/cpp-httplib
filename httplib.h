@@ -21,7 +21,6 @@
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max)()
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 #define CPPHTTPLIB_THREAD_POOL_COUNT 8
-#define CPPHTTPLIB_USE_POLL
 
 #ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -73,7 +72,7 @@ typedef int ssize_t;
 #endif // strcasecmp
 
 typedef SOCKET socket_t;
-#ifdef CPPHTTPLIB_USE_POLL
+#ifndef CPPHTTPLIB_USE_SELECT
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 #endif
 
@@ -83,7 +82,7 @@ typedef SOCKET socket_t;
 #include <cstring>
 #include <netdb.h>
 #include <netinet/in.h>
-#ifdef CPPHTTPLIB_USE_POLL
+#ifndef CPPHTTPLIB_USE_SELECT
 #include <poll.h>
 #endif
 #include <pthread.h>
@@ -1003,15 +1002,7 @@ inline int close_socket(socket_t sock) {
 }
 
 inline int select_read(socket_t sock, time_t sec, time_t usec) {
-#ifdef CPPHTTPLIB_USE_POLL
-  struct pollfd pfd_read;
-  pfd_read.fd = sock;
-  pfd_read.events = POLLIN;
-
-  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
-
-  return poll(&pfd_read, 1, timeout);
-#else
+#ifdef CPPHTTPLIB_USE_SELECT
   fd_set fds;
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
@@ -1021,26 +1012,19 @@ inline int select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_usec = static_cast<long>(usec);
 
   return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
+#else
+  struct pollfd pfd_read;
+  pfd_read.fd = sock;
+  pfd_read.events = POLLIN;
+
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
+
+  return poll(&pfd_read, 1, timeout);
 #endif
 }
 
 inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
-#ifdef CPPHTTPLIB_USE_POLL
-  struct pollfd pfd_read;
-  pfd_read.fd = sock;
-  pfd_read.events = POLLIN | POLLOUT;
-
-  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
-
-  if (poll(&pfd_read, 1, timeout) > 0 &&
-      pfd_read.revents & (POLLIN | POLLOUT)) {
-    int error = 0;
-    socklen_t len = sizeof(error);
-    return getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &len) >= 0 &&
-           !error;
-  }
-  return false;
-#else
+#ifdef CPPHTTPLIB_USE_SELECT
   fd_set fdsr;
   FD_ZERO(&fdsr);
   FD_SET(sock, &fdsr);
@@ -1057,6 +1041,21 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
     int error = 0;
     socklen_t len = sizeof(error);
     return getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len) >= 0 &&
+           !error;
+  }
+  return false;
+#else
+  struct pollfd pfd_read;
+  pfd_read.fd = sock;
+  pfd_read.events = POLLIN | POLLOUT;
+
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
+
+  if (poll(&pfd_read, 1, timeout) > 0 &&
+      pfd_read.revents & (POLLIN | POLLOUT)) {
+    int error = 0;
+    socklen_t len = sizeof(error);
+    return getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &len) >= 0 &&
            !error;
   }
   return false;
