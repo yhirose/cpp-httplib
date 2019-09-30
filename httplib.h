@@ -98,6 +98,7 @@ typedef int socket_t;
 #include <assert.h>
 #include <atomic>
 #include <condition_variable>
+#include <errno.h>
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
@@ -2550,6 +2551,12 @@ inline bool Server::listen_internal() {
       socket_t sock = accept(svr_sock_, nullptr, nullptr);
 
       if (sock == INVALID_SOCKET) {
+        if (errno == EMFILE) {
+          // The per-process limit of open file descriptors has been reached.
+          // Try to accept new connections after a short sleep.
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          continue;
+        }
         if (svr_sock_ != INVALID_SOCKET) {
           detail::close_socket(svr_sock_);
           ret = false;
