@@ -220,8 +220,7 @@ enum HttpStatusCode {
     INTERNAL_SERVER_ERROR = 500
 };
 
-enum class HttpMethod
-{
+enum class HttpMethod {
     GET,
     HEAD,
     POST,

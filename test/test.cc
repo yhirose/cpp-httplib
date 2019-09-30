@@ -71,25 +71,25 @@ TEST(ParseQueryTest, ParseQueryString) {
 
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
-  EXPECT_STREQ("text/plain", val);
+  auto val = detail::get_header_value(headers, HEADER_CONTENT_TYPE, 0, MEDIA_TYPE_TEXT_PLAIN);
+  EXPECT_STREQ(MEDIA_TYPE_TEXT_PLAIN, val);
 }
 
 TEST(GetHeaderValueTest, DefaultValueInt) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_uint64(headers, "Content-Length", 100);
+  auto val = detail::get_header_value_uint64(headers, HEADER_CONTENT_LENGTH, 100);
   EXPECT_EQ(100ull, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue) {
-  Headers headers = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
-  auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
-  EXPECT_STREQ("text/html", val);
+  Headers headers = {{HEADER_CONTENT_TYPE, MEDIA_TYPE_TEXT_HTML}, {"Dummy", "Dummy"}};
+  auto val = detail::get_header_value(headers, HEADER_CONTENT_TYPE, 0, MEDIA_TYPE_TEXT_PLAIN);
+  EXPECT_STREQ(MEDIA_TYPE_TEXT_HTML, val);
 }
 
 TEST(GetHeaderValueTest, RegularValueInt) {
-  Headers headers = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_uint64(headers, "Content-Length", 0);
+  Headers headers = {{HEADER_CONTENT_LENGTH, "100"}, {"Dummy", "Dummy"}};
+  auto val = detail::get_header_value_uint64(headers, HEADER_CONTENT_LENGTH, 0);
   EXPECT_EQ(100ull, val);
 }
 
@@ -567,21 +567,21 @@ protected:
 
     svr_.Get("/hi",
              [&](const Request & /*req*/, Response &res) {
-               res.set_content("Hello World!", "text/plain");
+               res.set_content("Hello World!", MEDIA_TYPE_TEXT_PLAIN);
              })
         .Get("/slow",
              [&](const Request & /*req*/, Response &res) {
                msleep(2000);
-               res.set_content("slow", "text/plain");
+               res.set_content("slow", MEDIA_TYPE_TEXT_PLAIN);
              })
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
-               res.set_content(remote_addr.c_str(), "text/plain");
+               res.set_content(remote_addr.c_str(), MEDIA_TYPE_TEXT_PLAIN);
              })
         .Get("/endwith%",
              [&](const Request & /*req*/, Response &res) {
-               res.set_content("Hello World!", "text/plain");
+               res.set_content("Hello World!", MEDIA_TYPE_TEXT_PLAIN);
              })
         .Get("/", [&](const Request & /*req*/,
                       Response &res) { res.set_redirect("/hi"); })
@@ -599,9 +599,9 @@ protected:
                string name = req.matches[1];
                if (persons_.find(name) != persons_.end()) {
                  auto note = persons_[name];
-                 res.set_content(note, "text/plain");
+                 res.set_content(note, MEDIA_TYPE_TEXT_PLAIN);
                } else {
-                 res.status = 404;
+                 res.status = HttpStatusCode::NOT_FOUND;
                }
              })
         .Post("/x-www-form-urlencoded-json",
@@ -652,7 +652,7 @@ protected:
              })
         .Get("/with-range",
              [&](const Request & /*req*/, Response &res) {
-               res.set_content("abcdefg", "text/plain");
+               res.set_content("abcdefg", MEDIA_TYPE_TEXT_PLAIN);
              })
         .Post("/chunked",
               [&](const Request &req, Response & /*res*/) {
@@ -684,7 +684,7 @@ protected:
                 {
                   const auto &file = req.get_file_value("file1");
                   EXPECT_EQ("hello.txt", file.filename);
-                  EXPECT_EQ("text/plain", file.content_type);
+                  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, file.content_type);
                   EXPECT_EQ("h\ne\n\nl\nl\no\n",
                             req.body.substr(file.offset, file.length));
                 }
@@ -699,21 +699,21 @@ protected:
         .Post("/empty",
               [&](const Request &req, Response &res) {
                 EXPECT_EQ(req.body, "");
-                res.set_content("empty", "text/plain");
+                res.set_content("empty", MEDIA_TYPE_TEXT_PLAIN);
               })
         .Put("/put",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "PUT");
-               res.set_content(req.body, "text/plain");
+               res.set_content(req.body, MEDIA_TYPE_TEXT_PLAIN);
              })
         .Patch("/patch",
                [&](const Request &req, Response &res) {
                  EXPECT_EQ(req.body, "PATCH");
-                 res.set_content(req.body, "text/plain");
+                 res.set_content(req.body, MEDIA_TYPE_TEXT_PLAIN);
                })
         .Delete("/delete",
                 [&](const Request & /*req*/, Response &res) {
-                  res.set_content("DELETE", "text/plain");
+                  res.set_content("DELETE", MEDIA_TYPE_TEXT_PLAIN);
                 })
         .Options(R"(\*)",
                  [&](const Request & /*req*/, Response &res) {
@@ -739,8 +739,8 @@ protected:
              })
         .Post("/validate-no-multiple-headers",
               [&](const Request &req, Response & /*res*/) {
-                EXPECT_EQ(1u, req.get_header_value_count("Content-Length"));
-                EXPECT_EQ("5", req.get_header_value("Content-Length"));
+                EXPECT_EQ(1u, req.get_header_value_count(HEADER_CONTENT_LENGTH));
+                EXPECT_EQ("5", req.get_header_value(HEADER_CONTENT_LENGTH));
               })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
         .Get("/gzip",
@@ -748,7 +748,7 @@ protected:
                res.set_content(
                    "12345678901234567890123456789012345678901234567890123456789"
                    "01234567890123456789012345678901234567890",
-                   "text/plain");
+                   MEDIA_TYPE_TEXT_PLAIN);
              })
         .Get("/nogzip",
              [&](const Request & /*req*/, Response &res) {
@@ -811,9 +811,9 @@ TEST_F(ServerTest, GetMethod200) {
   auto res = cli_.Get("/hi");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("HTTP/1.1", res->version);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
+  EXPECT_EQ(1, res->get_header_value_count(HEADER_CONTENT_TYPE));
   EXPECT_EQ("Hello World!", res->body);
 }
 
@@ -827,53 +827,53 @@ TEST_F(ServerTest, GetMethod302) {
 TEST_F(ServerTest, GetMethod404) {
   auto res = cli_.Get("/invalid");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, HeadMethod200) {
   auto res = cli_.Head("/hi");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
   EXPECT_EQ("", res->body);
 }
 
 TEST_F(ServerTest, HeadMethod404) {
   auto res = cli_.Head("/invalid");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
   EXPECT_EQ("", res->body);
 }
 
 TEST_F(ServerTest, GetMethodPersonJohn) {
   auto res = cli_.Get("/person/john");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
   EXPECT_EQ("programmer", res->body);
 }
 
 TEST_F(ServerTest, PostMethod1) {
   auto res = cli_.Get("/person/john1");
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(404, res->status);
+  ASSERT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 
   res = cli_.Post("/person", "name=john1&note=coder",
                   "application/x-www-form-urlencoded");
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(200, res->status);
+  ASSERT_EQ(HttpStatusCode::OK, res->status);
 
   res = cli_.Get("/person/john1");
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(200, res->status);
-  ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+  ASSERT_EQ(HttpStatusCode::OK, res->status);
+  ASSERT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
   ASSERT_EQ("coder", res->body);
 }
 
 TEST_F(ServerTest, PostMethod2) {
   auto res = cli_.Get("/person/john2");
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(404, res->status);
+  ASSERT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 
   Params params;
   params.emplace("name", "john2");
@@ -881,12 +881,12 @@ TEST_F(ServerTest, PostMethod2) {
 
   res = cli_.Post("/person", params);
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(200, res->status);
+  ASSERT_EQ(HttpStatusCode::OK, res->status);
 
   res = cli_.Get("/person/john2");
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(200, res->status);
-  ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+  ASSERT_EQ(HttpStatusCode::OK, res->status);
+  ASSERT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
   ASSERT_EQ("coder", res->body);
 }
 
@@ -897,22 +897,22 @@ TEST_F(ServerTest, PostWwwFormUrlEncodedJson) {
   auto res = cli_.Post("/x-www-form-urlencoded-json", params);
 
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(200, res->status);
+  ASSERT_EQ(HttpStatusCode::OK, res->status);
   ASSERT_EQ(JSON_DATA, res->body);
 }
 
 TEST_F(ServerTest, PostEmptyContent) {
-  auto res = cli_.Post("/empty", "", "text/plain");
+  auto res = cli_.Post("/empty", "", MEDIA_TYPE_TEXT_PLAIN);
   ASSERT_TRUE(res != nullptr);
-  ASSERT_EQ(200, res->status);
+  ASSERT_EQ(HttpStatusCode::OK, res->status);
   ASSERT_EQ("empty", res->body);
 }
 
 TEST_F(ServerTest, GetMethodDir) {
   auto res = cli_.Get("/dir/");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
+  EXPECT_EQ(MEDIA_TYPE_TEXT_HTML, res->get_header_value(HEADER_CONTENT_TYPE));
 
   auto body = R"(<html>
 <head>
@@ -929,35 +929,35 @@ TEST_F(ServerTest, GetMethodDir) {
 TEST_F(ServerTest, GetMethodDirTest) {
   auto res = cli_.Get("/dir/test.html");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
+  EXPECT_EQ(MEDIA_TYPE_TEXT_HTML, res->get_header_value(HEADER_CONTENT_TYPE));
   EXPECT_EQ("test.html", res->body);
 }
 
 TEST_F(ServerTest, GetMethodDirTestWithDoubleDots) {
   auto res = cli_.Get("/dir/../dir/test.html");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
+  EXPECT_EQ(MEDIA_TYPE_TEXT_HTML, res->get_header_value(HEADER_CONTENT_TYPE));
   EXPECT_EQ("test.html", res->body);
 }
 
 TEST_F(ServerTest, GetMethodInvalidPath) {
   auto res = cli_.Get("/dir/../test.html");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDir) {
   auto res = cli_.Get("/../www/dir/test.html");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDir2) {
   auto res = cli_.Get("/dir/../../www/dir/test.html");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, InvalidBaseDir) {
@@ -980,7 +980,7 @@ TEST_F(ServerTest, LongRequest) {
   auto res = cli_.Get(request.c_str());
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, TooLongRequest) {
@@ -998,7 +998,7 @@ TEST_F(ServerTest, TooLongRequest) {
 
 TEST_F(ServerTest, LongHeader) {
   Request req;
-  req.method = "GET";
+  req.method = HttpMethod::GET;
   req.path = "/hi";
 
   std::string host_and_port;
@@ -1046,7 +1046,7 @@ TEST_F(ServerTest, LongHeader) {
   auto ret = cli_.send(req, *res);
 
   ASSERT_TRUE(ret);
-  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(HttpStatusCode::OK, res->status);
 }
 
 TEST_F(ServerTest, LongQueryValue) {
@@ -1058,7 +1058,7 @@ TEST_F(ServerTest, LongQueryValue) {
 
 TEST_F(ServerTest, TooLongHeader) {
   Request req;
-  req.method = "GET";
+  req.method = HttpMethod::GET;
   req.path = "/hi";
 
   std::string host_and_port;
@@ -1068,7 +1068,7 @@ TEST_F(ServerTest, TooLongHeader) {
 
   req.headers.emplace("Host", host_and_port.c_str());
   req.headers.emplace("Accept", "*/*");
-  req.headers.emplace("User-Agent", "cpp-httplib/0.1");
+  req.headers.emplace(HEADER_USER_AGENT, "cpp-httplib/0.1");
 
   req.headers.emplace(
       "Header-Name",
@@ -1124,26 +1124,26 @@ TEST_F(ServerTest, PercentEncodingUnicode) {
 TEST_F(ServerTest, InvalidPercentEncoding) {
   auto res = cli_.Get("/%endwith%");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, InvalidPercentEncodingUnicode) {
   auto res = cli_.Get("/%uendwith%");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, EndWithPercentCharacterInQuery) {
   auto res = cli_.Get("/hello?aaa=bbb%");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(404, res->status);
+  EXPECT_EQ(HttpStatusCode::NOT_FOUND, res->status);
 }
 
 TEST_F(ServerTest, MultipartFormData) {
   MultipartFormDataItems items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
-      {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+      {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", MEDIA_TYPE_TEXT_PLAIN},
       {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
       {"file3", "", "", "application/octet-stream"},
   };
@@ -1158,13 +1158,13 @@ TEST_F(ServerTest, CaseInsensitiveHeaderName) {
   auto res = cli_.Get("/hi");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("content-type"));
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value("content-type"));
   EXPECT_EQ("Hello World!", res->body);
 }
 
 TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   Request req;
-  req.method = "POST";
+  req.method = HttpMethod::POST;
   req.path = "/chunked";
 
   std::string host_and_port;
@@ -1175,8 +1175,8 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   req.headers.emplace("Host", host_and_port.c_str());
   req.headers.emplace("Accept", "*/*");
   req.headers.emplace("User-Agent", "cpp-httplib/0.1");
-  req.headers.emplace("Content-Type", "text/plain");
-  req.headers.emplace("Content-Length", "0");
+  req.headers.emplace(HEADER_CONTENT_TYPE, MEDIA_TYPE_TEXT_PLAIN);
+  req.headers.emplace(HEADER_CONTENT_LENGTH, "0");
   req.headers.emplace(
       "Transfer-Encoding",
       "Chunked"); // Note, "Chunked" rather than typical "chunked".
@@ -1195,7 +1195,7 @@ TEST_F(ServerTest, GetStreamed2) {
   auto res = cli_.Get("/streamed", {{make_range_header({{2, 3}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ("2", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(std::string("ab"), res->body);
 }
 
@@ -1203,7 +1203,7 @@ TEST_F(ServerTest, GetStreamed) {
   auto res = cli_.Get("/streamed");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ("6", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(std::string("aaabbb"), res->body);
 }
 
@@ -1211,7 +1211,7 @@ TEST_F(ServerTest, GetStreamedWithRange1) {
   auto res = cli_.Get("/streamed-with-range", {{make_range_header({{3, 5}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ("3", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("def"), res->body);
 }
@@ -1220,7 +1220,7 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   auto res = cli_.Get("/streamed-with-range", {{make_range_header({{1, -1}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ("6", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
@@ -1230,7 +1230,7 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ("269", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(269, res->body.size());
 }
@@ -1247,7 +1247,7 @@ TEST_F(ServerTest, GetWithRange1) {
   auto res = cli_.Get("/with-range", {{make_range_header({{3, 5}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ("3", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("def"), res->body);
 }
@@ -1256,7 +1256,7 @@ TEST_F(ServerTest, GetWithRange2) {
   auto res = cli_.Get("/with-range", {{make_range_header({{1, -1}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ("6", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
@@ -1265,7 +1265,7 @@ TEST_F(ServerTest, GetWithRange3) {
   auto res = cli_.Get("/with-range", {{make_range_header({{0, 0}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("1", res->get_header_value("Content-Length"));
+  EXPECT_EQ("1", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("a"), res->body);
 }
@@ -1274,7 +1274,7 @@ TEST_F(ServerTest, GetWithRange4) {
   auto res = cli_.Get("/with-range", {{make_range_header({{-1, 2}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ("2", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("fg"), res->body);
 }
@@ -1283,7 +1283,7 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
   auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ("269", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(269, res->body.size());
 }
@@ -1297,7 +1297,7 @@ TEST_F(ServerTest, GetStreamedChunked) {
 
 TEST_F(ServerTest, LargeChunkedPost) {
   Request req;
-  req.method = "POST";
+  req.method = HttpMethod::POST;
   req.path = "/large-chunked";
 
   std::string host_and_port;
@@ -1308,8 +1308,8 @@ TEST_F(ServerTest, LargeChunkedPost) {
   req.headers.emplace("Host", host_and_port.c_str());
   req.headers.emplace("Accept", "*/*");
   req.headers.emplace("User-Agent", "cpp-httplib/0.1");
-  req.headers.emplace("Content-Type", "text/plain");
-  req.headers.emplace("Content-Length", "0");
+  req.headers.emplace(HEADER_CONTENT_TYPE, MEDIA_TYPE_TEXT_PLAIN);
+  req.headers.emplace(HEADER_CONTENT_LENGTH, "0");
   req.headers.emplace("Transfer-Encoding", "chunked");
 
   std::string long_string(30 * 1024u, 'a');
@@ -1330,7 +1330,7 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
   auto res = cli_.Get("/remote_addr");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
   EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
 }
 
@@ -1345,14 +1345,14 @@ TEST_F(ServerTest, SlowRequest) {
 }
 
 TEST_F(ServerTest, Put) {
-  auto res = cli_.Put("/put", "PUT", "text/plain");
+  auto res = cli_.Put("/put", "PUT", MEDIA_TYPE_TEXT_PLAIN);
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
 }
 
 TEST_F(ServerTest, Patch) {
-  auto res = cli_.Patch("/patch", "PATCH", "text/plain");
+  auto res = cli_.Patch("/patch", "PATCH", MEDIA_TYPE_TEXT_PLAIN);
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PATCH", res->body);
@@ -1386,9 +1386,9 @@ TEST_F(ServerTest, ArrayParam) {
 }
 
 TEST_F(ServerTest, NoMultipleHeaders) {
-  Headers headers = {{"Content-Length", "5"}};
+  Headers headers = {{HEADER_CONTENT_LENGTH, "5"}};
   auto res = cli_.Post("/validate-no-multiple-headers", headers, "hello",
-                       "text/plain");
+                       MEDIA_TYPE_TEXT_PLAIN);
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
@@ -1413,7 +1413,7 @@ TEST_F(ServerTest, KeepAlive) {
   Get(requests, "/hi");
   Get(requests, "/hi");
   Get(requests, "/not-exist");
-  Post(requests, "/empty", "", "text/plain");
+  Post(requests, "/empty", "", MEDIA_TYPE_TEXT_PLAIN);
 
   std::vector<Response> responses;
   auto ret = cli_.send(requests, responses);
@@ -1424,19 +1424,19 @@ TEST_F(ServerTest, KeepAlive) {
   for (int i = 0; i < 3; i++) {
     auto& res = responses[i];
     EXPECT_EQ(200, res.status);
-    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+    EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res.get_header_value(HEADER_CONTENT_TYPE));
     EXPECT_EQ("Hello World!", res.body);
   }
 
   {
     auto& res = responses[3];
-    EXPECT_EQ(404, res.status);
+    EXPECT_EQ(HttpStatusCode::NOT_FOUND, res.status);
   }
 
   {
     auto& res = responses[4];
     EXPECT_EQ(200, res.status);
-    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+    EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res.get_header_value(HEADER_CONTENT_TYPE));
     EXPECT_EQ("empty", res.body);
   }
 }
@@ -1444,13 +1444,13 @@ TEST_F(ServerTest, KeepAlive) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, Gzip) {
   Headers headers;
-  headers.emplace("Accept-Encoding", "gzip, deflate");
+  headers.emplace(HEADER_ACCEPT_ENCODING, "gzip, deflate");
   auto res = cli_.Get("/gzip", headers);
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_EQ("33", res->get_header_value("Content-Length"));
+  EXPECT_EQ("gzip", res->get_header_value(HEADER_CONTENT_ENCODING));
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
+  EXPECT_EQ("33", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             res->body);
@@ -1459,7 +1459,7 @@ TEST_F(ServerTest, Gzip) {
 
 TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
-  headers.emplace("Accept-Encoding", "gzip, deflate");
+  headers.emplace(HEADER_ACCEPT_ENCODING, "gzip, deflate");
   std::string body;
   auto res = cli_.Get("/gzip", headers,
                       [&](const char *data, uint64_t data_length,
@@ -1469,9 +1469,9 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
                       });
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_EQ("33", res->get_header_value("Content-Length"));
+  EXPECT_EQ("gzip", res->get_header_value(HEADER_CONTENT_ENCODING));
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
+  EXPECT_EQ("33", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             body);
@@ -1480,13 +1480,13 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
 
 TEST_F(ServerTest, NoGzip) {
   Headers headers;
-  headers.emplace("Accept-Encoding", "gzip, deflate");
+  headers.emplace(HEADER_ACCEPT_ENCODING, "gzip, deflate");
   auto res = cli_.Get("/nogzip", headers);
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(false, res->has_header("Content-Encoding"));
-  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
-  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header(HEADER_CONTENT_ENCODING));
+  EXPECT_EQ("application/octet-stream", res->get_header_value(HEADER_CONTENT_TYPE));
+  EXPECT_EQ("100", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             res->body);
@@ -1495,7 +1495,7 @@ TEST_F(ServerTest, NoGzip) {
 
 TEST_F(ServerTest, NoGzipWithContentReceiver) {
   Headers headers;
-  headers.emplace("Accept-Encoding", "gzip, deflate");
+  headers.emplace(HEADER_ACCEPT_ENCODING, "gzip, deflate");
   std::string body;
   auto res = cli_.Get("/nogzip", headers,
                       [&](const char *data, uint64_t data_length,
@@ -1505,9 +1505,9 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
                       });
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(false, res->has_header("Content-Encoding"));
-  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
-  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header(HEADER_CONTENT_ENCODING));
+  EXPECT_EQ("application/octet-stream", res->get_header_value(HEADER_CONTENT_TYPE));
+  EXPECT_EQ("100", res->get_header_value(HEADER_CONTENT_LENGTH));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             body);
@@ -1516,7 +1516,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
 
 TEST_F(ServerTest, MultipartFormDataGzip) {
   Request req;
-  req.method = "POST";
+  req.method = HttpMethod::POST;
   req.path = "/gzipmultipart";
 
   std::string host_and_port;
@@ -1526,11 +1526,11 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 
   req.headers.emplace("Host", host_and_port.c_str());
   req.headers.emplace("Accept", "*/*");
-  req.headers.emplace("User-Agent", "cpp-httplib/0.1");
+  req.headers.emplace(HEADER_USER_AGENT, "cpp-httplib/0.1");
   req.headers.emplace(
-      "Content-Type",
+      HEADER_CONTENT_TYPE,
       "multipart/form-data; boundary=------------------------fcba8368a9f48c0f");
-  req.headers.emplace("Content-Encoding", "gzip");
+  req.headers.emplace(HEADER_CONTENT_ENCODING, "gzip");
 
   // compressed_body generated by creating input.txt to this file:
   /*
@@ -1582,7 +1582,7 @@ protected:
 
   virtual void SetUp() {
     svr_.Get("/hi", [&](const Request & /*req*/, Response &res) {
-      res.set_content("Hello World!", "text/plain");
+      res.set_content("Hello World!", MEDIA_TYPE_TEXT_PLAIN);
     });
 
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(nullptr, PORT, AI_PASSIVE)); });
@@ -1611,7 +1611,7 @@ TEST_F(ServerTestWithAI_PASSIVE, GetMethod200) {
   auto res = cli_.Get("/hi");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(MEDIA_TYPE_TEXT_PLAIN, res->get_header_value(HEADER_CONTENT_TYPE));
   EXPECT_EQ("Hello World!", res->body);
 }
 
@@ -1661,7 +1661,7 @@ protected:
     svr_.set_payload_max_length(8);
 
     svr_.Post("/test", [&](const Request & /*req*/, Response &res) {
-      res.set_content("test", "text/plain");
+      res.set_content("test", MEDIA_TYPE_TEXT_PLAIN);
     });
 
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
@@ -1687,11 +1687,11 @@ protected:
 };
 
 TEST_F(PayloadMaxLengthTest, ExceedLimit) {
-  auto res = cli_.Post("/test", "123456789", "text/plain");
+  auto res = cli_.Post("/test", "123456789", MEDIA_TYPE_TEXT_PLAIN);
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(413, res->status);
 
-  res = cli_.Post("/test", "12345678", "text/plain");
+  res = cli_.Post("/test", "12345678", MEDIA_TYPE_TEXT_PLAIN);
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
@@ -1738,7 +1738,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
-    res.set_content("test", "text/plain");
+    res.set_content("test", MEDIA_TYPE_TEXT_PLAIN);
     svr.stop();
     ASSERT_TRUE(true);
 
@@ -1797,7 +1797,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &, Response &res) {
-    res.set_content("test", "text/plain");
+    res.set_content("test", MEDIA_TYPE_TEXT_PLAIN);
     svr.stop();
   });
 
