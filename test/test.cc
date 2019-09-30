@@ -821,7 +821,7 @@ TEST_F(ServerTest, GetMethod302) {
   auto res = cli_.Get("/");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(302, res->status);
-  EXPECT_EQ("/hi", res->get_header_value("Location"));
+  EXPECT_EQ("/hi", res->get_header_value(HEADER_LOCATION));
 }
 
 TEST_F(ServerTest, GetMethod404) {

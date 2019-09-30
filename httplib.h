@@ -190,6 +190,7 @@ static constexpr const char* HEADER_CONNECTION = "Connection";
 static constexpr const char* HEADER_AUTHORIZATION = "Authorization";
 static constexpr const char* HEADER_TRANSFER_ENCODING = "Transfer-Encoding";
 static constexpr const char* HEADER_CONTENT_RANGE = "Content-Range";
+static constexpr const char* HEADER_LOCATION = "Location";
 
 static constexpr const char* MEDIA_TYPE_TEXT_PLAIN = "text/plain";
 static constexpr const char* MEDIA_TYPE_TEXT_HTML = "text/html";
@@ -2193,7 +2194,7 @@ inline void Response::set_header(const char *key, const std::string &val) {
 }
 
 inline void Response::set_redirect(const char *url) {
-  set_header("Location", url);
+  set_header(HEADER_LOCATION, url);
   status = HttpStatusCode::FOUND;
 }
 
@@ -2935,7 +2936,7 @@ inline bool Client::send(const std::vector<Request> &requests,
 inline bool Client::redirect(const Request &req, Response &res) {
   if (req.redirect_count == 0) { return false; }
 
-  auto location = res.get_header_value("location");
+  auto location = res.get_header_value(HEADER_LOCATION);
   if (location.empty()) { return false; }
 
   std::regex re(
