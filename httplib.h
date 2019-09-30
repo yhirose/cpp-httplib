@@ -179,6 +179,60 @@ struct ci {
 
 enum class HttpVersion { v1_0 = 0, v1_1 };
 
+static constexpr const char* HEADER_CONTENT_TYPE = "Content-Type";
+static constexpr const char* HEADER_CONTENT_LENGTH = "Content-Length";
+static constexpr const char* HEADER_CONTENT_ENCODING = "Content-Encoding";
+static constexpr const char* HEADER_USER_AGENT = "User-Agent";
+static constexpr const char* HEADER_ACCEPT = "Accept";
+static constexpr const char* HEADER_ACCEPT_ENCODING = "Accept-Encoding";
+static constexpr const char* HEADER_ACCEPT_RANGES = "Accept-Ranges";
+static constexpr const char* HEADER_CONNECTION = "Connection";
+static constexpr const char* HEADER_AUTHORIZATION = "Authorization";
+static constexpr const char* HEADER_TRANSFER_ENCODING = "Transfer-Encoding";
+static constexpr const char* HEADER_CONTENT_RANGE = "Content-Range";
+
+static constexpr const char* MEDIA_TYPE_TEXT_PLAIN = "text/plain";
+static constexpr const char* MEDIA_TYPE_TEXT_HTML = "text/html";
+static constexpr const char* MEDIA_TYPE_TEXT_CSS = "text/css";
+static constexpr const char* MEDIA_TYPE_APPLICATION_JSON = "application/json";
+static constexpr const char* MEDIA_TYPE_APPLICATION_PDF = "application/pdf";
+static constexpr const char* MEDIA_TYPE_APPLICATION_XML = "application/xml";
+static constexpr const char* MEDIA_TYPE_APPLICATION_XHTML_XML = "application/xhtml+xml";
+static constexpr const char* MEDIA_TYPE_APPLICATION_JAVASCRIPT = "application/javascript";
+
+enum HttpStatusCode {
+    OK = 200,
+    PARTIAL_CONTENT = 206,
+
+    MOVED_PERMANENTLY = 301,
+    FOUND = 302,
+    SEE_OTHER = 303,
+    NOT_MODIFIED = 304,
+
+    BAD_REQUEST = 400,
+    FORBIDDEN = 403,
+    NOT_FOUND = 404,
+    PAYLOAD_TOO_LARGE = 413,
+    URI_TOO_LONG = 414,
+    UNSUPPORTED_MEDIA_TYPE = 415,
+    RANGE_NOT_STATISFIABLE = 416,
+
+    INTERNAL_SERVER_ERROR = 500
+};
+
+enum class HttpMethod
+{
+    GET,
+    HEAD,
+    POST,
+    PUT,
+    DELETE,
+    TRACE,
+    OPTIONS,
+    CONNECT,
+    PATCH
+};
+
 typedef std::multimap<std::string, std::string, detail::ci> Headers;
 
 typedef std::multimap<std::string, std::string> Params;
@@ -221,7 +275,7 @@ typedef std::pair<ssize_t, ssize_t> Range;
 typedef std::vector<Range> Ranges;
 
 struct Request {
-  std::string method;
+  HttpMethod method;
   std::string path;
   Headers headers;
   std::string body;
@@ -665,7 +719,7 @@ private:
 inline void Get(std::vector<Request> &requests, const char *path,
                 const Headers &headers) {
   Request req;
-  req.method = "GET";
+  req.method = HttpMethod::GET;
   req.path = path;
   req.headers = headers;
   requests.emplace_back(std::move(req));
@@ -679,10 +733,10 @@ inline void Post(std::vector<Request> &requests, const char *path,
                  const Headers &headers, const std::string &body,
                  const char *content_type) {
   Request req;
-  req.method = "POST";
+  req.method = HttpMethod::POST;
   req.path = path;
   req.headers = headers;
-  req.headers.emplace("Content-Type", content_type);
+  req.headers.emplace(HEADER_CONTENT_TYPE, content_type);
   req.body = body;
   requests.emplace_back(std::move(req));
 }
@@ -1233,11 +1287,11 @@ inline std::string get_remote_addr(socket_t sock) {
 inline const char *find_content_type(const std::string &path) {
   auto ext = file_extension(path);
   if (ext == "txt") {
-    return "text/plain";
+    return MEDIA_TYPE_TEXT_PLAIN;
   } else if (ext == "html") {
-    return "text/html";
+    return MEDIA_TYPE_TEXT_HTML;
   } else if (ext == "css") {
-    return "text/css";
+    return MEDIA_TYPE_TEXT_CSS;
   } else if (ext == "jpeg" || ext == "jpg") {
     return "image/jpg";
   } else if (ext == "png") {
@@ -1249,47 +1303,86 @@ inline const char *find_content_type(const std::string &path) {
   } else if (ext == "ico") {
     return "image/x-icon";
   } else if (ext == "json") {
-    return "application/json";
+    return MEDIA_TYPE_APPLICATION_JSON;
   } else if (ext == "pdf") {
-    return "application/pdf";
+    return MEDIA_TYPE_APPLICATION_PDF;
   } else if (ext == "js") {
-    return "application/javascript";
+    return MEDIA_TYPE_APPLICATION_JAVASCRIPT;
   } else if (ext == "xml") {
-    return "application/xml";
+    return MEDIA_TYPE_APPLICATION_XML;
   } else if (ext == "xhtml") {
-    return "application/xhtml+xml";
+    return MEDIA_TYPE_APPLICATION_XHTML_XML;
   }
   return nullptr;
 }
 
 inline const char *status_message(int status) {
   switch (status) {
-  case 200: return "OK";
-  case 206: return "Partial Content";
-  case 301: return "Moved Permanently";
-  case 302: return "Found";
-  case 303: return "See Other";
-  case 304: return "Not Modified";
-  case 400: return "Bad Request";
-  case 403: return "Forbidden";
-  case 404: return "Not Found";
-  case 413: return "Payload Too Large";
-  case 414: return "Request-URI Too Long";
-  case 415: return "Unsupported Media Type";
-  case 416: return "Range Not Satisfiable";
+  case HttpStatusCode::OK:
+      return "OK";
+  case HttpStatusCode::PARTIAL_CONTENT:
+      return "Partial Content";
+  case HttpStatusCode::MOVED_PERMANENTLY:
+      return "Moved Permanently";
+  case HttpStatusCode::FOUND:
+      return "Found";
+  case HttpStatusCode::SEE_OTHER:
+      return "See Other";
+  case HttpStatusCode::NOT_MODIFIED:
+      return "Not Modified";
+  case HttpStatusCode::BAD_REQUEST:
+      return "Bad Request";
+  case HttpStatusCode::FORBIDDEN:
+      return "Forbidden";
+  case HttpStatusCode::NOT_FOUND:
+      return "Not Found";
+  case HttpStatusCode::PAYLOAD_TOO_LARGE:
+      return "Payload Too Large";
+  case HttpStatusCode::URI_TOO_LONG:
+      return "Request-URI Too Long";
+  case HttpStatusCode::UNSUPPORTED_MEDIA_TYPE:
+      return "Unsupported Media Type";
+  case HttpStatusCode::RANGE_NOT_STATISFIABLE:
+      return "Range Not Satisfiable";
 
   default:
-  case 500: return "Internal Server Error";
+  case HttpStatusCode::INTERNAL_SERVER_ERROR:
+      return "Internal Server Error";
   }
+}
+
+inline const char* request_method(HttpMethod method) {
+    switch(method) {
+        case HttpMethod::GET:     return "GET";
+        case HttpMethod::HEAD:    return "HEAD";
+        case HttpMethod::POST:    return "POST";
+        case HttpMethod::PUT:     return "PUT";
+        case HttpMethod::DELETE:  return "DELETE";
+        case HttpMethod::TRACE:   return "TRACE";
+        case HttpMethod::OPTIONS: return "OPTIONS";
+        case HttpMethod::CONNECT: return "CONNECT";
+        case HttpMethod::PATCH:   return "PATCH";
+    }
+}
+
+inline HttpMethod parse_request_method(const std::string &value) {
+    for(HttpMethod method : {HttpMethod::GET, HttpMethod::HEAD, HttpMethod::POST, HttpMethod::PUT, HttpMethod::DELETE,
+                             HttpMethod::TRACE, HttpMethod::OPTIONS, HttpMethod::CONNECT, HttpMethod::PATCH}) {
+        if(value == request_method(method)) {
+            return method;
+        }
+    }
+
+    throw std::runtime_error("invalid request method error");
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 inline bool can_compress(const std::string &content_type) {
   return !content_type.find("text/") || content_type == "image/svg+xml" ||
-         content_type == "application/javascript" ||
-         content_type == "application/json" ||
-         content_type == "application/xml" ||
-         content_type == "application/xhtml+xml";
+         content_type == MEDIA_TYPE_APPLICATION_JAVASCRIPT ||
+         content_type == MEDIA_TYPE_APPLICATION_JSON ||
+         content_type == MEDIA_TYPE_APPLICATION_XML ||
+         content_type == MEDIA_TYPE_APPLICATION_XHTML_XML;
 }
 
 inline bool compress(std::string &content) {
@@ -1502,7 +1595,7 @@ inline bool read_content_chunked(Stream &strm, ContentReceiverCore out) {
 }
 
 inline bool is_chunked_transfer_encoding(const Headers &headers) {
-  return !strcasecmp(get_header_value(headers, "Transfer-Encoding", 0, ""),
+  return !strcasecmp(get_header_value(headers, HEADER_TRANSFER_ENCODING, 0, ""),
                      "chunked");
 }
 
@@ -1518,19 +1611,19 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   detail::decompressor decompressor;
 
   if (!decompressor.is_valid()) {
-    status = 500;
+    status = HttpStatusCode::INTERNAL_SERVER_ERROR;
     return false;
   }
 
-  if (x.get_header_value("Content-Encoding") == "gzip") {
+  if (x.get_header_value(HEADER_CONTENT_ENCODING) == "gzip") {
     out = [&](const char *buf, size_t n) {
       return decompressor.decompress(
           buf, n, [&](const char *buf, size_t n) { return receiver(buf, n); });
     };
   }
 #else
-  if (x.get_header_value("Content-Encoding") == "gzip") {
-    status = 415;
+  if (x.get_header_value(HEADER_CONTENT_ENCODING) == "gzip") {
+    status = HttpStatusCode::UNSUPPORTED_MEDIA_TYPE;
     return false;
   }
 #endif
@@ -1540,10 +1633,10 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 
   if (is_chunked_transfer_encoding(x.headers)) {
     ret = read_content_chunked(strm, out);
-  } else if (!has_header(x.headers, "Content-Length")) {
+  } else if (!has_header(x.headers, HEADER_CONTENT_LENGTH)) {
     ret = read_content_without_length(strm, out);
   } else {
-    auto len = get_header_value_uint64(x.headers, "Content-Length", 0);
+    auto len = get_header_value_uint64(x.headers, HEADER_CONTENT_LENGTH, 0);
     if (len > payload_max_length) {
       exceed_payload_max_length = true;
       skip_content_with_length(strm, len);
@@ -1553,7 +1646,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
     }
   }
 
-  if (!ret) { status = exceed_payload_max_length ? 413 : 400; }
+  if (!ret) { status = exceed_payload_max_length ? HttpStatusCode::PAYLOAD_TOO_LARGE : HttpStatusCode::BAD_REQUEST; }
 
   return ret;
 }
@@ -2026,7 +2119,7 @@ inline std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
                                  const std::string &password) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
-  return std::make_pair("Authorization", field);
+  return std::make_pair(HEADER_AUTHORIZATION, field);
 }
 
 // Request implementation
@@ -2102,19 +2195,19 @@ inline void Response::set_header(const char *key, const std::string &val) {
 
 inline void Response::set_redirect(const char *url) {
   set_header("Location", url);
-  status = 302;
+  status = HttpStatusCode::FOUND;
 }
 
 inline void Response::set_content(const char *s, size_t n,
                                   const char *content_type) {
   body.assign(s, n);
-  set_header("Content-Type", content_type);
+  set_header(HEADER_CONTENT_TYPE, content_type);
 }
 
 inline void Response::set_content(const std::string &s,
                                   const char *content_type) {
   body = s;
-  set_header("Content-Type", content_type);
+  set_header(HEADER_CONTENT_TYPE, content_type);
 }
 
 inline void Response::set_content_provider(
@@ -2326,7 +2419,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
   std::cmatch m;
   if (std::regex_match(s, m, re)) {
     req.version = std::string(m[5]);
-    req.method = std::string(m[1]);
+    req.method = detail::parse_request_method(m[1]);
     req.target = std::string(m[2]);
     req.path = detail::decode_url(m[3]);
 
@@ -2353,20 +2446,20 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
   }
 
   // Headers
-  if (last_connection || req.get_header_value("Connection") == "close") {
-    res.set_header("Connection", "close");
+  if (last_connection || req.get_header_value(HEADER_CONNECTION) == "close") {
+    res.set_header(HEADER_CONNECTION, "close");
   }
 
-  if (!last_connection && req.get_header_value("Connection") == "Keep-Alive") {
-    res.set_header("Connection", "Keep-Alive");
+  if (!last_connection && req.get_header_value(HEADER_CONNECTION) == "Keep-Alive") {
+    res.set_header(HEADER_CONNECTION, "Keep-Alive");
   }
 
-  if (!res.has_header("Content-Type")) {
-    res.set_header("Content-Type", "text/plain");
+  if (!res.has_header(HEADER_CONTENT_TYPE)) {
+    res.set_header(HEADER_CONTENT_TYPE, MEDIA_TYPE_TEXT_PLAIN);
   }
 
-  if (!res.has_header("Accept-Ranges")) {
-    res.set_header("Accept-Ranges", "bytes");
+  if (!res.has_header(HEADER_ACCEPT_RANGES)) {
+    res.set_header(HEADER_ACCEPT_RANGES, "bytes");
   }
 
   std::string content_type;
@@ -2375,13 +2468,13 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
   if (req.ranges.size() > 1) {
     boundary = detail::make_multipart_data_boundary();
 
-    auto it = res.headers.find("Content-Type");
+    auto it = res.headers.find(HEADER_CONTENT_TYPE);
     if (it != res.headers.end()) {
       content_type = it->second;
       res.headers.erase(it);
     }
 
-    res.headers.emplace("Content-Type",
+    res.headers.emplace(HEADER_CONTENT_TYPE,
                         "multipart/byteranges; boundary=" + boundary);
   }
 
@@ -2397,17 +2490,17 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
         length = offsets.second;
         auto content_range = detail::make_content_range_header_field(
             offset, length, res.content_provider_resource_length);
-        res.set_header("Content-Range", content_range);
+        res.set_header(HEADER_CONTENT_RANGE, content_range);
       } else {
         length = detail::get_multipart_ranges_data_length(req, res, boundary,
                                                           content_type);
       }
-      res.set_header("Content-Length", std::to_string(length));
+      res.set_header(HEADER_CONTENT_LENGTH, std::to_string(length));
     } else {
       if (res.content_provider) {
-        res.set_header("Transfer-Encoding", "chunked");
+        res.set_header(HEADER_TRANSFER_ENCODING, "chunked");
       } else {
-        res.set_header("Content-Length", "0");
+        res.set_header(HEADER_CONTENT_LENGTH, "0");
       }
     }
   } else {
@@ -2420,7 +2513,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
       auto length = offsets.second;
       auto content_range = detail::make_content_range_header_field(
           offset, length, res.body.size());
-      res.set_header("Content-Range", content_range);
+      res.set_header(HEADER_CONTENT_RANGE, content_range);
       res.body = res.body.substr(offset, length);
     } else {
       res.body =
@@ -2429,23 +2522,23 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
     // TODO: 'Accpet-Encoding' has gzip, not gzip;q=0
-    const auto &encodings = req.get_header_value("Accept-Encoding");
+    const auto &encodings = req.get_header_value(HEADER_ACCEPT_ENCODING);
     if (encodings.find("gzip") != std::string::npos &&
-        detail::can_compress(res.get_header_value("Content-Type"))) {
+        detail::can_compress(res.get_header_value(HEADER_CONTENT_TYPE))) {
       if (detail::compress(res.body)) {
-        res.set_header("Content-Encoding", "gzip");
+        res.set_header(HEADER_CONTENT_ENCODING, "gzip");
       }
     }
 #endif
 
     auto length = std::to_string(res.body.size());
-    res.set_header("Content-Length", length);
+    res.set_header(HEADER_CONTENT_LENGTH, length);
   }
 
   if (!detail::write_headers(strm, res, Headers())) { return false; }
 
   // Body
-  if (req.method != "HEAD") {
+  if (req.method != HttpMethod::HEAD) {
     if (!res.body.empty()) {
       if (!strm.write(res.body)) { return false; }
     } else if (res.content_provider) {
@@ -2504,8 +2597,8 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
     if (detail::is_file(path)) {
       detail::read_file(path, res.body);
       auto type = detail::find_content_type(path);
-      if (type) { res.set_header("Content-Type", type); }
-      res.status = 200;
+      if (type) { res.set_header(HEADER_CONTENT_TYPE, type); }
+      res.status = HttpStatusCode::OK;
       if (file_request_handler_) { file_request_handler_(req, res); }
       return true;
     }
@@ -2603,24 +2696,28 @@ inline bool Server::listen_internal() {
 }
 
 inline bool Server::routing(Request &req, Response &res) {
-  if (req.method == "GET" && handle_file_request(req, res)) { return true; }
+  if (req.method == HttpMethod::GET && handle_file_request(req, res)) { return true; }
 
-  if (req.method == "GET" || req.method == "HEAD") {
-    return dispatch_request(req, res, get_handlers_);
-  } else if (req.method == "POST") {
-    return dispatch_request(req, res, post_handlers_);
-  } else if (req.method == "PUT") {
-    return dispatch_request(req, res, put_handlers_);
-  } else if (req.method == "DELETE") {
-    return dispatch_request(req, res, delete_handlers_);
-  } else if (req.method == "OPTIONS") {
-    return dispatch_request(req, res, options_handlers_);
-  } else if (req.method == "PATCH") {
-    return dispatch_request(req, res, patch_handlers_);
+  switch(req.method) {
+      case HttpMethod::GET:
+      case HttpMethod::HEAD:
+          return dispatch_request(req, res, get_handlers_);
+      case HttpMethod::POST:
+          return dispatch_request(req, res, post_handlers_);
+      case HttpMethod::PUT:
+          return dispatch_request(req, res, put_handlers_);
+      case HttpMethod::DELETE:
+          return dispatch_request(req, res, delete_handlers_);
+      case HttpMethod::OPTIONS:
+          return dispatch_request(req, res, options_handlers_);
+      case HttpMethod::PATCH:
+          return dispatch_request(req, res, patch_handlers_);
+
+      case HttpMethod::CONNECT:
+      case HttpMethod::TRACE:
+          res.status = 400;
+          return false;
   }
-
-  res.status = 400;
-  return false;
 }
 
 inline bool Server::dispatch_request(Request &req, Response &res,
@@ -2657,30 +2754,30 @@ Server::process_request(Stream &strm, bool last_connection,
   if (reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
     Headers dummy;
     detail::read_headers(strm, dummy);
-    res.status = 414;
+    res.status = HttpStatusCode::URI_TOO_LONG;
     return write_response(strm, last_connection, req, res);
   }
 
   // Request line and headers
   if (!parse_request_line(reader.ptr(), req) ||
       !detail::read_headers(strm, req.headers)) {
-    res.status = 400;
+    res.status = HttpStatusCode::BAD_REQUEST;
     return write_response(strm, last_connection, req, res);
   }
 
-  if (req.get_header_value("Connection") == "close") {
+  if (req.get_header_value(HEADER_CONNECTION) == "close") {
     connection_close = true;
   }
 
   if (req.version == "HTTP/1.0" &&
-      req.get_header_value("Connection") != "Keep-Alive") {
+      req.get_header_value(HEADER_CONNECTION) != "Keep-Alive") {
     connection_close = true;
   }
 
   req.set_header("REMOTE_ADDR", strm.get_remote_addr());
 
   // Body
-  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" || req.method == "PRI") {
+  if (req.method == HttpMethod::POST || req.method == HttpMethod::PUT || req.method == HttpMethod::PATCH || req.method == HttpMethod::PRI) {
     if (!detail::read_content(strm, req, payload_max_length_, res.status,
                               Progress(), [&](const char *buf, size_t n) {
                                 if (req.body.size() + n > req.body.max_size()) {
@@ -2692,7 +2789,7 @@ Server::process_request(Stream &strm, bool last_connection,
       return write_response(strm, last_connection, req, res);
     }
 
-    const auto &content_type = req.get_header_value("Content-Type");
+    const auto &content_type = req.get_header_value(HEADER_CONTENT_TYPE);
 
     if (!content_type.find("application/x-www-form-urlencoded")) {
       detail::parse_query_text(req.body, req.params);
@@ -2700,7 +2797,7 @@ Server::process_request(Stream &strm, bool last_connection,
       std::string boundary;
       if (!detail::parse_multipart_boundary(content_type, boundary) ||
           !detail::parse_multipart_formdata(boundary, req.body, req.files)) {
-        res.status = 400;
+        res.status = HttpStatusCode::BAD_REQUEST;
         return write_response(strm, last_connection, req, res);
       }
     }
@@ -2716,9 +2813,9 @@ Server::process_request(Stream &strm, bool last_connection,
   if (setup_request) { setup_request(req); }
 
   if (routing(req, res)) {
-    if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
+    if (res.status == -1) { res.status = req.ranges.empty() ? HttpStatusCode::OK : HttpStatusCode::PARTIAL_CONTENT; }
   } else {
-    if (res.status == -1) { res.status = 404; }
+    if (res.status == -1) { res.status = HttpStatusCode::NOT_FOUND; }
   }
 
   return write_response(strm, last_connection, req, res);
@@ -2883,11 +2980,11 @@ inline void Client::write_request(Stream &strm, const Request &req,
   // Request line
   auto path = detail::encode_url(req.path);
 
-  bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
+  bstrm.write_format("%s %s HTTP/1.1\r\n", detail::request_method(req.method), path.c_str());
 
   // Additonal headers
   Headers headers;
-  if (last_connection) { headers.emplace("Connection", "close"); }
+  if (last_connection) { headers.emplace(HEADER_CONNECTION, "close"); }
 
   if (!req.has_header("Host")) {
     if (is_ssl()) {
@@ -2905,24 +3002,24 @@ inline void Client::write_request(Stream &strm, const Request &req,
     }
   }
 
-  if (!req.has_header("Accept")) { headers.emplace("Accept", "*/*"); }
+  if (!req.has_header(HEADER_ACCEPT)) { headers.emplace(HEADER_ACCEPT, "*/*"); }
 
-  if (!req.has_header("User-Agent")) {
-    headers.emplace("User-Agent", "cpp-httplib/0.2");
+  if (!req.has_header(HEADER_USER_AGENT)) {
+    headers.emplace(HEADER_USER_AGENT, "cpp-httplib/0.2");
   }
 
   if (req.body.empty()) {
-    if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
-      headers.emplace("Content-Length", "0");
+    if (req.method == HttpMethod::POST || req.method == HttpMethod::PUT || req.method == HttpMethod::PATCH) {
+      headers.emplace(HEADER_CONTENT_LENGTH, "0");
     }
   } else {
-    if (!req.has_header("Content-Type")) {
-      headers.emplace("Content-Type", "text/plain");
+    if (!req.has_header(HEADER_CONTENT_TYPE)) {
+      headers.emplace(HEADER_CONTENT_TYPE, MEDIA_TYPE_TEXT_PLAIN);
     }
 
-    if (!req.has_header("Content-Length")) {
+    if (!req.has_header(HEADER_CONTENT_LENGTH)) {
       auto length = std::to_string(req.body.size());
-      headers.emplace("Content-Length", length);
+      headers.emplace(HEADER_CONTENT_LENGTH, length);
     }
   }
 
@@ -2948,7 +3045,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
     return false;
   }
 
-  if (res.get_header_value("Connection") == "close" ||
+  if (res.get_header_value(HEADER_CONNECTION) == "close" ||
       res.version == "HTTP/1.0") {
     connection_close = true;
   }
@@ -2958,7 +3055,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
   }
 
   // Body
-  if (req.method != "HEAD") {
+  if (req.method != HttpMethod::HEAD) {
     detail::ContentReceiverCore out = [&](const char *buf, size_t n) {
       if (res.body.size() + n > res.body.max_size()) { return false; }
       res.body.append(buf, n);
@@ -2967,7 +3064,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
 
     if (req.content_receiver) {
       auto offset = std::make_shared<size_t>();
-      auto length = get_header_value_uint64(res.headers, "Content-Length", 0);
+      auto length = get_header_value_uint64(res.headers, HEADER_CONTENT_LENGTH, 0);
       auto receiver = req.content_receiver;
       out = [offset, length, receiver](const char *buf, size_t n) {
         auto ret = receiver(buf, n, *offset, length);
@@ -3016,7 +3113,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
 inline std::shared_ptr<Response>
 Client::Get(const char *path, const Headers &headers, Progress progress) {
   Request req;
-  req.method = "GET";
+  req.method = HttpMethod::GET;
   req.path = path;
   req.headers = headers;
   req.progress = std::move(progress);
@@ -3065,7 +3162,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
   Request req;
-  req.method = "GET";
+  req.method = HttpMethod::GET;
   req.path = path;
   req.headers = headers;
   req.response_handler = std::move(response_handler);
@@ -3083,7 +3180,7 @@ inline std::shared_ptr<Response> Client::Head(const char *path) {
 inline std::shared_ptr<Response> Client::Head(const char *path,
                                               const Headers &headers) {
   Request req;
-  req.method = "HEAD";
+  req.method = HttpMethod::HEAD;
   req.headers = headers;
   req.path = path;
 
@@ -3103,11 +3200,11 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const std::string &body,
                                               const char *content_type) {
   Request req;
-  req.method = "POST";
+  req.method = HttpMethod::POST;
   req.headers = headers;
   req.path = path;
 
-  req.headers.emplace("Content-Type", content_type);
+  req.headers.emplace(HEADER_CONTENT_TYPE, content_type);
   req.body = body;
 
   auto res = std::make_shared<Response>();
@@ -3142,13 +3239,13 @@ inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers,
              const MultipartFormDataItems &items) {
   Request req;
-  req.method = "POST";
+  req.method = HttpMethod::POST;
   req.headers = headers;
   req.path = path;
 
   auto boundary = detail::make_multipart_data_boundary();
 
-  req.headers.emplace("Content-Type",
+  req.headers.emplace(HEADER_CONTENT_TYPE,
                       "multipart/form-data; boundary=" + boundary);
 
   for (const auto &item : items) {
@@ -3159,7 +3256,7 @@ Client::Post(const char *path, const Headers &headers,
     }
     req.body += "\r\n";
     if (!item.content_type.empty()) {
-      req.body += "Content-Type: " + item.content_type + "\r\n";
+      req.body += std::string(HEADER_CONTENT_TYPE) + ": " + item.content_type + "\r\n";
     }
     req.body += "\r\n";
     req.body += item.content + "\r\n";
@@ -3183,11 +3280,11 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
                                              const std::string &body,
                                              const char *content_type) {
   Request req;
-  req.method = "PUT";
+  req.method = HttpMethod::PUT;
   req.headers = headers;
   req.path = path;
 
-  req.headers.emplace("Content-Type", content_type);
+  req.headers.emplace(HEADER_CONTENT_TYPE, content_type);
   req.body = body;
 
   auto res = std::make_shared<Response>();
@@ -3206,11 +3303,11 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
                                                const std::string &body,
                                                const char *content_type) {
   Request req;
-  req.method = "PATCH";
+  req.method = HttpMethod::PATCH;
   req.headers = headers;
   req.path = path;
 
-  req.headers.emplace("Content-Type", content_type);
+  req.headers.emplace(HEADER_CONTENT_TYPE, content_type);
   req.body = body;
 
   auto res = std::make_shared<Response>();
@@ -3238,11 +3335,11 @@ inline std::shared_ptr<Response> Client::Delete(const char *path,
                                                 const std::string &body,
                                                 const char *content_type) {
   Request req;
-  req.method = "DELETE";
+  req.method = HttpMethod::DELETE;
   req.headers = headers;
   req.path = path;
 
-  if (content_type) { req.headers.emplace("Content-Type", content_type); }
+  if (content_type) { req.headers.emplace(HEADER_CONTENT_TYPE, content_type); }
   req.body = body;
 
   auto res = std::make_shared<Response>();
@@ -3257,7 +3354,7 @@ inline std::shared_ptr<Response> Client::Options(const char *path) {
 inline std::shared_ptr<Response> Client::Options(const char *path,
                                                  const Headers &headers) {
   Request req;
-  req.method = "OPTIONS";
+  req.method = HttpMethod::OPTIONS;
   req.path = path;
   req.headers = headers;
 
