@@ -998,7 +998,7 @@ TEST_F(ServerTest, TooLongRequest) {
 
 TEST_F(ServerTest, LongHeader) {
   Request req;
-  req.method = HttpMethod::GET;
+  req.method = HttpMethod::METHOD_GET;
   req.path = "/hi";
 
   std::string host_and_port;
@@ -1058,7 +1058,7 @@ TEST_F(ServerTest, LongQueryValue) {
 
 TEST_F(ServerTest, TooLongHeader) {
   Request req;
-  req.method = HttpMethod::GET;
+  req.method = HttpMethod::METHOD_GET;
   req.path = "/hi";
 
   std::string host_and_port;
@@ -1164,7 +1164,7 @@ TEST_F(ServerTest, CaseInsensitiveHeaderName) {
 
 TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   Request req;
-  req.method = HttpMethod::POST;
+  req.method = HttpMethod::METHOD_POST;
   req.path = "/chunked";
 
   std::string host_and_port;
@@ -1297,7 +1297,7 @@ TEST_F(ServerTest, GetStreamedChunked) {
 
 TEST_F(ServerTest, LargeChunkedPost) {
   Request req;
-  req.method = HttpMethod::POST;
+  req.method = HttpMethod::METHOD_POST;
   req.path = "/large-chunked";
 
   std::string host_and_port;
@@ -1516,7 +1516,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
 
 TEST_F(ServerTest, MultipartFormDataGzip) {
   Request req;
-  req.method = HttpMethod::POST;
+  req.method = HttpMethod::METHOD_POST;
   req.path = "/gzipmultipart";
 
   std::string host_and_port;

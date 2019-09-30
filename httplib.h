@@ -222,15 +222,15 @@ enum HttpStatusCode {
 };
 
 enum class HttpMethod {
-    GET,
-    HEAD,
-    POST,
-    PUT,
-    DELETE,
-    TRACE,
-    OPTIONS,
-    CONNECT,
-    PATCH
+    METHOD_GET,
+    METHOD_HEAD,
+    METHOD_POST,
+    METHOD_PUT,
+    METHOD_DELETE,
+    METHOD_TRACE,
+    METHOD_OPTIONS,
+    METHOD_CONNECT,
+    METHOD_PATCH
 };
 
 typedef std::multimap<std::string, std::string, detail::ci> Headers;
@@ -719,7 +719,7 @@ private:
 inline void Get(std::vector<Request> &requests, const char *path,
                 const Headers &headers) {
   Request req;
-  req.method = HttpMethod::GET;
+  req.method = HttpMethod::METHOD_GET;
   req.path = path;
   req.headers = headers;
   requests.emplace_back(std::move(req));
@@ -733,7 +733,7 @@ inline void Post(std::vector<Request> &requests, const char *path,
                  const Headers &headers, const std::string &body,
                  const char *content_type) {
   Request req;
-  req.method = HttpMethod::POST;
+  req.method = HttpMethod::METHOD_POST;
   req.path = path;
   req.headers = headers;
   req.headers.emplace(HEADER_CONTENT_TYPE, content_type);
@@ -1353,21 +1353,21 @@ inline const char *status_message(int status) {
 
 inline const char* request_method(HttpMethod method) {
     switch(method) {
-        case HttpMethod::GET:     return "GET";
-        case HttpMethod::HEAD:    return "HEAD";
-        case HttpMethod::POST:    return "POST";
-        case HttpMethod::PUT:     return "PUT";
-        case HttpMethod::DELETE:  return "DELETE";
-        case HttpMethod::TRACE:   return "TRACE";
-        case HttpMethod::OPTIONS: return "OPTIONS";
-        case HttpMethod::CONNECT: return "CONNECT";
-        case HttpMethod::PATCH:   return "PATCH";
+        case HttpMethod::METHOD_GET:     return "GET";
+        case HttpMethod::METHOD_HEAD:    return "HEAD";
+        case HttpMethod::METHOD_POST:    return "POST";
+        case HttpMethod::METHOD_PUT:     return "PUT";
+        case HttpMethod::METHOD_DELETE:  return "DELETE";
+        case HttpMethod::METHOD_TRACE:   return "TRACE";
+        case HttpMethod::METHOD_OPTIONS: return "OPTIONS";
+        case HttpMethod::METHOD_CONNECT: return "CONNECT";
+        case HttpMethod::METHOD_PATCH:   return "PATCH";
     }
 }
 
 inline HttpMethod parse_request_method(const std::string &value) {
-    for(HttpMethod method : {HttpMethod::GET, HttpMethod::HEAD, HttpMethod::POST, HttpMethod::PUT, HttpMethod::DELETE,
-                             HttpMethod::TRACE, HttpMethod::OPTIONS, HttpMethod::CONNECT, HttpMethod::PATCH}) {
+    for(HttpMethod method : {HttpMethod::METHOD_GET, HttpMethod::METHOD_HEAD, HttpMethod::METHOD_POST, HttpMethod::METHOD_PUT, HttpMethod::METHOD_DELETE,
+                             HttpMethod::METHOD_TRACE, HttpMethod::METHOD_OPTIONS, HttpMethod::METHOD_CONNECT, HttpMethod::METHOD_PATCH}) {
         if(value == request_method(method)) {
             return method;
         }
@@ -2538,7 +2538,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
   if (!detail::write_headers(strm, res, Headers())) { return false; }
 
   // Body
-  if (req.method != HttpMethod::HEAD) {
+  if (req.method != HttpMethod::METHOD_HEAD) {
     if (!res.body.empty()) {
       if (!strm.write(res.body)) { return false; }
     } else if (res.content_provider) {
@@ -2696,25 +2696,25 @@ inline bool Server::listen_internal() {
 }
 
 inline bool Server::routing(Request &req, Response &res) {
-  if (req.method == HttpMethod::GET && handle_file_request(req, res)) { return true; }
+  if (req.method == HttpMethod::METHOD_GET && handle_file_request(req, res)) { return true; }
 
   switch(req.method) {
-      case HttpMethod::GET:
-      case HttpMethod::HEAD:
+      case HttpMethod::METHOD_GET:
+      case HttpMethod::METHOD_HEAD:
           return dispatch_request(req, res, get_handlers_);
-      case HttpMethod::POST:
+      case HttpMethod::METHOD_POST:
           return dispatch_request(req, res, post_handlers_);
-      case HttpMethod::PUT:
+      case HttpMethod::METHOD_PUT:
           return dispatch_request(req, res, put_handlers_);
-      case HttpMethod::DELETE:
+      case HttpMethod::METHOD_DELETE:
           return dispatch_request(req, res, delete_handlers_);
-      case HttpMethod::OPTIONS:
+      case HttpMethod::METHOD_OPTIONS:
           return dispatch_request(req, res, options_handlers_);
-      case HttpMethod::PATCH:
+      case HttpMethod::METHOD_PATCH:
           return dispatch_request(req, res, patch_handlers_);
 
-      case HttpMethod::CONNECT:
-      case HttpMethod::TRACE:
+      case HttpMethod::METHOD_CONNECT:
+      case HttpMethod::METHOD_TRACE:
           res.status = 400;
           return false;
   }
@@ -2777,7 +2777,7 @@ Server::process_request(Stream &strm, bool last_connection,
   req.set_header("REMOTE_ADDR", strm.get_remote_addr());
 
   // Body
-  if (req.method == HttpMethod::POST || req.method == HttpMethod::PUT || req.method == HttpMethod::PATCH || req.method == HttpMethod::PRI) {
+  if (req.method == HttpMethod::METHOD_POST || req.method == HttpMethod::METHOD_PUT || req.method == HttpMethod::METHOD_PATCH || req.method == HttpMethod::METHOD_PRI) {
     if (!detail::read_content(strm, req, payload_max_length_, res.status,
                               Progress(), [&](const char *buf, size_t n) {
                                 if (req.body.size() + n > req.body.max_size()) {
@@ -3009,7 +3009,7 @@ inline void Client::write_request(Stream &strm, const Request &req,
   }
 
   if (req.body.empty()) {
-    if (req.method == HttpMethod::POST || req.method == HttpMethod::PUT || req.method == HttpMethod::PATCH) {
+    if (req.method == HttpMethod::METHOD_POST || req.method == HttpMethod::METHOD_PUT || req.method == HttpMethod::METHOD_PATCH) {
       headers.emplace(HEADER_CONTENT_LENGTH, "0");
     }
   } else {
@@ -3055,7 +3055,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
   }
 
   // Body
-  if (req.method != HttpMethod::HEAD) {
+  if (req.method != HttpMethod::METHOD_HEAD) {
     detail::ContentReceiverCore out = [&](const char *buf, size_t n) {
       if (res.body.size() + n > res.body.max_size()) { return false; }
       res.body.append(buf, n);
@@ -3113,7 +3113,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
 inline std::shared_ptr<Response>
 Client::Get(const char *path, const Headers &headers, Progress progress) {
   Request req;
-  req.method = HttpMethod::GET;
+  req.method = HttpMethod::METHOD_GET;
   req.path = path;
   req.headers = headers;
   req.progress = std::move(progress);
@@ -3162,7 +3162,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
   Request req;
-  req.method = HttpMethod::GET;
+  req.method = HttpMethod::METHOD_GET;
   req.path = path;
   req.headers = headers;
   req.response_handler = std::move(response_handler);
@@ -3180,7 +3180,7 @@ inline std::shared_ptr<Response> Client::Head(const char *path) {
 inline std::shared_ptr<Response> Client::Head(const char *path,
                                               const Headers &headers) {
   Request req;
-  req.method = HttpMethod::HEAD;
+  req.method = HttpMethod::METHOD_HEAD;
   req.headers = headers;
   req.path = path;
 
@@ -3200,7 +3200,7 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const std::string &body,
                                               const char *content_type) {
   Request req;
-  req.method = HttpMethod::POST;
+  req.method = HttpMethod::METHOD_POST;
   req.headers = headers;
   req.path = path;
 
@@ -3239,7 +3239,7 @@ inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers,
              const MultipartFormDataItems &items) {
   Request req;
-  req.method = HttpMethod::POST;
+  req.method = HttpMethod::METHOD_POST;
   req.headers = headers;
   req.path = path;
 
@@ -3280,7 +3280,7 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
                                              const std::string &body,
                                              const char *content_type) {
   Request req;
-  req.method = HttpMethod::PUT;
+  req.method = HttpMethod::METHOD_PUT;
   req.headers = headers;
   req.path = path;
 
@@ -3303,7 +3303,7 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
                                                const std::string &body,
                                                const char *content_type) {
   Request req;
-  req.method = HttpMethod::PATCH;
+  req.method = HttpMethod::METHOD_PATCH;
   req.headers = headers;
   req.path = path;
 
@@ -3335,7 +3335,7 @@ inline std::shared_ptr<Response> Client::Delete(const char *path,
                                                 const std::string &body,
                                                 const char *content_type) {
   Request req;
-  req.method = HttpMethod::DELETE;
+  req.method = HttpMethod::METHOD_DELETE;
   req.headers = headers;
   req.path = path;
 
@@ -3354,7 +3354,7 @@ inline std::shared_ptr<Response> Client::Options(const char *path) {
 inline std::shared_ptr<Response> Client::Options(const char *path,
                                                  const Headers &headers) {
   Request req;
-  req.method = HttpMethod::OPTIONS;
+  req.method = HttpMethod::METHOD_OPTIONS;
   req.path = path;
   req.headers = headers;
 
