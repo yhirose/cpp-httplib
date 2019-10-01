@@ -1393,6 +1393,18 @@ TEST_F(ServerTest, NoMultipleHeaders) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, HTTP2Magic) {
+  Request req;
+  req.method = "PRI";
+  req.path = "/";
+  req.body = "SM";
+
+  auto res = std::make_shared<Response>();
+  auto ret = cli_.send(req, *res);
+
+  ASSERT_TRUE(ret);
+  EXPECT_EQ(400, res->status);
+}
 TEST_F(ServerTest, KeepAlive) {
   cli_.set_keep_alive_max_count(4);
 
