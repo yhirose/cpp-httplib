@@ -2242,7 +2242,7 @@ inline int Stream::write_format(const char *fmt, const Args &... args) {
 #endif
   if (n <= 0) { return n; }
 
-  if (n >= buf.size() - 1) {
+  if (n >= static_cast<int>(buf.size()) - 1) {
     std::vector<char> glowable_buf(buf.size());
 
     while (n >= static_cast<int>(glowable_buf.size() - 1)) {
