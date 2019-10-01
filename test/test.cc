@@ -1395,7 +1395,7 @@ TEST_F(ServerTest, NoMultipleHeaders) {
 
 TEST_F(ServerTest, HTTP2Magic) {
   Request req;
-  req.method = "PRI";
+  req.method = HttpMethod::METHOD_PRI;
   req.path = "*";
   req.body = "SM";
 

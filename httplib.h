@@ -230,7 +230,10 @@ enum class HttpMethod {
     METHOD_TRACE,
     METHOD_OPTIONS,
     METHOD_CONNECT,
-    METHOD_PATCH
+    METHOD_PATCH,
+
+    //HTTP/2
+    METHOD_PRI
 };
 
 typedef std::multimap<std::string, std::string, detail::ci> Headers;
@@ -1362,12 +1365,15 @@ inline const char* request_method(HttpMethod method) {
         case HttpMethod::METHOD_OPTIONS: return "OPTIONS";
         case HttpMethod::METHOD_CONNECT: return "CONNECT";
         case HttpMethod::METHOD_PATCH:   return "PATCH";
+        case HttpMethod::METHOD_PRI:     return "PRI";
     }
 }
 
 inline HttpMethod parse_request_method(const std::string &value) {
-    for(HttpMethod method : {HttpMethod::METHOD_GET, HttpMethod::METHOD_HEAD, HttpMethod::METHOD_POST, HttpMethod::METHOD_PUT, HttpMethod::METHOD_DELETE,
-                             HttpMethod::METHOD_TRACE, HttpMethod::METHOD_OPTIONS, HttpMethod::METHOD_CONNECT, HttpMethod::METHOD_PATCH}) {
+    for(HttpMethod method : {HttpMethod::METHOD_GET, HttpMethod::METHOD_HEAD, HttpMethod::METHOD_POST,
+                             HttpMethod::METHOD_PUT, HttpMethod::METHOD_DELETE, HttpMethod::METHOD_TRACE,
+                             HttpMethod::METHOD_OPTIONS, HttpMethod::METHOD_CONNECT, HttpMethod::METHOD_PATCH,
+                             HttpMethod::METHOD_PRI}) {
         if(value == request_method(method)) {
             return method;
         }
@@ -2713,6 +2719,7 @@ inline bool Server::routing(Request &req, Response &res) {
       case HttpMethod::METHOD_PATCH:
           return dispatch_request(req, res, patch_handlers_);
 
+      case HttpMethod::METHOD_PRI:
       case HttpMethod::METHOD_CONNECT:
       case HttpMethod::METHOD_TRACE:
           res.status = 400;
