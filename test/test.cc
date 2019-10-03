@@ -536,7 +536,7 @@ TEST(YahooRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(Https2HttpRedirectTest, Redirect) {
+TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.follow_location(true);
   auto res = cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
@@ -637,7 +637,7 @@ protected:
                      size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
                      auto out_len = std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
-                     sink(&d[offset], out_len);
+                     sink(&d[static_cast<size_t>(offset)], out_len);
                    },
                    [data] { delete data; });
              })
