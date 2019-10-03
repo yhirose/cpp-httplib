@@ -2322,7 +2322,7 @@ inline void Server::stop() {
 }
 
 inline bool Server::parse_request_line(const char *s, Request &req) {
-  static std::regex re("(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) "
+  static std::regex re("(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
                        "(([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
   std::cmatch m;
@@ -2614,13 +2614,15 @@ inline bool Server::routing(Request &req, Response &res) {
     return dispatch_request(req, res, post_handlers_);
   } else if (req.method == "PUT") {
     return dispatch_request(req, res, put_handlers_);
-  } else if (req.method == "PATCH") {
-    return dispatch_request(req, res, patch_handlers_);
   } else if (req.method == "DELETE") {
     return dispatch_request(req, res, delete_handlers_);
   } else if (req.method == "OPTIONS") {
     return dispatch_request(req, res, options_handlers_);
+  } else if (req.method == "PATCH") {
+    return dispatch_request(req, res, patch_handlers_);
   }
+
+  res.status = 400;
   return false;
 }
 
@@ -2682,7 +2684,7 @@ Server::process_request(Stream &strm, bool last_connection,
   req.set_header("REMOTE_ADDR", strm.get_remote_addr());
 
   // Body
-  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
+  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" || req.method == "PRI") {
     if (!detail::read_content(strm, req, payload_max_length_, res.status,
                               Progress(), [&](const char *buf, size_t n) {
                                 if (req.body.size() + n > req.body.max_size()) {
@@ -2720,7 +2722,7 @@ Server::process_request(Stream &strm, bool last_connection,
   if (routing(req, res)) {
     if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
   } else {
-    res.status = 404;
+    if (res.status == -1) { res.status = 404; }
   }
 
   return write_response(strm, last_connection, req, res);

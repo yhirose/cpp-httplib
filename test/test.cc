@@ -1396,7 +1396,7 @@ TEST_F(ServerTest, NoMultipleHeaders) {
 TEST_F(ServerTest, HTTP2Magic) {
   Request req;
   req.method = "PRI";
-  req.path = "/";
+  req.path = "*";
   req.body = "SM";
 
   auto res = std::make_shared<Response>();
