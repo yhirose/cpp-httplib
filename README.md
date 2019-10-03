@@ -77,12 +77,13 @@ svr.set_error_handler([](const auto& req, auto& res) {
 ```cpp
 svr.Post("/multipart", [&](const auto& req, auto& res) {
     auto size = req.files.size();
-    auto ret = req.has_file("name1"));
+    auto ret = req.has_file("name1");
     const auto& file = req.get_file_value("name1");
     // file.filename;
     // file.content_type;
-    auto body = req.body.substr(file.offset, file.length));
-})
+    auto body = req.body.substr(file.offset, file.length);
+});
+
 ```
 
 ### Stream content with Content provider
