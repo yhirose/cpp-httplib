@@ -335,7 +335,7 @@ TEST(RangeTest, FromHTTPBin) {
 }
 
 TEST(ConnectionErrorTest, InvalidHost) {
-  auto host = "abcde.com";
+  auto host = "-abcde.com";
   auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
