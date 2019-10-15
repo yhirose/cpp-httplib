@@ -96,9 +96,9 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 
   res.set_content_provider(
     data->size(), // Content length
-    [data](uint64_t offset, uint64_t length, Out out) {
+    [data](uint64_t offset, uint64_t length, DataSink sink) {
       const auto &d = *data;
-      out(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+      sink(&d[offset], std::min(length, DATA_CHUNK_SIZE));
     },
     [data] { delete data; });
 });
@@ -109,10 +109,10 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 ```cpp
 svr.Get("/chunked", [&](const Request& req, Response& res) {
   res.set_chunked_content_provider(
-    [](uint64_t offset, Out out, Done done) {
-       out("123", 3);
-       out("345", 3);
-       out("789", 3);
+    [](uint64_t offset, DataSink sink, Done done) {
+       sink("123", 3);
+       sink("345", 3);
+       sink("789", 3);
        done();
     }
   );
