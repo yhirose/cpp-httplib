@@ -186,6 +186,8 @@ typedef std::smatch Match;
 typedef std::function<void(const char *data, size_t data_len)> DataSink;
 
 typedef std::function<void()> Done;
+	
+typedef DataSink Out;
 
 typedef std::function<void(size_t offset, size_t length, DataSink sink,
                            Done done)>
