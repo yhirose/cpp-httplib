@@ -457,6 +457,7 @@ private:
 
 class Server {
 public:
+  typedef std::function<void(Stream &, const Request &, Response &)> StreamHandler;
   typedef std::function<void(const Request &, Response &)> Handler;
   typedef std::function<void(const Request &, const Response &)> Logger;
 
@@ -468,6 +469,7 @@ public:
 
   Server &Get(const char *pattern, Handler handler);
   Server &Post(const char *pattern, Handler handler);
+  Server &Post(const char *pattern, StreamHandler handler);
 
   Server &Put(const char *pattern, Handler handler);
   Server &Patch(const char *pattern, Handler handler);
@@ -503,6 +505,7 @@ protected:
 
 private:
   typedef std::vector<std::pair<std::regex, Handler>> Handlers;
+  typedef std::vector<std::pair<std::regex, StreamHandler>> StreamHandlers;
 
   socket_t create_server_socket(const char *host, int port,
                                 int socket_flags) const;
@@ -512,6 +515,7 @@ private:
   bool routing(Request &req, Response &res);
   bool handle_file_request(Request &req, Response &res);
   bool dispatch_request(Request &req, Response &res, Handlers &handlers);
+  bool dispatch_request(Stream &strm ,Request &req, Response &res, StreamHandlers &handlers);
 
   bool parse_request_line(const char *s, Request &req);
   bool write_response(Stream &strm, bool last_connection, const Request &req,
@@ -527,6 +531,7 @@ private:
   std::string base_dir_;
   Handler file_request_handler_;
   Handlers get_handlers_;
+  StreamHandlers stream_handlers_;
   Handlers post_handlers_;
   Handlers put_handlers_;
   Handlers patch_handlers_;
@@ -2253,6 +2258,12 @@ inline Server &Server::Post(const char *pattern, Handler handler) {
   return *this;
 }
 
+inline Server &Server::Post(const char *pattern, StreamHandler handler) {
+  stream_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+  return *this;
+}
+
+
 inline Server &Server::Put(const char *pattern, Handler handler) {
   put_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
   return *this;
@@ -2640,6 +2651,20 @@ inline bool Server::dispatch_request(Request &req, Response &res,
   return false;
 }
 
+inline bool Server::dispatch_request(Stream &strm, Request &req, Response &res,
+                                     StreamHandlers &handlers) {
+  for (const auto &x : handlers) {
+    const auto &pattern = x.first;
+    const auto &handler = x.second;
+
+    if (std::regex_match(req.path, req.matches, pattern)) {
+      handler(strm, req, res);
+      return true;
+    }
+  }
+  return false;
+}
+
 inline bool
 Server::process_request(Stream &strm, bool last_connection,
                         bool &connection_close,
@@ -2685,6 +2710,10 @@ Server::process_request(Stream &strm, bool last_connection,
 
   // Body
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" || req.method == "PRI") {
+    if (dispatch_request(strm, req, res, stream_handlers_)) {
+        if (res.status == -1) { res.status = 200; }
+        return write_response(strm, last_connection, req, res);
+    }
     if (!detail::read_content(strm, req, payload_max_length_, res.status,
                               Progress(), [&](const char *buf, size_t n) {
                                 if (req.body.size() + n > req.body.max_size()) {

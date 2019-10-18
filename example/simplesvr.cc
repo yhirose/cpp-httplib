@@ -109,6 +109,22 @@ int main(int argc, const char **argv) {
     res.set_content(body, "text/plain");
   });
 
+  svr.Post("/multi2", [](Stream& strm, const Request &req, Response &res) {
+    std::string rsp="req body stream is :\n";
+
+    detail::read_content(
+        strm, req, std::numeric_limits<size_t>::max(), res.status
+    ,   req.progress, [&rsp] (const char *buf, size_t n){
+            rsp+="cut(";
+            rsp.append(buf,n);
+            rsp+=")\n";
+            return true;
+        }
+    );
+
+    res.set_content(rsp, "text/plain");
+  });
+
   svr.set_error_handler([](const Request & /*req*/, Response &res) {
     const char *fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
     char buf[BUFSIZ];
