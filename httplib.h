@@ -1696,7 +1696,7 @@ inline std::string decode_url(const std::string &s) {
         int val = 0;
         if (from_hex_to_i(s, i + 1, 2, val)) {
           // 2 digits hex codes
-          result += val;
+          result += static_cast<char>(val);
           i += 2; // '00'
         } else {
           result += s[i];
@@ -1847,7 +1847,7 @@ inline std::string to_lower(const char *beg, const char *end) {
   std::string out;
   auto it = beg;
   while (it != end) {
-    out += ::tolower(*it);
+    out += static_cast<char>(::tolower(*it));
     it++;
   }
   return out;
@@ -3382,11 +3382,19 @@ private:
 class SSLInit {
 public:
   SSLInit() {
+#if OPENSSL_VERSION_NUMBER >= 0x1010001fL
+    OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
+#else
     SSL_load_error_strings();
     SSL_library_init();
+#endif
   }
 
-  ~SSLInit() { ERR_free_strings(); }
+  ~SSLInit() {
+#if OPENSSL_VERSION_NUMBER < 0x1010001fL
+	  ERR_free_strings();
+#endif
+  }
 
 private:
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
