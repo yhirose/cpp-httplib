@@ -483,6 +483,7 @@ public:
   void set_keep_alive_max_count(size_t count);
   void set_payload_max_length(size_t length);
 
+  bool bind_to_port(const char *host, int port, int socket_flags = 0);
   int bind_to_any_port(const char *host, int socket_flags = 0);
   bool listen_after_bind();
 
@@ -2299,6 +2300,10 @@ inline void Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
 }
 
+inline bool Server::bind_to_port(const char *host, int port, int socket_flags) {
+  if (bind_internal(host, port, socket_flags) < 0) return false;
+  return true;
+}
 inline int Server::bind_to_any_port(const char *host, int socket_flags) {
   return bind_internal(host, 0, socket_flags);
 }
@@ -2306,8 +2311,7 @@ inline int Server::bind_to_any_port(const char *host, int socket_flags) {
 inline bool Server::listen_after_bind() { return listen_internal(); }
 
 inline bool Server::listen(const char *host, int port, int socket_flags) {
-  if (bind_internal(host, port, socket_flags) < 0) return false;
-  return listen_internal();
+  return bind_to_port(host, port, socket_flags) && listen_internal();
 }
 
 inline bool Server::is_running() const { return is_running_; }
