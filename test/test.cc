@@ -1457,6 +1457,20 @@ TEST_F(ServerTest, Gzip) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, GzipWithoutAcceptEncoding) {
+  Headers headers;
+  auto res = cli_.Get("/gzip", headers);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
+  EXPECT_EQ(200, res->status);
+}
+
 TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
@@ -1472,6 +1486,26 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("33", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            body);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
+  Headers headers;
+  std::string body;
+  auto res = cli_.Get("/gzip", headers,
+                      [&](const char *data, uint64_t data_length,
+                          uint64_t /*offset*/, uint64_t /*content_length*/) {
+                        body.append(data, data_length);
+                        return true;
+                      });
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             body);
