@@ -1234,7 +1234,7 @@ inline const char *find_content_type(const std::string &path) {
   auto ext = file_extension(path);
   if (ext == "txt") {
     return "text/plain";
-  } else if (ext == "html") {
+  } else if (ext == "html" || ext == "htm") {
     return "text/html";
   } else if (ext == "css") {
     return "text/css";
