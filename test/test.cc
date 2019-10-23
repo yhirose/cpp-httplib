@@ -1353,6 +1353,28 @@ TEST_F(ServerTest, Put) {
   EXPECT_EQ("PUT", res->body);
 }
 
+TEST_F(ServerTest, PutWithContentProvider) {
+  auto res = cli_.Put("/put", 3, [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
+    sink("PUT", 3);
+  }, "text/plain");
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST_F(ServerTest, PutWithContentProviderWithGzip) {
+  auto res = cli_.Put("/put", 3, [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
+    sink("PUT", 3);
+  }, "text/plain", true);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+#endif
+
 TEST_F(ServerTest, Patch) {
   auto res = cli_.Patch("/patch", "PATCH", "text/plain");
   ASSERT_TRUE(res != nullptr);
