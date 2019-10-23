@@ -1,7 +1,8 @@
 
 #CXX = clang++
 CXXFLAGS = -std=c++14 -I.. -Wall -Wextra -pthread
-OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -lcrypto
+OPENSSL_DIR = /usr/local/opt/openssl
+OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
 all: server client hello simplesvr redirect benchmark
