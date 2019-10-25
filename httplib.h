@@ -3144,10 +3144,12 @@ Client::Post(const char *path, const Headers &headers, const std::string &body,
   req.headers.emplace("Content-Type", content_type);
   req.body = body;
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
   if (compress) {
     if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
   }
+#endif
 
   auto res = std::make_shared<Response>();
 
@@ -3226,10 +3228,12 @@ Client::Put(const char *path, const Headers &headers, const std::string &body,
   req.headers.emplace("Content-Type", content_type);
   req.body = body;
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
   if (compress) {
     if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
   }
+#endif
 
   auto res = std::make_shared<Response>();
 
@@ -3254,10 +3258,12 @@ Client::Patch(const char *path, const Headers &headers, const std::string &body,
   req.headers.emplace("Content-Type", content_type);
   req.body = body;
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
   if (compress) {
     if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
   }
+#endif
 
   auto res = std::make_shared<Response>();
 
