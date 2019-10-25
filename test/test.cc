@@ -255,16 +255,16 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 #endif
 
   std::string body;
-  auto res =
-      cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137", Headers(),
-              [&](const Response& response) {
-                EXPECT_EQ(200, response.status);
-                return true;
-              },
-              [&](const char *data, size_t data_length, uint64_t, uint64_t) {
-                body.append(data, data_length);
-                return true;
-              });
+  auto res = cli.Get(
+      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137", Headers(),
+      [&](const Response &response) {
+        EXPECT_EQ(200, response.status);
+        return true;
+      },
+      [&](const char *data, size_t data_length, uint64_t, uint64_t) {
+        body.append(data, data_length);
+        return true;
+      });
   ASSERT_TRUE(res != nullptr);
 
   std::string out;
@@ -539,7 +539,8 @@ TEST(YahooRedirectTest, Redirect) {
 TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.follow_location(true);
-  auto res = cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  auto res =
+      cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
   ASSERT_TRUE(res != nullptr);
 }
 #endif
@@ -636,7 +637,8 @@ protected:
                    [data](uint64_t offset, uint64_t length, DataSink sink) {
                      size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
-                     auto out_len = std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
+                     auto out_len =
+                         std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
                      sink(&d[static_cast<size_t>(offset)], out_len);
                    },
                    [data] { delete data; });
@@ -1422,19 +1424,19 @@ TEST_F(ServerTest, KeepAlive) {
   ASSERT_TRUE(requests.size() == responses.size());
 
   for (int i = 0; i < 3; i++) {
-    auto& res = responses[i];
+    auto &res = responses[i];
     EXPECT_EQ(200, res.status);
     EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
     EXPECT_EQ("Hello World!", res.body);
   }
 
   {
-    auto& res = responses[3];
+    auto &res = responses[3];
     EXPECT_EQ(404, res.status);
   }
 
   {
-    auto& res = responses[4];
+    auto &res = responses[4];
     EXPECT_EQ(200, res.status);
     EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
     EXPECT_EQ("empty", res.body);

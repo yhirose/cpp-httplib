@@ -52,6 +52,10 @@
 #define CPPHTTPLIB_THREAD_POOL_COUNT 8
 #endif
 
+/*
+ * Headers
+ */
+
 #ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
@@ -60,10 +64,6 @@
 #ifndef _CRT_NONSTDC_NO_DEPRECATE
 #define _CRT_NONSTDC_NO_DEPRECATE
 #endif //_CRT_NONSTDC_NO_DEPRECATE
-
-/*
- * Headers
- */
 
 #if defined(_MSC_VER)
 #ifdef _WIN64
@@ -589,37 +589,45 @@ public:
   std::shared_ptr<Response> Head(const char *path, const Headers &headers);
 
   std::shared_ptr<Response> Post(const char *path, const std::string &body,
-                                 const char *content_type, bool compress = false);
+                                 const char *content_type,
+                                 bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const std::string &body,
                                  const char *content_type,
                                  bool compress = false);
 
-  std::shared_ptr<Response> Post(const char *path, const Params &params, bool compress = false);
+  std::shared_ptr<Response> Post(const char *path, const Params &params,
+                                 bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const Params &params, bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path,
-                                 const MultipartFormDataItems &items, bool compress = false);
+                                 const MultipartFormDataItems &items,
+                                 bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const MultipartFormDataItems &items, bool compress = false);
+                                 const MultipartFormDataItems &items,
+                                 bool compress = false);
 
   std::shared_ptr<Response> Put(const char *path, const std::string &body,
-                                const char *content_type, bool compress = false);
+                                const char *content_type,
+                                bool compress = false);
 
   std::shared_ptr<Response> Put(const char *path, const Headers &headers,
                                 const std::string &body,
-                                const char *content_type, bool compress = false);
+                                const char *content_type,
+                                bool compress = false);
 
   std::shared_ptr<Response> Patch(const char *path, const std::string &body,
-                                  const char *content_type, bool compress = false);
+                                  const char *content_type,
+                                  bool compress = false);
 
   std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
                                   const std::string &body,
-                                  const char *content_type, bool compress = false);
+                                  const char *content_type,
+                                  bool compress = false);
 
   std::shared_ptr<Response> Delete(const char *path);
 
@@ -3120,14 +3128,14 @@ inline std::shared_ptr<Response> Client::Head(const char *path,
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const std::string &body,
-                                              const char *content_type, bool compress) {
+                                              const char *content_type,
+                                              bool compress) {
   return Post(path, Headers(), body, content_type, compress);
 }
 
-inline std::shared_ptr<Response> Client::Post(const char *path,
-                                              const Headers &headers,
-                                              const std::string &body,
-                                              const char *content_type, bool compress) {
+inline std::shared_ptr<Response>
+Client::Post(const char *path, const Headers &headers, const std::string &body,
+             const char *content_type, bool compress) {
   Request req;
   req.method = "POST";
   req.headers = headers;
@@ -3137,9 +3145,7 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
   req.body = body;
 
   if (compress) {
-    if (!detail::compress(req.body)) {
-      return nullptr;
-    }
+    if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
   }
 
@@ -3148,13 +3154,15 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
   return send(req, *res) ? res : nullptr;
 }
 
-inline std::shared_ptr<Response> Client::Post(const char *path,
-                                              const Params &params, bool compress) {
+inline std::shared_ptr<Response>
+Client::Post(const char *path, const Params &params, bool compress) {
   return Post(path, Headers(), params, compress);
 }
 
-inline std::shared_ptr<Response>
-Client::Post(const char *path, const Headers &headers, const Params &params, bool compress) {
+inline std::shared_ptr<Response> Client::Post(const char *path,
+                                              const Headers &headers,
+                                              const Params &params,
+                                              bool compress) {
   std::string query;
   for (auto it = params.begin(); it != params.end(); ++it) {
     if (it != params.begin()) { query += "&"; }
@@ -3163,11 +3171,13 @@ Client::Post(const char *path, const Headers &headers, const Params &params, boo
     query += detail::encode_url(it->second);
   }
 
-  return Post(path, headers, query, "application/x-www-form-urlencoded", compress);
+  return Post(path, headers, query, "application/x-www-form-urlencoded",
+              compress);
 }
 
 inline std::shared_ptr<Response>
-Client::Post(const char *path, const MultipartFormDataItems &items, bool compress) {
+Client::Post(const char *path, const MultipartFormDataItems &items,
+             bool compress) {
   return Post(path, Headers(), items, compress);
 }
 
@@ -3205,11 +3215,9 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
   return Put(path, Headers(), body, content_type, compress);
 }
 
-inline std::shared_ptr<Response> Client::Put(const char *path,
-                                             const Headers &headers,
-                                             const std::string &body,
-                                             const char *content_type,
-                                             bool compress) {
+inline std::shared_ptr<Response>
+Client::Put(const char *path, const Headers &headers, const std::string &body,
+            const char *content_type, bool compress) {
   Request req;
   req.method = "PUT";
   req.headers = headers;
@@ -3219,9 +3227,7 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
   req.body = body;
 
   if (compress) {
-    if (!detail::compress(req.body)) {
-      return nullptr;
-    }
+    if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
   }
 
@@ -3237,11 +3243,9 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
   return Patch(path, Headers(), body, content_type, compress);
 }
 
-inline std::shared_ptr<Response> Client::Patch(const char *path,
-                                               const Headers &headers,
-                                               const std::string &body,
-                                               const char *content_type,
-                                               bool compress) {
+inline std::shared_ptr<Response>
+Client::Patch(const char *path, const Headers &headers, const std::string &body,
+              const char *content_type, bool compress) {
   Request req;
   req.method = "PATCH";
   req.headers = headers;
@@ -3251,9 +3255,7 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
   req.body = body;
 
   if (compress) {
-    if (!detail::compress(req.body)) {
-      return nullptr;
-    }
+    if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
   }
 
