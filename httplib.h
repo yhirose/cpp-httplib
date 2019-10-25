@@ -11,6 +11,7 @@
 /*
  * Configuration
  */
+
 #ifndef CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #endif
@@ -59,6 +60,10 @@
 #ifndef _CRT_NONSTDC_NO_DEPRECATE
 #define _CRT_NONSTDC_NO_DEPRECATE
 #endif //_CRT_NONSTDC_NO_DEPRECATE
+
+/*
+ * Headers
+ */
 
 #if defined(_MSC_VER)
 #ifdef _WIN64
@@ -162,6 +167,9 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #include <zlib.h>
 #endif
 
+/*
+ * Declaration
+ */
 namespace httplib {
 
 namespace detail {
@@ -742,7 +750,7 @@ public:
 
   long get_openssl_verify_result() const;
 
-  SSL_CTX* ssl_context() const noexcept;
+  SSL_CTX *ssl_context() const noexcept;
 
 private:
   virtual bool process_and_close_socket(
@@ -770,6 +778,7 @@ private:
 /*
  * Implementation
  */
+
 namespace detail {
 
 inline bool is_hex(char c, int &v) {
@@ -1066,7 +1075,8 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
       pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
-    return getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &len) >= 0 &&
+    return getsockopt(sock, SOL_SOCKET, SO_ERROR,
+                      reinterpret_cast<char *>(&error), &len) >= 0 &&
            !error;
   }
   return false;
@@ -1177,9 +1187,11 @@ socket_t create_socket(const char *host, int port, Fn fn,
 
     // Make 'reuse address' option available
     int yes = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&yes), sizeof(yes));
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&yes),
+               sizeof(yes));
 #ifdef SO_REUSEPORT
-    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char*>(&yes), sizeof(yes));
+    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char *>(&yes),
+               sizeof(yes));
 #endif
 
     // bind or connect
@@ -1221,8 +1233,8 @@ inline std::string get_remote_addr(socket_t sock) {
   if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr), &len)) {
     char ipstr[NI_MAXHOST];
 
-    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr, sizeof(ipstr),
-                     nullptr, 0, NI_NUMERICHOST)) {
+    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr,
+                     sizeof(ipstr), nullptr, 0, NI_NUMERICHOST)) {
       return ipstr;
     }
   }
@@ -1303,7 +1315,8 @@ inline bool compress(std::string &content) {
   if (ret != Z_OK) { return false; }
 
   strm.avail_in = content.size();
-  strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(content.data()));
+  strm.next_in =
+      const_cast<Bytef *>(reinterpret_cast<const Bytef *>(content.data()));
 
   std::string compressed;
 
@@ -1311,7 +1324,7 @@ inline bool compress(std::string &content) {
   char buff[bufsiz];
   do {
     strm.avail_out = bufsiz;
-    strm.next_out = reinterpret_cast<Bytef*>(buff);
+    strm.next_out = reinterpret_cast<Bytef *>(buff);
     ret = deflate(&strm, Z_FINISH);
     assert(ret != Z_STREAM_ERROR);
     compressed.append(buff, bufsiz - strm.avail_out);
@@ -1348,13 +1361,13 @@ public:
     int ret = Z_OK;
 
     strm.avail_in = data_length;
-    strm.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef *>(data));
+    strm.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
     const auto bufsiz = 16384;
     char buff[bufsiz];
     do {
       strm.avail_out = bufsiz;
-      strm.next_out = reinterpret_cast<Bytef*>(buff);
+      strm.next_out = reinterpret_cast<Bytef *>(buff);
 
       ret = inflate(&strm, Z_NO_FLUSH);
       assert(ret != Z_STREAM_ERROR);
@@ -2326,8 +2339,9 @@ inline void Server::stop() {
 }
 
 inline bool Server::parse_request_line(const char *s, Request &req) {
-  static std::regex re("(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
-                       "(([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
+  static std::regex re(
+      "(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
+      "(([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
 
   std::cmatch m;
   if (std::regex_match(s, m, re)) {
@@ -2688,7 +2702,8 @@ Server::process_request(Stream &strm, bool last_connection,
   req.set_header("REMOTE_ADDR", strm.get_remote_addr());
 
   // Body
-  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" || req.method == "PRI") {
+  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
+      req.method == "PRI") {
     if (!detail::read_content(strm, req, payload_max_length_, res.status,
                               Progress(), [&](const char *buf, size_t n) {
                                 if (req.body.size() + n > req.body.max_size()) {
@@ -2820,7 +2835,8 @@ inline bool Client::send(const std::vector<Request> &requests,
 
     if (!process_and_close_socket(
             sock, requests.size() - i,
-            [&](Stream &strm, bool last_connection, bool &connection_close) -> bool {
+            [&](Stream &strm, bool last_connection,
+                bool &connection_close) -> bool {
               auto &req = requests[i];
               auto res = Response();
               i++;
@@ -3386,17 +3402,18 @@ private:
 class SSLInit {
 public:
   SSLInit() {
-#if OPENSSL_VERSION_NUMBER >= 0x1010001fL
-    OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
-#else
+#if OPENSSL_VERSION_NUMBER < 0x1010001fL
     SSL_load_error_strings();
     SSL_library_init();
+#else
+    OPENSSL_init_ssl(
+        OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
 #endif
   }
 
   ~SSLInit() {
 #if OPENSSL_VERSION_NUMBER < 0x1010001fL
-	  ERR_free_strings();
+    ERR_free_strings();
 #endif
   }
 
@@ -3539,9 +3556,7 @@ inline long SSLClient::get_openssl_verify_result() const {
   return verify_result_;
 }
 
-inline SSL_CTX* SSLClient::ssl_context() const noexcept {
-	return ctx_;
-}
+inline SSL_CTX *SSLClient::ssl_context() const noexcept { return ctx_; }
 
 inline bool SSLClient::process_and_close_socket(
     socket_t sock, size_t request_count,
