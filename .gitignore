@@ -26,3 +26,5 @@ ipch
 *.dSYM
 .*
 !/.travis.yml
+!/.gitignore
+!/.clang-format
