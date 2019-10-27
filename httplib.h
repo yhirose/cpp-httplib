@@ -326,7 +326,8 @@ public:
 
 class SocketStream : public Stream {
 public:
-  SocketStream(socket_t sock);
+  SocketStream(socket_t sock, time_t read_timeout_sec,
+               time_t read_timeout_usec);
   virtual ~SocketStream();
 
   virtual int read(char *ptr, size_t size);
@@ -337,6 +338,8 @@ public:
 
 private:
   socket_t sock_;
+  time_t read_timeout_sec_;
+  time_t read_timeout_usec_;
 };
 
 class BufferStream : public Stream {
@@ -497,6 +500,7 @@ public:
   void set_logger(Logger logger);
 
   void set_keep_alive_max_count(size_t count);
+  void set_read_timeout(time_t sec, time_t usec);
   void set_payload_max_length(size_t length);
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
@@ -516,6 +520,8 @@ protected:
                        std::function<void(Request &)> setup_request);
 
   size_t keep_alive_max_count_;
+  time_t read_timeout_sec_;
+  time_t read_timeout_usec_;
   size_t payload_max_length_;
 
 private:
@@ -605,8 +611,7 @@ public:
                                  const char *content_type,
                                  bool compress = false);
 
-  std::shared_ptr<Response> Post(const char *path,
-                                 size_t content_length,
+  std::shared_ptr<Response> Post(const char *path, size_t content_length,
                                  ContentProvider content_provider,
                                  const char *content_type,
                                  bool compress = false);
@@ -640,8 +645,7 @@ public:
                                 const char *content_type,
                                 bool compress = false);
 
-  std::shared_ptr<Response> Put(const char *path,
-                                size_t content_length,
+  std::shared_ptr<Response> Put(const char *path, size_t content_length,
                                 ContentProvider content_provider,
                                 const char *content_type,
                                 bool compress = false);
@@ -661,17 +665,16 @@ public:
                                   const char *content_type,
                                   bool compress = false);
 
-  std::shared_ptr<Response> Patch(const char *path,
-                                 size_t content_length,
-                                 ContentProvider content_provider,
-                                 const char *content_type,
-                                 bool compress = false);
+  std::shared_ptr<Response> Patch(const char *path, size_t content_length,
+                                  ContentProvider content_provider,
+                                  const char *content_type,
+                                  bool compress = false);
 
   std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
-                                 size_t content_length,
-                                 ContentProvider content_provider,
-                                 const char *content_type,
-                                 bool compress = false);
+                                  size_t content_length,
+                                  ContentProvider content_provider,
+                                  const char *content_type,
+                                  bool compress = false);
 
   std::shared_ptr<Response> Delete(const char *path);
 
@@ -694,6 +697,7 @@ public:
             std::vector<Response> &responses);
 
   void set_keep_alive_max_count(size_t count);
+  void set_read_timeout(time_t sec, time_t usec);
 
   void follow_location(bool on);
 
@@ -706,6 +710,8 @@ protected:
   time_t timeout_sec_;
   const std::string host_and_port_;
   size_t keep_alive_max_count_;
+  time_t read_timeout_sec_;
+  time_t read_timeout_usec_;
   size_t follow_location_;
 
 private:
@@ -714,13 +720,12 @@ private:
   void write_request(Stream &strm, const Request &req, bool last_connection);
   bool redirect(const Request &req, Response &res);
 
-  std::shared_ptr<Response> send_with_content_provider(
-      const char *method,
-      const char *path, const Headers &headers,
-      const std::string& body,
-      size_t content_length,
-      ContentProvider content_provider,
-      const char *content_type, bool compress);
+  std::shared_ptr<Response>
+  send_with_content_provider(const char *method, const char *path,
+                             const Headers &headers, const std::string &body,
+                             size_t content_length,
+                             ContentProvider content_provider,
+                             const char *content_type, bool compress);
 
   virtual bool process_and_close_socket(
       socket_t sock, size_t request_count,
@@ -764,7 +769,8 @@ inline void Post(std::vector<Request> &requests, const char *path,
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class SSLSocketStream : public Stream {
 public:
-  SSLSocketStream(socket_t sock, SSL *ssl);
+  SSLSocketStream(socket_t sock, SSL *ssl, time_t read_timeout_sec,
+                  time_t read_timeout_usec);
   virtual ~SSLSocketStream();
 
   virtual int read(char *ptr, size_t size);
@@ -776,6 +782,8 @@ public:
 private:
   socket_t sock_;
   SSL *ssl_;
+  time_t read_timeout_sec_;
+  time_t read_timeout_usec_;
 };
 
 class SSLServer : public Server {
@@ -1166,7 +1174,9 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 
 template <typename T>
 inline bool process_and_close_socket(bool is_client_request, socket_t sock,
-                                     size_t keep_alive_max_count, T callback) {
+                                     size_t keep_alive_max_count,
+                                     time_t read_timeout_sec,
+                                     time_t read_timeout_usec, T callback) {
   assert(keep_alive_max_count > 0);
 
   bool ret = false;
@@ -1177,7 +1187,7 @@ inline bool process_and_close_socket(bool is_client_request, socket_t sock,
            (is_client_request ||
             detail::select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
                                 CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0)) {
-      SocketStream strm(sock);
+      SocketStream strm(sock, read_timeout_sec, read_timeout_usec);
       auto last_connection = count == 1;
       auto connection_close = false;
 
@@ -1187,7 +1197,7 @@ inline bool process_and_close_socket(bool is_client_request, socket_t sock,
       count--;
     }
   } else {
-    SocketStream strm(sock);
+    SocketStream strm(sock, read_timeout_sec, read_timeout_usec);
     auto dummy_connection_close = false;
     ret = callback(strm, true, dummy_connection_close);
   }
@@ -1655,7 +1665,8 @@ inline int write_headers(Stream &strm, const T &info, const Headers &headers) {
   return write_len;
 }
 
-inline ssize_t write_content(Stream &strm, ContentProviderWithCloser content_provider,
+inline ssize_t write_content(Stream &strm,
+                             ContentProviderWithCloser content_provider,
                              size_t offset, size_t length) {
   size_t begin_offset = offset;
   size_t end_offset = offset + length;
@@ -1673,8 +1684,9 @@ inline ssize_t write_content(Stream &strm, ContentProviderWithCloser content_pro
   return static_cast<ssize_t>(offset - begin_offset);
 }
 
-inline ssize_t write_content_chunked(Stream &strm,
-                                     ContentProviderWithCloser content_provider) {
+inline ssize_t
+write_content_chunked(Stream &strm,
+                      ContentProviderWithCloser content_provider) {
   size_t offset = 0;
   auto data_available = true;
   ssize_t total_written_length = 0;
@@ -2245,13 +2257,15 @@ inline int Stream::write_format(const char *fmt, const Args &... args) {
 }
 
 // Socket stream implementation
-inline SocketStream::SocketStream(socket_t sock) : sock_(sock) {}
+inline SocketStream::SocketStream(socket_t sock, time_t read_timeout_sec,
+                                  time_t read_timeout_usec)
+    : sock_(sock), read_timeout_sec_(read_timeout_sec),
+      read_timeout_usec_(read_timeout_usec) {}
 
 inline SocketStream::~SocketStream() {}
 
 inline int SocketStream::read(char *ptr, size_t size) {
-  if (detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
-                          CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
+  if (detail::select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0) {
     return recv(sock_, ptr, static_cast<int>(size), 0);
   }
   return -1;
@@ -2302,6 +2316,8 @@ inline const std::string &BufferStream::get_buffer() const { return buffer; }
 // HTTP server implementation
 inline Server::Server()
     : keep_alive_max_count_(CPPHTTPLIB_KEEPALIVE_MAX_COUNT),
+      read_timeout_sec_(CPPHTTPLIB_READ_TIMEOUT_SECOND),
+      read_timeout_usec_(CPPHTTPLIB_READ_TIMEOUT_USECOND),
       payload_max_length_(CPPHTTPLIB_PAYLOAD_MAX_LENGTH), is_running_(false),
       svr_sock_(INVALID_SOCKET) {
 #ifndef _WIN32
@@ -2368,6 +2384,11 @@ inline void Server::set_logger(Logger logger) { logger_ = logger; }
 
 inline void Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
+}
+
+inline void Server::set_read_timeout(time_t sec, time_t usec) {
+  read_timeout_sec_ = sec;
+  read_timeout_usec_ = usec;
 }
 
 inline void Server::set_payload_max_length(size_t length) {
@@ -2472,8 +2493,8 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
       if (req.ranges.empty()) {
         length = res.content_length;
       } else if (req.ranges.size() == 1) {
-        auto offsets = detail::get_range_offset_and_length(
-            req, res.content_length, 0);
+        auto offsets =
+            detail::get_range_offset_and_length(req, res.content_length, 0);
         auto offset = offsets.first;
         length = offsets.second;
         auto content_range = detail::make_content_range_header_field(
@@ -2554,8 +2575,8 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
         return false;
       }
     } else if (req.ranges.size() == 1) {
-      auto offsets = detail::get_range_offset_and_length(
-          req, res.content_length, 0);
+      auto offsets =
+          detail::get_range_offset_and_length(req, res.content_length, 0);
       auto offset = offsets.first;
       auto length = offsets.second;
       if (detail::write_content(strm, res.content_provider, offset, length) <
@@ -2812,7 +2833,7 @@ inline bool Server::is_valid() const { return true; }
 
 inline bool Server::process_and_close_socket(socket_t sock) {
   return detail::process_and_close_socket(
-      false, sock, keep_alive_max_count_,
+      false, sock, keep_alive_max_count_, read_timeout_sec_, read_timeout_usec_,
       [this](Stream &strm, bool last_connection, bool &connection_close) {
         return process_request(strm, last_connection, connection_close,
                                nullptr);
@@ -2824,6 +2845,8 @@ inline Client::Client(const char *host, int port, time_t timeout_sec)
     : host_(host), port_(port), timeout_sec_(timeout_sec),
       host_and_port_(host_ + ":" + std::to_string(port_)),
       keep_alive_max_count_(CPPHTTPLIB_KEEPALIVE_MAX_COUNT),
+      read_timeout_sec_(CPPHTTPLIB_READ_TIMEOUT_SECOND),
+      read_timeout_usec_(CPPHTTPLIB_READ_TIMEOUT_USECOND),
       follow_location_(false) {}
 
 inline Client::~Client() {}
@@ -3027,12 +3050,11 @@ inline void Client::write_request(Stream &strm, const Request &req,
       size_t offset = 0;
       size_t end_offset = req.content_length;
       while (offset < end_offset) {
-        req.content_provider(
-            offset, end_offset - offset,
-            [&](const char *d, size_t l) {
-              auto written_length = strm.write(d, l);
-              offset += written_length;
-            });
+        req.content_provider(offset, end_offset - offset,
+                             [&](const char *d, size_t l) {
+                               auto written_length = strm.write(d, l);
+                               offset += written_length;
+                             });
       }
     }
   } else {
@@ -3040,14 +3062,10 @@ inline void Client::write_request(Stream &strm, const Request &req,
   }
 }
 
-inline std::shared_ptr<Response>
-Client::send_with_content_provider(
-     const char *method,
-     const char *path, const Headers &headers,
-     const std::string& body,
-     size_t content_length,
-     ContentProvider content_provider,
-     const char *content_type, bool compress) {
+inline std::shared_ptr<Response> Client::send_with_content_provider(
+    const char *method, const char *path, const Headers &headers,
+    const std::string &body, size_t content_length,
+    ContentProvider content_provider, const char *content_type, bool compress) {
 
   Request req;
   req.method = method;
@@ -3061,13 +3079,11 @@ Client::send_with_content_provider(
     if (content_provider) {
       size_t offset = 0;
       while (offset < content_length) {
-        content_provider(
-          offset,
-          content_length - offset,
-          [&](const char *data, size_t data_len) {
-            req.body.append(data, data_len);
-            offset += data_len;
-          });
+        content_provider(offset, content_length - offset,
+                         [&](const char *data, size_t data_len) {
+                           req.body.append(data, data_len);
+                           offset += data_len;
+                         });
       }
     } else {
       req.body = body;
@@ -3075,8 +3091,7 @@ Client::send_with_content_provider(
 
     if (!detail::compress(req.body)) { return nullptr; }
     req.headers.emplace("Content-Encoding", "gzip");
-  }
-  else
+  } else
 #endif
   {
     if (content_provider) {
@@ -3148,7 +3163,9 @@ inline bool Client::process_and_close_socket(
                        bool &connection_close)>
         callback) {
   request_count = std::min(request_count, keep_alive_max_count_);
-  return detail::process_and_close_socket(true, sock, request_count, callback);
+  return detail::process_and_close_socket(true, sock, request_count,
+                                          read_timeout_sec_, read_timeout_usec_,
+                                          callback);
 }
 
 inline bool Client::is_ssl() const { return false; }
@@ -3258,8 +3275,8 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers, const std::string &body,
              const char *content_type, bool compress) {
-  return send_with_content_provider(
-     "POST", path, headers, body, 0, nullptr, content_type, compress);
+  return send_with_content_provider("POST", path, headers, body, 0, nullptr,
+                                    content_type, compress);
 }
 
 inline std::shared_ptr<Response>
@@ -3272,16 +3289,17 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
                                               ContentProvider content_provider,
                                               const char *content_type,
                                               bool compress) {
-  return Post(path, Headers(), content_length, content_provider, content_type, compress);
+  return Post(path, Headers(), content_length, content_provider, content_type,
+              compress);
 }
 
 inline std::shared_ptr<Response>
-Client::Post(const char *path, const Headers &headers,
-             size_t content_length,
-             ContentProvider content_provider,
-             const char *content_type, bool compress) {
-  return send_with_content_provider(
-     "POST", path, headers, std::string(), content_length, content_provider, content_type, compress);
+Client::Post(const char *path, const Headers &headers, size_t content_length,
+             ContentProvider content_provider, const char *content_type,
+             bool compress) {
+  return send_with_content_provider("POST", path, headers, std::string(),
+                                    content_length, content_provider,
+                                    content_type, compress);
 }
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
@@ -3343,8 +3361,8 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
 inline std::shared_ptr<Response>
 Client::Put(const char *path, const Headers &headers, const std::string &body,
             const char *content_type, bool compress) {
-  return send_with_content_provider(
-     "PUT", path, headers, body, 0, nullptr, content_type, compress);
+  return send_with_content_provider("PUT", path, headers, body, 0, nullptr,
+                                    content_type, compress);
 }
 
 inline std::shared_ptr<Response> Client::Put(const char *path,
@@ -3352,16 +3370,17 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
                                              ContentProvider content_provider,
                                              const char *content_type,
                                              bool compress) {
-  return Put(path, Headers(), content_length, content_provider, content_type, compress);
+  return Put(path, Headers(), content_length, content_provider, content_type,
+             compress);
 }
 
 inline std::shared_ptr<Response>
-Client::Put(const char *path, const Headers &headers,
-            size_t content_length,
-            ContentProvider content_provider,
-            const char *content_type, bool compress) {
-  return send_with_content_provider(
-     "PUT", path, headers, std::string(), content_length, content_provider, content_type, compress);
+Client::Put(const char *path, const Headers &headers, size_t content_length,
+            ContentProvider content_provider, const char *content_type,
+            bool compress) {
+  return send_with_content_provider("PUT", path, headers, std::string(),
+                                    content_length, content_provider,
+                                    content_type, compress);
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
@@ -3374,8 +3393,8 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
 inline std::shared_ptr<Response>
 Client::Patch(const char *path, const Headers &headers, const std::string &body,
               const char *content_type, bool compress) {
-  return send_with_content_provider(
-     "PATCH", path, headers, body, 0, nullptr, content_type, compress);
+  return send_with_content_provider("PATCH", path, headers, body, 0, nullptr,
+                                    content_type, compress);
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
@@ -3383,16 +3402,17 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
                                                ContentProvider content_provider,
                                                const char *content_type,
                                                bool compress) {
-  return Patch(path, Headers(), content_length, content_provider, content_type, compress);
+  return Patch(path, Headers(), content_length, content_provider, content_type,
+               compress);
 }
 
 inline std::shared_ptr<Response>
-Client::Patch(const char *path, const Headers &headers,
-              size_t content_length,
-              ContentProvider content_provider,
-              const char *content_type, bool compress) {
-  return send_with_content_provider(
-     "PATCH", path, headers, std::string(), content_length, content_provider, content_type, compress);
+Client::Patch(const char *path, const Headers &headers, size_t content_length,
+              ContentProvider content_provider, const char *content_type,
+              bool compress) {
+  return send_with_content_provider("PATCH", path, headers, std::string(),
+                                    content_length, content_provider,
+                                    content_type, compress);
 }
 
 inline std::shared_ptr<Response> Client::Delete(const char *path) {
@@ -3447,6 +3467,11 @@ inline void Client::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
 }
 
+inline void Client::set_read_timeout(time_t sec, time_t usec) {
+  read_timeout_sec_ = sec;
+  read_timeout_usec_ = usec;
+}
+
 inline void Client::follow_location(bool on) { follow_location_ = on; }
 
 /*
@@ -3456,11 +3481,10 @@ inline void Client::follow_location(bool on) { follow_location_ = on; }
 namespace detail {
 
 template <typename U, typename V, typename T>
-inline bool process_and_close_socket_ssl(bool is_client_request, socket_t sock,
-                                         size_t keep_alive_max_count,
-                                         SSL_CTX *ctx, std::mutex &ctx_mutex,
-                                         U SSL_connect_or_accept, V setup,
-                                         T callback) {
+inline bool process_and_close_socket_ssl(
+    bool is_client_request, socket_t sock, size_t keep_alive_max_count,
+    time_t read_timeout_sec, time_t read_timeout_usec, SSL_CTX *ctx,
+    std::mutex &ctx_mutex, U SSL_connect_or_accept, V setup, T callback) {
   assert(keep_alive_max_count > 0);
 
   SSL *ssl = nullptr;
@@ -3497,7 +3521,7 @@ inline bool process_and_close_socket_ssl(bool is_client_request, socket_t sock,
              (is_client_request ||
               detail::select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
                                   CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0)) {
-        SSLSocketStream strm(sock, ssl);
+        SSLSocketStream strm(sock, ssl, read_timeout_sec, read_timeout_usec);
         auto last_connection = count == 1;
         auto connection_close = false;
 
@@ -3507,7 +3531,7 @@ inline bool process_and_close_socket_ssl(bool is_client_request, socket_t sock,
         count--;
       }
     } else {
-      SSLSocketStream strm(sock, ssl);
+      SSLSocketStream strm(sock, ssl, read_timeout_sec, read_timeout_usec);
       auto dummy_connection_close = false;
       ret = callback(ssl, strm, true, dummy_connection_close);
     }
@@ -3580,15 +3604,17 @@ static SSLInit sslinit_;
 } // namespace detail
 
 // SSL socket stream implementation
-inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl)
-    : sock_(sock), ssl_(ssl) {}
+inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl,
+                                        time_t read_timeout_sec,
+                                        time_t read_timeout_usec)
+    : sock_(sock), ssl_(ssl), read_timeout_sec_(read_timeout_sec),
+      read_timeout_usec_(read_timeout_usec) {}
 
 inline SSLSocketStream::~SSLSocketStream() {}
 
 inline int SSLSocketStream::read(char *ptr, size_t size) {
   if (SSL_pending(ssl_) > 0 ||
-      detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
-                          CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
+      detail::select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0) {
     return SSL_read(ssl_, ptr, static_cast<int>(size));
   }
   return -1;
@@ -3657,8 +3683,8 @@ inline bool SSLServer::is_valid() const { return ctx_; }
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
   return detail::process_and_close_socket_ssl(
-      false, sock, keep_alive_max_count_, ctx_, ctx_mutex_, SSL_accept,
-      [](SSL * /*ssl*/) { return true; },
+      false, sock, keep_alive_max_count_, read_timeout_sec_, read_timeout_usec_,
+      ctx_, ctx_mutex_, SSL_accept, [](SSL * /*ssl*/) { return true; },
       [this](SSL *ssl, Stream &strm, bool last_connection,
              bool &connection_close) {
         return process_request(strm, last_connection, connection_close,
@@ -3720,7 +3746,8 @@ inline bool SSLClient::process_and_close_socket(
 
   return is_valid() &&
          detail::process_and_close_socket_ssl(
-             true, sock, request_count, ctx_, ctx_mutex_,
+             true, sock, request_count, read_timeout_sec_, read_timeout_usec_,
+             ctx_, ctx_mutex_,
              [&](SSL *ssl) {
                if (ca_cert_file_path_.empty()) {
                  SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
