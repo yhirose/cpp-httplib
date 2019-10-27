@@ -1893,9 +1893,9 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
       auto len = m.length(1);
       detail::split(&s[pos], &s[pos + len], ',',
                     [&](const char *b, const char *e) {
-                      static auto re = std::regex(R"(\s*(\d*)-(\d*))");
+                      static auto re2 = std::regex(R"(\s*(\d*)-(\d*))");
                       std::cmatch m;
-                      if (std::regex_match(b, e, m, re)) {
+                      if (std::regex_match(b, e, m, re2)) {
                         ssize_t first = -1;
                         if (!m.str(1).empty()) {
                           first = static_cast<ssize_t>(std::stoll(m.str(1)));
