@@ -145,6 +145,8 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <chrono>
+#include <type_traits>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -171,6 +173,7 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
  * Declaration
  */
 namespace httplib {
+	constexpr auto default_read_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(CPPHTTPLIB_READ_TIMEOUT_SECOND) + std::chrono::microseconds(CPPHTTPLIB_READ_TIMEOUT_USECOND));
 
 namespace detail {
 
@@ -249,6 +252,7 @@ struct Request {
   ResponseHandler response_handler;
   ContentReceiver content_receiver;
   Progress progress;
+  std::chrono::milliseconds read_timeout;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   const SSL *ssl;
@@ -314,7 +318,7 @@ struct Response {
 class Stream {
 public:
   virtual ~Stream() {}
-  virtual int read(char *ptr, size_t size) = 0;
+  virtual int read(char *ptr, size_t size, std::chrono::milliseconds read_timeout) = 0;
   virtual int write(const char *ptr, size_t size1) = 0;
   virtual int write(const char *ptr) = 0;
   virtual int write(const std::string &s) = 0;
@@ -329,7 +333,7 @@ public:
   SocketStream(socket_t sock);
   virtual ~SocketStream();
 
-  virtual int read(char *ptr, size_t size);
+  virtual int read(char *ptr, size_t size, std::chrono::milliseconds read_timeout);
   virtual int write(const char *ptr, size_t size);
   virtual int write(const char *ptr);
   virtual int write(const std::string &s);
@@ -344,7 +348,7 @@ public:
   BufferStream() {}
   virtual ~BufferStream() {}
 
-  virtual int read(char *ptr, size_t size);
+  virtual int read(char *ptr, size_t size, std::chrono::milliseconds read_timeout);
   virtual int write(const char *ptr, size_t size);
   virtual int write(const char *ptr);
   virtual int write(const std::string &s);
@@ -561,74 +565,74 @@ public:
 
   virtual bool is_valid() const;
 
-  std::shared_ptr<Response> Get(const char *path);
+  std::shared_ptr<Response> Get(const char *path, std::chrono::milliseconds read_timeout = default_read_timeout);
 
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers);
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers, std::chrono::milliseconds read_timeout = default_read_timeout);
 
-  std::shared_ptr<Response> Get(const char *path, Progress progress);
+  std::shared_ptr<Response> Get(const char *path, Progress progress, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                Progress progress);
+                                Progress progress, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Get(const char *path,
-                                ContentReceiver content_receiver);
+                                ContentReceiver content_receiver, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                ContentReceiver content_receiver);
+                                ContentReceiver content_receiver, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response>
-  Get(const char *path, ContentReceiver content_receiver, Progress progress);
+  Get(const char *path, ContentReceiver content_receiver, Progress progress, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ContentReceiver content_receiver,
-                                Progress progress);
+                                Progress progress, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ResponseHandler response_handler,
-                                ContentReceiver content_receiver);
+                                ContentReceiver content_receiver, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ResponseHandler response_handler,
                                 ContentReceiver content_receiver,
-                                Progress progress);
+                                Progress progress, std::chrono::milliseconds read_timeout = default_read_timeout);
 
   std::shared_ptr<Response> Head(const char *path);
 
   std::shared_ptr<Response> Head(const char *path, const Headers &headers);
 
   std::shared_ptr<Response> Post(const char *path, const std::string &body,
-                                 const char *content_type,
+                                 const char *content_type, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const std::string &body,
-                                 const char *content_type,
+                                 const char *content_type, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path,
                                  size_t content_length,
                                  ContentProvider content_provider,
-                                 const char *content_type,
+                                 const char *content_type, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  size_t content_length,
                                  ContentProvider content_provider,
-                                 const char *content_type,
+                                 const char *content_type, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
-  std::shared_ptr<Response> Post(const char *path, const Params &params,
+  std::shared_ptr<Response> Post(const char *path, const Params &params, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const Params &params, bool compress = false);
+                                 const Params &params, std::chrono::milliseconds read_timeout = default_read_timeout, bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path,
-                                 const MultipartFormDataItems &items,
+                                 const MultipartFormDataItems &items, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const MultipartFormDataItems &items,
+                                 const MultipartFormDataItems &items, std::chrono::milliseconds read_timeout = default_read_timeout,
                                  bool compress = false);
 
   std::shared_ptr<Response> Put(const char *path, const std::string &body,
@@ -710,7 +714,7 @@ protected:
 
 private:
   socket_t create_client_socket() const;
-  bool read_response_line(Stream &strm, Response &res);
+  bool read_response_line(Stream &strm, Response &res, std::chrono::milliseconds read_timeout);
   void write_request(Stream &strm, const Request &req, bool last_connection);
   bool redirect(const Request &req, Response &res);
 
@@ -720,7 +724,7 @@ private:
       const std::string& body,
       size_t content_length,
       ContentProvider content_provider,
-      const char *content_type, bool compress);
+      const char *content_type, std::chrono::milliseconds read_timeout, bool compress);
 
   virtual bool process_and_close_socket(
       socket_t sock, size_t request_count,
@@ -767,7 +771,7 @@ public:
   SSLSocketStream(socket_t sock, SSL *ssl);
   virtual ~SSLSocketStream();
 
-  virtual int read(char *ptr, size_t size);
+  virtual int read(char *ptr, size_t size, std::chrono::milliseconds read_timeout);
   virtual int write(const char *ptr, size_t size);
   virtual int write(const char *ptr);
   virtual int write(const std::string &s);
@@ -1047,13 +1051,13 @@ public:
     }
   }
 
-  bool getline() {
+  bool getline(std::chrono::milliseconds read_timeout) {
     fixed_buffer_used_size_ = 0;
     glowable_buffer_.clear();
 
     for (size_t i = 0;; i++) {
       char byte;
-      auto n = strm_.read(&byte, 1);
+      auto n = strm_.read(&byte, 1, std::move(read_timeout));
 
       if (n < 0) {
         return false;
@@ -1471,7 +1475,7 @@ inline uint64_t get_header_value_uint64(const Headers &headers, const char *key,
   return def;
 }
 
-inline bool read_headers(Stream &strm, Headers &headers) {
+inline bool read_headers(Stream &strm, Headers &headers, std::chrono::milliseconds read_timeout) {
   static std::regex re(R"((.+?):\s*(.+?)\s*\r\n)");
 
   const auto bufsiz = 2048;
@@ -1480,7 +1484,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   stream_line_reader reader(strm, buf, bufsiz);
 
   for (;;) {
-    if (!reader.getline()) { return false; }
+    if (!reader.getline(std::move(read_timeout))) { return false; }
     if (!strcmp(reader.ptr(), "\r\n")) { break; }
     std::cmatch m;
     if (std::regex_match(reader.ptr(), m, re)) {
@@ -1496,15 +1500,15 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 typedef std::function<bool(const char *data, size_t data_length)>
     ContentReceiverCore;
 
-inline bool read_content_with_length(Stream &strm, uint64_t len,
-                                     Progress progress,
-                                     ContentReceiverCore out) {
+inline bool read_content_with_length(Stream& strm, uint64_t len,
+	Progress progress,
+	ContentReceiverCore out, std::chrono::milliseconds read_timeout) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
   uint64_t r = 0;
   while (r < len) {
     auto read_len = static_cast<size_t>(len - r);
-    auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ));
+    auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ), read_timeout);
     if (n <= 0) { return false; }
 
     if (!out(buf, n)) { return false; }
@@ -1519,21 +1523,21 @@ inline bool read_content_with_length(Stream &strm, uint64_t len,
   return true;
 }
 
-inline void skip_content_with_length(Stream &strm, uint64_t len) {
+inline void skip_content_with_length(Stream &strm, uint64_t len, std::chrono::milliseconds read_timeout) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   uint64_t r = 0;
   while (r < len) {
     auto read_len = static_cast<size_t>(len - r);
-    auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ));
+    auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ), read_timeout);
     if (n <= 0) { return; }
     r += n;
   }
 }
 
-inline bool read_content_without_length(Stream &strm, ContentReceiverCore out) {
+inline bool read_content_without_length(Stream &strm, ContentReceiverCore out, std::chrono::milliseconds read_timeout) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   for (;;) {
-    auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
+    auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ, read_timeout);
     if (n < 0) {
       return false;
     } else if (n == 0) {
@@ -1545,33 +1549,33 @@ inline bool read_content_without_length(Stream &strm, ContentReceiverCore out) {
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm, ContentReceiverCore out) {
+inline bool read_content_chunked(Stream &strm, ContentReceiverCore out, std::chrono::milliseconds read_timeout) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
   stream_line_reader reader(strm, buf, bufsiz);
 
-  if (!reader.getline()) { return false; }
+  if (!reader.getline(read_timeout)) { return false; }
 
   auto chunk_len = std::stoi(reader.ptr(), 0, 16);
 
   while (chunk_len > 0) {
-    if (!read_content_with_length(strm, chunk_len, nullptr, out)) {
+    if (!read_content_with_length(strm, chunk_len, nullptr, out, read_timeout)) {
       return false;
     }
 
-    if (!reader.getline()) { return false; }
+    if (!reader.getline(read_timeout)) { return false; }
 
     if (strcmp(reader.ptr(), "\r\n")) { break; }
 
-    if (!reader.getline()) { return false; }
+    if (!reader.getline(read_timeout)) { return false; }
 
     chunk_len = std::stoi(reader.ptr(), 0, 16);
   }
 
   if (chunk_len == 0) {
     // Reader terminator after chunks
-    if (!reader.getline() || strcmp(reader.ptr(), "\r\n")) return false;
+    if (!reader.getline(read_timeout) || strcmp(reader.ptr(), "\r\n")) return false;
   }
 
   return true;
@@ -1614,18 +1618,23 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   auto ret = true;
   auto exceed_payload_max_length = false;
 
+  auto read_timeout = default_read_timeout;
+  if constexpr (std::is_same<T, Request>::value) {
+    read_timeout = x.read_timeout;
+  }
+
   if (is_chunked_transfer_encoding(x.headers)) {
-    ret = read_content_chunked(strm, out);
+    ret = read_content_chunked(strm, out, read_timeout);
   } else if (!has_header(x.headers, "Content-Length")) {
-    ret = read_content_without_length(strm, out);
+    ret = read_content_without_length(strm, out, read_timeout);
   } else {
     auto len = get_header_value_uint64(x.headers, "Content-Length", 0);
     if (len > payload_max_length) {
       exceed_payload_max_length = true;
-      skip_content_with_length(strm, len);
+      skip_content_with_length(strm, len, read_timeout);
       ret = false;
     } else if (len > 0) {
-      ret = read_content_with_length(strm, len, progress, out);
+      ret = read_content_with_length(strm, len, progress, out, read_timeout);
     }
   }
 
@@ -2249,9 +2258,9 @@ inline SocketStream::SocketStream(socket_t sock) : sock_(sock) {}
 
 inline SocketStream::~SocketStream() {}
 
-inline int SocketStream::read(char *ptr, size_t size) {
-  if (detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
-                          CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
+inline int SocketStream::read(char *ptr, size_t size, std::chrono::milliseconds read_timeout) {
+  if (detail::select_read(sock_, std::chrono::duration_cast<std::chrono::seconds>(read_timeout).count(),
+                          std::chrono::duration_cast<std::chrono::microseconds>(read_timeout - std::chrono::duration_cast<std::chrono::seconds>(read_timeout)).count()) > 0) {
     return recv(sock_, ptr, static_cast<int>(size), 0);
   }
   return -1;
@@ -2274,7 +2283,7 @@ inline std::string SocketStream::get_remote_addr() const {
 }
 
 // Buffer stream implementation
-inline int BufferStream::read(char *ptr, size_t size) {
+inline int BufferStream::read(char *ptr, size_t size, std::chrono::milliseconds) {
 #if defined(_MSC_VER) && _MSC_VER < 1900
   return static_cast<int>(buffer._Copy_s(ptr, size, size));
 #else
@@ -2729,7 +2738,7 @@ Server::process_request(Stream &strm, bool last_connection,
   detail::stream_line_reader reader(strm, buf, bufsiz);
 
   // Connection has been closed on client
-  if (!reader.getline()) { return false; }
+  if (!reader.getline(default_read_timeout)) { return false; }
 
   Request req;
   Response res;
@@ -2739,14 +2748,14 @@ Server::process_request(Stream &strm, bool last_connection,
   // Check if the request URI doesn't exceed the limit
   if (reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
     Headers dummy;
-    detail::read_headers(strm, dummy);
+    detail::read_headers(strm, dummy, default_read_timeout);
     res.status = 414;
     return write_response(strm, last_connection, req, res);
   }
 
   // Request line and headers
   if (!parse_request_line(reader.ptr(), req) ||
-      !detail::read_headers(strm, req.headers)) {
+      !detail::read_headers(strm, req.headers, default_read_timeout)) {
     res.status = 400;
     return write_response(strm, last_connection, req, res);
   }
@@ -2849,13 +2858,13 @@ inline socket_t Client::create_client_socket() const {
       });
 }
 
-inline bool Client::read_response_line(Stream &strm, Response &res) {
+inline bool Client::read_response_line(Stream &strm, Response &res, std::chrono::milliseconds read_timeout) {
   const auto bufsiz = 2048;
   char buf[bufsiz];
 
   detail::stream_line_reader reader(strm, buf, bufsiz);
 
-  if (!reader.getline()) { return false; }
+  if (!reader.getline(std::move(read_timeout))) { return false; }
 
   const static std::regex re("(HTTP/1\\.[01]) (\\d+?) .*\r\n");
 
@@ -3047,12 +3056,13 @@ Client::send_with_content_provider(
      const std::string& body,
      size_t content_length,
      ContentProvider content_provider,
-     const char *content_type, bool compress) {
+     const char *content_type, std::chrono::milliseconds read_timeout, bool compress) {
 
   Request req;
   req.method = method;
   req.headers = headers;
   req.path = path;
+  req.read_timeout = std::move(read_timeout);
 
   req.headers.emplace("Content-Type", content_type);
 
@@ -3099,8 +3109,8 @@ inline bool Client::process_request(Stream &strm, const Request &req,
   write_request(strm, req, last_connection);
 
   // Receive response and headers
-  if (!read_response_line(strm, res) ||
-      !detail::read_headers(strm, res.headers)) {
+  if (!read_response_line(strm, res, req.read_timeout) ||
+      !detail::read_headers(strm, res.headers, req.read_timeout)) {
     return false;
   }
 
@@ -3153,73 +3163,74 @@ inline bool Client::process_and_close_socket(
 
 inline bool Client::is_ssl() const { return false; }
 
-inline std::shared_ptr<Response> Client::Get(const char *path) {
+inline std::shared_ptr<Response> Client::Get(const char *path, std::chrono::milliseconds read_timeout) {
   Progress dummy;
-  return Get(path, Headers(), dummy);
+  return Get(path, Headers(), dummy, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
-                                             Progress progress) {
-  return Get(path, Headers(), progress);
+                                             Progress progress, std::chrono::milliseconds read_timeout) {
+  return Get(path, Headers(), progress, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
-                                             const Headers &headers) {
+                                             const Headers &headers, std::chrono::milliseconds read_timeout) {
   Progress dummy;
-  return Get(path, headers, dummy);
+  return Get(path, headers, dummy, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response>
-Client::Get(const char *path, const Headers &headers, Progress progress) {
+Client::Get(const char *path, const Headers &headers, Progress progress, std::chrono::milliseconds read_timeout) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
   req.progress = progress;
+  req.read_timeout = std::move(read_timeout);
 
   auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
-                                             ContentReceiver content_receiver) {
+                                             ContentReceiver content_receiver, std::chrono::milliseconds read_timeout) {
   Progress dummy;
-  return Get(path, Headers(), nullptr, content_receiver, dummy);
+  return Get(path, Headers(), nullptr, content_receiver, dummy, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
-                                             Progress progress) {
-  return Get(path, Headers(), nullptr, content_receiver, progress);
+                                             Progress progress, std::chrono::milliseconds read_timeout) {
+  return Get(path, Headers(), nullptr, content_receiver, progress, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
-                                             ContentReceiver content_receiver) {
+                                             ContentReceiver content_receiver, std::chrono::milliseconds read_timeout) {
   Progress dummy;
-  return Get(path, headers, nullptr, content_receiver, dummy);
+  return Get(path, headers, nullptr, content_receiver, dummy, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver,
-                                             Progress progress) {
-  return Get(path, headers, nullptr, content_receiver, progress);
+                                             Progress progress, std::chrono::milliseconds read_timeout) {
+  return Get(path, headers, nullptr, content_receiver, progress, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ResponseHandler response_handler,
-                                             ContentReceiver content_receiver) {
+                                             ContentReceiver content_receiver, std::chrono::milliseconds read_timeout) {
   Progress dummy;
-  return Get(path, headers, response_handler, content_receiver, dummy);
+  return Get(path, headers, response_handler, content_receiver, dummy, std::move(read_timeout));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ResponseHandler response_handler,
                                              ContentReceiver content_receiver,
-                                             Progress progress) {
+                                             Progress progress, std::chrono::milliseconds read_timeout) {
   Request req;
   req.method = "GET";
   req.path = path;
@@ -3227,6 +3238,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
   req.response_handler = response_handler;
   req.content_receiver = content_receiver;
   req.progress = progress;
+  req.read_timeout = std::move(read_timeout);
 
   auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
@@ -3250,43 +3262,43 @@ inline std::shared_ptr<Response> Client::Head(const char *path,
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const std::string &body,
-                                              const char *content_type,
+                                              const char *content_type, std::chrono::milliseconds read_timeout,
                                               bool compress) {
-  return Post(path, Headers(), body, content_type, compress);
+  return Post(path, Headers(), body, content_type, std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers, const std::string &body,
-             const char *content_type, bool compress) {
+             const char *content_type, std::chrono::milliseconds read_timeout, bool compress) {
   return send_with_content_provider(
-     "POST", path, headers, body, 0, nullptr, content_type, compress);
+     "POST", path, headers, body, 0, nullptr, content_type, std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response>
-Client::Post(const char *path, const Params &params, bool compress) {
-  return Post(path, Headers(), params, compress);
+Client::Post(const char *path, const Params &params, std::chrono::milliseconds read_timeout, bool compress) {
+  return Post(path, Headers(), params, std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               size_t content_length,
                                               ContentProvider content_provider,
-                                              const char *content_type,
+                                              const char *content_type, std::chrono::milliseconds read_timeout,
                                               bool compress) {
-  return Post(path, Headers(), content_length, content_provider, content_type, compress);
+  return Post(path, Headers(), content_length, content_provider, content_type, std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers,
              size_t content_length,
              ContentProvider content_provider,
-             const char *content_type, bool compress) {
+             const char *content_type, std::chrono::milliseconds read_timeout, bool compress) {
   return send_with_content_provider(
-     "POST", path, headers, std::string(), content_length, content_provider, content_type, compress);
+     "POST", path, headers, std::string(), content_length, content_provider, content_type, std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const Headers &headers,
-                                              const Params &params,
+                                              const Params &params, std::chrono::milliseconds read_timeout,
                                               bool compress) {
   std::string query;
   for (auto it = params.begin(); it != params.end(); ++it) {
@@ -3296,19 +3308,19 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
     query += detail::encode_url(it->second);
   }
 
-  return Post(path, headers, query, "application/x-www-form-urlencoded",
+  return Post(path, headers, query, "application/x-www-form-urlencoded", std::move(read_timeout),
               compress);
 }
 
 inline std::shared_ptr<Response>
-Client::Post(const char *path, const MultipartFormDataItems &items,
+Client::Post(const char *path, const MultipartFormDataItems &items, std::chrono::milliseconds read_timeout,
              bool compress) {
-  return Post(path, Headers(), items, compress);
+  return Post(path, Headers(), items, std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers,
-             const MultipartFormDataItems &items, bool compress) {
+             const MultipartFormDataItems &items, std::chrono::milliseconds read_timeout, bool compress) {
   auto boundary = detail::make_multipart_data_boundary();
 
   std::string body;
@@ -3330,7 +3342,7 @@ Client::Post(const char *path, const Headers &headers,
   body += "--" + boundary + "--\r\n";
 
   std::string content_type = "multipart/form-data; boundary=" + boundary;
-  return Post(path, headers, body, content_type.c_str(), compress);
+  return Post(path, headers, body, content_type.data(), std::move(read_timeout), compress);
 }
 
 inline std::shared_ptr<Response> Client::Put(const char *path,
@@ -3344,7 +3356,7 @@ inline std::shared_ptr<Response>
 Client::Put(const char *path, const Headers &headers, const std::string &body,
             const char *content_type, bool compress) {
   return send_with_content_provider(
-     "PUT", path, headers, body, 0, nullptr, content_type, compress);
+     "PUT", path, headers, body, 0, nullptr, content_type, default_read_timeout, compress);
 }
 
 inline std::shared_ptr<Response> Client::Put(const char *path,
@@ -3361,7 +3373,7 @@ Client::Put(const char *path, const Headers &headers,
             ContentProvider content_provider,
             const char *content_type, bool compress) {
   return send_with_content_provider(
-     "PUT", path, headers, std::string(), content_length, content_provider, content_type, compress);
+     "PUT", path, headers, std::string(), content_length, content_provider, content_type, default_read_timeout, compress);
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
@@ -3375,7 +3387,7 @@ inline std::shared_ptr<Response>
 Client::Patch(const char *path, const Headers &headers, const std::string &body,
               const char *content_type, bool compress) {
   return send_with_content_provider(
-     "PATCH", path, headers, body, 0, nullptr, content_type, compress);
+     "PATCH", path, headers, body, 0, nullptr, content_type, default_read_timeout, compress);
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
@@ -3392,7 +3404,7 @@ Client::Patch(const char *path, const Headers &headers,
               ContentProvider content_provider,
               const char *content_type, bool compress) {
   return send_with_content_provider(
-     "PATCH", path, headers, std::string(), content_length, content_provider, content_type, compress);
+     "PATCH", path, headers, std::string(), content_length, content_provider, content_type, default_read_timeout, compress);
 }
 
 inline std::shared_ptr<Response> Client::Delete(const char *path) {
@@ -3585,10 +3597,10 @@ inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl)
 
 inline SSLSocketStream::~SSLSocketStream() {}
 
-inline int SSLSocketStream::read(char *ptr, size_t size) {
+inline int SSLSocketStream::read(char *ptr, size_t size, std::chrono::milliseconds read_timeout) {
   if (SSL_pending(ssl_) > 0 ||
-      detail::select_read(sock_, CPPHTTPLIB_READ_TIMEOUT_SECOND,
-                          CPPHTTPLIB_READ_TIMEOUT_USECOND) > 0) {
+      detail::select_read(sock_, std::chrono::duration_cast<std::chrono::seconds>(read_timeout).count(),
+                          std::chrono::duration_cast<std::chrono::microseconds>(read_timeout - std::chrono::duration_cast<std::chrono::seconds>(read_timeout)).count()) > 0) {
     return SSL_read(ssl_, ptr, static_cast<int>(size));
   }
   return -1;
