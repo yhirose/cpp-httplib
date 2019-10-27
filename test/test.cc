@@ -1578,7 +1578,7 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
       {"key2", "--abcdefg123", "", ""},
   };
 
-  auto res = cli_.Post("/gzipmultipart", items, true);
+  auto res = cli_.Post("/gzipmultipart", items, default_read_timeout, true);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);

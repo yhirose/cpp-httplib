@@ -253,7 +253,7 @@ struct Request {
   ResponseHandler response_handler;
   ContentReceiver content_receiver;
   Progress progress;
-  std::chrono::milliseconds read_timeout;
+  std::chrono::milliseconds read_timeout = default_read_timeout;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   const SSL *ssl;
@@ -1736,6 +1736,7 @@ inline bool redirect(T &cli, const Request &req, Response &res,
   new_req.response_handler = req.response_handler;
   new_req.content_receiver = req.content_receiver;
   new_req.progress = req.progress;
+  new_req.read_timeout = req.read_timeout;
 
   Response new_res;
   auto ret = cli.send(new_req, new_res);
