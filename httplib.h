@@ -147,6 +147,7 @@ typedef int socket_t;
 #include <thread>
 #include <chrono>
 #include <type_traits>
+#include <limits>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -1586,6 +1587,22 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
                      "chunked");
 }
 
+#if __cpp_if_constexpr
+template<typename T>
+constexpr auto get_read_timeout(T& x) {
+	if constexpr (std::is_same<T, Request>::value)
+		return x.read_timeout;
+	return default_read_timeout;
+}
+#else
+constexpr auto get_read_timeout(Request& x) {
+	return x.read_timeout;
+}
+constexpr auto get_read_timeout(Response&) {
+	return default_read_timeout;
+}
+#endif
+
 template <typename T>
 bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
                   Progress progress, ContentReceiverCore receiver) {
@@ -1618,10 +1635,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   auto ret = true;
   auto exceed_payload_max_length = false;
 
-  auto read_timeout = default_read_timeout;
-  if constexpr (std::is_same<T, Request>::value) {
-    read_timeout = x.read_timeout;
-  }
+  auto read_timeout = get_read_timeout(x);
 
   if (is_chunked_transfer_encoding(x.headers)) {
     ret = read_content_chunked(strm, out, read_timeout);
