@@ -1011,8 +1011,8 @@ inline void read_file(const std::string &path, std::string &out) {
 
 inline std::string file_extension(const std::string &path) {
   std::smatch m;
-  auto pat = std::regex("\\.([a-zA-Z0-9]+)$");
-  if (std::regex_search(path, m, pat)) { return m[1].str(); }
+  auto re = std::regex("\\.([a-zA-Z0-9]+)$");
+  if (std::regex_search(path, m, re)) { return m[1].str(); }
   return std::string();
 }
 
@@ -1898,16 +1898,16 @@ inline bool parse_multipart_formdata(const std::string &boundary,
 
 inline bool parse_range_header(const std::string &s, Ranges &ranges) {
   try {
-    static auto re = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
+    static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
     std::smatch m;
-    if (std::regex_match(s, m, re)) {
+    if (std::regex_match(s, m, re_first_range)) {
       auto pos = m.position(1);
       auto len = m.length(1);
       detail::split(&s[pos], &s[pos + len], ',',
                     [&](const char *b, const char *e) {
-                      static auto re = std::regex(R"(\s*(\d*)-(\d*))");
+                      static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
                       std::cmatch m;
-                      if (std::regex_match(b, e, m, re)) {
+                      if (std::regex_match(b, e, m, re_another_range)) {
                         ssize_t first = -1;
                         if (!m.str(1).empty()) {
                           first = static_cast<ssize_t>(std::stoll(m.str(1)));
