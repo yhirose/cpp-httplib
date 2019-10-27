@@ -1595,10 +1595,10 @@ constexpr auto get_read_timeout(T& x) {
 	return default_read_timeout;
 }
 #else
-constexpr auto get_read_timeout(Request& x) {
+constexpr std::chrono::milliseconds get_read_timeout(Request& x) {
 	return x.read_timeout;
 }
-constexpr auto get_read_timeout(Response&) {
+constexpr std::chrono::milliseconds get_read_timeout(Response&) {
 	return default_read_timeout;
 }
 #endif
