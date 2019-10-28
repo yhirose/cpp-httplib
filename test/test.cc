@@ -744,6 +744,52 @@ protected:
                 EXPECT_EQ(1u, req.get_header_value_count("Content-Length"));
                 EXPECT_EQ("5", req.get_header_value("Content-Length"));
               })
+        .Post("/content_receiver",
+              [&](const Request & req, Response &res,
+                  const ContentReader &content_reader) {
+                std::string body;
+                content_reader([&](const char *data, size_t data_length,
+                                   size_t offset,
+                                   uint64_t content_length) {
+                  EXPECT_EQ(offset, 0);
+                  if (req.get_header_value("Content-Encoding") == "gzip") {
+                    EXPECT_EQ(content_length, 0);
+                  } else {
+                    EXPECT_EQ(content_length, 7);
+                  }
+                  EXPECT_EQ(data_length, 7);
+                  body.append(data, data_length);
+                  return true;
+                });
+                EXPECT_EQ(body, "content");
+                res.set_content(body, "text/plain");
+              })
+        .Put("/content_receiver",
+             [&](const Request & /*req*/, Response &res,
+                 const ContentReader &content_reader) {
+               std::string body;
+               content_reader([&](const char *data, size_t data_length,
+                                  size_t /*offset*/,
+                                  uint64_t /*content_length*/) {
+                 body.append(data, data_length);
+                 return true;
+               });
+               EXPECT_EQ(body, "content");
+               res.set_content(body, "text/plain");
+             })
+        .Patch("/content_receiver",
+               [&](const Request & /*req*/, Response &res,
+                   const ContentReader &content_reader) {
+                 std::string body;
+                 content_reader([&](const char *data, size_t data_length,
+                                    size_t /*offset*/,
+                                    uint64_t /*content_length*/) {
+                   body.append(data, data_length);
+                   return true;
+                 });
+                 EXPECT_EQ(body, "content");
+                 res.set_content(body, "text/plain");
+               })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
         .Get("/gzip",
              [&](const Request & /*req*/, Response &res) {
@@ -1354,9 +1400,12 @@ TEST_F(ServerTest, Put) {
 }
 
 TEST_F(ServerTest, PutWithContentProvider) {
-  auto res = cli_.Put("/put", 3, [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
-    sink("PUT", 3);
-  }, "text/plain");
+  auto res = cli_.Put(
+      "/put", 3,
+      [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
+        sink("PUT", 3);
+      },
+      "text/plain");
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -1365,9 +1414,12 @@ TEST_F(ServerTest, PutWithContentProvider) {
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
-  auto res = cli_.Put("/put", 3, [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
-    sink("PUT", 3);
-  }, "text/plain", true);
+  auto res = cli_.Put(
+      "/put", 3,
+      [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
+        sink("PUT", 3);
+      },
+      "text/plain", true);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -1415,6 +1467,34 @@ TEST_F(ServerTest, NoMultipleHeaders) {
                        "text/plain");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, PostContentReceiver) {
+  auto res = cli_.Post("/content_receiver", "content", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("content", res->body);
+}
+
+TEST_F(ServerTest, PostContentReceiverGzip) {
+  auto res = cli_.Post("/content_receiver", "content", "text/plain", true);
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("content", res->body);
+}
+
+TEST_F(ServerTest, PutContentReceiver) {
+  auto res = cli_.Put("/content_receiver", "content", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("content", res->body);
+}
+
+TEST_F(ServerTest, PatchContentReceiver) {
+  auto res = cli_.Patch("/content_receiver", "content", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("content", res->body);
 }
 
 TEST_F(ServerTest, HTTP2Magic) {
@@ -1501,7 +1581,10 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   std::string body;
   auto res = cli_.Get("/gzip", headers,
                       [&](const char *data, uint64_t data_length,
-                          uint64_t /*offset*/, uint64_t /*content_length*/) {
+                          uint64_t offset, uint64_t content_length) {
+                        EXPECT_EQ(data_length, 100);
+                        EXPECT_EQ(offset, 0);
+                        EXPECT_EQ(content_length, 0);
                         body.append(data, data_length);
                         return true;
                       });
@@ -1521,7 +1604,10 @@ TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   std::string body;
   auto res = cli_.Get("/gzip", headers,
                       [&](const char *data, uint64_t data_length,
-                          uint64_t /*offset*/, uint64_t /*content_length*/) {
+                          uint64_t offset, uint64_t content_length) {
+                        EXPECT_EQ(data_length, 100);
+                        EXPECT_EQ(offset, 0);
+                        EXPECT_EQ(content_length, 100);
                         body.append(data, data_length);
                         return true;
                       });
@@ -1557,7 +1643,10 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   std::string body;
   auto res = cli_.Get("/nogzip", headers,
                       [&](const char *data, uint64_t data_length,
-                          uint64_t /*offset*/, uint64_t /*content_length*/) {
+                          uint64_t offset, uint64_t content_length) {
+                        EXPECT_EQ(data_length, 100);
+                        EXPECT_EQ(offset, 0);
+                        EXPECT_EQ(content_length, 100);
                         body.append(data, data_length);
                         return true;
                       });
