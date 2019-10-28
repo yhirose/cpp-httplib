@@ -194,7 +194,7 @@ int main(void)
   std::string body;
 
   auto res = cli.Get("/large-data",
-    [&](const char *data, uint64_t data_length, uint64_t offset, uint64_t content_length) {
+    [&](const char *data, uint64_t data_length) {
       body.append(data, data_length);
     });
 

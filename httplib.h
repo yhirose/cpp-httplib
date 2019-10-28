@@ -202,8 +202,7 @@ typedef std::function<void(size_t offset, size_t length, DataSink sink,
                            Done done)>
     ContentProviderWithCloser;
 
-typedef std::function<bool(const char *data, size_t data_length, size_t offset,
-                           uint64_t content_length)>
+typedef std::function<bool(const char *data, size_t data_length)>
     ContentReceiver;
 
 typedef std::function<bool(ContentReceiver receiver)> ContentReader;
@@ -1523,12 +1522,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   return true;
 }
 
-typedef std::function<bool(const char *data, size_t data_length)>
-    ContentReceiverCore;
-
 inline bool read_content_with_length(Stream &strm, uint64_t len,
-                                     Progress progress,
-                                     ContentReceiverCore out) {
+                                     Progress progress, ContentReceiver out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
   uint64_t r = 0;
@@ -1560,7 +1555,7 @@ inline void skip_content_with_length(Stream &strm, uint64_t len) {
   }
 }
 
-inline bool read_content_without_length(Stream &strm, ContentReceiverCore out) {
+inline bool read_content_without_length(Stream &strm, ContentReceiver out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   for (;;) {
     auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
@@ -1575,7 +1570,7 @@ inline bool read_content_without_length(Stream &strm, ContentReceiverCore out) {
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm, ContentReceiverCore out) {
+inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -1615,9 +1610,9 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
 
 template <typename T>
 bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
-                  Progress progress, ContentReceiverCore receiver) {
+                  Progress progress, ContentReceiver receiver) {
 
-  ContentReceiverCore out = [&](const char *buf, size_t n) {
+  ContentReceiver out = [&](const char *buf, size_t n) {
     return receiver(buf, n);
   };
 
@@ -2673,19 +2668,9 @@ inline bool
 Server::read_content_with_content_receiver(Stream &strm, bool last_connection,
                                            Request &req, Response &res,
                                            ContentReceiver receiver) {
-  size_t offset = 0;
-
-  size_t length = 0;
-  if (req.get_header_value("Content-Encoding") != "gzip") {
-    length = get_header_value_uint64(req.headers, "Content-Length", 0);
-  }
-
-  if (!detail::read_content(strm, req, payload_max_length_, res.status,
-                            Progress(), [&](const char *buf, size_t n) {
-                              auto ret = receiver(buf, n, offset, length);
-                              offset += n;
-                              return ret;
-                            })) {
+  if (!detail::read_content(
+          strm, req, payload_max_length_, res.status, Progress(),
+          [&](const char *buf, size_t n) { return receiver(buf, n); })) {
     return write_response(strm, last_connection, req, res);
   }
 
@@ -3253,26 +3238,15 @@ inline bool Client::process_request(Stream &strm, const Request &req,
 
   // Body
   if (req.method != "HEAD") {
-    detail::ContentReceiverCore out = [&](const char *buf, size_t n) {
+    ContentReceiver out = [&](const char *buf, size_t n) {
       if (res.body.size() + n > res.body.max_size()) { return false; }
       res.body.append(buf, n);
       return true;
     };
 
     if (req.content_receiver) {
-      auto offset = std::make_shared<size_t>();
-
-      size_t length = 0;
-      if (res.get_header_value("Content-Encoding") != "gzip") {
-        length = get_header_value_uint64(res.headers, "Content-Length", 0);
-      }
-
-      auto receiver = req.content_receiver;
-
-      out = [offset, length, receiver](const char *buf, size_t n) {
-        auto ret = receiver(buf, n, *offset, length);
-        (*offset) += n;
-        return ret;
+      out = [&](const char *buf, size_t n) {
+        return req.content_receiver(buf, n);
       };
     }
 

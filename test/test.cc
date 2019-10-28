@@ -229,7 +229,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   std::string body;
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
-              [&](const char *data, size_t data_length, uint64_t, uint64_t) {
+              [&](const char *data, size_t data_length) {
                 body.append(data, data_length);
                 return true;
               });
@@ -261,7 +261,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
         EXPECT_EQ(200, response.status);
         return true;
       },
-      [&](const char *data, size_t data_length, uint64_t, uint64_t) {
+      [&](const char *data, size_t data_length) {
         body.append(data, data_length);
         return true;
       });
@@ -745,18 +745,10 @@ protected:
                 EXPECT_EQ("5", req.get_header_value("Content-Length"));
               })
         .Post("/content_receiver",
-              [&](const Request & req, Response &res,
+              [&](const Request & /*req*/, Response &res,
                   const ContentReader &content_reader) {
                 std::string body;
-                content_reader([&](const char *data, size_t data_length,
-                                   size_t offset,
-                                   uint64_t content_length) {
-                  EXPECT_EQ(offset, 0);
-                  if (req.get_header_value("Content-Encoding") == "gzip") {
-                    EXPECT_EQ(content_length, 0);
-                  } else {
-                    EXPECT_EQ(content_length, 7);
-                  }
+                content_reader([&](const char *data, size_t data_length) {
                   EXPECT_EQ(data_length, 7);
                   body.append(data, data_length);
                   return true;
@@ -768,9 +760,7 @@ protected:
              [&](const Request & /*req*/, Response &res,
                  const ContentReader &content_reader) {
                std::string body;
-               content_reader([&](const char *data, size_t data_length,
-                                  size_t /*offset*/,
-                                  uint64_t /*content_length*/) {
+               content_reader([&](const char *data, size_t data_length) {
                  body.append(data, data_length);
                  return true;
                });
@@ -781,9 +771,7 @@ protected:
                [&](const Request & /*req*/, Response &res,
                    const ContentReader &content_reader) {
                  std::string body;
-                 content_reader([&](const char *data, size_t data_length,
-                                    size_t /*offset*/,
-                                    uint64_t /*content_length*/) {
+                 content_reader([&](const char *data, size_t data_length) {
                    body.append(data, data_length);
                    return true;
                  });
@@ -1284,10 +1272,15 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
 }
 
 TEST_F(ServerTest, GetStreamedEndless) {
+  size_t offset = 0;
   auto res = cli_.Get("/streamed-cancel",
-                      [](const char * /*data*/, uint64_t /*data_length*/,
-                         uint64_t offset,
-                         uint64_t /*content_length*/) { return offset < 100; });
+                      [&](const char * /*data*/, uint64_t data_length) {
+                        if (offset < 100) {
+                          offset += data_length;
+                          return true;
+                        }
+                        return false;
+                      });
   ASSERT_TRUE(res == nullptr);
 }
 
@@ -1579,15 +1572,12 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res = cli_.Get("/gzip", headers,
-                      [&](const char *data, uint64_t data_length,
-                          uint64_t offset, uint64_t content_length) {
-                        EXPECT_EQ(data_length, 100);
-                        EXPECT_EQ(offset, 0);
-                        EXPECT_EQ(content_length, 0);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/gzip", headers, [&](const char *data, uint64_t data_length) {
+        EXPECT_EQ(data_length, 100);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -1602,15 +1592,12 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   Headers headers;
   std::string body;
-  auto res = cli_.Get("/gzip", headers,
-                      [&](const char *data, uint64_t data_length,
-                          uint64_t offset, uint64_t content_length) {
-                        EXPECT_EQ(data_length, 100);
-                        EXPECT_EQ(offset, 0);
-                        EXPECT_EQ(content_length, 100);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/gzip", headers, [&](const char *data, uint64_t data_length) {
+        EXPECT_EQ(data_length, 100);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("", res->get_header_value("Content-Encoding"));
@@ -1641,15 +1628,12 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res = cli_.Get("/nogzip", headers,
-                      [&](const char *data, uint64_t data_length,
-                          uint64_t offset, uint64_t content_length) {
-                        EXPECT_EQ(data_length, 100);
-                        EXPECT_EQ(offset, 0);
-                        EXPECT_EQ(content_length, 100);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/nogzip", headers, [&](const char *data, uint64_t data_length) {
+        EXPECT_EQ(data_length, 100);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(false, res->has_header("Content-Encoding"));
