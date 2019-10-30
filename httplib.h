@@ -622,78 +622,127 @@ public:
   std::shared_ptr<Response> Head(const char *path, const Headers &headers);
 
   std::shared_ptr<Response> Post(const char *path, const std::string &body,
-                                 const char *content_type,
-                                 bool compress = false);
+                                 const char *content_type
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 ,bool compress = false
+                                 #endif
+                                 );
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const std::string &body,
-                                 const char *content_type,
-                                 bool compress = false);
+                                 const char *content_type
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 ,bool compress = false
+                                 #endif
+                                 );
 
   std::shared_ptr<Response> Post(const char *path, size_t content_length,
                                  ContentProvider content_provider,
-                                 const char *content_type,
-                                 bool compress = false);
+                                 const char *content_type
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 ,bool compress = false
+                                 #endif
+                                 );
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  size_t content_length,
                                  ContentProvider content_provider,
-                                 const char *content_type,
-                                 bool compress = false);
+                                 const char *content_type
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 ,bool compress = false
+                                 #endif
+                                 );
 
-  std::shared_ptr<Response> Post(const char *path, const Params &params,
-                                 bool compress = false);
+  std::shared_ptr<Response> Post(const char *path, const Params &params
+                                #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 ,bool compress = false
+                                #endif
+                                );
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const Params &params, bool compress = false);
+                                 const Params &params
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 , bool compress = false
+                                 #endif
+                                 );
 
   std::shared_ptr<Response> Post(const char *path,
-                                 const MultipartFormDataItems &items,
-                                 bool compress = false);
+                                 const MultipartFormDataItems &items
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 , bool compress = false
+                                 #endif
+                                 );
 
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const MultipartFormDataItems &items,
-                                 bool compress = false);
+                                 const MultipartFormDataItems &items
+                                 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                 ,bool compress = false
+                                 #endif
+                                 );
 
   std::shared_ptr<Response> Put(const char *path, const std::string &body,
-                                const char *content_type,
-                                bool compress = false);
+                                const char *content_type
+                                #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                , bool compress = false
+                                #endif
+                                );
 
   std::shared_ptr<Response> Put(const char *path, const Headers &headers,
                                 const std::string &body,
-                                const char *content_type,
-                                bool compress = false);
+                                const char *content_type
+                                #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                ,bool compress = false
+                                #endif
+                                );
 
   std::shared_ptr<Response> Put(const char *path, size_t content_length,
                                 ContentProvider content_provider,
-                                const char *content_type,
-                                bool compress = false);
+                                const char *content_type
+                                #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                ,bool compress = false
+                                #endif
+                                );
 
   std::shared_ptr<Response> Put(const char *path, const Headers &headers,
                                 size_t content_length,
                                 ContentProvider content_provider,
-                                const char *content_type,
-                                bool compress = false);
+                                const char *content_type
+                                #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                , bool compress = false
+                                #endif
+                                );
 
   std::shared_ptr<Response> Patch(const char *path, const std::string &body,
-                                  const char *content_type,
-                                  bool compress = false);
+                                  const char *content_type
+                                  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                  ,bool compress = false
+                                  #endif
+                                  );
 
   std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
                                   const std::string &body,
-                                  const char *content_type,
-                                  bool compress = false);
+                                  const char *content_type
+                                  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                  ,bool compress = false
+                                  #endif
+                                  );
 
   std::shared_ptr<Response> Patch(const char *path, size_t content_length,
                                   ContentProvider content_provider,
-                                  const char *content_type,
-                                  bool compress = false);
+                                  const char *content_type
+                                  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                  ,bool compress = false
+                                  #endif
+                                  );
 
   std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
                                   size_t content_length,
                                   ContentProvider content_provider,
-                                  const char *content_type,
-                                  bool compress = false);
+                                  const char *content_type
+                                  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                  ,bool compress = false
+                                  #endif
+                                  );
 
   std::shared_ptr<Response> Delete(const char *path);
 
@@ -744,7 +793,11 @@ private:
                              const Headers &headers, const std::string &body,
                              size_t content_length,
                              ContentProvider content_provider,
-                             const char *content_type, bool compress);
+                             const char *content_type
+                             #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                             , bool compress
+                             #endif
+                             );
 
   virtual bool process_and_close_socket(
       socket_t sock, size_t request_count,
@@ -3173,7 +3226,11 @@ inline void Client::write_request(Stream &strm, const Request &req,
 inline std::shared_ptr<Response> Client::send_with_content_provider(
     const char *method, const char *path, const Headers &headers,
     const std::string &body, size_t content_length,
-    ContentProvider content_provider, const char *content_type, bool compress) {
+    ContentProvider content_provider, const char *content_type
+    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    , bool compress
+    #endif
+    ) {
 
   Request req;
   req.method = method;
@@ -3370,45 +3427,84 @@ inline std::shared_ptr<Response> Client::Head(const char *path,
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const std::string &body,
-                                              const char *content_type,
-                                              bool compress) {
-  return Post(path, Headers(), body, content_type, compress);
+                                              const char *content_type
+                                              #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                              , bool compress
+                                              #endif
+                                              ) {
+  return Post(path, Headers(), body, content_type
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  , compress
+  #endif
+  );
 }
 
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers, const std::string &body,
-             const char *content_type, bool compress) {
+             const char *content_type
+             #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+             , bool compress
+             #endif
+             ) {
   return send_with_content_provider("POST", path, headers, body, 0, nullptr,
-                                    content_type, compress);
+                                    content_type
+                                    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                    , compress
+                                    #endif
+                                    );
 }
 
 inline std::shared_ptr<Response>
-Client::Post(const char *path, const Params &params, bool compress) {
-  return Post(path, Headers(), params, compress);
+Client::Post(const char *path, const Params &params
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+, bool compress
+#endif
+) {
+  return Post(path, Headers(), params
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  , compress
+  #endif
+  );
 }
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               size_t content_length,
                                               ContentProvider content_provider,
-                                              const char *content_type,
-                                              bool compress) {
-  return Post(path, Headers(), content_length, content_provider, content_type,
-              compress);
+                                              const char *content_type
+                                              #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                              ,bool compress
+                                              #endif
+                                              ) {
+  return Post(path, Headers(), content_length, content_provider, content_type
+            #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+              ,compress
+            #endif
+            );
 }
 
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers, size_t content_length,
-             ContentProvider content_provider, const char *content_type,
-             bool compress) {
+             ContentProvider content_provider, const char *content_type
+             #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+             ,bool compress
+             #endif
+             ) {
   return send_with_content_provider("POST", path, headers, std::string(),
                                     content_length, content_provider,
-                                    content_type, compress);
+                                    content_type
+                                    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                    , compress
+                                    #endif
+                                    );
 }
 
 inline std::shared_ptr<Response> Client::Post(const char *path,
                                               const Headers &headers,
-                                              const Params &params,
-                                              bool compress) {
+                                              const Params &params
+                                              #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                              , bool compress
+                                              #endif
+                                              ) {
   std::string query;
   for (auto it = params.begin(); it != params.end(); ++it) {
     if (it != params.begin()) { query += "&"; }
@@ -3417,19 +3513,33 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
     query += detail::encode_url(it->second);
   }
 
-  return Post(path, headers, query, "application/x-www-form-urlencoded",
-              compress);
+  return Post(path, headers, query, "application/x-www-form-urlencoded"
+            #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+              ,compress
+            #endif
+            );
 }
 
 inline std::shared_ptr<Response>
-Client::Post(const char *path, const MultipartFormDataItems &items,
-             bool compress) {
-  return Post(path, Headers(), items, compress);
+Client::Post(const char *path, const MultipartFormDataItems &items
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+             ,bool compress
+#endif
+) {
+  return Post(path, Headers(), items
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  , compress
+  #endif
+  );
 }
 
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers,
-             const MultipartFormDataItems &items, bool compress) {
+             const MultipartFormDataItems &items
+             #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+             , bool compress
+             #endif
+             ) {
   auto boundary = detail::make_multipart_data_boundary();
 
   std::string body;
@@ -3451,71 +3561,131 @@ Client::Post(const char *path, const Headers &headers,
   body += "--" + boundary + "--\r\n";
 
   std::string content_type = "multipart/form-data; boundary=" + boundary;
-  return Post(path, headers, body, content_type.c_str(), compress);
+  return Post(path, headers, body, content_type.c_str()
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  , compress
+  #endif
+  );
 }
 
 inline std::shared_ptr<Response> Client::Put(const char *path,
                                              const std::string &body,
-                                             const char *content_type,
-                                             bool compress) {
-  return Put(path, Headers(), body, content_type, compress);
+                                             const char *content_type
+                                             #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                             ,bool compress
+                                             #endif
+                                             ) {
+  return Put(path, Headers(), body, content_type
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  , compress
+  #endif
+  );
 }
 
 inline std::shared_ptr<Response>
 Client::Put(const char *path, const Headers &headers, const std::string &body,
-            const char *content_type, bool compress) {
+            const char *content_type
+            #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+            , bool compress
+            #endif
+            ) {
   return send_with_content_provider("PUT", path, headers, body, 0, nullptr,
-                                    content_type, compress);
+                                    content_type
+                                    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                    , compress
+                                    #endif
+                                    );
 }
 
 inline std::shared_ptr<Response> Client::Put(const char *path,
                                              size_t content_length,
                                              ContentProvider content_provider,
-                                             const char *content_type,
-                                             bool compress) {
-  return Put(path, Headers(), content_length, content_provider, content_type,
-             compress);
+                                             const char *content_type
+                                             #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                             ,bool compress
+                                             #endif
+                                             ) {
+  return Put(path, Headers(), content_length, content_provider, content_type
+            #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+            , compress
+            #endif
+            );
 }
 
 inline std::shared_ptr<Response>
 Client::Put(const char *path, const Headers &headers, size_t content_length,
-            ContentProvider content_provider, const char *content_type,
-            bool compress) {
+            ContentProvider content_provider, const char *content_type
+            #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+            , bool compress
+            #endif
+            ) {
   return send_with_content_provider("PUT", path, headers, std::string(),
                                     content_length, content_provider,
-                                    content_type, compress);
+                                    content_type
+                                    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                    , compress
+                                    #endif
+                                    );
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
                                                const std::string &body,
-                                               const char *content_type,
-                                               bool compress) {
-  return Patch(path, Headers(), body, content_type, compress);
+                                               const char *content_type
+                                               #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                               ,bool compress
+                                               #endif
+                                               ) {
+  return Patch(path, Headers(), body, content_type
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  , compress
+  #endif
+  );
 }
 
 inline std::shared_ptr<Response>
 Client::Patch(const char *path, const Headers &headers, const std::string &body,
-              const char *content_type, bool compress) {
+              const char *content_type
+              #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+              , bool compress
+              #endif
+              ) {
   return send_with_content_provider("PATCH", path, headers, body, 0, nullptr,
-                                    content_type, compress);
+                                    content_type
+                                    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                    , compress
+                                    #endif
+                                    );
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
                                                size_t content_length,
                                                ContentProvider content_provider,
-                                               const char *content_type,
-                                               bool compress) {
-  return Patch(path, Headers(), content_length, content_provider, content_type,
-               compress);
+                                               const char *content_type
+                                               #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                               ,bool compress
+                                               #endif
+                                               ) {
+  return Patch(path, Headers(), content_length, content_provider, content_type
+  #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+               , compress
+ #endif
+               );
 }
 
 inline std::shared_ptr<Response>
 Client::Patch(const char *path, const Headers &headers, size_t content_length,
-              ContentProvider content_provider, const char *content_type,
-              bool compress) {
+              ContentProvider content_provider, const char *content_type
+              #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+              , bool compress
+              #endif
+              ) {
   return send_with_content_provider("PATCH", path, headers, std::string(),
                                     content_length, content_provider,
-                                    content_type, compress);
+                                    content_type
+                                    #ifdef CPPHTTPLIB_ZLIB_SUPPORT
+                                    , compress
+                                    #endif
+                                    );
 }
 
 inline std::shared_ptr<Response> Client::Delete(const char *path) {
