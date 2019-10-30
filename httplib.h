@@ -3174,6 +3174,9 @@ inline std::shared_ptr<Response> Client::send_with_content_provider(
     const char *method, const char *path, const Headers &headers,
     const std::string &body, size_t content_length,
     ContentProvider content_provider, const char *content_type, bool compress) {
+#ifndef CPPHTTPLIB_ZLIB_SUPPORT
+  (void)compress;
+#endif
 
   Request req;
   req.method = method;
