@@ -473,11 +473,10 @@ private:
 
 class Server {
 public:
-  typedef std::function<void(const Request &, Response &)> Handler;
-  typedef std::function<void(const Request &, Response &,
-                             const ContentReader &content_reader)>
-      HandlerWithContentReader;
-  typedef std::function<void(const Request &, const Response &)> Logger;
+  using Handler = std::function<void(const Request &, Response &)>;
+  using HandlerWithContentReader = std::function<void(const Request &, Response &,
+                             const ContentReader &content_reader)>;
+  using Logger = std::function<void(const Request &, const Response &)>;
 
   Server();
 
@@ -576,7 +575,7 @@ private:
 
 class Client {
 public:
-  Client(const char *host, int port = 80, time_t timeout_sec = 300);
+  explicit Client(const char *host, int port = 80, time_t timeout_sec = 300);
 
   virtual ~Client();
 
