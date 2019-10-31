@@ -311,7 +311,7 @@ struct Response {
 
 class Stream {
 public:
-  virtual ~Stream() {}
+  virtual ~Stream() = default;
   virtual int read(char *ptr, size_t size) = 0;
   virtual int write(const char *ptr, size_t size1) = 0;
   virtual int write(const char *ptr) = 0;
@@ -326,7 +326,7 @@ class SocketStream : public Stream {
 public:
   SocketStream(socket_t sock, time_t read_timeout_sec,
                time_t read_timeout_usec);
-  virtual ~SocketStream();
+  ~SocketStream() override;
 
   int read(char *ptr, size_t size) override;
   int write(const char *ptr, size_t size) override;
@@ -342,8 +342,8 @@ private:
 
 class BufferStream : public Stream {
 public:
-  BufferStream() {}
-  virtual ~BufferStream() {}
+  BufferStream() = default;
+  ~BufferStream() override = default;
 
   int read(char *ptr, size_t size) override;
   int write(const char *ptr, size_t size) override;
@@ -359,8 +359,8 @@ private:
 
 class TaskQueue {
 public:
-  TaskQueue() {}
-  virtual ~TaskQueue() {}
+  TaskQueue() = default;
+  virtual ~TaskQueue() = default;
   virtual void enqueue(std::function<void()> fn) = 0;
   virtual void shutdown() = 0;
 };
@@ -368,7 +368,7 @@ public:
 #if CPPHTTPLIB_THREAD_POOL_COUNT > 0
 class ThreadPool : public TaskQueue {
 public:
-  ThreadPool(size_t n) : shutdown_(false) {
+  explicit ThreadPool(size_t n) : shutdown_(false) {
     while (n) {
       auto t = std::make_shared<std::thread>(worker(*this));
       threads_.push_back(t);
@@ -377,15 +377,15 @@ public:
   }
 
   ThreadPool(const ThreadPool &) = delete;
-  virtual ~ThreadPool() {}
+  ~ThreadPool() override = default;
 
-  virtual void enqueue(std::function<void()> fn) override {
+  void enqueue(std::function<void()> fn) override {
     std::unique_lock<std::mutex> lock(mutex_);
     jobs_.push_back(fn);
     cond_.notify_one();
   }
 
-  virtual void shutdown() override {
+  void shutdown() override {
     // Stop all worker threads...
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -402,7 +402,7 @@ public:
 
 private:
   struct worker {
-    worker(ThreadPool &pool) : pool_(pool) {}
+    explicit worker(ThreadPool &pool) : pool_(pool) {}
 
     void operator()() {
       for (;;) {
