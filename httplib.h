@@ -370,8 +370,7 @@ class ThreadPool : public TaskQueue {
 public:
   explicit ThreadPool(size_t n) : shutdown_(false) {
     while (n) {
-      auto t = std::make_shared<std::thread>(worker(*this));
-      threads_.push_back(t);
+      threads_.emplace_back(worker(*this));
       n--;
     }
   }
@@ -395,8 +394,8 @@ public:
     cond_.notify_all();
 
     // Join...
-    for (auto t : threads_) {
-      t->join();
+    for (auto& t : threads_) {
+      t.join();
     }
   }
 
@@ -428,7 +427,7 @@ private:
   };
   friend struct worker;
 
-  std::vector<std::shared_ptr<std::thread>> threads_;
+  std::vector<std::thread> threads_;
   std::list<std::function<void()>> jobs_;
 
   bool shutdown_;
