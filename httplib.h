@@ -120,7 +120,7 @@ typedef SOCKET socket_t;
 #include <poll.h>
 #endif
 #include <pthread.h>
-#include <signal.h>
+#include <csignal>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -129,7 +129,7 @@ typedef int socket_t;
 #define INVALID_SOCKET (-1)
 #endif //_WIN32
 
-#include <assert.h>
+#include <cassert>
 #include <atomic>
 #include <condition_variable>
 #include <errno.h>
@@ -145,6 +145,7 @@ typedef int socket_t;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <array>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -186,31 +187,27 @@ struct ci {
 
 enum class HttpVersion { v1_0 = 0, v1_1 };
 
-typedef std::multimap<std::string, std::string, detail::ci> Headers;
+using Headers = std::multimap<std::string, std::string, detail::ci>;
 
-typedef std::multimap<std::string, std::string> Params;
-typedef std::smatch Match;
+using Params = std::multimap<std::string, std::string>;
+using Match = std::smatch;
 
-typedef std::function<void(const char *data, size_t data_len)> DataSink;
+using DataSink = std::function<void(const char *data, size_t data_len)>;
 
-typedef std::function<void()> Done;
+using Done = std::function<void()>;
 
-typedef std::function<void(size_t offset, size_t length, DataSink sink)>
-    ContentProvider;
+using ContentProvider = std::function<void(size_t offset, size_t length, DataSink sink)>;
 
-typedef std::function<void(size_t offset, size_t length, DataSink sink,
-                           Done done)>
-    ContentProviderWithCloser;
+using ContentProviderWithCloser = std::function<void(size_t offset, size_t length, DataSink sink, Done done)>;
 
-typedef std::function<bool(const char *data, size_t data_length)>
-    ContentReceiver;
+using ContentReceiver = std::function<bool(const char *data, size_t data_length)>;
 
-typedef std::function<bool(ContentReceiver receiver)> ContentReader;
+using ContentReader = std::function<bool(ContentReceiver receiver)>;
 
-typedef std::function<bool(uint64_t current, uint64_t total)> Progress;
+using Progress = std::function<bool(uint64_t current, uint64_t total)>;
 
 struct Response;
-typedef std::function<bool(const Response &response)> ResponseHandler;
+using ResponseHandler = std::function<bool(const Response &response)>;
 
 struct MultipartFile {
   std::string filename;
@@ -218,7 +215,7 @@ struct MultipartFile {
   size_t offset = 0;
   size_t length = 0;
 };
-typedef std::multimap<std::string, MultipartFile> MultipartFiles;
+using MultipartFiles = std::multimap<std::string, MultipartFile>;
 
 struct MultipartFormData {
   std::string name;
@@ -226,10 +223,10 @@ struct MultipartFormData {
   std::string filename;
   std::string content_type;
 };
-typedef std::vector<MultipartFormData> MultipartFormDataItems;
+using MultipartFormDataItems = std::vector<MultipartFormData>;
 
-typedef std::pair<ssize_t, ssize_t> Range;
-typedef std::vector<Range> Ranges;
+using Range = std::pair<ssize_t, ssize_t>;
+using Ranges = std::vector<Range>;
 
 struct Request {
   std::string method;
@@ -285,7 +282,7 @@ struct Response {
   void set_header(const char *key, const char *val);
   void set_header(const char *key, const std::string &val);
 
-  void set_redirect(const char *uri);
+  void set_redirect(const char *url);
   void set_content(const char *s, size_t n, const char *content_type);
   void set_content(const std::string &s, const char *content_type);
 
@@ -314,7 +311,7 @@ struct Response {
 
 class Stream {
 public:
-  virtual ~Stream() {}
+  virtual ~Stream() = default;
   virtual int read(char *ptr, size_t size) = 0;
   virtual int write(const char *ptr, size_t size1) = 0;
   virtual int write(const char *ptr) = 0;
@@ -329,13 +326,13 @@ class SocketStream : public Stream {
 public:
   SocketStream(socket_t sock, time_t read_timeout_sec,
                time_t read_timeout_usec);
-  virtual ~SocketStream();
+  ~SocketStream() override;
 
-  virtual int read(char *ptr, size_t size);
-  virtual int write(const char *ptr, size_t size);
-  virtual int write(const char *ptr);
-  virtual int write(const std::string &s);
-  virtual std::string get_remote_addr() const;
+  int read(char *ptr, size_t size) override;
+  int write(const char *ptr, size_t size) override;
+  int write(const char *ptr) override;
+  int write(const std::string &s) override;
+  std::string get_remote_addr() const override;
 
 private:
   socket_t sock_;
@@ -345,14 +342,14 @@ private:
 
 class BufferStream : public Stream {
 public:
-  BufferStream() {}
-  virtual ~BufferStream() {}
+  BufferStream() = default;
+  ~BufferStream() override = default;
 
-  virtual int read(char *ptr, size_t size);
-  virtual int write(const char *ptr, size_t size);
-  virtual int write(const char *ptr);
-  virtual int write(const std::string &s);
-  virtual std::string get_remote_addr() const;
+  int read(char *ptr, size_t size) override;
+  int write(const char *ptr, size_t size) override;
+  int write(const char *ptr) override;
+  int write(const std::string &s) override;
+  std::string get_remote_addr() const override;
 
   const std::string &get_buffer() const;
 
@@ -362,8 +359,8 @@ private:
 
 class TaskQueue {
 public:
-  TaskQueue() {}
-  virtual ~TaskQueue() {}
+  TaskQueue() = default;
+  virtual ~TaskQueue() = default;
   virtual void enqueue(std::function<void()> fn) = 0;
   virtual void shutdown() = 0;
 };
@@ -371,24 +368,23 @@ public:
 #if CPPHTTPLIB_THREAD_POOL_COUNT > 0
 class ThreadPool : public TaskQueue {
 public:
-  ThreadPool(size_t n) : shutdown_(false) {
+  explicit ThreadPool(size_t n) : shutdown_(false) {
     while (n) {
-      auto t = std::make_shared<std::thread>(worker(*this));
-      threads_.push_back(t);
+      threads_.emplace_back(worker(*this));
       n--;
     }
   }
 
   ThreadPool(const ThreadPool &) = delete;
-  virtual ~ThreadPool() {}
+  ~ThreadPool() override = default;
 
-  virtual void enqueue(std::function<void()> fn) override {
+  void enqueue(std::function<void()> fn) override {
     std::unique_lock<std::mutex> lock(mutex_);
     jobs_.push_back(fn);
     cond_.notify_one();
   }
 
-  virtual void shutdown() override {
+  void shutdown() override {
     // Stop all worker threads...
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -398,14 +394,14 @@ public:
     cond_.notify_all();
 
     // Join...
-    for (auto t : threads_) {
-      t->join();
+    for (auto& t : threads_) {
+      t.join();
     }
   }
 
 private:
   struct worker {
-    worker(ThreadPool &pool) : pool_(pool) {}
+    explicit worker(ThreadPool &pool) : pool_(pool) {}
 
     void operator()() {
       for (;;) {
@@ -431,7 +427,7 @@ private:
   };
   friend struct worker;
 
-  std::vector<std::shared_ptr<std::thread>> threads_;
+  std::vector<std::thread> threads_;
   std::list<std::function<void()>> jobs_;
 
   bool shutdown_;
@@ -477,11 +473,10 @@ private:
 
 class Server {
 public:
-  typedef std::function<void(const Request &, Response &)> Handler;
-  typedef std::function<void(const Request &, Response &,
-                             const ContentReader &content_reader)>
-      HandlerWithContentReader;
-  typedef std::function<void(const Request &, const Response &)> Logger;
+  using Handler = std::function<void(const Request &, Response &)>;
+  using HandlerWithContentReader = std::function<void(const Request &, Response &,
+                             const ContentReader &content_reader)>;
+  using Logger = std::function<void(const Request &, const Response &)>;
 
   Server();
 
@@ -523,7 +518,7 @@ public:
 protected:
   bool process_request(Stream &strm, bool last_connection,
                        bool &connection_close,
-                       std::function<void(Request &)> setup_request);
+                       const std::function<void(Request &)>& setup_request);
 
   size_t keep_alive_max_count_;
   time_t read_timeout_sec_;
@@ -580,7 +575,7 @@ private:
 
 class Client {
 public:
-  Client(const char *host, int port = 80, time_t timeout_sec = 300);
+  explicit Client(const char *host, int port = 80, time_t timeout_sec = 300);
 
   virtual ~Client();
 
@@ -1117,7 +1112,7 @@ private:
   Stream &strm_;
   char *fixed_buffer_;
   const size_t fixed_buffer_size_;
-  size_t fixed_buffer_used_size_;
+  size_t fixed_buffer_used_size_ = 0;
   std::string glowable_buffer_;
 };
 
@@ -1184,7 +1179,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
       (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
     socklen_t len = sizeof(error);
-    return getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len) >= 0 &&
+    return getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &len) >= 0 &&
            !error;
   }
   return false;
@@ -1321,11 +1316,11 @@ inline std::string get_remote_addr(socket_t sock) {
   socklen_t len = sizeof(addr);
 
   if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr), &len)) {
-    char ipstr[NI_MAXHOST];
+    std::array<char, NI_MAXHOST> ipstr{};
 
-    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr,
-                     sizeof(ipstr), nullptr, 0, NI_NUMERICHOST)) {
-      return ipstr;
+    if (!getnameinfo(reinterpret_cast<struct sockaddr *>(&addr), len, ipstr.data(), ipstr.size(),
+                     nullptr, 0, NI_NUMERICHOST)) {
+      return ipstr.data();
     }
   }
 
@@ -1410,14 +1405,13 @@ inline bool compress(std::string &content) {
 
   std::string compressed;
 
-  const auto bufsiz = 16384;
-  char buff[bufsiz];
+  std::array<char, 16384> buff{};
   do {
-    strm.avail_out = bufsiz;
-    strm.next_out = reinterpret_cast<Bytef *>(buff);
+    strm.avail_out = buff.size();
+    strm.next_out = reinterpret_cast<Bytef*>(buff.data());
     ret = deflate(&strm, Z_FINISH);
     assert(ret != Z_STREAM_ERROR);
-    compressed.append(buff, bufsiz - strm.avail_out);
+    compressed.append(buff.data(), buff.size() - strm.avail_out);
   } while (strm.avail_out == 0);
 
   assert(ret == Z_STREAM_END);
@@ -1453,11 +1447,10 @@ public:
     strm.avail_in = data_length;
     strm.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
-    const auto bufsiz = 16384;
-    char buff[bufsiz];
+    std::array<char, 16384> buff{};
     do {
-      strm.avail_out = bufsiz;
-      strm.next_out = reinterpret_cast<Bytef *>(buff);
+      strm.avail_out = buff.size();
+      strm.next_out = reinterpret_cast<Bytef*>(buff.data());
 
       ret = inflate(&strm, Z_NO_FLUSH);
       assert(ret != Z_STREAM_ERROR);
@@ -1467,7 +1460,7 @@ public:
       case Z_MEM_ERROR: inflateEnd(&strm); return false;
       }
 
-      if (!callback(buff, bufsiz - strm.avail_out)) { return false; }
+      if (!callback(buff.data(), buff.size() - strm.avail_out)) { return false; }
     } while (strm.avail_out == 0);
 
     return ret == Z_STREAM_END;
@@ -2245,18 +2238,17 @@ inline void Response::set_chunked_content_provider(
 // Rstream implementation
 template <typename... Args>
 inline int Stream::write_format(const char *fmt, const Args &... args) {
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
+  std::array<char, 2048> buf;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  auto n = _snprintf_s(buf, bufsiz, bufsiz - 1, fmt, args...);
+  auto n = _snprintf_s(buf, bufsiz, buf.size() - 1, fmt, args...);
 #else
-  auto n = snprintf(buf, bufsiz - 1, fmt, args...);
+  auto n = snprintf(buf.data(), buf.size() - 1, fmt, args...);
 #endif
   if (n <= 0) { return n; }
 
-  if (n >= bufsiz - 1) {
-    std::vector<char> glowable_buf(bufsiz);
+  if (n >= static_cast<int>(buf.size()) - 1) {
+    std::vector<char> glowable_buf(buf.size());
 
     while (n >= static_cast<int>(glowable_buf.size() - 1)) {
       glowable_buf.resize(glowable_buf.size() * 2);
@@ -2269,7 +2261,7 @@ inline int Stream::write_format(const char *fmt, const Args &... args) {
     }
     return write(&glowable_buf[0], n);
   } else {
-    return write(buf, n);
+    return write(buf.data(), n);
   }
 }
 
@@ -2411,14 +2403,14 @@ inline bool Server::set_base_dir(const char *path) {
 }
 
 inline void Server::set_file_request_handler(Handler handler) {
-  file_request_handler_ = handler;
+  file_request_handler_ = std::move(handler);
 }
 
 inline void Server::set_error_handler(Handler handler) {
-  error_handler_ = handler;
+  error_handler_ = std::move(handler);
 }
 
-inline void Server::set_logger(Logger logger) { logger_ = logger; }
+inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
 
 inline void Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
@@ -2728,8 +2720,7 @@ inline int Server::bind_internal(const char *host, int port, int socket_flags) {
     if (address.ss_family == AF_INET) {
       return ntohs(reinterpret_cast<struct sockaddr_in *>(&address)->sin_port);
     } else if (address.ss_family == AF_INET6) {
-      return ntohs(
-          reinterpret_cast<struct sockaddr_in6 *>(&address)->sin6_port);
+      return ntohs(reinterpret_cast<struct sockaddr_in6 *>(&address)->sin6_port);
     } else {
       return -1;
     }
@@ -2863,11 +2854,10 @@ Server::dispatch_request_for_content_reader(Request &req, Response &res,
 inline bool
 Server::process_request(Stream &strm, bool last_connection,
                         bool &connection_close,
-                        std::function<void(Request &)> setup_request) {
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
+                        const std::function<void(Request &)>& setup_request) {
+  std::array<char, 2048> buf{};
 
-  detail::stream_line_reader line_reader(strm, buf, bufsiz);
+  detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
 
   // Connection has been closed on client
   if (!line_reader.getline()) { return false; }
@@ -2981,10 +2971,9 @@ inline socket_t Client::create_client_socket() const {
 }
 
 inline bool Client::read_response_line(Stream &strm, Response &res) {
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
+  std::array<char, 2048> buf;
 
-  detail::stream_line_reader line_reader(strm, buf, bufsiz);
+  detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
 
   if (!line_reader.getline()) { return false; }
 
@@ -3283,7 +3272,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path) {
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              Progress progress) {
-  return Get(path, Headers(), progress);
+  return Get(path, Headers(), std::move(progress));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3298,7 +3287,7 @@ Client::Get(const char *path, const Headers &headers, Progress progress) {
   req.method = "GET";
   req.path = path;
   req.headers = headers;
-  req.progress = progress;
+  req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
@@ -3307,27 +3296,27 @@ Client::Get(const char *path, const Headers &headers, Progress progress) {
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, Headers(), nullptr, content_receiver, dummy);
+  return Get(path, Headers(), nullptr, std::move(content_receiver), dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, Headers(), nullptr, content_receiver, progress);
+  return Get(path, Headers(), nullptr, std::move(content_receiver), progress);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, headers, nullptr, content_receiver, dummy);
+  return Get(path, headers, nullptr, std::move(content_receiver), dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, headers, nullptr, content_receiver, progress);
+  return Get(path, headers, nullptr, std::move(content_receiver), progress);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3335,7 +3324,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ResponseHandler response_handler,
                                              ContentReceiver content_receiver) {
   Progress dummy;
-  return Get(path, headers, response_handler, content_receiver, dummy);
+  return Get(path, headers, std::move(response_handler), content_receiver, dummy);
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3347,9 +3336,9 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
   req.method = "GET";
   req.path = path;
   req.headers = headers;
-  req.response_handler = response_handler;
-  req.content_receiver = content_receiver;
-  req.progress = progress;
+  req.response_handler = std::move(response_handler);
+  req.content_receiver = std::move(content_receiver);
+  req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
