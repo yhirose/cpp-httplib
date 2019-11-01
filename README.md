@@ -196,6 +196,7 @@ int main(void)
   auto res = cli.Get("/large-data",
     [&](const char *data, uint64_t data_length) {
       body.append(data, data_length);
+      return true;
     });
 
   assert(res->body.empty());
