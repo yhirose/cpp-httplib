@@ -1838,7 +1838,7 @@ inline bool parse_multipart_formdata(const std::string &boundary,
   static std::string dash = "--";
   static std::string crlf = "\r\n";
 
-  static std::regex re_content_type("Content-Type: (.*?)",
+  static std::regex re_content_type("Content-Type: (.*?)$",
                                     std::regex_constants::icase);
 
   static std::regex re_content_disposition(
