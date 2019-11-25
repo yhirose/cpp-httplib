@@ -435,7 +435,7 @@ private:
   std::condition_variable cond_;
   std::mutex mutex_;
 };
-#else
+#elif CPPHTTPLIB_THREAD_POOL_COUNT == 0
 class Threads : public TaskQueue {
 public:
   Threads() : running_threads_(0) {}
@@ -468,6 +468,19 @@ public:
 private:
   std::mutex running_threads_mutex_;
   int running_threads_;
+};
+#else
+class NoThread : public TaskQueue {
+public:
+  NoThread() {}
+  virtual ~NoThread() {}
+
+  virtual void enqueue(std::function<void()> fn) override {
+    fn();
+  }
+
+  virtual void shutdown() override {
+  }
 };
 #endif
 
@@ -2335,8 +2348,10 @@ inline Server::Server()
   new_task_queue = [] {
 #if CPPHTTPLIB_THREAD_POOL_COUNT > 0
     return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT);
-#else
+#elif CPPHTTPLIB_THREAD_POOL_COUNT == 0
     return new Threads();
+#else
+    return new NoThread();
 #endif
   };
 }
