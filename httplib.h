@@ -2468,7 +2468,7 @@ inline void Server::stop() {
 inline bool Server::parse_request_line(const char *s, Request &req) {
   static std::regex re(
       "(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
-      "(([^?]+)(?:\\?(.+?))?) (HTTP/1\\.[01])\r\n");
+      "(([^?]+)(?:\\?(.*?))?) (HTTP/1\\.[01])\r\n");
 
   std::cmatch m;
   if (std::regex_match(s, m, re)) {
