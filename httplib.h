@@ -1475,7 +1475,7 @@ public:
       if (!callback(buff.data(), buff.size() - strm.avail_out)) { return false; }
     } while (strm.avail_out == 0);
 
-    return ret == Z_STREAM_END;
+    return ret == Z_OK || ret == Z_STREAM_END;
   }
 
 private:

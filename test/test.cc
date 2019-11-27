@@ -28,6 +28,8 @@ const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
 
 const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
+const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
+
 #ifdef _WIN32
 TEST(StartupTest, WSAStartup) {
   WSADATA wsaData;
@@ -706,6 +708,11 @@ protected:
         .Put("/put",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "PUT");
+               res.set_content(req.body, "text/plain");
+             })
+        .Put("/put-large",
+             [&](const Request &req, Response &res) {
+               EXPECT_EQ(req.body, LARGE_DATA);
                res.set_content(req.body, "text/plain");
              })
         .Patch("/patch",
@@ -1417,6 +1424,14 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, PutLargeFileWithGzip) {
+  auto res = cli_.Put("/put-large", LARGE_DATA, "text/plain", true);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(LARGE_DATA, res->body);
 }
 #endif
 
