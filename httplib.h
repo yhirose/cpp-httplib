@@ -67,9 +67,9 @@
 
 #if defined(_MSC_VER)
 #ifdef _WIN64
-typedef __int64 ssize_t;
+using ssize_t = __int64;
 #else
-typedef int ssize_t;
+using ssize_t = int;
 #endif
 
 #if _MSC_VER < 1900
@@ -105,7 +105,7 @@ typedef int ssize_t;
 #define strcasecmp _stricmp
 #endif // strcasecmp
 
-typedef SOCKET socket_t;
+using socket_t = SOCKET;
 #ifdef CPPHTTPLIB_USE_POLL
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 #endif
@@ -125,7 +125,7 @@ typedef SOCKET socket_t;
 #include <sys/socket.h>
 #include <unistd.h>
 
-typedef int socket_t;
+using socket_t = int;
 #define INVALID_SOCKET (-1)
 #endif //_WIN32
 
@@ -539,9 +539,8 @@ protected:
   size_t payload_max_length_;
 
 private:
-  typedef std::vector<std::pair<std::regex, Handler>> Handlers;
-  typedef std::vector<std::pair<std::regex, HandlerWithContentReader>>
-      HandersForContentReader;
+  using Handlers = std::vector<std::pair<std::regex, Handler>>;
+  using HandersForContentReader = std::vector<std::pair<std::regex, HandlerWithContentReader>>;
 
   socket_t create_server_socket(const char *host, int port,
                                 int socket_flags) const;
