@@ -547,7 +547,7 @@ private:
   int bind_internal(const char *host, int port, int socket_flags);
   bool listen_internal();
 
-  bool routing(Request &req, Response &res, ContentReader content_reader);
+  bool routing(Request &req, Response &res, Stream &strm, bool last_connection);
   bool handle_file_request(Request &req, Response &res);
   bool dispatch_request(Request &req, Response &res, Handlers &handlers);
   bool dispatch_request_for_content_reader(Request &req, Response &res,
@@ -2790,31 +2790,38 @@ inline bool Server::listen_internal() {
   return ret;
 }
 
-inline bool Server::routing(Request &req, Response &res,
-                            ContentReader content_reader) {
+inline bool Server::routing(Request &req, Response &res, Stream &strm, bool last_connection) {
   // File handler
   if (req.method == "GET" && handle_file_request(req, res)) { return true; }
 
   // Content reader handler
-  if (req.method == "POST") {
-    if (dispatch_request_for_content_reader(req, res, content_reader,
-                                            post_handlers_for_content_reader)) {
-      return true;
-    }
-  } else if (req.method == "PUT") {
-    if (dispatch_request_for_content_reader(req, res, content_reader,
-                                            put_handlers_for_content_reader)) {
-      return true;
-    }
-  } else if (req.method == "PATCH") {
-    if (dispatch_request_for_content_reader(
-            req, res, content_reader, patch_handlers_for_content_reader)) {
-      return true;
+  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
+    ContentReader content_reader = [&](ContentReceiver receiver) {
+      return read_content_with_content_receiver(strm, last_connection, req, res, receiver);
+    };
+
+    if (req.method == "POST") {
+      if (dispatch_request_for_content_reader(req, res, content_reader,
+                                              post_handlers_for_content_reader)) {
+        return true;
+      }
+    } else if (req.method == "PUT") {
+      if (dispatch_request_for_content_reader(req, res, content_reader,
+                                              put_handlers_for_content_reader)) {
+        return true;
+      }
+    } else if (req.method == "PATCH") {
+      if (dispatch_request_for_content_reader(
+              req, res, content_reader, patch_handlers_for_content_reader)) {
+        return true;
+      }
     }
   }
 
   // Read content into `req.body`
-  if (!content_reader(nullptr)) { return false; }
+  if (!read_content(strm, last_connection, req, res)) {
+    return false;
+  }
 
   // Regular handler
   if (req.method == "GET" || req.method == "HEAD") {
@@ -2916,23 +2923,8 @@ Server::process_request(Stream &strm, bool last_connection,
 
   if (setup_request) { setup_request(req); }
 
-  // Body
-  ContentReader content_reader = [&](ContentReceiver receiver) {
-    if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH") {
-      if (receiver) {
-        return read_content_with_content_receiver(strm, last_connection, req,
-                                                  res, receiver);
-      } else {
-        return read_content(strm, last_connection, req, res);
-      }
-    } else if (req.method == "PRI") {
-      return read_content(strm, last_connection, req, res);
-    }
-    return true;
-  };
-
   // Rounting
-  if (routing(req, res, content_reader)) {
+  if (routing(req, res, strm, last_connection)) {
     if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
   } else {
     if (res.status == -1) { res.status = 404; }
