@@ -2819,8 +2819,10 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm, bool last
   }
 
   // Read content into `req.body`
-  if (!read_content(strm, last_connection, req, res)) {
-    return false;
+  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" || req.method == "PRI") {
+    if (!read_content(strm, last_connection, req, res)) {
+      return false;
+    }
   }
 
   // Regular handler
