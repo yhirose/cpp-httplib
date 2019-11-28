@@ -354,6 +354,8 @@ OpenSSL Support
 
 SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
 
+NOTE: cpp-httplib supports 1.1.1 (until 2023-09-11) and 1.0.2 (2019-12-31).
+
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 
