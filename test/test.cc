@@ -30,6 +30,12 @@ const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
 
+MultipartFile& get_file_value(MultipartFiles &files, const char *key) {
+  auto it = files.find(key);
+  if (it != files.end()) { return it->second; }
+  throw std::runtime_error("invalid mulitpart form data name error");
+}
+
 #ifdef _WIN32
 TEST(StartupTest, WSAStartup) {
   WSADATA wsaData;
@@ -676,29 +682,27 @@ protected:
                 {
                   const auto &file = req.get_file_value("text1");
                   EXPECT_EQ("", file.filename);
-                  EXPECT_EQ("text default",
-                            req.body.substr(file.offset, file.length));
+                  EXPECT_EQ("text default", file.content);
                 }
 
                 {
                   const auto &file = req.get_file_value("text2");
                   EXPECT_EQ("", file.filename);
-                  EXPECT_EQ("aωb", req.body.substr(file.offset, file.length));
+                  EXPECT_EQ("aωb", file.content);
                 }
 
                 {
                   const auto &file = req.get_file_value("file1");
                   EXPECT_EQ("hello.txt", file.filename);
                   EXPECT_EQ("text/plain", file.content_type);
-                  EXPECT_EQ("h\ne\n\nl\nl\no\n",
-                            req.body.substr(file.offset, file.length));
+                  EXPECT_EQ("h\ne\n\nl\nl\no\n", file.content);
                 }
 
                 {
                   const auto &file = req.get_file_value("file3");
                   EXPECT_EQ("", file.filename);
                   EXPECT_EQ("application/octet-stream", file.content_type);
-                  EXPECT_EQ(0u, file.length);
+                  EXPECT_EQ(0u, file.content.size());
                 }
               })
         .Post("/empty",
@@ -753,16 +757,57 @@ protected:
                 EXPECT_EQ("5", req.get_header_value("Content-Length"));
               })
         .Post("/content_receiver",
-              [&](const Request & /*req*/, Response &res,
-                  const ContentReader &content_reader) {
-                std::string body;
-                content_reader([&](const char *data, size_t data_length) {
-                  EXPECT_EQ(data_length, 7);
-                  body.append(data, data_length);
-                  return true;
-                });
-                EXPECT_EQ(body, "content");
-                res.set_content(body, "text/plain");
+              [&](const Request & req, Response &res, const ContentReader &content_reader) {
+                if (req.is_multipart_form_data()) {
+                  MultipartFiles files;
+                  content_reader(
+                    [&](const std::string &name, const char *data, size_t data_length) {
+                      auto &file = files.find(name)->second;
+                      file.content.append(data, data_length);
+                      return true;
+                    },
+                    [&](const std::string &name, const MultipartFile &file) {
+                      files.emplace(name, file);
+                      return true;
+                    });
+
+                  EXPECT_EQ(5u, files.size());
+
+                  {
+                    const auto &file = get_file_value(files, "text1");
+                    EXPECT_EQ("", file.filename);
+                    EXPECT_EQ("text default", file.content);
+                  }
+
+                  {
+                    const auto &file = get_file_value(files, "text2");
+                    EXPECT_EQ("", file.filename);
+                    EXPECT_EQ("aωb", file.content);
+                  }
+
+                  {
+                    const auto &file = get_file_value(files, "file1");
+                    EXPECT_EQ("hello.txt", file.filename);
+                    EXPECT_EQ("text/plain", file.content_type);
+                    EXPECT_EQ("h\ne\n\nl\nl\no\n", file.content);
+                  }
+
+                  {
+                    const auto &file = get_file_value(files, "file3");
+                    EXPECT_EQ("", file.filename);
+                    EXPECT_EQ("application/octet-stream", file.content_type);
+                    EXPECT_EQ(0u, file.content.size());
+                  }
+                } else {
+                  std::string body;
+                  content_reader([&](const char *data, size_t data_length) {
+                    EXPECT_EQ(data_length, 7);
+                    body.append(data, data_length);
+                    return true;
+                  });
+                  EXPECT_EQ(body, "content");
+                  res.set_content(body, "text/plain");
+                }
               })
         .Put("/content_receiver",
              [&](const Request & /*req*/, Response &res,
@@ -809,14 +854,13 @@ protected:
                 {
                   const auto &file = req.get_file_value("key1");
                   EXPECT_EQ("", file.filename);
-                  EXPECT_EQ("test", req.body.substr(file.offset, file.length));
+                  EXPECT_EQ("test", file.content);
                 }
 
                 {
                   const auto &file = req.get_file_value("key2");
                   EXPECT_EQ("", file.filename);
-                  EXPECT_EQ("--abcdefg123",
-                            req.body.substr(file.offset, file.length));
+                  EXPECT_EQ("--abcdefg123", file.content);
                 }
               })
 #endif
@@ -1516,6 +1560,21 @@ TEST_F(ServerTest, PostContentReceiver) {
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("content", res->body);
+}
+
+TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
+  MultipartFormDataItems items = {
+      {"text1", "text default", "", ""},
+      {"text2", "aωb", "", ""},
+      {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+      {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"file3", "", "", "application/octet-stream"},
+  };
+
+  auto res = cli_.Post("/content_receiver", items);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, PostContentReceiverGzip) {

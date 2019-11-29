@@ -90,7 +90,7 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
     const auto& file = req.get_file_value("name1");
     // file.filename;
     // file.content_type;
-    auto body = req.body.substr(file.offset, file.length);
+    // file.content;
 });
 
 ```
@@ -118,12 +118,26 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 ```cpp
 svr.Post("/content_receiver",
   [&](const Request &req, Response &res, const ContentReader &content_reader) {
-    std::string body;
-    content_reader([&](const char *data, size_t data_length) {
-      body.append(data, data_length);
-      return true;
-    });
-    res.set_content(body, "text/plain");
+    if (req.is_multipart_form_data()) {
+      MultipartFiles files;
+      content_reader(
+        [&](const std::string &name, const char *data, size_t data_length) {
+          auto &file = files.find(name)->second;
+          file.content.append(data, data_length);
+          return true;
+        },
+        [&](const std::string &name, const MultipartFile &file) {
+          files.emplace(name, file);
+          return true;
+        });
+    } else {
+      std::string body;
+      content_reader([&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+      res.set_content(body, "text/plain");
+    }
   });
 ```
 
