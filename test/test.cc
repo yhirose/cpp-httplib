@@ -567,6 +567,7 @@ protected:
 
   virtual void SetUp() {
     svr_.set_base_dir("./www");
+    svr_.set_base_dir("./www2", "/mount");
 
     svr_.Get("/hi",
              [&](const Request & /*req*/, Response &res) {
@@ -1003,9 +1004,42 @@ TEST_F(ServerTest, GetMethodOutOfBaseDir2) {
   EXPECT_EQ(404, res->status);
 }
 
-TEST_F(ServerTest, InvalidBaseDir) {
-  EXPECT_EQ(false, svr_.set_base_dir("invalid_dir"));
-  EXPECT_EQ(true, svr_.set_base_dir("."));
+TEST_F(ServerTest, GetMethodDirMountTest) {
+  auto res = cli_.Get("/mount/dir/test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GetMethodDirMountTestWithDoubleDots) {
+  auto res = cli_.Get("/mount/dir/../dir/test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GetMethodInvalidMountPath) {
+  auto res = cli_.Get("/mount/dir/../test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, GetMethodOutOfBaseDirMount) {
+  auto res = cli_.Get("/mount/../www2/dir/test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, GetMethodOutOfBaseDirMount2) {
+  auto res = cli_.Get("/mount/dir/../../www2/dir/test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, InvalidBaseDirMount) {
+  EXPECT_EQ(false, svr_.set_base_dir("./www3", "invalid_mount_point"));
 }
 
 TEST_F(ServerTest, EmptyRequest) {

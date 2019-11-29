@@ -129,8 +129,9 @@ using socket_t = int;
 #define INVALID_SOCKET (-1)
 #endif //_WIN32
 
-#include <cassert>
+#include <array>
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <errno.h>
 #include <fcntl.h>
@@ -145,7 +146,6 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
-#include <array>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -507,7 +507,7 @@ public:
   Server &Delete(const char *pattern, Handler handler);
   Server &Options(const char *pattern, Handler handler);
 
-  bool set_base_dir(const char *path);
+  bool set_base_dir(const char *dir, const char *mount_point = nullptr);
   void set_file_request_handler(Handler handler);
 
   void set_error_handler(Handler handler);
@@ -570,7 +570,7 @@ private:
 
   std::atomic<bool> is_running_;
   std::atomic<socket_t> svr_sock_;
-  std::string base_dir_;
+  std::vector<std::pair<std::string, std::string>> base_dirs_;
   Handler file_request_handler_;
   Handlers get_handlers_;
   Handlers post_handlers_;
@@ -2408,10 +2408,13 @@ inline Server &Server::Options(const char *pattern, Handler handler) {
   return *this;
 }
 
-inline bool Server::set_base_dir(const char *path) {
-  if (detail::is_dir(path)) {
-    base_dir_ = path;
-    return true;
+inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
+  if (detail::is_dir(dir)) {
+    std::string mnt = mount_point ? mount_point : "/";
+    if (!mnt.empty() && mnt[0] == '/') {
+      base_dirs_.emplace_back(mnt, dir);
+      return true;
+    }
   }
   return false;
 }
@@ -2684,21 +2687,28 @@ Server::read_content_with_content_receiver(Stream &strm, bool last_connection,
 }
 
 inline bool Server::handle_file_request(Request &req, Response &res) {
-  if (!base_dir_.empty() && detail::is_valid_path(req.path)) {
-    std::string path = base_dir_ + req.path;
+  for (const auto& kv: base_dirs_) {
+    const auto& mount_point = kv.first;
+    const auto& base_dir = kv.second;
 
-    if (!path.empty() && path.back() == '/') { path += "index.html"; }
+    // Prefix match
+    if (!req.path.find(mount_point)) {
+      std::string sub_path = "/" + req.path.substr(mount_point.size());
+      if (detail::is_valid_path(sub_path)) {
+        auto path = base_dir + sub_path;
+        if (path.back() == '/') { path += "index.html"; }
 
-    if (detail::is_file(path)) {
-      detail::read_file(path, res.body);
-      auto type = detail::find_content_type(path);
-      if (type) { res.set_header("Content-Type", type); }
-      res.status = 200;
-      if (file_request_handler_) { file_request_handler_(req, res); }
-      return true;
+        if (detail::is_file(path)) {
+          detail::read_file(path, res.body);
+          auto type = detail::find_content_type(path);
+          if (type) { res.set_header("Content-Type", type); }
+          res.status = 200;
+          if (file_request_handler_) { file_request_handler_(req, res); }
+          return true;
+        }
+      }
     }
   }
-
   return false;
 }
 
