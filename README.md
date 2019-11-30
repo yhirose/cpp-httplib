@@ -50,7 +50,16 @@ svr.listen_after_bind();
 ### Static File Server
 
 ```cpp
-svr.set_base_dir("./www");
+svr.set_base_dir("./www"); // This is same as `svr.set_base_dir("./www", "/")`;
+```
+
+```cpp
+svr.set_base_dir("./www", "/public");
+```
+
+```cpp
+svr.set_base_dir("./www1", "/public"); // 1st order
+svr.set_base_dir("./www2", "/public"); // 2nd order
 ```
 
 ### Logging
@@ -86,7 +95,7 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 
 ```
 
-### Stream content with Content provider
+### Send content with Content provider
 
 ```cpp
 const uint64_t DATA_CHUNK_SIZE = 4;
@@ -102,6 +111,20 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
     },
     [data] { delete data; });
 });
+```
+
+### Receive content with Content receiver
+
+```cpp
+svr.Post("/content_receiver",
+  [&](const Request &req, Response &res, const ContentReader &content_reader) {
+    std::string body;
+    content_reader([&](const char *data, size_t data_length) {
+      body.append(data, data_length);
+      return true;
+    });
+    res.set_content(body, "text/plain");
+  });
 ```
 
 ### Chunked transfer encoding
