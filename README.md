@@ -156,7 +156,7 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 });
 ```
 
-### Default thread pool supporet
+### Default thread pool support
 
 Set thread count to 8:
 
