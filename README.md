@@ -121,13 +121,13 @@ svr.Post("/content_receiver",
     if (req.is_multipart_form_data()) {
       MultipartFiles files;
       content_reader(
+        [&](const std::string &name, const MultipartFile &file) {
+          files.emplace(name, file);
+          return true;
+        },
         [&](const std::string &name, const char *data, size_t data_length) {
           auto &file = files.find(name)->second;
           file.content.append(data, data_length);
-          return true;
-        },
-        [&](const std::string &name, const MultipartFile &file) {
-          files.emplace(name, file);
           return true;
         });
     } else {
