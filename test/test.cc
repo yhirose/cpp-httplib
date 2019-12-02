@@ -1766,6 +1766,52 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 }
 #endif
 
+TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
+  Server svr;
+  std::string header_value;
+  svr.Get("/validate-ws-in-headers",
+          [&](const Request &req, Response &res) {
+            header_value = req.get_header_value("foo");
+            res.set_content("ok", "text/plain");
+          });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  while (!svr.is_running()) {
+    msleep(1);
+  }
+
+  // Only space and horizontal tab are whitespace. Make sure other whitespace-
+  // like characters are not treated the same - use vertical tab and escape.
+  auto client_sock =
+      detail::create_client_socket(HOST, PORT, /*timeout_sec=*/5);
+  ASSERT_TRUE(client_sock != INVALID_SOCKET);
+  const std::string req =
+      "GET /validate-ws-in-headers HTTP/1.1\r\n"
+      "foo: \t \v bar \e\t \r\n"
+      "Connection: close\r\n"
+      "\r\n";
+
+  bool process_ok = detail::process_and_close_socket(
+      true, client_sock, 1, 5, 0,
+      [&](Stream& strm, bool /*last_connection*/,
+          bool &/*connection_close*/) -> bool {
+        if (req.size() !=
+            static_cast<size_t>(strm.write(req.data(), req.size()))) {
+          return false;
+        }
+
+        char buf[512];
+
+        detail::stream_line_reader line_reader(strm, buf, sizeof(buf));
+        while (line_reader.getline()) {}
+        return true;
+      });
+  ASSERT_TRUE(process_ok);
+  svr.stop();
+  t.join();
+  EXPECT_EQ(header_value, "\v bar \e");
+}
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()
