@@ -1566,7 +1566,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   // the left or right side of the header value:
   //  - https://stackoverflow.com/questions/50179659/
   //  - https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html
-  static std::regex re(R"((.+?):[\t ]*(.+?)[\t ]*\r\n)");
+  static std::regex re(R"((.+?):[\t ]*(.+))");
 
   const auto bufsiz = 2048;
   char buf[bufsiz];
@@ -1575,9 +1575,23 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 
   for (;;) {
     if (!line_reader.getline()) { return false; }
-    if (!strcmp(line_reader.ptr(), "\r\n")) { break; }
+    const char *end = line_reader.ptr() + line_reader.size();
+    auto erase_last_char = [&](char c) {
+      if (line_reader.ptr() == end || end[-1] != c) {
+        return false;
+      }
+      end--;
+      return true;
+    };
+    if (!erase_last_char('\n')) { continue; }
+    if (!erase_last_char('\r')) { continue; }
+
+    // Blank line indicates end of headers.
+    if (line_reader.ptr() == end) { break; }
+
+    while (erase_last_char(' ') || erase_last_char('\t')) {}
     std::cmatch m;
-    if (std::regex_match(line_reader.ptr(), m, re)) {
+    if (std::regex_match(line_reader.ptr(), end, m, re)) {
       auto key = std::string(m[1]);
       auto val = std::string(m[2]);
       headers.emplace(key, val);
