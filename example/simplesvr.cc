@@ -46,10 +46,7 @@ string dump_multipart_files(const MultipartFiles &files) {
     snprintf(buf, sizeof(buf), "content type: %s\n", file.content_type.c_str());
     s += buf;
 
-    snprintf(buf, sizeof(buf), "text offset: %lu\n", file.offset);
-    s += buf;
-
-    snprintf(buf, sizeof(buf), "text length: %lu\n", file.length);
+    snprintf(buf, sizeof(buf), "text length: %lu\n", file.content.size());
     s += buf;
 
     s += "----------------\n";

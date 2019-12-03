@@ -37,10 +37,10 @@ int main(void) {
 
   svr.Post("/post", [](const Request & req, Response &res) {
     auto file = req.get_file_value("file");
-    cout << "file: " << file.offset << ":" << file.length << ":" << file.filename << endl;
+    cout << "file length: " << file.content.length() << ":" << file.filename << endl;
 
     ofstream ofs(file.filename, ios::binary);
-    ofs << req.body.substr(file.offset, file.length);
+    ofs << file.content;
 
     res.set_content("done", "text/plain");
   });
