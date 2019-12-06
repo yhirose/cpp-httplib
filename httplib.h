@@ -1114,6 +1114,11 @@ public:
     }
   }
 
+  bool end_with_crlf() const {
+    auto end = ptr() + size();
+    return size() >= 2 && end[-2] == '\r' && end[-1] == '\n';
+  }
+
   bool getline() {
     fixed_buffer_used_size_ = 0;
     glowable_buffer_.clear();
@@ -1562,34 +1567,33 @@ inline uint64_t get_header_value_uint64(const Headers &headers, const char *key,
 }
 
 inline bool read_headers(Stream &strm, Headers &headers) {
-  // Horizontal tab and ' ' are considered whitespace and are ignored when on
-  // the left or right side of the header value:
-  //  - https://stackoverflow.com/questions/50179659/
-  //  - https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html
-  static std::regex re(R"((.+?):[\t ]*(.+))");
-
   const auto bufsiz = 2048;
   char buf[bufsiz];
-
   stream_line_reader line_reader(strm, buf, bufsiz);
 
   for (;;) {
     if (!line_reader.getline()) { return false; }
-    const char *end = line_reader.ptr() + line_reader.size();
-    auto erase_last_char = [&](char c) {
-      if (line_reader.ptr() == end || end[-1] != c) {
-        return false;
-      }
+
+    // Check if the line ends with CRLF.
+    if (line_reader.end_with_crlf()) {
+      // Blank line indicates end of headers.
+      if (line_reader.size() == 2) { break; }
+    } else {
+      continue; // Skip invalid line.
+    }
+
+    // Skip trailing spaces and tabs.
+    auto end = line_reader.ptr() + line_reader.size() - 2;
+    while (line_reader.ptr() < end && (end[-1] == ' ' || end[-1] == '\t')) {
       end--;
-      return true;
-    };
-    if (!erase_last_char('\n')) { continue; }
-    if (!erase_last_char('\r')) { continue; }
+    }
 
-    // Blank line indicates end of headers.
-    if (line_reader.ptr() == end) { break; }
+    // Horizontal tab and ' ' are considered whitespace and are ignored when on
+    // the left or right side of the header value:
+    //  - https://stackoverflow.com/questions/50179659/
+    //  - https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html
+    static const std::regex re(R"((.+?):[\t ]*(.+))");
 
-    while (erase_last_char(' ') || erase_last_char('\t')) {}
     std::cmatch m;
     if (std::regex_match(line_reader.ptr(), end, m, re)) {
       auto key = std::string(m[1]);
