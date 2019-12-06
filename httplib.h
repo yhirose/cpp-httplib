@@ -2078,17 +2078,15 @@ public:
         break;
       }
       case 4: { // Boundary
-        auto pos = buf_.find(crlf_);
         if (crlf_.size() > buf_.size()) { return true; }
-        if (pos == 0) {
+        if (buf_.find(crlf_) == 0) {
           buf_.erase(0, crlf_.size());
           off_ += crlf_.size();
           state_ = 1;
         } else {
           auto pattern = dash_ + crlf_;
           if (pattern.size() > buf_.size()) { return true; }
-          auto pos = buf_.find(pattern);
-          if (pos == 0) {
+          if (buf_.find(pattern) == 0) {
             buf_.erase(0, pattern.size());
             off_ += pattern.size();
             is_valid_ = true;
