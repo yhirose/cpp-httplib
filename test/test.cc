@@ -1766,6 +1766,89 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 }
 #endif
 
+// Sends a raw request to a server listening at HOST:PORT.
+static bool send_request(time_t read_timeout_sec, const std::string& req) {
+  auto client_sock =
+      detail::create_client_socket(HOST, PORT, /*timeout_sec=*/5);
+
+  if (client_sock == INVALID_SOCKET) { return false; }
+
+  return detail::process_and_close_socket(
+      true, client_sock, 1, read_timeout_sec, 0,
+      [&](Stream& strm, bool /*last_connection*/,
+          bool &/*connection_close*/) -> bool {
+        if (req.size() !=
+            static_cast<size_t>(strm.write(req.data(), req.size()))) {
+          return false;
+        }
+
+        char buf[512];
+
+        detail::stream_line_reader line_reader(strm, buf, sizeof(buf));
+        while (line_reader.getline()) {}
+        return true;
+      });
+}
+
+TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
+  Server svr;
+  std::string header_value;
+  svr.Get("/validate-ws-in-headers",
+          [&](const Request &req, Response &res) {
+            header_value = req.get_header_value("foo");
+            res.set_content("ok", "text/plain");
+          });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  while (!svr.is_running()) {
+    msleep(1);
+  }
+
+  // Only space and horizontal tab are whitespace. Make sure other whitespace-
+  // like characters are not treated the same - use vertical tab and escape.
+  const std::string req =
+      "GET /validate-ws-in-headers HTTP/1.1\r\n"
+      "foo: \t \v bar \e\t \r\n"
+      "Connection: close\r\n"
+      "\r\n";
+
+  ASSERT_TRUE(send_request(5, req));
+  svr.stop();
+  t.join();
+  EXPECT_EQ(header_value, "\v bar \e");
+}
+
+TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
+  Server svr;
+  svr.Get("/hi",
+          [&](const Request & /*req*/, Response &res) {
+            res.set_content("ok", "text/plain");
+          });
+
+  // Server read timeout must be longer than the client read timeout for the
+  // bug to reproduce, probably to force the server to process a request
+  // without a trailing blank line.
+  const time_t client_read_timeout_sec = 1;
+  svr.set_read_timeout(client_read_timeout_sec + 1, 0);
+  bool listen_thread_ok = false;
+  thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
+  while (!svr.is_running()) {
+    msleep(1);
+  }
+
+  // A certain header line causes an exception if the header property is parsed
+  // naively with a single regex. This occurs with libc++ but not libstdc++.
+  const std::string req =
+      "GET /hi HTTP/1.1\r\n"
+      " :                                                                      "
+      "                                                                       ";
+
+  ASSERT_TRUE(send_request(client_read_timeout_sec, req));
+  svr.stop();
+  t.join();
+  EXPECT_TRUE(listen_thread_ok);
+}
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()
