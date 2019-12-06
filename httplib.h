@@ -1881,38 +1881,39 @@ inline bool parse_multipart_boundary(const std::string &content_type,
 }
 
 inline bool parse_range_header(const std::string &s, Ranges &ranges) {
-  try {
-    static auto re_first_range =
-        std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
-    std::smatch m;
-    if (std::regex_match(s, m, re_first_range)) {
-      auto pos = m.position(1);
-      auto len = m.length(1);
-      detail::split(
-          &s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
-            static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
-            std::cmatch m;
-            if (std::regex_match(b, e, m, re_another_range)) {
-              ssize_t first = -1;
-              if (!m.str(1).empty()) {
-                first = static_cast<ssize_t>(std::stoll(m.str(1)));
-              }
-
-              ssize_t last = -1;
-              if (!m.str(2).empty()) {
-                last = static_cast<ssize_t>(std::stoll(m.str(2)));
-              }
-
-              if (first != -1 && last != -1 && first > last) {
-                throw std::runtime_error("invalid range error");
-              }
-              ranges.emplace_back(std::make_pair(first, last));
+  static auto re_first_range =
+      std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
+  std::smatch m;
+  if (std::regex_match(s, m, re_first_range)) {
+    auto pos = m.position(1);
+    auto len = m.length(1);
+    bool all_valid_ranges = true;
+    detail::split(
+        &s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
+          if (!all_valid_ranges) return;
+          static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
+          std::cmatch m;
+          if (std::regex_match(b, e, m, re_another_range)) {
+            ssize_t first = -1;
+            if (!m.str(1).empty()) {
+              first = static_cast<ssize_t>(std::stoll(m.str(1)));
             }
-          });
-      return true;
-    }
-    return false;
-  } catch (...) { return false; }
+
+            ssize_t last = -1;
+            if (!m.str(2).empty()) {
+              last = static_cast<ssize_t>(std::stoll(m.str(2)));
+            }
+
+            if (first != -1 && last != -1 && first > last) {
+              all_valid_ranges = false;
+              return;
+            }
+            ranges.emplace_back(std::make_pair(first, last));
+          }
+        });
+    return all_valid_ranges;
+  }
+  return false;
 }
 
 class MultipartFormDataParser {
