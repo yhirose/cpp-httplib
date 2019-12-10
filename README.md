@@ -326,6 +326,8 @@ This feature was contributed by [underscorediscovery](https://github.com/yhirose
 
 ### Authentication
 
+NOTE: OpenSSL is required for Digest Authentication, since cpp-httplib uses message digest functions in OpenSSL.
+
 ```cpp
 httplib::Client cli("httplib.org");
 cli.set_auth("user", "pass");
