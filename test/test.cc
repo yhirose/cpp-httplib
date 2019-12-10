@@ -1399,7 +1399,7 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
 }
 
 TEST_F(ServerTest, GetStreamedEndless) {
-  size_t offset = 0;
+  uint64_t offset = 0;
   auto res = cli_.Get("/streamed-cancel",
                       [&](const char * /*data*/, uint64_t data_length) {
                         if (offset < 100) {
