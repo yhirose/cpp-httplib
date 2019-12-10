@@ -33,4 +33,4 @@ pem:
 	openssl req -new -key key.pem | openssl x509 -days 3650 -req -signkey key.pem > cert.pem
 
 clean:
-	rm server client hello simplesvr upload redirect *.pem
+	rm server client hello simplesvr upload redirect benchmark *.pem

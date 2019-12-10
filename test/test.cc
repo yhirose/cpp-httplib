@@ -469,7 +469,49 @@ TEST(BaseAuthTest, FromHTTPWatch) {
               "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
     EXPECT_EQ(200, res->status);
   }
+
+  {
+    cli.set_auth("hello", "world");
+    auto res = cli.Get("/basic-auth/hello/world");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(res->body,
+              "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
+    EXPECT_EQ(200, res->status);
+  }
 }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(DigestAuthTest, FromHTTPWatch) {
+  auto host = "httpbin.org";
+  auto port = 443;
+  httplib::SSLClient cli(host, port);
+
+  {
+    auto res = cli.Get("/digest-auth/auth/hello/world");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(401, res->status);
+  }
+
+  {
+    std::vector<std::string> paths = {
+      "/digest-auth/auth/hello/world/MD5",
+      "/digest-auth/auth/hello/world/SHA-256",
+      "/digest-auth/auth/hello/world/SHA-512",
+      "/digest-auth/auth-init/hello/world/MD5",
+      "/digest-auth/auth-int/hello/world/MD5",
+    };
+
+    cli.set_auth("hello", "world");
+    for (auto path: paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res != nullptr);
+      EXPECT_EQ(res->body,
+                "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
+      EXPECT_EQ(200, res->status);
+    }
+  }
+}
+#endif
 
 TEST(AbsoluteRedirectTest, Redirect) {
   auto host = "httpbin.org";
