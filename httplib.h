@@ -2425,7 +2425,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 inline int parse_www_authenticate(const httplib::Response &res,
                             std::map<std::string, std::string> &digest_auth) {
   if (res.has_header("WWW-Authenticate")) {
-    static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*)))))~");
+    static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
     auto s = res.get_header_value("WWW-Authenticate");
     auto pos = s.find(' ');
     if (pos != std::string::npos) {
