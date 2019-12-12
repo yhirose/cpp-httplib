@@ -912,6 +912,8 @@ private:
 };
 #endif
 
+// ----------------------------------------------------------------------------
+
 /*
  * Implementation
  */
@@ -4434,6 +4436,8 @@ inline bool SSLClient::check_host_name(const char *pattern,
   return true;
 }
 #endif
+
+// ----------------------------------------------------------------------------
 
 } // namespace httplib
 
