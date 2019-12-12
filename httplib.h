@@ -2014,7 +2014,7 @@ public:
         auto pos = buf_.find(crlf_);
         while (pos != std::string::npos) {
           if (pos == 0) {
-            if (!header_callback(file_.filename, file_)) {
+            if (!header_callback(name_+file_.filename, file_)) {
               is_valid_ = false;
               is_done_ = false;
               return false;
@@ -2049,7 +2049,7 @@ public:
           if (pos == std::string::npos) {
             pos = buf_.size();
           }
-          if (!content_callback(file_.filename, buf_.data(), pos)) {
+          if (!content_callback(name_+file_.filename, buf_.data(), pos)) {
             is_valid_ = false;
             is_done_ = false;
             return false;
@@ -2065,7 +2065,7 @@ public:
 
           auto pos = buf_.find(pattern);
           if (pos != std::string::npos) {
-            if (!content_callback(file_.filename, buf_.data(), pos)) {
+            if (!content_callback(name_+file_.filename, buf_.data(), pos)) {
               is_valid_ = false;
               is_done_ = false;
               return false;
@@ -2075,7 +2075,7 @@ public:
             buf_.erase(0, pos + pattern.size());
             state_ = 4;
           } else {
-            if (!content_callback(file_.filename, buf_.data(), pattern.size())) {
+            if (!content_callback(name_+file_.filename, buf_.data(), pattern.size())) {
               is_valid_ = false;
               is_done_ = false;
               return false;
