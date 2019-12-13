@@ -27,7 +27,7 @@ string dump_headers(const Headers &headers) {
   return s;
 }
 
-string dump_multipart_files(const MultipartFiles &files) {
+string dump_multipart_files(const MultipartFormDataMap &files) {
   string s;
   char buf[BUFSIZ];
 
