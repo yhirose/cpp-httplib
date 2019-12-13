@@ -211,13 +211,6 @@ using Progress = std::function<bool(uint64_t current, uint64_t total)>;
 struct Response;
 using ResponseHandler = std::function<bool(const Response &response)>;
 
-struct MultipartFile {
-  std::string filename;
-  std::string content_type;
-  std::string content;
-};
-using MultipartFiles = std::multimap<std::string, MultipartFile>;
-
 struct MultipartFormData {
   std::string name;
   std::string content;
@@ -225,12 +218,13 @@ struct MultipartFormData {
   std::string content_type;
 };
 using MultipartFormDataItems = std::vector<MultipartFormData>;
+using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
 
 using ContentReceiver =
     std::function<bool(const char *data, size_t data_length)>;
 
 using MultipartContentHeader =
-    std::function<bool(const std::string &name, const MultipartFile &file)>;
+    std::function<bool(const std::string &name, const MultipartFormData &file)>;
 
 using MultipartContentReceiver =
     std::function<bool(const std::string& name, const char *data, size_t data_length)>;
@@ -268,7 +262,7 @@ struct Request {
   std::string version;
   std::string target;
   Params params;
-  MultipartFiles files;
+  MultipartFormDataMap files;
   Ranges ranges;
   Match matches;
 
@@ -295,7 +289,7 @@ struct Request {
   bool is_multipart_form_data() const;
 
   bool has_file(const char *key) const;
-  MultipartFile get_file_value(const char *key) const;
+  MultipartFormData get_file_value(const char *key) const;
 
   // private members...
   size_t content_length;
@@ -2015,6 +2009,7 @@ public:
       case 2: { // Headers
         auto pos = buf_.find(crlf_);
         while (pos != std::string::npos) {
+          // Empty line
           if (pos == 0) {
             if (!header_callback(name_, file_)) {
               is_valid_ = false;
@@ -2034,6 +2029,7 @@ public:
               file_.content_type = m[1];
             } else if (std::regex_match(header, m, re_content_disposition)) {
               name_ = m[1];
+              file_.name = name_;
               file_.filename = m[2];
             }
           }
@@ -2137,7 +2133,7 @@ private:
   size_t is_done_ = false;
   size_t off_ = 0;
   std::string name_;
-  MultipartFile file_;
+  MultipartFormData file_;
 };
 
 inline std::string to_lower(const char *beg, const char *end) {
@@ -2512,10 +2508,10 @@ inline bool Request::has_file(const char *key) const {
   return files.find(key) != files.end();
 }
 
-inline MultipartFile Request::get_file_value(const char *key) const {
+inline MultipartFormData Request::get_file_value(const char *key) const {
   auto it = files.find(key);
   if (it != files.end()) { return it->second; }
-  return MultipartFile();
+  return MultipartFormData();
 }
 
 // Response implementation
@@ -2985,7 +2981,7 @@ inline bool Server::read_content(Stream &strm, bool last_connection,
       return true;
     },
     // Multipart
-    [&](const std::string &name, const MultipartFile &file) {
+    [&](const std::string &name, const MultipartFormData &file) {
       req.files.emplace(name, file);
       return true;
     },
