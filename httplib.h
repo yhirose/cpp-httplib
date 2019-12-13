@@ -2285,11 +2285,11 @@ inline std::string message_digest(const std::string &s, Init init,
                                   size_t digest_length) {
   using namespace std;
 
-  unsigned char md[digest_length];
+  std::vector<unsigned char> md(digest_length, 0);
   CTX ctx;
   init(&ctx);
   update(&ctx, s.data(), s.size());
-  final(md, &ctx);
+  final(md.data(), &ctx);
 
   stringstream ss;
   for (auto c : md) {
