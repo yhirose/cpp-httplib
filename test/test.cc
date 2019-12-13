@@ -30,9 +30,11 @@ const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
 
-MultipartFormData& get_file_value(MultipartFormDataMap &files, const char *key) {
-  auto it = files.find(key);
-  if (it != files.end()) { return it->second; }
+MultipartFormData& get_file_value(MultipartFormDataItems &files, const char *key) {
+  auto it = std::find_if(files.begin(), files.end(), [&](const MultipartFormData &file) {
+    return file.name == key;
+  });
+  if (it != files.end()) { return *it; }
   throw std::runtime_error("invalid mulitpart form data name error");
 }
 
@@ -801,15 +803,14 @@ protected:
         .Post("/content_receiver",
               [&](const Request & req, Response &res, const ContentReader &content_reader) {
                 if (req.is_multipart_form_data()) {
-                  MultipartFormDataMap files;
+                  MultipartFormDataItems files;
                   content_reader(
-                    [&](const std::string &name, const MultipartFormData &file) {
-                      files.emplace(name, file);
+                    [&](const MultipartFormData &file) {
+                      files.push_back(file);
                       return true;
                     },
-                    [&](const std::string &name, const char *data, size_t data_length) {
-                      auto &file = files.find(name)->second;
-                      file.content.append(data, data_length);
+                    [&](const char *data, size_t data_length) {
+                      files.back().content.append(data, data_length);
                       return true;
                     });
 

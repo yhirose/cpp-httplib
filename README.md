@@ -119,15 +119,14 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 svr.Post("/content_receiver",
   [&](const Request &req, Response &res, const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      MultipartFiles files;
+      MultipartFormDataItems files;
       content_reader(
-        [&](const std::string &name, const MultipartFile &file) {
-          files.emplace(name, file);
+        [&](const MultipartFormData &file) {
+          files.push_back(file);
           return true;
         },
-        [&](const std::string &name, const char *data, size_t data_length) {
-          auto &file = files.find(name)->second;
-          file.content.append(data, data_length);
+        [&](const char *data, size_t data_length) {
+          files.back().content.append(data, data_length);
           return true;
         });
     } else {
