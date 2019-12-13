@@ -1535,12 +1535,13 @@ TEST_F(ServerTest, PutWithContentProvider) {
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
+  cli_.compress(true);
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
         sink("PUT", 3);
       },
-      "text/plain", true);
+      "text/plain");
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -1548,7 +1549,8 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
 }
 
 TEST_F(ServerTest, PutLargeFileWithGzip) {
-  auto res = cli_.Put("/put-large", LARGE_DATA, "text/plain", true);
+  cli_.compress(true);
+  auto res = cli_.Put("/put-large", LARGE_DATA, "text/plain");
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -1621,7 +1623,8 @@ TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
 }
 
 TEST_F(ServerTest, PostContentReceiverGzip) {
-  auto res = cli_.Post("/content_receiver", "content", "text/plain", true);
+  cli_.compress(true);
+  auto res = cli_.Post("/content_receiver", "content", "text/plain");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("content", res->body);
@@ -1802,7 +1805,8 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
       {"key2", "--abcdefg123", "", ""},
   };
 
-  auto res = cli_.Post("/gzipmultipart", items, true);
+  cli_.compress(true);
+  auto res = cli_.Post("/gzipmultipart", items);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);

@@ -423,6 +423,13 @@ The server applies gzip compression to the following MIME type contents:
   * application/xml
   * application/xhtml+xml
 
+### Compress content on client
+
+```c++
+cli.compress(true);
+res = cli.Post("/resource/foo", "...", "text/plain");
+```
+
 NOTE
 ----
 
