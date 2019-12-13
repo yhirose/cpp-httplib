@@ -524,7 +524,7 @@ TEST(AbsoluteRedirectTest, Redirect) {
   httplib::Client cli(host);
 #endif
 
-  cli.follow_location(true);
+  cli.set_follow_location(true);
   auto res = cli.Get("/absolute-redirect/3");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -539,7 +539,7 @@ TEST(RedirectTest, Redirect) {
   httplib::Client cli(host);
 #endif
 
-  cli.follow_location(true);
+  cli.set_follow_location(true);
   auto res = cli.Get("/redirect/3");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -554,7 +554,7 @@ TEST(RelativeRedirectTest, Redirect) {
   httplib::Client cli(host);
 #endif
 
-  cli.follow_location(true);
+  cli.set_follow_location(true);
   auto res = cli.Get("/relative-redirect/3");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -569,7 +569,7 @@ TEST(TooManyRedirectTest, Redirect) {
   httplib::Client cli(host);
 #endif
 
-  cli.follow_location(true);
+  cli.set_follow_location(true);
   auto res = cli.Get("/redirect/21");
   ASSERT_TRUE(res == nullptr);
 }
@@ -582,7 +582,7 @@ TEST(YahooRedirectTest, Redirect) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(301, res->status);
 
-  cli.follow_location(true);
+  cli.set_follow_location(true);
   res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -590,7 +590,7 @@ TEST(YahooRedirectTest, Redirect) {
 
 TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
-  cli.follow_location(true);
+  cli.set_follow_location(true);
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
   ASSERT_TRUE(res != nullptr);
@@ -1535,7 +1535,7 @@ TEST_F(ServerTest, PutWithContentProvider) {
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
-  cli_.compress(true);
+  cli_.set_compress(true);
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
@@ -1549,7 +1549,7 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
 }
 
 TEST_F(ServerTest, PutLargeFileWithGzip) {
-  cli_.compress(true);
+  cli_.set_compress(true);
   auto res = cli_.Put("/put-large", LARGE_DATA, "text/plain");
 
   ASSERT_TRUE(res != nullptr);
@@ -1623,7 +1623,7 @@ TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
 }
 
 TEST_F(ServerTest, PostContentReceiverGzip) {
-  cli_.compress(true);
+  cli_.set_compress(true);
   auto res = cli_.Post("/content_receiver", "content", "text/plain");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
@@ -1805,7 +1805,7 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
       {"key2", "--abcdefg123", "", ""},
   };
 
-  cli_.compress(true);
+  cli_.set_compress(true);
   auto res = cli_.Post("/gzipmultipart", items);
 
   ASSERT_TRUE(res != nullptr);

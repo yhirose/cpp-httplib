@@ -741,9 +741,9 @@ public:
 
   void set_auth(const char *username, const char *password);
 
-  void follow_location(bool on);
+  void set_follow_location(bool on);
 
-  void compress(bool on);
+  void set_compress(bool on);
 
 protected:
   bool process_request(Stream &strm, const Request &req, Response &res,
@@ -3464,14 +3464,14 @@ inline bool Client::redirect(const Request &req, Response &res) {
       if (next_scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
         SSLClient cli(next_host.c_str());
-        cli.follow_location(true);
+        cli.set_follow_location(true);
         return detail::redirect(cli, req, res, next_path);
 #else
         return false;
 #endif
       } else {
         Client cli(next_host.c_str());
-        cli.follow_location(true);
+        cli.set_follow_location(true);
         return detail::redirect(cli, req, res, next_path);
       }
     }
@@ -3951,9 +3951,9 @@ inline void Client::set_auth(const char *username, const char *password) {
   password_ = password;
 }
 
-inline void Client::follow_location(bool on) { follow_location_ = on; }
+inline void Client::set_follow_location(bool on) { follow_location_ = on; }
 
-inline void Client::compress(bool on) { compress_ = on; }
+inline void Client::set_compress(bool on) { compress_ = on; }
 
 /*
  * SSL Implementation

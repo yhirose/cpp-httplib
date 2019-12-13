@@ -387,7 +387,7 @@ httplib::Client cli("yahoo.com");
 auto res = cli.Get("/");
 res->status; // 301
 
-cli.follow_location(true);
+cli.set_follow_location(true);
 res = cli.Get("/");
 res->status; // 200
 ```
@@ -426,7 +426,7 @@ The server applies gzip compression to the following MIME type contents:
 ### Compress content on client
 
 ```c++
-cli.compress(true);
+cli.set_compress(true);
 res = cli.Post("/resource/foo", "...", "text/plain");
 ```
 
