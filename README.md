@@ -430,6 +430,15 @@ cli.set_compress(true);
 res = cli.Post("/resource/foo", "...", "text/plain");
 ```
 
+Split httplib.h into .h and .cc
+-------------------------------
+
+```bash
+> python3 split.py
+> ls out
+httplib.h  httplib.cc
+```
+
 NOTE
 ----
 
