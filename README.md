@@ -392,6 +392,12 @@ res = cli.Get("/");
 res->status; // 200
 ```
 
+### Use a specitic network interface
+
+```cpp
+cli.set_interface("eth0"); // Interface name, IP address or host name
+```
+
 OpenSSL Support
 ---------------
 
