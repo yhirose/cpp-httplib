@@ -227,23 +227,23 @@ using MultipartContentHeader =
     std::function<bool(const MultipartFormData &file)>;
 
 class ContentReader {
-  public:
-    using Reader = std::function<bool(ContentReceiver receiver)>;
-    using MultipartReader = std::function<bool(MultipartContentHeader header, ContentReceiver receiver)>;
+public:
+  using Reader = std::function<bool(ContentReceiver receiver)>;
+  using MultipartReader = std::function<bool(MultipartContentHeader header,
+                                             ContentReceiver receiver)>;
 
-    ContentReader(Reader reader, MultipartReader muitlpart_reader)
+  ContentReader(Reader reader, MultipartReader muitlpart_reader)
       : reader_(reader), muitlpart_reader_(muitlpart_reader) {}
 
-    bool operator()(MultipartContentHeader header, ContentReceiver receiver) const {
-      return muitlpart_reader_(header, receiver);
-    }
+  bool operator()(MultipartContentHeader header,
+                  ContentReceiver receiver) const {
+    return muitlpart_reader_(header, receiver);
+  }
 
-    bool operator()(ContentReceiver receiver) const {
-      return reader_(receiver);
-    }
+  bool operator()(ContentReceiver receiver) const { return reader_(receiver); }
 
-    Reader reader_;
-    MultipartReader muitlpart_reader_;
+  Reader reader_;
+  MultipartReader muitlpart_reader_;
 };
 
 using Range = std::pair<ssize_t, ssize_t>;
@@ -583,14 +583,12 @@ private:
                                    const std::string &content_type);
   bool read_content(Stream &strm, bool last_connection, Request &req,
                     Response &res);
-  bool read_content_with_content_receiver(Stream &strm, bool last_connection,
-                                          Request &req, Response &res,
-                                          ContentReceiver receiver,
-                                          MultipartContentHeader multipart_header,
-                                          ContentReceiver multipart_receiver);
-  bool read_content_core(Stream &strm, bool last_connection,
-                         Request &req, Response &res,
-                         ContentReceiver receiver,
+  bool read_content_with_content_receiver(
+      Stream &strm, bool last_connection, Request &req, Response &res,
+      ContentReceiver receiver, MultipartContentHeader multipart_header,
+      ContentReceiver multipart_receiver);
+  bool read_content_core(Stream &strm, bool last_connection, Request &req,
+                         Response &res, ContentReceiver receiver,
                          MultipartContentHeader mulitpart_header,
                          ContentReceiver multipart_receiver);
 
@@ -767,12 +765,10 @@ private:
   void write_request(Stream &strm, const Request &req, bool last_connection);
   bool redirect(const Request &req, Response &res);
 
-  std::shared_ptr<Response>
-  send_with_content_provider(const char *method, const char *path,
-                             const Headers &headers, const std::string &body,
-                             size_t content_length,
-                             ContentProvider content_provider,
-                             const char *content_type);
+  std::shared_ptr<Response> send_with_content_provider(
+      const char *method, const char *path, const Headers &headers,
+      const std::string &body, size_t content_length,
+      ContentProvider content_provider, const char *content_type);
 
   virtual bool process_and_close_socket(
       socket_t sock, size_t request_count,
@@ -1352,8 +1348,8 @@ inline bool is_connection_error() {
 #endif
 }
 
-inline socket_t create_client_socket(
-    const char *host, int port, time_t timeout_sec) {
+inline socket_t create_client_socket(const char *host, int port,
+                                     time_t timeout_sec) {
   return create_socket(
       host, port, [=](socket_t sock, struct addrinfo &ai) -> bool {
         set_nonblocking(sock, true);
@@ -1914,8 +1910,7 @@ inline bool parse_multipart_boundary(const std::string &content_type,
 }
 
 inline bool parse_range_header(const std::string &s, Ranges &ranges) {
-  static auto re_first_range =
-      std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
+  static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
   std::smatch m;
   if (std::regex_match(s, m, re_first_range)) {
     auto pos = m.position(1);
@@ -1953,9 +1948,7 @@ class MultipartFormDataParser {
 public:
   MultipartFormDataParser() {}
 
-  void set_boundary(const std::string &boundary) {
-    boundary_ = boundary;
-  }
+  void set_boundary(const std::string &boundary) { boundary_ = boundary; }
 
   bool is_valid() const { return is_valid_; }
 
@@ -2028,9 +2021,7 @@ public:
         {
           auto pattern = crlf_ + dash_;
           auto pos = buf_.find(pattern);
-          if (pos == std::string::npos) {
-            pos = buf_.size();
-          }
+          if (pos == std::string::npos) { pos = buf_.size(); }
           if (!content_callback(buf_.data(), pos)) {
             is_valid_ = false;
             is_done_ = false;
@@ -2354,10 +2345,9 @@ make_basic_authentication_header(const std::string &username,
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline std::pair<std::string, std::string> make_digest_authentication_header(
-    const Request &req,
-    const std::map<std::string, std::string> &auth,
-    size_t cnonce_count, const std::string &cnonce,
-    const std::string &username, const std::string &password) {
+    const Request &req, const std::map<std::string, std::string> &auth,
+    size_t cnonce_count, const std::string &cnonce, const std::string &username,
+    const std::string &password) {
   using namespace std;
 
   string nc;
@@ -2385,9 +2375,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
     auto A1 = username + ":" + auth.at("realm") + ":" + password;
 
     auto A2 = req.method + ":" + req.path;
-    if (qop == "auth-int") {
-      A2 += ":" + H(req.body);
-    }
+    if (qop == "auth-int") { A2 += ":" + H(req.body); }
 
     response = H(H(A1) + ":" + auth.at("nonce") + ":" + nc + ":" + cnonce +
                  ":" + qop + ":" + H(A2));
@@ -2395,16 +2383,17 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 
   auto field = "Digest username=\"hello\", realm=\"" + auth.at("realm") +
                "\", nonce=\"" + auth.at("nonce") + "\", uri=\"" + req.path +
-               "\", algorithm=" + auth.at("algorithm") + ", qop=" + qop + ", nc=\"" +
-               nc + "\", cnonce=\"" + cnonce + "\", response=\"" + response +
-               "\"";
+               "\", algorithm=" + auth.at("algorithm") + ", qop=" + qop +
+               ", nc=\"" + nc + "\", cnonce=\"" + cnonce + "\", response=\"" +
+               response + "\"";
 
   return make_pair("Authorization", field);
 }
 #endif
 
-inline int parse_www_authenticate(const httplib::Response &res,
-                            std::map<std::string, std::string> &digest_auth) {
+inline int
+parse_www_authenticate(const httplib::Response &res,
+                       std::map<std::string, std::string> &digest_auth) {
   if (res.has_header("WWW-Authenticate")) {
     static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
     auto s = res.get_header_value("WWW-Authenticate");
@@ -2957,25 +2946,25 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
 inline bool Server::read_content(Stream &strm, bool last_connection,
                                  Request &req, Response &res) {
   MultipartFormDataMap::iterator cur;
-  auto ret = read_content_core(strm, last_connection, req, res,
-    // Regular
-    [&](const char *buf, size_t n) {
-      if (req.body.size() + n > req.body.max_size()) { return false; }
-      req.body.append(buf, n);
-      return true;
-    },
-    // Multipart
-    [&](const MultipartFormData &file) {
-      cur = req.files.emplace(file.name, file);
-      return true;
-    },
-    [&](const char *buf, size_t n) {
-      auto &content = cur->second.content;
-      if (content.size() + n > content.max_size()) { return false; }
-      content.append(buf, n);
-      return true;
-    }
-  );
+  auto ret = read_content_core(
+      strm, last_connection, req, res,
+      // Regular
+      [&](const char *buf, size_t n) {
+        if (req.body.size() + n > req.body.max_size()) { return false; }
+        req.body.append(buf, n);
+        return true;
+      },
+      // Multipart
+      [&](const MultipartFormData &file) {
+        cur = req.files.emplace(file.name, file);
+        return true;
+      },
+      [&](const char *buf, size_t n) {
+        auto &content = cur->second.content;
+        if (content.size() + n > content.max_size()) { return false; }
+        content.append(buf, n);
+        return true;
+      });
 
   const auto &content_type = req.get_header_value("Content-Type");
   if (!content_type.find("application/x-www-form-urlencoded")) {
@@ -2985,22 +2974,19 @@ inline bool Server::read_content(Stream &strm, bool last_connection,
   return ret;
 }
 
-inline bool
-Server::read_content_with_content_receiver(Stream &strm, bool last_connection,
-                                           Request &req, Response &res,
-                                           ContentReceiver receiver,
-                                           MultipartContentHeader multipart_header,
-                                           ContentReceiver multipart_receiver) {
-  return read_content_core(strm, last_connection, req, res,
-      receiver, multipart_header, multipart_receiver);
+inline bool Server::read_content_with_content_receiver(
+    Stream &strm, bool last_connection, Request &req, Response &res,
+    ContentReceiver receiver, MultipartContentHeader multipart_header,
+    ContentReceiver multipart_receiver) {
+  return read_content_core(strm, last_connection, req, res, receiver,
+                           multipart_header, multipart_receiver);
 }
 
-inline bool
-Server::read_content_core(Stream &strm, bool last_connection,
-                          Request &req, Response &res,
-                          ContentReceiver receiver,
-                          MultipartContentHeader mulitpart_header,
-                          ContentReceiver multipart_receiver) {
+inline bool Server::read_content_core(Stream &strm, bool last_connection,
+                                      Request &req, Response &res,
+                                      ContentReceiver receiver,
+                                      MultipartContentHeader mulitpart_header,
+                                      ContentReceiver multipart_receiver) {
   detail::MultipartFormDataParser multipart_form_data_parser;
   ContentReceiver out;
 
@@ -3014,7 +3000,8 @@ Server::read_content_core(Stream &strm, bool last_connection,
 
     multipart_form_data_parser.set_boundary(boundary);
     out = [&](const char *buf, size_t n) {
-      return multipart_form_data_parser.parse(buf, n, multipart_receiver, mulitpart_header);
+      return multipart_form_data_parser.parse(buf, n, multipart_receiver,
+                                              mulitpart_header);
     };
   } else {
     out = receiver;
@@ -3159,15 +3146,14 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm,
     // Content reader handler
     {
       ContentReader reader(
-        [&](ContentReceiver receiver) {
-          return read_content_with_content_receiver(strm, last_connection, req, res,
-                                                    receiver, nullptr, nullptr);
-        },
-        [&](MultipartContentHeader header, ContentReceiver receiver) {
-          return read_content_with_content_receiver(strm, last_connection, req, res,
-                                                    nullptr, header, receiver);
-        }
-      );
+          [&](ContentReceiver receiver) {
+            return read_content_with_content_receiver(
+                strm, last_connection, req, res, receiver, nullptr, nullptr);
+          },
+          [&](MultipartContentHeader header, ContentReceiver receiver) {
+            return read_content_with_content_receiver(
+                strm, last_connection, req, res, nullptr, header, receiver);
+          });
 
       if (req.method == "POST") {
         if (dispatch_request_for_content_reader(
@@ -3319,8 +3305,7 @@ inline Client::Client(const char *host, int port, time_t timeout_sec)
       keep_alive_max_count_(CPPHTTPLIB_KEEPALIVE_MAX_COUNT),
       read_timeout_sec_(CPPHTTPLIB_READ_TIMEOUT_SECOND),
       read_timeout_usec_(CPPHTTPLIB_READ_TIMEOUT_USECOND),
-      follow_location_(false),
-      compress_(false) {}
+      follow_location_(false), compress_(false) {}
 
 inline Client::~Client() {}
 
@@ -3760,15 +3745,16 @@ inline std::shared_ptr<Response> Client::Post(const char *path,
   return Post(path, Headers(), body, content_type);
 }
 
-inline std::shared_ptr<Response>
-Client::Post(const char *path, const Headers &headers, const std::string &body,
-             const char *content_type) {
+inline std::shared_ptr<Response> Client::Post(const char *path,
+                                              const Headers &headers,
+                                              const std::string &body,
+                                              const char *content_type) {
   return send_with_content_provider("POST", path, headers, body, 0, nullptr,
                                     content_type);
 }
 
-inline std::shared_ptr<Response>
-Client::Post(const char *path, const Params &params) {
+inline std::shared_ptr<Response> Client::Post(const char *path,
+                                              const Params &params) {
   return Post(path, Headers(), params);
 }
 
@@ -3787,9 +3773,8 @@ Client::Post(const char *path, const Headers &headers, size_t content_length,
                                     content_type);
 }
 
-inline std::shared_ptr<Response> Client::Post(const char *path,
-                                              const Headers &headers,
-                                              const Params &params) {
+inline std::shared_ptr<Response>
+Client::Post(const char *path, const Headers &headers, const Params &params) {
   std::string query;
   for (auto it = params.begin(); it != params.end(); ++it) {
     if (it != params.begin()) { query += "&"; }
@@ -3839,9 +3824,10 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
   return Put(path, Headers(), body, content_type);
 }
 
-inline std::shared_ptr<Response>
-Client::Put(const char *path, const Headers &headers, const std::string &body,
-            const char *content_type) {
+inline std::shared_ptr<Response> Client::Put(const char *path,
+                                             const Headers &headers,
+                                             const std::string &body,
+                                             const char *content_type) {
   return send_with_content_provider("PUT", path, headers, body, 0, nullptr,
                                     content_type);
 }
@@ -3867,9 +3853,10 @@ inline std::shared_ptr<Response> Client::Patch(const char *path,
   return Patch(path, Headers(), body, content_type);
 }
 
-inline std::shared_ptr<Response>
-Client::Patch(const char *path, const Headers &headers, const std::string &body,
-              const char *content_type) {
+inline std::shared_ptr<Response> Client::Patch(const char *path,
+                                               const Headers &headers,
+                                               const std::string &body,
+                                               const char *content_type) {
   return send_with_content_provider("PATCH", path, headers, body, 0, nullptr,
                                     content_type);
 }
