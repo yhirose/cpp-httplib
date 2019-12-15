@@ -30,10 +30,11 @@ const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
 
-MultipartFormData& get_file_value(MultipartFormDataItems &files, const char *key) {
-  auto it = std::find_if(files.begin(), files.end(), [&](const MultipartFormData &file) {
-    return file.name == key;
-  });
+MultipartFormData &get_file_value(MultipartFormDataItems &files,
+                                  const char *key) {
+  auto it = std::find_if(
+      files.begin(), files.end(),
+      [&](const MultipartFormData &file) { return file.name == key; });
   if (it != files.end()) { return *it; }
   throw std::runtime_error("invalid mulitpart form data name error");
 }
@@ -496,15 +497,15 @@ TEST(DigestAuthTest, FromHTTPWatch) {
 
   {
     std::vector<std::string> paths = {
-      "/digest-auth/auth/hello/world/MD5",
-      "/digest-auth/auth/hello/world/SHA-256",
-      "/digest-auth/auth/hello/world/SHA-512",
-      "/digest-auth/auth-init/hello/world/MD5",
-      "/digest-auth/auth-int/hello/world/MD5",
+        "/digest-auth/auth/hello/world/MD5",
+        "/digest-auth/auth/hello/world/SHA-256",
+        "/digest-auth/auth/hello/world/SHA-512",
+        "/digest-auth/auth-init/hello/world/MD5",
+        "/digest-auth/auth-int/hello/world/MD5",
     };
 
     cli.set_auth("hello", "world");
-    for (auto path: paths) {
+    for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
       EXPECT_EQ(res->body,
@@ -801,18 +802,19 @@ protected:
                 EXPECT_EQ("5", req.get_header_value("Content-Length"));
               })
         .Post("/content_receiver",
-              [&](const Request & req, Response &res, const ContentReader &content_reader) {
+              [&](const Request &req, Response &res,
+                  const ContentReader &content_reader) {
                 if (req.is_multipart_form_data()) {
                   MultipartFormDataItems files;
                   content_reader(
-                    [&](const MultipartFormData &file) {
-                      files.push_back(file);
-                      return true;
-                    },
-                    [&](const char *data, size_t data_length) {
-                      files.back().content.append(data, data_length);
-                      return true;
-                    });
+                      [&](const MultipartFormData &file) {
+                        files.push_back(file);
+                        return true;
+                      },
+                      [&](const char *data, size_t data_length) {
+                        files.back().content.append(data, data_length);
+                        return true;
+                      });
 
                   EXPECT_EQ(5u, files.size());
 
@@ -1814,7 +1816,7 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 #endif
 
 // Sends a raw request to a server listening at HOST:PORT.
-static bool send_request(time_t read_timeout_sec, const std::string& req) {
+static bool send_request(time_t read_timeout_sec, const std::string &req) {
   auto client_sock =
       detail::create_client_socket(HOST, PORT, /*timeout_sec=*/5);
 
@@ -1822,8 +1824,8 @@ static bool send_request(time_t read_timeout_sec, const std::string& req) {
 
   return detail::process_and_close_socket(
       true, client_sock, 1, read_timeout_sec, 0,
-      [&](Stream& strm, bool /*last_connection*/,
-          bool &/*connection_close*/) -> bool {
+      [&](Stream &strm, bool /*last_connection*/, bool &
+          /*connection_close*/) -> bool {
         if (req.size() !=
             static_cast<size_t>(strm.write(req.data(), req.size()))) {
           return false;
@@ -1840,11 +1842,10 @@ static bool send_request(time_t read_timeout_sec, const std::string& req) {
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   Server svr;
   std::string header_value;
-  svr.Get("/validate-ws-in-headers",
-          [&](const Request &req, Response &res) {
-            header_value = req.get_header_value("foo");
-            res.set_content("ok", "text/plain");
-          });
+  svr.Get("/validate-ws-in-headers", [&](const Request &req, Response &res) {
+    header_value = req.get_header_value("foo");
+    res.set_content("ok", "text/plain");
+  });
 
   thread t = thread([&] { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
@@ -1853,11 +1854,10 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 
   // Only space and horizontal tab are whitespace. Make sure other whitespace-
   // like characters are not treated the same - use vertical tab and escape.
-  const std::string req =
-      "GET /validate-ws-in-headers HTTP/1.1\r\n"
-      "foo: \t \v bar \e\t \r\n"
-      "Connection: close\r\n"
-      "\r\n";
+  const std::string req = "GET /validate-ws-in-headers HTTP/1.1\r\n"
+                          "foo: \t \v bar \e\t \r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
 
   ASSERT_TRUE(send_request(5, req));
   svr.stop();
@@ -1867,10 +1867,9 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 
 TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
   Server svr;
-  svr.Get("/hi",
-          [&](const Request & /*req*/, Response &res) {
-            res.set_content("ok", "text/plain");
-          });
+  svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
 
   // Server read timeout must be longer than the client read timeout for the
   // bug to reproduce, probably to force the server to process a request

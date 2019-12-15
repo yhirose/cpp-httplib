@@ -44,14 +44,10 @@ int main(void) {
 #endif
 
   // Run servers
-  auto httpThread = std::thread([&]() {
-    http.listen("localhost", 8080);
-  });
+  auto httpThread = std::thread([&]() { http.listen("localhost", 8080); });
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto httpsThread = std::thread([&]() {
-    https.listen("localhost", 8081);
-  });
+  auto httpsThread = std::thread([&]() { https.listen("localhost", 8081); });
 #endif
 
   httpThread.join();

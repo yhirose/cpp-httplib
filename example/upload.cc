@@ -5,13 +5,13 @@
 //  MIT License
 //
 
+#include <fstream>
 #include <httplib.h>
 #include <iostream>
-#include <fstream>
 using namespace httplib;
 using namespace std;
 
-const char* html = R"(
+const char *html = R"(
 <form id="formElem">
   <input type="file" name="file" accept="image/*">
   <input type="submit">
@@ -35,9 +35,10 @@ int main(void) {
     res.set_content(html, "text/html");
   });
 
-  svr.Post("/post", [](const Request & req, Response &res) {
+  svr.Post("/post", [](const Request &req, Response &res) {
     auto file = req.get_file_value("file");
-    cout << "file length: " << file.content.length() << ":" << file.filename << endl;
+    cout << "file length: " << file.content.length() << ":" << file.filename
+         << endl;
 
     ofstream ofs(file.filename, ios::binary);
     ofs << file.content;
