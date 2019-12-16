@@ -394,6 +394,8 @@ res->status; // 200
 
 ### Use a specitic network interface
 
+NOTE: This feature is not available on Windows, yet.
+
 ```cpp
 cli.set_interface("eth0"); // Interface name, IP address or host name
 ```
