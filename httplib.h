@@ -1060,7 +1060,7 @@ inline void read_file(const std::string &path, std::string &out) {
 
 inline std::string file_extension(const std::string &path) {
   std::smatch m;
-  auto re = std::regex("\\.([a-zA-Z0-9]+)$");
+  static auto re = std::regex("\\.([a-zA-Z0-9]+)$");
   if (std::regex_search(path, m, re)) { return m[1].str(); }
   return std::string();
 }
@@ -2823,7 +2823,7 @@ inline void Server::stop() {
 }
 
 inline bool Server::parse_request_line(const char *s, Request &req) {
-  static std::regex re(
+  const static std::regex re(
       "(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
       "(([^?]+)(?:\\?(.*?))?) (HTTP/1\\.[01])\r\n");
 
@@ -3487,38 +3487,37 @@ inline bool Client::redirect(const Request &req, Response &res) {
   auto location = res.get_header_value("location");
   if (location.empty()) { return false; }
 
-  std::regex re(
+  const static std::regex re(
       R"(^(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
 
   std::smatch m;
-  if (regex_match(location, m, re)) {
-    auto next_scheme = m[1].str();
-    auto next_host = m[2].str();
-    auto next_path = m[3].str();
-    if (next_host.empty()) { next_host = host_; }
-    if (next_path.empty()) { next_path = "/"; }
+  if (!regex_match(location, m, re)) { return false; }
 
-    auto scheme = is_ssl() ? "https" : "http";
+  auto next_scheme = m[1].str();
+  auto next_host = m[2].str();
+  auto next_path = m[3].str();
+  if (next_host.empty()) { next_host = host_; }
+  if (next_path.empty()) { next_path = "/"; }
 
-    if (next_scheme == scheme && next_host == host_) {
-      return detail::redirect(*this, req, res, next_path);
-    } else {
-      if (next_scheme == "https") {
+  auto scheme = is_ssl() ? "https" : "http";
+
+  if (next_scheme == scheme && next_host == host_) {
+    return detail::redirect(*this, req, res, next_path);
+  } else {
+    if (next_scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-        SSLClient cli(next_host.c_str());
-        cli.set_follow_location(true);
-        return detail::redirect(cli, req, res, next_path);
+      SSLClient cli(next_host.c_str());
+      cli.set_follow_location(true);
+      return detail::redirect(cli, req, res, next_path);
 #else
-        return false;
+      return false;
 #endif
-      } else {
-        Client cli(next_host.c_str());
-        cli.set_follow_location(true);
-        return detail::redirect(cli, req, res, next_path);
-      }
+    } else {
+      Client cli(next_host.c_str());
+      cli.set_follow_location(true);
+      return detail::redirect(cli, req, res, next_path);
     }
   }
-  return false;
 }
 
 inline bool Client::write_request(Stream &strm, const Request &req,
@@ -3526,13 +3525,11 @@ inline bool Client::write_request(Stream &strm, const Request &req,
   BufferStream bstrm;
 
   // Request line
-  static std::regex re(
+  const static std::regex re(
       R"(^([^:/?#]+://[^/?#]*)?([^?#]*(?:\?[^#]*)?(?:#.*)?))");
 
   std::smatch m;
-  if (!regex_match(req.path, m, re)) {
-    return false;
-  }
+  if (!regex_match(req.path, m, re)) { return false; }
 
   auto path = m[1].str() + detail::encode_url(m[2].str());
 
@@ -3656,9 +3653,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
                                     Response &res, bool last_connection,
                                     bool &connection_close) {
   // Send request
-  if (!write_request(strm, req, last_connection)) {
-    return false;
-  }
+  if (!write_request(strm, req, last_connection)) { return false; }
 
   // Receive response and headers
   if (!read_response_line(strm, res) ||
@@ -4011,9 +4006,7 @@ inline void Client::set_follow_location(bool on) { follow_location_ = on; }
 
 inline void Client::set_compress(bool on) { compress_ = on; }
 
-inline void Client::set_interface(const char *intf) {
-  interface_ = intf;
-}
+inline void Client::set_interface(const char *intf) { interface_ = intf; }
 
 /*
  * SSL Implementation
