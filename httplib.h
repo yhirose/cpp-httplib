@@ -766,7 +766,7 @@ protected:
 private:
   socket_t create_client_socket() const;
   bool read_response_line(Stream &strm, Response &res);
-  void write_request(Stream &strm, const Request &req, bool last_connection);
+  bool write_request(Stream &strm, const Request &req, bool last_connection);
   bool redirect(const Request &req, Response &res);
 
   std::shared_ptr<Response> send_with_content_provider(
@@ -3490,8 +3490,6 @@ inline bool Client::redirect(const Request &req, Response &res) {
   std::regex re(
       R"(^(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
 
-  auto scheme = is_ssl() ? "https" : "http";
-
   std::smatch m;
   if (regex_match(location, m, re)) {
     auto next_scheme = m[1].str();
@@ -3499,6 +3497,8 @@ inline bool Client::redirect(const Request &req, Response &res) {
     auto next_path = m[3].str();
     if (next_host.empty()) { next_host = host_; }
     if (next_path.empty()) { next_path = "/"; }
+
+    auto scheme = is_ssl() ? "https" : "http";
 
     if (next_scheme == scheme && next_host == host_) {
       return detail::redirect(*this, req, res, next_path);
@@ -3521,12 +3521,20 @@ inline bool Client::redirect(const Request &req, Response &res) {
   return false;
 }
 
-inline void Client::write_request(Stream &strm, const Request &req,
+inline bool Client::write_request(Stream &strm, const Request &req,
                                   bool last_connection) {
   BufferStream bstrm;
 
   // Request line
-  auto path = detail::encode_url(req.path);
+  static std::regex re(
+      R"(^([^:/?#]+://[^/?#]*)?([^?#]*(?:\?[^#]*)?(?:#.*)?))");
+
+  std::smatch m;
+  if (!regex_match(req.path, m, re)) {
+    return false;
+  }
+
+  auto path = m[1].str() + detail::encode_url(m[2].str());
 
   bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
 
@@ -3596,6 +3604,8 @@ inline void Client::write_request(Stream &strm, const Request &req,
   } else {
     strm.write(req.body);
   }
+
+  return true;
 }
 
 inline std::shared_ptr<Response> Client::send_with_content_provider(
@@ -3646,7 +3656,9 @@ inline bool Client::process_request(Stream &strm, const Request &req,
                                     Response &res, bool last_connection,
                                     bool &connection_close) {
   // Send request
-  write_request(strm, req, last_connection);
+  if (!write_request(strm, req, last_connection)) {
+    return false;
+  }
 
   // Receive response and headers
   if (!read_response_line(strm, res) ||
