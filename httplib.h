@@ -614,7 +614,7 @@ private:
 
 class Client {
 public:
-  explicit Client(const char *host, int port = 80, time_t timeout_sec = 300);
+  explicit Client(const char *host, int port = 80);
 
   virtual ~Client();
 
@@ -734,6 +734,8 @@ public:
   bool send(const std::vector<Request> &requests,
             std::vector<Response> &responses);
 
+  void set_timeout_sec(time_t timeout_sec);
+
   void set_keep_alive_max_count(size_t count);
 
   void set_read_timeout(time_t sec, time_t usec);
@@ -752,15 +754,17 @@ protected:
 
   const std::string host_;
   const int port_;
-  time_t timeout_sec_;
   const std::string host_and_port_;
-  size_t keep_alive_max_count_;
-  time_t read_timeout_sec_;
-  time_t read_timeout_usec_;
-  bool follow_location_;
+
+  // Options
+  time_t timeout_sec_ = 300;
+  size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+  time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
+  time_t read_timeout_usec_ = CPPHTTPLIB_READ_TIMEOUT_USECOND;
   std::string username_;
   std::string password_;
-  bool compress_;
+  bool follow_location_ = false;
+  bool compress_ = false;
   std::string interface_;
 
 private:
@@ -852,7 +856,7 @@ private:
 
 class SSLClient : public Client {
 public:
-  SSLClient(const char *host, int port = 443, time_t timeout_sec = 300,
+  SSLClient(const char *host, int port = 443,
             const char *client_cert_path = nullptr,
             const char *client_key_path = nullptr);
 
@@ -884,6 +888,8 @@ private:
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
   std::vector<std::string> host_components_;
+
+  // Options
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
   bool server_certificate_verification_ = false;
@@ -3371,13 +3377,9 @@ inline bool Server::process_and_close_socket(socket_t sock) {
 }
 
 // HTTP client implementation
-inline Client::Client(const char *host, int port, time_t timeout_sec)
-    : host_(host), port_(port), timeout_sec_(timeout_sec),
-      host_and_port_(host_ + ":" + std::to_string(port_)),
-      keep_alive_max_count_(CPPHTTPLIB_KEEPALIVE_MAX_COUNT),
-      read_timeout_sec_(CPPHTTPLIB_READ_TIMEOUT_SECOND),
-      read_timeout_usec_(CPPHTTPLIB_READ_TIMEOUT_USECOND),
-      follow_location_(false), compress_(false) {}
+inline Client::Client(const char *host, int port)
+    : host_(host), port_(port),
+      host_and_port_(host_ + ":" + std::to_string(port_)) {}
 
 inline Client::~Client() {}
 
@@ -4004,6 +4006,10 @@ inline std::shared_ptr<Response> Client::Options(const char *path,
   return send(req, *res) ? res : nullptr;
 }
 
+inline void Client::set_timeout_sec(time_t timeout_sec) {
+  timeout_sec_ = timeout_sec;
+}
+
 inline void Client::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
 }
@@ -4243,10 +4249,10 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 }
 
 // SSL HTTP client implementation
-inline SSLClient::SSLClient(const char *host, int port, time_t timeout_sec,
+inline SSLClient::SSLClient(const char *host, int port,
                             const char *client_cert_path,
                             const char *client_key_path)
-    : Client(host, port, timeout_sec) {
+    : Client(host, port) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
