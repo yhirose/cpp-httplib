@@ -204,15 +204,15 @@ TEST(ParseHeaderValueTest, Range) {
 
 TEST(ChunkedEncodingTest, FromHTTPWatch) {
   auto host = "www.httpwatch.com";
-  auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(2);
 
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
@@ -227,15 +227,15 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
 
 TEST(ChunkedEncodingTest, WithContentReceiver) {
   auto host = "www.httpwatch.com";
-  auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(2);
 
   std::string body;
   auto res =
@@ -255,15 +255,15 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
 
 TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   auto host = "www.httpwatch.com";
-  auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(2);
 
   std::string body;
   auto res = cli.Get(
@@ -287,15 +287,15 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 
 TEST(RangeTest, FromHTTPBin) {
   auto host = "httpbin.org";
-  auto sec = 5;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(5);
 
   {
     httplib::Headers headers;
@@ -347,15 +347,15 @@ TEST(RangeTest, FromHTTPBin) {
 
 TEST(ConnectionErrorTest, InvalidHost) {
   auto host = "-abcde.com";
-  auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(2);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
@@ -363,15 +363,15 @@ TEST(ConnectionErrorTest, InvalidHost) {
 
 TEST(ConnectionErrorTest, InvalidPort) {
   auto host = "localhost";
-  auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 44380;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 8080;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(2);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
@@ -379,15 +379,15 @@ TEST(ConnectionErrorTest, InvalidPort) {
 
 TEST(ConnectionErrorTest, Timeout) {
   auto host = "google.com";
-  auto sec = 2;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 44380;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 8080;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(2);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
@@ -395,15 +395,15 @@ TEST(ConnectionErrorTest, Timeout) {
 
 TEST(CancelTest, NoCancel) {
   auto host = "httpbin.org";
-  auto sec = 5;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(5);
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res != nullptr);
@@ -413,31 +413,31 @@ TEST(CancelTest, NoCancel) {
 
 TEST(CancelTest, WithCancelSmallPayload) {
   auto host = "httpbin.org";
-  auto sec = 5;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
+  cli.set_timeout_sec(5);
   ASSERT_TRUE(res == nullptr);
 }
 
 TEST(CancelTest, WithCancelLargePayload) {
   auto host = "httpbin.org";
-  auto sec = 5;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port, sec);
+  httplib::SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port, sec);
+  httplib::Client cli(host, port);
 #endif
+  cli.set_timeout_sec(5);
 
   uint32_t count = 0;
   httplib::Headers headers;
@@ -2090,9 +2090,10 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   msleep(1);
 
-  httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE,
+  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE,
                          CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
+  cli.set_timeout_sec(30);
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 
@@ -2109,8 +2110,9 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   msleep(1);
 
-  httplib::SSLClient cli(HOST, PORT, 30);
+  httplib::SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
+  cli.set_timeout_sec(30);
   ASSERT_TRUE(res == nullptr);
 
   svr.stop();
@@ -2130,9 +2132,10 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   msleep(1);
 
-  httplib::SSLClient cli(HOST, PORT, 30, CLIENT_CERT_FILE,
+  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE,
                          CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
+  cli.set_timeout_sec(30);
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 

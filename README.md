@@ -301,7 +301,7 @@ res = cli.Options("/resource/foo");
 ### Connection Timeout
 
 ```c++
-httplib::Client cli("localhost", 8080, 5); // timeouts in 5 seconds
+cli.set_timeout_sec(5); // timeouts in 5 seconds
 ```
 ### With Progress Callback
 
