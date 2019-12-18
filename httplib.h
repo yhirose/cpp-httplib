@@ -1302,6 +1302,22 @@ socket_t create_socket(const char *host, int port, Fn fn,
 #ifdef _WIN32
     auto sock = WSASocketW(rp->ai_family, rp->ai_socktype, rp->ai_protocol,
                            nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT);
+    /**
+     * Since the WSA_FLAG_NO_HANDLE_INHERIT is only supported on Windows 7 SP1 and above
+     * the socket creation fails on older Windows Systems.
+     *
+     * Let's try to create a socket the old way in this case.
+     *
+     * Reference:
+     * https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsasocketa
+     *
+     * WSA_FLAG_NO_HANDLE_INHERIT:
+     * This flag is supported on Windows 7 with SP1, Windows Server 2008 R2 with SP1, and later
+     *
+     */
+    if (sock == INVALID_SOCKET) {
+        sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    }
 #else
     auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
 #endif
