@@ -474,12 +474,26 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   }
 
   {
-    cli.set_auth("hello", "world");
+    cli.set_basic_auth("hello", "world");
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(res->body,
               "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
     EXPECT_EQ(200, res->status);
+  }
+
+  {
+    cli.set_basic_auth("hello", "bad");
+    auto res = cli.Get("/basic-auth/hello/world");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(401, res->status);
+  }
+
+  {
+    cli.set_basic_auth("bad", "world");
+    auto res = cli.Get("/basic-auth/hello/world");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(401, res->status);
   }
 }
 
@@ -504,13 +518,27 @@ TEST(DigestAuthTest, FromHTTPWatch) {
         "/digest-auth/auth-int/hello/world/MD5",
     };
 
-    cli.set_auth("hello", "world");
+    cli.set_digest_auth("hello", "world");
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
       EXPECT_EQ(res->body,
                 "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
       EXPECT_EQ(200, res->status);
+    }
+
+    cli.set_digest_auth("hello", "bad");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res != nullptr);
+      EXPECT_EQ(400, res->status);
+    }
+
+    cli.set_digest_auth("bad", "world");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res != nullptr);
+      EXPECT_EQ(400, res->status);
     }
   }
 }
