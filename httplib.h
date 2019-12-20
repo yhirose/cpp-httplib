@@ -2477,9 +2477,9 @@ inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
 
 inline std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
-                                 const std::string &password, bool proxy = false) {
+                                 const std::string &password, bool is_proxy = false) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
-  auto key = proxy ? "Proxy-Authorization" : "Authorization";
+  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
 }
 
@@ -2487,7 +2487,7 @@ make_basic_authentication_header(const std::string &username,
 inline std::pair<std::string, std::string> make_digest_authentication_header(
     const Request &req, const std::map<std::string, std::string> &auth,
     size_t cnonce_count, const std::string &cnonce, const std::string &username,
-    const std::string &password, bool proxy = false) {
+    const std::string &password, bool is_proxy = false) {
   using namespace std;
 
   string nc;
@@ -2527,15 +2527,15 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
                "\", algorithm=" + algo + ", qop=" + qop + ", nc=\"" + nc +
                "\", cnonce=\"" + cnonce + "\", response=\"" + response + "\"";
 
-  auto key = proxy ? "Proxy-Authorization" : "Authorization";
+  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
 }
 #endif
 
 inline bool parse_www_authenticate(const httplib::Response &res,
                                    std::map<std::string, std::string> &auth,
-                                   bool proxy) {
-  auto key = proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
+                                   bool is_proxy) {
+  auto key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
   if (res.has_header(key)) {
     static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
     auto s = res.get_header_value(key);
@@ -3562,6 +3562,8 @@ inline bool Client::send(const Request &req, Response &res) {
       std::map<std::string, std::string> auth;
       if (parse_www_authenticate(res, auth, is_proxy)) {
         Request new_req = req;
+        auto key = is_proxy ? "Proxy-Authorization" : "WWW-Authorization";
+        new_req.headers.erase(key);
         new_req.headers.insert(make_digest_authentication_header(
             req, auth, 1, random_string(10), username, password, is_proxy));
 
