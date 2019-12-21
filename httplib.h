@@ -3726,8 +3726,7 @@ inline bool Client::process_and_close_socket(
 inline bool Client::is_ssl() const { return false; }
 
 inline std::shared_ptr<Response> Client::Get(const char *path) {
-  Progress dummy;
-  return Get(path, Headers(), dummy);
+  return Get(path, Headers(), Progress());
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3737,8 +3736,7 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers) {
-  Progress dummy;
-  return Get(path, headers, dummy);
+  return Get(path, headers, Progress());
 }
 
 inline std::shared_ptr<Response>
@@ -3755,37 +3753,33 @@ Client::Get(const char *path, const Headers &headers, Progress progress) {
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver) {
-  Progress dummy;
-  return Get(path, Headers(), nullptr, std::move(content_receiver), dummy);
+  return Get(path, Headers(), nullptr, std::move(content_receiver), Progress());
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, Headers(), nullptr, std::move(content_receiver), progress);
+  return Get(path, Headers(), nullptr, std::move(content_receiver), std::move(progress));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver) {
-  Progress dummy;
-  return Get(path, headers, nullptr, std::move(content_receiver), dummy);
+  return Get(path, headers, nullptr, std::move(content_receiver), Progress());
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, headers, nullptr, std::move(content_receiver), progress);
+  return Get(path, headers, nullptr, std::move(content_receiver), std::move(progress));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ResponseHandler response_handler,
                                              ContentReceiver content_receiver) {
-  Progress dummy;
-  return Get(path, headers, std::move(response_handler), content_receiver,
-             dummy);
+  return Get(path, headers, std::move(response_handler), content_receiver, Progress());
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
