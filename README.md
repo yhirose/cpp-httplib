@@ -74,7 +74,7 @@ svr.set_logger([](const auto& req, const auto& res) {
 
 ```cpp
 svr.set_error_handler([](const auto& req, auto& res) {
-    const char* fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
+    auto fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
     char buf[BUFSIZ];
     snprintf(buf, sizeof(buf), fmt, res.status);
     res.set_content(buf, "text/html");
@@ -325,22 +325,29 @@ This feature was contributed by [underscorediscovery](https://github.com/yhirose
 
 ### Authentication
 
-NOTE: OpenSSL is required for Digest Authentication, since cpp-httplib uses message digest functions in OpenSSL.
+```cpp
+// Basic Authentication
+cli.set_basic_auth("user", "pass");
+
+// Digest Authentication
+cli.set_digest_auth("user", "pass");
+```
+
+NOTE: OpenSSL is required for Digest Authentication.
+
+### Proxy server support
 
 ```cpp
-httplib::Client cli("httplib.org");
-cli.set_auth("user", "pass");
+cli.set_proxy("host", port);
 
-// Basic
-auto res = cli.Get("/basic-auth/user/pass");
-// res->status should be 200
-// res->body should be "{\n  \"authenticated\": true, \n  \"user\": \"user\"\n}\n".
+// Basic Authentication
+cli.set_proxy_basic_auth("user", "pass");
 
-// Digest
-res = cli.Get("/digest-auth/auth/user/pass/SHA-256");
-// res->status should be 200
-// res->body should be "{\n  \"authenticated\": true, \n  \"user\": \"user\"\n}\n".
+// Digest Authentication
+cli.set_proxy_digest_auth("user", "pass");
 ```
+
+NOTE: OpenSSL is required for Digest Authentication.
 
 ### Range
 
