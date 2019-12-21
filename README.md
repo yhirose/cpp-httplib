@@ -450,7 +450,7 @@ httplib.h  httplib.cc
 NOTE
 ----
 
-g++ 4.8 cannot build this library since `<regex>` in g++4.8 is [broken](https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions).
+g++ 4.8 and below cannot build this library since `<regex>` in the versions are [broken](https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions).
 
 License
 -------
