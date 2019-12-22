@@ -3018,7 +3018,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
     }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-    // TODO: 'Accpet-Encoding' has gzip, not gzip;q=0
+    // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
     const auto &encodings = req.get_header_value("Accept-Encoding");
     if (encodings.find("gzip") != std::string::npos &&
         detail::can_compress(res.get_header_value("Content-Type"))) {
