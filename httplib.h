@@ -190,8 +190,6 @@ struct ci {
 
 } // namespace detail
 
-enum class HttpVersion { v1_0 = 0, v1_1 };
-
 using Headers = std::multimap<std::string, std::string, detail::ci>;
 
 using Params = std::multimap<std::string, std::string>;
