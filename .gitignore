@@ -9,6 +9,7 @@ example/redirect
 example/upload
 example/*.pem
 test/test
+test/test_proxy
 test/test.xcodeproj/xcuser*
 test/test.xcodeproj/*/xcuser*
 test/*.pem

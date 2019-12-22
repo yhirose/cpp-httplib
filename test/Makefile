@@ -11,6 +11,9 @@ all : test
 test : test.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o test $(CXXFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -pthread
 
+test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o test_proxy $(CXXFLAGS) test_proxy.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -pthread
+
 cert.pem:
 	openssl genrsa 2048 > key.pem
 	openssl req -new -batch -config test.conf -key key.pem | openssl x509 -days 3650 -req -signkey key.pem > cert.pem
@@ -21,4 +24,4 @@ cert.pem:
 	#c_rehash .
 
 clean:
-	rm -f test *.pem *.0 *.1 *.srl
+	rm -f test test_proxy pem *.0 *.1 *.srl

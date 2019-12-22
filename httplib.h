@@ -2476,7 +2476,8 @@ inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
 
 inline std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
-                                 const std::string &password, bool is_proxy = false) {
+                                 const std::string &password,
+                                 bool is_proxy = false) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
@@ -3500,31 +3501,36 @@ inline bool Client::send(const Request &req, Response &res) {
       return false;
     }
 
-    if (res2.status == 407 && !proxy_digest_auth_username_.empty() &&
-        !proxy_digest_auth_password_.empty()) {
-      std::map<std::string, std::string> auth;
-      if (parse_www_authenticate(res2, auth, true)) {
-        detail::close_socket(sock);
-        sock = create_client_socket();
-        if (sock == INVALID_SOCKET) { return false; }
+    if (res2.status == 407) {
+      if (!proxy_digest_auth_username_.empty() &&
+          !proxy_digest_auth_password_.empty()) {
+        std::map<std::string, std::string> auth;
+        if (parse_www_authenticate(res2, auth, true)) {
+          detail::close_socket(sock);
+          sock = create_client_socket();
+          if (sock == INVALID_SOCKET) { return false; }
 
-        Response res2;
-        if (!detail::process_socket(
-                true, sock, 1, read_timeout_sec_, read_timeout_usec_,
-                [&](Stream &strm, bool /*last_connection*/,
-                    bool &connection_close) {
-                  Request req2;
-                  req2.method = "CONNECT";
-                  req2.path = host_and_port_;
-                  req2.headers.insert(make_digest_authentication_header(
-                      req2, auth, 1, random_string(10),
-                      proxy_digest_auth_username_, proxy_digest_auth_password_,
-                      true));
-                  return process_request(strm, req2, res2, false,
-                                         connection_close);
-                })) {
-          return false;
+          Response res2;
+          if (!detail::process_socket(
+                  true, sock, 1, read_timeout_sec_, read_timeout_usec_,
+                  [&](Stream &strm, bool /*last_connection*/,
+                      bool &connection_close) {
+                    Request req2;
+                    req2.method = "CONNECT";
+                    req2.path = host_and_port_;
+                    req2.headers.insert(make_digest_authentication_header(
+                        req2, auth, 1, random_string(10),
+                        proxy_digest_auth_username_,
+                        proxy_digest_auth_password_, true));
+                    return process_request(strm, req2, res2, false,
+                                           connection_close);
+                  })) {
+            return false;
+          }
         }
+      } else {
+        res = res2;
+        return true;
       }
     }
   }
@@ -3890,7 +3896,8 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, Headers(), nullptr, std::move(content_receiver), std::move(progress));
+  return Get(path, Headers(), nullptr, std::move(content_receiver),
+             std::move(progress));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
@@ -3903,14 +3910,16 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ContentReceiver content_receiver,
                                              Progress progress) {
-  return Get(path, headers, nullptr, std::move(content_receiver), std::move(progress));
+  return Get(path, headers, nullptr, std::move(content_receiver),
+             std::move(progress));
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ResponseHandler response_handler,
                                              ContentReceiver content_receiver) {
-  return Get(path, headers, std::move(response_handler), content_receiver, Progress());
+  return Get(path, headers, std::move(response_handler), content_receiver,
+             Progress());
 }
 
 inline std::shared_ptr<Response> Client::Get(const char *path,
