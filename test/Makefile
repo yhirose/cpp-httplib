@@ -8,6 +8,9 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 all : test
 	./test
 
+proxy : test_proxy
+	./test_proxy
+
 test : test.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o test $(CXXFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) -pthread
 
