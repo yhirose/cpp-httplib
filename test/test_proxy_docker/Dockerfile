@@ -1,4 +1,4 @@
-FROM centos
+FROM centos:7
 LABEL maintainer="yuji.hirose.bug@gmail.com"
 ARG auth="basic"
 ARG port="3128"
