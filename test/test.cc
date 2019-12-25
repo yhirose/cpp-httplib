@@ -904,6 +904,12 @@ protected:
                  EXPECT_EQ(body, "content");
                  res.set_content(body, "text/plain");
                })
+        .Post("/query-string-and-body",
+              [&](const Request &req, Response & /*res*/) {
+                ASSERT_TRUE(req.has_param("key"));
+                EXPECT_EQ(req.get_param_value("key"), "value");
+                EXPECT_EQ(req.body, "content");
+              })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
         .Get("/gzip",
              [&](const Request & /*req*/, Response &res) {
@@ -1674,6 +1680,12 @@ TEST_F(ServerTest, PatchContentReceiver) {
   ASSERT_EQ("content", res->body);
 }
 
+TEST_F(ServerTest, PostQueryStringAndBody) {
+  auto res = cli_.Post("/query-string-and-body?key=value", "content", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+}
+
 TEST_F(ServerTest, HTTP2Magic) {
   Request req;
   req.method = "PRI";
@@ -1686,6 +1698,7 @@ TEST_F(ServerTest, HTTP2Magic) {
   ASSERT_TRUE(ret);
   EXPECT_EQ(400, res->status);
 }
+
 TEST_F(ServerTest, KeepAlive) {
   cli_.set_keep_alive_max_count(4);
 
