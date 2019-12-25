@@ -1,6 +1,7 @@
 # Environment
 language: cpp
 os:
+  - linux
   - osx
 
 # Compiler selection
