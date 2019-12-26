@@ -528,6 +528,8 @@ public:
   Server &Options(const char *pattern, Handler handler);
 
   bool set_base_dir(const char *dir, const char *mount_point = nullptr);
+  void set_file_extension_and_mimetype_mapping(const char *ext,
+                                               const char *mime);
   void set_file_request_handler(Handler handler);
 
   void set_error_handler(Handler handler);
@@ -597,6 +599,7 @@ private:
   std::atomic<bool> is_running_;
   std::atomic<socket_t> svr_sock_;
   std::vector<std::pair<std::string, std::string>> base_dirs_;
+  std::map<std::string, std::string> file_extension_and_mimetype_map_;
   Handler file_request_handler_;
   Handlers get_handlers_;
   Handlers post_handlers_;
@@ -1526,8 +1529,14 @@ inline std::string get_remote_addr(socket_t sock) {
   return std::string();
 }
 
-inline const char *find_content_type(const std::string &path) {
+inline const char *
+find_content_type(const std::string &path,
+                  const std::map<std::string, std::string> &user_data) {
   auto ext = file_extension(path);
+
+  auto it = user_data.find(ext);
+  if (it != user_data.end()) { return it->second.c_str(); }
+
   if (ext == "txt") {
     return "text/plain";
   } else if (ext == "html" || ext == "htm") {
@@ -1550,6 +1559,8 @@ inline const char *find_content_type(const std::string &path) {
     return "application/pdf";
   } else if (ext == "js") {
     return "application/javascript";
+  } else if (ext == "wasm") {
+    return "application/wasm";
   } else if (ext == "xml") {
     return "application/xml";
   } else if (ext == "xhtml") {
@@ -2860,6 +2871,11 @@ inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
   return false;
 }
 
+inline void Server::set_file_extension_and_mimetype_mapping(const char *ext,
+                                                            const char *mime) {
+  file_extension_and_mimetype_map_[ext] = mime;
+}
+
 inline void Server::set_file_request_handler(Handler handler) {
   file_request_handler_ = std::move(handler);
 }
@@ -3178,7 +3194,8 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
 
         if (detail::is_file(path)) {
           detail::read_file(path, res.body);
-          auto type = detail::find_content_type(path);
+          auto type =
+              detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
           res.status = 200;
           if (file_request_handler_) { file_request_handler_(req, res); }
@@ -3666,7 +3683,7 @@ inline bool Client::write_request(Stream &strm, const Request &req,
   BufferStream bstrm;
 
   // Request line
-  const auto& path = detail::encode_url(req.path);
+  const auto &path = detail::encode_url(req.path);
 
   bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
 

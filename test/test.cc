@@ -647,6 +647,7 @@ protected:
   virtual void SetUp() {
     svr_.set_base_dir("./www");
     svr_.set_base_dir("./www2", "/mount");
+    svr_.set_file_extension_and_mimetype_mapping("abcde", "text/abcde");
 
     svr_.Get("/hi",
              [&](const Request & /*req*/, Response &res) {
@@ -1159,6 +1160,14 @@ TEST_F(ServerTest, GetMethodOutOfBaseDirMount2) {
   auto res = cli_.Get("/mount/dir/../../www2/dir/test.html");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
+  auto res = cli_.Get("/dir/test.abcde");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
+  EXPECT_EQ("abcde\n", res->body);
 }
 
 TEST_F(ServerTest, InvalidBaseDirMount) {
