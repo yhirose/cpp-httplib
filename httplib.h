@@ -1967,7 +1967,7 @@ inline std::string encode_url(const std::string &s) {
     case '\n': result += "%0A"; break;
     case '\'': result += "%27"; break;
     case ',': result += "%2C"; break;
-    case ':': result += "%3A"; break;
+    // case ':': result += "%3A"; break; // ok? probably...
     case ';': result += "%3B"; break;
     default:
       auto c = static_cast<uint8_t>(s[i]);
@@ -3666,13 +3666,7 @@ inline bool Client::write_request(Stream &strm, const Request &req,
   BufferStream bstrm;
 
   // Request line
-  const static std::regex re(
-      R"(^((?:[^:/?#]+://)?(?:[^/?#]*)?)?([^?#]*(?:\?[^#]*)?(?:#.*)?))");
-
-  std::smatch m;
-  if (!regex_match(req.path, m, re)) { return false; }
-
-  auto path = m[1].str() + detail::encode_url(m[2].str());
+  const auto& path = detail::encode_url(req.path);
 
   bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
 
