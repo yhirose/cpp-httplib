@@ -51,6 +51,11 @@ svr.listen_after_bind();
 
 ```cpp
 svr.set_base_dir("./www"); // This is same as `svr.set_base_dir("./www", "/")`;
+
+// User defined file extension and MIME type mappings
+svr.set_file_extension_and_mimetype_mapping("cc", "text/x-c");
+svr.set_file_extension_and_mimetype_mapping("cpp", "text/x-c");
+svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
 ```
 
 ```cpp
@@ -61,6 +66,25 @@ svr.set_base_dir("./www", "/public");
 svr.set_base_dir("./www1", "/public"); // 1st order
 svr.set_base_dir("./www2", "/public"); // 2nd order
 ```
+
+The followings are built-in mappings:
+
+| Extension  |     MIME Type          |
+| :--------- | :--------------------- |
+| .txt       | text/plain             |
+| .html .htm | text/html              |
+| .css       | text/css               |
+| .jpeg .jpg | image/jpg              |
+| .png       | image/png              |
+| .gif       | image/gif              |
+| .svg       | image/svg+xml          |
+| .ico       | image/x-icon           |
+| .json      | application/json       |
+| .pdf       | application/pdf        |
+| .js        | application/javascript |
+| .wasm      | application/wasm       |
+| .xml       | application/xml        |
+| .xhtml     | application/xhtml+xml  |
 
 ### Logging
 
