@@ -13,5 +13,11 @@ jobs:
     steps:
     - name: checkout
       uses: actions/checkout@v1
+    - name: brotli-ubuntu
+      run: sudo apt-get install -y libbrotli-dev
+      if: matrix.os == 'ubuntu-latest'
+    - name: brotli-macOS
+      run: brew install brotli
+      if: matrix.os == 'macOS-latest'
     - name: make
       run: cd test && make
