@@ -181,16 +181,13 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 
 ### Default thread pool support
 
+
+`ThreadPool` is used as a default task queue, and the default thread count is set to value from `std::thread::hardware_concurrency()`.
+
 Set thread count to 8:
 
 ```cpp
 #define CPPHTTPLIB_THREAD_POOL_COUNT 8
-```
-
-Disable the default thread pool:
-
-```cpp
-#define CPPHTTPLIB_THREAD_POOL_COUNT 0
 ```
 
 ### Override the default thread pool with yours
