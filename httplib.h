@@ -1250,7 +1250,7 @@ inline bool process_socket(bool is_client_request, socket_t sock,
                            time_t read_timeout_usec, T callback) {
   assert(keep_alive_max_count > 0);
 
-  bool ret = false;
+  auto ret = false;
 
   if (keep_alive_max_count > 1) {
     auto count = keep_alive_max_count;
@@ -1267,7 +1267,7 @@ inline bool process_socket(bool is_client_request, socket_t sock,
 
       count--;
     }
-  } else {
+  } else { // keep_alive_max_count  is 0 or 1
     SocketStream strm(sock, read_timeout_sec, read_timeout_usec);
     auto dummy_connection_close = false;
     ret = callback(strm, true, dummy_connection_close);
@@ -1406,7 +1406,7 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
 
   if (getaddrinfo(host, "0", &hints, &result)) { return false; }
 
-  bool ret = false;
+  auto ret = false;
   for (auto rp = result; rp; rp = rp->ai_next) {
     const auto &ai = *rp;
     if (!::bind(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen))) {
@@ -3463,6 +3463,7 @@ inline bool Client::send(const Request &req, Response &res) {
               req2.path = host_and_port_;
               return process_request(strm, req2, res2, false, connection_close);
             })) {
+      detail::close_socket(sock);
       return false;
     }
 
@@ -3471,10 +3472,6 @@ inline bool Client::send(const Request &req, Response &res) {
           !proxy_digest_auth_password_.empty()) {
         std::map<std::string, std::string> auth;
         if (parse_www_authenticate(res2, auth, true)) {
-          detail::close_socket(sock);
-          sock = create_client_socket();
-          if (sock == INVALID_SOCKET) { return false; }
-
           Response res2;
           if (!detail::process_socket(
                   true, sock, 1, read_timeout_sec_, read_timeout_usec_,
@@ -3490,6 +3487,7 @@ inline bool Client::send(const Request &req, Response &res) {
                     return process_request(strm, req2, res2, false,
                                            connection_close);
                   })) {
+            detail::close_socket(sock);
             return false;
           }
         }
@@ -4186,7 +4184,7 @@ inline bool process_and_close_socket_ssl(
     return false;
   }
 
-  bool ret = false;
+  auto ret = false;
 
   if (SSL_connect_or_accept(ssl) == 1) {
     if (keep_alive_max_count > 1) {
