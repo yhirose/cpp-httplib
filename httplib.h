@@ -49,7 +49,7 @@
 #endif
 
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
-#define CPPHTTPLIB_THREAD_POOL_COUNT 8
+#define CPPHTTPLIB_THREAD_POOL_COUNT (std::thread::hardware_concurrency())
 #endif
 
 /*
@@ -387,7 +387,6 @@ public:
   virtual void shutdown() = 0;
 };
 
-#if CPPHTTPLIB_THREAD_POOL_COUNT > 0
 class ThreadPool : public TaskQueue {
 public:
   explicit ThreadPool(size_t n) : shutdown_(false) {
@@ -457,51 +456,6 @@ private:
   std::condition_variable cond_;
   std::mutex mutex_;
 };
-#elif CPPHTTPLIB_THREAD_POOL_COUNT == 0
-class Threads : public TaskQueue {
-public:
-  Threads() : running_threads_(0) {}
-  virtual ~Threads() {}
-
-  virtual void enqueue(std::function<void()> fn) override {
-    std::thread([=]() {
-      {
-        std::lock_guard<std::mutex> guard(running_threads_mutex_);
-        running_threads_++;
-      }
-
-      fn();
-
-      {
-        std::lock_guard<std::mutex> guard(running_threads_mutex_);
-        running_threads_--;
-      }
-    }).detach();
-  }
-
-  virtual void shutdown() override {
-    for (;;) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      std::lock_guard<std::mutex> guard(running_threads_mutex_);
-      if (!running_threads_) { break; }
-    }
-  }
-
-private:
-  std::mutex running_threads_mutex_;
-  int running_threads_;
-};
-#else
-class NoThread : public TaskQueue {
-public:
-  NoThread() {}
-  virtual ~NoThread() {}
-
-  virtual void enqueue(std::function<void()> fn) override { fn(); }
-
-  virtual void shutdown() override {}
-};
-#endif
 
 using Logger = std::function<void(const Request &, const Response &)>;
 
@@ -2797,13 +2751,7 @@ inline Server::Server()
   signal(SIGPIPE, SIG_IGN);
 #endif
   new_task_queue = [] {
-#if CPPHTTPLIB_THREAD_POOL_COUNT > 0
     return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT);
-#elif CPPHTTPLIB_THREAD_POOL_COUNT == 0
-    return new Threads();
-#else
-    return new NoThread();
-#endif
   };
 }
 
