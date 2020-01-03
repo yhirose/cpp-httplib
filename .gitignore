@@ -6,6 +6,7 @@ example/hello
 example/simplesvr
 example/benchmark
 example/redirect
+example/sse
 example/upload
 example/*.pem
 test/test
