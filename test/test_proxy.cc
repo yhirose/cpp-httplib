@@ -210,27 +210,49 @@ TEST(DigestAuthTest, NoSSL) {
 
 // ----------------------------------------------------------------------------
 
+void KeepAliveTest(Client& cli, bool basic) {
+  cli.set_proxy("localhost", basic ? 3128 : 3129);
+  if (basic) {
+    cli.set_proxy_basic_auth("hello", "world");
+  } else {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(KeepAliveText, NoSSLWithDigest) {
-  Client cli("httpbin.org");
+    cli.set_proxy_digest_auth("hello", "world");
+#endif
+  }
+
   cli.set_keep_alive_max_count(4);
   cli.set_follow_location(true);
   cli.set_digest_auth("hello", "world");
-  cli.set_proxy("localhost", 3129);
-  cli.set_proxy_digest_auth("hello", "world");
 
   std::vector<Request> requests;
 
   Get(requests, "/get");
   Get(requests, "/redirect/2");
-  Get(requests, "/digest-auth/auth/hello/world/MD5");
+
+  std::vector<std::string> paths = {
+      "/digest-auth/auth/hello/world/MD5",
+      "/digest-auth/auth/hello/world/SHA-256",
+      "/digest-auth/auth/hello/world/SHA-512",
+      "/digest-auth/auth-int/hello/world/MD5",
+  };
+
+  for (auto path : paths) {
+    Get(requests, path.c_str());
+  }
+
+  {
+    int count = 100;
+    while (count--) {
+      Get(requests, "/get");
+    }
+  }
 
   std::vector<Response> responses;
   auto ret = cli.send(requests, responses);
   ASSERT_TRUE(ret == true);
   ASSERT_TRUE(requests.size() == responses.size());
 
-  auto i = 0;
+  size_t i = 0;
 
   {
     auto &res = responses[i++];
@@ -242,48 +264,40 @@ TEST(KeepAliveText, NoSSLWithDigest) {
     EXPECT_EQ(200, res.status);
   }
 
+
   {
-    auto &res = responses[i++];
-    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res.body);
+    int count = paths.size();
+    while (count--) {
+      auto &res = responses[i++];
+      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res.body);
+      EXPECT_EQ(200, res.status);
+    }
+  }
+
+  for (; i < responses.size(); i++) {
+    auto &res = responses[i];
     EXPECT_EQ(200, res.status);
   }
 }
 
-TEST(KeepAliveText, SSLWithDigest) {
+TEST(KeepAliveTest, NoSSLWithBasic) {
+  Client cli("httpbin.org");
+  KeepAliveTest(cli, true);
+}
+
+TEST(KeepAliveTest, SSLWithBasic) {
   SSLClient cli("httpbin.org");
-  cli.set_keep_alive_max_count(4);
-  cli.set_follow_location(true);
-  cli.set_digest_auth("hello", "world");
-  cli.set_proxy("localhost", 3129);
-  cli.set_proxy_digest_auth("hello", "world");
+  KeepAliveTest(cli, true);
+}
 
-  std::vector<Request> requests;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(KeepAliveTest, NoSSLWithDigest) {
+  Client cli("httpbin.org");
+  KeepAliveTest(cli, false);
+}
 
-  Get(requests, "/get");
-  Get(requests, "/redirect/2");
-  Get(requests, "/digest-auth/auth/hello/world/MD5");
-
-  std::vector<Response> responses;
-  auto ret = cli.send(requests, responses);
-  ASSERT_TRUE(ret == true);
-  ASSERT_TRUE(requests.size() == responses.size());
-
-  auto i = 0;
-
-  {
-    auto &res = responses[i++];
-    EXPECT_EQ(200, res.status);
-  }
-
-  {
-    auto &res = responses[i++];
-    EXPECT_EQ(200, res.status);
-  }
-
-  {
-    auto &res = responses[i++];
-    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res.body);
-    EXPECT_EQ(200, res.status);
-  }
+TEST(KeepAliveTest, SSLWithDigest) {
+  SSLClient cli("httpbin.org");
+  KeepAliveTest(cli, false);
 }
 #endif
