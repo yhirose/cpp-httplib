@@ -200,7 +200,8 @@ TEST(ParseHeaderValueTest, Range) {
 }
 
 TEST(BufferStreamTest, read) {
-  detail::BufferStream strm;
+  detail::BufferStream strm1;
+  Stream& strm = strm1;
 
   EXPECT_EQ(5, strm.write("hello"));
 
@@ -724,6 +725,7 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_chunked_content_provider(
                    [](uint64_t /*offset*/, DataSink &sink) {
+                     ASSERT_TRUE(sink.is_writable());
                      sink.write("123", 3);
                      sink.write("456", 3);
                      sink.write("789", 3);
@@ -735,6 +737,7 @@ protected:
                auto i = new int(0);
                res.set_chunked_content_provider(
                    [i](uint64_t /*offset*/, DataSink &sink) {
+                     ASSERT_TRUE(sink.is_writable());
                      switch (*i) {
                      case 0: sink.write("123", 3); break;
                      case 1: sink.write("456", 3); break;
@@ -758,6 +761,7 @@ protected:
                res.set_content_provider(
                    data->size(),
                    [data](uint64_t offset, uint64_t length, DataSink &sink) {
+                     ASSERT_TRUE(sink.is_writable());
                      size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
                      auto out_len =
@@ -771,6 +775,7 @@ protected:
                res.set_content_provider(size_t(-1), [](uint64_t /*offset*/,
                                                        uint64_t /*length*/,
                                                        DataSink &sink) {
+                 ASSERT_TRUE(sink.is_writable());
                  std::string data = "data_chunk";
                  sink.write(data.data(), data.size());
                });
@@ -1636,6 +1641,7 @@ TEST_F(ServerTest, PutWithContentProvider) {
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        ASSERT_TRUE(sink.is_writable());
         sink.write("PUT", 3);
       },
       "text/plain");
@@ -1651,6 +1657,7 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        ASSERT_TRUE(sink.is_writable());
         sink.write("PUT", 3);
       },
       "text/plain");
