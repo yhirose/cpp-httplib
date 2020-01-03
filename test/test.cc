@@ -514,7 +514,6 @@ TEST(DigestAuthTest, FromHTTPWatch) {
         "/digest-auth/auth/hello/world/MD5",
         "/digest-auth/auth/hello/world/SHA-256",
         "/digest-auth/auth/hello/world/SHA-512",
-        "/digest-auth/auth-init/hello/world/MD5",
         "/digest-auth/auth-int/hello/world/MD5",
     };
 
