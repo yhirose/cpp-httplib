@@ -41,7 +41,9 @@ void RedirectProxyText(Client& cli, const char *path, bool basic) {
   if (basic) {
     cli.set_proxy_basic_auth("hello", "world");
   } else {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     cli.set_proxy_digest_auth("hello", "world");
+#endif
   }
   cli.set_follow_location(true);
 
@@ -55,12 +57,12 @@ TEST(RedirectTest, HTTPBinNoSSLBasic) {
   RedirectProxyText(cli, "/redirect/2", true);
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(RedirectTest, HTTPBinNoSSLDigest) {
   Client cli("httpbin.org");
   RedirectProxyText(cli, "/redirect/2", false);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(RedirectTest, HTTPBinSSLBasic) {
   SSLClient cli("httpbin.org");
   RedirectProxyText(cli, "/redirect/2", true);

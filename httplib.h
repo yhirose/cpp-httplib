@@ -700,7 +700,9 @@ public:
 
   void set_basic_auth(const char *username, const char *password);
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_digest_auth(const char *username, const char *password);
+#endif
 
   void set_follow_location(bool on);
 
@@ -712,7 +714,9 @@ public:
 
   void set_proxy_basic_auth(const char *username, const char *password);
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_proxy_digest_auth(const char *username, const char *password);
+#endif
 
   void set_logger(Logger logger);
 
@@ -736,8 +740,10 @@ protected:
 
   std::string basic_auth_username_;
   std::string basic_auth_password_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   std::string digest_auth_username_;
   std::string digest_auth_password_;
+#endif
 
   bool follow_location_ = false;
 
@@ -750,8 +756,10 @@ protected:
 
   std::string proxy_basic_auth_username_;
   std::string proxy_basic_auth_password_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   std::string proxy_digest_auth_username_;
   std::string proxy_digest_auth_password_;
+#endif
 
   Logger logger_;
 
@@ -764,8 +772,10 @@ protected:
     keep_alive_max_count_ = rhs.keep_alive_max_count_;
     basic_auth_username_ = rhs.basic_auth_username_;
     basic_auth_password_ = rhs.basic_auth_password_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     digest_auth_username_ = rhs.digest_auth_username_;
     digest_auth_password_ = rhs.digest_auth_password_;
+#endif
     follow_location_ = rhs.follow_location_;
     compress_ = rhs.compress_;
     interface_ = rhs.interface_;
@@ -773,8 +783,10 @@ protected:
     proxy_port_ = rhs.proxy_port_;
     proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
     proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     proxy_digest_auth_username_ = rhs.proxy_digest_auth_username_;
     proxy_digest_auth_password_ = rhs.proxy_digest_auth_password_;
+#endif
     logger_ = rhs.logger_;
   }
 
@@ -783,9 +795,11 @@ private:
   bool read_response_line(Stream &strm, Response &res);
   bool write_request(Stream &strm, const Request &req, bool last_connection);
   bool redirect(const Request &req, Response &res);
-  bool connect(socket_t sock, Response &res, bool &error);
   bool handle_request(Stream &strm, const Request &req, Response &res,
                       bool last_connection, bool &connection_close);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  bool connect(socket_t sock, Response &res, bool &error);
+#endif
 
   std::shared_ptr<Response> send_with_content_provider(
       const char *method, const char *path, const Headers &headers,
@@ -3498,6 +3512,57 @@ inline bool Client::send(const std::vector<Request> &requests,
   return true;
 }
 
+inline bool Client::handle_request(Stream &strm, const Request &req,
+                                   Response &res, bool last_connection,
+                                   bool &connection_close) {
+  if (req.path.empty()) { return false; }
+
+  bool ret;
+
+  if (!is_ssl() && !proxy_host_.empty()) {
+    auto req2 = req;
+    req2.path = "http://" + host_and_port_ + req.path;
+    ret = process_request(strm, req2, res, last_connection, connection_close);
+  } else {
+    ret = process_request(strm, req, res, last_connection, connection_close);
+  }
+
+  if (!ret) { return false; }
+
+  if (300 < res.status && res.status < 400 && follow_location_) {
+    ret = redirect(req, res);
+  }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  if (res.status == 401 || res.status == 407) {
+    auto is_proxy = res.status == 407;
+    const auto &username =
+        is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;
+    const auto &password =
+        is_proxy ? proxy_digest_auth_password_ : digest_auth_password_;
+
+    if (!username.empty() && !password.empty()) {
+      std::map<std::string, std::string> auth;
+      if (parse_www_authenticate(res, auth, is_proxy)) {
+        Request new_req = req;
+        auto key = is_proxy ? "Proxy-Authorization" : "WWW-Authorization";
+        new_req.headers.erase(key);
+        new_req.headers.insert(make_digest_authentication_header(
+            req, auth, 1, random_string(10), username, password, is_proxy));
+
+        Response new_res;
+
+        ret = send(new_req, new_res);
+        if (ret) { res = new_res; }
+      }
+    }
+  }
+#endif
+
+  return ret;
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline bool Client::connect(socket_t sock, Response &res, bool &error) {
   error = true;
   Response res2;
@@ -3548,56 +3613,7 @@ inline bool Client::connect(socket_t sock, Response &res, bool &error) {
 
   return true;
 }
-
-inline bool Client::handle_request(Stream &strm, const Request &req,
-                                   Response &res, bool last_connection,
-                                   bool &connection_close) {
-  if (req.path.empty()) { return false; }
-
-  bool ret;
-
-  if (!is_ssl() && !proxy_host_.empty()) {
-    auto req2 = req;
-    req2.path = "http://" + host_and_port_ + req.path;
-    ret = process_request(strm, req2, res, last_connection, connection_close);
-  } else {
-    ret = process_request(strm, req, res, last_connection, connection_close);
-  }
-
-  if (!ret) { return false; }
-
-  if (300 < res.status && res.status < 400 && follow_location_) {
-    ret = redirect(req, res);
-  }
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  if (res.status == 401 || res.status == 407) {
-    auto is_proxy = res.status == 407;
-    const auto &username =
-        is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;
-    const auto &password =
-        is_proxy ? proxy_digest_auth_password_ : digest_auth_password_;
-
-    if (!username.empty() && !password.empty()) {
-      std::map<std::string, std::string> auth;
-      if (parse_www_authenticate(res, auth, is_proxy)) {
-        Request new_req = req;
-        auto key = is_proxy ? "Proxy-Authorization" : "WWW-Authorization";
-        new_req.headers.erase(key);
-        new_req.headers.insert(make_digest_authentication_header(
-            req, auth, 1, random_string(10), username, password, is_proxy));
-
-        Response new_res;
-
-        ret = send(new_req, new_res);
-        if (ret) { res = new_res; }
-      }
-    }
-  }
 #endif
-
-  return ret;
-}
 
 inline bool Client::redirect(const Request &req, Response &res) {
   if (req.redirect_count == 0) { return false; }
@@ -4131,11 +4147,13 @@ inline void Client::set_basic_auth(const char *username, const char *password) {
   basic_auth_password_ = password;
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_digest_auth(const char *username,
                                     const char *password) {
   digest_auth_username_ = username;
   digest_auth_password_ = password;
 }
+#endif
 
 inline void Client::set_follow_location(bool on) { follow_location_ = on; }
 
@@ -4154,11 +4172,13 @@ inline void Client::set_proxy_basic_auth(const char *username,
   proxy_basic_auth_password_ = password;
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_proxy_digest_auth(const char *username,
                                           const char *password) {
   proxy_digest_auth_username_ = username;
   proxy_digest_auth_password_ = password;
 }
+#endif
 
 inline void Client::set_logger(Logger logger) { logger_ = std::move(logger); }
 
