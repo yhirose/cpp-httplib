@@ -697,18 +697,33 @@ protected:
         .Get("/streamed-chunked",
              [&](const Request & /*req*/, Response &res) {
                res.set_chunked_content_provider(
-                   [](uint64_t /*offset*/, DataSink sink, Done done) {
-                     sink("123", 3);
-                     sink("456", 3);
-                     sink("789", 3);
-                     done();
+                   [](uint64_t /*offset*/, DataSink &sink) {
+                     sink.write("123", 3);
+                     sink.write("456", 3);
+                     sink.write("789", 3);
+                     sink.done();
                    });
+             })
+        .Get("/streamed-chunked2",
+             [&](const Request & /*req*/, Response &res) {
+               auto i = new int(0);
+               res.set_chunked_content_provider(
+                   [i](uint64_t /*offset*/, DataSink &sink) {
+                     switch (*i) {
+                     case 0: sink.write("123", 3); break;
+                     case 1: sink.write("456", 3); break;
+                     case 2: sink.write("789", 3); break;
+                     case 3: sink.done(); break;
+                     }
+                     (*i)++;
+                   },
+                   [i] { delete i; });
              })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   6, [](uint64_t offset, uint64_t /*length*/, DataSink sink) {
-                     sink(offset < 3 ? "a" : "b", 1);
+                   6, [](uint64_t offset, uint64_t /*length*/, DataSink &sink) {
+                     sink.write(offset < 3 ? "a" : "b", 1);
                    });
              })
         .Get("/streamed-with-range",
@@ -716,23 +731,23 @@ protected:
                auto data = new std::string("abcdefg");
                res.set_content_provider(
                    data->size(),
-                   [data](uint64_t offset, uint64_t length, DataSink sink) {
+                   [data](uint64_t offset, uint64_t length, DataSink &sink) {
                      size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
                      auto out_len =
                          std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
-                     sink(&d[static_cast<size_t>(offset)], out_len);
+                     sink.write(&d[static_cast<size_t>(offset)], out_len);
                    },
                    [data] { delete data; });
              })
         .Get("/streamed-cancel",
              [&](const Request & /*req*/, Response &res) {
-               res.set_content_provider(
-                   size_t(-1),
-                   [](uint64_t /*offset*/, uint64_t /*length*/, DataSink sink) {
-                     std::string data = "data_chunk";
-                     sink(data.data(), data.size());
-                   });
+               res.set_content_provider(size_t(-1), [](uint64_t /*offset*/,
+                                                       uint64_t /*length*/,
+                                                       DataSink &sink) {
+                 std::string data = "data_chunk";
+                 sink.write(data.data(), data.size());
+               });
              })
         .Get("/with-range",
              [&](const Request & /*req*/, Response &res) {
@@ -1508,6 +1523,13 @@ TEST_F(ServerTest, GetStreamedChunked) {
   EXPECT_EQ(std::string("123456789"), res->body);
 }
 
+TEST_F(ServerTest, GetStreamedChunked2) {
+  auto res = cli_.Get("/streamed-chunked2");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+
 TEST_F(ServerTest, LargeChunkedPost) {
   Request req;
   req.method = "POST";
@@ -1567,8 +1589,8 @@ TEST_F(ServerTest, Put) {
 TEST_F(ServerTest, PutWithContentProvider) {
   auto res = cli_.Put(
       "/put", 3,
-      [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
-        sink("PUT", 3);
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.write("PUT", 3);
       },
       "text/plain");
 
@@ -1582,8 +1604,8 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   cli_.set_compress(true);
   auto res = cli_.Put(
       "/put", 3,
-      [](size_t /*offset*/, size_t /*length*/, DataSink sink) {
-        sink("PUT", 3);
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.write("PUT", 3);
       },
       "text/plain");
 
@@ -1689,7 +1711,8 @@ TEST_F(ServerTest, PatchContentReceiver) {
 }
 
 TEST_F(ServerTest, PostQueryStringAndBody) {
-  auto res = cli_.Post("/query-string-and-body?key=value", "content", "text/plain");
+  auto res =
+      cli_.Post("/query-string-and-body?key=value", "content", "text/plain");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 }
@@ -2139,8 +2162,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   msleep(1);
 
-  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE,
-                         CLIENT_PRIVATE_KEY_FILE);
+  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
   cli.set_timeout_sec(30);
   ASSERT_TRUE(res != nullptr);
@@ -2181,8 +2203,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   msleep(1);
 
-  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE,
-                         CLIENT_PRIVATE_KEY_FILE);
+  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
   cli.set_timeout_sec(30);
   ASSERT_TRUE(res != nullptr);
