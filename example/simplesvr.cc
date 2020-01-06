@@ -122,7 +122,10 @@ int main(int argc, const char **argv) {
   auto base_dir = "./";
   if (argc > 2) { base_dir = argv[2]; }
 
-  svr.set_base_dir(base_dir);
+  if (!svr.set_base_dir(base_dir)) {
+    cout << "The specified base directory doesn't exist...";
+    return 1;
+  }
 
   cout << "The server started at port " << port << "...";
 

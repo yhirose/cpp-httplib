@@ -50,21 +50,24 @@ svr.listen_after_bind();
 ### Static File Server
 
 ```cpp
-svr.set_base_dir("./www"); // This is same as `svr.set_base_dir("./www", "/")`;
+auto ret = svr.set_base_dir("./www"); // This is same as `svr.set_base_dir("./www", "/")`;
+if (!ret) {
+  // The specified base directory doesn't exist...
+}
 
+// Mount /public to ./www directory
+ret = svr.set_base_dir("./www", "/public");
+
+// Mount /public to ./www1 and ./www2 directories
+ret = svr.set_base_dir("./www1", "/public"); // 1st order to search
+ret = svr.set_base_dir("./www2", "/public"); // 2nd order to search
+```
+
+```cpp
 // User defined file extension and MIME type mappings
 svr.set_file_extension_and_mimetype_mapping("cc", "text/x-c");
 svr.set_file_extension_and_mimetype_mapping("cpp", "text/x-c");
 svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
-```
-
-```cpp
-svr.set_base_dir("./www", "/public");
-```
-
-```cpp
-svr.set_base_dir("./www1", "/public"); // 1st order
-svr.set_base_dir("./www2", "/public"); // 2nd order
 ```
 
 The followings are built-in mappings:
