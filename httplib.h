@@ -509,8 +509,6 @@ public:
   bool is_running() const;
   void stop();
 
-  std::function<TaskQueue *(void)> new_task_queue;
-
 protected:
   bool process_request(Stream &strm, bool last_connection,
                        bool &connection_close,
@@ -2798,7 +2796,6 @@ inline Server::Server()
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
-  new_task_queue = [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); };
 }
 
 inline Server::~Server() {}
@@ -3248,7 +3245,7 @@ inline bool Server::listen_internal() {
   is_running_ = true;
 
   {
-    std::unique_ptr<TaskQueue> task_queue(new_task_queue());
+    std::unique_ptr<TaskQueue> task_queue(new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT));
 
     for (;;) {
       if (svr_sock_ == INVALID_SOCKET) {
