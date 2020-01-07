@@ -213,7 +213,9 @@ class DataSink {
 public:
   DataSink() = default;
   DataSink(const DataSink &) = delete;
-  DataSink(const DataSink &&) = delete;
+  DataSink& operator=(const DataSink &) = delete;
+  DataSink(DataSink &&) = delete;
+  DataSink& operator=(DataSink &&) = delete;
 
   std::function<void(const char *data, size_t data_len)> write;
   std::function<void()> done;
