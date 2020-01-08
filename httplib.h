@@ -300,7 +300,7 @@ struct Request {
 
 struct Response {
   std::string version;
-  int status;
+  int status = -1;
   Headers headers;
   std::string body;
 
@@ -324,8 +324,11 @@ struct Response {
       std::function<void(size_t offset, DataSink &sink)> provider,
       std::function<void()> resource_releaser = [] {});
 
-  Response() : status(-1), content_length(0) {}
-
+  Response() = default;
+  Response(const Response&) = default;
+  Response& operator=(const Response&) = default;
+  Response(Response&&) = default;
+  Response& operator=(Response&&) = default;
   ~Response() {
     if (content_provider_resource_releaser) {
       content_provider_resource_releaser();
@@ -333,7 +336,7 @@ struct Response {
   }
 
   // private members...
-  size_t content_length;
+  size_t content_length = 0;
   ContentProvider content_provider;
   std::function<void()> content_provider_resource_releaser;
 };
