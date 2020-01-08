@@ -1967,6 +1967,46 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
   EXPECT_TRUE(listen_thread_ok);
 }
 
+TEST(ServerStopTest, StopServerWithChunkedTransmission) {
+  Server svr;
+
+  svr.Get("/events", [](const Request &req, Response &res) {
+    res.set_header("Content-Type", "text/event-stream");
+    res.set_header("Cache-Control", "no-cache");
+    res.set_chunked_content_provider([](size_t offset, const DataSink &sink) {
+      char buffer[27];
+      int size = sprintf(buffer, "data:%ld\n\n", offset);
+      sink.write(buffer, size);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  Client client(HOST, PORT);
+  const Headers headers = {{"Accept", "text/event-stream"},
+                           {"Connection", "Keep-Alive"}};
+
+  auto get_thread = std::thread([&client, &headers]() {
+    std::shared_ptr<Response> res =
+        client.Get("/events", headers,
+                   [](const char *data, size_t len) -> bool { return true; });
+  });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
+  svr.stop();
+
+  listen_thread.join();
+  get_thread.join();
+
+  ASSERT_FALSE(svr.is_running());
+}
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()
