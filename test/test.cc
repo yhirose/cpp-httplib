@@ -1,6 +1,10 @@
-#include <future>
-#include <gtest/gtest.h>
 #include <httplib.h>
+
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <future>
+#include <thread>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
@@ -9,13 +13,6 @@
 #define CLIENT_CA_CERT_DIR "."
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
-
-#ifdef _WIN32
-#include <process.h>
-#define msleep(n) ::Sleep(n)
-#else
-#define msleep(n) ::usleep(n * 1000)
-#endif
 
 using namespace std;
 using namespace httplib;
@@ -654,7 +651,7 @@ protected:
              })
         .Get("/slow",
              [&](const Request & /*req*/, Response &res) {
-               msleep(2000);
+               std::this_thread::sleep_for(std::chrono::seconds(2));
                res.set_content("slow", "text/plain");
              })
         .Get("/remote_addr",
@@ -965,7 +962,7 @@ protected:
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
 
     while (!svr_.is_running()) {
-      msleep(1);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
@@ -1576,7 +1573,7 @@ TEST_F(ServerTest, SlowRequest) {
       std::thread([=]() { auto res = cli_.Get("/slow"); }));
   request_threads_.push_back(
       std::thread([=]() { auto res = cli_.Get("/slow"); }));
-  msleep(100);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 TEST_F(ServerTest, Put) {
@@ -1921,7 +1918,7 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 
   thread t = thread([&] { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
-    msleep(1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   // Only space and horizontal tab are whitespace. Make sure other whitespace-
@@ -1951,7 +1948,7 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
   bool listen_thread_ok = false;
   thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
-    msleep(1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   // A certain header line causes an exception if the header property is parsed
@@ -2026,7 +2023,7 @@ protected:
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(nullptr, PORT, AI_PASSIVE)); });
 
     while (!svr_.is_running()) {
-      msleep(1);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
@@ -2060,12 +2057,12 @@ protected:
   virtual void SetUp() {
     t_ = thread([&]() {
       svr_.bind_to_any_port(HOST);
-      msleep(500);
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
       ASSERT_TRUE(svr_.listen_after_bind());
     });
 
     while (!svr_.is_running()) {
-      msleep(1);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
@@ -2105,7 +2102,7 @@ protected:
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
 
     while (!svr_.is_running()) {
-      msleep(1);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
@@ -2200,7 +2197,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
-  msleep(1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
@@ -2219,7 +2216,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
-  msleep(1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   httplib::SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
@@ -2241,7 +2238,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
-  msleep(1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
