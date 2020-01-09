@@ -1948,7 +1948,7 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
   bool listen_thread_ok = false;
   thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   // A certain header line causes an exception if the header property is parsed
@@ -2023,7 +2023,7 @@ protected:
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(nullptr, PORT, AI_PASSIVE)); });
 
     while (!svr_.is_running()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
