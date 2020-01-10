@@ -820,6 +820,7 @@ inline void Post(std::vector<Request> &requests, const char *path,
   Post(requests, path, Headers(), body, content_type);
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class SSLServer : public Server {
 public:
   SSLServer(const char *cert_path, const char *private_key_path,
@@ -1253,6 +1254,7 @@ private:
   time_t read_timeout_sec_;
   time_t read_timeout_usec_;
 };
+#endif
 
 class BufferStream : public Stream {
 public:
