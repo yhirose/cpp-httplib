@@ -13,7 +13,8 @@ using namespace std;
 
 const char *html = R"(
 <form id="formElem">
-  <input type="file" name="file" accept="image/*">
+  <input type="file" name="image_file" accept="image/*">
+  <input type="file" name="text_file" accept="text/*">
   <input type="submit">
 </form>
 <script>
@@ -36,12 +37,22 @@ int main(void) {
   });
 
   svr.Post("/post", [](const Request &req, Response &res) {
-    auto file = req.get_file_value("file");
-    cout << "file length: " << file.content.length() << ":" << file.filename
-         << endl;
+    auto image_file = req.get_file_value("image_file");
+    auto text_file = req.get_file_value("text_file");
 
-    ofstream ofs(file.filename, ios::binary);
-    ofs << file.content;
+    cout << "image file length: " << image_file.content.length() << endl
+         << "image file name: " << image_file.filename << endl
+         << "text file length: " << text_file.content.length() << endl
+         << "text file name: " << text_file.filename << endl;
+
+    {
+      ofstream ofs(image_file.filename, ios::binary);
+      ofs << image_file.content;
+    }
+    {
+      ofstream ofs(text_file.filename);
+      ofs << text_file.content;
+    }
 
     res.set_content("done", "text/plain");
   });
