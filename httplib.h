@@ -213,9 +213,9 @@ class DataSink {
 public:
   DataSink() = default;
   DataSink(const DataSink &) = delete;
-  DataSink& operator=(const DataSink &) = delete;
+  DataSink &operator=(const DataSink &) = delete;
   DataSink(DataSink &&) = delete;
-  DataSink& operator=(DataSink &&) = delete;
+  DataSink &operator=(DataSink &&) = delete;
 
   std::function<void(const char *data, size_t data_len)> write;
   std::function<void()> done;
@@ -325,10 +325,10 @@ struct Response {
       std::function<void()> resource_releaser = [] {});
 
   Response() = default;
-  Response(const Response&) = default;
-  Response& operator=(const Response&) = default;
-  Response(Response&&) = default;
-  Response& operator=(Response&&) = default;
+  Response(const Response &) = default;
+  Response &operator=(const Response &) = default;
+  Response(Response &&) = default;
+  Response &operator=(Response &&) = default;
   ~Response() {
     if (content_provider_resource_releaser) {
       content_provider_resource_releaser();
@@ -1285,7 +1285,7 @@ inline bool process_socket(bool is_client_request, socket_t sock,
     while (count > 0 &&
            (is_client_request ||
             select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
-                                CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0)) {
+                        CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0)) {
       SocketStream strm(sock, read_timeout_sec, read_timeout_usec);
       auto last_connection = count == 1;
       auto connection_close = false;
@@ -2051,29 +2051,28 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
     auto pos = m.position(1);
     auto len = m.length(1);
     bool all_valid_ranges = true;
-    split(
-        &s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
-          if (!all_valid_ranges) return;
-          static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
-          std::cmatch m;
-          if (std::regex_match(b, e, m, re_another_range)) {
-            ssize_t first = -1;
-            if (!m.str(1).empty()) {
-              first = static_cast<ssize_t>(std::stoll(m.str(1)));
-            }
+    split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
+      if (!all_valid_ranges) return;
+      static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
+      std::cmatch m;
+      if (std::regex_match(b, e, m, re_another_range)) {
+        ssize_t first = -1;
+        if (!m.str(1).empty()) {
+          first = static_cast<ssize_t>(std::stoll(m.str(1)));
+        }
 
-            ssize_t last = -1;
-            if (!m.str(2).empty()) {
-              last = static_cast<ssize_t>(std::stoll(m.str(2)));
-            }
+        ssize_t last = -1;
+        if (!m.str(2).empty()) {
+          last = static_cast<ssize_t>(std::stoll(m.str(2)));
+        }
 
-            if (first != -1 && last != -1 && first > last) {
-              all_valid_ranges = false;
-              return;
-            }
-            ranges.emplace_back(std::make_pair(first, last));
-          }
-        });
+        if (first != -1 && last != -1 && first > last) {
+          all_valid_ranges = false;
+          return;
+        }
+        ranges.emplace_back(std::make_pair(first, last));
+      }
+    });
     return all_valid_ranges;
   }
   return false;
@@ -2380,8 +2379,7 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
       [&](const std::string &token) { strm.write(token); },
       [&](const char *token) { strm.write(token); },
       [&](size_t offset, size_t length) {
-        return write_content(strm, res.content_provider, offset,
-                                     length) >= 0;
+        return write_content(strm, res.content_provider, offset, length) >= 0;
       });
 }
 
@@ -3079,8 +3077,11 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
       }
     }
   } else {
-    auto is_shutting_down = [this]() { return this->svr_sock_ == INVALID_SOCKET; };
-    if (detail::write_content_chunked(strm, res.content_provider, is_shutting_down) < 0) {
+    auto is_shutting_down = [this]() {
+      return this->svr_sock_ == INVALID_SOCKET;
+    };
+    if (detail::write_content_chunked(strm, res.content_provider,
+                                      is_shutting_down) < 0) {
       return false;
     }
   }
