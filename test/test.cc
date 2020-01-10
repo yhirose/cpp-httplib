@@ -199,6 +199,26 @@ TEST(ParseHeaderValueTest, Range) {
   }
 }
 
+TEST(BufferStreamTest, read) {
+  detail::BufferStream strm;
+
+  EXPECT_EQ(5, strm.write("hello"));
+
+  char buf[512];
+  EXPECT_EQ(2, strm.read(buf, 2));
+  EXPECT_EQ('h', buf[0]);
+  EXPECT_EQ('e', buf[1]);
+
+  EXPECT_EQ(2, strm.read(buf, 2));
+  EXPECT_EQ('l', buf[0]);
+  EXPECT_EQ('l', buf[1]);
+
+  EXPECT_EQ(1, strm.read(buf, 1));
+  EXPECT_EQ('o', buf[0]);
+
+  EXPECT_EQ(0, strm.read(buf, 1));
+}
+
 TEST(ChunkedEncodingTest, FromHTTPWatch) {
   auto host = "www.httpwatch.com";
 
@@ -1967,7 +1987,7 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 
-  svr.Get("/events", [](const Request &req, Response &res) {
+  svr.Get("/events", [](const Request & /*req*/, Response &res) {
     res.set_header("Content-Type", "text/event-stream");
     res.set_header("Cache-Control", "no-cache");
     res.set_chunked_content_provider([](size_t offset, const DataSink &sink) {
@@ -1988,9 +2008,9 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
                            {"Connection", "Keep-Alive"}};
 
   auto get_thread = std::thread([&client, &headers]() {
-    std::shared_ptr<Response> res =
-        client.Get("/events", headers,
-                   [](const char *data, size_t len) -> bool { return true; });
+    std::shared_ptr<Response> res = client.Get(
+        "/events", headers,
+        [](const char * /*data*/, size_t /*len*/) -> bool { return true; });
   });
 
   // Give GET time to get a few messages.

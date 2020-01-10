@@ -354,42 +354,6 @@ public:
   int write_format(const char *fmt, const Args &... args);
 };
 
-class SocketStream : public Stream {
-public:
-  SocketStream(socket_t sock, time_t read_timeout_sec,
-               time_t read_timeout_usec);
-  ~SocketStream() override;
-
-  int read(char *ptr, size_t size) override;
-  int write(const char *ptr, size_t size) override;
-  int write(const char *ptr) override;
-  int write(const std::string &s) override;
-  std::string get_remote_addr() const override;
-
-private:
-  socket_t sock_;
-  time_t read_timeout_sec_;
-  time_t read_timeout_usec_;
-};
-
-class BufferStream : public Stream {
-public:
-  BufferStream() = default;
-  ~BufferStream() override = default;
-
-  int read(char *ptr, size_t size) override;
-  int write(const char *ptr, size_t size) override;
-  int write(const char *ptr) override;
-  int write(const std::string &s) override;
-  std::string get_remote_addr() const override;
-
-  const std::string &get_buffer() const;
-
-private:
-  std::string buffer;
-  int position = 0;
-};
-
 class TaskQueue {
 public:
   TaskQueue() = default;
@@ -856,26 +820,6 @@ inline void Post(std::vector<Request> &requests, const char *path,
   Post(requests, path, Headers(), body, content_type);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-class SSLSocketStream : public Stream {
-public:
-  SSLSocketStream(socket_t sock, SSL *ssl, time_t read_timeout_sec,
-                  time_t read_timeout_usec);
-  virtual ~SSLSocketStream();
-
-  virtual int read(char *ptr, size_t size);
-  virtual int write(const char *ptr, size_t size);
-  virtual int write(const char *ptr);
-  virtual int write(const std::string &s);
-  virtual std::string get_remote_addr() const;
-
-private:
-  socket_t sock_;
-  SSL *ssl_;
-  time_t read_timeout_sec_;
-  time_t read_timeout_usec_;
-};
-
 class SSLServer : public Server {
 public:
   SSLServer(const char *cert_path, const char *private_key_path,
@@ -1272,6 +1216,62 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 #endif
 }
 
+class SocketStream : public Stream {
+public:
+  SocketStream(socket_t sock, time_t read_timeout_sec,
+               time_t read_timeout_usec);
+  ~SocketStream() override;
+
+  int read(char *ptr, size_t size) override;
+  int write(const char *ptr, size_t size) override;
+  int write(const char *ptr) override;
+  int write(const std::string &s) override;
+  std::string get_remote_addr() const override;
+
+private:
+  socket_t sock_;
+  time_t read_timeout_sec_;
+  time_t read_timeout_usec_;
+};
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+class SSLSocketStream : public Stream {
+public:
+  SSLSocketStream(socket_t sock, SSL *ssl, time_t read_timeout_sec,
+                  time_t read_timeout_usec);
+  virtual ~SSLSocketStream();
+
+  virtual int read(char *ptr, size_t size);
+  virtual int write(const char *ptr, size_t size);
+  virtual int write(const char *ptr);
+  virtual int write(const std::string &s);
+  virtual std::string get_remote_addr() const;
+
+private:
+  socket_t sock_;
+  SSL *ssl_;
+  time_t read_timeout_sec_;
+  time_t read_timeout_usec_;
+};
+
+class BufferStream : public Stream {
+public:
+  BufferStream() = default;
+  ~BufferStream() override = default;
+
+  int read(char *ptr, size_t size) override;
+  int write(const char *ptr, size_t size) override;
+  int write(const char *ptr) override;
+  int write(const std::string &s) override;
+  std::string get_remote_addr() const override;
+
+  const std::string &get_buffer() const;
+
+private:
+  std::string buffer;
+  int position = 0;
+};
+
 template <typename T>
 inline bool process_socket(bool is_client_request, socket_t sock,
                            size_t keep_alive_max_count, time_t read_timeout_sec,
@@ -1284,7 +1284,7 @@ inline bool process_socket(bool is_client_request, socket_t sock,
     auto count = keep_alive_max_count;
     while (count > 0 &&
            (is_client_request ||
-            detail::select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
+            select_read(sock, CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND,
                                 CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND) > 0)) {
       SocketStream strm(sock, read_timeout_sec, read_timeout_usec);
       auto last_connection = count == 1;
@@ -1823,7 +1823,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   };
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  detail::decompressor decompressor;
+  decompressor decompressor;
 
   if (!decompressor.is_valid()) {
     status = 500;
@@ -2051,7 +2051,7 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
     auto pos = m.position(1);
     auto len = m.length(1);
     bool all_valid_ranges = true;
-    detail::split(
+    split(
         &s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
           if (!all_valid_ranges) return;
           static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
@@ -2317,7 +2317,7 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
       ctoken("\r\n");
     }
 
-    auto offsets = detail::get_range_offset_and_length(req, res.body.size(), i);
+    auto offsets = get_range_offset_and_length(req, res.body.size(), i);
     auto offset = offsets.first;
     auto length = offsets.second;
 
@@ -2380,7 +2380,7 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
       [&](const std::string &token) { strm.write(token); },
       [&](const char *token) { strm.write(token); },
       [&](size_t offset, size_t length) {
-        return detail::write_content(strm, res.content_provider, offset,
+        return write_content(strm, res.content_provider, offset,
                                      length) >= 0;
       });
 }
@@ -2425,7 +2425,6 @@ inline std::string message_digest(const std::string &s, Init init,
 }
 
 inline std::string MD5(const std::string &s) {
-  using namespace detail;
   return message_digest<MD5_CTX>(s, MD5_Init, MD5_Update, MD5_Final,
                                  MD5_DIGEST_LENGTH);
 }
@@ -2717,6 +2716,8 @@ inline int Stream::write_format(const char *fmt, const Args &... args) {
   }
 }
 
+namespace detail {
+
 // Socket stream implementation
 inline SocketStream::SocketStream(socket_t sock, time_t read_timeout_sec,
                                   time_t read_timeout_usec)
@@ -2775,6 +2776,8 @@ inline int BufferStream::write(const std::string &s) {
 inline std::string BufferStream::get_remote_addr() const { return ""; }
 
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
+
+} // namespace detail
 
 // HTTP server implementation
 inline Server::Server()
@@ -3678,7 +3681,7 @@ inline bool Client::redirect(const Request &req, Response &res) {
 
 inline bool Client::write_request(Stream &strm, const Request &req,
                                   bool last_connection) {
-  BufferStream bstrm;
+  detail::BufferStream bstrm;
 
   // Request line
   const auto &path = detail::encode_url(req.path);
@@ -4333,10 +4336,6 @@ private:
 #endif
 };
 
-static SSLInit sslinit_;
-
-} // namespace detail
-
 // SSL socket stream implementation
 inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl,
                                         time_t read_timeout_sec,
@@ -4348,7 +4347,7 @@ inline SSLSocketStream::~SSLSocketStream() {}
 
 inline int SSLSocketStream::read(char *ptr, size_t size) {
   if (SSL_pending(ssl_) > 0 ||
-      detail::select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0) {
+      select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0) {
     return SSL_read(ssl_, ptr, static_cast<int>(size));
   }
   return -1;
@@ -4369,6 +4368,10 @@ inline int SSLSocketStream::write(const std::string &s) {
 inline std::string SSLSocketStream::get_remote_addr() const {
   return detail::get_remote_addr(sock_);
 }
+
+static SSLInit sslinit_;
+
+} // namespace detail
 
 // SSL HTTP server implementation
 inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
