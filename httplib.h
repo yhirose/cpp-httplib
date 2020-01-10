@@ -1556,6 +1556,7 @@ find_content_type(const std::string &path,
 inline const char *status_message(int status) {
   switch (status) {
   case 200: return "OK";
+  case 202: return "Accepted";
   case 204: return "No Content";
   case 206: return "Partial Content";
   case 301: return "Moved Permanently";
