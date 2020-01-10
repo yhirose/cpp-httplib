@@ -387,6 +387,7 @@ public:
 
 private:
   std::string buffer;
+  int position = 0;
 };
 
 class TaskQueue {
@@ -2750,10 +2751,12 @@ inline std::string SocketStream::get_remote_addr() const {
 // Buffer stream implementation
 inline int BufferStream::read(char *ptr, size_t size) {
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  return static_cast<int>(buffer._Copy_s(ptr, size, size));
+  int len_read = static_cast<int>(buffer._Copy_s(ptr, size, size, position));
 #else
-  return static_cast<int>(buffer.copy(ptr, size));
+  int len_read = static_cast<int>(buffer.copy(ptr, size, position));
 #endif
+  position += len_read;
+  return len_read;
 }
 
 inline int BufferStream::write(const char *ptr, size_t size) {
