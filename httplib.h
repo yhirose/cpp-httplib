@@ -2157,6 +2157,8 @@ public:
       case 3: { // Body
         {
           auto pattern = crlf_ + dash_;
+          if (pattern.size() > buf_.size()) { return true; }
+
           auto pos = buf_.find(pattern);
           if (pos == std::string::npos) { pos = buf_.size(); }
           if (!content_callback(buf_.data(), pos)) {
