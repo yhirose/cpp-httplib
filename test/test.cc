@@ -694,6 +694,15 @@ protected:
                   res.status = 400;
                 }
               })
+        .Put("/person",
+             [&](const Request &req, Response &res) {
+               if (req.has_param("name") && req.has_param("note")) {
+                 persons_[req.get_param_value("name")] =
+                     req.get_param_value("note");
+               } else {
+                 res.status = 400;
+               }
+             })
         .Get("/person/(.*)",
              [&](const Request &req, Response &res) {
                string name = req.matches[1];
@@ -1083,6 +1092,26 @@ TEST_F(ServerTest, PostMethod2) {
   ASSERT_EQ(200, res->status);
 
   res = cli_.Get("/person/john2");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+  ASSERT_EQ("coder", res->body);
+}
+
+TEST_F(ServerTest, PutMethod3) {
+  auto res = cli_.Get("/person/john3");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(404, res->status);
+
+  Params params;
+  params.emplace("name", "john3");
+  params.emplace("note", "coder");
+
+  res = cli_.Put("/person", params);
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+
+  res = cli_.Get("/person/john3");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));

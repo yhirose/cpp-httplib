@@ -631,6 +631,11 @@ public:
                                 ContentProvider content_provider,
                                 const char *content_type);
 
+  std::shared_ptr<Response> Put(const char *path, const Params &params);
+
+  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
+                                const Params &params);
+
   std::shared_ptr<Response> Patch(const char *path, const std::string &body,
                                   const char *content_type);
 
@@ -4085,6 +4090,24 @@ Client::Put(const char *path, const Headers &headers, size_t content_length,
   return send_with_content_provider("PUT", path, headers, std::string(),
                                     content_length, content_provider,
                                     content_type);
+}
+
+inline std::shared_ptr<Response> Client::Put(const char *path,
+                                             const Params &params) {
+  return Put(path, Headers(), params);
+}
+
+inline std::shared_ptr<Response>
+Client::Put(const char *path, const Headers &headers, const Params &params) {
+  std::string query;
+  for (auto it = params.begin(); it != params.end(); ++it) {
+    if (it != params.begin()) { query += "&"; }
+    query += it->first;
+    query += "=";
+    query += detail::encode_url(it->second);
+  }
+
+  return Put(path, headers, query, "application/x-www-form-urlencoded");
 }
 
 inline std::shared_ptr<Response> Client::Patch(const char *path,
