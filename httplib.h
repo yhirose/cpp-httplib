@@ -1581,6 +1581,7 @@ inline const char *status_message(int status) {
   case 414: return "Request-URI Too Long";
   case 415: return "Unsupported Media Type";
   case 416: return "Range Not Satisfiable";
+  case 503: return "Service Unavailable";
 
   default:
   case 500: return "Internal Server Error";
