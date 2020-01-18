@@ -182,6 +182,10 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 });
 ```
 
+### Server-Sent Events
+
+Please check [here](https://github.com/yhirose/cpp-httplib/blob/master/example/sse.cc).
+
 ### Default thread pool support
 
 

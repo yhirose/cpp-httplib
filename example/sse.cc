@@ -23,7 +23,7 @@ public:
     cid_ = -1;
   }
 
-  void add_sink(DataSink *sink) {
+  void wait_event(DataSink *sink) {
     unique_lock<mutex> lk(m_);
     int id = id_;
     cv_.wait(lk, [&] { return cid_ == id; });
@@ -80,14 +80,14 @@ int main(void) {
     cout << "connected to event1..." << endl;
     res.set_header("Content-Type", "text/event-stream");
     res.set_chunked_content_provider(
-        [&](uint64_t /*offset*/, DataSink &sink) { ed.add_sink(&sink); });
+        [&](uint64_t /*offset*/, DataSink &sink) { ed.wait_event(&sink); });
   });
 
   svr.Get("/event2", [&](const Request & /*req*/, Response &res) {
     cout << "connected to event2..." << endl;
     res.set_header("Content-Type", "text/event-stream");
     res.set_chunked_content_provider(
-        [&](uint64_t /*offset*/, DataSink &sink) { ed.add_sink(&sink); });
+        [&](uint64_t /*offset*/, DataSink &sink) { ed.wait_event(&sink); });
   });
 
   thread t([&] {
