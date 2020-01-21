@@ -1232,7 +1232,7 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
-  EXPECT_EQ("abcde\n", res->body);
+  EXPECT_EQ("abcde", res->body);
 }
 
 TEST_F(ServerTest, InvalidBaseDirMount) {
