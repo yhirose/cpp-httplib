@@ -349,8 +349,6 @@ std::shared_ptr<httplib::Response> res =
 
 ![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
 
-This feature was contributed by [underscorediscovery](https://github.com/yhirose/cpp-httplib/pull/23).
-
 ### Authentication
 
 ```cpp
@@ -490,4 +488,46 @@ g++ 4.8 and below cannot build this library since `<regex>` in the versions are 
 License
 -------
 
-MIT license (© 2019 Yuji Hirose)
+MIT license (© 2020 Yuji Hirose)
+
+Special Thanks To
+-----------------
+
+The following folks made great contributions to polish this library to totally another level from a simple toy!
+
+  * [Zefz](https://github.com/Zefz)
+  * [PixlRainbow](https://github.com/PixlRainbow)
+  * [sgraham](https://github.com/sgraham)
+  * [mrexodia](https://github.com/mrexodia)
+  * [hyperxor](https://github.com/hyperxor)
+  * [omaralvarez](https://github.com/omaralvarez)
+  * [vvanelslande](https://github.com/vvanelslande)
+  * [underscorediscovery](https://github.com/underscorediscovery)
+  * [sux2mfgj](https://github.com/sux2mfgj)
+  * [matvore](https://github.com/matvore)
+  * [intmain-io](https://github.com/intmain)
+  * [davidgfnet](https://github.com/davidgfnet)
+  * [crtxcr](https://github.com/crtxcr)
+  * [const-volatile](https://github.com/const)
+  * [aguadoenzo](https://github.com/aguadoenzo)
+  * [TheMaverickProgrammer](https://github.com/TheMaverickProgrammer)
+  * [vdudouyt](https://github.com/vdudouyt)
+  * [stupedama](https://github.com/stupedama)
+  * [rockwotj](https://github.com/rockwotj)
+  * [marknelson](https://github.com/marknelson)
+  * [jaspervandeven](https://github.com/jaspervandeven)
+  * [hans-erickson](https://github.com/hans)
+  * [ha11owed](https://github.com/ha11owed)
+  * [gulrak](https://github.com/gulrak)
+  * [dolphineye](https://github.com/dolphineye)
+  * [danielzehe](https://github.com/danielzehe)
+  * [batist73](https://github.com/batist73)
+  * [barryam3](https://github.com/barryam3)
+  * [adikabintang](https://github.com/adikabintang)
+  * [aaronalbers](https://github.com/aaronalbers)
+  * [Whitetigerswt](https://github.com/Whitetigerswt)
+  * [TangHuaiZhe](https://github.com/TangHuaiZhe)
+  * [Sil3ntStorm](https://github.com/Sil3ntStorm)
+  * [MannyClicks](https://github.com/MannyClicks)
+  * [DraTeots](https://github.com/DraTeots)
+  * [BastienDurel](https://github.com/BastienDurel)
