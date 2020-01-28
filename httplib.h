@@ -509,7 +509,7 @@ private:
   bool listen_internal();
 
   bool routing(Request &req, Response &res, Stream &strm, bool last_connection);
-  bool handle_file_request(Request &req, Response &res);
+  bool handle_file_request(Request &req, Response &res, bool head = false);
   bool dispatch_request(Request &req, Response &res, Handlers &handlers);
   bool dispatch_request_for_content_reader(Request &req, Response &res,
                                            ContentReader content_reader,
@@ -3212,7 +3212,7 @@ inline bool Server::read_content_core(Stream &strm, bool last_connection,
   return true;
 }
 
-inline bool Server::handle_file_request(Request &req, Response &res) {
+inline bool Server::handle_file_request(Request &req, Response &res, bool head) {
   for (const auto &kv : base_dirs_) {
     const auto &mount_point = kv.first;
     const auto &base_dir = kv.second;
@@ -3230,7 +3230,7 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
               detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
           res.status = 200;
-          if (file_request_handler_) { file_request_handler_(req, res); }
+          if (!head && file_request_handler_) { file_request_handler_(req, res); }
           return true;
         }
       }
@@ -3331,7 +3331,8 @@ inline bool Server::listen_internal() {
 inline bool Server::routing(Request &req, Response &res, Stream &strm,
                             bool last_connection) {
   // File handler
-  if (req.method == "GET" && handle_file_request(req, res)) { return true; }
+  bool is_head_request = req.method == "HEAD";
+  if ((req.method == "GET" || is_head_request) && handle_file_request(req, res, is_head_request)) { return true; }
 
   if (detail::expect_content(req)) {
     // Content reader handler
