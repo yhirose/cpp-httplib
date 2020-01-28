@@ -531,3 +531,4 @@ The following folks made great contributions to polish this library to totally a
   * [MannyClicks](https://github.com/MannyClicks)
   * [DraTeots](https://github.com/DraTeots)
   * [BastienDurel](https://github.com/BastienDurel)
+  * [vitalyster](https://github.com/vitalyster)
