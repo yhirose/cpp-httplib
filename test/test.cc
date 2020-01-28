@@ -1051,6 +1051,15 @@ TEST_F(ServerTest, HeadMethod200) {
   EXPECT_EQ("", res->body);
 }
 
+TEST_F(ServerTest, HeadMethod200Static) {
+  auto res = cli_.Head("/mount/dir/index.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(104, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("", res->body);
+}
+
 TEST_F(ServerTest, HeadMethod404) {
   auto res = cli_.Head("/invalid");
   ASSERT_TRUE(res != nullptr);
