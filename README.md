@@ -50,17 +50,21 @@ svr.listen_after_bind();
 ### Static File Server
 
 ```cpp
-auto ret = svr.set_base_dir("./www"); // This is same as `svr.set_base_dir("./www", "/")`;
+// Mount / to ./www directory
+auto ret = svr.set_mount_point("./www", "/");
 if (!ret) {
   // The specified base directory doesn't exist...
 }
 
 // Mount /public to ./www directory
-ret = svr.set_base_dir("./www", "/public");
+ret = svr.set_mount_point("./www", "/public");
 
 // Mount /public to ./www1 and ./www2 directories
-ret = svr.set_base_dir("./www1", "/public"); // 1st order to search
-ret = svr.set_base_dir("./www2", "/public"); // 2nd order to search
+ret = svr.set_mount_point("./www1", "/public"); // 1st order to search
+ret = svr.set_mount_point("./www2", "/public"); // 2nd order to search
+
+// Remove mount /
+ret = svr.remove_mount_point("/");
 ```
 
 ```cpp
@@ -72,22 +76,24 @@ svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
 
 The followings are built-in mappings:
 
-| Extension  |     MIME Type          |
-| :--------- | :--------------------- |
-| .txt       | text/plain             |
-| .html .htm | text/html              |
-| .css       | text/css               |
-| .jpeg .jpg | image/jpg              |
-| .png       | image/png              |
-| .gif       | image/gif              |
-| .svg       | image/svg+xml          |
-| .ico       | image/x-icon           |
-| .json      | application/json       |
-| .pdf       | application/pdf        |
-| .js        | application/javascript |
-| .wasm      | application/wasm       |
-| .xml       | application/xml        |
-| .xhtml     | application/xhtml+xml  |
+| Extension |     MIME Type          |
+| :-------- | :--------------------- |
+| txt       | text/plain             |
+| html, htm | text/html              |
+| css       | text/css               |
+| jpeg, jpg | image/jpg              |
+| png       | image/png              |
+| gif       | image/gif              |
+| svg       | image/svg+xml          |
+| ico       | image/x-icon           |
+| json      | application/json       |
+| pdf       | application/pdf        |
+| js        | application/javascript |
+| wasm      | application/wasm       |
+| xml       | application/xml        |
+| xhtml     | application/xhtml+xml  |
+
+NOTE: These the static file server methods are not thread safe.
 
 ### Logging
 
