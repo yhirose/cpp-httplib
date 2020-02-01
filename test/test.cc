@@ -662,8 +662,8 @@ protected:
   }
 
   virtual void SetUp() {
-    svr_.set_base_dir("./www");
-    svr_.set_base_dir("./www2", "/mount");
+    svr_.set_mount_point("./www", "/");
+    svr_.set_mount_point("./www2", "/mount");
     svr_.set_file_extension_and_mimetype_mapping("abcde", "text/abcde");
 
     svr_.Get("/hi",
@@ -1245,7 +1245,7 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
 }
 
 TEST_F(ServerTest, InvalidBaseDirMount) {
-  EXPECT_EQ(false, svr_.set_base_dir("./www3", "invalid_mount_point"));
+  EXPECT_EQ(false, svr_.set_mount_point("./www3", "invalid_mount_point"));
 }
 
 TEST_F(ServerTest, EmptyRequest) {
@@ -2066,6 +2066,50 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   listen_thread.join();
   get_thread.join();
 
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(MountTest, Unmount) {
+  Server svr;
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  svr.set_mount_point("./www2", "/mount2");
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
+
+  res = cli.Get("/mount2/dir/test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+
+  svr.set_mount_point("./www", "/");
+
+  res = cli.Get("/dir/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+
+  svr.remove_mount_point("/");
+  res = cli.Get("/dir/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
+
+  svr.remove_mount_point("/mount2");
+  res = cli.Get("/mount2/dir/test.html");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
+
+  svr.stop();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
