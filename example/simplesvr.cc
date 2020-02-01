@@ -122,7 +122,7 @@ int main(int argc, const char **argv) {
   auto base_dir = "./";
   if (argc > 2) { base_dir = argv[2]; }
 
-  if (!svr.set_mount_point(base_dir, "/")) {
+  if (!svr.set_mount_point("/", base_dir)) {
     cout << "The specified base directory doesn't exist...";
     return 1;
   }
