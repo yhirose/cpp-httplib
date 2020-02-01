@@ -65,6 +65,9 @@ ret = svr.set_mount_point("/public", "./www2"); // 2nd order to search
 
 // Remove mount /
 ret = svr.remove_mount_point("/");
+
+// Remove mount /public
+ret = svr.remove_mount_point("/public");
 ```
 
 ```cpp
