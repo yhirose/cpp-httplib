@@ -662,8 +662,8 @@ protected:
   }
 
   virtual void SetUp() {
-    svr_.set_mount_point("./www", "/");
-    svr_.set_mount_point("./www2", "/mount");
+    svr_.set_mount_point("/", "./www");
+    svr_.set_mount_point("/mount", "./www2");
     svr_.set_file_extension_and_mimetype_mapping("abcde", "text/abcde");
 
     svr_.Get("/hi",
@@ -1245,7 +1245,7 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
 }
 
 TEST_F(ServerTest, InvalidBaseDirMount) {
-  EXPECT_EQ(false, svr_.set_mount_point("./www3", "invalid_mount_point"));
+  EXPECT_EQ(false, svr_.set_mount_point("invalid_mount_point", "./www3"));
 }
 
 TEST_F(ServerTest, EmptyRequest) {
@@ -2082,7 +2082,7 @@ TEST(MountTest, Unmount) {
 
   Client cli("localhost", PORT);
 
-  svr.set_mount_point("./www2", "/mount2");
+  svr.set_mount_point("/mount2", "./www2");
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -2092,7 +2092,7 @@ TEST(MountTest, Unmount) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 
-  svr.set_mount_point("./www", "/");
+  svr.set_mount_point("/", "./www");
 
   res = cli.Get("/dir/");
   ASSERT_TRUE(res != nullptr);

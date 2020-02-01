@@ -466,7 +466,7 @@ public:
   Server &Options(const char *pattern, Handler handler);
 
   [[deprecated]] bool set_base_dir(const char *dir, const char *mount_point = nullptr);
-  bool set_mount_point(const char *dir, const char *mount_point);
+  bool set_mount_point(const char *mount_point, const char* dir);
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
@@ -2891,10 +2891,10 @@ inline Server &Server::Options(const char *pattern, Handler handler) {
 }
 
 inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
-  return  set_mount_point(dir, mount_point);
+  return  set_mount_point(mount_point, dir);
 }
 
-inline bool Server::set_mount_point(const char *dir, const char *mount_point) {
+inline bool Server::set_mount_point(const char *mount_point, const char* dir) {
   if (detail::is_dir(dir)) {
     std::string mnt = mount_point ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
