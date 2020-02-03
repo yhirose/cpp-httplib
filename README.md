@@ -541,3 +541,4 @@ The following folks made great contributions to polish this library to totally a
   * [DraTeots](https://github.com/DraTeots)
   * [BastienDurel](https://github.com/BastienDurel)
   * [vitalyster](https://github.com/vitalyster)
+  * [trollixx](https://github.com/trollixx)
