@@ -465,8 +465,9 @@ public:
   Server &Delete(const char *pattern, Handler handler);
   Server &Options(const char *pattern, Handler handler);
 
-  [[deprecated]] bool set_base_dir(const char *dir, const char *mount_point = nullptr);
-  bool set_mount_point(const char *mount_point, const char* dir);
+  [[deprecated]] bool set_base_dir(const char *dir,
+                                   const char *mount_point = nullptr);
+  bool set_mount_point(const char *mount_point, const char *dir);
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
@@ -2891,10 +2892,10 @@ inline Server &Server::Options(const char *pattern, Handler handler) {
 }
 
 inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
-  return  set_mount_point(mount_point, dir);
+  return set_mount_point(mount_point, dir);
 }
 
-inline bool Server::set_mount_point(const char *mount_point, const char* dir) {
+inline bool Server::set_mount_point(const char *mount_point, const char *dir) {
   if (detail::is_dir(dir)) {
     std::string mnt = mount_point ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
@@ -2907,10 +2908,10 @@ inline bool Server::set_mount_point(const char *mount_point, const char* dir) {
 
 inline bool Server::remove_mount_point(const char *mount_point) {
   for (auto it = base_dirs_.begin(); it != base_dirs_.end(); ++it) {
-      if (it->first == mount_point) {
-          base_dirs_.erase(it);
-          return true;
-      }
+    if (it->first == mount_point) {
+      base_dirs_.erase(it);
+      return true;
+    }
   }
   return false;
 }
@@ -3228,7 +3229,8 @@ inline bool Server::read_content_core(Stream &strm, bool last_connection,
   return true;
 }
 
-inline bool Server::handle_file_request(Request &req, Response &res, bool head) {
+inline bool Server::handle_file_request(Request &req, Response &res,
+                                        bool head) {
   for (const auto &kv : base_dirs_) {
     const auto &mount_point = kv.first;
     const auto &base_dir = kv.second;
@@ -3246,7 +3248,9 @@ inline bool Server::handle_file_request(Request &req, Response &res, bool head) 
               detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
           res.status = 200;
-          if (!head && file_request_handler_) { file_request_handler_(req, res); }
+          if (!head && file_request_handler_) {
+            file_request_handler_(req, res);
+          }
           return true;
         }
       }
@@ -3348,7 +3352,10 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm,
                             bool last_connection) {
   // File handler
   bool is_head_request = req.method == "HEAD";
-  if ((req.method == "GET" || is_head_request) && handle_file_request(req, res, is_head_request)) { return true; }
+  if ((req.method == "GET" || is_head_request) &&
+      handle_file_request(req, res, is_head_request)) {
+    return true;
+  }
 
   if (detail::expect_content(req)) {
     // Content reader handler
