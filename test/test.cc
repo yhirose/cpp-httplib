@@ -201,7 +201,7 @@ TEST(ParseHeaderValueTest, Range) {
 
 TEST(BufferStreamTest, read) {
   detail::BufferStream strm1;
-  Stream& strm = strm1;
+  Stream &strm = strm1;
 
   EXPECT_EQ(5, strm.write("hello"));
 
