@@ -11,6 +11,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <thread>
 
 using namespace httplib;
