@@ -129,6 +129,7 @@ using socket_t = SOCKET;
 #include <pthread.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 using socket_t = int;
@@ -702,6 +703,10 @@ public:
 
   void set_interface(const char *intf);
 
+#ifndef _WIN32
+  void set_unix_socket_path(const char *path);
+#endif
+
   void set_proxy(const char *host, int port);
 
   void set_proxy_basic_auth(const char *username, const char *password);
@@ -743,6 +748,10 @@ protected:
 
   std::string interface_;
 
+#ifndef _WIN32
+  std::string unix_socket_path_;
+#endif
+
   std::string proxy_host_;
   int proxy_port_;
 
@@ -771,6 +780,9 @@ protected:
     follow_location_ = rhs.follow_location_;
     compress_ = rhs.compress_;
     interface_ = rhs.interface_;
+#ifndef _WIN32
+    unix_socket_path_ = rhs.unix_socket_path_;
+#endif
     proxy_host_ = rhs.proxy_host_;
     proxy_port_ = rhs.proxy_port_;
     proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
@@ -1535,6 +1547,44 @@ inline socket_t create_client_socket(const char *host, int port,
         return true;
       });
 }
+
+#ifndef _WIN32
+inline socket_t create_unix_client_socket(const char *path,
+                                          time_t timeout_sec) {
+  auto sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock == INVALID_SOCKET) { return INVALID_SOCKET; }
+
+  if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) { return INVALID_SOCKET; }
+
+  // Make 'reuse address' option available
+  int yes = 1;
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&yes),
+             sizeof(yes));
+#ifdef SO_REUSEPORT
+  setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char *>(&yes),
+             sizeof(yes));
+#endif
+
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path, sizeof(addr.sun_path)-1);
+
+  set_nonblocking(sock, true);
+  auto ret = ::connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
+                       sizeof(addr));
+  if (ret < 0) {
+    if (is_connection_error() ||
+        !wait_until_socket_is_ready(sock, timeout_sec, 0)) {
+      close_socket(sock);
+      return INVALID_SOCKET;
+    }
+  }
+
+  set_nonblocking(sock, false);
+  return sock;
+}
+#endif
 
 inline std::string get_remote_addr(socket_t sock) {
   struct sockaddr_storage addr;
@@ -3529,6 +3579,12 @@ inline socket_t Client::create_client_socket() const {
     return detail::create_client_socket(proxy_host_.c_str(), proxy_port_,
                                         timeout_sec_, interface_);
   }
+#ifndef _WIN32
+  if (!unix_socket_path_.empty()) {
+    return detail::create_unix_client_socket(unix_socket_path_.c_str(),
+                                             timeout_sec_);
+  }
+#endif
   return detail::create_client_socket(host_.c_str(), port_, timeout_sec_,
                                       interface_);
 }
@@ -4278,6 +4334,12 @@ inline void Client::set_follow_location(bool on) { follow_location_ = on; }
 inline void Client::set_compress(bool on) { compress_ = on; }
 
 inline void Client::set_interface(const char *intf) { interface_ = intf; }
+
+#ifndef _WIN32
+inline void Client::set_unix_socket_path(const char *path) {
+  unix_socket_path_ = path;
+}
+#endif
 
 inline void Client::set_proxy(const char *host, int port) {
   proxy_host_ = host;
