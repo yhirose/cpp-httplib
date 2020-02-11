@@ -448,6 +448,8 @@ public:
   using Handler = std::function<void(const Request &, Response &)>;
   using HandlerWithContentReader = std::function<void(
       const Request &, Response &, const ContentReader &content_reader)>;
+  using Expect100ContinueHandler =
+      std::function<int(const Request &, Response &)>;
 
   Server();
 
@@ -475,6 +477,8 @@ public:
 
   void set_error_handler(Handler handler);
   void set_logger(Logger logger);
+
+  void set_expect_100_continue_handler(Expect100ContinueHandler handler);
 
   void set_keep_alive_max_count(size_t count);
   void set_read_timeout(time_t sec, time_t usec);
@@ -553,6 +557,7 @@ private:
   Handlers options_handlers_;
   Handler error_handler_;
   Logger logger_;
+  Expect100ContinueHandler expect_100_continue_handler_;
 };
 
 class Client {
@@ -1594,6 +1599,7 @@ find_content_type(const std::string &path,
 
 inline const char *status_message(int status) {
   switch (status) {
+  case 100: return "Continue";
   case 200: return "OK";
   case 202: return "Accepted";
   case 204: return "No Content";
@@ -1610,6 +1616,7 @@ inline const char *status_message(int status) {
   case 414: return "Request-URI Too Long";
   case 415: return "Unsupported Media Type";
   case 416: return "Range Not Satisfiable";
+  case 417: return "Expectation Failed";
   case 503: return "Service Unavailable";
 
   default:
@@ -2931,6 +2938,11 @@ inline void Server::set_error_handler(Handler handler) {
 
 inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
 
+inline void
+Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
+  expect_100_continue_handler_ = std::move(handler);
+}
+
 inline void Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
 }
@@ -3012,11 +3024,12 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
     res.set_header("Connection", "Keep-Alive");
   }
 
-  if (!res.has_header("Content-Type")) {
+  if (!res.has_header("Content-Type") &&
+      (!res.body.empty() || res.content_length > 0)) {
     res.set_header("Content-Type", "text/plain");
   }
 
-  if (!res.has_header("Accept-Ranges")) {
+  if (!res.has_header("Accept-Ranges") && req.method == "HEAD") {
     res.set_header("Accept-Ranges", "bytes");
   }
 
@@ -3490,6 +3503,21 @@ Server::process_request(Stream &strm, bool last_connection,
   }
 
   if (setup_request) { setup_request(req); }
+
+  if (req.get_header_value("Expect") == "100-continue") {
+    auto status = 100;
+    if (expect_100_continue_handler_) {
+      status = expect_100_continue_handler_(req, res);
+    }
+    switch (status) {
+    case 100:
+    case 417:
+      strm.write_format("HTTP/1.1 %d %s\r\n\r\n", status,
+                        detail::status_message(status));
+      break;
+    default: return write_response(strm, last_connection, req, res);
+    }
+  }
 
   // Rounting
   if (routing(req, res, strm, last_connection)) {

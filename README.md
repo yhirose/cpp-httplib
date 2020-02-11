@@ -106,7 +106,7 @@ svr.set_logger([](const auto& req, const auto& res) {
 });
 ```
 
-### Error Handler
+### Error handler
 
 ```cpp
 svr.set_error_handler([](const auto& req, auto& res) {
@@ -230,6 +230,24 @@ private:
 svr.new_task_queue = [] {
   return new YourThreadPoolTaskQueue(12);
 };
+```
+
+### 'Expect: 100-continue' handler
+
+As default, the server sends `100 Continue` response for `Expect: 100-continue` header.
+
+```cpp
+// Send a '417 Expectation Failed' response.
+svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
+  return 417;
+});
+```
+
+```cpp
+// Send a final status without reading the message body.
+svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
+  return res.status = 401;
+});
 ```
 
 Client Example
