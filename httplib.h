@@ -41,7 +41,7 @@
 #endif
 
 #ifndef CPPHTTPLIB_PAYLOAD_MAX_LENGTH
-#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max)()
+#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (std::numeric_limits<size_t>::max())
 #endif
 
 #ifndef CPPHTTPLIB_RECV_BUFSIZ
@@ -49,12 +49,7 @@
 #endif
 
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
-// if hardware_concurrency() outputs 0 we still wants to use threads for this.
-// -1 because we have one thread already in the main function.
-#define CPPHTTPLIB_THREAD_POOL_COUNT                                           \
-  (std::thread::hardware_concurrency()                                         \
-       ? std::thread::hardware_concurrency() - 1                               \
-       : 2)
+#define CPPHTTPLIB_THREAD_POOL_COUNT (std::max(1u, std::thread::hardware_concurrency() - 1))
 #endif
 
 /*
