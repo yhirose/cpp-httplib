@@ -49,7 +49,8 @@
 #endif
 
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
-#define CPPHTTPLIB_THREAD_POOL_COUNT (std::max(1u, std::thread::hardware_concurrency() - 1))
+#define CPPHTTPLIB_THREAD_POOL_COUNT                                           \
+  (std::max(1u, std::thread::hardware_concurrency() - 1))
 #endif
 
 /*
@@ -3004,9 +3005,11 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
 
   if (400 <= res.status && error_handler_) { error_handler_(req, res); }
 
+  detail::BufferStream bstrm;
+
   // Response line
-  if (!strm.write_format("HTTP/1.1 %d %s\r\n", res.status,
-                         detail::status_message(res.status))) {
+  if (!bstrm.write_format("HTTP/1.1 %d %s\r\n", res.status,
+                          detail::status_message(res.status))) {
     return false;
   }
 
@@ -3101,7 +3104,11 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
     res.set_header("Content-Length", length);
   }
 
-  if (!detail::write_headers(strm, res, Headers())) { return false; }
+  if (!detail::write_headers(bstrm, res, Headers())) { return false; }
+
+  // Flush buffer
+  auto &data = bstrm.get_buffer();
+  strm.write(data.data(), data.size());
 
   // Body
   if (req.method != "HEAD") {
