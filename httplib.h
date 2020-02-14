@@ -628,6 +628,10 @@ public:
   std::shared_ptr<Response> Post(const char *path, const Headers &headers,
                                  const MultipartFormDataItems &items);
 
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 const std::string &body, const char *content_type,
+                                 ContentReceiver content_receiver);
+  
   std::shared_ptr<Response> Put(const char *path, const std::string &body,
                                 const char *content_type);
 
@@ -4071,6 +4075,23 @@ inline std::shared_ptr<Response> Client::Head(const char *path,
 
   auto res = std::make_shared<Response>();
 
+  return send(req, *res) ? res : nullptr;
+}
+
+inline std::shared_ptr<Response> Client::Post(const char *path, const Headers &headers,
+                                 const std::string &body, const char *content_type,
+                                 ContentReceiver content_receiver) {
+  Request req;
+  req.method = "POST";
+  req.path = path;
+  req.headers = headers;
+  req.body = body;
+  req.response_handler = nullptr;
+  req.progress = nullptr;
+  req.content_receiver = std::move(content_receiver);
+  if(content_type) { req.headers.emplace("Content-Type", content_type); };
+
+  auto res = std::make_shared<Response>();
   return send(req, *res) ? res : nullptr;
 }
 
