@@ -645,10 +645,21 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
 
 TEST(Server, BindAndListenSeparately) {
   Server svr;
-  int port = svr.bind_to_any_port("localhost");
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
   ASSERT_TRUE(port > 0);
   svr.stop();
 }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(SSLServer, BindAndListenSeparately) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE, CLIENT_CA_CERT_DIR);
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(port > 0);
+  svr.stop();
+}
+#endif
 
 class ServerTest : public ::testing::Test {
 protected:
