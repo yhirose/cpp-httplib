@@ -199,11 +199,7 @@ Please check [here](https://github.com/yhirose/cpp-httplib/blob/master/example/s
 
 `ThreadPool` is used as a default task queue, and the default thread count is set to value from `std::thread::hardware_concurrency()`.
 
-Set thread count to 8:
-
-```cpp
-#define CPPHTTPLIB_THREAD_POOL_COUNT 8
-```
+You can change the thread count by setting `CPPHTTPLIB_THREAD_POOL_COUNT`.
 
 ### Override the default thread pool with yours
 
