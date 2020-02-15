@@ -17,24 +17,24 @@ Server Example
 
 int main(void)
 {
-    using namespace httplib;
+  using namespace httplib;
 
-    Server svr;
+  Server svr;
 
-    svr.Get("/hi", [](const Request& req, Response& res) {
-        res.set_content("Hello World!", "text/plain");
-    });
+  svr.Get("/hi", [](const Request& req, Response& res) {
+    res.set_content("Hello World!", "text/plain");
+  });
 
-    svr.Get(R"(/numbers/(\d+))", [&](const Request& req, Response& res) {
-        auto numbers = req.matches[1];
-        res.set_content(numbers, "text/plain");
-    });
+  svr.Get(R"(/numbers/(\d+))", [&](const Request& req, Response& res) {
+    auto numbers = req.matches[1];
+    res.set_content(numbers, "text/plain");
+  });
 
-    svr.Get("/stop", [&](const Request& req, Response& res) {
-        svr.stop();
-    });
+  svr.Get("/stop", [&](const Request& req, Response& res) {
+    svr.stop();
+  });
 
-    svr.listen("localhost", 1234);
+  svr.listen("localhost", 1234);
 }
 ```
 
@@ -102,7 +102,7 @@ NOTE: These the static file server methods are not thread safe.
 
 ```cpp
 svr.set_logger([](const auto& req, const auto& res) {
-    your_logger(req, res);
+  your_logger(req, res);
 });
 ```
 
@@ -110,10 +110,10 @@ svr.set_logger([](const auto& req, const auto& res) {
 
 ```cpp
 svr.set_error_handler([](const auto& req, auto& res) {
-    auto fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
-    char buf[BUFSIZ];
-    snprintf(buf, sizeof(buf), fmt, res.status);
-    res.set_content(buf, "text/html");
+  auto fmt = "<p>Error Status: <span style='color:red;'>%d</span></p>";
+  char buf[BUFSIZ];
+  snprintf(buf, sizeof(buf), fmt, res.status);
+  res.set_content(buf, "text/html");
 });
 ```
 
@@ -121,31 +121,12 @@ svr.set_error_handler([](const auto& req, auto& res) {
 
 ```cpp
 svr.Post("/multipart", [&](const auto& req, auto& res) {
-    auto size = req.files.size();
-    auto ret = req.has_file("name1");
-    const auto& file = req.get_file_value("name1");
-    // file.filename;
-    // file.content_type;
-    // file.content;
-});
-
-```
-
-### Send content with Content provider
-
-```cpp
-const uint64_t DATA_CHUNK_SIZE = 4;
-
-svr.Get("/stream", [&](const Request &req, Response &res) {
-  auto data = new std::string("abcdefg");
-
-  res.set_content_provider(
-    data->size(), // Content length
-    [data](uint64_t offset, uint64_t length, DataSink &sink) {
-      const auto &d = *data;
-      sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
-    },
-    [data] { delete data; });
+  auto size = req.files.size();
+  auto ret = req.has_file("name1");
+  const auto& file = req.get_file_value("name1");
+  // file.filename;
+  // file.content_type;
+  // file.content;
 });
 ```
 
@@ -174,6 +155,24 @@ svr.Post("/content_receiver",
       res.set_content(body, "text/plain");
     }
   });
+```
+
+### Send content with Content provider
+
+```cpp
+const uint64_t DATA_CHUNK_SIZE = 4;
+
+svr.Get("/stream", [&](const Request &req, Response &res) {
+  auto data = new std::string("abcdefg");
+
+  res.set_content_provider(
+    data->size(), // Content length
+    [data](uint64_t offset, uint64_t length, DataSink &sink) {
+      const auto &d = *data;
+      sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+    },
+    [data] { delete data; });
+});
 ```
 
 ### Chunked transfer encoding
@@ -261,36 +260,36 @@ Client Example
 
 int main(void)
 {
-    httplib::Client cli("localhost", 1234);
+  httplib::Client cli("localhost", 1234);
 
-    auto res = cli.Get("/hi");
-    if (res && res->status == 200) {
-        std::cout << res->body << std::endl;
-    }
+  auto res = cli.Get("/hi");
+  if (res && res->status == 200) {
+    std::cout << res->body << std::endl;
+  }
 }
 ```
 
 ### GET with HTTP headers
 
 ```c++
-  httplib::Headers headers = {
-    { "Accept-Encoding", "gzip, deflate" }
-  };
-  auto res = cli.Get("/hi", headers);
+httplib::Headers headers = {
+  { "Accept-Encoding", "gzip, deflate" }
+};
+auto res = cli.Get("/hi", headers);
 ```
 
 ### GET with Content Receiver
 
 ```c++
-  std::string body;
+std::string body;
 
-  auto res = cli.Get("/large-data",
-    [&](const char *data, uint64_t data_length) {
-      body.append(data, data_length);
-      return true;
-    });
+auto res = cli.Get("/large-data",
+  [&](const char *data, uint64_t data_length) {
+    body.append(data, data_length);
+    return true;
+  });
 
-  assert(res->body.empty());
+assert(res->body.empty());
 ```
 
 ### POST
@@ -323,15 +322,15 @@ auto res = cli.Post("/post", params);
 ### POST with Multipart Form Data
 
 ```c++
-  httplib::MultipartFormDataItems items = {
-    { "text1", "text default", "", "" },
-    { "text2", "aωb", "", "" },
-    { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
-    { "file2", "{\n  \"world\", true\n}\n", "world.json", "application/json" },
-    { "file3", "", "", "application/octet-stream" },
-  };
+httplib::MultipartFormDataItems items = {
+  { "text1", "text default", "", "" },
+  { "text2", "aωb", "", "" },
+  { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
+  { "file2", "{\n  \"world\", true\n}\n", "world.json", "application/json" },
+  { "file3", "", "", "application/octet-stream" },
+};
 
-  auto res = cli.Post("/multipart", items);
+auto res = cli.Post("/multipart", items);
 ```
 
 ### PUT
@@ -365,12 +364,12 @@ httplib::Client client(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
 std::shared_ptr<httplib::Response> res =
-    cli.Get("/", [](uint64_t len, uint64_t total) {
-        printf("%lld / %lld bytes => %d%% complete\n",
-            len, total,
-            (int)((len/total)*100));
-        return true; // return 'false' if you want to cancel the request.
-    }
+  cli.Get("/", [](uint64_t len, uint64_t total) {
+    printf("%lld / %lld bytes => %d%% complete\n",
+      len, total,
+      (int)((len/total)*100));
+    return true; // return 'false' if you want to cancel the request.
+  }
 );
 ```
 
