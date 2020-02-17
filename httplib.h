@@ -2072,11 +2072,11 @@ inline void parse_query_text(const std::string &s, Params &params) {
   split(&s[0], &s[s.size()], '&', [&](const char *b, const char *e) {
     std::string key;
     std::string val;
-    split(b, e, '=', [&](const char *b, const char *e) {
+    split(b, e, '=', [&](const char *b2, const char *e2) {
       if (key.empty()) {
-        key.assign(b, e);
+        key.assign(b2, e2);
       } else {
-        val.assign(b, e);
+        val.assign(b2, e2);
       }
     });
     params.emplace(key, decode_url(val));
@@ -2102,16 +2102,16 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
     split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
       if (!all_valid_ranges) return;
       static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
-      std::cmatch m;
-      if (std::regex_match(b, e, m, re_another_range)) {
+      std::cmatch cm;
+      if (std::regex_match(b, e, cm, re_another_range)) {
         ssize_t first = -1;
-        if (!m.str(1).empty()) {
-          first = static_cast<ssize_t>(std::stoll(m.str(1)));
+        if (!cm.str(1).empty()) {
+          first = static_cast<ssize_t>(std::stoll(cm.str(1)));
         }
 
         ssize_t last = -1;
-        if (!m.str(2).empty()) {
-          last = static_cast<ssize_t>(std::stoll(m.str(2)));
+        if (!cm.str(2).empty()) {
+          last = static_cast<ssize_t>(std::stoll(cm.str(2)));
         }
 
         if (first != -1 && last != -1 && first > last) {
@@ -2579,10 +2579,10 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 inline bool parse_www_authenticate(const httplib::Response &res,
                                    std::map<std::string, std::string> &auth,
                                    bool is_proxy) {
-  auto key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
-  if (res.has_header(key)) {
+  auto auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
+  if (res.has_header(auth_key)) {
     static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
-    auto s = res.get_header_value(key);
+    auto s = res.get_header_value(auth_key);
     auto pos = s.find(' ');
     if (pos != std::string::npos) {
       auto type = s.substr(0, pos);
@@ -2713,11 +2713,11 @@ inline void Response::set_content(const std::string &s,
 }
 
 inline void Response::set_content_provider(
-    size_t length,
+    size_t in_length,
     std::function<void(size_t offset, size_t length, DataSink &sink)> provider,
     std::function<void()> resource_releaser) {
-  assert(length > 0);
-  content_length = length;
+  assert(in_length > 0);
+  content_length = in_length;
   content_provider = [provider](size_t offset, size_t length, DataSink &sink) {
     provider(offset, length, sink);
   };
