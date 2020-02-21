@@ -1041,6 +1041,16 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+TEST_F(ServerTest, GetMethod200withPercentEncoding) {
+  auto res = cli_.Get("/%68%69"); // auto res = cli_.Get("/hi");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("HTTP/1.1", res->version);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
+  EXPECT_EQ("Hello World!", res->body);
+}
+
 TEST_F(ServerTest, GetMethod302) {
   auto res = cli_.Get("/");
   ASSERT_TRUE(res != nullptr);
