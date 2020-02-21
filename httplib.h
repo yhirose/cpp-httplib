@@ -1666,26 +1666,29 @@ inline bool compress(std::string &content) {
 
 class decompressor {
 public:
-  decompressor(bool force_gzip = false) {
+  decompressor() {
+    std::memset(&strm, 0, sizeof(strm));
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
-
-    if (force_gzip) {
-      is_valid_ = init_gzip();
-      first_ = false;
-    } else {
-      is_valid_ = true;
-      first_ = true;
-    }
+    is_valid_ = true;
+    first_ = true;
   }
 
   ~decompressor() { inflateEnd(&strm); }
 
   bool is_valid() const { return is_valid_; }
 
+  void force_gzip() {
+    is_valid_ = init_gzip();
+    first_ = false;
+  }
+
   template <typename T>
   bool decompress(const char *data, size_t data_length, T callback) {
+    if (!is_valid_)
+      return false;
+
     if (first_) {
       // check GZip magic:
       if (data_length >= 2 && data[0] == '\037' && data[1] == '\213') {
@@ -1899,14 +1902,14 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
   decompressor decompressor;
 
-  if (!decompressor.is_valid()) {
-    status = 500;
-    return false;
-  }
-
   std::string content_encoding = x.get_header_value("Content-Encoding");
-  if (content_encoding.find("gzip") != std::string::npos
-          || content_encoding.find("deflate") != std::string::npos) {
+  bool is_gzip_encoded = (content_encoding.find("gzip") != std::string::npos);
+  bool is_deflate_encoded = (content_encoding.find("deflate") != std::string::npos);
+
+  if (is_gzip_encoded || is_deflate_encoded) {
+    if (is_gzip_encoded)
+      decompressor.force_gzip();
+
     out = [&](const char *buf, size_t n) {
       return decompressor.decompress(
           buf, n, [&](const char *buf, size_t n) { return receiver(buf, n); });
