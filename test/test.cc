@@ -1041,6 +1041,16 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+TEST_F(ServerTest, GetMethod200withPercentEncoding) {
+  auto res = cli_.Get("/%68%69"); // auto res = cli_.Get("/hi");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("HTTP/1.1", res->version);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
+  EXPECT_EQ("Hello World!", res->body);
+}
+
 TEST_F(ServerTest, GetMethod302) {
   auto res = cli_.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -1695,6 +1705,19 @@ TEST_F(ServerTest, PutLargeFileWithGzip) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(LARGE_DATA, res->body);
 }
+
+TEST_F(ServerTest, PutContentWithDeflate) {
+  cli_.set_compress(false);
+  httplib::Headers headers;
+  headers.emplace("Content-Encoding", "deflate");
+  // PUT in deflate format:
+  auto res = cli_.Put("/put", headers, "\170\234\013\010\015\001\0\001\361\0\372", "text/plain");
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
 #endif
 
 TEST_F(ServerTest, Patch) {
