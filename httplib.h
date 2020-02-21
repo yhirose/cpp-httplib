@@ -1670,19 +1670,33 @@ public:
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
+  }
 
-    // 15 is the value of wbits, which should be at the maximum possible value
-    // to ensure that any gzip stream can be decoded. The offset of 16 specifies
-    // that the stream to decompress will be formatted with a gzip wrapper.
-    is_valid_ = inflateInit2(&strm, 16 + 15) == Z_OK;
+  bool is_valid() const {
+    return true;
   }
 
   ~decompressor() { inflateEnd(&strm); }
 
-  bool is_valid() const { return is_valid_; }
-
   template <typename T>
   bool decompress(const char *data, size_t data_length, T callback) {
+    if (first_) {
+      // check GZip magic:
+      if (data_length >= 2 && data[0] == '\037' && data[1] == '\213') {
+        // 15 is the value of wbits, which should be at the maximum possible value
+        // to ensure that any gzip stream can be decoded. The offset of 16 specifies
+        // that the stream to decompress will be formatted with a gzip wrapper.
+        if (inflateInit2(&strm, 16 + 15) != Z_OK) {
+          return false;
+        }
+      } else {
+        if (inflateInit(&strm) != Z_OK) {
+          return false;
+        }
+      }
+      first_ = false;
+    }
+
     int ret = Z_OK;
 
     strm.avail_in = data_length;
@@ -1710,7 +1724,7 @@ public:
   }
 
 private:
-  bool is_valid_;
+  bool first_;
   z_stream strm;
 };
 #endif
@@ -1877,7 +1891,9 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
     return false;
   }
 
-  if (x.get_header_value("Content-Encoding") == "gzip") {
+  std::string content_encoding = x.get_header_value("Content-Encoding");
+  if (content_encoding.find("gzip") != std::string::npos
+          || content_encoding.find("deflate") != std::string::npos) {
     out = [&](const char *buf, size_t n) {
       return decompressor.decompress(
           buf, n, [&](const char *buf, size_t n) { return receiver(buf, n); });
