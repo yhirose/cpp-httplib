@@ -1666,33 +1666,34 @@ inline bool compress(std::string &content) {
 
 class decompressor {
 public:
-  decompressor() {
+  decompressor(bool force_gzip = false) {
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
-  }
 
-  bool is_valid() const {
-    return true;
+    if (force_gzip) {
+      is_valid_ = init_gzip();
+      first_ = false;
+    } else {
+      is_valid_ = true;
+      first_ = true;
+    }
   }
 
   ~decompressor() { inflateEnd(&strm); }
+
+  bool is_valid() const { return is_valid_; }
 
   template <typename T>
   bool decompress(const char *data, size_t data_length, T callback) {
     if (first_) {
       // check GZip magic:
       if (data_length >= 2 && data[0] == '\037' && data[1] == '\213') {
-        // 15 is the value of wbits, which should be at the maximum possible value
-        // to ensure that any gzip stream can be decoded. The offset of 16 specifies
-        // that the stream to decompress will be formatted with a gzip wrapper.
-        if (inflateInit2(&strm, 16 + 15) != Z_OK) {
+        if (!init_gzip())
           return false;
-        }
       } else {
-        if (inflateInit(&strm) != Z_OK) {
+        if (!init_deflate())
           return false;
-        }
       }
       first_ = false;
     }
@@ -1724,6 +1725,18 @@ public:
   }
 
 private:
+  bool init_gzip() {
+    // 15 is the value of wbits, which should be at the maximum possible value
+    // to ensure that any gzip stream can be decoded. The offset of 16 specifies
+    // that the stream to decompress will be formatted with a gzip wrapper.
+    return (inflateInit2(&strm, 16 + 15) == Z_OK);
+  }
+
+  bool init_deflate() {
+    return (inflateInit(&strm) == Z_OK);
+  }
+
+  bool is_valid_;
   bool first_;
   z_stream strm;
 };
