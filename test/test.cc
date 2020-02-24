@@ -1705,6 +1705,19 @@ TEST_F(ServerTest, PutLargeFileWithGzip) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(LARGE_DATA, res->body);
 }
+
+TEST_F(ServerTest, PutContentWithDeflate) {
+  cli_.set_compress(false);
+  httplib::Headers headers;
+  headers.emplace("Content-Encoding", "deflate");
+  // PUT in deflate format:
+  auto res = cli_.Put("/put", headers, "\170\234\013\010\015\001\0\001\361\0\372", "text/plain");
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
 #endif
 
 TEST_F(ServerTest, Patch) {
