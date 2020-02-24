@@ -77,6 +77,21 @@ TEST(ParseQueryTest, ParseQueryString) {
   EXPECT_EQ("val3", dic.find("key3")->second);
 }
 
+TEST(ParamsToQueryTest, ConvertParamsToQuery) {
+    Params dic;
+
+    EXPECT_EQ(detail::params_to_query_str(dic), "");
+
+    dic.emplace("key1", "val1");
+
+    EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1");
+
+    dic.emplace("key2", "val2");
+    dic.emplace("key3", "val3");
+
+    EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1&key2=val2&key3=val3");
+}
+
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
   auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
