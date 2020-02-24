@@ -1667,14 +1667,15 @@ inline bool compress(std::string &content) {
 class decompressor {
 public:
   decompressor() {
+    std::memset(&strm, 0, sizeof(strm));
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
 
     // 15 is the value of wbits, which should be at the maximum possible value
-    // to ensure that any gzip stream can be decoded. The offset of 16 specifies
-    // that the stream to decompress will be formatted with a gzip wrapper.
-    is_valid_ = inflateInit2(&strm, 16 + 15) == Z_OK;
+    // to ensure that any gzip stream can be decoded. The offset of 32 specifies
+    // that the stream type should be automatically detected either gzip or deflate.
+    is_valid_ = inflateInit2(&strm, 32 + 15) == Z_OK;
   }
 
   ~decompressor() { inflateEnd(&strm); }
@@ -1872,12 +1873,14 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
   decompressor decompressor;
 
-  if (!decompressor.is_valid()) {
-    status = 500;
-    return false;
-  }
+  std::string content_encoding = x.get_header_value("Content-Encoding");
+  if (content_encoding.find("gzip") != std::string::npos
+          || content_encoding.find("deflate") != std::string::npos) {
+    if (!decompressor.is_valid()) {
+      status = 500;
+      return false;
+    }
 
-  if (x.get_header_value("Content-Encoding") == "gzip") {
     out = [&](const char *buf, size_t n) {
       return decompressor.decompress(
           buf, n, [&](const char *buf, size_t n) { return receiver(buf, n); });
