@@ -1672,10 +1672,9 @@ public:
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
 
-    // 15 is the value of wbits, which should be at the maximum possible value
-    // to ensure that any gzip stream can be decoded. The offset of 16 specifies
-    // that the stream to decompress will be formatted with a gzip wrapper.
-    // Stream type is automatically detected by inflate function.
+    // 31 is the value of wbits, which should be used for compression auto
+    // detection. In such mode zlib will be able to decompress both gzip
+    // and deflate data.
     is_valid_ = inflateInit2(&strm, 32 + 15) == Z_OK;
   }
 
