@@ -1671,36 +1671,19 @@ public:
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
-    is_valid_ = true;
-    first_ = true;
+    // 15 is the value of wbits, which should be at the maximum possible value
+    // to ensure that any gzip stream can be decoded. The offset of 16 specifies
+    // that the stream to decompress will be formatted with a gzip wrapper.
+    // Stream type is automatically detected by inflate function.
+    is_valid_ = inflateInit2(&strm, 32 + 15) == Z_OK;
   }
 
   ~decompressor() { inflateEnd(&strm); }
 
   bool is_valid() const { return is_valid_; }
 
-  void force_gzip() {
-    is_valid_ = init_gzip();
-    first_ = false;
-  }
-
   template <typename T>
   bool decompress(const char *data, size_t data_length, T callback) {
-    if (!is_valid_)
-      return false;
-
-    if (first_) {
-      // check GZip magic:
-      if (data_length >= 2 && data[0] == '\037' && data[1] == '\213') {
-        if (!init_gzip())
-          return false;
-      } else {
-        if (!init_deflate())
-          return false;
-      }
-      first_ = false;
-    }
-
     int ret = Z_OK;
 
     strm.avail_in = data_length;
@@ -1728,19 +1711,8 @@ public:
   }
 
 private:
-  bool init_gzip() {
-    // 15 is the value of wbits, which should be at the maximum possible value
-    // to ensure that any gzip stream can be decoded. The offset of 16 specifies
-    // that the stream to decompress will be formatted with a gzip wrapper.
-    return (inflateInit2(&strm, 16 + 15) == Z_OK);
-  }
-
-  bool init_deflate() {
-    return (inflateInit(&strm) == Z_OK);
-  }
 
   bool is_valid_;
-  bool first_;
   z_stream strm;
 };
 #endif
@@ -1903,12 +1875,12 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   decompressor decompressor;
 
   std::string content_encoding = x.get_header_value("Content-Encoding");
-  bool is_gzip_encoded = (content_encoding.find("gzip") != std::string::npos);
-  bool is_deflate_encoded = (content_encoding.find("deflate") != std::string::npos);
-
-  if (is_gzip_encoded || is_deflate_encoded) {
-    if (is_gzip_encoded)
-      decompressor.force_gzip();
+  if (content_encoding.find("gzip") != std::string::npos
+          || content_encoding.find("deflate") != std::string::npos) {
+    if (!decompressor.is_valid()) {
+      status = 500;
+      return false;
+    }
 
     out = [&](const char *buf, size_t n) {
       return decompressor.decompress(
