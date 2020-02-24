@@ -1671,6 +1671,7 @@ public:
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
     strm.opaque = Z_NULL;
+
     // 15 is the value of wbits, which should be at the maximum possible value
     // to ensure that any gzip stream can be decoded. The offset of 16 specifies
     // that the stream to decompress will be formatted with a gzip wrapper.
@@ -1711,7 +1712,6 @@ public:
   }
 
 private:
-
   bool is_valid_;
   z_stream strm;
 };
