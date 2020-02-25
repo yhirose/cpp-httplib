@@ -1674,7 +1674,8 @@ public:
 
     // 15 is the value of wbits, which should be at the maximum possible value
     // to ensure that any gzip stream can be decoded. The offset of 32 specifies
-    // that the stream type should be automatically detected either gzip or deflate.
+    // that the stream type should be automatically detected either gzip or
+    // deflate.
     is_valid_ = inflateInit2(&strm, 32 + 15) == Z_OK;
   }
 
@@ -1874,8 +1875,8 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   decompressor decompressor;
 
   std::string content_encoding = x.get_header_value("Content-Encoding");
-  if (content_encoding.find("gzip") != std::string::npos
-          || content_encoding.find("deflate") != std::string::npos) {
+  if (content_encoding.find("gzip") != std::string::npos ||
+      content_encoding.find("deflate") != std::string::npos) {
     if (!decompressor.is_valid()) {
       status = 500;
       return false;
@@ -4125,11 +4126,9 @@ Client::Post(const char *path, const Headers &headers, size_t content_length,
                                     content_type);
 }
 
-
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers, const Params &params) {
-  std::string query = detail::params_to_query_str(params);
-
+  auto query = detail::params_to_query_str(params);
   return Post(path, headers, query, "application/x-www-form-urlencoded");
 }
 
@@ -4201,8 +4200,7 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
 
 inline std::shared_ptr<Response>
 Client::Put(const char *path, const Headers &headers, const Params &params) {
-  std::string query = detail::params_to_query_str(params);
-
+  auto query = detail::params_to_query_str(params);
   return Put(path, headers, query, "application/x-www-form-urlencoded");
 }
 
