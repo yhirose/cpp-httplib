@@ -248,14 +248,13 @@ svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
 Client Example
 --------------
 
-### GET
-
 ```c++
 #include <httplib.h>
 #include <iostream>
 
 int main(void)
 {
+  // IMPORTANT: 1st parameter must be a hostname or an IP adress string.
   httplib::Client cli("localhost", 1234);
 
   auto res = cli.Get("/hi");
