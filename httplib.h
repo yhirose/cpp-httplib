@@ -2072,6 +2072,19 @@ inline std::string decode_url(const std::string &s) {
   return result;
 }
 
+inline std::string params_to_query_str(const Params &params) {
+  std::string query;
+
+  for (auto it = params.begin(); it != params.end(); ++it) {
+    if (it != params.begin()) { query += "&"; }
+    query += it->first;
+    query += "=";
+    query += detail::encode_url(it->second);
+  }
+
+  return query;
+}
+
 inline void parse_query_text(const std::string &s, Params &params) {
   split(&s[0], &s[s.size()], '&', [&](const char *b, const char *e) {
     std::string key;
@@ -4112,15 +4125,10 @@ Client::Post(const char *path, const Headers &headers, size_t content_length,
                                     content_type);
 }
 
+
 inline std::shared_ptr<Response>
 Client::Post(const char *path, const Headers &headers, const Params &params) {
-  std::string query;
-  for (auto it = params.begin(); it != params.end(); ++it) {
-    if (it != params.begin()) { query += "&"; }
-    query += it->first;
-    query += "=";
-    query += detail::encode_url(it->second);
-  }
+  std::string query = detail::params_to_query_str(params);
 
   return Post(path, headers, query, "application/x-www-form-urlencoded");
 }
@@ -4193,13 +4201,7 @@ inline std::shared_ptr<Response> Client::Put(const char *path,
 
 inline std::shared_ptr<Response>
 Client::Put(const char *path, const Headers &headers, const Params &params) {
-  std::string query;
-  for (auto it = params.begin(); it != params.end(); ++it) {
-    if (it != params.begin()) { query += "&"; }
-    query += it->first;
-    query += "=";
-    query += detail::encode_url(it->second);
-  }
+  std::string query = detail::params_to_query_str(params);
 
   return Put(path, headers, query, "application/x-www-form-urlencoded");
 }
