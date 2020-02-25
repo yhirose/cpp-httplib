@@ -823,6 +823,7 @@ protected:
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(5u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
+                ASSERT_TRUE(req.body.empty());
 
                 {
                   const auto &file = req.get_file_value("text1");
