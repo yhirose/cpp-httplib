@@ -2049,7 +2049,8 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   EXPECT_EQ(header_value, "\v bar \e");
 }
 
-TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
+// Sends a raw request and verifies that there isn't a crash or exception.
+static void test_raw_request(const std::string& req) {
   Server svr;
   svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
@@ -2066,17 +2067,58 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  // A certain header line causes an exception if the header property is parsed
-  // naively with a single regex. This occurs with libc++ but not libstdc++.
-  const std::string req =
-      "GET /hi HTTP/1.1\r\n"
-      " :                                                                      "
-      "                                                                       ";
-
   ASSERT_TRUE(send_request(client_read_timeout_sec, req));
   svr.stop();
   t.join();
   EXPECT_TRUE(listen_thread_ok);
+}
+
+TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
+  // A certain header line causes an exception if the header property is parsed
+  // naively with a single regex. This occurs with libc++ but not libstdc++.
+  test_raw_request(
+      "GET /hi HTTP/1.1\r\n"
+      " :                                                                      "
+      "                                                                       "
+  );
+}
+
+TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity2) {
+  // A certain header line causes an exception if the header property *name* is
+  // parsed with a regular expression starting with "(.+?):" - this is a non-
+  // greedy matcher and requires backtracking when there are a lot of ":"
+  // characters.
+  // This occurs with libc++ but not libstdc++.
+  test_raw_request(
+      "GET /hi HTTP/1.1\r\n"
+      ":-:::::::::::::::::::::::::::-::::::::::::::::::::::::@-&&&&&&&&&&&"
+      "--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@-&&&&&&&&"
+      "&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@-:::::"
+      "::-:::::::::::::::::@-&&&&&&&&&&&--:::::::-::::::::::::::::::::::::"
+      ":::::-:::::::::::::::::@-&&&&&&&&&&&--:::::::-:::::::::::::::::::::"
+      "::::::::-:::::::::::::::::@-&&&&&&&--:::::::-::::::::::::::::::::::"
+      ":::::::-:::::::::::::::::@-&&&&&&&&&&&--:::::::-:::::::::::::::::::"
+      "::::::::::-:::::::::::::::::@-&&&&&::::::::::::-:::::::::::::::::@-"
+      "&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-::::::::::::::::"
+      ":@-&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::"
+      "::::@-&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-::::::@-&&"
+      "&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@"
+      "::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@-&&&&&&&&&&&"
+      "--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@-&&&&&&&&"
+      "&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@-&&&&&"
+      "&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@-&&"
+      "&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::::@"
+      "-&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::::"
+      "::@-&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-::::::::::::"
+      ":::::@-&&&&&&&&&&&::-:::::::::::::::::@-&&&&&&&&&&&--:::::::-::::::"
+      ":::::::::::::::::::::::-:::::::::::::::::@-&&&&&&&&&&&--:::::::-:::"
+      "::::::::::::::::::::::::::-:::::::::::::::::@-&&&&&&&&&&&--:::::::-"
+      ":::::::::::::::::::::::::::::-:::::::::::::::::@-&&&&&&&&&&&---&&:&"
+      "&&.0------------:-:::::::::::::::::::::::::::::-:::::::::::::::::@-"
+      "&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-::::::::::::::::"
+      ":@-&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::"
+      "::::@-&&&&&&&&&&&---&&:&&&.0------------O--------\rH PUTHTTP/1.1\r\n"
+      "&&&%%%");
 }
 
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
