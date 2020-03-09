@@ -845,12 +845,12 @@ public:
             const char *client_ca_cert_file_path = nullptr,
             const char *client_ca_cert_dir_path = nullptr);
 
-  virtual ~SSLServer();
+  ~SSLServer() override;
 
-  virtual bool is_valid() const;
+  bool is_valid() const override;
 
 private:
-  virtual bool process_and_close_socket(socket_t sock);
+  bool process_and_close_socket(socket_t sock) override;
 
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
@@ -862,9 +862,9 @@ public:
             const std::string &client_cert_path = std::string(),
             const std::string &client_key_path = std::string());
 
-  virtual ~SSLClient();
+  ~SSLClient() override;
 
-  virtual bool is_valid() const;
+  bool is_valid() const override;
 
   void set_ca_cert_path(const char *ca_ceert_file_path,
                         const char *ca_cert_dir_path = nullptr);
@@ -876,12 +876,12 @@ public:
   SSL_CTX *ssl_context() const noexcept;
 
 private:
-  virtual bool process_and_close_socket(
+  bool process_and_close_socket(
       socket_t sock, size_t request_count,
       std::function<bool(Stream &strm, bool last_connection,
                          bool &connection_close)>
-          callback);
-  virtual bool is_ssl() const;
+          callback) override;
+  bool is_ssl() const override;
 
   bool verify_host(X509 *server_cert) const;
   bool verify_host_with_subject_alt_name(X509 *server_cert) const;
@@ -1280,7 +1280,7 @@ class SSLSocketStream : public Stream {
 public:
   SSLSocketStream(socket_t sock, SSL *ssl, time_t read_timeout_sec,
                   time_t read_timeout_usec);
-  virtual ~SSLSocketStream();
+  ~SSLSocketStream() override;
 
   bool is_readable() const override;
   bool is_writable() const override;
