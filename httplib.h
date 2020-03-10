@@ -1921,7 +1921,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 template <typename T>
 inline ssize_t write_headers(Stream &strm, const T &info,
                              const Headers &headers) {
-  auto write_len = 0;
+  ssize_t write_len = 0;
   for (const auto &x : info.headers) {
     auto len =
         strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
