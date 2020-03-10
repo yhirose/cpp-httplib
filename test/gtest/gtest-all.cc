@@ -38,6 +38,14 @@
 // when it's fused.
 #include "gtest/gtest.h"
 
+#if __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#elif __GNUC__
+#pragma gcc diagnostic push
+#pragma gcc diagnostic ignored "-Wsign-conversion"
+#endif
+
 // The following lines pull in the real gtest *.cc files.
 // Copyright 2005, Google Inc.
 // All rights reserved.
@@ -9039,7 +9047,6 @@ void HasNewFatalFailureHelper::ReportTestPartResult(
 //
 // Author: wan@google.com (Zhanyong Wan)
 
-
 namespace testing {
 namespace internal {
 
@@ -9116,3 +9123,9 @@ const char* TypedTestCasePState::VerifyRegisteredTestNames(
 
 }  // namespace internal
 }  // namespace testing
+
+#if __clang__
+#pragma clang diagnostic pop
+#elif __GNUC__
+#pragma gcc diagnostic pop
+#endif
