@@ -349,14 +349,14 @@ public:
   virtual bool is_readable() const = 0;
   virtual bool is_writable() const = 0;
 
-  virtual int read(char *ptr, size_t size) = 0;
-  virtual int write(const char *ptr, size_t size) = 0;
+  virtual ssize_t read(char *ptr, size_t size) = 0;
+  virtual ssize_t write(const char *ptr, size_t size) = 0;
   virtual std::string get_remote_addr() const = 0;
 
   template <typename... Args>
-  int write_format(const char *fmt, const Args &... args);
-  int write(const char *ptr);
-  int write(const std::string &s);
+  ssize_t write_format(const char *fmt, const Args &... args);
+  ssize_t write(const char *ptr);
+  ssize_t write(const std::string &s);
 };
 
 class TaskQueue {
@@ -953,26 +953,26 @@ inline size_t to_utf8(int code, char *buff) {
     buff[0] = (code & 0x7F);
     return 1;
   } else if (code < 0x0800) {
-    buff[0] = (0xC0 | ((code >> 6) & 0x1F));
-    buff[1] = (0x80 | (code & 0x3F));
+    buff[0] = static_cast<char>(0xC0 | ((code >> 6) & 0x1F));
+    buff[1] = static_cast<char>(0x80 | (code & 0x3F));
     return 2;
   } else if (code < 0xD800) {
-    buff[0] = (0xE0 | ((code >> 12) & 0xF));
-    buff[1] = (0x80 | ((code >> 6) & 0x3F));
-    buff[2] = (0x80 | (code & 0x3F));
+    buff[0] = static_cast<char>(0xE0 | ((code >> 12) & 0xF));
+    buff[1] = static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+    buff[2] = static_cast<char>(0x80 | (code & 0x3F));
     return 3;
   } else if (code < 0xE000) { // D800 - DFFF is invalid...
     return 0;
   } else if (code < 0x10000) {
-    buff[0] = (0xE0 | ((code >> 12) & 0xF));
-    buff[1] = (0x80 | ((code >> 6) & 0x3F));
-    buff[2] = (0x80 | (code & 0x3F));
+    buff[0] = static_cast<char>(0xE0 | ((code >> 12) & 0xF));
+    buff[1] = static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+    buff[2] = static_cast<char>(0x80 | (code & 0x3F));
     return 3;
   } else if (code < 0x110000) {
-    buff[0] = (0xF0 | ((code >> 18) & 0x7));
-    buff[1] = (0x80 | ((code >> 12) & 0x3F));
-    buff[2] = (0x80 | ((code >> 6) & 0x3F));
-    buff[3] = (0x80 | (code & 0x3F));
+    buff[0] = static_cast<char>(0xF0 | ((code >> 18) & 0x7));
+    buff[1] = static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+    buff[2] = static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+    buff[3] = static_cast<char>(0x80 | (code & 0x3F));
     return 4;
   }
 
@@ -992,8 +992,8 @@ inline std::string base64_encode(const std::string &in) {
   int val = 0;
   int valb = -6;
 
-  for (uint8_t c : in) {
-    val = (val << 8) + c;
+  for (auto c : in) {
+    val = (val << 8) + static_cast<uint8_t>(c);
     valb += 8;
     while (valb >= 0) {
       out.push_back(lookup[(val >> valb) & 0x3F]);
@@ -1188,7 +1188,7 @@ inline int select_read(socket_t sock, time_t sec, time_t usec) {
 
   timeval tv;
   tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<long>(usec);
+  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
 #endif
@@ -1210,7 +1210,7 @@ inline int select_write(socket_t sock, time_t sec, time_t usec) {
 
   timeval tv;
   tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<long>(usec);
+  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   return select(static_cast<int>(sock + 1), nullptr, &fds, nullptr, &tv);
 #endif
@@ -1243,7 +1243,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 
   timeval tv;
   tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<long>(usec);
+  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   if (select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) > 0 &&
       (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
@@ -1265,8 +1265,8 @@ public:
 
   bool is_readable() const override;
   bool is_writable() const override;
-  int read(char *ptr, size_t size) override;
-  int write(const char *ptr, size_t size) override;
+  ssize_t read(char *ptr, size_t size) override;
+  ssize_t write(const char *ptr, size_t size) override;
   std::string get_remote_addr() const override;
 
 private:
@@ -1284,8 +1284,8 @@ public:
 
   bool is_readable() const override;
   bool is_writable() const override;
-  int read(char *ptr, size_t size) override;
-  int write(const char *ptr, size_t size) override;
+  ssize_t read(char *ptr, size_t size) override;
+  ssize_t write(const char *ptr, size_t size) override;
   std::string get_remote_addr() const override;
 
 private:
@@ -1303,15 +1303,15 @@ public:
 
   bool is_readable() const override;
   bool is_writable() const override;
-  int read(char *ptr, size_t size) override;
-  int write(const char *ptr, size_t size) override;
+  ssize_t read(char *ptr, size_t size) override;
+  ssize_t write(const char *ptr, size_t size) override;
   std::string get_remote_addr() const override;
 
   const std::string &get_buffer() const;
 
 private:
   std::string buffer;
-  int position = 0;
+  size_t position = 0;
 };
 
 template <typename T>
@@ -1479,7 +1479,7 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
   auto ret = false;
   for (auto rp = result; rp; rp = rp->ai_next) {
     const auto &ai = *rp;
-    if (!::bind(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen))) {
+    if (!::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
       ret = true;
       break;
     }
@@ -1523,7 +1523,8 @@ inline socket_t create_client_socket(const char *host, int port,
 
         set_nonblocking(sock, true);
 
-        auto ret = ::connect(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen));
+        auto ret =
+            ::connect(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
         if (ret < 0) {
           if (is_connection_error() ||
               !wait_until_socket_is_ready(sock, timeout_sec, 0)) {
@@ -1640,7 +1641,7 @@ inline bool compress(std::string &content) {
                           Z_DEFAULT_STRATEGY);
   if (ret != Z_OK) { return false; }
 
-  strm.avail_in = content.size();
+  strm.avail_in = static_cast<decltype(strm.avail_in)>(content.size());
   strm.next_in =
       const_cast<Bytef *>(reinterpret_cast<const Bytef *>(content.data()));
 
@@ -1687,7 +1688,7 @@ public:
   bool decompress(const char *data, size_t data_length, T callback) {
     int ret = Z_OK;
 
-    strm.avail_in = data_length;
+    strm.avail_in = static_cast<decltype(strm.avail_in)>(data_length);
     strm.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
     std::array<char, 16384> buff{};
@@ -1724,13 +1725,13 @@ inline bool has_header(const Headers &headers, const char *key) {
 inline const char *get_header_value(const Headers &headers, const char *key,
                                     size_t id = 0, const char *def = nullptr) {
   auto it = headers.find(key);
-  std::advance(it, id);
+  std::advance(it, static_cast<int>(id));
   if (it != headers.end()) { return it->second.c_str(); }
   return def;
 }
 
 inline uint64_t get_header_value_uint64(const Headers &headers, const char *key,
-                                        int def = 0) {
+                                        uint64_t def = 0) {
   auto it = headers.find(key);
   if (it != headers.end()) {
     return std::strtoull(it->second.data(), nullptr, 10);
@@ -1787,9 +1788,9 @@ inline bool read_content_with_length(Stream &strm, uint64_t len,
     auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return false; }
 
-    if (!out(buf, n)) { return false; }
+    if (!out(buf, static_cast<size_t>(n))) { return false; }
 
-    r += n;
+    r += static_cast<uint64_t>(n);
 
     if (progress) {
       if (!progress(r, len)) { return false; }
@@ -1806,7 +1807,7 @@ inline void skip_content_with_length(Stream &strm, uint64_t len) {
     auto read_len = static_cast<size_t>(len - r);
     auto n = strm.read(buf, std::min(read_len, CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return; }
-    r += n;
+    r += static_cast<uint64_t>(n);
   }
 }
 
@@ -1819,7 +1820,7 @@ inline bool read_content_without_length(Stream &strm, ContentReceiver out) {
     } else if (n == 0) {
       return true;
     }
-    if (!out(buf, n)) { return false; }
+    if (!out(buf, static_cast<size_t>(n))) { return false; }
   }
 
   return true;
@@ -1833,7 +1834,7 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
 
   if (!line_reader.getline()) { return false; }
 
-  auto chunk_len = std::stoi(line_reader.ptr(), 0, 16);
+  auto chunk_len = std::stoul(line_reader.ptr(), 0, 16);
 
   while (chunk_len > 0) {
     if (!read_content_with_length(strm, chunk_len, nullptr, out)) {
@@ -1846,7 +1847,7 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
 
     if (!line_reader.getline()) { return false; }
 
-    chunk_len = std::stoi(line_reader.ptr(), 0, 16);
+    chunk_len = std::stoul(line_reader.ptr(), 0, 16);
   }
 
   if (chunk_len == 0) {
@@ -1918,7 +1919,8 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 }
 
 template <typename T>
-inline int write_headers(Stream &strm, const T &info, const Headers &headers) {
+inline ssize_t write_headers(Stream &strm, const T &info,
+                             const Headers &headers) {
   auto write_len = 0;
   for (const auto &x : info.headers) {
     auto len =
@@ -2009,7 +2011,7 @@ inline bool redirect(T &cli, const Request &req, Response &res,
 inline std::string encode_url(const std::string &s) {
   std::string result;
 
-  for (auto i = 0; s[i]; i++) {
+  for (size_t i = 0; s[i]; i++) {
     switch (s[i]) {
     case ' ': result += "%20"; break;
     case '+': result += "%2B"; break;
@@ -2024,9 +2026,9 @@ inline std::string encode_url(const std::string &s) {
       if (c >= 0x80) {
         result += '%';
         char hex[4];
-        size_t len = snprintf(hex, sizeof(hex) - 1, "%02X", c);
+        auto len = snprintf(hex, sizeof(hex) - 1, "%02X", c);
         assert(len == 2);
-        result.append(hex, len);
+        result.append(hex, static_cast<size_t>(len));
       } else {
         result += s[i];
       }
@@ -2114,8 +2116,8 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
   static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
   std::smatch m;
   if (std::regex_match(s, m, re_first_range)) {
-    auto pos = m.position(1);
-    auto len = m.length(1);
+    auto pos = static_cast<size_t>(m.position(1));
+    auto len = static_cast<size_t>(m.length(1));
     bool all_valid_ranges = true;
     split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
       if (!all_valid_ranges) return;
@@ -2347,12 +2349,14 @@ get_range_offset_and_length(const Request &req, size_t content_length,
     return std::make_pair(0, content_length);
   }
 
+  auto slen = static_cast<ssize_t>(content_length);
+
   if (r.first == -1) {
-    r.first = content_length - r.second;
-    r.second = content_length - 1;
+    r.first = slen - r.second;
+    r.second = slen - 1;
   }
 
-  if (r.second == -1) { r.second = content_length - 1; }
+  if (r.second == -1) { r.second = slen - 1; }
 
   return std::make_pair(r.first, r.second - r.first + 1);
 }
@@ -2456,7 +2460,9 @@ get_range_offset_and_length(const Request &req, const Response &res,
                             size_t index) {
   auto r = req.ranges[index];
 
-  if (r.second == -1) { r.second = res.content_length - 1; }
+  if (r.second == -1) {
+    r.second = static_cast<ssize_t>(res.content_length) - 1;
+  }
 
   return std::make_pair(r.first, r.second - r.first + 1);
 }
@@ -2611,9 +2617,13 @@ inline bool parse_www_authenticate(const httplib::Response &res,
         auto beg = std::sregex_iterator(s.begin(), s.end(), re);
         for (auto i = beg; i != std::sregex_iterator(); ++i) {
           auto m = *i;
-          auto key = s.substr(m.position(1), m.length(1));
-          auto val = m.length(2) > 0 ? s.substr(m.position(2), m.length(2))
-                                     : s.substr(m.position(3), m.length(3));
+          auto key = s.substr(static_cast<size_t>(m.position(1)),
+                              static_cast<size_t>(m.length(1)));
+          auto val = m.length(2) > 0
+                         ? s.substr(static_cast<size_t>(m.position(2)),
+                                    static_cast<size_t>(m.length(2)))
+                         : s.substr(static_cast<size_t>(m.position(3)),
+                                    static_cast<size_t>(m.length(3)));
           auth[key] = val;
         }
         return true;
@@ -2630,7 +2640,7 @@ inline std::string random_string(size_t length) {
                            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                            "abcdefghijklmnopqrstuvwxyz";
     const size_t max_index = (sizeof(charset) - 1);
-    return charset[rand() % max_index];
+    return charset[static_cast<size_t>(rand()) % max_index];
   };
   std::string str(length, 0);
   std::generate_n(str.begin(), length, randchar);
@@ -2648,7 +2658,7 @@ inline std::string Request::get_header_value(const char *key, size_t id) const {
 
 inline size_t Request::get_header_value_count(const char *key) const {
   auto r = headers.equal_range(key);
-  return std::distance(r.first, r.second);
+  return static_cast<size_t>(std::distance(r.first, r.second));
 }
 
 inline void Request::set_header(const char *key, const char *val) {
@@ -2665,14 +2675,14 @@ inline bool Request::has_param(const char *key) const {
 
 inline std::string Request::get_param_value(const char *key, size_t id) const {
   auto it = params.find(key);
-  std::advance(it, id);
+  std::advance(it, static_cast<ssize_t>(id));
   if (it != params.end()) { return it->second; }
   return std::string();
 }
 
 inline size_t Request::get_param_value_count(const char *key) const {
   auto r = params.equal_range(key);
-  return std::distance(r.first, r.second);
+  return static_cast<size_t>(std::distance(r.first, r.second));
 }
 
 inline bool Request::is_multipart_form_data() const {
@@ -2702,7 +2712,7 @@ inline std::string Response::get_header_value(const char *key,
 
 inline size_t Response::get_header_value_count(const char *key) const {
   auto r = headers.equal_range(key);
-  return std::distance(r.first, r.second);
+  return static_cast<size_t>(std::distance(r.first, r.second));
 }
 
 inline void Response::set_header(const char *key, const char *val) {
@@ -2753,33 +2763,39 @@ inline void Response::set_chunked_content_provider(
 }
 
 // Rstream implementation
-inline int Stream::write(const char *ptr) { return write(ptr, strlen(ptr)); }
+inline ssize_t Stream::write(const char *ptr) {
+  return write(ptr, strlen(ptr));
+}
 
-inline int Stream::write(const std::string &s) {
+inline ssize_t Stream::write(const std::string &s) {
   return write(s.data(), s.size());
 }
 
 template <typename... Args>
-inline int Stream::write_format(const char *fmt, const Args &... args) {
+inline ssize_t Stream::write_format(const char *fmt, const Args &... args) {
   std::array<char, 2048> buf;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  auto n = _snprintf_s(buf, bufsiz, buf.size() - 1, fmt, args...);
+  auto sn = _snprintf_s(buf, bufsiz, buf.size() - 1, fmt, args...);
 #else
-  auto n = snprintf(buf.data(), buf.size() - 1, fmt, args...);
+  auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
 #endif
-  if (n <= 0) { return n; }
+  if (sn <= 0) { return sn; }
 
-  if (n >= static_cast<int>(buf.size()) - 1) {
+  auto n = static_cast<size_t>(sn);
+
+  if (n >= buf.size() - 1) {
     std::vector<char> glowable_buf(buf.size());
 
-    while (n >= static_cast<int>(glowable_buf.size() - 1)) {
+    while (n >= glowable_buf.size() - 1) {
       glowable_buf.resize(glowable_buf.size() * 2);
 #if defined(_MSC_VER) && _MSC_VER < 1900
-      n = _snprintf_s(&glowable_buf[0], glowable_buf.size(),
-                      glowable_buf.size() - 1, fmt, args...);
+      n = static_cast<size_t>(_snprintf_s(&glowable_buf[0], glowable_buf.size(),
+                                          glowable_buf.size() - 1, fmt,
+                                          args...));
 #else
-      n = snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...);
+      n = static_cast<size_t>(
+          snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
 #endif
     }
     return write(&glowable_buf[0], n);
@@ -2806,13 +2822,13 @@ inline bool SocketStream::is_writable() const {
   return detail::select_write(sock_, 0, 0) > 0;
 }
 
-inline int SocketStream::read(char *ptr, size_t size) {
-  if (is_readable()) { return recv(sock_, ptr, static_cast<int>(size), 0); }
+inline ssize_t SocketStream::read(char *ptr, size_t size) {
+  if (is_readable()) { return recv(sock_, ptr, size, 0); }
   return -1;
 }
 
-inline int SocketStream::write(const char *ptr, size_t size) {
-  if (is_writable()) { return send(sock_, ptr, static_cast<int>(size), 0); }
+inline ssize_t SocketStream::write(const char *ptr, size_t size) {
+  if (is_writable()) { return send(sock_, ptr, size, 0); }
   return -1;
 }
 
@@ -2825,19 +2841,19 @@ inline bool BufferStream::is_readable() const { return true; }
 
 inline bool BufferStream::is_writable() const { return true; }
 
-inline int BufferStream::read(char *ptr, size_t size) {
+inline ssize_t BufferStream::read(char *ptr, size_t size) {
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  int len_read = static_cast<int>(buffer._Copy_s(ptr, size, size, position));
+  auto len_read = buffer._Copy_s(ptr, size, size, position);
 #else
-  int len_read = static_cast<int>(buffer.copy(ptr, size, position));
+  auto len_read = buffer.copy(ptr, size, position);
 #endif
-  position += len_read;
-  return len_read;
+  position += static_cast<size_t>(len_read);
+  return static_cast<ssize_t>(len_read);
 }
 
-inline int BufferStream::write(const char *ptr, size_t size) {
+inline ssize_t BufferStream::write(const char *ptr, size_t size) {
   buffer.append(ptr, size);
-  return static_cast<int>(size);
+  return static_cast<ssize_t>(size);
 }
 
 inline std::string BufferStream::get_remote_addr() const { return ""; }
@@ -3297,7 +3313,7 @@ inline socket_t Server::create_server_socket(const char *host, int port,
   return detail::create_socket(
       host, port,
       [](socket_t sock, struct addrinfo &ai) -> bool {
-        if (::bind(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen))) {
+        if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
         }
         if (::listen(sock, 5)) { // Listen through 5 channels
@@ -3875,7 +3891,7 @@ inline bool Client::write_request(Stream &strm, const Request &req,
       DataSink data_sink;
       data_sink.write = [&](const char *d, size_t l) {
         auto written_length = strm.write(d, l);
-        offset += written_length;
+        offset += static_cast<size_t>(written_length);
       };
       data_sink.is_writable = [&](void) { return strm.is_writable(); };
 
@@ -4476,7 +4492,7 @@ inline bool SSLSocketStream::is_writable() const {
   return detail::select_write(sock_, 0, 0) > 0;
 }
 
-inline int SSLSocketStream::read(char *ptr, size_t size) {
+inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
   if (SSL_pending(ssl_) > 0 ||
       select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0) {
     return SSL_read(ssl_, ptr, static_cast<int>(size));
@@ -4484,7 +4500,7 @@ inline int SSLSocketStream::read(char *ptr, size_t size) {
   return -1;
 }
 
-inline int SSLSocketStream::write(const char *ptr, size_t size) {
+inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
   if (is_writable()) { return SSL_write(ssl_, ptr, static_cast<int>(size)); }
   return -1;
 }
@@ -4744,7 +4760,9 @@ inline bool SSLClient::verify_host_with_common_name(X509 *server_cert) const {
     auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
                                               name, sizeof(name));
 
-    if (name_len != -1) { return check_host_name(name, name_len); }
+    if (name_len != -1) {
+      return check_host_name(name, static_cast<size_t>(name_len));
+    }
   }
 
   return false;
