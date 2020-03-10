@@ -2205,6 +2205,35 @@ TEST(MountTest, Unmount) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(ExceptionTest, ThrowExceptionInHandler) {
+  Server svr;
+
+  svr.Get("/hi",
+          [&](const Request & /*req*/, Response &res) {
+            throw std::runtime_error("exception...");
+            res.set_content("Hello World!", "text/plain");
+          });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/hi");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(500, res->status);
+  ASSERT_FALSE(res->has_header("EXCEPTION_WHAT"));
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()

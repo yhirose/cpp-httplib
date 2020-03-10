@@ -1923,6 +1923,9 @@ inline ssize_t write_headers(Stream &strm, const T &info,
                              const Headers &headers) {
   ssize_t write_len = 0;
   for (const auto &x : info.headers) {
+    if (x.first == "EXCEPTION_WHAT") {
+      continue;
+    }
     auto len =
         strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
     if (len < 0) { return len; }
