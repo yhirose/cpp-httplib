@@ -3462,14 +3462,23 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm,
 
 inline bool Server::dispatch_request(Request &req, Response &res,
                                      Handlers &handlers) {
-  for (const auto &x : handlers) {
-    const auto &pattern = x.first;
-    const auto &handler = x.second;
 
-    if (std::regex_match(req.path, req.matches, pattern)) {
-      handler(req, res);
-      return true;
+  try {
+    for (const auto &x : handlers) {
+      const auto &pattern = x.first;
+      const auto &handler = x.second;
+
+      if (std::regex_match(req.path, req.matches, pattern)) {
+        handler(req, res);
+        return true;
+      }
     }
+  } catch (const std::exception &ex) {
+    res.status = 500;
+    res.set_header("EXCEPTION_WHAT", ex.what());
+  } catch (...) {
+    res.status = 500;
+    res.set_header("EXCEPTION_WHAT", "UNKNOWN");
   }
   return false;
 }
