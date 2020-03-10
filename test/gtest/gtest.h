@@ -59,6 +59,14 @@
 #pragma warning(disable : 4996)
 #endif
 
+#if __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#elif __GNUC__
+#pragma gcc diagnostic push
+#pragma gcc diagnostic ignored "-Wsign-compare"
+#endif
+
 // Copyright 2005, Google Inc.
 // All rights reserved.
 //
@@ -7311,7 +7319,7 @@ inline const char* SkipComma(const char* str) {
 // the entire string if it contains no comma.
 inline String GetPrefixUntilComma(const char* str) {
   const char* comma = strchr(str, ',');
-  return comma == NULL ? String(str) : String(str, comma - str);
+  return comma == NULL ? String(str) : String(str, static_cast<size_t>(comma - str));
 }
 
 // TypeParameterizedTest<Fixture, TestSel, Types>::Register()
@@ -19551,6 +19559,12 @@ bool StaticAssertTypeEq() {
 
 #if defined(_MSC_VER)
 #pragma warning( pop )
+#endif
+
+#if __clang__
+#pragma clang diagnostic pop
+#elif __GNUC__
+#pragma gcc diagnostic pop
 #endif
 
 #endif  // GTEST_INCLUDE_GTEST_GTEST_H_

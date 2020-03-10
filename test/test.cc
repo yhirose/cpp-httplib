@@ -1858,7 +1858,7 @@ TEST_F(ServerTest, KeepAlive) {
   ASSERT_TRUE(ret == true);
   ASSERT_TRUE(requests.size() == responses.size());
 
-  for (int i = 0; i < 3; i++) {
+  for (size_t i = 0; i < 3; i++) {
     auto &res = responses[i];
     EXPECT_EQ(200, res.status);
     EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
@@ -2129,7 +2129,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
     res.set_header("Cache-Control", "no-cache");
     res.set_chunked_content_provider([](size_t offset, const DataSink &sink) {
       char buffer[27];
-      int size = sprintf(buffer, "data:%ld\n\n", offset);
+      auto size = static_cast<size_t>(sprintf(buffer, "data:%ld\n\n", offset));
       sink.write(buffer, size);
       std::this_thread::sleep_for(std::chrono::seconds(1));
     });
@@ -2389,7 +2389,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
       char name[BUFSIZ];
       auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
                                                 name, sizeof(name));
-      common_name.assign(name, name_len);
+      common_name.assign(name, static_cast<size_t>(name_len));
     }
 
     EXPECT_EQ("Common Name", common_name);
