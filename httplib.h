@@ -48,10 +48,6 @@
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 #endif
 
-#ifndef CPPHTTPLIB_THREAD_POOL_COUNT
-#define CPPHTTPLIB_THREAD_POOL_COUNT                                           \
-  (std::max(1u, std::thread::hardware_concurrency() - 1))
-#endif
 
 /*
  * Headers
@@ -447,7 +443,7 @@ public:
   using Expect100ContinueHandler =
       std::function<int(const Request &, Response &)>;
 
-  Server();
+  Server(size_t pool_size = 0);
 
   virtual ~Server();
 
@@ -843,7 +839,7 @@ class SSLServer : public Server {
 public:
   SSLServer(const char *cert_path, const char *private_key_path,
             const char *client_ca_cert_file_path = nullptr,
-            const char *client_ca_cert_dir_path = nullptr);
+            const char *client_ca_cert_dir_path = nullptr, size_t pool_size = 0);
 
   ~SSLServer() override;
 
@@ -2866,7 +2862,7 @@ inline const std::string &BufferStream::get_buffer() const { return buffer; }
 } // namespace detail
 
 // HTTP server implementation
-inline Server::Server()
+inline Server::Server(size_t pool_size)
     : keep_alive_max_count_(CPPHTTPLIB_KEEPALIVE_MAX_COUNT),
       read_timeout_sec_(CPPHTTPLIB_READ_TIMEOUT_SECOND),
       read_timeout_usec_(CPPHTTPLIB_READ_TIMEOUT_USECOND),
@@ -2875,7 +2871,10 @@ inline Server::Server()
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
-  new_task_queue = [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); };
+  if(pool_size == 0){
+    pool_size = std::max(1u, std::thread::hardware_concurrency() - 1);
+  }
+  new_task_queue = [pool_size] { return new ThreadPool(pool_size); };
 }
 
 inline Server::~Server() {}
@@ -4528,7 +4527,8 @@ static SSLInit sslinit_;
 // SSL HTTP server implementation
 inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
                             const char *client_ca_cert_file_path,
-                            const char *client_ca_cert_dir_path) {
+                            const char *client_ca_cert_dir_path,
+                            size_t pool_size) :Server(pool_size){
   ctx_ = SSL_CTX_new(SSLv23_server_method());
 
   if (ctx_) {
