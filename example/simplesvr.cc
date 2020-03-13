@@ -127,7 +127,7 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  cout << "The server started at port " << port << "...";
+  cout << "The server started at port " << port << "..." << endl;
 
   svr.listen("localhost", port);
 
