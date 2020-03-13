@@ -1923,9 +1923,7 @@ inline ssize_t write_headers(Stream &strm, const T &info,
                              const Headers &headers) {
   ssize_t write_len = 0;
   for (const auto &x : info.headers) {
-    if (x.first == "EXCEPTION_WHAT") {
-      continue;
-    }
+    if (x.first == "EXCEPTION_WHAT") { continue; }
     auto len =
         strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
     if (len < 0) { return len; }
@@ -2042,7 +2040,8 @@ inline std::string encode_url(const std::string &s) {
   return result;
 }
 
-inline std::string decode_url(const std::string &s) {
+inline std::string decode_url(const std::string &s,
+                              bool convert_plus_to_space) {
   std::string result;
 
   for (size_t i = 0; i < s.size(); i++) {
@@ -2068,7 +2067,7 @@ inline std::string decode_url(const std::string &s) {
           result += s[i];
         }
       }
-    } else if (s[i] == '+') {
+    } else if (convert_plus_to_space && s[i] == '+') {
       result += ' ';
     } else {
       result += s[i];
@@ -2102,7 +2101,7 @@ inline void parse_query_text(const std::string &s, Params &params) {
         val.assign(b2, e2);
       }
     });
-    params.emplace(key, decode_url(val));
+    params.emplace(decode_url(key, true), decode_url(val, true));
   });
 }
 
@@ -3024,7 +3023,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
     req.version = std::string(m[5]);
     req.method = std::string(m[1]);
     req.target = std::string(m[2]);
-    req.path = detail::decode_url(m[3]);
+    req.path = detail::decode_url(m[3], false);
 
     // Parse query text
     auto len = std::distance(m[4].first, m[4].second);
@@ -3391,9 +3390,9 @@ inline bool Server::listen_internal() {
       }
 
 #if __cplusplus > 201703L
-        task_queue->enqueue([=, this]() { process_and_close_socket(sock); });
+      task_queue->enqueue([=, this]() { process_and_close_socket(sock); });
 #else
-        task_queue->enqueue([=]() { process_and_close_socket(sock); });
+      task_queue->enqueue([=]() { process_and_close_socket(sock); });
 #endif
     }
 

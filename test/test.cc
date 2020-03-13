@@ -78,18 +78,18 @@ TEST(ParseQueryTest, ParseQueryString) {
 }
 
 TEST(ParamsToQueryTest, ConvertParamsToQuery) {
-    Params dic;
+  Params dic;
 
-    EXPECT_EQ(detail::params_to_query_str(dic), "");
+  EXPECT_EQ(detail::params_to_query_str(dic), "");
 
-    dic.emplace("key1", "val1");
+  dic.emplace("key1", "val1");
 
-    EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1");
+  EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1");
 
-    dic.emplace("key2", "val2");
-    dic.emplace("key3", "val3");
+  dic.emplace("key2", "val2");
+  dic.emplace("key3", "val3");
 
-    EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1&key2=val2&key3=val3");
+  EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1&key2=val2&key3=val3");
 }
 
 TEST(GetHeaderValueTest, DefaultValue) {
@@ -668,7 +668,8 @@ TEST(Server, BindAndListenSeparately) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(SSLServer, BindAndListenSeparately) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE, CLIENT_CA_CERT_DIR);
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
+                CLIENT_CA_CERT_DIR);
   int port = svr.bind_to_any_port("0.0.0.0");
   ASSERT_TRUE(svr.is_valid());
   ASSERT_TRUE(port > 0);
@@ -709,6 +710,12 @@ protected:
         .Get("/endwith%",
              [&](const Request & /*req*/, Response &res) {
                res.set_content("Hello World!", "text/plain");
+             })
+        .Get("/a\\+\\+b",
+             [&](const Request &req, Response &res) {
+               ASSERT_TRUE(req.has_param("a +b"));
+               auto val = req.get_param_value("a +b");
+               res.set_content(val, "text/plain");
              })
         .Get("/", [&](const Request & /*req*/,
                       Response &res) { res.set_redirect("/hi"); })
@@ -1459,6 +1466,13 @@ TEST_F(ServerTest, EndWithPercentCharacterInQuery) {
   EXPECT_EQ(404, res->status);
 }
 
+TEST_F(ServerTest, PlusSignEncoding) {
+  auto res = cli_.Get("/a+%2Bb?a %2bb=a %2Bb");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("a +b", res->body);
+}
+
 TEST_F(ServerTest, MultipartFormData) {
   MultipartFormDataItems items = {
       {"text1", "text default", "", ""},
@@ -1727,7 +1741,8 @@ TEST_F(ServerTest, PutContentWithDeflate) {
   httplib::Headers headers;
   headers.emplace("Content-Encoding", "deflate");
   // PUT in deflate format:
-  auto res = cli_.Put("/put", headers, "\170\234\013\010\015\001\0\001\361\0\372", "text/plain");
+  auto res = cli_.Put("/put", headers,
+                      "\170\234\013\010\015\001\0\001\361\0\372", "text/plain");
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -2050,7 +2065,7 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 }
 
 // Sends a raw request and verifies that there isn't a crash or exception.
-static void test_raw_request(const std::string& req) {
+static void test_raw_request(const std::string &req) {
   Server svr;
   svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
@@ -2208,11 +2223,10 @@ TEST(MountTest, Unmount) {
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
 
-  svr.Get("/hi",
-          [&](const Request & /*req*/, Response &res) {
-            throw std::runtime_error("exception...");
-            res.set_content("Hello World!", "text/plain");
-          });
+  svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
+    throw std::runtime_error("exception...");
+    res.set_content("Hello World!", "text/plain");
+  });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
