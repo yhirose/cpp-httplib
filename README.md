@@ -30,6 +30,16 @@ int main(void)
     res.set_content(numbers, "text/plain");
   });
 
+  svr.Get("/body-header-param", [](const Request& req, Response& res) {
+    if (req.has_header("Content-Length")) {
+      auto val = req.get_header_value("Content-Length");
+    }
+    if (req.has_param("key")) {
+      auto val = req.get_param_value("key");
+    }
+    res.set_content(req.body, "text/plain");
+  });
+
   svr.Get("/stop", [&](const Request& req, Response& res) {
     svr.stop();
   });
