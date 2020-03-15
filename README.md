@@ -362,7 +362,7 @@ std::shared_ptr<httplib::Response> res =
   cli.Get("/", [](uint64_t len, uint64_t total) {
     printf("%lld / %lld bytes => %d%% complete\n",
       len, total,
-      (int)((len/total)*100));
+      (int)(len*100/total));
     return true; // return 'false' if you want to cancel the request.
   }
 );
