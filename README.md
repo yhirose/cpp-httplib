@@ -9,6 +9,8 @@ A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
 
+For Windows users: Please read [this note](https://github.com/yhirose/cpp-httplib#windows).
+
 Server Example
 --------------
 
@@ -514,7 +516,24 @@ httplib.h  httplib.cc
 NOTE
 ----
 
+### g++
+
 g++ 4.8 and below cannot build this library since `<regex>` in the versions are [broken](https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions).
+
+### Windows
+
+Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32_LEAN_AND_MEAN` beforehand.
+
+```cpp
+#include <httplib.h>
+#include <Windows.h>
+```
+
+```cpp
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#include <httplib.h>
+```
 
 License
 -------
@@ -524,43 +543,4 @@ MIT license (© 2020 Yuji Hirose)
 Special Thanks To
 -----------------
 
-The following folks made great contributions to polish this library to totally another level from a simple toy!
-
-  * [Zefz](https://github.com/Zefz)
-  * [PixlRainbow](https://github.com/PixlRainbow)
-  * [sgraham](https://github.com/sgraham)
-  * [mrexodia](https://github.com/mrexodia)
-  * [hyperxor](https://github.com/hyperxor)
-  * [omaralvarez](https://github.com/omaralvarez)
-  * [vvanelslande](https://github.com/vvanelslande)
-  * [underscorediscovery](https://github.com/underscorediscovery)
-  * [sux2mfgj](https://github.com/sux2mfgj)
-  * [matvore](https://github.com/matvore)
-  * [intmain-io](https://github.com/intmain)
-  * [davidgfnet](https://github.com/davidgfnet)
-  * [crtxcr](https://github.com/crtxcr)
-  * [const-volatile](https://github.com/const)
-  * [aguadoenzo](https://github.com/aguadoenzo)
-  * [TheMaverickProgrammer](https://github.com/TheMaverickProgrammer)
-  * [vdudouyt](https://github.com/vdudouyt)
-  * [stupedama](https://github.com/stupedama)
-  * [rockwotj](https://github.com/rockwotj)
-  * [marknelson](https://github.com/marknelson)
-  * [jaspervandeven](https://github.com/jaspervandeven)
-  * [hans-erickson](https://github.com/hans)
-  * [ha11owed](https://github.com/ha11owed)
-  * [gulrak](https://github.com/gulrak)
-  * [dolphineye](https://github.com/dolphineye)
-  * [danielzehe](https://github.com/danielzehe)
-  * [batist73](https://github.com/batist73)
-  * [barryam3](https://github.com/barryam3)
-  * [adikabintang](https://github.com/adikabintang)
-  * [aaronalbers](https://github.com/aaronalbers)
-  * [Whitetigerswt](https://github.com/Whitetigerswt)
-  * [TangHuaiZhe](https://github.com/TangHuaiZhe)
-  * [Sil3ntStorm](https://github.com/Sil3ntStorm)
-  * [MannyClicks](https://github.com/MannyClicks)
-  * [DraTeots](https://github.com/DraTeots)
-  * [BastienDurel](https://github.com/BastienDurel)
-  * [vitalyster](https://github.com/vitalyster)
-  * [trollixx](https://github.com/trollixx)
+[These folks](https://github.com/yhirose/cpp-httplib/graphs/contributors) made great contributions to polish this library to totally another level from a simple toy!
