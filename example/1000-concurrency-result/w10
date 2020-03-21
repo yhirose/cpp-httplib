@@ -1,0 +1,42 @@
+This is ApacheBench, Version 2.3 <$Revision: 1807734 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking localhost (be patient)
+
+
+Server Software:        
+Server Hostname:        localhost
+Server Port:            8080
+
+Document Path:          /hello.cc
+Document Length:        330 bytes
+
+Concurrency Level:      1000
+Time taken for tests:   6.053 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      3960000 bytes
+HTML transferred:       3300000 bytes
+Requests per second:    1652.00 [#/sec] (mean)
+Time per request:       605.326 [ms] (mean)
+Time per request:       0.605 [ms] (mean, across all concurrent requests)
+Transfer rate:          638.86 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:       63  249  64.4    253     414
+Processing:    12  342 108.0    323     793
+Waiting:        7  260  82.5    254     580
+Total:        230  591 109.6    569     959
+
+Percentage of the requests served within a certain time (ms)
+  50%    569
+  66%    651
+  75%    688
+  80%    704
+  90%    715
+  95%    726
+  98%    849
+  99%    849
+ 100%    959 (longest request)
