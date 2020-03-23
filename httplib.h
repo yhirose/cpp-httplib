@@ -858,7 +858,7 @@ private:
 
 class SSLClient : public Client {
 public:
-  SSLClient(const std::string &host, int port = 443,
+  explicit SSLClient(const std::string &host, int port = 443,
             const std::string &client_cert_path = std::string(),
             const std::string &client_key_path = std::string());
 
@@ -2150,9 +2150,9 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
 
 class MultipartFormDataParser {
 public:
-  MultipartFormDataParser() {}
+  MultipartFormDataParser() = default;
 
-  void set_boundary(const std::string &boundary) { boundary_ = boundary; }
+  void set_boundary(std::string boundary) { boundary_ = std::move(boundary); }
 
   bool is_valid() const { return is_valid_; }
 
@@ -2165,6 +2165,8 @@ public:
         "^Content-Disposition:\\s*form-data;\\s*name=\"(.*?)\"(?:;\\s*filename="
         "\"(.*?)\")?\\s*$",
         std::regex_constants::icase);
+    static const std::string dash_ = "--";
+    static const std::string crlf_ = "\r\n";
 
     buf_.append(buf, n); // TODO: performance improvement
 
@@ -2304,8 +2306,6 @@ private:
     file_.content_type.clear();
   }
 
-  const std::string dash_ = "--";
-  const std::string crlf_ = "\r\n";
   std::string boundary_;
 
   std::string buf_;
@@ -3256,7 +3256,7 @@ inline bool Server::read_content_core(Stream &strm, bool last_connection,
       return write_response(strm, last_connection, req, res);
     }
 
-    multipart_form_data_parser.set_boundary(boundary);
+    multipart_form_data_parser.set_boundary(std::move(boundary));
     out = [&](const char *buf, size_t n) {
       return multipart_form_data_parser.parse(buf, n, multipart_receiver,
                                               mulitpart_header);
