@@ -713,6 +713,8 @@ public:
 
   void set_logger(Logger logger);
 
+  void close_socket();
+
 protected:
   bool process_request(Stream &strm, const Request &req, Response &res,
                        bool last_connection, bool &connection_close);
@@ -720,6 +722,7 @@ protected:
   const std::string host_;
   const int port_;
   const std::string host_and_port_;
+  socket_t sock = INVALID_SOCKET;
 
   // Settings
   std::string client_cert_path_;
@@ -800,7 +803,7 @@ private:
       ContentProvider content_provider, const char *content_type);
 
   virtual bool process_and_close_socket(
-      socket_t sock, size_t request_count,
+      size_t request_count,
       std::function<bool(Stream &strm, bool last_connection,
                          bool &connection_close)>
           callback);
@@ -3631,7 +3634,7 @@ inline bool Client::read_response_line(Stream &strm, Response &res) {
 }
 
 inline bool Client::send(const Request &req, Response &res) {
-  auto sock = create_client_socket();
+  sock = create_client_socket();
   if (sock == INVALID_SOCKET) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -3642,7 +3645,7 @@ inline bool Client::send(const Request &req, Response &res) {
 #endif
 
   return process_and_close_socket(
-      sock, 1, [&](Stream &strm, bool last_connection, bool &connection_close) {
+      1, [&](Stream &strm, bool last_connection, bool &connection_close) {
         return handle_request(strm, req, res, last_connection,
                               connection_close);
       });
@@ -3652,7 +3655,7 @@ inline bool Client::send(const std::vector<Request> &requests,
                          std::vector<Response> &responses) {
   size_t i = 0;
   while (i < requests.size()) {
-    auto sock = create_client_socket();
+    sock = create_client_socket();
     if (sock == INVALID_SOCKET) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -3663,7 +3666,7 @@ inline bool Client::send(const std::vector<Request> &requests,
     }
 #endif
 
-    if (!process_and_close_socket(sock, requests.size() - i,
+    if (!process_and_close_socket(requests.size() - i,
                                   [&](Stream &strm, bool last_connection,
                                       bool &connection_close) -> bool {
                                     auto &req = requests[i++];
@@ -4018,7 +4021,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
 }
 
 inline bool Client::process_and_close_socket(
-    socket_t sock, size_t request_count,
+    size_t request_count,
     std::function<bool(Stream &strm, bool last_connection,
                        bool &connection_close)>
         callback) {
@@ -4364,6 +4367,8 @@ inline void Client::set_proxy_digest_auth(const char *username,
 #endif
 
 inline void Client::set_logger(Logger logger) { logger_ = std::move(logger); }
+
+inline void Client::close_socket() { detail::close_socket(sock); }
 
 /*
  * SSL Implementation
