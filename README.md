@@ -49,6 +49,22 @@ int main(void)
   svr.listen("localhost", 1234);
 }
 ```
+#### Quick start (Linux)
+
+ - download `httplib.h` into some location where you compiler can find it (`/usr/local/include` for example)
+ - copy above code in `test.cpp`
+ - `$ g++ test.cpp -lpthread`
+ - `$ ./a.out`  => runs (no shell return)
+ - `$ curl -i http://localhost:1234/hi`
+
+ => output:
+ ```
+ HTTP/1.1 200 OK
+ Content-Length: 12
+ Content-Type: text/plain
+
+ Hello World!
+ ```
 
 `Post`, `Put`, `Delete` and `Options` methods are also supported.
 
