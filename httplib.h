@@ -4032,17 +4032,16 @@ inline bool Client::process_request(Stream &strm, const Request &req,
 
   // Body
   if (req.method != "HEAD" && req.method != "CONNECT") {
-    ContentReceiver out = [&](const char *buf, size_t n) {
-      if (res.body.size() + n > res.body.max_size()) { return false; }
-      res.body.append(buf, n);
-      return true;
-    };
-
-    if (req.content_receiver) {
-      out = [&](const char *buf, size_t n) {
-        return req.content_receiver(buf, n);
-      };
-    }
+    auto out =
+        req.content_receiver
+            ? static_cast<ContentReceiver>([&](const char *buf, size_t n) {
+                return req.content_receiver(buf, n);
+              })
+            : static_cast<ContentReceiver>([&](const char *buf, size_t n) {
+                if (res.body.size() + n > res.body.max_size()) { return false; }
+                res.body.append(buf, n);
+                return true;
+              });
 
     int dummy_status;
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
