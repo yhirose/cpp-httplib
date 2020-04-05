@@ -4397,7 +4397,9 @@ inline bool process_and_close_socket_ssl(
     }
   }
 
-  SSL_shutdown(ssl);
+  if (ret) {
+    SSL_shutdown(ssl);		// shutdown only if not already closed by remote
+  }
   {
     std::lock_guard<std::mutex> guard(ctx_mutex);
     SSL_free(ssl);
