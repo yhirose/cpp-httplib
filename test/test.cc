@@ -884,7 +884,7 @@ protected:
                 })
         .Delete("/delete-body",
                [&](const Request &req, Response &res) {
-                 EXPECT_EQ(req.body, "DELETE");
+                 EXPECT_EQ(req.body, "content");
                  res.set_content(req.body, "text/plain");
                })
         .Options(R"(\*)",
