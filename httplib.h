@@ -462,6 +462,7 @@ public:
   Server &Patch(const char *pattern, Handler handler);
   Server &Patch(const char *pattern, HandlerWithContentReader handler);
   Server &Delete(const char *pattern, Handler handler);
+  Server &Delete(const char *pattern, HandlerWithContentReader handler);
   Server &Options(const char *pattern, Handler handler);
 
   [[deprecated]] bool set_base_dir(const char *dir,
@@ -551,6 +552,7 @@ private:
   Handlers patch_handlers_;
   HandlersForContentReader patch_handlers_for_content_reader_;
   Handlers delete_handlers_;
+  HandlersForContentReader delete_handlers_for_content_reader_;
   Handlers options_handlers_;
   Handler error_handler_;
   Logger logger_;
@@ -2515,7 +2517,7 @@ get_range_offset_and_length(const Request &req, const Response &res,
 
 inline bool expect_content(const Request &req) {
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
-      req.method == "PRI") {
+      req.method == "PRI" || req.method == "DELETE") {
     return true;
   }
   // TODO: check if Content-Length is set
@@ -2965,6 +2967,13 @@ inline Server &Server::Patch(const char *pattern,
 
 inline Server &Server::Delete(const char *pattern, Handler handler) {
   delete_handlers_.push_back(std::make_pair(std::regex(pattern), handler));
+  return *this;
+}
+
+inline Server &Server::Delete(const char *pattern,
+                              HandlerWithContentReader handler) {
+  delete_handlers_for_content_reader_.push_back(
+      std::make_pair(std::regex(pattern), handler));
   return *this;
 }
 
@@ -3478,6 +3487,12 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
       } else if (req.method == "PATCH") {
         if (dispatch_request_for_content_reader(
                 req, res, reader, patch_handlers_for_content_reader_)) {
+          return true;
+        }
+      }
+      else if (req.method == "DELETE") {
+        if (dispatch_request_for_content_reader(
+                req, res, reader, delete_handlers_for_content_reader_)) {
           return true;
         }
       }
