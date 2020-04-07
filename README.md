@@ -535,6 +535,20 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 #include <httplib.h>
 ```
 
+### Linux
+
+Install cpp-httplib to `/ usr/local/include/httplib/httplib.h` on Linux.
+
+```shell
+git clone https://github.com/yhirose/cpp-httplib && cd cpp-httplib
+cmake .
+sudo make install
+```
+
+```cpp
+#include <httplib/httplib.h>
+```
+
 License
 -------
 
