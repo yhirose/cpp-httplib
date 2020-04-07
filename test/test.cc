@@ -882,6 +882,11 @@ protected:
                 [&](const Request & /*req*/, Response &res) {
                   res.set_content("DELETE", "text/plain");
                 })
+        .Delete("/delete-body",
+               [&](const Request &req, Response &res) {
+                 EXPECT_EQ(req.body, "DELETE");
+                 res.set_content(req.body, "text/plain");
+               })
         .Options(R"(\*)",
                  [&](const Request & /*req*/, Response &res) {
                    res.set_header("Allow", "GET, POST, HEAD, OPTIONS");
@@ -1763,6 +1768,13 @@ TEST_F(ServerTest, Delete) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("DELETE", res->body);
+}
+
+TEST_F(ServerTest, DeleteContentReceiver) {
+  auto res = cli_.Delete("/delete-body", "content", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("content", res->body);
 }
 
 TEST_F(ServerTest, Options) {
