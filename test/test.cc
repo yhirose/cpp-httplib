@@ -697,6 +697,36 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("Hello World!", "text/plain");
              })
+        .Get("/http_response_splitting",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_header("a", "1\r\nSet-Cookie: a=1");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("a"));
+
+               res.set_header("a", "1\nSet-Cookie: a=1");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("a"));
+
+               res.set_header("a", "1\rSet-Cookie: a=1");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("a"));
+
+               res.set_header("a\r\nb", "0");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("a"));
+
+               res.set_header("a\rb", "0");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("a"));
+
+               res.set_header("a\nb", "0");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("a"));
+
+               res.set_redirect("1\r\nSet-Cookie: a=1");
+               EXPECT_EQ(0, res.headers.size());
+               EXPECT_FALSE(res.has_header("Location"));
+             })
         .Get("/slow",
              [&](const Request & /*req*/, Response &res) {
                std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -1683,6 +1713,12 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
+}
+
+TEST_F(ServerTest, HTTPResponseSplitting) {
+  auto res = cli_.Get("/http_response_splitting");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, SlowRequest) {

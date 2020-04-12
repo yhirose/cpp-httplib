@@ -2524,6 +2524,17 @@ inline bool expect_content(const Request &req) {
   return false;
 }
 
+inline bool has_crlf(const char* s) {
+  auto p = s;
+  while (*p) {
+    if (*p == '\r' || *p == '\n') {
+      return true;
+    }
+    p++;
+  }
+  return false;
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 template <typename CTX, typename Init, typename Update, typename Final>
 inline std::string message_digest(const std::string &s, Init init,
@@ -2710,11 +2721,15 @@ inline size_t Request::get_header_value_count(const char *key) const {
 }
 
 inline void Request::set_header(const char *key, const char *val) {
-  headers.emplace(key, val);
+  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
+    headers.emplace(key, val);
+  }
 }
 
 inline void Request::set_header(const char *key, const std::string &val) {
-  headers.emplace(key, val);
+  if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
+    headers.emplace(key, val);
+  }
 }
 
 inline bool Request::has_param(const char *key) const {
@@ -2764,16 +2779,22 @@ inline size_t Response::get_header_value_count(const char *key) const {
 }
 
 inline void Response::set_header(const char *key, const char *val) {
-  headers.emplace(key, val);
+  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
+    headers.emplace(key, val);
+  }
 }
 
 inline void Response::set_header(const char *key, const std::string &val) {
-  headers.emplace(key, val);
+  if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
+    headers.emplace(key, val);
+  }
 }
 
 inline void Response::set_redirect(const char *url) {
-  set_header("Location", url);
-  status = 302;
+  if (!detail::has_crlf(url)) {
+    set_header("Location", url);
+    status = 302;
+  }
 }
 
 inline void Response::set_content(const char *s, size_t n,
