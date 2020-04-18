@@ -312,7 +312,7 @@ struct Response {
   void set_header(const char *key, const char *val);
   void set_header(const char *key, const std::string &val);
 
-  void set_redirect(const char *url);
+  void set_redirect(const char *url, int status = 302);
   void set_content(const char *s, size_t n, const char *content_type);
   void set_content(std::string s, const char *content_type);
 
@@ -2048,6 +2048,12 @@ inline bool redirect(T &cli, const Request &req, Response &res,
   new_req.path = path;
   new_req.redirect_count -= 1;
 
+  if (res.status == 303 && (req.method != "GET" && req.method != "HEAD")) {
+    new_req.method = "GET";
+    new_req.body.clear();
+    new_req.headers.clear();
+  }
+
   Response new_res;
 
   auto ret = cli.send(new_req, new_res);
@@ -2790,10 +2796,14 @@ inline void Response::set_header(const char *key, const std::string &val) {
   }
 }
 
-inline void Response::set_redirect(const char *url) {
+inline void Response::set_redirect(const char *url, int status) {
   if (!detail::has_crlf(url)) {
     set_header("Location", url);
-    status = 302;
+    if (300 <= status && status < 400) {
+      this->status = status;
+    } else {
+      this->status = 302;
+    }
   }
 }
 
