@@ -848,6 +848,9 @@ public:
             const char *client_ca_cert_file_path = nullptr,
             const char *client_ca_cert_dir_path = nullptr);
 
+  SSLServer(X509 *cert, EVP_PKEY *private_key,
+            X509_STORE *client_ca_cert_store = nullptr);
+
   ~SSLServer() override;
 
   bool is_valid() const override;
@@ -865,12 +868,17 @@ public:
                      const std::string &client_cert_path = std::string(),
                      const std::string &client_key_path = std::string());
 
+  SSLClient(const std::string &host, int port, X509 *client_cert,
+            EVP_PKEY *client_key);
+
   ~SSLClient() override;
 
   bool is_valid() const override;
 
   void set_ca_cert_path(const char *ca_ceert_file_path,
                         const char *ca_cert_dir_path = nullptr);
+
+  void set_ca_cert_store(X509_STORE *ca_cert_store);
 
   void enable_server_certificate_verification(bool enabled);
 
@@ -897,6 +905,7 @@ private:
 
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
+  X509_STORE *ca_cert_store_ = nullptr;
   bool server_certificate_verification_ = false;
   long verify_result_ = 0;
 };
@@ -4654,6 +4663,33 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
   }
 }
 
+inline SSLServer::SSLServer(X509 *cert, EVP_PKEY *private_key,
+                            X509_STORE *client_ca_cert_store) {
+  ctx_ = SSL_CTX_new(SSLv23_server_method());
+
+  if (ctx_) {
+    SSL_CTX_set_options(ctx_,
+                        SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
+                            SSL_OP_NO_COMPRESSION |
+                            SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+
+    if (SSL_CTX_use_certificate(ctx_, cert) != 1 ||
+        SSL_CTX_use_PrivateKey(ctx_, private_key) != 1) {
+      SSL_CTX_free(ctx_);
+      ctx_ = nullptr;
+    } else if (client_ca_cert_store) {
+
+      SSL_CTX_set_cert_store(ctx_, client_ca_cert_store);
+
+      SSL_CTX_set_verify(
+          ctx_,
+          SSL_VERIFY_PEER |
+              SSL_VERIFY_FAIL_IF_NO_PEER_CERT, // SSL_VERIFY_CLIENT_ONCE,
+          nullptr);
+    }
+  }
+}
+
 inline SSLServer::~SSLServer() {
   if (ctx_) { SSL_CTX_free(ctx_); }
 }
@@ -4693,6 +4729,24 @@ inline SSLClient::SSLClient(const std::string &host, int port,
   }
 }
 
+inline SSLClient::SSLClient(const std::string &host, int port,
+                            X509 *client_cert, EVP_PKEY *client_key)
+    : Client(host, port) {
+  ctx_ = SSL_CTX_new(SSLv23_client_method());
+
+  detail::split(&host_[0], &host_[host_.size()], '.',
+                [&](const char *b, const char *e) {
+                  host_components_.emplace_back(std::string(b, e));
+                });
+  if (client_cert != nullptr && client_key != nullptr) {
+    if (SSL_CTX_use_certificate(ctx_, client_cert) != 1 ||
+        SSL_CTX_use_PrivateKey(ctx_, client_key) != 1) {
+      SSL_CTX_free(ctx_);
+      ctx_ = nullptr;
+    }
+  }
+}
+
 inline SSLClient::~SSLClient() {
   if (ctx_) { SSL_CTX_free(ctx_); }
 }
@@ -4703,6 +4757,10 @@ inline void SSLClient::set_ca_cert_path(const char *ca_cert_file_path,
                                         const char *ca_cert_dir_path) {
   if (ca_cert_file_path) { ca_cert_file_path_ = ca_cert_file_path; }
   if (ca_cert_dir_path) { ca_cert_dir_path_ = ca_cert_dir_path; }
+}
+
+void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
+  if (ca_cert_store) { ca_cert_store_ = ca_cert_store; }
 }
 
 inline void SSLClient::enable_server_certificate_verification(bool enabled) {
@@ -4728,12 +4786,17 @@ inline bool SSLClient::process_and_close_socket(
              true, sock, request_count, read_timeout_sec_, read_timeout_usec_,
              ctx_, ctx_mutex_,
              [&](SSL *ssl) {
-               if (ca_cert_file_path_.empty()) {
+               if (ca_cert_file_path_.empty() && ca_cert_store_ == nullptr) {
                  SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
-               } else {
+               } else if (!ca_cert_file_path_.empty()) {
                  if (!SSL_CTX_load_verify_locations(
                          ctx_, ca_cert_file_path_.c_str(), nullptr)) {
                    return false;
+                 }
+                 SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
+               } else if (ca_cert_store_ != nullptr) {
+                 if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store_) {
+                   SSL_CTX_set_cert_store(ctx_, ca_cert_store_);
                  }
                  SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
                }
