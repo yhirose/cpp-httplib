@@ -2500,6 +2500,80 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   t.join();
 }
 
+TEST(SSLClientServerTest, MemoryClientCertPresent) {
+  X509 *server_cert;
+  EVP_PKEY *server_private_key;
+  X509_STORE *client_ca_cert_store;
+  X509 *client_cert;
+  EVP_PKEY *client_private_key;
+
+  FILE *f = fopen(SERVER_CERT_FILE, "r+");
+  server_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
+  fclose(f);
+
+  f = fopen(SERVER_PRIVATE_KEY_FILE, "r+");
+  server_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
+  fclose(f);
+
+  f = fopen(CLIENT_CA_CERT_FILE, "r+");
+  client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
+  client_ca_cert_store = X509_STORE_new();
+  X509_STORE_add_cert(client_ca_cert_store, client_cert);
+  X509_free(client_cert);
+  fclose(f);
+
+  f = fopen(CLIENT_CERT_FILE, "r+");
+  client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
+  fclose(f);
+
+  f = fopen(CLIENT_PRIVATE_KEY_FILE, "r+");
+  client_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
+  fclose(f);
+
+  SSLServer svr(server_cert, server_private_key, client_ca_cert_store);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    res.set_content("test", "text/plain");
+    svr.stop();
+    ASSERT_TRUE(true);
+
+    auto peer_cert = SSL_get_peer_certificate(req.ssl);
+    ASSERT_TRUE(peer_cert != nullptr);
+
+    auto subject_name = X509_get_subject_name(peer_cert);
+    ASSERT_TRUE(subject_name != nullptr);
+
+    std::string common_name;
+    {
+      char name[BUFSIZ];
+      auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
+                                                name, sizeof(name));
+      common_name.assign(name, static_cast<size_t>(name_len));
+    }
+
+    EXPECT_EQ("Common Name", common_name);
+
+    X509_free(peer_cert);
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  httplib::SSLClient cli(HOST, PORT, client_cert, client_private_key);
+  auto res = cli.Get("/test");
+  cli.set_timeout_sec(30);
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+
+  X509_free(server_cert);
+  EVP_PKEY_free(server_private_key);
+  X509_free(client_cert);
+  EVP_PKEY_free(client_private_key);
+
+  t.join();
+}
+
 TEST(SSLClientServerTest, ClientCertMissing) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
