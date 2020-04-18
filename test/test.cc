@@ -749,6 +749,13 @@ protected:
              })
         .Get("/", [&](const Request & /*req*/,
                       Response &res) { res.set_redirect("/hi"); })
+        .Post("/1", [](const Request & /*req*/,
+                       Response &res) { res.set_redirect("/2", 303); })
+        .Get("/2",
+             [](const Request & /*req*/, Response &res) {
+               res.set_content("redirected.", "text/plain");
+               res.status = 200;
+             })
         .Post("/person",
               [&](const Request &req, Response &res) {
                 if (req.has_param("name") && req.has_param("note")) {
@@ -913,10 +920,10 @@ protected:
                   res.set_content("DELETE", "text/plain");
                 })
         .Delete("/delete-body",
-               [&](const Request &req, Response &res) {
-                 EXPECT_EQ(req.body, "content");
-                 res.set_content(req.body, "text/plain");
-               })
+                [&](const Request &req, Response &res) {
+                  EXPECT_EQ(req.body, "content");
+                  res.set_content(req.body, "text/plain");
+                })
         .Options(R"(\*)",
                  [&](const Request & /*req*/, Response &res) {
                    res.set_header("Allow", "GET, POST, HEAD, OPTIONS");
@@ -1116,6 +1123,14 @@ TEST_F(ServerTest, GetMethod302) {
   EXPECT_EQ("/hi", res->get_header_value("Location"));
 }
 
+TEST_F(ServerTest, GetMethod302Redirect) {
+  cli_.set_follow_location(true);
+  auto res = cli_.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("Hello World!", res->body);
+}
+
 TEST_F(ServerTest, GetMethod404) {
   auto res = cli_.Get("/invalid");
   ASSERT_TRUE(res != nullptr);
@@ -1313,6 +1328,21 @@ TEST_F(ServerTest, GetMethodOutOfBaseDirMount2) {
   auto res = cli_.Get("/mount/dir/../../www2/dir/test.html");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(404, res->status);
+}
+
+TEST_F(ServerTest, PostMethod303) {
+  auto res = cli_.Post("/1", "body", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(303, res->status);
+  EXPECT_EQ("/2", res->get_header_value("Location"));
+}
+
+TEST_F(ServerTest, PostMethod303Redirect) {
+  cli_.set_follow_location(true);
+  auto res = cli_.Post("/1", "body", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("redirected.", res->body);
 }
 
 TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
@@ -2142,8 +2172,8 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
   test_raw_request(
       "GET /hi HTTP/1.1\r\n"
       " :                                                                      "
-      "                                                                       "
-  );
+      "                                                                      "
+      " ");
 }
 
 TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity2) {
