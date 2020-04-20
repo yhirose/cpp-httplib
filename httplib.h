@@ -2539,12 +2539,10 @@ inline bool expect_content(const Request &req) {
   return false;
 }
 
-inline bool has_crlf(const char* s) {
+inline bool has_crlf(const char *s) {
   auto p = s;
   while (*p) {
-    if (*p == '\r' || *p == '\n') {
-      return true;
-    }
+    if (*p == '\r' || *p == '\n') { return true; }
     p++;
   }
   return false;
@@ -3529,8 +3527,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
                 req, res, reader, patch_handlers_for_content_reader_)) {
           return true;
         }
-      }
-      else if (req.method == "DELETE") {
+      } else if (req.method == "DELETE") {
         if (dispatch_request_for_content_reader(
                 req, res, reader, delete_handlers_for_content_reader_)) {
           return true;
@@ -4523,7 +4520,7 @@ inline bool process_and_close_socket_ssl(
   }
 
   if (ret) {
-    SSL_shutdown(ssl);		// shutdown only if not already closed by remote
+    SSL_shutdown(ssl); // shutdown only if not already closed by remote
   }
   {
     std::lock_guard<std::mutex> guard(ctx_mutex);
