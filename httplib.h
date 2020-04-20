@@ -4551,11 +4551,11 @@ public:
 private:
   static void locking_callback(int mode, int type, const char * /*file*/,
                                int /*line*/) {
-    auto &locks = *openSSL_locks_;
+    auto &lk = (*openSSL_locks_)[static_cast<size_t>(type)];
     if (mode & CRYPTO_LOCK) {
-      locks[type].lock();
+      lk.lock();
     } else {
-      locks[type].unlock();
+      lk.unlock();
     }
   }
 };
