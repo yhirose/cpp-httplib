@@ -4756,7 +4756,7 @@ inline void SSLClient::set_ca_cert_path(const char *ca_cert_file_path,
   if (ca_cert_dir_path) { ca_cert_dir_path_ = ca_cert_dir_path; }
 }
 
-void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
+inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (ca_cert_store) { ca_cert_store_ = ca_cert_store; }
 }
 
