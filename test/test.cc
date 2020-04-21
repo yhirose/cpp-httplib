@@ -649,6 +649,19 @@ TEST(YahooRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST(YahooRedirectTestWithURL, Redirect) {
+  auto res = httplib::url::Get("http://yahoo.com");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(301, res->status);
+
+  httplib::url::options options;
+  options.follow_location = true;
+
+  res = httplib::url::Get("http://yahoo.com", options);
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+}
+
 TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.set_follow_location(true);
