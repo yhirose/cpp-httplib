@@ -3,6 +3,7 @@ tags
 example/server
 example/client
 example/hello
+example/simplecli
 example/simplesvr
 example/benchmark
 example/redirect
