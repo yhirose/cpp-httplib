@@ -668,6 +668,7 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
   ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST(HttpsToHttpRedirectTestWithURL, Redirect) {
@@ -676,8 +677,11 @@ TEST(HttpsToHttpRedirectTestWithURL, Redirect) {
 
   auto res = httplib::url::Get(
       "https://httpbin.org/"
-      "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+      "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302",
+      options);
+
   ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 
 TEST(RedirectToDifferentPort, Redirect) {
@@ -692,13 +696,9 @@ TEST(RedirectToDifferentPort, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto thread8080 = std::thread([&]() {
-      svr8080.listen("localhost", 8080);
-  });
+  auto thread8080 = std::thread([&]() { svr8080.listen("localhost", 8080); });
 
-  auto thread8081 = std::thread([&]() {
-      svr8081.listen("localhost", 8081);
-  });
+  auto thread8081 = std::thread([&]() { svr8081.listen("localhost", 8081); });
 
   while (!svr8080.is_running() || !svr8081.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
