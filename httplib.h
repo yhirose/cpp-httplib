@@ -3885,7 +3885,7 @@ inline bool Client::redirect(const Request &req, Response &res) {
   if (location.empty()) { return false; }
 
   const static std::regex re(
-      R"(^(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
+      R"(^(?:(https?):)?(?://([^/?#]*)(?:(:\d+))?)?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
 
   std::smatch m;
   if (!regex_match(location, m, re)) { return false; }
@@ -3894,25 +3894,33 @@ inline bool Client::redirect(const Request &req, Response &res) {
 
   auto next_scheme = m[1].str();
   auto next_host = m[2].str();
-  auto next_path = m[3].str();
-  if (next_scheme.empty()) { next_scheme = scheme; }
+  auto port_str = m[3].str();
+  auto next_path = m[4].str();
+
+  auto next_port = port_;
+  if (!port_str.empty()) {
+    next_port = std::stoi(port_str);
+  } else if (!next_scheme.empty()) {
+    next_port = next_scheme == "https" ? 443 : 80;
+  }
+
   if (next_scheme.empty()) { next_scheme = scheme; }
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  if (next_scheme == scheme && next_host == host_) {
+  if (next_scheme == scheme && next_host == host_ && next_port == port_) {
     return detail::redirect(*this, req, res, next_path);
   } else {
     if (next_scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      SSLClient cli(next_host.c_str());
+      SSLClient cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
       return detail::redirect(cli, req, res, next_path);
 #else
       return false;
 #endif
     } else {
-      Client cli(next_host.c_str());
+      Client cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
       return detail::redirect(cli, req, res, next_path);
     }
