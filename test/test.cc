@@ -2159,7 +2159,8 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 #endif
 
 // Sends a raw request to a server listening at HOST:PORT.
-static bool send_request(time_t read_timeout_sec, const std::string &req) {
+static bool send_request(time_t read_timeout_sec, const std::string &req,
+                         std::string *resp = nullptr) {
   auto client_sock = detail::create_client_socket(HOST, PORT, /*timeout_sec=*/5,
                                                   std::string());
 
@@ -2177,7 +2178,9 @@ static bool send_request(time_t read_timeout_sec, const std::string &req) {
         char buf[512];
 
         detail::stream_line_reader line_reader(strm, buf, sizeof(buf));
-        while (line_reader.getline()) {}
+        while (line_reader.getline()) {
+          if (resp) { *resp += line_reader.ptr(); }
+        }
         return true;
       });
 }
@@ -2209,9 +2212,13 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 }
 
 // Sends a raw request and verifies that there isn't a crash or exception.
-static void test_raw_request(const std::string &req) {
+static void test_raw_request(const std::string &req,
+                             std::string *out = nullptr) {
   Server svr;
   svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+  svr.Put("/put_hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
@@ -2226,7 +2233,7 @@ static void test_raw_request(const std::string &req) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  ASSERT_TRUE(send_request(client_read_timeout_sec, req));
+  ASSERT_TRUE(send_request(client_read_timeout_sec, req, out));
   svr.stop();
   t.join();
   EXPECT_TRUE(listen_thread_ok);
@@ -2278,6 +2285,32 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity2) {
       ":@-&&&&&&&&&&&--:::::::-:::::::::::::::::::::::::::::-:::::::::::::"
       "::::@-&&&&&&&&&&&---&&:&&&.0------------O--------\rH PUTHTTP/1.1\r\n"
       "&&&%%%");
+}
+
+TEST(ServerRequestParsingTest, InvalidFirstChunkLengthInRequest) {
+  std::string out;
+
+  test_raw_request(
+      "PUT /put_hi HTTP/1.1\r\n"
+      "Content-Type: text/plain\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n"
+      "nothex\r\n", &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
+TEST(ServerRequestParsingTest, InvalidSecondChunkLengthInRequest) {
+  std::string out;
+
+  test_raw_request(
+      "PUT /put_hi HTTP/1.1\r\n"
+      "Content-Type: text/plain\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n"
+      "3\r\n"
+      "xyz\r\n"
+      "NaN\r\n", &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {

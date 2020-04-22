@@ -1889,9 +1889,16 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
 
   if (!line_reader.getline()) { return false; }
 
-  auto chunk_len = std::stoul(line_reader.ptr(), 0, 16);
+  unsigned long chunk_len;
+  while (true) {
+    char *end_ptr;
 
-  while (chunk_len > 0) {
+    chunk_len = std::strtoul(line_reader.ptr(), &end_ptr, 16);
+
+    if (end_ptr == line_reader.ptr()) { return false; }
+
+    if (chunk_len == 0) { break; }
+
     if (!read_content_with_length(strm, chunk_len, nullptr, out)) {
       return false;
     }
@@ -1901,8 +1908,6 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
     if (strcmp(line_reader.ptr(), "\r\n")) { break; }
 
     if (!line_reader.getline()) { return false; }
-
-    chunk_len = std::stoul(line_reader.ptr(), 0, 16);
   }
 
   if (chunk_len == 0) {
