@@ -654,7 +654,7 @@ TEST(YahooRedirectTestWithURL, Redirect) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(301, res->status);
 
-  httplib::url::options options;
+  httplib::url::Options options;
   options.follow_location = true;
 
   res = httplib::url::Get("http://yahoo.com", options);
@@ -668,6 +668,59 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
   ASSERT_TRUE(res != nullptr);
+}
+
+TEST(HttpsToHttpRedirectTestWithURL, Redirect) {
+  httplib::url::Options options;
+  options.follow_location = true;
+
+  auto res = httplib::url::Get(
+      "https://httpbin.org/"
+      "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  ASSERT_TRUE(res != nullptr);
+}
+
+TEST(RedirectToDifferentPort, Redirect) {
+  Server svr8080;
+  Server svr8081;
+
+  svr8080.Get("/1", [&](const Request & /*req*/, Response &res) {
+    res.set_redirect("http://localhost:8081/2");
+  });
+
+  svr8081.Get("/2", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto thread8080 = std::thread([&]() {
+      svr8080.listen("localhost", 8080);
+  });
+
+  auto thread8081 = std::thread([&]() {
+      svr8081.listen("localhost", 8081);
+  });
+
+  while (!svr8080.is_running() || !svr8081.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", 8080);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/1");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(res->body, "Hello World!");
+
+  svr8080.stop();
+  svr8081.stop();
+  thread8080.join();
+  thread8081.join();
+  ASSERT_FALSE(svr8080.is_running());
+  ASSERT_FALSE(svr8081.is_running());
 }
 #endif
 
