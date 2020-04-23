@@ -964,7 +964,23 @@ protected:
         .Post("/empty",
               [&](const Request &req, Response &res) {
                 EXPECT_EQ(req.body, "");
+                EXPECT_EQ("text/plain", req.get_header_value("Content-Type"));
+                EXPECT_EQ("0", req.get_header_value("Content-Length"));
                 res.set_content("empty", "text/plain");
+              })
+        .Post("/empty-no-content-type",
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, "");
+                EXPECT_FALSE(req.has_header("Content-Type"));
+                EXPECT_EQ("0", req.get_header_value("Content-Length"));
+                res.set_content("empty-no-content-type", "text/plain");
+              })
+        .Put("/empty-no-content-type",
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, "");
+                EXPECT_FALSE(req.has_header("Content-Type"));
+                EXPECT_EQ("0", req.get_header_value("Content-Length"));
+                res.set_content("empty-no-content-type", "text/plain");
               })
         .Put("/put",
              [&](const Request &req, Response &res) {
@@ -1308,6 +1324,20 @@ TEST_F(ServerTest, PostEmptyContent) {
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty", res->body);
+}
+
+TEST_F(ServerTest, PostEmptyContentWithNoContentType) {
+  auto res = cli_.Post("/empty-no-content-type");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("empty-no-content-type", res->body);
+}
+
+TEST_F(ServerTest, PutEmptyContentWithNoContentType) {
+  auto res = cli_.Put("/empty-no-content-type");
+  ASSERT_TRUE(res != nullptr);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("empty-no-content-type", res->body);
 }
 
 TEST_F(ServerTest, GetMethodDir) {
