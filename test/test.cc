@@ -937,13 +937,13 @@ protected:
 
                 {
                   const auto &file = req.get_file_value("text1");
-                  EXPECT_EQ("", file.filename);
+                  EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("text default", file.content);
                 }
 
                 {
                   const auto &file = req.get_file_value("text2");
-                  EXPECT_EQ("", file.filename);
+                  EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("aωb", file.content);
                 }
 
@@ -956,7 +956,7 @@ protected:
 
                 {
                   const auto &file = req.get_file_value("file3");
-                  EXPECT_EQ("", file.filename);
+                  EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("application/octet-stream", file.content_type);
                   EXPECT_EQ(0u, file.content.size());
                 }
@@ -1052,13 +1052,13 @@ protected:
 
                   {
                     const auto &file = get_file_value(files, "text1");
-                    EXPECT_EQ("", file.filename);
+                    EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("text default", file.content);
                   }
 
                   {
                     const auto &file = get_file_value(files, "text2");
-                    EXPECT_EQ("", file.filename);
+                    EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("aωb", file.content);
                   }
 
@@ -1071,7 +1071,7 @@ protected:
 
                   {
                     const auto &file = get_file_value(files, "file3");
-                    EXPECT_EQ("", file.filename);
+                    EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("application/octet-stream", file.content_type);
                     EXPECT_EQ(0u, file.content.size());
                   }
@@ -1136,13 +1136,13 @@ protected:
 
                 {
                   const auto &file = req.get_file_value("key1");
-                  EXPECT_EQ("", file.filename);
+                  EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("test", file.content);
                 }
 
                 {
                   const auto &file = req.get_file_value("key2");
-                  EXPECT_EQ("", file.filename);
+                  EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("--abcdefg123", file.content);
                 }
               })
@@ -1224,7 +1224,7 @@ TEST_F(ServerTest, HeadMethod200) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_EQ("", res->body);
+  EXPECT_TRUE(res->body.empty());
 }
 
 TEST_F(ServerTest, HeadMethod200Static) {
@@ -1233,14 +1233,14 @@ TEST_F(ServerTest, HeadMethod200Static) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ(104, std::stoi(res->get_header_value("Content-Length")));
-  EXPECT_EQ("", res->body);
+  EXPECT_TRUE(res->body.empty());
 }
 
 TEST_F(ServerTest, HeadMethod404) {
   auto res = cli_.Head("/invalid");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(404, res->status);
-  EXPECT_EQ("", res->body);
+  EXPECT_TRUE(res->body.empty());
 }
 
 TEST_F(ServerTest, GetMethodPersonJohn) {
@@ -2088,7 +2088,7 @@ TEST_F(ServerTest, GzipWithoutAcceptEncoding) {
   auto res = cli_.Get("/gzip", headers);
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ("", res->get_header_value("Content-Encoding"));
+  EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("100", res->get_header_value("Content-Length"));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
@@ -2129,7 +2129,7 @@ TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
       });
 
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ("", res->get_header_value("Content-Encoding"));
+  EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("100", res->get_header_value("Content-Length"));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
