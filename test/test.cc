@@ -2343,6 +2343,20 @@ TEST(ServerRequestParsingTest, InvalidSecondChunkLengthInRequest) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
+TEST(ServerRequestParsingTest, ChunkLengthTooHighInRequest) {
+  std::string out;
+
+  test_raw_request(
+      "PUT /put_hi HTTP/1.1\r\n"
+      "Content-Type: text/plain\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n"
+      // Length is too large for 64 bits.
+      "1ffffffffffffffff\r\n"
+      "xyz\r\n", &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 
