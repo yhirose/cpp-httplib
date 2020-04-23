@@ -1900,6 +1900,7 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
     chunk_len = std::strtoul(line_reader.ptr(), &end_ptr, 16);
 
     if (end_ptr == line_reader.ptr()) { return false; }
+    if (chunk_len == ULONG_MAX) { return false; }
 
     if (chunk_len == 0) { break; }
 
