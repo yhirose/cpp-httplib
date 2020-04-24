@@ -803,7 +803,8 @@ protected:
                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
                EXPECT_TRUE(req.has_header("REMOTE_PORT"));
                EXPECT_EQ(req.remote_addr, req.get_header_value("REMOTE_ADDR"));
-               EXPECT_EQ(req.remote_port, std::stoi(req.get_header_value("REMOTE_PORT")));
+               EXPECT_EQ(req.remote_port,
+                         std::stoi(req.get_header_value("REMOTE_PORT")));
                res.set_content(remote_addr.c_str(), "text/plain");
              })
         .Get("/endwith%",
@@ -979,12 +980,12 @@ protected:
                 res.set_content("empty-no-content-type", "text/plain");
               })
         .Put("/empty-no-content-type",
-              [&](const Request &req, Response &res) {
-                EXPECT_EQ(req.body, "");
-                EXPECT_FALSE(req.has_header("Content-Type"));
-                EXPECT_EQ("0", req.get_header_value("Content-Length"));
-                res.set_content("empty-no-content-type", "text/plain");
-              })
+             [&](const Request &req, Response &res) {
+               EXPECT_EQ(req.body, "");
+               EXPECT_FALSE(req.has_header("Content-Type"));
+               EXPECT_EQ("0", req.get_header_value("Content-Length"));
+               res.set_content("empty-no-content-type", "text/plain");
+             })
         .Put("/put",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "PUT");
@@ -1746,6 +1747,18 @@ TEST_F(ServerTest, GetStreamedEndless) {
   ASSERT_TRUE(res == nullptr);
 }
 
+TEST_F(ServerTest, ClientStop) {
+  thread t = thread([&]() {
+    auto res =
+        cli_.Get("/streamed-cancel",
+                 [&](const char *, uint64_t) { return true; });
+    ASSERT_TRUE(res == nullptr);
+  });
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  cli_.stop();
+  t.join();
+}
+
 TEST_F(ServerTest, GetWithRange1) {
   auto res = cli_.Get("/with-range", {{make_range_header({{3, 5}})}});
   ASSERT_TRUE(res != nullptr);
@@ -2323,40 +2336,40 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity2) {
 TEST(ServerRequestParsingTest, InvalidFirstChunkLengthInRequest) {
   std::string out;
 
-  test_raw_request(
-      "PUT /put_hi HTTP/1.1\r\n"
-      "Content-Type: text/plain\r\n"
-      "Transfer-Encoding: chunked\r\n"
-      "\r\n"
-      "nothex\r\n", &out);
+  test_raw_request("PUT /put_hi HTTP/1.1\r\n"
+                   "Content-Type: text/plain\r\n"
+                   "Transfer-Encoding: chunked\r\n"
+                   "\r\n"
+                   "nothex\r\n",
+                   &out);
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
 TEST(ServerRequestParsingTest, InvalidSecondChunkLengthInRequest) {
   std::string out;
 
-  test_raw_request(
-      "PUT /put_hi HTTP/1.1\r\n"
-      "Content-Type: text/plain\r\n"
-      "Transfer-Encoding: chunked\r\n"
-      "\r\n"
-      "3\r\n"
-      "xyz\r\n"
-      "NaN\r\n", &out);
+  test_raw_request("PUT /put_hi HTTP/1.1\r\n"
+                   "Content-Type: text/plain\r\n"
+                   "Transfer-Encoding: chunked\r\n"
+                   "\r\n"
+                   "3\r\n"
+                   "xyz\r\n"
+                   "NaN\r\n",
+                   &out);
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
 TEST(ServerRequestParsingTest, ChunkLengthTooHighInRequest) {
   std::string out;
 
-  test_raw_request(
-      "PUT /put_hi HTTP/1.1\r\n"
-      "Content-Type: text/plain\r\n"
-      "Transfer-Encoding: chunked\r\n"
-      "\r\n"
-      // Length is too large for 64 bits.
-      "1ffffffffffffffff\r\n"
-      "xyz\r\n", &out);
+  test_raw_request("PUT /put_hi HTTP/1.1\r\n"
+                   "Content-Type: text/plain\r\n"
+                   "Transfer-Encoding: chunked\r\n"
+                   "\r\n"
+                   // Length is too large for 64 bits.
+                   "1ffffffffffffffff\r\n"
+                   "xyz\r\n",
+                   &out);
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
