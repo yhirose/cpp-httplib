@@ -801,6 +801,9 @@ protected:
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
+               EXPECT_TRUE(req.has_header("REMOTE_PORT"));
+               EXPECT_EQ(req.remote_addr, req.get_header_value("REMOTE_ADDR"));
+               EXPECT_EQ(req.remote_port, std::stoi(req.get_header_value("REMOTE_PORT")));
                res.set_content(remote_addr.c_str(), "text/plain");
              })
         .Get("/endwith%",
