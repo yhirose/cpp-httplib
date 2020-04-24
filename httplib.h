@@ -695,6 +695,8 @@ public:
   bool send(const std::vector<Request> &requests,
             std::vector<Response> &responses);
 
+  void stop();
+
   void set_timeout_sec(time_t timeout_sec);
 
   void set_read_timeout(time_t sec, time_t usec);
@@ -726,6 +728,8 @@ public:
 protected:
   bool process_request(Stream &strm, const Request &req, Response &res,
                        bool last_connection, bool &connection_close);
+
+  std::atomic<socket_t> sock_;
 
   const std::string host_;
   const int port_;
@@ -3714,7 +3718,7 @@ inline bool Server::process_and_close_socket(socket_t sock) {
 inline Client::Client(const std::string &host, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path)
-    : host_(host), port_(port),
+    : sock_(INVALID_SOCKET), host_(host), port_(port),
       host_and_port_(host_ + ":" + std::to_string(port_)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
@@ -3750,18 +3754,18 @@ inline bool Client::read_response_line(Stream &strm, Response &res) {
 }
 
 inline bool Client::send(const Request &req, Response &res) {
-  auto sock = create_client_socket();
-  if (sock == INVALID_SOCKET) { return false; }
+  sock_ = create_client_socket();
+  if (sock_ == INVALID_SOCKET) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if (is_ssl() && !proxy_host_.empty()) {
     bool error;
-    if (!connect(sock, res, error)) { return error; }
+    if (!connect(sock_, res, error)) { return error; }
   }
 #endif
 
   return process_and_close_socket(
-      sock, 1, [&](Stream &strm, bool last_connection, bool &connection_close) {
+      sock_, 1, [&](Stream &strm, bool last_connection, bool &connection_close) {
         return handle_request(strm, req, res, last_connection,
                               connection_close);
       });
@@ -3771,18 +3775,18 @@ inline bool Client::send(const std::vector<Request> &requests,
                          std::vector<Response> &responses) {
   size_t i = 0;
   while (i < requests.size()) {
-    auto sock = create_client_socket();
-    if (sock == INVALID_SOCKET) { return false; }
+    sock_ = create_client_socket();
+    if (sock_ == INVALID_SOCKET) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     if (is_ssl() && !proxy_host_.empty()) {
       Response res;
       bool error;
-      if (!connect(sock, res, error)) { return false; }
+      if (!connect(sock_, res, error)) { return false; }
     }
 #endif
 
-    if (!process_and_close_socket(sock, requests.size() - i,
+    if (!process_and_close_socket(sock_, requests.size() - i,
                                   [&](Stream &strm, bool last_connection,
                                       bool &connection_close) -> bool {
                                     auto &req = requests[i++];
@@ -4444,6 +4448,14 @@ inline std::shared_ptr<Response> Client::Options(const char *path,
   auto res = std::make_shared<Response>();
 
   return send(req, *res) ? res : nullptr;
+}
+
+inline void Client::stop() {
+  if (sock_ != INVALID_SOCKET) {
+    std::atomic<socket_t> sock(sock_.exchange(INVALID_SOCKET));
+    detail::shutdown_socket(sock);
+    detail::close_socket(sock);
+  }
 }
 
 inline void Client::set_timeout_sec(time_t timeout_sec) {
