@@ -2,19 +2,13 @@ image:
   - Visual Studio 2019
 
 platform:
-  # - Win32
   - x64
-
-environment:
-  matrix:
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      TOOLSET: v142
 
 build_script:
   - cmd: >-
       cd test
 
-      msbuild.exe test.sln /verbosity:minimal /t:Build /p:Configuration=Release;Platform=%PLATFORM%;PlatformToolset=%TOOLSET%
+      msbuild.exe test.sln /verbosity:minimal /t:Build /p:Configuration=Release;Platform=%PLATFORM%
 
 test_script:
   - cmd: x64\Release\test.exe
