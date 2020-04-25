@@ -2942,7 +2942,9 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
   if (!is_readable()) { return -1; }
 
 #ifdef _WIN32
-  if (size > static_cast<size_t>(std::numeric_limits<int>::max())) { return -1; }
+  if (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return -1;
+  }
   return recv(sock_, ptr, static_cast<int>(size), 0);
 #else
   return recv(sock_, ptr, size, 0);
@@ -2953,7 +2955,9 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!is_writable()) { return -1; }
 
 #ifdef _WIN32
-  if (size > static_cast<size_t>(std::numeric_limits<int>::max())) { return -1; }
+  if (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return -1;
+  }
   return send(sock_, ptr, static_cast<int>(size), 0);
 #else
   return send(sock_, ptr, size, 0);
@@ -3781,7 +3785,8 @@ inline bool Client::send(const Request &req, Response &res) {
 #endif
 
   return process_and_close_socket(
-      sock_, 1, [&](Stream &strm, bool last_connection, bool &connection_close) {
+      sock_, 1,
+      [&](Stream &strm, bool last_connection, bool &connection_close) {
         return handle_request(strm, req, res, last_connection,
                               connection_close);
       });
