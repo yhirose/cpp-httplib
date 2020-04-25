@@ -2937,9 +2937,11 @@ inline bool SocketStream::is_writable() const {
 
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
 #ifdef _WIN32
-#pragma warning( push )
-#pragma warning( disable : 4018 )
-  if (is_readable() && size <= std::numeric_limits<int>::max()) { return recv(sock_, ptr, static_cast<int>(size), 0); }
+#pragma warning(push)
+#pragma warning(disable : 4018)
+  if (is_readable() && size <= std::numeric_limits<int>::max()) {
+    return recv(sock_, ptr, static_cast<int>(size), 0);
+  }
 #else
   if (is_readable()) { return recv(sock_, ptr, size, 0); }
 #endif
@@ -2948,8 +2950,10 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
 #ifdef _WIN32
-  if (is_writable() && size <= std::numeric_limits<int>::max()) { return send(sock_, ptr, static_cast<int>(size), 0); }
-#pragma warning( pop )
+  if (is_writable() && size <= std::numeric_limits<int>::max()) {
+    return send(sock_, ptr, static_cast<int>(size), 0);
+  }
+#pragma warning(pop)
 #else
   if (is_writable()) { return send(sock_, ptr, size, 0); }
 #endif
