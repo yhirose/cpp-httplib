@@ -368,6 +368,7 @@ public:
   TaskQueue() = default;
   virtual ~TaskQueue() = default;
   virtual void enqueue(std::function<void()> fn) = 0;
+  virtual void queue_adjust() { };
   virtual void shutdown() = 0;
 };
 
@@ -3497,6 +3498,7 @@ inline bool Server::listen_internal() {
       auto val = detail::select_read(svr_sock_, 0, 100000);
 
       if (val == 0) { // Timeout
+        task_queue->queue_adjust();
         continue;
       }
 
