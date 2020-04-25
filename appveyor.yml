@@ -1,9 +1,20 @@
-version: 1.0.{build}
-image: Visual Studio 2017
-build_script:
-- cmd: >-
-    cd test
+image:
+  - Visual Studio 2019
 
-    msbuild.exe test.sln /verbosity:minimal /t:Build /p:Configuration=Debug;Platform=Win32
+platform:
+  # - Win32
+  - x64
+
+environment:
+  matrix:
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      TOOLSET: v142
+
+build_script:
+  - cmd: >-
+      cd test
+
+      msbuild.exe test.sln /verbosity:minimal /t:Build /p:Configuration=Release;Platform=%PLATFORM%;PlatformToolset=%TOOLSET%
+
 test_script:
-- cmd: Debug\test.exe
+  - cmd: x64\Release\test.exe
