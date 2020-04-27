@@ -172,18 +172,6 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #endif
 #endif
 
-#define HANDLE_EINTR(method, ...) \
-  ({int res; \
-  while (true) { \
-    res = method(__VA_ARGS__); \
-    if (res < 0 && errno == EINTR) { \
-      continue; \
-    } else { \
-      break; \
-    } \
-  } \
-  res;})
-
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 #include <zlib.h>
 #endif
@@ -1266,7 +1254,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
-    int res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
+    auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
                       reinterpret_cast<char *>(&error), &len);
     return res >= 0 && !error;
   }
@@ -2626,6 +2614,21 @@ inline std::string SHA_512(const std::string &s) {
                                     SHA512_DIGEST_LENGTH);
 }
 #endif
+
+template <typename T>
+inline ssize_t handle_EINTR(T fn) {
+  ssize_t res = false;
+  while (true) {
+    res = fn();
+    if (res < 0 && errno == EINTR) {
+      continue;
+    }
+    break;
+  }
+  return res;
+}
+
+#define HANDLE_EINTR(method, ...) (handle_EINTR([&]() { return method(__VA_ARGS__); }))
 
 #ifdef _WIN32
 class WSInit {
@@ -5105,6 +5108,12 @@ inline std::shared_ptr<Response> Get(const char *url) {
 }
 
 } // namespace url
+
+namespace detail {
+
+#undef HANDLE_EINTR
+
+} // namespace detail
 
 // ----------------------------------------------------------------------------
 
