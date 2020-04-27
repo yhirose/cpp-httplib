@@ -724,6 +724,39 @@ TEST(RedirectToDifferentPort, Redirect) {
 }
 #endif
 
+TEST(Server, BindDualStack) {
+  Server svr;
+
+  svr.Get("/1", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen("::", PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli("127.0.0.1", PORT);
+
+    auto res = cli.Get("/1");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(res->body, "Hello World!");
+  }
+  {
+    Client cli("::1", PORT);
+
+    auto res = cli.Get("/1");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(res->body, "Hello World!");
+  }
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 TEST(Server, BindAndListenSeparately) {
   Server svr;
   int port = svr.bind_to_any_port("0.0.0.0");
