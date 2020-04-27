@@ -172,6 +172,18 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #endif
 #endif
 
+#define HANDLE_EINTR(method, ...) \
+  ({int res; \
+  while (true) { \
+    res = method(__VA_ARGS__); \
+    if (res < 0 && errno == EINTR) { \
+      continue; \
+    } else { \
+      break; \
+    } \
+  } \
+  res;})
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 #include <zlib.h>
 #endif
@@ -1206,7 +1218,7 @@ inline int select_read(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return poll(&pfd_read, 1, timeout);
+  return HANDLE_EINTR(poll, &pfd_read, 1, timeout);
 #else
   fd_set fds;
   FD_ZERO(&fds);
@@ -1228,7 +1240,7 @@ inline int select_write(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return poll(&pfd_read, 1, timeout);
+  return HANDLE_EINTR(poll, &pfd_read, 1, timeout);
 #else
   fd_set fds;
   FD_ZERO(&fds);
@@ -1250,13 +1262,13 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  if (poll(&pfd_read, 1, timeout) > 0 &&
-      pfd_read.revents & (POLLIN | POLLOUT)) {
+  int poll_res = HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
-    return getsockopt(sock, SOL_SOCKET, SO_ERROR,
-                      reinterpret_cast<char *>(&error), &len) >= 0 &&
-           !error;
+    int res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
+                      reinterpret_cast<char *>(&error), &len);
+    return res >= 0 && !error;
   }
   return false;
 #else
@@ -2947,7 +2959,7 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
   }
   return recv(sock_, ptr, static_cast<int>(size), 0);
 #else
-  return recv(sock_, ptr, size, 0);
+  return HANDLE_EINTR(recv, sock_, ptr, size, 0);
 #endif
 }
 
@@ -5099,3 +5111,4 @@ inline std::shared_ptr<Response> Get(const char *url) {
 } // namespace httplib
 
 #endif // CPPHTTPLIB_HTTPLIB_H
+
