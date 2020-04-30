@@ -1515,8 +1515,8 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
   return ret;
 }
 
-inline std::string if2ip(const std::string &ifn) {
 #ifndef _WIN32
+inline std::string if2ip(const std::string &ifn) {
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
   for (auto ifa = ifap; ifa; ifa = ifa->ifa_next) {
@@ -1532,9 +1532,9 @@ inline std::string if2ip(const std::string &ifn) {
     }
   }
   freeifaddrs(ifap);
-#endif
   return std::string();
 }
+#endif
 
 inline socket_t create_client_socket(const char *host, int port,
                                      time_t timeout_sec,
@@ -1542,9 +1542,11 @@ inline socket_t create_client_socket(const char *host, int port,
   return create_socket(
       host, port, [&](socket_t sock, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
+#ifndef _WIN32
           auto ip = if2ip(intf);
           if (ip.empty()) { ip = intf; }
           if (!bind_ip_address(sock, ip.c_str())) { return false; }
+#endif
         }
 
         set_nonblocking(sock, true);
@@ -2849,11 +2851,11 @@ inline void Response::set_header(const char *key, const std::string &val) {
   }
 }
 
-inline void Response::set_redirect(const char *url, int status) {
+inline void Response::set_redirect(const char *url, int stat) {
   if (!detail::has_crlf(url)) {
     set_header("Location", url);
-    if (300 <= status && status < 400) {
-      this->status = status;
+    if (300 <= stat && stat < 400) {
+      this->status = stat;
     } else {
       this->status = 302;
     }
