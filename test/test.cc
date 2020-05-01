@@ -2333,6 +2333,19 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity2) {
       "&&&%%%");
 }
 
+TEST(ServerRequestParsingTest, ExcessiveWhitespaceInUnparseableHeaderLine) {
+  // Make sure this doesn't crash the server.
+  // In a previous version of the header line regex, the "\r" rendered the line
+  // unparseable and the regex engine repeatedly backtracked, trying to look for
+  // a new position where the leading white space ended and the field value
+  // began.
+  // The crash occurs with libc++ but not libstdc++.
+  test_raw_request("GET /hi HTTP/1.1\r\n"
+                   "a:" + std::string(2000, ' ') + '\r' + std::string(20, 'z') +
+                   "\r\n"
+                   "\r\n");
+}
+
 TEST(ServerRequestParsingTest, InvalidFirstChunkLengthInRequest) {
   std::string out;
 
