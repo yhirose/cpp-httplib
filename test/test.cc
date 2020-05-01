@@ -2088,6 +2088,7 @@ TEST_F(ServerTest, KeepAlive) {
   Get(requests, "/hi");
   Get(requests, "/not-exist");
   Post(requests, "/empty", "", "text/plain");
+  Post(requests, "/empty", 0, [&](size_t offset, size_t length, httplib::DataSink &sink){}, "text/plain");
 
   std::vector<Response> responses;
   auto ret = cli_.send(requests, responses);
@@ -2107,8 +2108,8 @@ TEST_F(ServerTest, KeepAlive) {
     EXPECT_EQ(404, res.status);
   }
 
-  {
-    auto &res = responses[4];
+  for (size_t i = 4; i < 6; i++) {
+    auto &res = responses[i];
     EXPECT_EQ(200, res.status);
     EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
     EXPECT_EQ("empty", res.body);

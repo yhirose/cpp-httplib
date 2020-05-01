@@ -855,6 +855,21 @@ inline void Post(std::vector<Request> &requests, const char *path,
   Post(requests, path, Headers(), body, content_type);
 }
 
+inline void Post(std::vector<Request> &requests,
+     const char *path, size_t content_length,
+    ContentProvider content_provider, const char *content_type) {
+  Request req;
+  req.method = "POST";
+  req.headers = Headers();
+  req.path = path;
+  req.content_length = content_length;
+  req.content_provider = content_provider;
+
+  if (content_type) { req.headers.emplace("Content-Type", content_type); }
+
+  requests.emplace_back(std::move(req));
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class SSLServer : public Server {
 public:
