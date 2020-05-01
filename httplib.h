@@ -1847,7 +1847,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     // the left or right side of the header value:
     //  - https://stackoverflow.com/questions/50179659/
     //  - https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html
-    static const std::regex re(R"(([^:]+):[\t ]*(.+))");
+    static const std::regex re(R"(([^:]+):[\t ]*([^\t ].*))");
 
     std::cmatch m;
     if (std::regex_match(line_reader.ptr(), end, m, re)) {
