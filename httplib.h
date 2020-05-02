@@ -1198,7 +1198,22 @@ inline int close_socket(socket_t sock) {
 #endif
 }
 
-inline int select_read(socket_t sock, time_t sec, time_t usec) {
+template <typename T>
+inline ssize_t handle_EINTR(T fn) {
+  ssize_t res = false;
+  while (true) {
+    res = fn();
+    if (res < 0 && errno == EINTR) {
+      continue;
+    }
+    break;
+  }
+  return res;
+}
+
+#define HANDLE_EINTR(method, ...) (handle_EINTR([&]() { return method(__VA_ARGS__); }))
+
+inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
   pfd_read.fd = sock;
@@ -1216,11 +1231,11 @@ inline int select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
+  return HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
 #endif
 }
 
-inline int select_write(socket_t sock, time_t sec, time_t usec) {
+inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
   pfd_read.fd = sock;
@@ -1238,7 +1253,7 @@ inline int select_write(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return select(static_cast<int>(sock + 1), nullptr, &fds, nullptr, &tv);
+  return HANDLE_EINTR(select, static_cast<int>(sock + 1), nullptr, &fds, nullptr, &tv);
 #endif
 }
 
@@ -1250,7 +1265,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  int poll_res = HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  auto poll_res = HANDLE_EINTR(poll, &pfd_read, 1, timeout);
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -1271,7 +1286,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  if (select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) > 0 &&
+  if (HANDLE_EINTR(select, static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) > 0 &&
       (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -2617,21 +2632,6 @@ inline std::string SHA_512(const std::string &s) {
 }
 #endif
 
-template <typename T>
-inline ssize_t handle_EINTR(T fn) {
-  ssize_t res = false;
-  while (true) {
-    res = fn();
-    if (res < 0 && errno == EINTR) {
-      continue;
-    }
-    break;
-  }
-  return res;
-}
-
-#define HANDLE_EINTR(method, ...) (handle_EINTR([&]() { return method(__VA_ARGS__); }))
-
 #ifdef _WIN32
 class WSInit {
 public:
@@ -2977,7 +2977,7 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   }
   return send(sock_, ptr, static_cast<int>(size), 0);
 #else
-  return send(sock_, ptr, size, 0);
+  return HANDLE_EINTR(send, sock_, ptr, size, 0);
 #endif
 }
 
