@@ -50,7 +50,7 @@
 
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
 #define CPPHTTPLIB_THREAD_POOL_COUNT                                           \
-  ((std::max)(1u, std::thread::hardware_concurrency() - 1))
+  ((std::max)(8u, std::thread::hardware_concurrency() - 1))
 #endif
 
 /*
