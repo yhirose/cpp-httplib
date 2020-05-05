@@ -1749,9 +1749,8 @@ TEST_F(ServerTest, GetStreamedEndless) {
 
 TEST_F(ServerTest, ClientStop) {
   thread t = thread([&]() {
-    auto res =
-        cli_.Get("/streamed-cancel",
-                 [&](const char *, uint64_t) { return true; });
+    auto res = cli_.Get("/streamed-cancel",
+                        [&](const char *, uint64_t) { return true; });
     ASSERT_TRUE(res == nullptr);
   });
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -2341,7 +2340,8 @@ TEST(ServerRequestParsingTest, ExcessiveWhitespaceInUnparseableHeaderLine) {
   // began.
   // The crash occurs with libc++ but not libstdc++.
   test_raw_request("GET /hi HTTP/1.1\r\n"
-                   "a:" + std::string(2000, ' ') + '\r' + std::string(20, 'z') +
+                   "a:" +
+                   std::string(2000, ' ') + '\r' + std::string(20, 'z') +
                    "\r\n"
                    "\r\n");
 }
