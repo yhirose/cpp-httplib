@@ -2386,6 +2386,11 @@ TEST(ServerRequestParsingTest, ChunkLengthTooHighInRequest) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
+TEST(ServerRequestParsingTest, InvalidHeaderTextWithExtraCR) {
+  test_raw_request("GET /hi HTTP/1.1\r\n"
+                   "Content-Type: text/plain\r\n\r");
+}
+
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 
