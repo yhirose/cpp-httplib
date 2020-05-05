@@ -1198,20 +1198,18 @@ inline int close_socket(socket_t sock) {
 #endif
 }
 
-template <typename T>
-inline ssize_t handle_EINTR(T fn) {
+template <typename T> inline ssize_t handle_EINTR(T fn) {
   ssize_t res = false;
   while (true) {
     res = fn();
-    if (res < 0 && errno == EINTR) {
-      continue;
-    }
+    if (res < 0 && errno == EINTR) { continue; }
     break;
   }
   return res;
 }
 
-#define HANDLE_EINTR(method, ...) (handle_EINTR([&]() { return method(__VA_ARGS__); }))
+#define HANDLE_EINTR(method, ...)                                              \
+  (handle_EINTR([&]() { return method(__VA_ARGS__); }))
 
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
@@ -1231,7 +1229,8 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
+  return HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr,
+                      nullptr, &tv);
 #endif
 }
 
@@ -1253,7 +1252,8 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return HANDLE_EINTR(select, static_cast<int>(sock + 1), nullptr, &fds, nullptr, &tv);
+  return HANDLE_EINTR(select, static_cast<int>(sock + 1), nullptr, &fds,
+                      nullptr, &tv);
 #endif
 }
 
@@ -1270,7 +1270,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
     int error = 0;
     socklen_t len = sizeof(error);
     auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
-                      reinterpret_cast<char *>(&error), &len);
+                          reinterpret_cast<char *>(&error), &len);
     return res >= 0 && !error;
   }
   return false;
@@ -1286,7 +1286,8 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  if (HANDLE_EINTR(select, static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv) > 0 &&
+  if (HANDLE_EINTR(select, static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse,
+                   &tv) > 0 &&
       (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -1470,14 +1471,16 @@ socket_t create_socket(const char *host, int port, Fn fn,
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&yes),
                sizeof(yes));
 
-    int no = 0;
-    setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char *>(&no),
-               sizeof(no));
-
 #ifdef SO_REUSEPORT
     setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char *>(&yes),
                sizeof(yes));
 #endif
+
+    if (rp->ai_family == AF_INET6) {
+      int no = 0;
+      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char *>(&no),
+                 sizeof(no));
+    }
 
     // bind or connect
     if (fn(sock, *rp)) {
@@ -5127,4 +5130,3 @@ namespace detail {
 } // namespace httplib
 
 #endif // CPPHTTPLIB_HTTPLIB_H
-
