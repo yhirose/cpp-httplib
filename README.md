@@ -171,14 +171,14 @@ svr.Post("/content_receiver",
 ### Send content with Content provider
 
 ```cpp
-const uint64_t DATA_CHUNK_SIZE = 4;
+const size_t DATA_CHUNK_SIZE = 4;
 
 svr.Get("/stream", [&](const Request &req, Response &res) {
   auto data = new std::string("abcdefg");
 
   res.set_content_provider(
     data->size(), // Content length
-    [data](uint64_t offset, uint64_t length, DataSink &sink) {
+    [data](size_t offset, size_t length, DataSink &sink) {
       const auto &d = *data;
       sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
     },
@@ -191,7 +191,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 ```cpp
 svr.Get("/chunked", [&](const Request& req, Response& res) {
   res.set_chunked_content_provider(
-    [](uint64_t offset, DataSink &sink) {
+    [](size_t offset, DataSink &sink) {
        sink.write("123", 3);
        sink.write("345", 3);
        sink.write("789", 3);
@@ -290,7 +290,7 @@ auto res = cli.Get("/hi", headers);
 std::string body;
 
 auto res = cli.Get("/large-data",
-  [&](const char *data, uint64_t data_length) {
+  [&](const char *data, size_t data_length) {
     body.append(data, data_length);
     return true;
   });
@@ -435,6 +435,15 @@ Get(requests, "/get-request1");
 Get(requests, "/get-request2");
 Post(requests, "/post-request1", "text", "text/plain");
 Post(requests, "/post-request2", "text", "text/plain");
+
+const size_t DATA_CHUNK_SIZE = 4;
+std::string data("abcdefg");
+Post(requests, "/post-request-with-content-provider",
+  data.size(),
+  [&](size_t offset, size_t length, DataSink &sink){
+    sink.write(&data[offset], std::min(length, DATA_CHUNK_SIZE));
+  },
+  "text/plain");
 
 std::vector<Response> responses;
 if (cli.send(requests, responses)) {
