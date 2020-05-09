@@ -566,8 +566,8 @@ TEST(DigestAuthTest, FromHTTPWatch) {
       EXPECT_EQ(400, res->status);
     }
 
-    // NOTE: Until httpbin.org fixes issue #46, the following test is commented out.
-    // Plese see https://httpbin.org/digest-auth/auth/hello/world
+    // NOTE: Until httpbin.org fixes issue #46, the following test is commented
+    // out. Plese see https://httpbin.org/digest-auth/auth/hello/world
     // cli.set_digest_auth("bad", "world");
     // for (auto path : paths) {
     //   auto res = cli.Get(path.c_str());
@@ -2091,8 +2091,7 @@ TEST_F(ServerTest, KeepAlive) {
   Get(requests, "/not-exist");
   Post(requests, "/empty", "", "text/plain");
   Post(
-      requests, "/empty", 0,
-      [&](size_t offset, size_t length, httplib::DataSink &sink) {},
+      requests, "/empty", 0, [&](size_t, size_t, httplib::DataSink &) {},
       "text/plain");
 
   std::vector<Response> responses;
