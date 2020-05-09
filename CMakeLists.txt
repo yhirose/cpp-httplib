@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.7.0)
 project(httplib)
+cmake_minimum_required(VERSION 3.7.0 FATAL_ERROR)
 
 set(CMAKE_CXX_STANDARD 11)
 
