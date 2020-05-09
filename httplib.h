@@ -2733,7 +2733,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
                  ":" + qop + ":" + H(A2));
   }
 
-  auto field = "Digest username=\"hello\", realm=\"" + auth.at("realm") +
+  auto field = "Digest username=\"" + username + "\", realm=\"" + auth.at("realm") +
                "\", nonce=\"" + auth.at("nonce") + "\", uri=\"" + req.path +
                "\", algorithm=" + algo + ", qop=" + qop + ", nc=\"" + nc +
                "\", cnonce=\"" + cnonce + "\", response=\"" + response + "\"";
