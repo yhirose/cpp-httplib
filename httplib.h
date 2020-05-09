@@ -1234,7 +1234,9 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  auto status = HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  if (pfd_read.revents != POLLOUT) { return 0; }
+  return status;
 #else
   fd_set fds;
   FD_ZERO(&fds);
@@ -1244,8 +1246,13 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr,
-                      nullptr, &tv);
+  auto status HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr,
+                           nullptr, &tv);
+  if (status > 0) {
+    return HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr,
+                        nullptr, &tv) > 0 ? 0 : status;
+  }
+  return status;
 #endif
 }
 
