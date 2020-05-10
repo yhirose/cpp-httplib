@@ -563,7 +563,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ(400, res->status);
+      EXPECT_EQ(401, res->status);
     }
 
     // NOTE: Until httpbin.org fixes issue #46, the following test is commented
