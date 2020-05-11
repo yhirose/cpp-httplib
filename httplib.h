@@ -4142,6 +4142,7 @@ inline std::shared_ptr<Response> Client::send_with_content_provider(
   if (compress_) {
     if (content_provider) {
       size_t offset = 0;
+      ssize_t written_length = 0;
 
       DataSink data_sink;
       data_sink.write = [&](const char *data, size_t data_len) {
@@ -4149,9 +4150,11 @@ inline std::shared_ptr<Response> Client::send_with_content_provider(
         offset += data_len;
       };
       data_sink.is_writable = [&](void) { return true; };
+      data_sink.done = [&](void) { written_length = -1; };
 
       while (offset < content_length) {
         content_provider(offset, content_length - offset, data_sink);
+        if (written_length < 0) { return nullptr; }
       }
     } else {
       req.body = body;
