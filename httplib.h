@@ -4105,16 +4105,19 @@ inline bool Client::write_request(Stream &strm, const Request &req,
     if (req.content_provider) {
       size_t offset = 0;
       size_t end_offset = req.content_length;
+      ssize_t written_length = 0;
 
       DataSink data_sink;
       data_sink.write = [&](const char *d, size_t l) {
-        auto written_length = strm.write(d, l);
+        written_length = strm.write(d, l);
         offset += static_cast<size_t>(written_length);
       };
       data_sink.is_writable = [&](void) { return strm.is_writable(); };
+      data_sink.done = [&](void) { written_length = -1; };
 
       while (offset < end_offset) {
         req.content_provider(offset, end_offset - offset, data_sink);
+        if (written_length < 0) { return false; }
       }
     }
   } else {

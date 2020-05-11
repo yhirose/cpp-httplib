@@ -1928,6 +1928,17 @@ TEST_F(ServerTest, PutWithContentProvider) {
   EXPECT_EQ("PUT", res->body);
 }
 
+TEST_F(ServerTest, PostWithContentProviderAbort) {
+  auto res = cli_.Post(
+      "/post", 42,
+      [](size_t /*offset*/, size_t /*length*/, httplib::DataSink &sink) {
+        sink.done();
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res == nullptr);
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   cli_.set_compress(true);
