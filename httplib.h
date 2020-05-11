@@ -2114,7 +2114,9 @@ inline ssize_t write_content_chunked(Stream &strm,
       data_available = false;
       written_length = strm.write("0\r\n\r\n");
     };
-    data_sink.is_writable = [&](void) { return strm.is_writable(); };
+    data_sink.is_writable = [&](void) {
+      return strm.is_writable() && written_length >= 0;
+    };
 
     content_provider(offset, 0, data_sink);
 
