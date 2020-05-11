@@ -2083,7 +2083,9 @@ inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
       written_length = strm.write(d, l);
     };
     data_sink.done = [&](void) { written_length = -1; };
-    data_sink.is_writable = [&](void) { return strm.is_writable(); };
+    data_sink.is_writable = [&](void) {
+      return strm.is_writable() && written_length >= 0;
+    };
 
     content_provider(offset, end_offset - offset, data_sink);
     if (written_length < 0) { return written_length; }
