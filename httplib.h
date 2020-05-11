@@ -4112,7 +4112,9 @@ inline bool Client::write_request(Stream &strm, const Request &req,
         written_length = strm.write(d, l);
         offset += static_cast<size_t>(written_length);
       };
-      data_sink.is_writable = [&](void) { return strm.is_writable(); };
+      data_sink.is_writable = [&](void) {
+        return strm.is_writable() && written_length >= 0;
+      };
       data_sink.done = [&](void) { written_length = -1; };
 
       while (offset < end_offset) {
