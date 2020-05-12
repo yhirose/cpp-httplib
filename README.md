@@ -494,7 +494,7 @@ cli.enable_server_certificate_verification(true);
 Zlib Support
 ------------
 
-'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`.
+'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`. `libz` should be linked.
 
 The server applies gzip compression to the following MIME type contents:
 
