@@ -571,9 +571,13 @@ private:
 
 class Client {
 public:
-  explicit Client(const std::string &host, int port = 80,
-                  const std::string &client_cert_path = std::string(),
-                  const std::string &client_key_path = std::string());
+  explicit Client(const std::string &host);
+
+  explicit Client(const std::string &host, int port);
+
+  explicit Client(const std::string &host, int port,
+                  const std::string &client_cert_path,
+                  const std::string &client_key_path);
 
   virtual ~Client();
 
@@ -897,9 +901,13 @@ private:
 
 class SSLClient : public Client {
 public:
-  explicit SSLClient(const std::string &host, int port = 443,
-                     const std::string &client_cert_path = std::string(),
-                     const std::string &client_key_path = std::string());
+  explicit SSLClient(const std::string &host);
+
+  explicit SSLClient(const std::string &host, int port);
+
+  explicit SSLClient(const std::string &host, int port,
+                     const std::string &client_cert_path,
+                     const std::string &client_key_path);
 
   explicit SSLClient(const std::string &host, int port, X509 *client_cert,
                      EVP_PKEY *client_key);
@@ -3786,6 +3794,12 @@ inline bool Server::process_and_close_socket(socket_t sock) {
 }
 
 // HTTP client implementation
+inline Client::Client(const std::string &host)
+    : Client(host, 80, std::string(), std::string()) {}
+
+inline Client::Client(const std::string &host, int port)
+    : Client(host, port, std::string(), std::string()) {}
+
 inline Client::Client(const std::string &host, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path)
@@ -4845,6 +4859,12 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 }
 
 // SSL HTTP client implementation
+inline SSLClient::SSLClient(const std::string &host)
+    : SSLClient(host, 443, std::string(), std::string()) {}
+
+inline SSLClient::SSLClient(const std::string &host, int port)
+    : SSLClient(host, port, std::string(), std::string()) {}
+
 inline SSLClient::SSLClient(const std::string &host, int port,
                             const std::string &client_cert_path,
                             const std::string &client_key_path)
@@ -5101,13 +5121,16 @@ inline bool SSLClient::check_host_name(const char *pattern,
 
 class Client2 {
 public:
-  explicit Client2(const char *host_and_port,
-                   const std::string &client_cert_path = std::string(),
-                   const std::string &client_key_path = std::string()) {
+  explicit Client2(const char *scheme_host_port)
+      : Client2(scheme_host_port, std::string(), std::string()) {}
+
+  explicit Client2(const char *scheme_host_port,
+                   const std::string &client_cert_path,
+                   const std::string &client_key_path) {
     const static std::regex re(R"(^(https?)://([^:/?#]+)(?::(\d+))?)");
 
     std::cmatch m;
-    if (std::regex_match(host_and_port, m, re)) {
+    if (std::regex_match(scheme_host_port, m, re)) {
       auto scheme = m[1].str();
       auto host = m[2].str();
       auto port_str = m[3].str();
