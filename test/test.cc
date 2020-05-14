@@ -319,36 +319,24 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 }
 
 TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiverAndProgress) {
-  auto host = "127.0.0.1";
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto port = 443;
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
-                CLIENT_CA_CERT_DIR);
-  httplib::SSLClient cli(host, port);
-#else
-  auto port = 80;
-  httplib::Server svr;
-  httplib::Client cli(host, port);
-#endif
-
   std::string out;
   httplib::detail::read_file("./image.jpg", out);
 
-  svr.Get("/image", [&](const Request&, Response& res) {
-	  res.set_chunked_content_provider([&](size_t, DataSink& sink) {
+  httplib::Server svr;
+  svr.Get("/image", [&](const Request&, Response &res) {
+	  res.set_chunked_content_provider([&](size_t, DataSink &sink) {
 		  sink.write(out.data(), out.size());
 		  sink.done();
 		  return true;
 	  });
   });
-
   auto fut = std::async(std::launch::async, [&]{
-    svr.listen(host, port);
+    svr.listen(HOST, PORT);
   });
-  fut.wait_for(std::chrono::nanoseconds::zero());
+  fut.wait_for(std::chrono::milliseconds(100));
   while (!svr.is_running()) std::this_thread::yield();
 
+  httplib::Client cli(HOST, PORT);
   cli.set_timeout_sec(2);
 
   std::string body;
@@ -369,12 +357,13 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiverAndProgress) {
 		progress = current;
         return true;
       });
+  svr.stop();
+
   ASSERT_TRUE(res != nullptr);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, body);
   EXPECT_EQ(progress, body.size());
-  svr.stop();
 }
 
 TEST(RangeTest, FromHTTPBin) {
