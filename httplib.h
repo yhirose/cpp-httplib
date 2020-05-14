@@ -5354,63 +5354,88 @@ public:
 
   void stop() { cli_->stop(); }
 
-  void set_timeout_sec(time_t timeout_sec) {
+  Client2 &set_timeout_sec(time_t timeout_sec) {
     cli_->set_timeout_sec(timeout_sec);
+    return *this;
   }
 
-  void set_read_timeout(time_t sec, time_t usec) {
+  Client2 &set_read_timeout(time_t sec, time_t usec) {
     cli_->set_read_timeout(sec, usec);
+    return *this;
   }
 
-  void set_keep_alive_max_count(size_t count) {
+  Client2 &set_keep_alive_max_count(size_t count) {
     cli_->set_keep_alive_max_count(count);
+    return *this;
   }
 
-  void set_basic_auth(const char *username, const char *password) {
+  Client2 &set_basic_auth(const char *username, const char *password) {
     cli_->set_basic_auth(username, password);
+    return *this;
   }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  void set_digest_auth(const char *username, const char *password) {
+  Client2 &set_digest_auth(const char *username, const char *password) {
     cli_->set_digest_auth(username, password);
+    return *this;
   }
 #endif
 
-  void set_follow_location(bool on) { cli_->set_follow_location(on); }
+  Client2 &set_follow_location(bool on) {
+    cli_->set_follow_location(on);
+    return *this;
+  }
 
-  void set_compress(bool on) { cli_->set_compress(on); }
+  Client2 &set_compress(bool on) {
+    cli_->set_compress(on);
+    return *this;
+  }
 
-  void set_interface(const char *intf) { cli_->set_interface(intf); }
+  Client2 &set_interface(const char *intf) {
+    cli_->set_interface(intf);
+    return *this;
+  }
 
-  void set_proxy(const char *host, int port) { cli_->set_proxy(host, port); }
+  Client2 &set_proxy(const char *host, int port) {
+    cli_->set_proxy(host, port);
+    return *this;
+  }
 
-  void set_proxy_basic_auth(const char *username, const char *password) {
+  Client2 &set_proxy_basic_auth(const char *username, const char *password) {
     cli_->set_proxy_basic_auth(username, password);
+    return *this;
   }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  void set_proxy_digest_auth(const char *username, const char *password) {
+  Client2 &set_proxy_digest_auth(const char *username, const char *password) {
     cli_->set_proxy_digest_auth(username, password);
+    return *this;
   }
 #endif
 
-  void set_logger(Logger logger) { cli_->set_logger(logger); }
+  Client2 &set_logger(Logger logger) {
+    cli_->set_logger(logger);
+    return *this;
+  }
 
   // SSL
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  void set_ca_cert_path(const char *ca_cert_file_path,
-                        const char *ca_cert_dir_path = nullptr) {
+  Client2 &set_ca_cert_path(const char *ca_cert_file_path,
+                            const char *ca_cert_dir_path = nullptr) {
     dynamic_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
                                                       ca_cert_dir_path);
+    return *this;
   }
 
-  void set_ca_cert_store(X509_STORE *ca_cert_store) {
+  Client2 &set_ca_cert_store(X509_STORE *ca_cert_store) {
     dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+    return *this;
   }
 
-  void enable_server_certificate_verification(bool enabled) {
+  Client2 &enable_server_certificate_verification(bool enabled) {
     dynamic_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
         enabled);
+    return *this;
   }
 
   long get_openssl_verify_result() const {

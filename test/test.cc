@@ -674,10 +674,11 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
 }
 
 TEST(HttpsToHttpRedirectTest2, Redirect) {
-  httplib::Client2 cli("https://httpbin.org");
-  cli.set_follow_location(true);
   auto res =
-      cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+      httplib::Client2("https://httpbin.org")
+          .set_follow_location(true)
+          .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
