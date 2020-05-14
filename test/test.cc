@@ -318,6 +318,64 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   EXPECT_EQ(out, body);
 }
 
+TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiverAndProgress) {
+  auto host = "127.0.0.1";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  auto port = 443;
+  httplib::SSLServer server;
+  httplib::SSLClient cli(host, port);
+#else
+  auto port = 80;
+  httplib::Server server;
+  httplib::Client cli(host, port);
+#endif
+
+  std::string out;
+  httplib::detail::read_file("./image.jpg", out);
+
+  server.Get("/image", [&](const Request&, Response& res) {
+	  res.set_chunked_content_provider([&](size_t, DataSink& sink) {
+		  sink.write(out.data(), out.size());
+		  sink.done();
+		  return true;
+	  });
+  });
+
+  auto fut = std::async(std::launch::async, [&]{
+    server.listen(host, port);
+  });
+  fut.wait_for(std::chrono::nanoseconds::zero());
+  while (!server.is_running()) std::this_thread::yield();
+
+  cli.set_timeout_sec(2);
+
+  std::string body;
+  size_t progress = 0;
+  auto res = cli.Get(
+      "/image", Headers(),
+      [&](const Response &response) {
+        EXPECT_EQ(200, response.status);
+        return true;
+      },
+      [&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      },
+      [&](size_t current, size_t total) {
+        EXPECT_LE(current, total);
+		EXPECT_LT(progress, current);
+		progress = current;
+        return true;
+      });
+  ASSERT_TRUE(res != nullptr);
+
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(out, body);
+  EXPECT_EQ(progress, body.size());
+  server.stop();
+}
+
 TEST(RangeTest, FromHTTPBin) {
   auto host = "httpbin.org";
 
