@@ -651,34 +651,11 @@ TEST(YahooRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(YahooRedirectTest2, Redirect) {
-  httplib::Client2 cli("http://yahoo.com");
-
-  auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(301, res->status);
-
-  cli.set_follow_location(true);
-  res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-}
-
 TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.set_follow_location(true);
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
-  ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-}
-
-TEST(HttpsToHttpRedirectTest2, Redirect) {
-  auto res =
-      httplib::Client2("https://httpbin.org")
-          .set_follow_location(true)
-          .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
-
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
@@ -2887,18 +2864,59 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
   t.join();
 }
-
-/* Cannot test this case as there is no external access to SSL object to check
-SSL_get_peer_certificate() == NULL TEST(SSLClientServerTest,
-ClientCAPathRequired) { SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
-nullptr, CLIENT_CA_CERT_DIR);
-}
-*/
 #endif
 
 #ifdef _WIN32
 TEST(CleanupTest, WSACleanup) {
   int ret = WSACleanup();
   ASSERT_EQ(0, ret);
+}
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(InvalidScheme, SimpleInterface) {
+  httplib::Client2 cli("scheme://yahoo.com");
+  ASSERT_FALSE(cli.is_valid());
+}
+
+TEST(NoScheme, SimpleInterface) {
+  httplib::Client2 cli("yahoo.com");
+  ASSERT_FALSE(cli.is_valid());
+}
+
+TEST(YahooRedirectTest2, SimpleInterface) {
+  httplib::Client2 cli("http://yahoo.com");
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(301, res->status);
+
+  cli.set_follow_location(true);
+  res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST(YahooRedirectTest3, SimpleInterface) {
+  httplib::Client2 cli("https://yahoo.com");
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(301, res->status);
+
+  cli.set_follow_location(true);
+  res = cli.Get("/");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
+  auto res =
+      httplib::Client2("https://httpbin.org")
+          .set_follow_location(true)
+          .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
 }
 #endif
