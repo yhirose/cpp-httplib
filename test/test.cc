@@ -664,19 +664,6 @@ TEST(YahooRedirectTest2, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(YahooRedirectTestWithURL, Redirect) {
-  auto res = httplib::url::Get("http://yahoo.com");
-  ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(301, res->status);
-
-  httplib::url::Config config;
-  config.follow_location = true;
-
-  res = httplib::url::Get("http://yahoo.com", config);
-  ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-}
-
 TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.set_follow_location(true);
@@ -691,19 +678,6 @@ TEST(HttpsToHttpRedirectTest2, Redirect) {
   cli.set_follow_location(true);
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
-  ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
-}
-
-TEST(HttpsToHttpRedirectTestWithURL, Redirect) {
-  httplib::url::Config config;
-  config.follow_location = true;
-
-  auto res = httplib::url::Get(
-      "https://httpbin.org/"
-      "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302",
-      config);
-
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }

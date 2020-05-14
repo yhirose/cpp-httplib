@@ -5099,167 +5099,6 @@ inline bool SSLClient::check_host_name(const char *pattern,
 }
 #endif
 
-namespace url {
-
-struct Config {
-  Headers headers;
-  std::string body;
-
-  size_t redirect_count = CPPHTTPLIB_REDIRECT_MAX_COUNT;
-  ResponseHandler response_handler;
-  ContentReceiver content_receiver;
-  size_t content_length = 0;
-  ContentProvider content_provider;
-  Progress progress;
-
-  time_t timeout_sec = 300;
-  time_t read_timeout_sec = CPPHTTPLIB_READ_TIMEOUT_SECOND;
-  time_t read_timeout_usec = CPPHTTPLIB_READ_TIMEOUT_USECOND;
-  size_t keep_alive_max_count = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
-  std::string basic_auth_username;
-  std::string basic_auth_password;
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  std::string digest_auth_username;
-  std::string digest_auth_password;
-#endif
-  bool follow_location = false;
-  bool compress = false;
-  std::string interface;
-  std::string proxy_host;
-  int proxy_port;
-  std::string proxy_basic_auth_username;
-  std::string proxy_basic_auth_password;
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  std::string proxy_digest_auth_username;
-  std::string proxy_digest_auth_password;
-#endif
-  Logger logger;
-
-  // For SSL
-  std::string client_cert_path;
-  std::string client_key_path;
-
-  std::string ca_cert_file_path;
-  std::string ca_cert_dir_path;
-  bool server_certificate_verification = false;
-};
-
-namespace detail {
-
-inline std::shared_ptr<Response> send_core(Client &cli, const char *method,
-                                           const std::string &path,
-                                           Config &config) {
-  Request req;
-  req.method = method;
-  req.path = path;
-  req.headers = config.headers;
-  req.response_handler = config.response_handler;
-  req.content_receiver = config.content_receiver;
-  req.progress = config.progress;
-
-  cli.set_timeout_sec(config.timeout_sec);
-  cli.set_read_timeout(config.read_timeout_sec, config.read_timeout_usec);
-  cli.set_keep_alive_max_count(config.keep_alive_max_count);
-  cli.set_basic_auth(config.basic_auth_username.c_str(),
-                     config.basic_auth_password.c_str());
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  cli.set_digest_auth(config.digest_auth_username.c_str(),
-                      config.digest_auth_password.c_str());
-#endif
-  cli.set_follow_location(config.follow_location);
-  cli.set_compress(config.compress);
-  cli.set_interface(config.interface.c_str());
-  cli.set_proxy(config.proxy_host.c_str(), config.proxy_port);
-  cli.set_proxy_basic_auth(config.proxy_basic_auth_username.c_str(),
-                           config.proxy_basic_auth_password.c_str());
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  cli.set_proxy_digest_auth(config.proxy_digest_auth_username.c_str(),
-                            config.proxy_digest_auth_password.c_str());
-#endif
-  cli.set_logger(config.logger);
-
-  auto res = std::make_shared<Response>();
-  return cli.send(req, *res) ? res : nullptr;
-}
-
-} // namespace detail
-
-inline std::shared_ptr<Response> send(const char *method, const char *url,
-                                      Config &config) {
-  const static std::regex re(
-      R"(^(https?)://([^:/?#]+)(?::(\d+))?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
-
-  std::cmatch m;
-  if (!std::regex_match(url, m, re)) { return nullptr; }
-
-  auto scheme = m[1].str();
-  auto host = m[2].str();
-  auto port_str = m[3].str();
-  auto path = m[4].str();
-
-  auto port =
-      !port_str.empty() ? std::stoi(port_str) : (scheme == "https" ? 443 : 80);
-
-  if (path.empty()) { path = "/"; }
-
-  if (scheme == "https") {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    SSLClient cli(host.c_str(), port, config.client_cert_path,
-                  config.client_key_path);
-    cli.set_ca_cert_path(config.ca_cert_file_path.c_str(),
-                         config.ca_cert_dir_path.c_str());
-    cli.enable_server_certificate_verification(
-        config.server_certificate_verification);
-
-    return detail::send_core(cli, method, path, config);
-#else
-    return nullptr;
-#endif
-  } else {
-    Client cli(host.c_str(), port, config.client_cert_path,
-               config.client_key_path);
-
-    return detail::send_core(cli, method, path, config);
-  }
-}
-
-inline std::shared_ptr<Response> Get(const char *url,
-                                     Config config = Config()) {
-  return send("GET", url, config);
-}
-
-inline std::shared_ptr<Response> Head(const char *url,
-                                      Config config = Config()) {
-  return send("HEAD", url, config);
-}
-
-inline std::shared_ptr<Response> Post(const char *url,
-                                      Config config = Config()) {
-  return send("POST", url, config);
-}
-
-inline std::shared_ptr<Response> Put(const char *url,
-                                     Config config = Config()) {
-  return send("PUT", url, config);
-}
-
-inline std::shared_ptr<Response> Patch(const char *url,
-                                       Config config = Config()) {
-  return send("PATCH", url, config);
-}
-
-inline std::shared_ptr<Response> Delete(const char *url,
-                                        Config config = Config()) {
-  return send("DELETE", url, config);
-}
-
-inline std::shared_ptr<Response> Options(const char *url,
-                                         Config config = Config()) {
-  return send("DELETE", url, config);
-}
-
-} // namespace url
-
 class Client2 {
 public:
   explicit Client2(const char *host_and_port,
@@ -5538,29 +5377,24 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_ca_cert_path(const char *ca_cert_file_path,
                         const char *ca_cert_dir_path = nullptr) {
-    assert(is_valid() && is_ssl_);
     dynamic_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
                                                       ca_cert_dir_path);
   }
 
   void set_ca_cert_store(X509_STORE *ca_cert_store) {
-    assert(is_valid() && is_ssl_);
     dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
   }
 
   void enable_server_certificate_verification(bool enabled) {
-    assert(is_valid() && is_ssl_);
     dynamic_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
         enabled);
   }
 
   long get_openssl_verify_result() const {
-    assert(is_valid() && is_ssl_);
     return dynamic_cast<SSLClient &>(*cli_).get_openssl_verify_result();
   }
 
   SSL_CTX *ssl_context() const {
-    assert(is_valid() && is_ssl_);
     return dynamic_cast<SSLClient &>(*cli_).ssl_context();
   }
 #endif
