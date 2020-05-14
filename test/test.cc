@@ -899,20 +899,21 @@ protected:
         .Get("/streamed-chunked",
              [&](const Request & /*req*/, Response &res) {
                res.set_chunked_content_provider(
-                   [](uint64_t /*offset*/, DataSink &sink) {
-                     ASSERT_TRUE(sink.is_writable());
+                   [](size_t /*offset*/, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
                      sink.write("123", 3);
                      sink.write("456", 3);
                      sink.write("789", 3);
                      sink.done();
+                     return true;
                    });
              })
         .Get("/streamed-chunked2",
              [&](const Request & /*req*/, Response &res) {
                auto i = new int(0);
                res.set_chunked_content_provider(
-                   [i](uint64_t /*offset*/, DataSink &sink) {
-                     ASSERT_TRUE(sink.is_writable());
+                   [i](size_t /*offset*/, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
                      switch (*i) {
                      case 0: sink.write("123", 3); break;
                      case 1: sink.write("456", 3); break;
@@ -920,14 +921,16 @@ protected:
                      case 3: sink.done(); break;
                      }
                      (*i)++;
+                     return true;
                    },
                    [i] { delete i; });
              })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   6, [](uint64_t offset, uint64_t /*length*/, DataSink &sink) {
+                   6, [](size_t offset, size_t /*length*/, DataSink &sink) {
                      sink.write(offset < 3 ? "a" : "b", 1);
+                     return true;
                    });
              })
         .Get("/streamed-with-range",
@@ -935,25 +938,27 @@ protected:
                auto data = new std::string("abcdefg");
                res.set_content_provider(
                    data->size(),
-                   [data](uint64_t offset, uint64_t length, DataSink &sink) {
-                     ASSERT_TRUE(sink.is_writable());
+                   [data](size_t offset, size_t length, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
                      size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
                      auto out_len =
                          std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
                      sink.write(&d[static_cast<size_t>(offset)], out_len);
+                     return true;
                    },
                    [data] { delete data; });
              })
         .Get("/streamed-cancel",
              [&](const Request & /*req*/, Response &res) {
-               res.set_content_provider(size_t(-1), [](uint64_t /*offset*/,
-                                                       uint64_t /*length*/,
-                                                       DataSink &sink) {
-                 ASSERT_TRUE(sink.is_writable());
-                 std::string data = "data_chunk";
-                 sink.write(data.data(), data.size());
-               });
+               res.set_content_provider(
+                   size_t(-1),
+                   [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
+                     std::string data = "data_chunk";
+                     sink.write(data.data(), data.size());
+                     return true;
+                   });
              })
         .Get("/with-range",
              [&](const Request & /*req*/, Response &res) {
@@ -1918,8 +1923,9 @@ TEST_F(ServerTest, PutWithContentProvider) {
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        ASSERT_TRUE(sink.is_writable());
+        EXPECT_TRUE(sink.is_writable());
         sink.write("PUT", 3);
+        return true;
       },
       "text/plain");
 
@@ -1928,20 +1934,44 @@ TEST_F(ServerTest, PutWithContentProvider) {
   EXPECT_EQ("PUT", res->body);
 }
 
+TEST_F(ServerTest, PostWithContentProviderAbort) {
+  auto res = cli_.Post(
+      "/post", 42,
+      [](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) {
+        return false;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res == nullptr);
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   cli_.set_compress(true);
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        ASSERT_TRUE(sink.is_writable());
+        EXPECT_TRUE(sink.is_writable());
         sink.write("PUT", 3);
+        return true;
       },
       "text/plain");
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, PostWithContentProviderWithGzipAbort) {
+  cli_.set_compress(true);
+  auto res = cli_.Post(
+      "/post", 42,
+      [](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) {
+        return false;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res == nullptr);
 }
 
 TEST_F(ServerTest, PutLargeFileWithGzip) {
@@ -2091,8 +2121,8 @@ TEST_F(ServerTest, KeepAlive) {
   Get(requests, "/not-exist");
   Post(requests, "/empty", "", "text/plain");
   Post(
-      requests, "/empty", 0, [&](size_t, size_t, httplib::DataSink &) {},
-      "text/plain");
+      requests, "/empty", 0,
+      [&](size_t, size_t, httplib::DataSink &) { return true; }, "text/plain");
 
   std::vector<Response> responses;
   auto ret = cli_.send(requests, responses);
@@ -2440,6 +2470,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
       auto size = static_cast<size_t>(sprintf(buffer, "data:%ld\n\n", offset));
       sink.write(buffer, size);
       std::this_thread::sleep_for(std::chrono::seconds(1));
+      return true;
     });
   });
 

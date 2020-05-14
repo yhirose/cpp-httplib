@@ -227,7 +227,10 @@ public:
 };
 
 using ContentProvider =
-    std::function<void(size_t offset, size_t length, DataSink &sink)>;
+    std::function<bool(size_t offset, size_t length, DataSink &sink)>;
+
+using ChunkedContentProvider =
+    std::function<bool(size_t offset, DataSink &sink)>;
 
 using ContentReceiver =
     std::function<bool(const char *data, size_t data_length)>;
@@ -323,13 +326,11 @@ struct Response {
   void set_content(std::string s, const char *content_type);
 
   void set_content_provider(
-      size_t length,
-      std::function<void(size_t offset, size_t length, DataSink &sink)>
-          provider,
+      size_t length, ContentProvider provider,
       std::function<void()> resource_releaser = [] {});
 
   void set_chunked_content_provider(
-      std::function<void(size_t offset, DataSink &sink)> provider,
+      ChunkedContentProvider provider,
       std::function<void()> resource_releaser = [] {});
 
   Response() = default;
@@ -2074,22 +2075,25 @@ inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
                              size_t offset, size_t length) {
   size_t begin_offset = offset;
   size_t end_offset = offset + length;
+
+  ssize_t written_length = 0;
+
+  DataSink data_sink;
+  data_sink.write = [&](const char *d, size_t l) {
+    offset += l;
+    written_length = strm.write(d, l);
+  };
+  data_sink.is_writable = [&](void) {
+    return strm.is_writable() && written_length >= 0;
+  };
+
   while (offset < end_offset) {
-    ssize_t written_length = 0;
-
-    DataSink data_sink;
-    data_sink.write = [&](const char *d, size_t l) {
-      offset += l;
-      written_length = strm.write(d, l);
-    };
-    data_sink.done = [&](void) { written_length = -1; };
-    data_sink.is_writable = [&](void) {
-      return strm.is_writable() && written_length >= 0;
-    };
-
-    content_provider(offset, end_offset - offset, data_sink);
+    if (!content_provider(offset, end_offset - offset, data_sink)) {
+      return -1;
+    }
     if (written_length < 0) { return written_length; }
   }
+
   return static_cast<ssize_t>(offset - begin_offset);
 }
 
@@ -2100,31 +2104,32 @@ inline ssize_t write_content_chunked(Stream &strm,
   size_t offset = 0;
   auto data_available = true;
   ssize_t total_written_length = 0;
+
+  ssize_t written_length = 0;
+
+  DataSink data_sink;
+  data_sink.write = [&](const char *d, size_t l) {
+    data_available = l > 0;
+    offset += l;
+
+    // Emit chunked response header and footer for each chunk
+    auto chunk = from_i_to_hex(l) + "\r\n" + std::string(d, l) + "\r\n";
+    written_length = strm.write(chunk);
+  };
+  data_sink.done = [&](void) {
+    data_available = false;
+    written_length = strm.write("0\r\n\r\n");
+  };
+  data_sink.is_writable = [&](void) {
+    return strm.is_writable() && written_length >= 0;
+  };
+
   while (data_available && !is_shutting_down()) {
-    ssize_t written_length = 0;
-
-    DataSink data_sink;
-    data_sink.write = [&](const char *d, size_t l) {
-      data_available = l > 0;
-      offset += l;
-
-      // Emit chunked response header and footer for each chunk
-      auto chunk = from_i_to_hex(l) + "\r\n" + std::string(d, l) + "\r\n";
-      written_length = strm.write(chunk);
-    };
-    data_sink.done = [&](void) {
-      data_available = false;
-      written_length = strm.write("0\r\n\r\n");
-    };
-    data_sink.is_writable = [&](void) {
-      return strm.is_writable() && written_length >= 0;
-    };
-
-    content_provider(offset, 0, data_sink);
-
+    if (!content_provider(offset, 0, data_sink)) { return -1; }
     if (written_length < 0) { return written_length; }
     total_written_length += written_length;
   }
+
   return total_written_length;
 }
 
@@ -2904,24 +2909,23 @@ inline void Response::set_content(std::string s, const char *content_type) {
   set_header("Content-Type", content_type);
 }
 
-inline void Response::set_content_provider(
-    size_t in_length,
-    std::function<void(size_t offset, size_t length, DataSink &sink)> provider,
-    std::function<void()> resource_releaser) {
+inline void
+Response::set_content_provider(size_t in_length, ContentProvider provider,
+                               std::function<void()> resource_releaser) {
   assert(in_length > 0);
   content_length = in_length;
   content_provider = [provider](size_t offset, size_t length, DataSink &sink) {
-    provider(offset, length, sink);
+    return provider(offset, length, sink);
   };
   content_provider_resource_releaser = resource_releaser;
 }
 
 inline void Response::set_chunked_content_provider(
-    std::function<void(size_t offset, DataSink &sink)> provider,
+    ChunkedContentProvider provider,
     std::function<void()> resource_releaser) {
   content_length = 0;
   content_provider = [provider](size_t offset, size_t, DataSink &sink) {
-    provider(offset, sink);
+    return provider(offset, sink);
   };
   content_provider_resource_releaser = resource_releaser;
 }
@@ -4106,15 +4110,22 @@ inline bool Client::write_request(Stream &strm, const Request &req,
       size_t offset = 0;
       size_t end_offset = req.content_length;
 
+      ssize_t written_length = 0;
+
       DataSink data_sink;
       data_sink.write = [&](const char *d, size_t l) {
-        auto written_length = strm.write(d, l);
+        written_length = strm.write(d, l);
         offset += static_cast<size_t>(written_length);
       };
-      data_sink.is_writable = [&](void) { return strm.is_writable(); };
+      data_sink.is_writable = [&](void) {
+        return strm.is_writable() && written_length >= 0;
+      };
 
       while (offset < end_offset) {
-        req.content_provider(offset, end_offset - offset, data_sink);
+        if (!req.content_provider(offset, end_offset - offset, data_sink)) {
+          return false;
+        }
+        if (written_length < 0) { return false; }
       }
     }
   } else {
@@ -4148,7 +4159,9 @@ inline std::shared_ptr<Response> Client::send_with_content_provider(
       data_sink.is_writable = [&](void) { return true; };
 
       while (offset < content_length) {
-        content_provider(offset, content_length - offset, data_sink);
+        if (!content_provider(offset, content_length - offset, data_sink)) {
+          return nullptr;
+        }
       }
     } else {
       req.body = body;

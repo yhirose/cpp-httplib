@@ -181,6 +181,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
     [data](size_t offset, size_t length, DataSink &sink) {
       const auto &d = *data;
       sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+      return true; // return 'false' if you want to cancel the process.
     },
     [data] { delete data; });
 });
@@ -192,10 +193,11 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 svr.Get("/chunked", [&](const Request& req, Response& res) {
   res.set_chunked_content_provider(
     [](size_t offset, DataSink &sink) {
-       sink.write("123", 3);
-       sink.write("345", 3);
-       sink.write("789", 3);
-       sink.done();
+      sink.write("123", 3);
+      sink.write("345", 3);
+      sink.write("789", 3);
+      sink.done();
+      return true; // return 'false' if you want to cancel the process.
     }
   );
 });
@@ -363,6 +365,35 @@ res = cli.Options("/resource/foo");
 ```c++
 cli.set_timeout_sec(5); // timeouts in 5 seconds
 ```
+### Receive content with Content receiver
+
+```cpp
+std::string body;
+auto res = cli.Get(
+  "/stream", Headers(),
+  [&](const Response &response) {
+    EXPECT_EQ(200, response.status);
+    return true; // return 'false' if you want to cancel the request.
+  },
+  [&](const char *data, size_t data_length) {
+    body.append(data, data_length);
+    return true; // return 'false' if you want to cancel the request.
+  });
+```
+
+### Send content with Content provider
+
+```cpp
+std::string body = ...;
+auto res = cli_.Post(
+  "/stream", body.size(),
+  [](size_t offset, size_t length, DataSink &sink) {
+    sink.write(body.data() + offset, length);
+    return true; // return 'false' if you want to cancel the request.
+  },
+  "text/plain");
+```
+
 ### With Progress Callback
 
 ```cpp
