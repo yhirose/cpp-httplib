@@ -280,9 +280,10 @@ struct Request {
 
   // for client
   size_t redirect_count = CPPHTTPLIB_REDIRECT_MAX_COUNT;
-  size_t authorization_count = 1;
   ResponseHandler response_handler;
   ContentReceiver content_receiver;
+  size_t content_length = 0;
+  ContentProvider content_provider;
   Progress progress;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -305,8 +306,7 @@ struct Request {
   MultipartFormData get_file_value(const char *key) const;
 
   // private members...
-  size_t content_length;
-  ContentProvider content_provider;
+  size_t authorization_count_ = 1;
 };
 
 struct Response {
@@ -339,15 +339,15 @@ struct Response {
   Response(Response &&) = default;
   Response &operator=(Response &&) = default;
   ~Response() {
-    if (content_provider_resource_releaser) {
-      content_provider_resource_releaser();
+    if (content_provider_resource_releaser_) {
+      content_provider_resource_releaser_();
     }
   }
 
   // private members...
-  size_t content_length = 0;
-  ContentProvider content_provider;
-  std::function<void()> content_provider_resource_releaser;
+  size_t content_length_ = 0;
+  ContentProvider content_provider_;
+  std::function<void()> content_provider_resource_releaser_;
 };
 
 class Stream {
@@ -901,14 +901,14 @@ public:
                      const std::string &client_cert_path = std::string(),
                      const std::string &client_key_path = std::string());
 
-  SSLClient(const std::string &host, int port, X509 *client_cert,
-            EVP_PKEY *client_key);
+  explicit SSLClient(const std::string &host, int port, X509 *client_cert,
+                     EVP_PKEY *client_key);
 
   ~SSLClient() override;
 
   bool is_valid() const override;
 
-  void set_ca_cert_path(const char *ca_ceert_file_path,
+  void set_ca_cert_path(const char *ca_cert_file_path,
                         const char *ca_cert_dir_path = nullptr);
 
   void set_ca_cert_store(X509_STORE *ca_cert_store);
@@ -2597,7 +2597,7 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
       [&](const std::string &token) { strm.write(token); },
       [&](const char *token) { strm.write(token); },
       [&](size_t offset, size_t length) {
-        return write_content(strm, res.content_provider, offset, length) >= 0;
+        return write_content(strm, res.content_provider_, offset, length) >= 0;
       });
 }
 
@@ -2607,7 +2607,7 @@ get_range_offset_and_length(const Request &req, const Response &res,
   auto r = req.ranges[index];
 
   if (r.second == -1) {
-    r.second = static_cast<ssize_t>(res.content_length) - 1;
+    r.second = static_cast<ssize_t>(res.content_length_) - 1;
   }
 
   return std::make_pair(r.first, r.second - r.first + 1);
@@ -2913,21 +2913,20 @@ inline void
 Response::set_content_provider(size_t in_length, ContentProvider provider,
                                std::function<void()> resource_releaser) {
   assert(in_length > 0);
-  content_length = in_length;
-  content_provider = [provider](size_t offset, size_t length, DataSink &sink) {
+  content_length_ = in_length;
+  content_provider_ = [provider](size_t offset, size_t length, DataSink &sink) {
     return provider(offset, length, sink);
   };
-  content_provider_resource_releaser = resource_releaser;
+  content_provider_resource_releaser_ = resource_releaser;
 }
 
 inline void Response::set_chunked_content_provider(
-    ChunkedContentProvider provider,
-    std::function<void()> resource_releaser) {
-  content_length = 0;
-  content_provider = [provider](size_t offset, size_t, DataSink &sink) {
+    ChunkedContentProvider provider, std::function<void()> resource_releaser) {
+  content_length_ = 0;
+  content_provider_ = [provider](size_t offset, size_t, DataSink &sink) {
     return provider(offset, sink);
   };
-  content_provider_resource_releaser = resource_releaser;
+  content_provider_resource_releaser_ = resource_releaser;
 }
 
 // Rstream implementation
@@ -3250,7 +3249,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
   }
 
   if (!res.has_header("Content-Type") &&
-      (!res.body.empty() || res.content_length > 0)) {
+      (!res.body.empty() || res.content_length_ > 0)) {
     res.set_header("Content-Type", "text/plain");
   }
 
@@ -3275,17 +3274,17 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
   }
 
   if (res.body.empty()) {
-    if (res.content_length > 0) {
+    if (res.content_length_ > 0) {
       size_t length = 0;
       if (req.ranges.empty()) {
-        length = res.content_length;
+        length = res.content_length_;
       } else if (req.ranges.size() == 1) {
         auto offsets =
-            detail::get_range_offset_and_length(req, res.content_length, 0);
+            detail::get_range_offset_and_length(req, res.content_length_, 0);
         auto offset = offsets.first;
         length = offsets.second;
         auto content_range = detail::make_content_range_header_field(
-            offset, length, res.content_length);
+            offset, length, res.content_length_);
         res.set_header("Content-Range", content_range);
       } else {
         length = detail::get_multipart_ranges_data_length(req, res, boundary,
@@ -3293,7 +3292,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
       }
       res.set_header("Content-Length", std::to_string(length));
     } else {
-      if (res.content_provider) {
+      if (res.content_provider_) {
         res.set_header("Transfer-Encoding", "chunked");
       } else {
         res.set_header("Content-Length", "0");
@@ -3341,7 +3340,7 @@ inline bool Server::write_response(Stream &strm, bool last_connection,
   if (req.method != "HEAD") {
     if (!res.body.empty()) {
       if (!strm.write(res.body)) { return false; }
-    } else if (res.content_provider) {
+    } else if (res.content_provider_) {
       if (!write_content_with_provider(strm, req, res, boundary,
                                        content_type)) {
         return false;
@@ -3359,18 +3358,18 @@ inline bool
 Server::write_content_with_provider(Stream &strm, const Request &req,
                                     Response &res, const std::string &boundary,
                                     const std::string &content_type) {
-  if (res.content_length) {
+  if (res.content_length_) {
     if (req.ranges.empty()) {
-      if (detail::write_content(strm, res.content_provider, 0,
-                                res.content_length) < 0) {
+      if (detail::write_content(strm, res.content_provider_, 0,
+                                res.content_length_) < 0) {
         return false;
       }
     } else if (req.ranges.size() == 1) {
       auto offsets =
-          detail::get_range_offset_and_length(req, res.content_length, 0);
+          detail::get_range_offset_and_length(req, res.content_length_, 0);
       auto offset = offsets.first;
       auto length = offsets.second;
-      if (detail::write_content(strm, res.content_provider, offset, length) <
+      if (detail::write_content(strm, res.content_provider_, offset, length) <
           0) {
         return false;
       }
@@ -3384,7 +3383,7 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
     auto is_shutting_down = [this]() {
       return this->svr_sock_ == INVALID_SOCKET;
     };
-    if (detail::write_content_chunked(strm, res.content_provider,
+    if (detail::write_content_chunked(strm, res.content_provider_,
                                       is_shutting_down) < 0) {
       return false;
     }
@@ -3902,7 +3901,7 @@ inline bool Client::handle_request(Stream &strm, const Request &req,
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if ((res.status == 401 || res.status == 407) &&
-      req.authorization_count == 1) {
+      req.authorization_count_ == 1) {
     auto is_proxy = res.status == 407;
     const auto &username =
         is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;
@@ -3913,12 +3912,12 @@ inline bool Client::handle_request(Stream &strm, const Request &req,
       std::map<std::string, std::string> auth;
       if (parse_www_authenticate(res, auth, is_proxy)) {
         Request new_req = req;
-        new_req.authorization_count += 1;
+        new_req.authorization_count_ += 1;
         auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
         new_req.headers.erase(key);
         new_req.headers.insert(make_digest_authentication_header(
-            req, auth, new_req.authorization_count, random_string(10), username,
-            password, is_proxy));
+            req, auth, new_req.authorization_count_, random_string(10),
+            username, password, is_proxy));
 
         Response new_res;
 
