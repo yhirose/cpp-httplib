@@ -1950,7 +1950,7 @@ inline bool read_content_without_length(Stream &strm, ContentReceiver out) {
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
+inline bool read_content_chunked(Stream &strm, Progress progress, ContentReceiver out) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -1969,7 +1969,7 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
 
     if (chunk_len == 0) { break; }
 
-    if (!read_content_with_length(strm, chunk_len, nullptr, out)) {
+    if (!read_content_with_length(strm, chunk_len, progress, out)) {
       return false;
     }
 
@@ -2029,7 +2029,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
   auto exceed_payload_max_length = false;
 
   if (is_chunked_transfer_encoding(x.headers)) {
-    ret = read_content_chunked(strm, out);
+    ret = read_content_chunked(strm, progress, out);
   } else if (!has_header(x.headers, "Content-Length")) {
     ret = read_content_without_length(strm, out);
   } else {
