@@ -800,6 +800,7 @@ protected:
 #endif
     follow_location_ = rhs.follow_location_;
     compress_ = rhs.compress_;
+    decompress_ = rhs.decompress_;
     interface_ = rhs.interface_;
     proxy_host_ = rhs.proxy_host_;
     proxy_port_ = rhs.proxy_port_;
