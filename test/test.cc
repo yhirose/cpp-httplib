@@ -2266,6 +2266,21 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
+
+TEST_F(ServerTest, GzipWithoutDecompressing) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+
+  cli_.set_decompress(false);
+
+  auto res = cli_.Get("/gzip", headers);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("application/json", res->get_header_value("Content-Type"));
+  EXPECT_EQ("202", res->get_header_value("Content-Length"));
+  EXPECT_EQ(200, res->status);
+}
 #endif
 
 // Sends a raw request to a server listening at HOST:PORT.
