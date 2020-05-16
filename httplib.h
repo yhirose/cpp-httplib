@@ -333,7 +333,7 @@ struct Request {
   MultipartFormData get_file_value(const char *key) const;
 
   // private members...
-  size_t authorization_count_ = 1;
+  size_t authorization_count_ = 0;
 };
 
 struct Response {
@@ -3995,7 +3995,7 @@ inline bool Client::handle_request(Stream &strm, const Request &req,
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if ((res.status == 401 || res.status == 407) &&
-      req.authorization_count_ == 1) {
+      req.authorization_count_ < 5) {
     auto is_proxy = res.status == 407;
     const auto &username =
         is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;

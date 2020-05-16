@@ -185,15 +185,17 @@ void DigestAuthTestFromHTTPWatch(Client& cli) {
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ(400, res->status);
+      EXPECT_EQ(401, res->status);
     }
 
-    cli.set_digest_auth("bad", "world");
-    for (auto path : paths) {
-      auto res = cli.Get(path.c_str());
-      ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ(400, res->status);
-    }
+    // NOTE: Until httpbin.org fixes issue #46, the following test is commented
+    // out. Plese see https://httpbin.org/digest-auth/auth/hello/world
+    // cli.set_digest_auth("bad", "world");
+    // for (auto path : paths) {
+    //   auto res = cli.Get(path.c_str());
+    //   ASSERT_TRUE(res != nullptr);
+    //   EXPECT_EQ(401, res->status);
+    // }
   }
 }
 
@@ -266,7 +268,7 @@ void KeepAliveTest(Client& cli, bool basic) {
 
 
   {
-    int count = paths.size();
+    int count = static_cast<int>(paths.size());
     while (count--) {
       auto &res = responses[i++];
       EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res.body);
