@@ -2197,9 +2197,7 @@ inline ssize_t write_content_chunked(Stream &strm,
       }
     }
   };
-  data_sink.is_writable = [&](void) {
-    return ok && strm.is_writable();
-  };
+  data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
   while (data_available && !is_shutting_down()) {
     if (!content_provider(offset, 0, data_sink)) { return -1; }
@@ -4197,9 +4195,7 @@ inline bool Client::write_request(Stream &strm, const Request &req,
 
   // Flush buffer
   auto &data = bstrm.get_buffer();
-  if (!detail::write_data(strm, data.data(), data.size())) {
-    return false;
-  }
+  if (!detail::write_data(strm, data.data(), data.size())) { return false; }
 
   // Body
   if (req.body.empty()) {
@@ -4219,9 +4215,7 @@ inline bool Client::write_request(Stream &strm, const Request &req,
           }
         }
       };
-      data_sink.is_writable = [&](void) {
-        return ok && strm.is_writable();
-      };
+      data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
       while (offset < end_offset) {
         if (!req.content_provider(offset, end_offset - offset, data_sink)) {

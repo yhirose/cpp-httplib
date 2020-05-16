@@ -334,7 +334,7 @@ TEST(RangeTest, FromHTTPBin) {
     httplib::Headers headers;
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
   }
 
@@ -342,7 +342,7 @@ TEST(RangeTest, FromHTTPBin) {
     httplib::Headers headers = {httplib::make_range_header({{1, -1}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body, "bcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ("bcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(206, res->status);
   }
 
@@ -350,7 +350,7 @@ TEST(RangeTest, FromHTTPBin) {
     httplib::Headers headers = {httplib::make_range_header({{1, 10}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body, "bcdefghijk");
+    EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(206, res->status);
   }
 
@@ -358,7 +358,7 @@ TEST(RangeTest, FromHTTPBin) {
     httplib::Headers headers = {httplib::make_range_header({{0, 31}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
   }
 
@@ -366,7 +366,7 @@ TEST(RangeTest, FromHTTPBin) {
     httplib::Headers headers = {httplib::make_range_header({{0, -1}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+    EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
   }
 
@@ -440,7 +440,7 @@ TEST(CancelTest, NoCancel) {
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(res->body, "abcdefghijklmnopqrstuvwxyzabcdef");
+  EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
   EXPECT_EQ(200, res->status);
 }
 
@@ -501,8 +501,8 @@ TEST(BaseAuthTest, FromHTTPWatch) {
         cli.Get("/basic-auth/hello/world",
                 {httplib::make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body,
-              "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
+    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
+              res->body);
     EXPECT_EQ(200, res->status);
   }
 
@@ -510,8 +510,8 @@ TEST(BaseAuthTest, FromHTTPWatch) {
     cli.set_basic_auth("hello", "world");
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(res->body,
-              "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
+    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
+              res->body);
     EXPECT_EQ(200, res->status);
   }
 
@@ -554,8 +554,8 @@ TEST(DigestAuthTest, FromHTTPWatch) {
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ(res->body,
-                "{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n");
+      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
+                res->body);
       EXPECT_EQ(200, res->status);
     }
 
@@ -689,7 +689,7 @@ TEST(RedirectToDifferentPort, Redirect) {
   auto res = cli.Get("/1");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ(res->body, "Hello World!");
+  EXPECT_EQ("Hello World!", res->body);
 
   svr8080.stop();
   svr8081.stop();
@@ -718,7 +718,7 @@ TEST(Server, BindDualStack) {
     auto res = cli.Get("/1");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
-    EXPECT_EQ(res->body, "Hello World!");
+    EXPECT_EQ("Hello World!", res->body);
   }
   {
     Client cli("::1", PORT);
@@ -726,7 +726,7 @@ TEST(Server, BindDualStack) {
     auto res = cli.Get("/1");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(200, res->status);
-    EXPECT_EQ(res->body, "Hello World!");
+    EXPECT_EQ("Hello World!", res->body);
   }
   svr.stop();
   thread.join();
@@ -808,10 +808,10 @@ protected:
                res.set_content("slow", "text/plain");
              })
         .Post("/slowpost",
-             [&](const Request & /*req*/, Response &res) {
-               std::this_thread::sleep_for(std::chrono::seconds(2));
-               res.set_content("slow", "text/plain");
-             })
+              [&](const Request & /*req*/, Response &res) {
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                res.set_content("slow", "text/plain");
+              })
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
@@ -1893,14 +1893,18 @@ TEST_F(ServerTest, SlowRequest) {
 TEST_F(ServerTest, SlowPost) {
   char buffer[64 * 1024];
   memset(buffer, 0x42, sizeof(buffer));
+
   auto res = cli_.Post(
-      "/slowpost", 64*1024*1024,
-      [&] (size_t /*offset*/, size_t /*length*/, DataSink & sink) {
-        sink.write(buffer, sizeof(buffer)); return true;
+      "/slowpost", 64 * 1024 * 1024,
+      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.write(buffer, sizeof(buffer));
+        return true;
       },
       "text/plain");
+
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
+
   cli_.set_write_timeout(0, 0);
   res = cli_.Post(
       "/slowpost", 64 * 1024 * 1024,
@@ -1909,6 +1913,7 @@ TEST_F(ServerTest, SlowPost) {
         return true;
       },
       "text/plain");
+
   ASSERT_FALSE(res != nullptr);
 }
 
@@ -2465,7 +2470,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   svr.Get("/events", [](const Request & /*req*/, Response &res) {
     res.set_header("Content-Type", "text/event-stream");
     res.set_header("Cache-Control", "no-cache");
-    res.set_chunked_content_provider([](size_t offset, const DataSink &sink) {
+    res.set_chunked_content_provider([](size_t offset, DataSink &sink) {
       char buffer[27];
       auto size = static_cast<size_t>(sprintf(buffer, "data:%ld\n\n", offset));
       sink.write(buffer, size);
