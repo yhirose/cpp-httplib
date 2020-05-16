@@ -807,6 +807,11 @@ protected:
                std::this_thread::sleep_for(std::chrono::seconds(2));
                res.set_content("slow", "text/plain");
              })
+        .Post("/slowpost",
+             [&](const Request & /*req*/, Response &res) {
+               std::this_thread::sleep_for(std::chrono::seconds(2));
+               res.set_content("slow", "text/plain");
+             })
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
@@ -1885,6 +1890,28 @@ TEST_F(ServerTest, SlowRequest) {
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
+TEST_F(ServerTest, SlowPost) {
+  char buffer[64 * 1024];
+  memset(buffer, 0x42, sizeof(buffer));
+  auto res = cli_.Post(
+      "/slowpost", 64*1024*1024,
+      [&] (size_t /*offset*/, size_t /*length*/, DataSink & sink) {
+        sink.write(buffer, sizeof(buffer)); return true;
+      },
+      "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  cli_.set_write_timeout(0, 0);
+  res = cli_.Post(
+      "/slowpost", 64 * 1024 * 1024,
+      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.write(buffer, sizeof(buffer));
+        return true;
+      },
+      "text/plain");
+  ASSERT_FALSE(res != nullptr);
+}
+
 TEST_F(ServerTest, Put) {
   auto res = cli_.Put("/put", "PUT", "text/plain");
   ASSERT_TRUE(res != nullptr);
@@ -2253,7 +2280,7 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   if (client_sock == INVALID_SOCKET) { return false; }
 
   return detail::process_and_close_socket(
-      true, client_sock, 1, read_timeout_sec, 0,
+      true, client_sock, 1, read_timeout_sec, 0, 0, 0,
       [&](Stream &strm, bool /*last_connection*/, bool &
           /*connection_close*/) -> bool {
         if (req.size() !=
