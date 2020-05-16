@@ -14,13 +14,12 @@ using namespace std;
 
 int main(void) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::url::Options options;
-  options.ca_cert_file_path = CA_CERT_FILE;
-  // options.server_certificate_verification = true;
-
-  auto res = httplib::url::Get("https://localhost:8080/hi", options);
+  auto res = httplib::Client2("https://localhost:8080")
+    .set_ca_cert_path(CA_CERT_FILE)
+    // .enable_server_certificate_verification(true)
+    .Get("/hi");
 #else
-  auto res = httplib::url::Get("http://localhost:8080/hi");
+  auto res = httplib::Client2("http://localhost:8080").Get("/hi");
 #endif
 
   if (res) {
