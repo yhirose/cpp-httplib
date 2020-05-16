@@ -875,9 +875,9 @@ protected:
                res.set_chunked_content_provider(
                    [](size_t /*offset*/, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
-                     sink.write("123", 3);
-                     sink.write("456", 3);
-                     sink.write("789", 3);
+                     sink.os << "123";
+                     sink.os << "456";
+                     sink.os << "789";
                      sink.done();
                      return true;
                    });
@@ -889,9 +889,9 @@ protected:
                    [i](size_t /*offset*/, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
                      switch (*i) {
-                     case 0: sink.write("123", 3); break;
-                     case 1: sink.write("456", 3); break;
-                     case 2: sink.write("789", 3); break;
+                     case 0: sink.os << "123"; break;
+                     case 1: sink.os << "456"; break;
+                     case 2: sink.os << "789"; break;
                      case 3: sink.done(); break;
                      }
                      (*i)++;
@@ -903,7 +903,7 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
                    6, [](size_t offset, size_t /*length*/, DataSink &sink) {
-                     sink.write(offset < 3 ? "a" : "b", 1);
+                     sink.os << (offset < 3 ? "a" : "b");
                      return true;
                    });
              })
@@ -929,8 +929,7 @@ protected:
                    size_t(-1),
                    [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
-                     std::string data = "data_chunk";
-                     sink.write(data.data(), data.size());
+                     sink.os << "data_chunk";
                      return true;
                    });
              })
@@ -1898,7 +1897,7 @@ TEST_F(ServerTest, PutWithContentProvider) {
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
         EXPECT_TRUE(sink.is_writable());
-        sink.write("PUT", 3);
+        sink.os << "PUT";
         return true;
       },
       "text/plain");
@@ -1926,7 +1925,7 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
         EXPECT_TRUE(sink.is_writable());
-        sink.write("PUT", 3);
+        sink.os << "PUT";
         return true;
       },
       "text/plain");

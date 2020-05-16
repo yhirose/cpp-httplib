@@ -215,7 +215,8 @@ using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
 
 class DataSink {
 public:
-  DataSink() = default;
+  DataSink() : os(&sb_), sb_(*this) {}
+
   DataSink(const DataSink &) = delete;
   DataSink &operator=(const DataSink &) = delete;
   DataSink(DataSink &&) = delete;
@@ -224,6 +225,24 @@ public:
   std::function<void(const char *data, size_t data_len)> write;
   std::function<void()> done;
   std::function<bool()> is_writable;
+  std::ostream os;
+
+private:
+  class data_sink_streambuf : public std::streambuf {
+  public:
+    data_sink_streambuf(DataSink &sink) : sink_(sink) {}
+
+  protected:
+    std::streamsize xsputn(const char *s, std::streamsize n) {
+      sink_.write(s, static_cast<size_t>(n));
+      return n;
+    }
+
+  private:
+    DataSink &sink_;
+  };
+
+  data_sink_streambuf sb_;
 };
 
 using ContentProvider =
@@ -2084,22 +2103,20 @@ inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
   size_t begin_offset = offset;
   size_t end_offset = offset + length;
 
-  ssize_t written_length = 0;
+  auto ok = true;
 
   DataSink data_sink;
   data_sink.write = [&](const char *d, size_t l) {
     offset += l;
-    written_length = strm.write(d, l);
+    if (strm.write(d, l) < 0) { ok = false; }
   };
-  data_sink.is_writable = [&](void) {
-    return strm.is_writable() && written_length >= 0;
-  };
+  data_sink.is_writable = [&](void) { return strm.is_writable() && ok; };
 
   while (offset < end_offset) {
     if (!content_provider(offset, end_offset - offset, data_sink)) {
       return -1;
     }
-    if (written_length < 0) { return written_length; }
+    if (!ok) { return -1; }
   }
 
   return static_cast<ssize_t>(offset - begin_offset);
