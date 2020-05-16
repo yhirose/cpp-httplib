@@ -2098,6 +2098,16 @@ inline ssize_t write_headers(Stream &strm, const T &info,
   return write_len;
 }
 
+inline bool write_data(Stream &strm, const char *d, size_t l) {
+  size_t offset = 0;
+  while (offset < l) {
+    auto length = strm.write(d + offset, l - offset);
+    if (length < 0) { return false; }
+    offset += static_cast<size_t>(length);
+  }
+  return true;
+}
+
 inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
                              size_t offset, size_t length) {
   size_t begin_offset = offset;
@@ -2107,12 +2117,14 @@ inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
 
   DataSink data_sink;
   data_sink.write = [&](const char *d, size_t l) {
-    offset += l;
-    if (strm.write(d, l) < 0) { ok = false; }
+    if (ok) {
+      offset += l;
+      if (!write_data(strm, d, l)) { ok = false; }
+    }
   };
-  data_sink.is_writable = [&](void) { return strm.is_writable() && ok; };
+  data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
-  while (offset < end_offset) {
+  while (ok && offset < end_offset) {
     if (!content_provider(offset, end_offset - offset, data_sink)) {
       return -1;
     }
@@ -2130,29 +2142,41 @@ inline ssize_t write_content_chunked(Stream &strm,
   auto data_available = true;
   ssize_t total_written_length = 0;
 
-  ssize_t written_length = 0;
+  auto ok = true;
 
   DataSink data_sink;
   data_sink.write = [&](const char *d, size_t l) {
-    data_available = l > 0;
-    offset += l;
+    if (ok) {
+      data_available = l > 0;
+      offset += l;
 
-    // Emit chunked response header and footer for each chunk
-    auto chunk = from_i_to_hex(l) + "\r\n" + std::string(d, l) + "\r\n";
-    written_length = strm.write(chunk);
+      // Emit chunked response header and footer for each chunk
+      auto chunk = from_i_to_hex(l) + "\r\n" + std::string(d, l) + "\r\n";
+      if (write_data(strm, chunk.data(), chunk.size())) {
+        total_written_length += chunk.size();
+      } else {
+        ok = false;
+      }
+    }
   };
   data_sink.done = [&](void) {
     data_available = false;
-    written_length = strm.write("0\r\n\r\n");
+    if (ok) {
+      static const std::string done_marker("0\r\n\r\n");
+      if (write_data(strm, done_marker.data(), done_marker.size())) {
+        total_written_length += done_marker.size();
+      } else {
+        ok = false;
+      }
+    }
   };
   data_sink.is_writable = [&](void) {
-    return strm.is_writable() && written_length >= 0;
+    return ok && strm.is_writable();
   };
 
   while (data_available && !is_shutting_down()) {
     if (!content_provider(offset, 0, data_sink)) { return -1; }
-    if (written_length < 0) { return written_length; }
-    total_written_length += written_length;
+    if (!ok) { return -1; }
   }
 
   return total_written_length;
@@ -4132,7 +4156,9 @@ inline bool Client::write_request(Stream &strm, const Request &req,
 
   // Flush buffer
   auto &data = bstrm.get_buffer();
-  strm.write(data.data(), data.size());
+  if (!detail::write_data(strm, data.data(), data.size())) {
+    return false;
+  }
 
   // Body
   if (req.body.empty()) {
@@ -4140,26 +4166,31 @@ inline bool Client::write_request(Stream &strm, const Request &req,
       size_t offset = 0;
       size_t end_offset = req.content_length;
 
-      ssize_t written_length = 0;
+      bool ok = true;
 
       DataSink data_sink;
       data_sink.write = [&](const char *d, size_t l) {
-        written_length = strm.write(d, l);
-        offset += static_cast<size_t>(written_length);
+        if (ok) {
+          if (detail::write_data(strm, d, l)) {
+            offset += l;
+          } else {
+            ok = false;
+          }
+        }
       };
       data_sink.is_writable = [&](void) {
-        return strm.is_writable() && written_length >= 0;
+        return ok && strm.is_writable();
       };
 
       while (offset < end_offset) {
         if (!req.content_provider(offset, end_offset - offset, data_sink)) {
           return false;
         }
-        if (written_length < 0) { return false; }
+        if (!ok) { return false; }
       }
     }
   } else {
-    strm.write(req.body);
+    return detail::write_data(strm, req.body.data(), req.body.size());
   }
 
   return true;
