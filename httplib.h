@@ -2056,6 +2056,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
     return receiver(buf, n);
   };
 
+#ifndef CPPHTTPLIB_DO_NOT_DECOMPRESS
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
   decompressor decompressor;
 
@@ -2077,6 +2078,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
     status = 415;
     return false;
   }
+#endif
 #endif
 
   auto ret = true;
