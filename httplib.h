@@ -63,6 +63,8 @@
                       : 0))
 #endif
 
+// if CPPHTTPLIB_DO_NOT_DECOMPRESS is defined, the library will not decompress bodies
+
 /*
  * Headers
  */
