@@ -1,3 +1,42 @@
+#[[
+	Build options:
+	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
+	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
+	* HTTPLIB_REQUIRE_OPENSSL (default off)
+	* HTTPLIB_REQUIRE_ZLIB (default off)
+
+	After installation with Cmake, a find_package(httplib) is available.
+	This creates a httplib::httplib target (if found).
+	It can be linked like so:
+
+	target_link_libraries(your_exe httplib::httplib)
+
+	The following will build & install for later use.
+
+	Linux/macOS:
+
+	mkdir -p build
+	cd build
+	cmake -DCMAKE_BUILD_TYPE=Release ..
+	sudo cmake --build . --target install
+
+	Windows:
+
+	mkdir build
+	cd build
+	cmake ..
+	runas /user:Administrator "cmake --build . --config Release --target install"
+
+	These three variables are available after you run find_package(httplib)
+	* HTTPLIB_HEADER_PATH - this is the full path to the installed header.
+	* HTTPLIB_IS_USING_OPENSSL - a bool for if OpenSSL support is enabled.
+	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
+
+	Want to use precompiled headers (Cmake feature since v3.16)?
+	It's as simple as doing the following (before linking):
+
+	target_precompile_headers(httplib::httplib INTERFACE "${HTTPLIB_HEADER_PATH}")
+]]
 cmake_minimum_required(VERSION 3.7.0 FATAL_ERROR)
 project(httplib LANGUAGES CXX)
 
