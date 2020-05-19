@@ -1,0 +1,38 @@
+# Generates a macro to auto-configure everything
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# We add find_dependency calls here to not make the end-user have to call them.
+find_dependency(Threads REQUIRED)
+if(@HTTPLIB_REQUIRE_OPENSSL@)
+	find_dependency(OpenSSL @_HTTPLIB_OPENSSL_MIN_VER@ REQUIRED)
+	# Lets you check if these options were correctly enabled for your install
+	set(HTTPLIB_IS_USING_OPENSSL TRUE)
+elseif(@HTTPLIB_USE_OPENSSL_IF_AVAILABLE@)
+	# Look quietly since it's optional
+	find_dependency(OpenSSL @_HTTPLIB_OPENSSL_MIN_VER@ QUIET)
+	# Lets you check if these options were correctly enabled for your install
+	set(HTTPLIB_IS_USING_OPENSSL @OPENSSL_FOUND@)
+else()
+	set(HTTPLIB_IS_USING_OPENSSL FALSE)
+endif()
+if(@HTTPLIB_REQUIRE_ZLIB@)
+	find_dependency(ZLIB REQUIRED)
+	# Lets you check if these options were correctly enabled for your install
+	set(HTTPLIB_IS_USING_ZLIB TRUE)
+elseif(@HTTPLIB_USE_ZLIB_IF_AVAILABLE@)
+	# Look quietly since it's optional
+	find_dependency(ZLIB QUIET)
+	# Lets you check if these options were correctly enabled for your install
+	set(HTTPLIB_IS_USING_ZLIB @ZLIB_FOUND@)
+else()
+	set(HTTPLIB_IS_USING_ZLIB FALSE)
+endif()
+
+# Lets the end-user find the header path if needed
+# This is helpful if you're using Cmake's pre-compiled header feature
+set_and_check(HTTPLIB_HEADER_PATH "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@/httplib.h")
+
+# Brings in the target library
+include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
