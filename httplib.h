@@ -988,6 +988,339 @@ private:
 };
 #endif
 
+class Client2 {
+public:
+  explicit Client2(const char *scheme_host_port)
+      : Client2(scheme_host_port, std::string(), std::string()) {}
+
+  explicit Client2(const char *scheme_host_port,
+                   const std::string &client_cert_path,
+                   const std::string &client_key_path) {
+    const static std::regex re(R"(^(https?)://([^:/?#]+)(?::(\d+))?)");
+
+    std::cmatch m;
+    if (std::regex_match(scheme_host_port, m, re)) {
+      auto scheme = m[1].str();
+      auto host = m[2].str();
+      auto port_str = m[3].str();
+
+      auto port = !port_str.empty() ? std::stoi(port_str)
+                                    : (scheme == "https" ? 443 : 80);
+
+      if (scheme == "https") {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        is_ssl_ = true;
+        cli_ = std::make_shared<SSLClient>(host.c_str(), port, client_cert_path,
+                                           client_key_path);
+#endif
+      } else {
+        cli_ = std::make_shared<Client>(host.c_str(), port, client_cert_path,
+                                        client_key_path);
+      }
+    }
+  }
+
+  ~Client2() {}
+
+  bool is_valid() const { return cli_ != nullptr; }
+
+  std::shared_ptr<Response> Get(const char *path) { return cli_->Get(path); }
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers) {
+    return cli_->Get(path, headers);
+  }
+
+  std::shared_ptr<Response> Get(const char *path, Progress progress) {
+    return cli_->Get(path, progress);
+  }
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                Progress progress) {
+    return cli_->Get(path, headers, progress);
+  }
+
+  std::shared_ptr<Response> Get(const char *path,
+                                ContentReceiver content_receiver) {
+    return cli_->Get(path, content_receiver);
+  }
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ContentReceiver content_receiver) {
+    return cli_->Get(path, headers, content_receiver);
+  }
+
+  std::shared_ptr<Response>
+  Get(const char *path, ContentReceiver content_receiver, Progress progress) {
+    return cli_->Get(path, content_receiver, progress);
+  }
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ContentReceiver content_receiver,
+                                Progress progress) {
+    return cli_->Get(path, headers, content_receiver, progress);
+  }
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver) {
+    return cli_->Get(path, headers, response_handler, content_receiver);
+  }
+
+  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver,
+                                Progress progress) {
+    return cli_->Get(path, headers, response_handler, content_receiver,
+                     progress);
+  }
+
+  std::shared_ptr<Response> Head(const char *path) { return cli_->Head(path); }
+
+  std::shared_ptr<Response> Head(const char *path, const Headers &headers) {
+    return cli_->Head(path, headers);
+  }
+
+  std::shared_ptr<Response> Post(const char *path) { return cli_->Post(path); }
+
+  std::shared_ptr<Response> Post(const char *path, const std::string &body,
+                                 const char *content_type) {
+    return cli_->Post(path, body, content_type);
+  }
+
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 const std::string &body,
+                                 const char *content_type) {
+    return cli_->Post(path, headers, body, content_type);
+  }
+
+  std::shared_ptr<Response> Post(const char *path, size_t content_length,
+                                 ContentProvider content_provider,
+                                 const char *content_type) {
+    return cli_->Post(path, content_length, content_provider, content_type);
+  }
+
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 size_t content_length,
+                                 ContentProvider content_provider,
+                                 const char *content_type) {
+    return cli_->Post(path, headers, content_length, content_provider,
+                      content_type);
+  }
+
+  std::shared_ptr<Response> Post(const char *path, const Params &params) {
+    return cli_->Post(path, params);
+  }
+
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 const Params &params) {
+    return cli_->Post(path, headers, params);
+  }
+
+  std::shared_ptr<Response> Post(const char *path,
+                                 const MultipartFormDataItems &items) {
+    return cli_->Post(path, items);
+  }
+
+  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
+                                 const MultipartFormDataItems &items) {
+    return cli_->Post(path, headers, items);
+  }
+
+  std::shared_ptr<Response> Put(const char *path) { return cli_->Put(path); }
+
+  std::shared_ptr<Response> Put(const char *path, const std::string &body,
+                                const char *content_type) {
+    return cli_->Put(path, body, content_type);
+  }
+
+  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
+                                const std::string &body,
+                                const char *content_type) {
+    return cli_->Put(path, headers, body, content_type);
+  }
+
+  std::shared_ptr<Response> Put(const char *path, size_t content_length,
+                                ContentProvider content_provider,
+                                const char *content_type) {
+    return cli_->Put(path, content_length, content_provider, content_type);
+  }
+
+  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
+                                size_t content_length,
+                                ContentProvider content_provider,
+                                const char *content_type) {
+    return cli_->Put(path, headers, content_length, content_provider,
+                     content_type);
+  }
+
+  std::shared_ptr<Response> Put(const char *path, const Params &params) {
+    return cli_->Put(path, params);
+  }
+
+  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
+                                const Params &params) {
+    return cli_->Put(path, headers, params);
+  }
+
+  std::shared_ptr<Response> Patch(const char *path, const std::string &body,
+                                  const char *content_type) {
+    return cli_->Patch(path, body, content_type);
+  }
+
+  std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
+                                  const std::string &body,
+                                  const char *content_type) {
+    return cli_->Patch(path, headers, body, content_type);
+  }
+
+  std::shared_ptr<Response> Patch(const char *path, size_t content_length,
+                                  ContentProvider content_provider,
+                                  const char *content_type) {
+    return cli_->Patch(path, content_length, content_provider, content_type);
+  }
+
+  std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
+                                  size_t content_length,
+                                  ContentProvider content_provider,
+                                  const char *content_type) {
+    return cli_->Patch(path, headers, content_length, content_provider,
+                       content_type);
+  }
+
+  std::shared_ptr<Response> Delete(const char *path) {
+    return cli_->Delete(path);
+  }
+
+  std::shared_ptr<Response> Delete(const char *path, const std::string &body,
+                                   const char *content_type) {
+    return cli_->Delete(path, body, content_type);
+  }
+
+  std::shared_ptr<Response> Delete(const char *path, const Headers &headers) {
+    return cli_->Delete(path, headers);
+  }
+
+  std::shared_ptr<Response> Delete(const char *path, const Headers &headers,
+                                   const std::string &body,
+                                   const char *content_type) {
+    return cli_->Delete(path, headers, body, content_type);
+  }
+
+  std::shared_ptr<Response> Options(const char *path) {
+    return cli_->Options(path);
+  }
+
+  std::shared_ptr<Response> Options(const char *path, const Headers &headers) {
+    return cli_->Options(path, headers);
+  }
+
+  bool send(const Request &req, Response &res) { return cli_->send(req, res); }
+
+  bool send(const std::vector<Request> &requests,
+            std::vector<Response> &responses) {
+    return cli_->send(requests, responses);
+  }
+
+  void stop() { cli_->stop(); }
+
+  Client2 &set_timeout_sec(time_t timeout_sec) {
+    cli_->set_timeout_sec(timeout_sec);
+    return *this;
+  }
+
+  Client2 &set_read_timeout(time_t sec, time_t usec) {
+    cli_->set_read_timeout(sec, usec);
+    return *this;
+  }
+
+  Client2 &set_keep_alive_max_count(size_t count) {
+    cli_->set_keep_alive_max_count(count);
+    return *this;
+  }
+
+  Client2 &set_basic_auth(const char *username, const char *password) {
+    cli_->set_basic_auth(username, password);
+    return *this;
+  }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  Client2 &set_digest_auth(const char *username, const char *password) {
+    cli_->set_digest_auth(username, password);
+    return *this;
+  }
+#endif
+
+  Client2 &set_follow_location(bool on) {
+    cli_->set_follow_location(on);
+    return *this;
+  }
+
+  Client2 &set_compress(bool on) {
+    cli_->set_compress(on);
+    return *this;
+  }
+
+  Client2 &set_interface(const char *intf) {
+    cli_->set_interface(intf);
+    return *this;
+  }
+
+  Client2 &set_proxy(const char *host, int port) {
+    cli_->set_proxy(host, port);
+    return *this;
+  }
+
+  Client2 &set_proxy_basic_auth(const char *username, const char *password) {
+    cli_->set_proxy_basic_auth(username, password);
+    return *this;
+  }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  Client2 &set_proxy_digest_auth(const char *username, const char *password) {
+    cli_->set_proxy_digest_auth(username, password);
+    return *this;
+  }
+#endif
+
+  Client2 &set_logger(Logger logger) {
+    cli_->set_logger(logger);
+    return *this;
+  }
+
+  // SSL
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  Client2 &set_ca_cert_path(const char *ca_cert_file_path,
+                            const char *ca_cert_dir_path = nullptr) {
+    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
+                                                      ca_cert_dir_path);
+    return *this;
+  }
+
+  Client2 &set_ca_cert_store(X509_STORE *ca_cert_store) {
+    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+    return *this;
+  }
+
+  Client2 &enable_server_certificate_verification(bool enabled) {
+    dynamic_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
+        enabled);
+    return *this;
+  }
+
+  long get_openssl_verify_result() const {
+    return dynamic_cast<SSLClient &>(*cli_).get_openssl_verify_result();
+  }
+
+  SSL_CTX *ssl_context() const {
+    return dynamic_cast<SSLClient &>(*cli_).ssl_context();
+  }
+#endif
+
+private:
+  bool is_ssl_ = false;
+  std::shared_ptr<Client> cli_;
+};
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -5215,339 +5548,6 @@ inline bool SSLClient::check_host_name(const char *pattern,
   return true;
 }
 #endif
-
-class Client2 {
-public:
-  explicit Client2(const char *scheme_host_port)
-      : Client2(scheme_host_port, std::string(), std::string()) {}
-
-  explicit Client2(const char *scheme_host_port,
-                   const std::string &client_cert_path,
-                   const std::string &client_key_path) {
-    const static std::regex re(R"(^(https?)://([^:/?#]+)(?::(\d+))?)");
-
-    std::cmatch m;
-    if (std::regex_match(scheme_host_port, m, re)) {
-      auto scheme = m[1].str();
-      auto host = m[2].str();
-      auto port_str = m[3].str();
-
-      auto port = !port_str.empty() ? std::stoi(port_str)
-                                    : (scheme == "https" ? 443 : 80);
-
-      if (scheme == "https") {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-        is_ssl_ = true;
-        cli_ = std::make_shared<SSLClient>(host.c_str(), port, client_cert_path,
-                                           client_key_path);
-#endif
-      } else {
-        cli_ = std::make_shared<Client>(host.c_str(), port, client_cert_path,
-                                        client_key_path);
-      }
-    }
-  }
-
-  ~Client2() {}
-
-  bool is_valid() const { return cli_ != nullptr; }
-
-  std::shared_ptr<Response> Get(const char *path) { return cli_->Get(path); }
-
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers) {
-    return cli_->Get(path, headers);
-  }
-
-  std::shared_ptr<Response> Get(const char *path, Progress progress) {
-    return cli_->Get(path, progress);
-  }
-
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                Progress progress) {
-    return cli_->Get(path, headers, progress);
-  }
-
-  std::shared_ptr<Response> Get(const char *path,
-                                ContentReceiver content_receiver) {
-    return cli_->Get(path, content_receiver);
-  }
-
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                ContentReceiver content_receiver) {
-    return cli_->Get(path, headers, content_receiver);
-  }
-
-  std::shared_ptr<Response>
-  Get(const char *path, ContentReceiver content_receiver, Progress progress) {
-    return cli_->Get(path, content_receiver, progress);
-  }
-
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                ContentReceiver content_receiver,
-                                Progress progress) {
-    return cli_->Get(path, headers, content_receiver, progress);
-  }
-
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                ResponseHandler response_handler,
-                                ContentReceiver content_receiver) {
-    return cli_->Get(path, headers, response_handler, content_receiver);
-  }
-
-  std::shared_ptr<Response> Get(const char *path, const Headers &headers,
-                                ResponseHandler response_handler,
-                                ContentReceiver content_receiver,
-                                Progress progress) {
-    return cli_->Get(path, headers, response_handler, content_receiver,
-                     progress);
-  }
-
-  std::shared_ptr<Response> Head(const char *path) { return cli_->Head(path); }
-
-  std::shared_ptr<Response> Head(const char *path, const Headers &headers) {
-    return cli_->Head(path, headers);
-  }
-
-  std::shared_ptr<Response> Post(const char *path) { return cli_->Post(path); }
-
-  std::shared_ptr<Response> Post(const char *path, const std::string &body,
-                                 const char *content_type) {
-    return cli_->Post(path, body, content_type);
-  }
-
-  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const std::string &body,
-                                 const char *content_type) {
-    return cli_->Post(path, headers, body, content_type);
-  }
-
-  std::shared_ptr<Response> Post(const char *path, size_t content_length,
-                                 ContentProvider content_provider,
-                                 const char *content_type) {
-    return cli_->Post(path, content_length, content_provider, content_type);
-  }
-
-  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 size_t content_length,
-                                 ContentProvider content_provider,
-                                 const char *content_type) {
-    return cli_->Post(path, headers, content_length, content_provider,
-                      content_type);
-  }
-
-  std::shared_ptr<Response> Post(const char *path, const Params &params) {
-    return cli_->Post(path, params);
-  }
-
-  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const Params &params) {
-    return cli_->Post(path, headers, params);
-  }
-
-  std::shared_ptr<Response> Post(const char *path,
-                                 const MultipartFormDataItems &items) {
-    return cli_->Post(path, items);
-  }
-
-  std::shared_ptr<Response> Post(const char *path, const Headers &headers,
-                                 const MultipartFormDataItems &items) {
-    return cli_->Post(path, headers, items);
-  }
-
-  std::shared_ptr<Response> Put(const char *path) { return cli_->Put(path); }
-
-  std::shared_ptr<Response> Put(const char *path, const std::string &body,
-                                const char *content_type) {
-    return cli_->Put(path, body, content_type);
-  }
-
-  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
-                                const std::string &body,
-                                const char *content_type) {
-    return cli_->Put(path, headers, body, content_type);
-  }
-
-  std::shared_ptr<Response> Put(const char *path, size_t content_length,
-                                ContentProvider content_provider,
-                                const char *content_type) {
-    return cli_->Put(path, content_length, content_provider, content_type);
-  }
-
-  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
-                                size_t content_length,
-                                ContentProvider content_provider,
-                                const char *content_type) {
-    return cli_->Put(path, headers, content_length, content_provider,
-                     content_type);
-  }
-
-  std::shared_ptr<Response> Put(const char *path, const Params &params) {
-    return cli_->Put(path, params);
-  }
-
-  std::shared_ptr<Response> Put(const char *path, const Headers &headers,
-                                const Params &params) {
-    return cli_->Put(path, headers, params);
-  }
-
-  std::shared_ptr<Response> Patch(const char *path, const std::string &body,
-                                  const char *content_type) {
-    return cli_->Patch(path, body, content_type);
-  }
-
-  std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
-                                  const std::string &body,
-                                  const char *content_type) {
-    return cli_->Patch(path, headers, body, content_type);
-  }
-
-  std::shared_ptr<Response> Patch(const char *path, size_t content_length,
-                                  ContentProvider content_provider,
-                                  const char *content_type) {
-    return cli_->Patch(path, content_length, content_provider, content_type);
-  }
-
-  std::shared_ptr<Response> Patch(const char *path, const Headers &headers,
-                                  size_t content_length,
-                                  ContentProvider content_provider,
-                                  const char *content_type) {
-    return cli_->Patch(path, headers, content_length, content_provider,
-                       content_type);
-  }
-
-  std::shared_ptr<Response> Delete(const char *path) {
-    return cli_->Delete(path);
-  }
-
-  std::shared_ptr<Response> Delete(const char *path, const std::string &body,
-                                   const char *content_type) {
-    return cli_->Delete(path, body, content_type);
-  }
-
-  std::shared_ptr<Response> Delete(const char *path, const Headers &headers) {
-    return cli_->Delete(path, headers);
-  }
-
-  std::shared_ptr<Response> Delete(const char *path, const Headers &headers,
-                                   const std::string &body,
-                                   const char *content_type) {
-    return cli_->Delete(path, headers, body, content_type);
-  }
-
-  std::shared_ptr<Response> Options(const char *path) {
-    return cli_->Options(path);
-  }
-
-  std::shared_ptr<Response> Options(const char *path, const Headers &headers) {
-    return cli_->Options(path, headers);
-  }
-
-  bool send(const Request &req, Response &res) { return cli_->send(req, res); }
-
-  bool send(const std::vector<Request> &requests,
-            std::vector<Response> &responses) {
-    return cli_->send(requests, responses);
-  }
-
-  void stop() { cli_->stop(); }
-
-  Client2 &set_timeout_sec(time_t timeout_sec) {
-    cli_->set_timeout_sec(timeout_sec);
-    return *this;
-  }
-
-  Client2 &set_read_timeout(time_t sec, time_t usec) {
-    cli_->set_read_timeout(sec, usec);
-    return *this;
-  }
-
-  Client2 &set_keep_alive_max_count(size_t count) {
-    cli_->set_keep_alive_max_count(count);
-    return *this;
-  }
-
-  Client2 &set_basic_auth(const char *username, const char *password) {
-    cli_->set_basic_auth(username, password);
-    return *this;
-  }
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  Client2 &set_digest_auth(const char *username, const char *password) {
-    cli_->set_digest_auth(username, password);
-    return *this;
-  }
-#endif
-
-  Client2 &set_follow_location(bool on) {
-    cli_->set_follow_location(on);
-    return *this;
-  }
-
-  Client2 &set_compress(bool on) {
-    cli_->set_compress(on);
-    return *this;
-  }
-
-  Client2 &set_interface(const char *intf) {
-    cli_->set_interface(intf);
-    return *this;
-  }
-
-  Client2 &set_proxy(const char *host, int port) {
-    cli_->set_proxy(host, port);
-    return *this;
-  }
-
-  Client2 &set_proxy_basic_auth(const char *username, const char *password) {
-    cli_->set_proxy_basic_auth(username, password);
-    return *this;
-  }
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  Client2 &set_proxy_digest_auth(const char *username, const char *password) {
-    cli_->set_proxy_digest_auth(username, password);
-    return *this;
-  }
-#endif
-
-  Client2 &set_logger(Logger logger) {
-    cli_->set_logger(logger);
-    return *this;
-  }
-
-  // SSL
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  Client2 &set_ca_cert_path(const char *ca_cert_file_path,
-                            const char *ca_cert_dir_path = nullptr) {
-    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
-                                                      ca_cert_dir_path);
-    return *this;
-  }
-
-  Client2 &set_ca_cert_store(X509_STORE *ca_cert_store) {
-    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
-    return *this;
-  }
-
-  Client2 &enable_server_certificate_verification(bool enabled) {
-    dynamic_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
-        enabled);
-    return *this;
-  }
-
-  long get_openssl_verify_result() const {
-    return dynamic_cast<SSLClient &>(*cli_).get_openssl_verify_result();
-  }
-
-  SSL_CTX *ssl_context() const {
-    return dynamic_cast<SSLClient &>(*cli_).ssl_context();
-  }
-#endif
-
-private:
-  bool is_ssl_ = false;
-  std::shared_ptr<Client> cli_;
-};
 
 namespace detail {
 
