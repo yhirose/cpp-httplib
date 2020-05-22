@@ -40,6 +40,14 @@
 #define CPPHTTPLIB_WRITE_TIMEOUT_USECOND 0
 #endif
 
+#ifndef CPPHTTPLIB_IDLE_INTERVAL_SECOND
+#define CPPHTTPLIB_IDLE_INTERVAL_SECOND 0
+#endif
+
+#ifndef CPPHTTPLIB_IDLE_INTERVAL_USECOND
+#define CPPHTTPLIB_IDLE_INTERVAL_USECOND 100000
+#endif
+
 #ifndef CPPHTTPLIB_REQUEST_URI_MAX_LENGTH
 #define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
 #endif
@@ -518,6 +526,7 @@ public:
   void set_keep_alive_max_count(size_t count);
   void set_read_timeout(time_t sec, time_t usec);
   void set_write_timeout(time_t sec, time_t usec);
+  void set_idle_interval(time_t sec, time_t usec);
   void set_payload_max_length(size_t length);
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
@@ -536,12 +545,14 @@ protected:
                        bool &connection_close,
                        const std::function<void(Request &)> &setup_request);
 
-  size_t keep_alive_max_count_;
-  time_t read_timeout_sec_;
-  time_t read_timeout_usec_;
-  time_t write_timeout_sec_;
-  time_t write_timeout_usec_;
-  size_t payload_max_length_;
+  size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+  time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
+  time_t read_timeout_usec_ = CPPHTTPLIB_READ_TIMEOUT_USECOND;
+  time_t write_timeout_sec_ = CPPHTTPLIB_WRITE_TIMEOUT_SECOND;
+  time_t write_timeout_usec_ = CPPHTTPLIB_WRITE_TIMEOUT_USECOND;
+  time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
+  time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
+  size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
 
 private:
   using Handlers = std::vector<std::pair<std::regex, Handler>>;
@@ -3459,14 +3470,7 @@ inline const std::string &BufferStream::get_buffer() const { return buffer; }
 } // namespace detail
 
 // HTTP server implementation
-inline Server::Server()
-    : keep_alive_max_count_(CPPHTTPLIB_KEEPALIVE_MAX_COUNT),
-      read_timeout_sec_(CPPHTTPLIB_READ_TIMEOUT_SECOND),
-      read_timeout_usec_(CPPHTTPLIB_READ_TIMEOUT_USECOND),
-      write_timeout_sec_(CPPHTTPLIB_WRITE_TIMEOUT_SECOND),
-      write_timeout_usec_(CPPHTTPLIB_WRITE_TIMEOUT_USECOND),
-      payload_max_length_(CPPHTTPLIB_PAYLOAD_MAX_LENGTH), is_running_(false),
-      svr_sock_(INVALID_SOCKET) {
+inline Server::Server() : is_running_(false), svr_sock_(INVALID_SOCKET) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
@@ -3590,6 +3594,11 @@ inline void Server::set_read_timeout(time_t sec, time_t usec) {
 inline void Server::set_write_timeout(time_t sec, time_t usec) {
   write_timeout_sec_ = sec;
   write_timeout_usec_ = usec;
+}
+
+inline void Server::set_idle_interval(time_t sec, time_t usec) {
+  idle_interval_sec_ = sec;
+  idle_interval_usec_ = usec;
 }
 
 inline void Server::set_payload_max_length(size_t length) {
@@ -3964,17 +3973,14 @@ inline bool Server::listen_internal() {
   {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());
 
-    for (;;) {
-      if (svr_sock_ == INVALID_SOCKET) {
-        // The server socket was closed by 'stop' method.
-        break;
-      }
-
-      auto val = detail::select_read(svr_sock_, 0, 0);
-
-      if (val == 0) { // Timeout
-        task_queue->on_idle();
-        continue;
+    while (svr_sock_ != INVALID_SOCKET) {
+      if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
+        auto val = detail::select_read(svr_sock_, idle_interval_sec_,
+                                       idle_interval_usec_);
+        if (val == 0) { // Timeout
+          task_queue->on_idle();
+          continue;
+        }
       }
 
       socket_t sock = accept(svr_sock_, nullptr, nullptr);
