@@ -3970,7 +3970,7 @@ inline bool Server::listen_internal() {
         break;
       }
 
-      auto val = detail::select_read(svr_sock_, 0, 100000);
+      auto val = detail::select_read(svr_sock_, 0, 0);
 
       if (val == 0) { // Timeout
         task_queue->on_idle();
