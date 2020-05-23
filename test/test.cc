@@ -245,7 +245,7 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(2);
+  cli.set_connection_timeout(2);
 
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
@@ -268,7 +268,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(2);
+  cli.set_connection_timeout(2);
 
   std::string body;
   auto res =
@@ -296,7 +296,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(2);
+  cli.set_connection_timeout(2);
 
   std::string body;
   auto res = cli.Get(
@@ -328,7 +328,7 @@ TEST(RangeTest, FromHTTPBin) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(5);
+  cli.set_connection_timeout(5);
 
   {
     httplib::Headers headers;
@@ -388,7 +388,7 @@ TEST(ConnectionErrorTest, InvalidHost) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(2);
+  cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
@@ -404,7 +404,7 @@ TEST(ConnectionErrorTest, InvalidPort) {
   auto port = 8080;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(2);
+  cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
@@ -420,7 +420,7 @@ TEST(ConnectionErrorTest, Timeout) {
   auto port = 8080;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(2);
+  cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
@@ -436,7 +436,7 @@ TEST(CancelTest, NoCancel) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(5);
+  cli.set_connection_timeout(5);
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res != nullptr);
@@ -456,7 +456,7 @@ TEST(CancelTest, WithCancelSmallPayload) {
 #endif
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
-  cli.set_timeout_sec(5);
+  cli.set_connection_timeout(5);
   ASSERT_TRUE(res == nullptr);
 }
 
@@ -470,7 +470,7 @@ TEST(CancelTest, WithCancelLargePayload) {
   auto port = 80;
   httplib::Client cli(host, port);
 #endif
-  cli.set_timeout_sec(5);
+  cli.set_connection_timeout(5);
 
   uint32_t count = 0;
   httplib::Headers headers;
@@ -2279,7 +2279,7 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
-  auto client_sock = detail::create_client_socket(HOST, PORT, /*timeout_sec=*/5,
+  auto client_sock = detail::create_client_socket(HOST, PORT, /*timeout_sec=*/5, 0,
                                                   std::string());
 
   if (client_sock == INVALID_SOCKET) { return false; }
@@ -2774,7 +2774,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
 
   httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
-  cli.set_timeout_sec(30);
+  cli.set_connection_timeout(30);
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 
@@ -2843,7 +2843,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   httplib::SSLClient cli(HOST, PORT, client_cert, client_private_key);
   auto res = cli.Get("/test");
-  cli.set_timeout_sec(30);
+  cli.set_connection_timeout(30);
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 
@@ -2867,7 +2867,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
 
   httplib::SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
-  cli.set_timeout_sec(30);
+  cli.set_connection_timeout(30);
   ASSERT_TRUE(res == nullptr);
 
   svr.stop();
@@ -2889,7 +2889,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
   httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   auto res = cli.Get("/test");
-  cli.set_timeout_sec(30);
+  cli.set_connection_timeout(30);
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 

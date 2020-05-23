@@ -24,6 +24,14 @@
 #define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
 #endif
 
+#ifndef CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND
+#define CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND 300
+#endif
+
+#ifndef CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND
+#define CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND 0
+#endif
+
 #ifndef CPPHTTPLIB_READ_TIMEOUT_SECOND
 #define CPPHTTPLIB_READ_TIMEOUT_SECOND 5
 #endif
@@ -528,9 +536,10 @@ public:
   void set_expect_100_continue_handler(Expect100ContinueHandler handler);
 
   void set_keep_alive_max_count(size_t count);
-  void set_read_timeout(time_t sec, time_t usec);
-  void set_write_timeout(time_t sec, time_t usec);
-  void set_idle_interval(time_t sec, time_t usec);
+  void set_read_timeout(time_t sec, time_t usec = 0);
+  void set_write_timeout(time_t sec, time_t usec = 0);
+  void set_idle_interval(time_t sec, time_t usec = 0);
+
   void set_payload_max_length(size_t length);
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
@@ -753,16 +762,14 @@ public:
 
   void stop();
 
-  void set_timeout_sec(time_t timeout_sec);
-
-  void set_read_timeout(time_t sec, time_t usec);
-
-  void set_write_timeout(time_t sec, time_t usec);
+  [[deprecated]] void set_timeout_sec(time_t timeout_sec);
+  void set_connection_timeout(time_t sec, time_t usec = 0);
+  void set_read_timeout(time_t sec, time_t usec = 0);
+  void set_write_timeout(time_t sec, time_t usec = 0);
 
   void set_keep_alive_max_count(size_t count);
 
   void set_basic_auth(const char *username, const char *password);
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_digest_auth(const char *username, const char *password);
 #endif
@@ -774,9 +781,7 @@ public:
   void set_interface(const char *intf);
 
   void set_proxy(const char *host, int port);
-
   void set_proxy_basic_auth(const char *username, const char *password);
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_proxy_digest_auth(const char *username, const char *password);
 #endif
@@ -797,7 +802,8 @@ protected:
   std::string client_cert_path_;
   std::string client_key_path_;
 
-  time_t timeout_sec_ = 300;
+  time_t connection_timeout_sec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND;
+  time_t connection_timeout_usec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND;
   time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
   time_t read_timeout_usec_ = CPPHTTPLIB_READ_TIMEOUT_USECOND;
   time_t write_timeout_sec_ = CPPHTTPLIB_WRITE_TIMEOUT_SECOND;
@@ -833,7 +839,7 @@ protected:
   void copy_settings(const Client &rhs) {
     client_cert_path_ = rhs.client_cert_path_;
     client_key_path_ = rhs.client_key_path_;
-    timeout_sec_ = rhs.timeout_sec_;
+    connection_timeout_sec_ = rhs.connection_timeout_sec_;
     read_timeout_sec_ = rhs.read_timeout_sec_;
     read_timeout_usec_ = rhs.read_timeout_usec_;
     write_timeout_sec_ = rhs.write_timeout_sec_;
@@ -1238,8 +1244,8 @@ public:
 
   void stop() { cli_->stop(); }
 
-  Client2 &set_timeout_sec(time_t timeout_sec) {
-    cli_->set_timeout_sec(timeout_sec);
+  Client2 &set_connection_timeout(time_t sec, time_t usec) {
+    cli_->set_connection_timeout(sec, usec);
     return *this;
   }
 
@@ -1981,7 +1987,7 @@ inline std::string if2ip(const std::string &ifn) {
 #endif
 
 inline socket_t create_client_socket(const char *host, int port,
-                                     time_t timeout_sec,
+                                     time_t timeout_sec, time_t timeout_usec,
                                      const std::string &intf) {
   return create_socket(
       host, port, [&](socket_t sock, struct addrinfo &ai) -> bool {
@@ -1999,7 +2005,7 @@ inline socket_t create_client_socket(const char *host, int port,
             ::connect(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
         if (ret < 0) {
           if (is_connection_error() ||
-              !wait_until_socket_is_ready(sock, timeout_sec, 0)) {
+              !wait_until_socket_is_ready(sock, timeout_sec, timeout_usec)) {
             close_socket(sock);
             return false;
           }
@@ -4238,10 +4244,12 @@ inline bool Client::is_valid() const { return true; }
 inline socket_t Client::create_client_socket() const {
   if (!proxy_host_.empty()) {
     return detail::create_client_socket(proxy_host_.c_str(), proxy_port_,
-                                        timeout_sec_, interface_);
+                                        connection_timeout_sec_,
+                                        connection_timeout_usec_, interface_);
   }
-  return detail::create_client_socket(host_.c_str(), port_, timeout_sec_,
-                                      interface_);
+  return detail::create_client_socket(host_.c_str(), port_,
+                                      connection_timeout_sec_,
+                                      connection_timeout_usec_, interface_);
 }
 
 inline bool Client::read_response_line(Stream &strm, Response &res) {
@@ -4986,7 +4994,12 @@ inline void Client::stop() {
 }
 
 inline void Client::set_timeout_sec(time_t timeout_sec) {
-  timeout_sec_ = timeout_sec;
+  set_connection_timeout(timeout_sec, 0);
+}
+
+inline void Client::set_connection_timeout(time_t sec, time_t usec) {
+  connection_timeout_sec_ = sec;
+  connection_timeout_usec_ = usec;
 }
 
 inline void Client::set_read_timeout(time_t sec, time_t usec) {
