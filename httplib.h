@@ -45,7 +45,11 @@
 #endif
 
 #ifndef CPPHTTPLIB_IDLE_INTERVAL_USECOND
+#ifdef _WIN32
+#define CPPHTTPLIB_IDLE_INTERVAL_USECOND 10000
+#else
 #define CPPHTTPLIB_IDLE_INTERVAL_USECOND 0
+#endif
 #endif
 
 #ifndef CPPHTTPLIB_REQUEST_URI_MAX_LENGTH
@@ -3974,15 +3978,18 @@ inline bool Server::listen_internal() {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());
 
     while (svr_sock_ != INVALID_SOCKET) {
+#ifndef _WIN32
       if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
+#endif
         auto val = detail::select_read(svr_sock_, idle_interval_sec_,
                                        idle_interval_usec_);
         if (val == 0) { // Timeout
           task_queue->on_idle();
           continue;
         }
+#ifndef _WIN32
       }
-
+#endif
       socket_t sock = accept(svr_sock_, nullptr, nullptr);
 
       if (sock == INVALID_SOCKET) {
