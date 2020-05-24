@@ -4,6 +4,9 @@
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
+	* HTTPLIB_COMPILE (default off)
+
+	-------------------------------------------------------------------------------
 
 	After installation with Cmake, a find_package(httplib) is available.
 	This creates a httplib::httplib target (if found).
@@ -27,17 +30,24 @@
 	cmake ..
 	runas /user:Administrator "cmake --build . --config Release --target install"
 
+	-------------------------------------------------------------------------------
+
 	These three variables are available after you run find_package(httplib)
 	* HTTPLIB_HEADER_PATH - this is the full path to the installed header.
 	* HTTPLIB_IS_USING_OPENSSL - a bool for if OpenSSL support is enabled.
 	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
+	* HTTPLIB_IS_COMPILED - a bool for if the library is header-only or compiled.
 
 	Want to use precompiled headers (Cmake feature since v3.16)?
 	It's as simple as doing the following (before linking):
 
 	target_precompile_headers(httplib::httplib INTERFACE "${HTTPLIB_HEADER_PATH}")
+
+	-------------------------------------------------------------------------------
+
+	FindPython3 requires Cmake v3.12
 ]]
-cmake_minimum_required(VERSION 3.7.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.12.0 FATAL_ERROR)
 project(httplib LANGUAGES CXX)
 
 # Change as needed to set an OpenSSL minimum version.
@@ -51,17 +61,23 @@ option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build.
 # Make these options so their automatic use can be specifically disabled (as needed)
 option(HTTPLIB_USE_OPENSSL_IF_AVAILABLE "Uses OpenSSL (if available) to enable HTTPS support." ON)
 option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable compression support." ON)
-
-# TODO: implement the option of option to correctly split, building, and export with the split.py script.
-# option(HTTPLIB_SPLIT "Uses a Python script to split the header into a header & source file." OFF)
+# Lets you compile the program as a regular library instead of header-only
+option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
+# Defaults to static library
+option(BUILD_SHARED_LIBS "Build the library as a shared library instead of static. Has no effect if using header-only." OFF)
+if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
+	# Necessary for Windows if building shared libs
+	# See https://stackoverflow.com/a/40743080
+	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
 find_package(Threads REQUIRED)
+# Since Cmake v3.11, Crypto & SSL became optional when not specified as COMPONENTS.
 if(HTTPLIB_REQUIRE_OPENSSL)
-	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} REQUIRED)
+	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL REQUIRED)
 elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
-	# Look quietly since it's optional are optional
-	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} QUIET)
+	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL QUIET)
 endif()
 if(HTTPLIB_REQUIRE_ZLIB)
 	find_package(ZLIB REQUIRED)
@@ -73,16 +89,53 @@ endif()
 # like CMAKE_INSTALL_INCLUDEDIR or CMAKE_INSTALL_DATADIR
 include(GNUInstallDirs)
 
-add_library(${PROJECT_NAME} INTERFACE)
+if(HTTPLIB_COMPILE)
+	# Put the split script into the build dir
+	configure_file(split.py "${CMAKE_CURRENT_BINARY_DIR}/split.py"
+		COPYONLY
+	)
+	# Needs to be in the same dir as the python script
+	configure_file(httplib.h "${CMAKE_CURRENT_BINARY_DIR}/httplib.h"
+		COPYONLY
+	)
+
+	# Used outside of this if-else
+	set(_INTERFACE_OR_PUBLIC PUBLIC)
+	# Brings in the Python3_EXECUTABLE path we can use.
+	find_package(Python3 REQUIRED)
+	# Actually split the file
+	# Keeps the output in the build dir to not pollute the main dir
+	execute_process(COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/split.py"
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+		ERROR_VARIABLE _httplib_split_error
+	)
+	if(_httplib_split_error)
+		message(FATAL_ERROR "Failed when trying to split Cpp-httplib with the Python script.\n${_httplib_split_error}")
+	endif()
+
+	# split.py puts output in "out"
+	set(_httplib_build_includedir "${CMAKE_CURRENT_BINARY_DIR}/out")
+	# This will automatically be either static or shared based on the value of BUILD_SHARED_LIBS
+	add_library(${PROJECT_NAME} "${_httplib_build_includedir}/httplib.cc")
+	target_sources(${PROJECT_NAME}
+		PUBLIC
+			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
+			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/httplib.h>
+	)
+else()
+	# This is for header-only.
+	set(_INTERFACE_OR_PUBLIC INTERFACE)
+	add_library(${PROJECT_NAME} INTERFACE)
+	set(_httplib_build_includedir "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
 # Lets you address the target with httplib::httplib
 # Only useful if building in-tree, versus using it from an installation.
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 # Might be missing some, but this list is somewhat comprehensive
-target_compile_features(${PROJECT_NAME} INTERFACE
+target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	cxx_std_11
 	cxx_nullptr
-	cxx_noexcept
 	cxx_lambdas
 	cxx_override
 	cxx_defaulted_functions
@@ -94,24 +147,41 @@ target_compile_features(${PROJECT_NAME} INTERFACE
 	cxx_sizeof_member
 )
 
-target_include_directories(${PROJECT_NAME} INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-
-
-target_link_libraries(${PROJECT_NAME} INTERFACE
-	# Always require threads
-	Threads::Threads
-	# Only link zlib & openssl if they're found
-	$<$<BOOL:${ZLIB_FOUND}>:ZLIB::ZLIB>
-	$<$<BOOL:${OPENSSL_FOUND}>:OpenSSL::SSL OpenSSL::Crypto>
+target_include_directories(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+    $<BUILD_INTERFACE:${_httplib_build_includedir}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-# Auto-define the optional support if those packages were found
-target_compile_definitions(${PROJECT_NAME} INTERFACE
-	$<$<BOOL:${ZLIB_FOUND}>:CPPHTTPLIB_ZLIB_SUPPORT>
-	$<$<BOOL:${OPENSSL_FOUND}>:CPPHTTPLIB_OPENSSL_SUPPORT>
+# Always require threads
+target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+		Threads::Threads
 )
+
+# We check for the target when using IF_AVAILABLE since it's possible we didn't find it.
+if(HTTPLIB_USE_OPENSSL_IF_AVAILABLE AND TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto OR HTTPLIB_REQUIRE_OPENSSL)
+	target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+		OpenSSL::SSL OpenSSL::Crypto
+	)
+	target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+		CPPHTTPLIB_OPENSSL_SUPPORT
+	)
+	set(HTTPLIB_IS_USING_OPENSSL TRUE)
+else()
+	set(HTTPLIB_IS_USING_OPENSSL FALSE)
+endif()
+
+# We check for the target when using IF_AVAILABLE since it's possible we didn't find it.
+if(HTTPLIB_USE_ZLIB_IF_AVAILABLE AND TARGET ZLIB::ZLIB OR HTTPLIB_REQUIRE_ZLIB)
+	target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+		ZLIB::ZLIB
+	)
+	target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+		CPPHTTPLIB_ZLIB_SUPPORT
+	)
+	set(HTTPLIB_IS_USING_ZLIB TRUE)
+else()
+	set(HTTPLIB_IS_USING_ZLIB FALSE)
+endif()
 
 # Cmake's find_package search path is different based on the system
 # See https://cmake.org/cmake/help/latest/command/find_package.html for the list
@@ -144,7 +214,7 @@ install(TARGETS ${PROJECT_NAME}
 	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-install(FILES httplib.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "${_httplib_build_includedir}/httplib.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 install(FILES
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
