@@ -1837,15 +1837,6 @@ inline int shutdown_socket(socket_t sock) {
 template <typename Fn>
 socket_t create_socket(const char *host, int port, Fn fn,
                        int socket_flags = 0) {
-#ifdef _WIN32
-#define SO_SYNCHRONOUS_NONALERT 0x20
-#define SO_OPENTYPE 0x7008
-
-  int opt = SO_SYNCHRONOUS_NONALERT;
-  setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE, (char *)&opt,
-             sizeof(opt));
-#endif
-
   // Get address info
   struct addrinfo hints;
   struct addrinfo *result;
