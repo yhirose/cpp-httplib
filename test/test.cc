@@ -2206,6 +2206,21 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, GzipWithoutDecompressing) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+
+  cli_.set_decompress(false);
+  auto res = cli_.Get("/gzip", headers);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("33", res->get_header_value("Content-Length"));
+  EXPECT_EQ(33, res->body.size());
+  EXPECT_EQ(200, res->status);
+}
+
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   Headers headers;
   std::string body;

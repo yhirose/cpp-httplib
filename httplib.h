@@ -778,6 +778,8 @@ public:
 
   void set_compress(bool on);
 
+  void set_decompress(bool on);
+
   void set_interface(const char *intf);
 
   void set_proxy(const char *host, int port);
@@ -821,6 +823,7 @@ protected:
   bool follow_location_ = false;
 
   bool compress_ = false;
+  bool decompress_ = true;
 
   std::string interface_;
 
@@ -853,6 +856,7 @@ protected:
 #endif
     follow_location_ = rhs.follow_location_;
     compress_ = rhs.compress_;
+    decompress_ = rhs.decompress_;
     interface_ = rhs.interface_;
     proxy_host_ = rhs.proxy_host_;
     proxy_port_ = rhs.proxy_port_;
@@ -1278,6 +1282,11 @@ public:
 
   Client2 &set_compress(bool on) {
     cli_->set_compress(on);
+    return *this;
+  }
+
+  Client2 &set_decompress(bool on) {
+    cli_->set_decompress(on);
     return *this;
   }
 
@@ -2395,7 +2404,7 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
 
 template <typename T>
 bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
-                  Progress progress, ContentReceiver receiver) {
+                  Progress progress, ContentReceiver receiver, bool decompress) {
 
   ContentReceiver out = [&](const char *buf, size_t n) {
     return receiver(buf, n);
@@ -2403,26 +2412,31 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
   decompressor decompressor;
+#endif
 
-  std::string content_encoding = x.get_header_value("Content-Encoding");
-  if (content_encoding.find("gzip") != std::string::npos ||
-      content_encoding.find("deflate") != std::string::npos) {
-    if (!decompressor.is_valid()) {
-      status = 500;
+  if (decompress) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    std::string content_encoding = x.get_header_value("Content-Encoding");
+    if (content_encoding.find("gzip") != std::string::npos ||
+        content_encoding.find("deflate") != std::string::npos) {
+      if (!decompressor.is_valid()) {
+        status = 500;
+        return false;
+      }
+
+      out = [&](const char *buf, size_t n) {
+        return decompressor.decompress(buf, n, [&](const char *buf, size_t n) {
+          return receiver(buf, n);
+        });
+      };
+    }
+#else
+    if (x.get_header_value("Content-Encoding") == "gzip") {
+      status = 415;
       return false;
     }
-
-    out = [&](const char *buf, size_t n) {
-      return decompressor.decompress(
-          buf, n, [&](const char *buf, size_t n) { return receiver(buf, n); });
-    };
-  }
-#else
-  if (x.get_header_value("Content-Encoding") == "gzip") {
-    status = 415;
-    return false;
-  }
 #endif
+  }
 
   auto ret = true;
   auto exceed_payload_max_length = false;
@@ -3883,7 +3897,7 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
   }
 
   if (!detail::read_content(strm, req, payload_max_length_, res.status,
-                            Progress(), out)) {
+                            Progress(), out, true)) {
     return false;
   }
 
@@ -4663,7 +4677,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
 
     int dummy_status;
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
-                              dummy_status, req.progress, out)) {
+                              dummy_status, req.progress, out, decompress_)) {
       return false;
     }
   }
@@ -5024,6 +5038,8 @@ inline void Client::set_digest_auth(const char *username,
 inline void Client::set_follow_location(bool on) { follow_location_ = on; }
 
 inline void Client::set_compress(bool on) { compress_ = on; }
+
+inline void Client::set_decompress(bool on) { decompress_ = on; }
 
 inline void Client::set_interface(const char *intf) { interface_ = intf; }
 

@@ -559,11 +559,19 @@ The server applies gzip compression to the following MIME type contents:
   * application/xml
   * application/xhtml+xml
 
-### Compress content on client
+### Compress request body on client
 
 ```c++
 cli.set_compress(true);
 res = cli.Post("/resource/foo", "...", "text/plain");
+```
+
+### Compress response body on client
+
+```c++
+cli.set_decompress(false);
+res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate"}});
+res->body; // Compressed data
 ```
 
 Split httplib.h into .h and .cc
