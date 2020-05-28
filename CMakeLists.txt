@@ -32,11 +32,15 @@
 
 	-------------------------------------------------------------------------------
 
-	These three variables are available after you run find_package(httplib)
-	* HTTPLIB_HEADER_PATH - this is the full path to the installed header.
+	These variables are available after you run find_package(httplib)
+	* HTTPLIB_HEADER_PATH - this is the full path to the installed header (e.g. /usr/include/httplib.h).
 	* HTTPLIB_IS_USING_OPENSSL - a bool for if OpenSSL support is enabled.
 	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
-	* HTTPLIB_IS_COMPILED - a bool for if the library is header-only or compiled.
+	* HTTPLIB_IS_COMPILED - a bool for if the library is compiled, or otherwise header-only.
+	* HTTPLIB_INCLUDE_DIR - the root path to httplib's header (e.g. /usr/include).
+	* HTTPLIB_LIBRARY - the full path to the library if compiled (e.g. /usr/lib/libhttplib.so).
+	* HTTPLIB_VERSION - the project's version string.
+	* HTTPLIB_FOUND - a bool for if the target was found.
 
 	Want to use precompiled headers (Cmake feature since v3.16)?
 	It's as simple as doing the following (before linking):
@@ -48,7 +52,15 @@
 	FindPython3 requires Cmake v3.12
 ]]
 cmake_minimum_required(VERSION 3.12.0 FATAL_ERROR)
-project(httplib LANGUAGES CXX)
+
+# Get the user agent and use it as a version
+# This gets the string with the user agent from the header.
+# This is so the maintainer doesn't actually need to update this manually.
+file(STRINGS httplib.h _user_agent_match REGEX "User\-Agent.*cpp\-httplib/([0-9]+\.?)+")
+# Need to pull out just the version for use
+string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_user_agent_match}")
+
+project(httplib VERSION ${_httplib_version} LANGUAGES CXX)
 
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.
@@ -205,6 +217,23 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
 	NO_CHECK_REQUIRED_COMPONENTS_MACRO
 )
 
+if(HTTPLIB_COMPILE)
+	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
+		# Example: if you find_package(httplib 0.5.4)
+		# then anything >= 0.5 and <= 1.0 is accepted
+		COMPATIBILITY SameMajorVersion
+	)
+else()
+	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
+		# Example: if you find_package(httplib 0.5.4)
+		# then anything >= 0.5 and <= 1.0 is accepted
+		COMPATIBILITY SameMajorVersion
+		# Tells Cmake that it's a header-only lib
+		# Mildly useful for end-users :)
+		ARCH_INDEPENDENT
+	)
+endif()
+
 # Creates the export httplibTargets.cmake
 # This is strictly what holds compilation requirements
 # and linkage information (doesn't find deps though).
@@ -218,6 +247,7 @@ install(FILES "${_httplib_build_includedir}/httplib.h" DESTINATION ${CMAKE_INSTA
 
 install(FILES
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
 	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 )
 
