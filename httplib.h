@@ -2283,6 +2283,27 @@ inline uint64_t get_header_value_uint64(const Headers &headers, const char *key,
   return def;
 }
 
+inline void parse_header(const char *beg, const char *end, Headers &headers) {
+  auto p = beg;
+  while (p < end && *p != ':') {
+    p++;
+  }
+  if (p < end) {
+    auto key_end = p;
+    p++; // skip ':'
+    while (p < end && (*p == ' ' || *p == '\t')) {
+      p++;
+    }
+    if (p < end) {
+      auto val_begin = p;
+      while (p < end) {
+        p++;
+      }
+      headers.emplace(std::string(beg, key_end), std::string(val_begin, end));
+    }
+  }
+}
+
 inline bool read_headers(Stream &strm, Headers &headers) {
   const auto bufsiz = 2048;
   char buf[bufsiz];
@@ -2305,18 +2326,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
       end--;
     }
 
-    // Horizontal tab and ' ' are considered whitespace and are ignored when on
-    // the left or right side of the header value:
-    //  - https://stackoverflow.com/questions/50179659/
-    //  - https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html
-    static const std::regex re(R"(([^:]+):[\t ]*([^\t ].*))");
-
-    std::cmatch m;
-    if (std::regex_match(line_reader.ptr(), end, m, re)) {
-      auto key = std::string(m[1]);
-      auto val = std::string(m[2]);
-      headers.emplace(key, val);
-    }
+    parse_header(line_reader.ptr(), end, headers);
   }
 
   return true;
