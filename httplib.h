@@ -1634,9 +1634,6 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
   return res;
 }
 
-#define HANDLE_EINTR(method, ...)                                              \
-  (handle_EINTR([&]() { return method(__VA_ARGS__); }))
-
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
@@ -1645,7 +1642,7 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
   fd_set fds;
   FD_ZERO(&fds);
@@ -1655,8 +1652,9 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return HANDLE_EINTR(select, static_cast<int>(sock + 1), &fds, nullptr,
-                      nullptr, &tv);
+  return handle_EINTR([&]() {
+    return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
+  });
 #endif
 }
 
@@ -1668,7 +1666,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
   fd_set fds;
   FD_ZERO(&fds);
@@ -1678,8 +1676,9 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return HANDLE_EINTR(select, static_cast<int>(sock + 1), nullptr, &fds,
-                      nullptr, &tv);
+  return handle_EINTR([&]() {
+    return select(static_cast<int>(sock + 1), nullptr, &fds, nullptr, &tv);
+  });
 #endif
 }
 
@@ -1691,7 +1690,8 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  auto poll_res = HANDLE_EINTR(poll, &pfd_read, 1, timeout);
+  auto poll_res = handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
+
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -1712,9 +1712,11 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  if (HANDLE_EINTR(select, static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse,
-                   &tv) > 0 &&
-      (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
+  auto ret = handle_EINTR([&]() {
+    return select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv);
+  });
+
+  if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
     socklen_t len = sizeof(error);
     return getsockopt(sock, SOL_SOCKET, SO_ERROR,
@@ -2404,7 +2406,8 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
 
 template <typename T>
 bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
-                  Progress progress, ContentReceiver receiver, bool decompress) {
+                  Progress progress, ContentReceiver receiver,
+                  bool decompress) {
 
   ContentReceiver out = [&](const char *buf, size_t n) {
     return receiver(buf, n);
@@ -5582,12 +5585,6 @@ inline bool SSLClient::check_host_name(const char *pattern,
   return true;
 }
 #endif
-
-namespace detail {
-
-#undef HANDLE_EINTR
-
-} // namespace detail
 
 // ----------------------------------------------------------------------------
 
