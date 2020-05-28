@@ -1321,28 +1321,38 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   Client2 &set_ca_cert_path(const char *ca_cert_file_path,
                             const char *ca_cert_dir_path = nullptr) {
-    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
-                                                      ca_cert_dir_path);
+    if (is_ssl_) {
+      static_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
+                                                       ca_cert_dir_path);
+    }
     return *this;
   }
 
   Client2 &set_ca_cert_store(X509_STORE *ca_cert_store) {
-    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+    if (is_ssl_) {
+      static_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+    }
     return *this;
   }
 
   Client2 &enable_server_certificate_verification(bool enabled) {
-    dynamic_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
-        enabled);
+    if (is_ssl_) {
+      static_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
+          enabled);
+    }
     return *this;
   }
 
   long get_openssl_verify_result() const {
-    return dynamic_cast<SSLClient &>(*cli_).get_openssl_verify_result();
+    if (is_ssl_) {
+      return static_cast<SSLClient &>(*cli_).get_openssl_verify_result();
+    }
+    return -1; // NOTE: -1 doesn't match any of X509_V_ERR_???
   }
 
   SSL_CTX *ssl_context() const {
-    return dynamic_cast<SSLClient &>(*cli_).ssl_context();
+    if (is_ssl_) { return static_cast<SSLClient &>(*cli_).ssl_context(); }
+    return nullptr;
   }
 #endif
 
