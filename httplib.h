@@ -3213,7 +3213,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 }
 #endif
 
-inline bool parse_www_authenticate(const httplib::Response &res,
+inline bool parse_www_authenticate(const Response &res,
                                    std::map<std::string, std::string> &auth,
                                    bool is_proxy) {
   auto auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
