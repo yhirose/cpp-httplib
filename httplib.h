@@ -2268,10 +2268,10 @@ inline bool has_header(const Headers &headers, const char *key) {
 
 inline const char *get_header_value(const Headers &headers, const char *key,
                                     size_t id = 0, const char *def = nullptr) {
-  auto itRange = headers.equal_range(key);
-  auto it = itRange.first;
+  auto rng = headers.equal_range(key);
+  auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
-  if(it != itRange.second) { return it->second.c_str(); }
+  if (it != rng.second) { return it->second.c_str(); }
   return def;
 }
 
@@ -3292,10 +3292,10 @@ inline bool Request::has_param(const char *key) const {
 }
 
 inline std::string Request::get_param_value(const char *key, size_t id) const {
-  auto itRange = params.equal_range(key);
-  auto it = itRange.first;
+  auto rng = params.equal_range(key);
+  auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
-  if(it != itRange.second) { return it->second; }
+  if (it != rng.second) { return it->second; }
   return std::string();
 }
 
