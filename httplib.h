@@ -1525,7 +1525,7 @@ inline void read_file(const std::string &path, std::string &out) {
   auto size = fs.tellg();
   fs.seekg(0);
   out.resize(static_cast<size_t>(size));
-  fs.read(&out[0], size);
+  fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
 inline std::string file_extension(const std::string &path) {
@@ -2911,8 +2911,8 @@ private:
 
   std::string buf_;
   size_t state_ = 0;
-  size_t is_valid_ = false;
-  size_t is_done_ = false;
+  bool is_valid_ = false;
+  bool is_done_ = false;
   size_t off_ = 0;
   MultipartFormData file_;
 };
