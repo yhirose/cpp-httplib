@@ -83,6 +83,24 @@
                       : 0))
 #endif
 
+// Prefer gnu::deprecated, otherwise gcc complains if we use
+// [[deprecated]] together with pedantic.
+#ifndef CPPHTTPLIB_DEPRECATED
+#  if defined(__has_cpp_attribute)
+#    if __has_cpp_attribute(gnu::deprecated)
+#      define CPPHTTPLIB_DEPRECATED [[gnu::deprecated]]
+#    else
+#      if __has_cpp_attribute(deprecated)
+#        define CPPHTTPLIB_DEPRECATED [[deprecated]]
+#      else
+#        define CPPHTTPLIB_DEPRECATED
+#      endif
+#    endif
+#  else
+#    define CPPHTTPLIB_DEPRECATED
+#  endif
+#endif
+
 /*
  * Headers
  */
@@ -522,8 +540,8 @@ public:
   Server &Delete(const char *pattern, HandlerWithContentReader handler);
   Server &Options(const char *pattern, Handler handler);
 
-  [[deprecated]] bool set_base_dir(const char *dir,
-                                   const char *mount_point = nullptr);
+  CPPHTTPLIB_DEPRECATED bool set_base_dir(const char *dir,
+                                          const char *mount_point = nullptr);
   bool set_mount_point(const char *mount_point, const char *dir);
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
