@@ -780,7 +780,7 @@ public:
 
   void stop();
 
-  [[deprecated]] void set_timeout_sec(time_t timeout_sec);
+  CPPHTTPLIB_DEPRECATED void set_timeout_sec(time_t timeout_sec);
   void set_connection_timeout(time_t sec, time_t usec = 0);
   void set_read_timeout(time_t sec, time_t usec = 0);
   void set_write_timeout(time_t sec, time_t usec = 0);
