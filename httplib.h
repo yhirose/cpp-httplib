@@ -338,6 +338,7 @@ struct Request {
   // for server
   std::string version;
   std::string target;
+  std::string fragment;
   Params params;
   MultipartFormDataMap files;
   Ranges ranges;
@@ -3692,14 +3693,15 @@ inline void Server::stop() {
 inline bool Server::parse_request_line(const char *s, Request &req) {
   const static std::regex re(
       "(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
-      "(([^?]+)(?:\\?(.*?))?) (HTTP/1\\.[01])\r\n");
+      "(([^?]+)(?:\\?(.*?))?(?:#(.*?))?) (HTTP/1\\.[01])\r\n");
 
   std::cmatch m;
   if (std::regex_match(s, m, re)) {
-    req.version = std::string(m[5]);
+    req.version = std::string(m[6]);
     req.method = std::string(m[1]);
     req.target = std::string(m[2]);
     req.path = detail::decode_url(m[3], false);
+    req.fragment = detail::decode_url(m[5], true);
 
     // Parse query text
     auto len = std::distance(m[4].first, m[4].second);
