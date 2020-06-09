@@ -86,19 +86,19 @@
 // Prefer gnu::deprecated, otherwise gcc complains if we use
 // [[deprecated]] together with pedantic.
 #ifndef CPPHTTPLIB_DEPRECATED
-#  if defined(__has_cpp_attribute)
-#    if __has_cpp_attribute(gnu::deprecated)
-#      define CPPHTTPLIB_DEPRECATED [[gnu::deprecated]]
-#    else
-#      if __has_cpp_attribute(deprecated)
-#        define CPPHTTPLIB_DEPRECATED [[deprecated]]
-#      else
-#        define CPPHTTPLIB_DEPRECATED
-#      endif
-#    endif
-#  else
-#    define CPPHTTPLIB_DEPRECATED
-#  endif
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(gnu::deprecated)
+#define CPPHTTPLIB_DEPRECATED [[gnu::deprecated]]
+#else
+#if __has_cpp_attribute(deprecated)
+#define CPPHTTPLIB_DEPRECATED [[deprecated]]
+#else
+#define CPPHTTPLIB_DEPRECATED
+#endif
+#endif
+#else
+#define CPPHTTPLIB_DEPRECATED
+#endif
 #endif
 
 /*
