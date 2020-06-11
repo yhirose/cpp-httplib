@@ -925,11 +925,19 @@ private:
       const std::string &body, size_t content_length,
       ContentProvider content_provider, const char *content_type);
 
+#ifndef CPPHTTPLIB_MANUAL_CONNECTION
   virtual bool process_and_close_socket(
       socket_t sock, size_t request_count,
       std::function<bool(Stream &strm, bool last_connection,
                          bool &connection_close)>
           callback);
+#else
+  virtual bool process_socket(
+      socket_t sock,
+      std::function<bool(Stream &strm, bool last_connection,
+                         bool &connection_close)>
+          callback);
+#endif
 
   virtual bool is_ssl() const;
 };
@@ -1844,7 +1852,7 @@ inline bool process_socket(bool is_client_request, socket_t sock,
                            size_t keep_alive_max_count, time_t read_timeout_sec,
                            time_t read_timeout_usec, time_t write_timeout_sec,
                            time_t write_timeout_usec, T callback) {
-  assert(keep_alive_max_count > 0);
+  //assert(keep_alive_max_count > 0);
 
   auto ret = false;
 
@@ -4347,7 +4355,13 @@ inline bool Client::read_response_line(Stream &strm, Response &res) {
 }
 
 inline bool Client::send(const Request &req, Response &res) {
+#ifndef CPPHTTPLIB_MANUAL_CONNECTION
   sock_ = create_client_socket();
+#else
+  if(!sock_ || sock_ == INVALID_SOCKET) {
+    sock_ = create_client_socket();
+  }
+#endif
   if (sock_ == INVALID_SOCKET) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4356,15 +4370,24 @@ inline bool Client::send(const Request &req, Response &res) {
     if (!connect(sock_, res, error)) { return error; }
   }
 #endif
-
+#ifndef CPPHTTPLIB_MANUAL_CONNECTION
   return process_and_close_socket(
       sock_, 1,
       [&](Stream &strm, bool last_connection, bool &connection_close) {
         return handle_request(strm, req, res, last_connection,
                               connection_close);
       });
+#else
+  return process_socket(
+      sock_,
+      [&](Stream &strm, bool last_connection, bool &connection_close) {
+        return handle_request(strm, req, res, last_connection,
+                              connection_close);
+      });
+#endif
 }
 
+#ifndef CPPHTTPLIB_MANUAL_CONNECTION
 inline bool Client::send(const std::vector<Request> &requests,
                          std::vector<Response> &responses) {
   size_t i = 0;
@@ -4399,6 +4422,7 @@ inline bool Client::send(const std::vector<Request> &requests,
 
   return true;
 }
+#endif
 
 inline bool Client::handle_request(Stream &strm, const Request &req,
                                    Response &res, bool last_connection,
@@ -4568,7 +4592,11 @@ inline bool Client::write_request(Stream &strm, const Request &req,
 
   // Additonal headers
   Headers headers;
+  #ifndef CPPHTTPLIB_MANUAL_CONNECTION
   if (last_connection) { headers.emplace("Connection", "close"); }
+  #else
+  if (headers.find("Connection") == headers.end()) { headers.emplace("Connection", "keep-alive"); }
+  #endif
 
   if (!req.has_header("Host")) {
     if (is_ssl()) {
@@ -4758,6 +4786,7 @@ inline bool Client::process_request(Stream &strm, const Request &req,
   return true;
 }
 
+#ifndef CPPHTTPLIB_MANUAL_CONNECTION
 inline bool Client::process_and_close_socket(
     socket_t sock, size_t request_count,
     std::function<bool(Stream &strm, bool last_connection,
@@ -4768,6 +4797,17 @@ inline bool Client::process_and_close_socket(
       true, sock, request_count, read_timeout_sec_, read_timeout_usec_,
       write_timeout_sec_, write_timeout_usec_, callback);
 }
+#else
+inline bool Client::process_socket(
+    socket_t sock,
+    std::function<bool(Stream &strm, bool last_connection,
+                       bool &connection_close)>
+        callback) {
+  return detail::process_socket(
+      true, sock, 0, read_timeout_sec_, read_timeout_usec_,
+      write_timeout_sec_, write_timeout_usec_, callback);
+}
+#endif
 
 inline bool Client::is_ssl() const { return false; }
 
