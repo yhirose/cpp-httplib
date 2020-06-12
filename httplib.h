@@ -194,6 +194,7 @@ using socket_t = int;
 #include <mutex>
 #include <random>
 #include <regex>
+#include <set>
 #include <string>
 #include <sys/stat.h>
 #include <thread>
@@ -834,7 +835,8 @@ protected:
   bool process_request(Stream &strm, const Request &req, Response &res,
                        bool last_connection, bool &connection_close);
 
-  std::atomic<socket_t> sock_;
+  std::set<socket_t> cli_socks_;
+  std::mutex cli_socks_mutex_;
 
   const std::string host_;
   const int port_;
@@ -911,6 +913,7 @@ protected:
 
 private:
   socket_t create_client_socket() const;
+  bool create_and_connect_socket(socket_t &sock);
   bool read_response_line(Stream &strm, Response &res);
   bool write_request(Stream &strm, const Request &req, bool last_connection);
   bool redirect(const Request &req, Response &res);
@@ -1397,7 +1400,9 @@ public:
 #endif
 
 private:
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool is_ssl_ = false;
+#endif
   std::shared_ptr<Client> cli_;
 };
 
@@ -4309,7 +4314,7 @@ inline Client::Client(const std::string &host, int port)
 inline Client::Client(const std::string &host, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path)
-    : sock_(INVALID_SOCKET), host_(host), port_(port),
+    : /*cli_sock_(INVALID_SOCKET),*/ host_(host), port_(port),
       host_and_port_(host_ + ":" + std::to_string(port_)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
@@ -4326,6 +4331,20 @@ inline socket_t Client::create_client_socket() const {
   return detail::create_client_socket(host_.c_str(), port_, nullptr,
                                       connection_timeout_sec_,
                                       connection_timeout_usec_, interface_);
+}
+
+inline bool Client::create_and_connect_socket(socket_t &sock) {
+  sock = create_client_socket();
+  if (sock == INVALID_SOCKET) { return false; }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  if (is_ssl() && !proxy_host_.empty()) {
+    Response res;
+    bool error;
+    if (!connect(sock, res, error)) { return error; }
+  }
+#endif
+  return true;
 }
 
 inline bool Client::read_response_line(Stream &strm, Response &res) {
@@ -4347,54 +4366,58 @@ inline bool Client::read_response_line(Stream &strm, Response &res) {
 }
 
 inline bool Client::send(const Request &req, Response &res) {
-  sock_ = create_client_socket();
-  if (sock_ == INVALID_SOCKET) { return false; }
+  socket_t sock = INVALID_SOCKET;
+  if (!create_and_connect_socket(sock)) { return false; }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  if (is_ssl() && !proxy_host_.empty()) {
-    bool error;
-    if (!connect(sock_, res, error)) { return error; }
+  {
+    std::lock_guard<std::mutex> guard(cli_socks_mutex_);
+    cli_socks_.insert(sock);
   }
-#endif
 
-  return process_and_close_socket(
-      sock_, 1,
-      [&](Stream &strm, bool last_connection, bool &connection_close) {
+  auto ret = process_and_close_socket(
+      sock, 1, [&](Stream &strm, bool last_connection, bool &connection_close) {
         return handle_request(strm, req, res, last_connection,
                               connection_close);
       });
+
+  {
+    std::lock_guard<std::mutex> guard(cli_socks_mutex_);
+    cli_socks_.erase(sock);
+  }
+
+  return ret;
 }
 
 inline bool Client::send(const std::vector<Request> &requests,
                          std::vector<Response> &responses) {
   size_t i = 0;
   while (i < requests.size()) {
-    sock_ = create_client_socket();
-    if (sock_ == INVALID_SOCKET) { return false; }
+    socket_t sock = INVALID_SOCKET;
+    if (!create_and_connect_socket(sock)) { return false; }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    if (is_ssl() && !proxy_host_.empty()) {
-      Response res;
-      bool error;
-      if (!connect(sock_, res, error)) { return false; }
+    {
+      std::lock_guard<std::mutex> guard(cli_socks_mutex_);
+      cli_socks_.insert(sock);
     }
-#endif
 
-    if (!process_and_close_socket(sock_, requests.size() - i,
-                                  [&](Stream &strm, bool last_connection,
-                                      bool &connection_close) -> bool {
-                                    auto &req = requests[i++];
-                                    auto res = Response();
-                                    auto ret = handle_request(strm, req, res,
-                                                              last_connection,
-                                                              connection_close);
-                                    if (ret) {
-                                      responses.emplace_back(std::move(res));
-                                    }
-                                    return ret;
-                                  })) {
-      return false;
+    auto ret = process_and_close_socket(
+        sock, requests.size() - i,
+        [&](Stream &strm, bool last_connection,
+            bool &connection_close) -> bool {
+          auto &req = requests[i++];
+          auto res = Response();
+          auto ret =
+              handle_request(strm, req, res, last_connection, connection_close);
+          if (ret) { responses.emplace_back(std::move(res)); }
+          return ret;
+        });
+
+    {
+      std::lock_guard<std::mutex> guard(cli_socks_mutex_);
+      cli_socks_.erase(sock);
     }
+
+    if (!ret) { return false; }
   }
 
   return true;
@@ -5062,11 +5085,12 @@ inline std::shared_ptr<Response> Client::Options(const char *path,
 }
 
 inline void Client::stop() {
-  if (sock_ != INVALID_SOCKET) {
-    std::atomic<socket_t> sock(sock_.exchange(INVALID_SOCKET));
+  std::lock_guard<std::mutex> guard(cli_socks_mutex_);
+  for (auto &sock : cli_socks_) {
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
+  cli_socks_.clear();
 }
 
 inline void Client::set_timeout_sec(time_t timeout_sec) {

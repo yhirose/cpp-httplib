@@ -1766,14 +1766,19 @@ TEST_F(ServerTest, GetStreamedEndless) {
 }
 
 TEST_F(ServerTest, ClientStop) {
-  thread t = thread([&]() {
-    auto res = cli_.Get("/streamed-cancel",
-                        [&](const char *, uint64_t) { return true; });
-    ASSERT_TRUE(res == nullptr);
-  });
+  std::vector<std::thread> threads;
+  for (auto i = 0; i < 10; i++) {
+    threads.emplace_back(thread([&]() {
+      auto res = cli_.Get("/streamed-cancel",
+                          [&](const char *, uint64_t) { return true; });
+      ASSERT_TRUE(res == nullptr);
+    }));
+  }
   std::this_thread::sleep_for(std::chrono::seconds(1));
   cli_.stop();
-  t.join();
+  for (auto& t: threads) {
+    t.join();
+  }
 }
 
 TEST_F(ServerTest, GetWithRange1) {
