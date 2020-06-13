@@ -1767,16 +1767,16 @@ TEST_F(ServerTest, GetStreamedEndless) {
 
 TEST_F(ServerTest, ClientStop) {
   std::vector<std::thread> threads;
-  for (auto i = 0; i < 10; i++) {
+  for (auto i = 0; i < 8; i++) {
     threads.emplace_back(thread([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
       ASSERT_TRUE(res == nullptr);
     }));
   }
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::this_thread::sleep_for(std::chrono::seconds(3));
   cli_.stop();
-  for (auto& t: threads) {
+  for (auto &t : threads) {
     t.join();
   }
 }
@@ -2299,13 +2299,13 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
-  auto client_sock = detail::create_client_socket(
-      HOST, PORT, nullptr,
-      /*timeout_sec=*/5, 0, std::string());
+  auto client_sock =
+      detail::create_client_socket(HOST, PORT, nullptr,
+                                   /*timeout_sec=*/5, 0, std::string());
 
   if (client_sock == INVALID_SOCKET) { return false; }
 
-  return detail::process_and_close_socket(
+  auto ret = detail::process_socket(
       true, client_sock, 1, read_timeout_sec, 0, 0, 0,
       [&](Stream &strm, bool /*last_connection*/, bool &
           /*connection_close*/) -> bool {
@@ -2322,6 +2322,10 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
         }
         return true;
       });
+
+  detail::close_socket(client_sock);
+
+  return ret;
 }
 
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
