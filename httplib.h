@@ -5054,7 +5054,9 @@ inline void Client::stop() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
   if (socket_.is_open()) {
     detail::shutdown_socket(socket_.sock);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
     close_socket(socket_, true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
 
@@ -5562,7 +5564,6 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
 inline void SSLClient::close_socket(Socket &socket, bool process_socket_ret) {
   detail::close_socket(socket.sock);
   socket_.sock = INVALID_SOCKET;
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
   if (socket.ssl) {
     detail::ssl_delete(ctx_mutex_, socket.ssl, process_socket_ret);
     socket_.ssl = nullptr;
