@@ -4389,7 +4389,7 @@ inline bool Client::read_response_line(Stream &strm, Response &res) {
 }
 
 inline bool Client::send(const Request &req, Response &res) {
-  std::lock_guard<std::recursive_mutex> guard(request_mutex_);
+  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
   auto need_new_socket = !is_socket_open();
 
   if (need_new_socket) {
@@ -4413,7 +4413,7 @@ inline bool Client::send(const Request &req, Response &res) {
 
 inline bool Client::send(const std::vector<Request> &requests,
                          std::vector<Response> &responses) {
-  std::lock_guard<std::recursive_mutex> guard(request_mutex_);
+  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
 
   size_t i = 0;
   while (i < requests.size()) {
