@@ -1767,15 +1767,20 @@ TEST_F(ServerTest, GetStreamedEndless) {
 
 TEST_F(ServerTest, ClientStop) {
   std::vector<std::thread> threads;
-  for (auto i = 0; i < 3; i++) {
+  for (auto i = 0; i < 100; i++) {
     threads.emplace_back(thread([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
       ASSERT_TRUE(res == nullptr);
     }));
   }
-  std::this_thread::sleep_for(std::chrono::seconds(3));
-  cli_.stop();
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  while (cli_.is_socket_open()) {
+    cli_.stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
   for (auto &t : threads) {
     t.join();
   }
