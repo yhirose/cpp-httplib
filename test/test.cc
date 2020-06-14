@@ -1767,7 +1767,7 @@ TEST_F(ServerTest, GetStreamedEndless) {
 
 TEST_F(ServerTest, ClientStop) {
   std::vector<std::thread> threads;
-  for (auto i = 0; i < 100; i++) {
+  for (auto i = 0; i < 3; i++) {
     threads.emplace_back(thread([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
