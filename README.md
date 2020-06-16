@@ -482,29 +482,15 @@ httplib::make_range_header({{0, 0}, {-1, 1}})        // 'Range: bytes=0-0, -1'
 ### Keep-Alive connection
 
 ```cpp
-cli.set_keep_alive_max_count(2); // Default is 5
+httplib::Client cli("localhost", 1234);
 
-std::vector<Request> requests;
-Get(requests, "/get-request1");
-Get(requests, "/get-request2");
-Post(requests, "/post-request1", "text", "text/plain");
-Post(requests, "/post-request2", "text", "text/plain");
+cli.Get("/hello");         // with "Connection: close"
 
-const size_t DATA_CHUNK_SIZE = 4;
-std::string data("abcdefg");
-Post(requests, "/post-request-with-content-provider",
-  data.size(),
-  [&](size_t offset, size_t length, DataSink &sink){
-    sink.write(&data[offset], std::min(length, DATA_CHUNK_SIZE));
-  },
-  "text/plain");
+cli.set_keep_alive(true);
+cli.Get("/world");
 
-std::vector<Response> responses;
-if (cli.send(requests, responses)) {
-  for (const auto& res: responses) {
-    ...
-  }
-}
+cli.set_keep_alive(false);
+cli.Get("/last-request");  // with "Connection: close"
 ```
 
 ### Redirect
