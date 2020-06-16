@@ -4591,7 +4591,7 @@ inline bool Client::write_request(Stream &strm, const Request &req,
   if (!req.has_header("Accept")) { headers.emplace("Accept", "*/*"); }
 
   if (!req.has_header("User-Agent")) {
-    headers.emplace("User-Agent", "cpp-httplib/0.6");
+    headers.emplace("User-Agent", "cpp-httplib/0.7");
   }
 
   if (req.body.empty()) {
