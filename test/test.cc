@@ -1136,6 +1136,10 @@ protected:
                 EXPECT_EQ(req.get_param_value("key"), "value");
                 EXPECT_EQ(req.body, "content");
               })
+        .Get("/last-request",
+             [&](const Request & req, Response &/*res*/) {
+               EXPECT_EQ("close", req.get_header_value("Connection"));
+             })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
         .Get("/gzip",
              [&](const Request & /*req*/, Response &res) {
@@ -1766,14 +1770,24 @@ TEST_F(ServerTest, GetStreamedEndless) {
 }
 
 TEST_F(ServerTest, ClientStop) {
-  thread t = thread([&]() {
-    auto res = cli_.Get("/streamed-cancel",
-                        [&](const char *, uint64_t) { return true; });
-    ASSERT_TRUE(res == nullptr);
-  });
+  std::vector<std::thread> threads;
+  for (auto i = 0; i < 3; i++) {
+    threads.emplace_back(thread([&]() {
+      auto res = cli_.Get("/streamed-cancel",
+                          [&](const char *, uint64_t) { return true; });
+      ASSERT_TRUE(res == nullptr);
+    }));
+  }
+
   std::this_thread::sleep_for(std::chrono::seconds(1));
-  cli_.stop();
-  t.join();
+
+  while (cli_.is_socket_open()) {
+    cli_.stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  for (auto &t : threads) {
+    t.join();
+  }
 }
 
 TEST_F(ServerTest, GetWithRange1) {
@@ -2117,42 +2131,48 @@ TEST_F(ServerTest, HTTP2Magic) {
 }
 
 TEST_F(ServerTest, KeepAlive) {
-  cli_.set_keep_alive_max_count(4);
+  auto res = cli_.Get("/hi");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("Hello World!", res->body);
 
-  std::vector<Request> requests;
-  Get(requests, "/hi");
-  Get(requests, "/hi");
-  Get(requests, "/hi");
-  Get(requests, "/not-exist");
-  Post(requests, "/empty", "", "text/plain");
-  Post(
-      requests, "/empty", 0,
-      [&](size_t, size_t, httplib::DataSink &) { return true; }, "text/plain");
+  res = cli_.Get("/hi");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("Hello World!", res->body);
 
-  std::vector<Response> responses;
-  auto ret = cli_.send(requests, responses);
+  res = cli_.Get("/hi");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("Hello World!", res->body);
 
-  ASSERT_TRUE(ret == true);
-  ASSERT_TRUE(requests.size() == responses.size());
+  res = cli_.Get("/not-exist");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(404, res->status);
 
-  for (size_t i = 0; i < 3; i++) {
-    auto &res = responses[i];
-    EXPECT_EQ(200, res.status);
-    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
-    EXPECT_EQ("Hello World!", res.body);
-  }
+  res = cli_.Post("/empty", "", "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("empty", res->body);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
 
-  {
-    auto &res = responses[3];
-    EXPECT_EQ(404, res.status);
-  }
+  res = cli_.Post(
+      "/empty", 0, [&](size_t, size_t, httplib::DataSink &) { return true; },
+      "text/plain");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("empty", res->body);
 
-  for (size_t i = 4; i < 6; i++) {
-    auto &res = responses[i];
-    EXPECT_EQ(200, res.status);
-    EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
-    EXPECT_EQ("empty", res.body);
-  }
+  cli_.set_keep_alive(false);
+  res = cli_.Get("/last-request");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -2294,16 +2314,14 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
-  auto client_sock = detail::create_client_socket(
-      HOST, PORT, nullptr,
-      /*timeout_sec=*/5, 0, std::string());
+  auto client_sock =
+      detail::create_client_socket(HOST, PORT, nullptr,
+                                   /*timeout_sec=*/5, 0, std::string());
 
   if (client_sock == INVALID_SOCKET) { return false; }
 
-  return detail::process_and_close_socket(
-      true, client_sock, 1, read_timeout_sec, 0, 0, 0,
-      [&](Stream &strm, bool /*last_connection*/, bool &
-          /*connection_close*/) -> bool {
+  auto ret = detail::process_client_socket(
+      client_sock, read_timeout_sec, 0, 0, 0, [&](Stream &strm) {
         if (req.size() !=
             static_cast<size_t>(strm.write(req.data(), req.size()))) {
           return false;
@@ -2317,6 +2335,10 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
         }
         return true;
       });
+
+  detail::close_socket(client_sock);
+
+  return ret;
 }
 
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
@@ -2501,8 +2523,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   }
 
   Client client(HOST, PORT);
-  const Headers headers = {{"Accept", "text/event-stream"},
-                           {"Connection", "Keep-Alive"}};
+  const Headers headers = {{"Accept", "text/event-stream"}};
 
   auto get_thread = std::thread([&client, &headers]() {
     std::shared_ptr<Response> res = client.Get(
@@ -2728,19 +2749,24 @@ TEST(SSLClientTest, ServerNameIndication) {
   ASSERT_EQ(200, res->status);
 }
 
-TEST(SSLClientTest, ServerCertificateVerification) {
+TEST(SSLClientTest, ServerCertificateVerification1) {
   SSLClient cli("google.com");
-
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(301, res->status);
+}
 
+TEST(SSLClientTest, ServerCertificateVerification2) {
+  SSLClient cli("google.com");
   cli.enable_server_certificate_verification(true);
-  res = cli.Get("/");
+  auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
+}
 
+TEST(SSLClientTest, ServerCertificateVerification3) {
+  SSLClient cli("google.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
-  res = cli.Get("/");
+  auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(301, res->status);
 }

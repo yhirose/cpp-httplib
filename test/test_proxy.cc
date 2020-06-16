@@ -222,66 +222,45 @@ void KeepAliveTest(Client& cli, bool basic) {
 #endif
   }
 
-  cli.set_keep_alive_max_count(4);
   cli.set_follow_location(true);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   cli.set_digest_auth("hello", "world");
+#endif
 
-  std::vector<Request> requests;
+  {
+    auto res = cli.Get("/get");
+    EXPECT_EQ(200, res->status);
+  }
+  {
+    auto res = cli.Get("/redirect/2");
+    EXPECT_EQ(200, res->status);
+  }
 
-  Get(requests, "/get");
-  Get(requests, "/redirect/2");
+  {
+    std::vector<std::string> paths = {
+        "/digest-auth/auth/hello/world/MD5",
+        "/digest-auth/auth/hello/world/SHA-256",
+        "/digest-auth/auth/hello/world/SHA-512",
+        "/digest-auth/auth-int/hello/world/MD5",
+    };
 
-  std::vector<std::string> paths = {
-      "/digest-auth/auth/hello/world/MD5",
-      "/digest-auth/auth/hello/world/SHA-256",
-      "/digest-auth/auth/hello/world/SHA-512",
-      "/digest-auth/auth-int/hello/world/MD5",
-  };
-
-  for (auto path : paths) {
-    Get(requests, path.c_str());
+    for (auto path: paths) {
+      auto res = cli.Get(path.c_str());
+      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res->body);
+      EXPECT_EQ(200, res->status);
+    }
   }
 
   {
     int count = 100;
     while (count--) {
-      Get(requests, "/get");
+      auto res = cli.Get("/get");
+      EXPECT_EQ(200, res->status);
     }
-  }
-
-  std::vector<Response> responses;
-  auto ret = cli.send(requests, responses);
-  ASSERT_TRUE(ret == true);
-  ASSERT_TRUE(requests.size() == responses.size());
-
-  size_t i = 0;
-
-  {
-    auto &res = responses[i++];
-    EXPECT_EQ(200, res.status);
-  }
-
-  {
-    auto &res = responses[i++];
-    EXPECT_EQ(200, res.status);
-  }
-
-
-  {
-    int count = static_cast<int>(paths.size());
-    while (count--) {
-      auto &res = responses[i++];
-      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res.body);
-      EXPECT_EQ(200, res.status);
-    }
-  }
-
-  for (; i < responses.size(); i++) {
-    auto &res = responses[i];
-    EXPECT_EQ(200, res.status);
   }
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, NoSSLWithBasic) {
   Client cli("httpbin.org");
   KeepAliveTest(cli, true);
@@ -292,7 +271,6 @@ TEST(KeepAliveTest, SSLWithBasic) {
   KeepAliveTest(cli, true);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, NoSSLWithDigest) {
   Client cli("httpbin.org");
   KeepAliveTest(cli, false);
