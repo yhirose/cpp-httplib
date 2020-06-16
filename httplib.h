@@ -2842,7 +2842,6 @@ public:
         if (pattern.size() > buf_.size()) { return true; }
         auto pos = buf_.find(pattern);
         if (pos != 0) {
-          is_done_ = true;
           return false;
         }
         buf_.erase(0, pattern.size());
@@ -2862,7 +2861,6 @@ public:
           if (pos == 0) {
             if (!header_callback(file_)) {
               is_valid_ = false;
-              is_done_ = false;
               return false;
             }
             buf_.erase(0, crlf_.size());
@@ -2886,7 +2884,7 @@ public:
           off_ += pos + crlf_.size();
           pos = buf_.find(crlf_);
         }
-        break;
+        if (state_ != 3) { return true; }
       }
       case 3: { // Body
         {
@@ -2894,10 +2892,17 @@ public:
           if (pattern.size() > buf_.size()) { return true; }
 
           auto pos = buf_.find(pattern);
-          if (pos == std::string::npos) { pos = buf_.size(); }
+          if (pos == std::string::npos) {
+            pos = buf_.size();
+            while (pos > 0) {
+              auto c = buf_[pos - 1];
+              if (c != '\r' && c != '\n' && c != '-') { break; }
+              pos--;
+            }
+          }
+
           if (!content_callback(buf_.data(), pos)) {
             is_valid_ = false;
-            is_done_ = false;
             return false;
           }
 
@@ -2913,7 +2918,6 @@ public:
           if (pos != std::string::npos) {
             if (!content_callback(buf_.data(), pos)) {
               is_valid_ = false;
-              is_done_ = false;
               return false;
             }
 
@@ -2923,7 +2927,6 @@ public:
           } else {
             if (!content_callback(buf_.data(), pattern.size())) {
               is_valid_ = false;
-              is_done_ = false;
               return false;
             }
 
@@ -2948,7 +2951,6 @@ public:
             is_valid_ = true;
             state_ = 5;
           } else {
-            is_done_ = true;
             return true;
           }
         }
@@ -2976,7 +2978,6 @@ private:
   std::string buf_;
   size_t state_ = 0;
   bool is_valid_ = false;
-  bool is_done_ = false;
   size_t off_ = 0;
   MultipartFormData file_;
 };
@@ -3978,6 +3979,17 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
 
     multipart_form_data_parser.set_boundary(std::move(boundary));
     out = [&](const char *buf, size_t n) {
+      /* For debug
+      size_t pos = 0;
+      while (pos < n) {
+        auto read_size = std::min<size_t>(1, n - pos);
+        auto ret = multipart_form_data_parser.parse(
+            buf + pos, read_size, multipart_receiver, mulitpart_header);
+        if (!ret) { return false; }
+        pos += read_size;
+      }
+      return true;
+      */
       return multipart_form_data_parser.parse(buf, n, multipart_receiver,
                                               mulitpart_header);
     };
