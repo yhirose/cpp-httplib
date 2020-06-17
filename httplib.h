@@ -4340,7 +4340,7 @@ inline bool Server::process_and_close_socket(socket_t sock) {
                                nullptr);
       });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  // std::this_thread::sleep_for(std::chrono::milliseconds(1));
   detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return ret;
@@ -4356,7 +4356,7 @@ inline Client::Client(const std::string &host, int port)
 inline Client::Client(const std::string &host, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path)
-    : /*cli_sock_(INVALID_SOCKET),*/ host_(host), port_(port),
+    : host_(host), port_(port),
       host_and_port_(host_ + ":" + std::to_string(port_)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
