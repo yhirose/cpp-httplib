@@ -2781,9 +2781,12 @@ inline bool parse_multipart_boundary(const std::string &content_type,
                                      std::string &boundary) {
   auto pos = content_type.find("boundary=");
   if (pos == std::string::npos) { return false; }
-
   boundary = content_type.substr(pos + 9);
-  return true;
+  if (boundary.length() >= 2 && boundary.front() == '"' &&
+      boundary.back() == '"') {
+    boundary = boundary.substr(1, boundary.size() - 2);
+  }
+  return !boundary.empty();
 }
 
 inline bool parse_range_header(const std::string &s, Ranges &ranges) {
