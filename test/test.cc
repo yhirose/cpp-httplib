@@ -2378,7 +2378,7 @@ TEST(ServerRequestParsingTest, ParseFragmentWithParams)
     t.join();
 
     EXPECT_EQ(request.fragment, "fragment");
-    ASSERT_TRUE(request.params.size(), 2);
+    ASSERT_EQ(request.params.size(), 2);
     EXPECT_EQ(request.path, "/fooBar");
     EXPECT_EQ(request.target, "/fooBar?par1=val1&par2=val2#fragment");
     EXPECT_EQ(request.version, "HTTP/1.1");
