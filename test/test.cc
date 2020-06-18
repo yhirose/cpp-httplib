@@ -2318,6 +2318,72 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
       });
 }
 
+TEST(ServerRequestParsingTest, ParseFragmentWithoutParams)
+{
+    Server svr;
+    httplib::Request request;
+    svr.Get(
+        ".*/fooBar",
+        [&request](const httplib::Request& req, httplib::Response& res)
+        {
+            request = req;
+            res.set_content("ok", "text/plain");
+        }
+    );
+    thread t = thread([&] { svr.listen(HOST, PORT); });
+    while (!svr.is_running()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    const std::string req = "GET /fooBar#fragment HTTP/1.1\r\n"
+        "foo: \t \v bar \e\t \r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    ASSERT_TRUE(send_request(5, req));
+    svr.stop();
+    t.join();
+
+    EXPECT_EQ(request.fragment, "fragment");
+    EXPECT_TRUE(request.params.empty());
+    EXPECT_EQ(request.path, "/fooBar");
+    EXPECT_EQ(request.target, "/fooBar#fragment");
+    EXPECT_EQ(request.version, "HTTP/1.1");
+}
+
+TEST(ServerRequestParsingTest, ParseFragmentWithParams)
+{
+    Server svr;
+    httplib::Request request;
+    svr.Get(
+        ".*/fooBar",
+        [&request](const httplib::Request& req, httplib::Response& res)
+        {
+            request = req;
+            res.set_content("ok", "text/plain");
+        }
+    );
+    thread t = thread([&] { svr.listen(HOST, PORT); });
+    while (!svr.is_running()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    const std::string req = "GET /fooBar?par1=val1&par2=val2#fragment HTTP/1.1\r\n"
+        "foo: \t \v bar \e\t \r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    ASSERT_TRUE(send_request(5, req));
+    svr.stop();
+    t.join();
+
+    EXPECT_EQ(request.fragment, "fragment");
+    ASSERT_TRUE(request.params.size(), 2);
+    EXPECT_EQ(request.path, "/fooBar");
+    EXPECT_EQ(request.target, "/fooBar?par1=val1&par2=val2#fragment");
+    EXPECT_EQ(request.version, "HTTP/1.1");
+}
+
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   Server svr;
   std::string header_value;
