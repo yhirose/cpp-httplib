@@ -2895,6 +2895,7 @@ public:
           pos = buf_.find(crlf_);
         }
         if (state_ != 3) { return true; }
+        break;
       }
       case 3: { // Body
         {
