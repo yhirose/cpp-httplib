@@ -2817,7 +2817,7 @@ class MultipartFormDataParser {
 public:
   MultipartFormDataParser() = default;
 
-  void set_boundary(std::string boundary) { boundary_ = std::move(boundary); }
+  void set_boundary(std::string &&boundary) { boundary_ = boundary; }
 
   bool is_valid() const { return is_valid_; }
 
