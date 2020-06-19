@@ -1889,11 +1889,11 @@ inline bool process_server_socket_core(socket_t sock,
 }
 
 template <typename T>
-inline bool
-process_server_socket(socket_t sock, size_t keep_alive_max_count,
-                      time_t read_timeout_sec, time_t read_timeout_usec,
-                      time_t write_timeout_sec, time_t write_timeout_usec,
-                      T callback) {
+inline bool process_server_socket(socket_t sock, size_t keep_alive_max_count,
+                                  time_t read_timeout_sec,
+                                  time_t read_timeout_usec,
+                                  time_t write_timeout_sec,
+                                  time_t write_timeout_usec, T callback) {
   return process_server_socket_core(
       sock, keep_alive_max_count,
       [&](bool close_connection, bool connection_closed) {
@@ -1973,16 +1973,6 @@ socket_t create_socket(const char *host, int port, int socket_flags,
 #endif
 
     if (socket_options) { socket_options(sock); }
-
-    // Make 'reuse address' option available
-    int yes = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&yes),
-               sizeof(yes));
-
-#ifdef SO_REUSEPORT
-    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char *>(&yes),
-               sizeof(yes));
-#endif
 
     if (rp->ai_family == AF_INET6) {
       int no = 0;
@@ -3693,6 +3683,10 @@ inline void Server::set_file_request_handler(Handler handler) {
 
 inline void Server::set_error_handler(Handler handler) {
   error_handler_ = std::move(handler);
+}
+
+inline void Server::set_socket_options(SocketOptions socket_options) {
+  socket_options_ = socket_options;
 }
 
 inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
