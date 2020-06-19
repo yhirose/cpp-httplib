@@ -1860,10 +1860,9 @@ inline bool keep_alive(socket_t sock) {
     } else if (val == 0) {
       auto current = steady_clock::now();
       auto duration = duration_cast<milliseconds>(current - start);
-      auto timeout = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND * 100 + CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
-      if (duration.count() > timeout) {
-        return false;
-      }
+      auto timeout = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND * 100 +
+                     CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
+      if (duration.count() > timeout) { return false; }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     } else {
       return true;
@@ -2841,9 +2840,7 @@ public:
         auto pattern = dash_ + boundary_ + crlf_;
         if (pattern.size() > buf_.size()) { return true; }
         auto pos = buf_.find(pattern);
-        if (pos != 0) {
-          return false;
-        }
+        if (pos != 0) { return false; }
         buf_.erase(0, pattern.size());
         off_ += pattern.size();
         state_ = 1;
