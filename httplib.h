@@ -72,6 +72,10 @@
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH ((std::numeric_limits<size_t>::max)())
 #endif
 
+#ifndef CPPHTTPLIB_TCP_NODELAY
+#define CPPHTTPLIB_TCP_NODELAY false
+#endif
+
 #ifndef CPPHTTPLIB_RECV_BUFSIZ
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 #endif
@@ -166,6 +170,7 @@ using socket_t = SOCKET;
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #ifdef CPPHTTPLIB_USE_POLL
 #include <poll.h>
 #endif
@@ -573,6 +578,7 @@ public:
   void set_expect_100_continue_handler(Expect100ContinueHandler handler);
   void set_logger(Logger logger);
 
+  void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
 
   void set_keep_alive_max_count(size_t count);
@@ -661,6 +667,8 @@ private:
   Handler error_handler_;
   Logger logger_;
   Expect100ContinueHandler expect_100_continue_handler_;
+
+  bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   SocketOptions socket_options_ = default_socket_options;
 };
 
@@ -802,6 +810,9 @@ public:
 
   void stop();
 
+  void set_tcp_nodelay(bool on);
+  void set_socket_options(SocketOptions socket_options);
+
   CPPHTTPLIB_DEPRECATED void set_timeout_sec(time_t timeout_sec);
   void set_connection_timeout(time_t sec, time_t usec = 0);
   void set_read_timeout(time_t sec, time_t usec = 0);
@@ -876,6 +887,9 @@ protected:
   bool keep_alive_ = false;
   bool follow_location_ = false;
 
+  bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
+  SocketOptions socket_options_ = nullptr;
+
   bool compress_ = false;
   bool decompress_ = true;
 
@@ -909,6 +923,8 @@ protected:
 #endif
     keep_alive_ = rhs.keep_alive_;
     follow_location_ = rhs.follow_location_;
+    tcp_nodelay_ = rhs.tcp_nodelay_;
+    socket_options_ = rhs.socket_options_;
     compress_ = rhs.compress_;
     decompress_ = rhs.decompress_;
     interface_ = rhs.interface_;
@@ -1296,6 +1312,14 @@ public:
   bool is_socket_open() { return cli_->is_socket_open(); }
 
   void stop() { cli_->stop(); }
+
+  void set_tcp_nodelay(bool on) {
+    cli_->set_tcp_nodelay(on);
+  }
+
+  void set_socket_options(SocketOptions socket_options) {
+    cli_->set_socket_options(socket_options);
+  }
 
   Client2 &set_connection_timeout(time_t sec, time_t usec) {
     cli_->set_connection_timeout(sec, usec);
@@ -1922,7 +1946,7 @@ inline int shutdown_socket(socket_t sock) {
 
 template <typename BindOrConnect>
 socket_t create_socket(const char *host, int port, int socket_flags,
-                       SocketOptions socket_options,
+                       bool tcp_nodelay, SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
   struct addrinfo hints;
@@ -1970,6 +1994,12 @@ socket_t create_socket(const char *host, int port, int socket_flags,
 #ifndef _WIN32
     if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) { continue; }
 #endif
+
+    if (tcp_nodelay) {
+      int yes = 1;
+      setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&yes),
+                 sizeof(yes));
+    }
 
     if (socket_options) { socket_options(sock); }
 
@@ -2057,11 +2087,12 @@ inline std::string if2ip(const std::string &ifn) {
 #endif
 
 inline socket_t create_client_socket(const char *host, int port,
+                                     bool tcp_nodelay,
                                      SocketOptions socket_options,
                                      time_t timeout_sec, time_t timeout_usec,
                                      const std::string &intf) {
   return create_socket(
-      host, port, 0, socket_options,
+      host, port, 0, tcp_nodelay, socket_options,
       [&](socket_t sock, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifndef _WIN32
@@ -3682,6 +3713,8 @@ inline void Server::set_error_handler(Handler handler) {
   error_handler_ = std::move(handler);
 }
 
+inline void Server::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
+
 inline void Server::set_socket_options(SocketOptions socket_options) {
   socket_options_ = socket_options;
 }
@@ -4052,7 +4085,7 @@ inline socket_t
 Server::create_server_socket(const char *host, int port, int socket_flags,
                              SocketOptions socket_options) const {
   return detail::create_socket(
-      host, port, socket_flags, socket_options,
+      host, port, socket_flags, tcp_nodelay_, socket_options,
       [](socket_t sock, struct addrinfo &ai) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
@@ -4335,7 +4368,6 @@ inline bool Server::process_and_close_socket(socket_t sock) {
                                nullptr);
       });
 
-  // std::this_thread::sleep_for(std::chrono::milliseconds(1));
   detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return ret;
@@ -4361,12 +4393,12 @@ inline bool Client::is_valid() const { return true; }
 
 inline socket_t Client::create_client_socket() const {
   if (!proxy_host_.empty()) {
-    return detail::create_client_socket(proxy_host_.c_str(), proxy_port_,
-                                        nullptr, connection_timeout_sec_,
-                                        connection_timeout_usec_, interface_);
+    return detail::create_client_socket(
+        proxy_host_.c_str(), proxy_port_, tcp_nodelay_, socket_options_,
+        connection_timeout_sec_, connection_timeout_usec_, interface_);
   }
-  return detail::create_client_socket(host_.c_str(), port_, nullptr,
-                                      connection_timeout_sec_,
+  return detail::create_client_socket(host_.c_str(), port_, tcp_nodelay_,
+                                      socket_options_, connection_timeout_sec_,
                                       connection_timeout_usec_, interface_);
 }
 
@@ -5096,6 +5128,12 @@ inline void Client::set_digest_auth(const char *username,
 inline void Client::set_keep_alive(bool on) { keep_alive_ = on; }
 
 inline void Client::set_follow_location(bool on) { follow_location_ = on; }
+
+inline void Client::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
+
+inline void Client::set_socket_options(SocketOptions socket_options) {
+  socket_options_ = socket_options;
+}
 
 inline void Client::set_compress(bool on) { compress_ = on; }
 
