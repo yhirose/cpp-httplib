@@ -50,8 +50,9 @@
 	-------------------------------------------------------------------------------
 
 	FindPython3 requires Cmake v3.12
+	ARCH_INDEPENDENT option of write_basic_package_version_file() requires Cmake v3.14
 ]]
-cmake_minimum_required(VERSION 3.12.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
 
 # Gets the latest tag as a string like "v0.6.6"
 # Can silently fail if git isn't on the system
