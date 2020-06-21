@@ -5548,7 +5548,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
       socket.sock, ctx_, ctx_mutex_,
       [&](SSL *ssl) {
         if (ca_cert_file_path_.empty() && ca_cert_store_ == nullptr) {
-          SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
+          SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
+          SSL_CTX_set_default_verify_paths(ctx_);
         } else if (!ca_cert_file_path_.empty()) {
           if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
                                              nullptr)) {
