@@ -52,6 +52,7 @@ void RedirectProxyText(Client& cli, const char *path, bool basic) {
   EXPECT_EQ(200, res->status);
 }
 
+#if 0
 TEST(RedirectTest, HTTPBinNoSSLBasic) {
   Client cli("httpbin.org");
   RedirectProxyText(cli, "/redirect/2", true);
@@ -72,6 +73,7 @@ TEST(RedirectTest, HTTPBinSSLDigest) {
   SSLClient cli("httpbin.org");
   RedirectProxyText(cli, "/redirect/2", false);
 }
+#endif
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -260,6 +262,7 @@ void KeepAliveTest(Client& cli, bool basic) {
   }
 }
 
+#if 0
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, NoSSLWithBasic) {
   Client cli("httpbin.org");
@@ -280,4 +283,5 @@ TEST(KeepAliveTest, SSLWithDigest) {
   SSLClient cli("httpbin.org");
   KeepAliveTest(cli, false);
 }
+#endif
 #endif

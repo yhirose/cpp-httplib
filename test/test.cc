@@ -578,6 +578,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
 }
 #endif
 
+#if 0
 TEST(AbsoluteRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
@@ -636,6 +637,7 @@ TEST(TooManyRedirectTest, Redirect) {
   auto res = cli.Get("/redirect/21");
   ASSERT_TRUE(res == nullptr);
 }
+#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest, Redirect) {
@@ -651,6 +653,7 @@ TEST(YahooRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
+#if 0
 TEST(HttpsToHttpRedirectTest, Redirect) {
   httplib::SSLClient cli("httpbin.org");
   cli.set_follow_location(true);
@@ -659,6 +662,7 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
+#endif
 
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr8080;
@@ -2983,6 +2987,7 @@ TEST(YahooRedirectTest3, SimpleInterface) {
   EXPECT_EQ(200, res->status);
 }
 
+#if 0
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   auto res =
       httplib::Client2("https://httpbin.org")
@@ -2992,4 +2997,5 @@ TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
+#endif
 #endif
