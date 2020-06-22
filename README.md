@@ -287,7 +287,7 @@ Client Example
 
 int main(void)
 {
-  // IMPORTANT: 1st parameter must be a hostname or an IP adress string.
+  // IMPORTANT: 1st parameter must be a hostname or an IP address string.
   httplib::Client cli("localhost", 1234);
 
   auto res = cli.Get("/hi");
