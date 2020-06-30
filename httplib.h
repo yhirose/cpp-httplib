@@ -152,6 +152,8 @@ using ssize_t = int;
 
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "cryptui.lib")
 #endif
 
 #ifndef strcasecmp
@@ -1062,6 +1064,8 @@ private:
   bool connect_with_proxy(Socket &sock, Response &res, bool &success);
   bool initialize_ssl(Socket &socket);
 
+  bool load_certs();
+
   bool verify_host(X509 *server_cert) const;
   bool verify_host_with_subject_alt_name(X509 *server_cert) const;
   bool verify_host_with_common_name(X509 *server_cert) const;
@@ -1069,12 +1073,14 @@ private:
 
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
+  std::once_flag initialize_cert_;
+
   std::vector<std::string> host_components_;
 
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
   X509_STORE *ca_cert_store_ = nullptr;
-  bool server_certificate_verification_ = false;
+  bool server_certificate_verification_ = true;
   long verify_result_ = 0;
 
   friend class Client;
@@ -1313,9 +1319,7 @@ public:
 
   void stop() { cli_->stop(); }
 
-  void set_tcp_nodelay(bool on) {
-    cli_->set_tcp_nodelay(on);
-  }
+  void set_tcp_nodelay(bool on) { cli_->set_tcp_nodelay(on); }
 
   void set_socket_options(SocketOptions socket_options) {
     cli_->set_socket_options(socket_options);
@@ -2776,7 +2780,7 @@ inline std::string params_to_query_str(const Params &params) {
     if (it != params.begin()) { query += "&"; }
     query += it->first;
     query += "=";
-    query += detail::encode_url(it->second);
+    query += encode_url(it->second);
   }
 
   return query;
@@ -3223,6 +3227,33 @@ inline std::string SHA_512(const std::string &s) {
 #endif
 
 #ifdef _WIN32
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// NOTE: This code came up with the following stackoverflow post:
+// https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
+inline bool load_system_certs_on_windows(X509_STORE *store) {
+  auto hStore = CertOpenSystemStore((HCRYPTPROV_LEGACY)NULL, L"ROOT");
+
+  if (!hStore) { return false; }
+
+  PCCERT_CONTEXT pContext = NULL;
+  while (pContext = CertEnumCertificatesInStore(hStore, pContext)) {
+    auto encoded_cert =
+        static_cast<const unsigned char *>(pContext->pbCertEncoded);
+
+    auto x509 = d2i_X509(NULL, &encoded_cert, pContext->cbCertEncoded);
+    if (x509) {
+      X509_STORE_add_cert(store, x509);
+      X509_free(x509);
+    }
+  }
+
+  CertFreeCertificateContext(pContext);
+  CertCloseStore(hStore, 0);
+
+  return true;
+}
+#endif
+
 class WSInit {
 public:
   WSInit() {
@@ -5543,23 +5574,44 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
   return true;
 }
 
+inline bool SSLClient::load_certs() {
+  bool ret = true;
+
+  std::call_once(initialize_cert_, [&]() {
+    std::lock_guard<std::mutex> guard(ctx_mutex_);
+    if (!ca_cert_file_path_.empty()) {
+      if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
+                                         nullptr)) {
+        ret = false;
+      }
+    } else if (!ca_cert_dir_path_.empty()) {
+      if (!SSL_CTX_load_verify_locations(ctx_, nullptr,
+                                         ca_cert_dir_path_.c_str())) {
+        ret = false;
+      }
+    } else if (ca_cert_store_ != nullptr) {
+      if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store_) {
+        SSL_CTX_set_cert_store(ctx_, ca_cert_store_);
+      }
+    } else {
+#ifdef _WIN32
+      detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
+#else
+      SSL_CTX_set_default_verify_paths(ctx_);
+#endif
+    }
+  });
+
+  return ret;
+}
+
 inline bool SSLClient::initialize_ssl(Socket &socket) {
   auto ssl = detail::ssl_new(
       socket.sock, ctx_, ctx_mutex_,
       [&](SSL *ssl) {
-        if (ca_cert_file_path_.empty() && ca_cert_store_ == nullptr) {
-          SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
-        } else if (!ca_cert_file_path_.empty()) {
-          if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
-                                             nullptr)) {
-            return false;
-          }
-          SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
-        } else if (ca_cert_store_ != nullptr) {
-          if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store_) {
-            SSL_CTX_set_cert_store(ctx_, ca_cert_store_);
-          }
-          SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
+        if (server_certificate_verification_) {
+          if (!load_certs()) { return false; }
+          SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
         }
 
         if (SSL_connect(ssl) != 1) { return false; }
@@ -5749,3 +5801,5 @@ inline bool SSLClient::check_host_name(const char *pattern,
 } // namespace httplib
 
 #endif // CPPHTTPLIB_HTTPLIB_H
+
+

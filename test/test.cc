@@ -765,6 +765,9 @@ protected:
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    cli_.enable_server_certificate_verification(false);
+#endif
   }
 
   virtual void SetUp() {
@@ -2627,6 +2630,9 @@ protected:
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    cli_.enable_server_certificate_verification(false);
+#endif
   }
 
   virtual void SetUp() {
@@ -2704,6 +2710,9 @@ protected:
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    cli_.enable_server_certificate_verification(false);
+#endif
   }
 
   virtual void SetUp() {
@@ -2763,6 +2772,7 @@ TEST(SSLClientTest, ServerCertificateVerification1) {
 TEST(SSLClientTest, ServerCertificateVerification2) {
   SSLClient cli("google.com");
   cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path("hello");
   auto res = cli.Get("/");
   ASSERT_TRUE(res == nullptr);
 }
@@ -2819,8 +2829,10 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
-  auto res = cli.Get("/test");
+  cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 
@@ -2888,8 +2900,10 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   httplib::SSLClient cli(HOST, PORT, client_cert, client_private_key);
-  auto res = cli.Get("/test");
+  cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 
@@ -2934,8 +2948,10 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
-  auto res = cli.Get("/test");
+  cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
   ASSERT_TRUE(res != nullptr);
   ASSERT_EQ(200, res->status);
 
