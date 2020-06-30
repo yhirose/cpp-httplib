@@ -5671,7 +5671,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
 
     auto count = sk_GENERAL_NAME_num(alt_names);
 
-    for (auto i = 0; i < count && !dsn_matched; i++) {
+    for (decltype(count) i = 0; i < count && !dsn_matched; i++) {
       auto val = sk_GENERAL_NAME_value(alt_names, i);
       if (val->type == type) {
         auto name = (const char *)ASN1_STRING_get0_data(val->d.ia5);
