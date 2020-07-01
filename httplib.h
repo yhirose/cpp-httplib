@@ -3586,7 +3586,7 @@ inline bool BufferStream::is_readable() const { return true; }
 inline bool BufferStream::is_writable() const { return true; }
 
 inline ssize_t BufferStream::read(char *ptr, size_t size) {
-#if defined(_MSC_VER) && _MSC_VER < 1900
+#if defined(_MSC_VER) && _MSC_VER <= 1900
   auto len_read = buffer._Copy_s(ptr, size, size, position);
 #else
   auto len_read = buffer.copy(ptr, size, position);
