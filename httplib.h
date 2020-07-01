@@ -3908,13 +3908,14 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
   strm.write(data.data(), data.size());
 
   // Body
+  auto ret = true;
   if (req.method != "HEAD") {
     if (!res.body.empty()) {
-      if (!strm.write(res.body)) { return false; }
+      if (!strm.write(res.body)) { ret = false; }
     } else if (res.content_provider_) {
       if (!write_content_with_provider(strm, req, res, boundary,
                                        content_type)) {
-        return false;
+		  ret = false;
       }
     }
   }
@@ -3922,7 +3923,7 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
   // Log
   if (logger_) { logger_(req, res); }
 
-  return true;
+  return ret;
 }
 
 inline bool
