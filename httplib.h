@@ -557,7 +557,7 @@ inline void socket_timeout_options(socket_t sock,TimeoutOption option) {
       return;
   }
 
-  std::cout<<"set socket timeout..."<<std::endl;
+  // std::cout<<"set socket timeout..."<<std::endl;
   timeval tv_read;
   tv_read.tv_sec = static_cast<long>(option.read_timeout_sec);
   tv_read.tv_usec = static_cast<decltype(tv_read.tv_usec)>(option.read_timeout_usec);
@@ -569,7 +569,7 @@ inline void socket_timeout_options(socket_t sock,TimeoutOption option) {
   //set send/receive timeout
   bool ret1=setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<char *>(&tv_read), sizeof(tv_read));
   bool ret2= setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<char *>(&tv_write), sizeof(tv_write));
-  std::cout<<"set read timeout result:"<<ret1<<"set write timeout result:"<<ret2<<std::endl;
+  // std::cout<<"set read timeout result:"<<ret1<<"set write timeout result:"<<ret2<<std::endl;
 }
 
 class Server {
