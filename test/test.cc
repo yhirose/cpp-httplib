@@ -2318,9 +2318,15 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
+	TimeoutOption timeout;
+	timeout.read_timeout_sec = 5;
+	timeout.read_timeout_usec = 0;
+	timeout.write_timeout_sec = 5;
+	timeout.write_timeout_usec = 0;
+	timeout.connection_timeout_sec = 5;
+	timeout.connection_timeout_usec = 0;
   auto client_sock =
-      detail::create_client_socket(HOST, PORT, false, nullptr,
-                                   /*timeout_sec=*/5, 0, std::string());
+      detail::create_client_socket(HOST, PORT, false, timeout,nullptr, std::string());
 
   if (client_sock == INVALID_SOCKET) { return false; }
 

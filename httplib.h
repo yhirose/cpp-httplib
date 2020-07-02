@@ -1,4 +1,4 @@
-//
+﻿//
 //  httplib.h
 //
 //  Copyright (c) 2020 Yuji Hirose. All rights reserved.
@@ -519,11 +519,22 @@ private:
   std::mutex mutex_;
 };
 
+struct TimeoutOption
+{
+    bool is_init=false;
+    time_t read_timeout_sec;
+    time_t read_timeout_usec;
+    time_t write_timeout_sec;
+    time_t write_timeout_usec;
+    time_t connection_timeout_sec;
+    time_t connection_timeout_usec;
+};
+
 using Logger = std::function<void(const Request &, const Response &)>;
 
-using SocketOptions = std::function<void(socket_t sock)>;
+using SocketOptions = std::function<void(socket_t sock,TimeoutOption option)>;
 
-inline void default_socket_options(socket_t sock) {
+inline void default_socket_options(socket_t sock,TimeoutOption option) {
   int yes = 1;
 #ifdef _WIN32
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&yes),
@@ -539,6 +550,24 @@ inline void default_socket_options(socket_t sock) {
              sizeof(yes));
 #endif
 #endif
+}
+
+inline void socket_timeout_options(socket_t sock,TimeoutOption option) {
+  if(!option.is_init){
+      return;
+  }
+
+  timeval tv_read;
+  tv_read.tv_sec = static_cast<long>(option.read_timeout_sec);
+  tv_read.tv_usec = static_cast<decltype(tv_read.tv_usec)>(option.read_timeout_usec);
+
+  timeval tv_write;
+  tv_write.tv_sec = static_cast<long>(option.write_timeout_sec);
+  tv_write.tv_usec = static_cast<decltype(tv_write.tv_usec)>(option.write_timeout_usec);
+
+  //set send/receive timeout
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<char *>(&tv_read), sizeof(tv_read));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<char *>(&tv_write), sizeof(tv_write));
 }
 
 class Server {
@@ -1946,7 +1975,8 @@ inline int shutdown_socket(socket_t sock) {
 
 template <typename BindOrConnect>
 socket_t create_socket(const char *host, int port, int socket_flags,
-                       bool tcp_nodelay, SocketOptions socket_options,
+                       bool tcp_nodelay, TimeoutOption timeoutOption,
+                       SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
   struct addrinfo hints;
@@ -2001,7 +2031,7 @@ socket_t create_socket(const char *host, int port, int socket_flags,
                  sizeof(yes));
     }
 
-    if (socket_options) { socket_options(sock); }
+    if (socket_options) { socket_options(sock,timeoutOption); }
 
     if (rp->ai_family == AF_INET6) {
       int no = 0;
@@ -2088,11 +2118,11 @@ inline std::string if2ip(const std::string &ifn) {
 
 inline socket_t create_client_socket(const char *host, int port,
                                      bool tcp_nodelay,
+                                     TimeoutOption timeoutOption,
                                      SocketOptions socket_options,
-                                     time_t timeout_sec, time_t timeout_usec,
                                      const std::string &intf) {
   return create_socket(
-      host, port, 0, tcp_nodelay, socket_options,
+      host, port, 0, tcp_nodelay, timeoutOption,socket_options,
       [&](socket_t sock, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifndef _WIN32
@@ -2108,7 +2138,7 @@ inline socket_t create_client_socket(const char *host, int port,
             ::connect(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
         if (ret < 0) {
           if (is_connection_error() ||
-              !wait_until_socket_is_ready(sock, timeout_sec, timeout_usec)) {
+              !wait_until_socket_is_ready(sock, timeoutOption.connection_timeout_sec, timeoutOption.connection_timeout_usec)) {
             close_socket(sock);
             return false;
           }
@@ -4085,8 +4115,10 @@ inline bool Server::handle_file_request(Request &req, Response &res,
 inline socket_t
 Server::create_server_socket(const char *host, int port, int socket_flags,
                              SocketOptions socket_options) const {
+
+   TimeoutOption timeout; // is_init is false, not work
   return detail::create_socket(
-      host, port, socket_flags, tcp_nodelay_, socket_options,
+      host, port, socket_flags, tcp_nodelay_, timeout,socket_options,
       [](socket_t sock, struct addrinfo &ai) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
@@ -4393,14 +4425,22 @@ inline Client::~Client() { stop(); }
 inline bool Client::is_valid() const { return true; }
 
 inline socket_t Client::create_client_socket() const {
+
+  TimeoutOption timeout; //set socket read/write option
+  timeout.read_timeout_sec=read_timeout_sec_;
+  timeout.read_timeout_usec=read_timeout_usec_;
+  timeout.write_timeout_sec=write_timeout_sec_;
+  timeout.write_timeout_usec=write_timeout_usec_;
+  timeout.connection_timeout_sec=connection_timeout_sec_;
+  timeout.connection_timeout_usec=connection_timeout_usec_;
+  timeout.is_init=true; //set true to work
+
   if (!proxy_host_.empty()) {
     return detail::create_client_socket(
-        proxy_host_.c_str(), proxy_port_, tcp_nodelay_, socket_options_,
-        connection_timeout_sec_, connection_timeout_usec_, interface_);
+        proxy_host_.c_str(), proxy_port_, tcp_nodelay_, timeout,socket_timeout_options, interface_);
   }
-  return detail::create_client_socket(host_.c_str(), port_, tcp_nodelay_,
-                                      socket_options_, connection_timeout_sec_,
-                                      connection_timeout_usec_, interface_);
+  return detail::create_client_socket(host_.c_str(), port_, tcp_nodelay_,timeout,
+                                      socket_timeout_options,  interface_);
 }
 
 inline bool Client::create_and_connect_socket(Socket &socket) {
