@@ -3946,7 +3946,7 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
     } else if (res.content_provider_) {
       if (!write_content_with_provider(strm, req, res, boundary,
                                        content_type)) {
-		  ret = false;
+        ret = false;
       }
     }
   }
