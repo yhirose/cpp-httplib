@@ -589,7 +589,6 @@ public:
   void set_idle_interval(time_t sec, time_t usec = 0);
 
   void set_payload_max_length(size_t length);
-  void set_compression_level(int);
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
   int bind_to_any_port(const char *host, int socket_flags = 0);
@@ -616,9 +615,6 @@ protected:
   time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT  
-  int    compression_level_ = Z_DEFAULT_COMPRESSION;
-#endif
 
 private:
   using Handlers = std::vector<std::pair<std::regex, Handler>>;
@@ -2274,14 +2270,13 @@ inline bool can_compress(const std::string &content_type) {
          content_type == "application/xhtml+xml";
 }
 
-inline bool compress(std::string &content, int level = Z_DEFAULT_COMPRESSION) {
+inline bool compress(std::string &content) {
   z_stream strm;
   strm.zalloc = Z_NULL;
   strm.zfree = Z_NULL;
   strm.opaque = Z_NULL;
 
-  level = (level < -1) ? -1 : (level > 9) ? 9 : level;
-  auto ret = deflateInit2(&strm, level, Z_DEFLATED, 31, 8,
+  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
                           Z_DEFAULT_STRATEGY);
   if (ret != Z_OK) { return false; }
 
@@ -3785,12 +3780,6 @@ inline void Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
 }
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-inline void Server::set_compression_level(int level) {
-  compression_level_ = level;
-}
-#endif
-
 inline bool Server::bind_to_port(const char *host, int port, int socket_flags) {
   if (bind_internal(host, port, socket_flags) < 0) return false;
   return true;
@@ -3933,7 +3922,7 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
     const auto &encodings = req.get_header_value("Accept-Encoding");
     if (encodings.find("gzip") != std::string::npos &&
         detail::can_compress(res.get_header_value("Content-Type"))) {
-      if (detail::compress(res.body, compression_level_)) {
+      if (detail::compress(res.body)) {
         res.set_header("Content-Encoding", "gzip");
       }
     }
@@ -5813,5 +5802,4 @@ inline bool SSLClient::check_host_name(const char *pattern,
 } // namespace httplib
 
 #endif // CPPHTTPLIB_HTTPLIB_H
-
 
