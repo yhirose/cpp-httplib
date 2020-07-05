@@ -616,7 +616,9 @@ protected:
   time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT  
   int    compression_level_ = Z_DEFAULT_COMPRESSION;
+#endif
 
 private:
   using Handlers = std::vector<std::pair<std::regex, Handler>>;
@@ -3783,9 +3785,11 @@ inline void Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
 inline void Server::set_compression_level(int level) {
   compression_level_ = level;
 }
+#endif
 
 inline bool Server::bind_to_port(const char *host, int port, int socket_flags) {
   if (bind_internal(host, port, socket_flags) < 0) return false;
