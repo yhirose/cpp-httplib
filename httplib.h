@@ -384,6 +384,10 @@ struct Request {
 
 struct Response {
   std::string version;
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT  
+  bool accept_gzip_encoding = false;
+  int  gzip_compression_level = Z_DEFAULT_COMPRESSION;
+#endif
   int status = -1;
   Headers headers;
   std::string body;
@@ -589,6 +593,9 @@ public:
   void set_idle_interval(time_t sec, time_t usec = 0);
 
   void set_payload_max_length(size_t length);
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT  
+  void set_compression_level(int);
+#endif
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
   int bind_to_any_port(const char *host, int socket_flags = 0);
@@ -615,6 +622,9 @@ protected:
   time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  int    compression_level_ = Z_DEFAULT_COMPRESSION;
+#endif
 
 private:
   using Handlers = std::vector<std::pair<std::regex, Handler>>;
@@ -2270,13 +2280,13 @@ inline bool can_compress(const std::string &content_type) {
          content_type == "application/xhtml+xml";
 }
 
-inline bool compress(std::string &content) {
+inline bool compress(std::string &content, int level = Z_DEFAULT_COMPRESSION) {
   z_stream strm;
   strm.zalloc = Z_NULL;
   strm.zfree = Z_NULL;
   strm.opaque = Z_NULL;
 
-  auto ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+  auto ret = deflateInit2(&strm, level, Z_DEFLATED, 31, 8,
                           Z_DEFAULT_STRATEGY);
   if (ret != Z_OK) { return false; }
 
@@ -3780,6 +3790,13 @@ inline void Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+inline void Server::set_compression_level(int level) {
+  level = ((level >= Z_NO_COMPRESSION) && (level <= Z_BEST_COMPRESSION)) ? level : Z_DEFAULT_COMPRESSION;
+  compression_level_ = level;
+}
+#endif
+
 inline bool Server::bind_to_port(const char *host, int port, int socket_flags) {
   if (bind_internal(host, port, socket_flags) < 0) return false;
   return true;
@@ -3918,13 +3935,8 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
     }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-    // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
-    const auto &encodings = req.get_header_value("Accept-Encoding");
-    if (encodings.find("gzip") != std::string::npos &&
-        detail::can_compress(res.get_header_value("Content-Type"))) {
-      if (detail::compress(res.body)) {
+    if (res.accept_gzip_encoding && detail::can_compress(res.get_header_value("Content-Type")) && detail::compress(res.body, compression_level_)) {
         res.set_header("Content-Encoding", "gzip");
-      }
     }
 #endif
 
@@ -4378,6 +4390,14 @@ Server::process_request(Stream &strm, bool close_connection,
     default: return write_response(strm, close_connection, req, res);
     }
   }
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
+  const auto &encodings = req.get_header_value("Accept-Encoding");
+  if (encodings.find("gzip") != std::string::npos) {
+    res.accept_gzip_encoding = true;
+    res.gzip_compression_level = compression_level_;
+  }
+#endif
 
   // Rounting
   if (routing(req, res, strm)) {
