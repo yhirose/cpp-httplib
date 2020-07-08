@@ -3231,7 +3231,7 @@ inline std::string SHA_512(const std::string &s) {
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
 inline bool load_system_certs_on_windows(X509_STORE *store) {
-  auto hStore = CertOpenSystemStore((HCRYPTPROV_LEGACY)NULL, L"ROOT");
+  auto hStore = CertOpenSystemStoreW((HCRYPTPROV_LEGACY)NULL, L"ROOT");
 
   if (!hStore) { return false; }
 
@@ -3527,10 +3527,11 @@ inline ssize_t Stream::write(const std::string &s) {
 
 template <typename... Args>
 inline ssize_t Stream::write_format(const char *fmt, const Args &... args) {
-  std::array<char, 2048> buf;
+  const auto bufsiz = 2048;
+  std::array<char, bufsiz> buf;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  auto sn = _snprintf_s(buf, bufsiz, buf.size() - 1, fmt, args...);
+  auto sn = _snprintf_s(buf, bufsiz - 1, buf.size() - 1, fmt, args...);
 #else
   auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
 #endif
