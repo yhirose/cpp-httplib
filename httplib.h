@@ -1753,7 +1753,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   pfd_read.fd = sock;
   pfd_read.events = POLLOUT;
 
-  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
+  auto timeout = static_cast<int>(sec * 1000 + usec);
 
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
