@@ -1729,7 +1729,7 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
   pfd_read.fd = sock;
   pfd_read.events = POLLIN;
 
-  auto timeout = static_cast<int>(sec * 1000 + usec);
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
@@ -1753,7 +1753,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   pfd_read.fd = sock;
   pfd_read.events = POLLOUT;
 
-  auto timeout = static_cast<int>(sec * 1000 + usec);
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
@@ -1777,7 +1777,7 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   pfd_read.fd = sock;
   pfd_read.events = POLLIN | POLLOUT;
 
-  auto timeout = static_cast<int>(sec * 1000 + usec);
+  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
   auto poll_res = handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 
@@ -1888,8 +1888,8 @@ inline bool keep_alive(socket_t sock) {
     } else if (val == 0) {
       auto current = steady_clock::now();
       auto duration = duration_cast<milliseconds>(current - start);
-      auto timeout = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND * 100 +
-                     CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
+      auto timeout = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND * 1000 +
+                     CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND / 1000;
       if (duration.count() > timeout) { return false; }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     } else {
