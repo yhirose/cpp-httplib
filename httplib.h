@@ -145,6 +145,7 @@ using ssize_t = int;
 #include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <wincrypt.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
