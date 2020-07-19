@@ -143,8 +143,9 @@ using ssize_t = int;
 #endif // NOMINMAX
 
 #include <io.h>
-#include <wincrypt.h>
 #include <winsock2.h>
+
+#include <wincrypt.h>
 #include <ws2tcpip.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
