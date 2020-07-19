@@ -46,7 +46,7 @@ string dump_multipart_files(const MultipartFormDataMap &files) {
     snprintf(buf, sizeof(buf), "content type: %s\n", file.content_type.c_str());
     s += buf;
 
-    snprintf(buf, sizeof(buf), "text length: %lu\n", file.content.size());
+    snprintf(buf, sizeof(buf), "text length: %zu\n", file.content.size());
     s += buf;
 
     s += "----------------\n";
