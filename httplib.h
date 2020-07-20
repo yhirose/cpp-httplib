@@ -87,24 +87,6 @@
                       : 0))
 #endif
 
-// Prefer gnu::deprecated, otherwise gcc complains if we use
-// [[deprecated]] together with pedantic.
-#ifndef CPPHTTPLIB_DEPRECATED
-#if defined(__has_cpp_attribute)
-#if __has_cpp_attribute(gnu::deprecated)
-#define CPPHTTPLIB_DEPRECATED [[gnu::deprecated]]
-#else
-#if __has_cpp_attribute(deprecated)
-#define CPPHTTPLIB_DEPRECATED [[deprecated]]
-#else
-#define CPPHTTPLIB_DEPRECATED
-#endif
-#endif
-#else
-#define CPPHTTPLIB_DEPRECATED
-#endif
-#endif
-
 /*
  * Headers
  */
@@ -570,8 +552,7 @@ public:
   Server &Delete(const char *pattern, HandlerWithContentReader handler);
   Server &Options(const char *pattern, Handler handler);
 
-  CPPHTTPLIB_DEPRECATED bool set_base_dir(const char *dir,
-                                          const char *mount_point = nullptr);
+  bool set_base_dir(const char *dir, const char *mount_point = nullptr);
   bool set_mount_point(const char *mount_point, const char *dir);
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
@@ -817,7 +798,6 @@ public:
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
 
-  CPPHTTPLIB_DEPRECATED void set_timeout_sec(time_t timeout_sec);
   void set_connection_timeout(time_t sec, time_t usec = 0);
   void set_read_timeout(time_t sec, time_t usec = 0);
   void set_write_timeout(time_t sec, time_t usec = 0);
@@ -5239,10 +5219,6 @@ inline void Client::stop() {
     close_socket(socket_, true);
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-}
-
-inline void Client::set_timeout_sec(time_t timeout_sec) {
-  set_connection_timeout(timeout_sec, 0);
 }
 
 inline void Client::set_connection_timeout(time_t sec, time_t usec) {
