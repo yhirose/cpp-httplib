@@ -885,7 +885,7 @@ protected:
         .Get("/streamed-chunked",
              [&](const Request & /*req*/, Response &res) {
                res.set_chunked_content_provider(
-                   [](size_t /*offset*/, DataSink &sink) {
+                   "text/plain", [](size_t /*offset*/, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
                      sink.os << "123";
                      sink.os << "456";
@@ -898,6 +898,7 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                auto i = new int(0);
                res.set_chunked_content_provider(
+                   "text/plain",
                    [i](size_t /*offset*/, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
                      switch (*i) {
@@ -914,7 +915,8 @@ protected:
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   6, [](size_t offset, size_t /*length*/, DataSink &sink) {
+                   6, "text/plain",
+                   [](size_t offset, size_t /*length*/, DataSink &sink) {
                      sink.os << (offset < 3 ? "a" : "b");
                      return true;
                    });
@@ -923,7 +925,7 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                auto data = new std::string("abcdefg");
                res.set_content_provider(
-                   data->size(),
+                   data->size(), "text/plain",
                    [data](size_t offset, size_t length, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
                      size_t DATA_CHUNK_SIZE = 4;
@@ -938,7 +940,7 @@ protected:
         .Get("/streamed-cancel",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
-                   size_t(-1),
+                   size_t(-1), "text/plain",
                    [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
                      EXPECT_TRUE(sink.is_writable());
                      sink.os << "data_chunk";
@@ -1144,7 +1146,7 @@ protected:
                 EXPECT_EQ(req.body, "content");
               })
         .Get("/last-request",
-             [&](const Request & req, Response &/*res*/) {
+             [&](const Request &req, Response & /*res*/) {
                EXPECT_EQ("close", req.get_header_value("Connection"));
              })
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -2022,6 +2024,25 @@ TEST_F(ServerTest, PutContentWithDeflate) {
   EXPECT_EQ("PUT", res->body);
 }
 
+TEST_F(ServerTest, GetStreamedChunkedWithGzip) {
+  httplib::Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+
+  auto res = cli_.Get("/streamed-chunked", headers);
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
+  httplib::Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+
+  auto res = cli_.Get("/streamed-chunked2", headers);
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
 #endif
 
 TEST_F(ServerTest, Patch) {
@@ -2513,9 +2534,9 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 
   svr.Get("/events", [](const Request & /*req*/, Response &res) {
-    res.set_header("Content-Type", "text/event-stream");
     res.set_header("Cache-Control", "no-cache");
-    res.set_chunked_content_provider([](size_t offset, DataSink &sink) {
+    res.set_chunked_content_provider("text/event-stream", [](size_t offset,
+                                                             DataSink &sink) {
       char buffer[27];
       auto size = static_cast<size_t>(sprintf(buffer, "data:%ld\n\n", offset));
       sink.write(buffer, size);

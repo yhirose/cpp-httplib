@@ -401,11 +401,11 @@ struct Response {
   void set_content(std::string s, const char *content_type);
 
   void set_content_provider(
-      size_t length, ContentProvider provider,
+      size_t length, const char *content_type, ContentProvider provider,
       std::function<void()> resource_releaser = [] {});
 
   void set_chunked_content_provider(
-      ChunkedContentProvider provider,
+      const char *content_type, ChunkedContentProvider provider,
       std::function<void()> resource_releaser = [] {});
 
   Response() = default;
@@ -2263,8 +2263,7 @@ inline const char *status_message(int status) {
   }
 }
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-inline bool can_compress(const std::string &content_type) {
+inline bool can_compress_content_type(const std::string &content_type) {
   return !content_type.find("text/") || content_type == "image/svg+xml" ||
          content_type == "application/javascript" ||
          content_type == "application/json" ||
@@ -2272,6 +2271,18 @@ inline bool can_compress(const std::string &content_type) {
          content_type == "application/xhtml+xml";
 }
 
+inline bool can_compress_content(const Request &req, const Response &res) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  const auto &encodings = req.get_header_value("Accept-Encoding");
+  return encodings.find("gzip") != std::string::npos &&
+         detail::can_compress_content_type(
+             res.get_header_value("Content-Type"));
+#else
+  return false;
+#endif
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
 class compressor {
 public:
   compressor() {
@@ -2310,7 +2321,7 @@ public:
       }
     } while (strm_.avail_out == 0);
 
-    assert(ret == Z_STREAM_END);
+    assert((last && ret == Z_STREAM_END) || (!last && ret == Z_OK));
     assert(strm_.avail_in == 0);
     return true;
   }
@@ -2660,39 +2671,90 @@ inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
 template <typename T>
 inline ssize_t write_content_chunked(Stream &strm,
                                      ContentProvider content_provider,
-                                     T is_shutting_down) {
+                                     T is_shutting_down, bool compress) {
   size_t offset = 0;
   auto data_available = true;
   ssize_t total_written_length = 0;
 
   auto ok = true;
-
   DataSink data_sink;
-  data_sink.write = [&](const char *d, size_t l) {
-    if (ok) {
-      data_available = l > 0;
-      offset += l;
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  detail::compressor compressor;
+#endif
+
+  data_sink.write = [&](const char *d, size_t l) {
+    if (!ok) { return; }
+
+    data_available = l > 0;
+    offset += l;
+
+    std::string payload;
+    if (compress) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+      if (!compressor.compress(d, l, false,
+                               [&](const char *data, size_t data_len) {
+                                 payload.append(data, data_len);
+                                 return true;
+                               })) {
+        ok = false;
+        return;
+      }
+#endif
+    } else {
+      payload = std::string(d, l);
+    }
+
+    if (!payload.empty()) {
       // Emit chunked response header and footer for each chunk
-      auto chunk = from_i_to_hex(l) + "\r\n" + std::string(d, l) + "\r\n";
+      auto chunk = from_i_to_hex(payload.size()) + "\r\n" + payload + "\r\n";
       if (write_data(strm, chunk.data(), chunk.size())) {
         total_written_length += chunk.size();
       } else {
         ok = false;
+        return;
       }
     }
   };
+
   data_sink.done = [&](void) {
+    if (!ok) { return; }
+
     data_available = false;
-    if (ok) {
-      static const std::string done_marker("0\r\n\r\n");
-      if (write_data(strm, done_marker.data(), done_marker.size())) {
-        total_written_length += done_marker.size();
-      } else {
+
+    if (compress) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+      std::string payload;
+      if (!compressor.compress(nullptr, 0, true,
+                               [&](const char *data, size_t data_len) {
+                                 payload.append(data, data_len);
+                                 return true;
+                               })) {
         ok = false;
+        return;
       }
+
+      if (!payload.empty()) {
+        // Emit chunked response header and footer for each chunk
+        auto chunk = from_i_to_hex(payload.size()) + "\r\n" + payload + "\r\n";
+        if (write_data(strm, chunk.data(), chunk.size())) {
+          total_written_length += chunk.size();
+        } else {
+          ok = false;
+          return;
+        }
+      }
+#endif
+    }
+
+    static const std::string done_marker("0\r\n\r\n");
+    if (write_data(strm, done_marker.data(), done_marker.size())) {
+      total_written_length += done_marker.size();
+    } else {
+      ok = false;
     }
   };
+
   data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
   while (data_available && !is_shutting_down()) {
@@ -3515,9 +3577,11 @@ inline void Response::set_content(std::string s, const char *content_type) {
 }
 
 inline void
-Response::set_content_provider(size_t in_length, ContentProvider provider,
+Response::set_content_provider(size_t in_length, const char *content_type,
+                               ContentProvider provider,
                                std::function<void()> resource_releaser) {
   assert(in_length > 0);
+  set_header("Content-Type", content_type);
   content_length_ = in_length;
   content_provider_ = [provider](size_t offset, size_t length, DataSink &sink) {
     return provider(offset, length, sink);
@@ -3526,7 +3590,9 @@ Response::set_content_provider(size_t in_length, ContentProvider provider,
 }
 
 inline void Response::set_chunked_content_provider(
-    ChunkedContentProvider provider, std::function<void()> resource_releaser) {
+    const char *content_type, ChunkedContentProvider provider,
+    std::function<void()> resource_releaser) {
+  set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = [provider](size_t offset, size_t, DataSink &sink) {
     return provider(offset, sink);
@@ -3894,6 +3960,8 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
                         "multipart/byteranges; boundary=" + boundary);
   }
 
+  bool compress = detail::can_compress_content(req, res);
+
   if (res.body.empty()) {
     if (res.content_length_ > 0) {
       size_t length = 0;
@@ -3915,6 +3983,7 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
     } else {
       if (res.content_provider_) {
         res.set_header("Transfer-Encoding", "chunked");
+        if (compress) { res.set_header("Content-Encoding", "gzip"); }
       } else {
         res.set_header("Content-Length", "0");
       }
@@ -3936,11 +4005,9 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
           detail::make_multipart_ranges_data(req, res, boundary, content_type);
     }
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
     // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
-    const auto &encodings = req.get_header_value("Accept-Encoding");
-    if (encodings.find("gzip") != std::string::npos &&
-        detail::can_compress(res.get_header_value("Content-Type"))) {
+    if (compress) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
       std::string compressed;
       detail::compressor compressor;
       if (!compressor.compress(res.body.data(), res.body.size(), true,
@@ -3952,8 +4019,8 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
       }
       res.body.swap(compressed);
       res.set_header("Content-Encoding", "gzip");
-    }
 #endif
+    }
 
     auto length = std::to_string(res.body.size());
     res.set_header("Content-Length", length);
@@ -4014,8 +4081,9 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
       }
     }
   } else {
+    auto compress = detail::can_compress_content(req, res);
     if (detail::write_content_chunked(strm, res.content_provider_,
-                                      is_shutting_down) < 0) {
+                                      is_shutting_down, compress) < 0) {
       return false;
     }
   }
