@@ -394,6 +394,20 @@ TEST(ConnectionErrorTest, InvalidHost) {
   ASSERT_TRUE(res == nullptr);
 }
 
+TEST(ConnectionErrorTest, InvalidHost2) {
+  auto host = "httpbin.org/";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  httplib::SSLClient cli(host);
+#else
+  httplib::Client cli(host);
+#endif
+  cli.set_connection_timeout(2);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res == nullptr);
+}
+
 TEST(ConnectionErrorTest, InvalidPort) {
   auto host = "localhost";
 
