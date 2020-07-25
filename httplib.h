@@ -2316,7 +2316,8 @@ inline const char *status_message(int status) {
 }
 
 inline bool can_compress_content_type(const std::string &content_type) {
-  return !content_type.find("text/") || content_type == "image/svg+xml" ||
+  return (!content_type.find("text/") && content_type != "text/event-stream") ||
+         content_type == "image/svg+xml" ||
          content_type == "application/javascript" ||
          content_type == "application/json" ||
          content_type == "application/xml" ||
