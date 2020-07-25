@@ -79,20 +79,20 @@ int main(void) {
 
   svr.Get("/event1", [&](const Request & /*req*/, Response &res) {
     cout << "connected to event1..." << endl;
-    res.set_header("Content-Type", "text/event-stream");
-    res.set_chunked_content_provider([&](size_t /*offset*/, DataSink &sink) {
-      ed.wait_event(&sink);
-      return true;
-    });
+    res.set_chunked_content_provider("text/event-stream",
+                                     [&](size_t /*offset*/, DataSink &sink) {
+                                       ed.wait_event(&sink);
+                                       return true;
+                                     });
   });
 
   svr.Get("/event2", [&](const Request & /*req*/, Response &res) {
     cout << "connected to event2..." << endl;
-    res.set_header("Content-Type", "text/event-stream");
-    res.set_chunked_content_provider([&](size_t /*offset*/, DataSink &sink) {
-      ed.wait_event(&sink);
-      return true;
-    });
+    res.set_chunked_content_provider("text/event-stream",
+                                     [&](size_t /*offset*/, DataSink &sink) {
+                                       ed.wait_event(&sink);
+                                       return true;
+                                     });
   });
 
   thread t([&] {
