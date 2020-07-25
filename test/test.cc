@@ -100,7 +100,8 @@ TEST(GetHeaderValueTest, DefaultValue) {
 
 TEST(GetHeaderValueTest, DefaultValueInt) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_uint64(headers, "Content-Length", 100);
+  auto val =
+      detail::get_header_value<uint64_t>(headers, "Content-Length", 0, 100);
   EXPECT_EQ(100ull, val);
 }
 
@@ -112,7 +113,8 @@ TEST(GetHeaderValueTest, RegularValue) {
 
 TEST(GetHeaderValueTest, RegularValueInt) {
   Headers headers = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_uint64(headers, "Content-Length", 0);
+  auto val =
+      detail::get_header_value<uint64_t>(headers, "Content-Length", 0, 0);
   EXPECT_EQ(100ull, val);
 }
 
@@ -715,6 +717,16 @@ TEST(RedirectToDifferentPort, Redirect) {
   thread8081.join();
   ASSERT_FALSE(svr8080.is_running());
   ASSERT_FALSE(svr8081.is_running());
+}
+
+TEST(UrlWithSpace, Redirect) {
+  httplib::SSLClient cli("edge.forgecdn.net");
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(18527, res->get_header_value<uint64_t>("Content-Length"));
 }
 #endif
 
