@@ -243,9 +243,7 @@ svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 
 ### Server-Sent Events
 
-[Server example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssesvr.cc)
-
-[Client example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssecli.cc)
+Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssesvr.cc) and [Client example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssecli.cc).
 
 ### Default thread pool support
 
@@ -390,6 +388,7 @@ auto res = cli.Get("/large-data",
 
 ```cpp
 std::string body;
+
 auto res = cli.Get(
   "/stream", Headers(),
   [&](const Response &response) {
@@ -406,6 +405,7 @@ auto res = cli.Get(
 
 ```cpp
 std::string body = ...;
+
 auto res = cli_.Post(
   "/stream", body.size(),
   [](size_t offset, size_t length, DataSink &sink) {
