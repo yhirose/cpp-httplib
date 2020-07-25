@@ -243,7 +243,9 @@ svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 
 ### Server-Sent Events
 
-Please check [here](https://github.com/yhirose/cpp-httplib/blob/master/example/sse.cc).
+[Server example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssesvr.cc)
+
+[Client example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssecli.cc)
 
 ### Default thread pool support
 
@@ -304,20 +306,6 @@ httplib::Headers headers = {
   { "Accept-Encoding", "gzip, deflate" }
 };
 auto res = cli.Get("/hi", headers);
-```
-
-### GET with Content Receiver
-
-```c++
-std::string body;
-
-auto res = cli.Get("/large-data",
-  [&](const char *data, size_t data_length) {
-    body.append(data, data_length);
-    return true;
-  });
-
-assert(res->body.empty());
 ```
 
 ### POST
@@ -389,6 +377,16 @@ cli.set_write_timeout(5, 0); // 5 seconds
 ```
 
 ### Receive content with Content receiver
+
+```c++
+std::string body;
+
+auto res = cli.Get("/large-data",
+  [&](const char *data, size_t data_length) {
+    body.append(data, data_length);
+    return true;
+  });
+```
 
 ```cpp
 std::string body;
