@@ -216,6 +216,58 @@ TEST(ParseHeaderValueTest, Range) {
   }
 }
 
+TEST(ParseAcceptEncoding1, AcceptEncoding) {
+  Request req;
+  req.set_header("Accept-Encoding", "gzip");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#else
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+#endif
+}
+
+TEST(ParseAcceptEncoding2, AcceptEncoding) {
+  Request req;
+  req.set_header("Accept-Encoding", "gzip, deflate, br");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Brotli);
+#elif CPPHTTPLIB_ZLIB_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#else
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+#endif
+}
+
+TEST(ParseAcceptEncoding3, AcceptEncoding) {
+  Request req;
+  req.set_header("Accept-Encoding", "br;q=1.0, gzip;q=0.8, *;q=0.1");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Brotli);
+#elif CPPHTTPLIB_ZLIB_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#else
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+#endif
+}
+
 TEST(BufferStreamTest, read) {
   detail::BufferStream strm1;
   Stream &strm = strm1;
@@ -3049,6 +3101,18 @@ TEST(YahooRedirectTest3, SimpleInterface) {
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
 }
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
+  httplib::Client2 cli("https://cdnjs.cloudflare.com");
+  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "brotli"}});
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(287630, res->body.size());
+  EXPECT_EQ("application/javascript; charset=utf-8", res->get_header_value("Content-Type"));
+}
+#endif
 
 #if 0
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {

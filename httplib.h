@@ -215,6 +215,11 @@ inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 #include <zlib.h>
 #endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+#include <brotli/decode.h>
+#endif
+
 /*
  * Declaration
  */
@@ -1668,19 +1673,34 @@ inline std::string file_extension(const std::string &path) {
   return std::string();
 }
 
+inline std::pair<int, int> trim(const char *b, const char *e, int left,
+                                int right) {
+  while (b + left < e && b[left] == ' ') {
+    left++;
+  }
+  while (right - 1 >= 0 && b[right - 1] == ' ') {
+    right--;
+  }
+  return std::make_pair(left, right);
+}
+
 template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   int i = 0;
   int beg = 0;
 
   while (e ? (b + i != e) : (b[i] != '\0')) {
     if (b[i] == d) {
-      fn(&b[beg], &b[i]);
+      auto r = trim(b, e, beg, i);
+      fn(&b[r.first], &b[r.second]);
       beg = i + 1;
     }
     i++;
   }
 
-  if (i) { fn(&b[beg], &b[i]); }
+  if (i) {
+    auto r = trim(b, e, beg, i);
+    fn(&b[r.first], &b[r.second]);
+  }
 }
 
 // NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
@@ -2324,21 +2344,34 @@ inline bool can_compress_content_type(const std::string &content_type) {
          content_type == "application/xhtml+xml";
 }
 
-inline bool can_compress_content(const Request &req, const Response &res) {
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  const auto &encodings = req.get_header_value("Accept-Encoding");
-  return encodings.find("gzip") != std::string::npos &&
-         detail::can_compress_content_type(
-             res.get_header_value("Content-Type"));
-#else
-  return false;
+enum class EncodingType { None = 0, Gzip, Brotli };
+
+inline EncodingType encoding_type(const Request &req, const Response &res) {
+  auto ret =
+      detail::can_compress_content_type(res.get_header_value("Content-Type"));
+  if (!ret) { return EncodingType::None; }
+
+  const auto &s = req.get_header_value("Accept-Encoding");
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+  // TODO: 'Accept-Encoding' has br, not br;q=0
+  ret = s.find("br") != std::string::npos;
+  if (ret) { return EncodingType::Brotli; }
 #endif
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
+  ret = s.find("gzip") != std::string::npos;
+  if (ret) { return EncodingType::Gzip; }
+#endif
+
+  return EncodingType::None;
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-class compressor {
+class gzip_compressor {
 public:
-  compressor() {
+  gzip_compressor() {
     std::memset(&strm_, 0, sizeof(strm_));
     strm_.zalloc = Z_NULL;
     strm_.zfree = Z_NULL;
@@ -2348,7 +2381,7 @@ public:
                              Z_DEFAULT_STRATEGY) == Z_OK;
   }
 
-  ~compressor() { deflateEnd(&strm_); }
+  ~gzip_compressor() { deflateEnd(&strm_); }
 
   template <typename T>
   bool compress(const char *data, size_t data_length, bool last, T callback) {
@@ -2384,9 +2417,9 @@ private:
   z_stream strm_;
 };
 
-class decompressor {
+class gzip_decompressor {
 public:
-  decompressor() {
+  gzip_decompressor() {
     std::memset(&strm_, 0, sizeof(strm_));
     strm_.zalloc = Z_NULL;
     strm_.zfree = Z_NULL;
@@ -2399,7 +2432,7 @@ public:
     is_valid_ = inflateInit2(&strm_, 32 + 15) == Z_OK;
   }
 
-  ~decompressor() { inflateEnd(&strm_); }
+  ~gzip_decompressor() { inflateEnd(&strm_); }
 
   bool is_valid() const { return is_valid_; }
 
@@ -2436,6 +2469,59 @@ public:
 private:
   bool is_valid_ = false;
   z_stream strm_;
+};
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+class brotli_decompressor {
+public:
+  brotli_decompressor() {
+    decoder_s = BrotliDecoderCreateInstance(0, 0, 0);
+    decoder_r = decoder_s ? BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT
+                          : BROTLI_DECODER_RESULT_ERROR;
+  }
+
+  ~brotli_decompressor() {
+    if (decoder_s) { BrotliDecoderDestroyInstance(decoder_s); }
+  }
+
+  bool is_valid() const { return decoder_s; }
+
+  template <typename T>
+  bool decompress(const char *data, size_t data_length, T callback) {
+    if (decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
+        decoder_r == BROTLI_DECODER_RESULT_ERROR)
+      return 0;
+
+    const uint8_t *next_in = (const uint8_t *)data;
+    size_t avail_in = data_length;
+    size_t total_out;
+
+    decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
+
+    while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+      char output[1024];
+      char *next_out = output;
+      size_t avail_out = sizeof(output);
+
+      decoder_r = BrotliDecoderDecompressStream(
+          decoder_s, &avail_in, &next_in, &avail_out,
+          reinterpret_cast<unsigned char **>(&next_out), &total_out);
+
+      if (decoder_r == BROTLI_DECODER_RESULT_ERROR) { return false; }
+
+      if (!callback((const char *)output, sizeof(output) - avail_out)) {
+        return false;
+      }
+    }
+
+    return decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
+           decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT;
+  }
+
+private:
+  BrotliDecoderResult decoder_r;
+  BrotliDecoderState *decoder_s = nullptr;
 };
 #endif
 
@@ -2611,63 +2697,86 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
                      "chunked");
 }
 
-template <typename T>
-bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
-                  Progress progress, ContentReceiver receiver,
-                  bool decompress) {
+template <typename T, typename U>
+bool prepare_content_receiver(T &x, int &status, ContentReceiver receiver,
+                              bool decompress, U callback) {
+  if (decompress) {
+    std::string encoding = x.get_header_value("Content-Encoding");
+
+    if (encoding.find("gzip") != std::string::npos ||
+        encoding.find("deflate") != std::string::npos) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+      gzip_decompressor decompressor;
+      if (decompressor.is_valid()) {
+        ContentReceiver out = [&](const char *buf, size_t n) {
+          return decompressor.decompress(
+              buf, n,
+              [&](const char *buf, size_t n) { return receiver(buf, n); });
+        };
+        return callback(out);
+      } else {
+        status = 500;
+        return false;
+      }
+#else
+      status = 415;
+      return false;
+#endif
+    } else if (encoding.find("br") != std::string::npos) {
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+      brotli_decompressor decompressor;
+      if (decompressor.is_valid()) {
+        ContentReceiver out = [&](const char *buf, size_t n) {
+          return decompressor.decompress(
+              buf, n,
+              [&](const char *buf, size_t n) { return receiver(buf, n); });
+        };
+        return callback(out);
+      } else {
+        status = 500;
+        return false;
+      }
+#else
+      status = 415;
+      return false;
+#endif
+    }
+  }
 
   ContentReceiver out = [&](const char *buf, size_t n) {
     return receiver(buf, n);
   };
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  decompressor decompressor;
-#endif
+  return callback(out);
+}
 
-  if (decompress) {
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-    std::string content_encoding = x.get_header_value("Content-Encoding");
-    if (content_encoding.find("gzip") != std::string::npos ||
-        content_encoding.find("deflate") != std::string::npos) {
-      if (!decompressor.is_valid()) {
-        status = 500;
-        return false;
-      }
+template <typename T>
+bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
+                  Progress progress, ContentReceiver receiver,
+                  bool decompress) {
+  return prepare_content_receiver(
+      x, status, receiver, decompress, [&](ContentReceiver &out) {
+        auto ret = true;
+        auto exceed_payload_max_length = false;
 
-      out = [&](const char *buf, size_t n) {
-        return decompressor.decompress(buf, n, [&](const char *buf, size_t n) {
-          return receiver(buf, n);
-        });
-      };
-    }
-#else
-    if (x.get_header_value("Content-Encoding") == "gzip") {
-      status = 415;
-      return false;
-    }
-#endif
-  }
+        if (is_chunked_transfer_encoding(x.headers)) {
+          ret = read_content_chunked(strm, out);
+        } else if (!has_header(x.headers, "Content-Length")) {
+          ret = read_content_without_length(strm, out);
+        } else {
+          auto len = get_header_value<uint64_t>(x.headers, "Content-Length");
+          if (len > payload_max_length) {
+            exceed_payload_max_length = true;
+            skip_content_with_length(strm, len);
+            ret = false;
+          } else if (len > 0) {
+            ret = read_content_with_length(strm, len, progress, out);
+          }
+        }
 
-  auto ret = true;
-  auto exceed_payload_max_length = false;
-
-  if (is_chunked_transfer_encoding(x.headers)) {
-    ret = read_content_chunked(strm, out);
-  } else if (!has_header(x.headers, "Content-Length")) {
-    ret = read_content_without_length(strm, out);
-  } else {
-    auto len = get_header_value<uint64_t>(x.headers, "Content-Length");
-    if (len > payload_max_length) {
-      exceed_payload_max_length = true;
-      skip_content_with_length(strm, len);
-      ret = false;
-    } else if (len > 0) {
-      ret = read_content_with_length(strm, len, progress, out);
-    }
-  }
-
-  if (!ret) { status = exceed_payload_max_length ? 413 : 400; }
-  return ret;
+        if (!ret) { status = exceed_payload_max_length ? 413 : 400; }
+        return ret;
+      });
 }
 
 template <typename T>
@@ -2733,7 +2842,7 @@ inline ssize_t write_content(Stream &strm, ContentProvider content_provider,
 template <typename T>
 inline ssize_t write_content_chunked(Stream &strm,
                                      ContentProvider content_provider,
-                                     T is_shutting_down, bool compress) {
+                                     T is_shutting_down, EncodingType type) {
   size_t offset = 0;
   auto data_available = true;
   ssize_t total_written_length = 0;
@@ -2742,7 +2851,7 @@ inline ssize_t write_content_chunked(Stream &strm,
   DataSink data_sink;
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  detail::compressor compressor;
+  detail::gzip_compressor compressor;
 #endif
 
   data_sink.write = [&](const char *d, size_t l) {
@@ -2752,7 +2861,7 @@ inline ssize_t write_content_chunked(Stream &strm,
     offset += l;
 
     std::string payload;
-    if (compress) {
+    if (type == EncodingType::Gzip) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
       if (!compressor.compress(d, l, false,
                                [&](const char *data, size_t data_len) {
@@ -2762,6 +2871,9 @@ inline ssize_t write_content_chunked(Stream &strm,
         ok = false;
         return;
       }
+#endif
+    } else if (type == EncodingType::Brotli) {
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
 #endif
     } else {
       payload = std::string(d, l);
@@ -2784,7 +2896,7 @@ inline ssize_t write_content_chunked(Stream &strm,
 
     data_available = false;
 
-    if (compress) {
+    if (type == EncodingType::Gzip) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
       std::string payload;
       if (!compressor.compress(nullptr, 0, true,
@@ -2806,6 +2918,9 @@ inline ssize_t write_content_chunked(Stream &strm,
           return;
         }
       }
+#endif
+    } else if (type == EncodingType::Brotli) {
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
 #endif
     }
 
@@ -3964,7 +4079,7 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
                         "multipart/byteranges; boundary=" + boundary);
   }
 
-  bool compress = detail::can_compress_content(req, res);
+  auto type = detail::encoding_type(req, res);
 
   if (res.body.empty()) {
     if (res.content_length_ > 0) {
@@ -3987,7 +4102,11 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
     } else {
       if (res.content_provider_) {
         res.set_header("Transfer-Encoding", "chunked");
-        if (compress) { res.set_header("Content-Encoding", "gzip"); }
+        if (type == detail::EncodingType::Gzip) {
+          res.set_header("Content-Encoding", "gzip");
+        } else if (type == detail::EncodingType::Brotli) {
+          res.set_header("Content-Encoding", "br");
+        }
       } else {
         res.set_header("Content-Length", "0");
       }
@@ -4009,20 +4128,25 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
           detail::make_multipart_ranges_data(req, res, boundary, content_type);
     }
 
-    // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
-    if (compress) {
+    if (type != detail::EncodingType::None) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
       std::string compressed;
-      detail::compressor compressor;
-      if (!compressor.compress(res.body.data(), res.body.size(), true,
-                               [&](const char *data, size_t data_len) {
-                                 compressed.append(data, data_len);
-                                 return true;
-                               })) {
-        return false;
+
+      if (type == detail::EncodingType::Gzip) {
+        detail::gzip_compressor compressor;
+        if (!compressor.compress(res.body.data(), res.body.size(), true,
+                                 [&](const char *data, size_t data_len) {
+                                   compressed.append(data, data_len);
+                                   return true;
+                                 })) {
+          return false;
+        }
+        res.set_header("Content-Encoding", "gzip");
+      } else if (type == detail::EncodingType::Brotli) {
+        // TODO:
       }
+
       res.body.swap(compressed);
-      res.set_header("Content-Encoding", "gzip");
 #endif
     }
 
@@ -4085,9 +4209,9 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
       }
     }
   } else {
-    auto compress = detail::can_compress_content(req, res);
+    auto type = detail::encoding_type(req, res);
     if (detail::write_content_chunked(strm, res.content_provider_,
-                                      is_shutting_down, compress) < 0) {
+                                      is_shutting_down, type) < 0) {
       return false;
     }
   }
@@ -4827,7 +4951,7 @@ inline std::shared_ptr<Response> Client::send_with_content_provider(
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
   if (compress_) {
-    detail::compressor compressor;
+    detail::gzip_compressor compressor;
 
     if (content_provider) {
       auto ok = true;

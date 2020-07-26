@@ -1,41 +1,46 @@
 
 #CXX = clang++
 CXXFLAGS = -std=c++14 -I.. -Wall -Wextra -pthread
+
 OPENSSL_DIR = /usr/local/opt/openssl
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
+
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
+
+BROTLI_DIR = /usr/local/opt/brotli
+# BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon-static -lbrotlienc-static -lbrotlidec-static
 
 all: server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark
 
 server : server.cc ../httplib.h Makefile
-	$(CXX) -o server $(CXXFLAGS) server.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o server $(CXXFLAGS) server.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 client : client.cc ../httplib.h Makefile
-	$(CXX) -o client $(CXXFLAGS) client.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o client $(CXXFLAGS) client.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 hello : hello.cc ../httplib.h Makefile
-	$(CXX) -o hello $(CXXFLAGS) hello.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o hello $(CXXFLAGS) hello.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 simplecli : simplecli.cc ../httplib.h Makefile
-	$(CXX) -o simplecli $(CXXFLAGS) simplecli.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o simplecli $(CXXFLAGS) simplecli.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 simplesvr : simplesvr.cc ../httplib.h Makefile
-	$(CXX) -o simplesvr $(CXXFLAGS) simplesvr.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o simplesvr $(CXXFLAGS) simplesvr.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 upload : upload.cc ../httplib.h Makefile
-	$(CXX) -o upload $(CXXFLAGS) upload.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o upload $(CXXFLAGS) upload.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 redirect : redirect.cc ../httplib.h Makefile
-	$(CXX) -o redirect $(CXXFLAGS) redirect.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o redirect $(CXXFLAGS) redirect.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 ssesvr : ssesvr.cc ../httplib.h Makefile
-	$(CXX) -o ssesvr $(CXXFLAGS) ssesvr.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o ssesvr $(CXXFLAGS) ssesvr.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 ssecli : ssecli.cc ../httplib.h Makefile
-	$(CXX) -o ssecli $(CXXFLAGS) ssecli.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o ssecli $(CXXFLAGS) ssecli.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 benchmark : benchmark.cc ../httplib.h Makefile
-	$(CXX) -o benchmark $(CXXFLAGS) benchmark.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT)
+	$(CXX) -o benchmark $(CXXFLAGS) benchmark.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 pem:
 	openssl genrsa 2048 > key.pem
