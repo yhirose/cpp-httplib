@@ -529,19 +529,26 @@ cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(true);
 ```
 
-Zlib Support
-------------
+Compression
+-----------
 
-'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`. `libz` should be linked.
+The server can applie compression to the following MIME type contents:
 
-The server applies gzip compression to the following MIME type contents:
-
-  * all text types
+  * all text types except text/event-stream
   * image/svg+xml
   * application/javascript
   * application/json
   * application/xml
   * application/xhtml+xml
+
+### Zlib Support
+
+'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`. `libz` should be linked.
+
+### Brotli Support
+
+Brotli compression is available with `CPPHTTPLIB_BROTLI_SUPPORT`. Necessary libraries should be linked.
+Please see https://github.com/google/brotli for more detail.
 
 ### Compress request body on client
 
@@ -554,7 +561,7 @@ res = cli.Post("/resource/foo", "...", "text/plain");
 
 ```c++
 cli.set_decompress(false);
-res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate"}});
+res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate, br"}});
 res->body; // Compressed data
 ```
 
