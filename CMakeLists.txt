@@ -181,6 +181,10 @@ target_include_directories(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 # Always require threads
 target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		Threads::Threads
+		# Needed for Windows libs on Mingw, as the pragma comment(lib, "xyz") aren't triggered.
+		$<$<PLATFORM_ID:Windows>:ws2_32>
+		$<$<PLATFORM_ID:Windows>:crypt32>
+		$<$<PLATFORM_ID:Windows>:cryptui>
 )
 
 # We check for the target when using IF_AVAILABLE since it's possible we didn't find it.
