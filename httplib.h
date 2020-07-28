@@ -196,7 +196,9 @@ using socket_t = int;
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
+#ifdef _WIN32
 #include <openssl/applink.c>
+#endif
 
 #include <iomanip>
 #include <iostream>
