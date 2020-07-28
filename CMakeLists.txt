@@ -1,10 +1,15 @@
 #[[
 	Build options:
+	* BUILD_SHARED_LIBS (default off) builds as a static library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
+	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
+	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_COMPILE (default off)
+	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
+	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
 
 	-------------------------------------------------------------------------------
 
@@ -36,10 +41,11 @@
 	* HTTPLIB_HEADER_PATH - this is the full path to the installed header (e.g. /usr/include/httplib.h).
 	* HTTPLIB_IS_USING_OPENSSL - a bool for if OpenSSL support is enabled.
 	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
+	* HTTPLIB_IS_USING_BROTLI - a bool for if Brotli support is enabled.
 	* HTTPLIB_IS_COMPILED - a bool for if the library is compiled, or otherwise header-only.
 	* HTTPLIB_INCLUDE_DIR - the root path to httplib's header (e.g. /usr/include).
 	* HTTPLIB_LIBRARY - the full path to the library if compiled (e.g. /usr/lib/libhttplib.so).
-	* HTTPLIB_VERSION - the project's version string.
+	* httplib_VERSION or HTTPLIB_VERSION - the project's version string.
 	* HTTPLIB_FOUND - a bool for if the target was found.
 
 	Want to use precompiled headers (Cmake feature since v3.16)?
@@ -86,9 +92,16 @@ option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build.
 # Allow for a build to casually enable OpenSSL/ZLIB support, but silenty continue if not found.
 # Make these options so their automatic use can be specifically disabled (as needed)
 option(HTTPLIB_USE_OPENSSL_IF_AVAILABLE "Uses OpenSSL (if available) to enable HTTPS support." ON)
-option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable compression support." ON)
+option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib compression support." ON)
 # Lets you compile the program as a regular library instead of header-only
 option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
+# Just setting this variable here for people building in-tree
+if(HTTPLIB_COMPILE)
+	set(HTTPLIB_IS_COMPILED TRUE)
+endif()
+
+option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
+option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli compression support." ON)
 # Defaults to static library
 option(BUILD_SHARED_LIBS "Build the library as a shared library instead of static. Has no effect if using header-only." OFF)
 if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
@@ -105,10 +118,32 @@ if(HTTPLIB_REQUIRE_OPENSSL)
 elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL QUIET)
 endif()
+# Just setting this variable here for people building in-tree
+if(OPENSSL_FOUND)
+	set(HTTPLIB_IS_USING_OPENSSL TRUE)
+endif()
+
 if(HTTPLIB_REQUIRE_ZLIB)
 	find_package(ZLIB REQUIRED)
 elseif(HTTPLIB_USE_ZLIB_IF_AVAILABLE)
 	find_package(ZLIB QUIET)
+endif()
+# Just setting this variable here for people building in-tree
+# FindZLIB doesn't have a ZLIB_FOUND variable, so check the target.
+if(TARGET ZLIB::ZLIB)
+	set(HTTPLIB_IS_USING_ZLIB TRUE)
+endif()
+
+# Adds our cmake folder to the search path for find_package
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+if(HTTPLIB_REQUIRE_BROTLI)
+	find_package(Brotli COMPONENTS encoder decoder common REQUIRED)
+elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
+	find_package(Brotli COMPONENTS encoder decoder common QUIET)
+endif()
+# Just setting this variable here for people building in-tree
+if(Brotli_FOUND)
+	set(HTTPLIB_IS_USING_BROTLI TRUE)
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
@@ -185,33 +220,21 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<PLATFORM_ID:Windows>:ws2_32>
 		$<$<PLATFORM_ID:Windows>:crypt32>
 		$<$<PLATFORM_ID:Windows>:cryptui>
+		# Can't put multiple targets in a single generator expression or it bugs out.
+		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::common>
+		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::encoder>
+		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::decoder>
+		$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:ZLIB::ZLIB>
+		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
+		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
 )
 
-# We check for the target when using IF_AVAILABLE since it's possible we didn't find it.
-if(HTTPLIB_USE_OPENSSL_IF_AVAILABLE AND TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto OR HTTPLIB_REQUIRE_OPENSSL)
-	target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-		OpenSSL::SSL OpenSSL::Crypto
-	)
-	target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-		CPPHTTPLIB_OPENSSL_SUPPORT
-	)
-	set(HTTPLIB_IS_USING_OPENSSL TRUE)
-else()
-	set(HTTPLIB_IS_USING_OPENSSL FALSE)
-endif()
-
-# We check for the target when using IF_AVAILABLE since it's possible we didn't find it.
-if(HTTPLIB_USE_ZLIB_IF_AVAILABLE AND TARGET ZLIB::ZLIB OR HTTPLIB_REQUIRE_ZLIB)
-	target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-		ZLIB::ZLIB
-	)
-	target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-		CPPHTTPLIB_ZLIB_SUPPORT
-	)
-	set(HTTPLIB_IS_USING_ZLIB TRUE)
-else()
-	set(HTTPLIB_IS_USING_ZLIB FALSE)
-endif()
+# Set the definitions to enable optional features
+target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+	$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:"CPPHTTPLIB_BROTLI_SUPPORT">
+	$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:"CPPHTTPLIB_ZLIB_SUPPORT">
+	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:"CPPHTTPLIB_OPENSSL_SUPPORT">
+)
 
 # Cmake's find_package search path is different based on the system
 # See https://cmake.org/cmake/help/latest/command/find_package.html for the list
@@ -266,6 +289,9 @@ install(FILES "${_httplib_build_includedir}/httplib.h" DESTINATION ${CMAKE_INSTA
 install(FILES
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+		# Install it so it can be used later by the httplibConfig.cmake file.
+		# Put it in the same dir as our config file instead of a global path so we don't potentially stomp on other packages.
+		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
 	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 )
 
