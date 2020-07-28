@@ -196,6 +196,8 @@ using socket_t = int;
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
+#include <openssl/applink.c>
+
 #include <iomanip>
 #include <iostream>
 #include <sstream>
