@@ -8,19 +8,16 @@
 #include <httplib.h>
 #include <iostream>
 
-#define CA_CERT_FILE "./ca-bundle.crt"
-
 using namespace std;
 
 int main(void) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto res = httplib::Client2("https://localhost:8080")
-    .set_ca_cert_path(CA_CERT_FILE)
-    // .enable_server_certificate_verification(true)
-    .Get("/hi");
+  auto scheme_host_port = "https://localhost:8080";
 #else
-  auto res = httplib::Client2("http://localhost:8080").Get("/hi");
+  auto scheme_host_port = "http://localhost:8080";
 #endif
+
+  auto res = httplib::Client2(scheme_host_port).Get("/hi");
 
   if (res) {
     cout << res->status << endl;
