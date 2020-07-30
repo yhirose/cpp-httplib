@@ -2720,6 +2720,43 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(KeepAliveTest, ReadTimeout) {
+  Server svr;
+
+  svr.Get("/a", [&](const Request & /*req*/, Response &res) {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    res.set_content("a", "text/plain");
+  });
+
+  svr.Get("/b", [&](const Request & /*req*/, Response &res) {
+    res.set_content("b", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+  cli.set_keep_alive(true);
+  cli.set_read_timeout(1);
+
+  auto resa = cli.Get("/a");
+  ASSERT_TRUE(resa == nullptr);
+
+  auto resb = cli.Get("/b");
+  ASSERT_TRUE(resb != nullptr);
+  EXPECT_EQ(200, resb->status);
+  EXPECT_EQ("b", resb->body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()

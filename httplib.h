@@ -4518,7 +4518,7 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
     return handle_request(strm, req, res, close_connection);
   });
 
-  if (close_connection) { stop(); }
+  if (close_connection || !ret) { stop(); }
 
   return ret;
 }
