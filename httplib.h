@@ -156,6 +156,7 @@ using socket_t = SOCKET;
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <resolv.h>
 #include <netinet/tcp.h>
 #ifdef CPPHTTPLIB_USE_POLL
 #include <poll.h>
@@ -1821,6 +1822,7 @@ socket_t create_socket(const char *host, int port, int socket_flags,
   auto service = std::to_string(port);
 
   if (getaddrinfo(host, service.c_str(), &hints, &result)) {
+    res_init();
     return INVALID_SOCKET;
   }
 
