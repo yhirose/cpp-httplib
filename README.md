@@ -2,13 +2,10 @@ cpp-httplib
 ===========
 
 [![](https://github.com/yhirose/cpp-httplib/workflows/test/badge.svg)](https://github.com/yhirose/cpp-httplib/actions)
-[![Bulid Status](https://ci.appveyor.com/api/projects/status/github/yhirose/cpp-httplib?branch=master&svg=true)](https://ci.appveyor.com/project/yhirose/cpp-httplib)
 
 A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
-
-For Windows users: Please read [this note](https://github.com/yhirose/cpp-httplib#windows).
 
 Server Example
 --------------
