@@ -22,7 +22,7 @@
     <ProjectGuid>{6B3E6769-052D-4BC0-9D2C-E9127C3DBB26}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>test</RootNamespace>
-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -97,6 +97,7 @@
       <AdditionalIncludeDirectories>./;../</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>
       </AdditionalUsingDirectories>
+      <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -114,6 +115,7 @@
       <AdditionalIncludeDirectories>./;../</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>
       </AdditionalUsingDirectories>
+      <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -133,6 +135,7 @@
       <AdditionalIncludeDirectories>./;../</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>
       </AdditionalUsingDirectories>
+      <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -154,6 +157,7 @@
       <AdditionalIncludeDirectories>./;../</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>
       </AdditionalUsingDirectories>
+      <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
