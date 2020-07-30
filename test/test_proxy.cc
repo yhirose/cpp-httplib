@@ -5,7 +5,8 @@
 using namespace std;
 using namespace httplib;
 
-void ProxyTest(Client& cli, bool basic) {
+template <typename T>
+void ProxyTest(T& cli, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
   auto res = cli.Get("/get");
   ASSERT_TRUE(res != nullptr);
@@ -36,7 +37,8 @@ TEST(ProxyTest, SSLDigest) {
 
 // ----------------------------------------------------------------------------
 
-void RedirectProxyText(Client& cli, const char *path, bool basic) {
+template <typename T>
+void RedirectProxyText(T& cli, const char *path, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
   if (basic) {
     cli.set_proxy_basic_auth("hello", "world");
@@ -100,7 +102,8 @@ TEST(RedirectTest, YouTubeSSLDigest) {
 
 // ----------------------------------------------------------------------------
 
-void BaseAuthTestFromHTTPWatch(Client& cli) {
+template <typename T>
+void BaseAuthTestFromHTTPWatch(T& cli) {
   cli.set_proxy("localhost", 3128);
   cli.set_proxy_basic_auth("hello", "world");
 
@@ -157,7 +160,8 @@ TEST(BaseAuthTest, SSL) {
 // ----------------------------------------------------------------------------
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-void DigestAuthTestFromHTTPWatch(Client& cli) {
+template <typename T>
+void DigestAuthTestFromHTTPWatch(T& cli) {
   cli.set_proxy("localhost", 3129);
   cli.set_proxy_digest_auth("hello", "world");
 

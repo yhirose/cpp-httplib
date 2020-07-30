@@ -287,7 +287,6 @@ Client Example
 
 int main(void)
 {
-  // IMPORTANT: 1st parameter must be a hostname or an IP address string.
   httplib::Client cli("localhost", 1234);
 
   auto res = cli.Get("/hi");
@@ -295,6 +294,16 @@ int main(void)
     std::cout << res->body << std::endl;
   }
 }
+```
+
+NOTE: Constructor with scheme-host-port string is now supported!
+
+```c++
+httplib::Client cli("localhost");
+httplib::Client cli("localhost:8080");
+httplib::Client cli("http://localhost");
+httplib::Client cli("http://localhost:8080");
+httplib::Client cli("https://localhost");
 ```
 
 ### GET with HTTP headers

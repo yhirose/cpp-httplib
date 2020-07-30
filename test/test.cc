@@ -3065,19 +3065,26 @@ TEST(CleanupTest, WSACleanup) {
 }
 #endif
 
+// #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+// TEST(NoSSLSupport, SimpleInterface) {
+//   httplib::Client cli("https://yahoo.com");
+//   ASSERT_FALSE(cli.is_valid());
+// }
+// #endif
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(InvalidScheme, SimpleInterface) {
-  httplib::Client2 cli("scheme://yahoo.com");
+  httplib::Client cli("scheme://yahoo.com");
   ASSERT_FALSE(cli.is_valid());
 }
 
 TEST(NoScheme, SimpleInterface) {
-  httplib::Client2 cli("yahoo.com");
-  ASSERT_FALSE(cli.is_valid());
+  httplib::Client cli("yahoo.com:80");
+  ASSERT_TRUE(cli.is_valid());
 }
 
 TEST(YahooRedirectTest2, SimpleInterface) {
-  httplib::Client2 cli("http://yahoo.com");
+  httplib::Client cli("http://yahoo.com");
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -3090,7 +3097,7 @@ TEST(YahooRedirectTest2, SimpleInterface) {
 }
 
 TEST(YahooRedirectTest3, SimpleInterface) {
-  httplib::Client2 cli("https://yahoo.com");
+  httplib::Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -3104,7 +3111,7 @@ TEST(YahooRedirectTest3, SimpleInterface) {
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
-  httplib::Client2 cli("https://cdnjs.cloudflare.com");
+  httplib::Client cli("https://cdnjs.cloudflare.com");
   auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "brotli"}});
 
   ASSERT_TRUE(res != nullptr);
@@ -3117,7 +3124,7 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 #if 0
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   auto res =
-      httplib::Client2("https://httpbin.org")
+      httplib::Client("https://httpbin.org")
           .set_follow_location(true)
           .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
