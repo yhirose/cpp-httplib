@@ -1227,22 +1227,22 @@ protected:
              [&](const Request &req, Response & /*res*/) {
                EXPECT_EQ("close", req.get_header_value("Connection"));
              })
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        .Get("/gzip",
+#if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT)
+        .Get("/compress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
                    "12345678901234567890123456789012345678901234567890123456789"
                    "01234567890123456789012345678901234567890",
                    "text/plain");
              })
-        .Get("/nogzip",
+        .Get("/nocompress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
                    "12345678901234567890123456789012345678901234567890123456789"
                    "01234567890123456789012345678901234567890",
                    "application/octet-stream");
              })
-        .Post("/gzipmultipart",
+        .Post("/compress-multipart",
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(2u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
@@ -2123,6 +2123,28 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST_F(ServerTest, GetStreamedChunkedWithBrotli) {
+  httplib::Headers headers;
+  headers.emplace("Accept-Encoding", "brotli");
+
+  auto res = cli_.Get("/streamed-chunked", headers);
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedChunkedWithBrotli2) {
+  httplib::Headers headers;
+  headers.emplace("Accept-Encoding", "brotli");
+
+  auto res = cli_.Get("/streamed-chunked2", headers);
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+#endif
+
 TEST_F(ServerTest, Patch) {
   auto res = cli_.Patch("/patch", "PATCH", "text/plain");
   ASSERT_TRUE(res != nullptr);
@@ -2285,7 +2307,7 @@ TEST_F(ServerTest, KeepAlive) {
 TEST_F(ServerTest, Gzip) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
-  auto res = cli_.Get("/gzip", headers);
+  auto res = cli_.Get("/compress", headers);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -2299,7 +2321,7 @@ TEST_F(ServerTest, Gzip) {
 
 TEST_F(ServerTest, GzipWithoutAcceptEncoding) {
   Headers headers;
-  auto res = cli_.Get("/gzip", headers);
+  auto res = cli_.Get("/compress", headers);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
@@ -2316,7 +2338,7 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
   auto res =
-      cli_.Get("/gzip", headers, [&](const char *data, uint64_t data_length) {
+      cli_.Get("/compress", headers, [&](const char *data, uint64_t data_length) {
         EXPECT_EQ(data_length, 100);
         body.append(data, data_length);
         return true;
@@ -2337,7 +2359,7 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
   headers.emplace("Accept-Encoding", "gzip, deflate");
 
   cli_.set_decompress(false);
-  auto res = cli_.Get("/gzip", headers);
+  auto res = cli_.Get("/compress", headers);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -2351,7 +2373,7 @@ TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   Headers headers;
   std::string body;
   auto res =
-      cli_.Get("/gzip", headers, [&](const char *data, uint64_t data_length) {
+      cli_.Get("/compress", headers, [&](const char *data, uint64_t data_length) {
         EXPECT_EQ(data_length, 100);
         body.append(data, data_length);
         return true;
@@ -2370,7 +2392,7 @@ TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
 TEST_F(ServerTest, NoGzip) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
-  auto res = cli_.Get("/nogzip", headers);
+  auto res = cli_.Get("/nocompress", headers);
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(false, res->has_header("Content-Encoding"));
@@ -2387,7 +2409,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
   auto res =
-      cli_.Get("/nogzip", headers, [&](const char *data, uint64_t data_length) {
+      cli_.Get("/nocompress", headers, [&](const char *data, uint64_t data_length) {
         EXPECT_EQ(data_length, 100);
         body.append(data, data_length);
         return true;
@@ -2410,9 +2432,26 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
   };
 
   cli_.set_compress(true);
-  auto res = cli_.Post("/gzipmultipart", items);
+  auto res = cli_.Post("/compress-multipart", items);
 
   ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(200, res->status);
+}
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST_F(ServerTest, Brotli) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "br");
+  auto res = cli_.Get("/compress", headers);
+
+  ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ("brotli", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("19", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
   EXPECT_EQ(200, res->status);
 }
 #endif
@@ -3149,12 +3188,14 @@ TEST(YahooRedirectTest3, SimpleInterface) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
   httplib::Client cli("https://cdnjs.cloudflare.com");
-  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "brotli"}});
+  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
+                     {{"Accept-Encoding", "brotli"}});
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(287630, res->body.size());
-  EXPECT_EQ("application/javascript; charset=utf-8", res->get_header_value("Content-Type"));
+  EXPECT_EQ("application/javascript; charset=utf-8",
+            res->get_header_value("Content-Type"));
 }
 #endif
 
