@@ -789,6 +789,7 @@ public:
   void set_write_timeout(time_t sec, time_t usec = 0);
 
   void set_basic_auth(const char *username, const char *password);
+  void set_bearer_token_auth(const char *token);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_digest_auth(const char *username, const char *password);
 #endif
@@ -804,6 +805,7 @@ public:
 
   void set_proxy(const char *host, int port);
   void set_proxy_basic_auth(const char *username, const char *password);
+  void set_proxy_bearer_token_auth(const char *token);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_proxy_digest_auth(const char *username, const char *password);
 #endif
@@ -849,6 +851,7 @@ protected:
 
   std::string basic_auth_username_;
   std::string basic_auth_password_;
+  std::string bearer_token_auth_token_;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   std::string digest_auth_username_;
   std::string digest_auth_password_;
@@ -870,6 +873,7 @@ protected:
 
   std::string proxy_basic_auth_username_;
   std::string proxy_basic_auth_password_;
+  std::string proxy_bearer_token_auth_token_;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   std::string proxy_digest_auth_username_;
   std::string proxy_digest_auth_password_;
@@ -887,6 +891,7 @@ protected:
     write_timeout_usec_ = rhs.write_timeout_usec_;
     basic_auth_username_ = rhs.basic_auth_username_;
     basic_auth_password_ = rhs.basic_auth_password_;
+    bearer_token_auth_token_ = rhs.bearer_token_auth_token_;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     digest_auth_username_ = rhs.digest_auth_username_;
     digest_auth_password_ = rhs.digest_auth_password_;
@@ -902,6 +907,7 @@ protected:
     proxy_port_ = rhs.proxy_port_;
     proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
     proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
+    proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     proxy_digest_auth_username_ = rhs.proxy_digest_auth_username_;
     proxy_digest_auth_password_ = rhs.proxy_digest_auth_password_;
@@ -1046,6 +1052,7 @@ public:
   void set_write_timeout(time_t sec, time_t usec = 0);
 
   void set_basic_auth(const char *username, const char *password);
+  void set_bearer_token_auth(const char *token);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_digest_auth(const char *username, const char *password);
 #endif
@@ -1061,6 +1068,7 @@ public:
 
   void set_proxy(const char *host, int port);
   void set_proxy_basic_auth(const char *username, const char *password);
+  void set_proxy_bearer_token_auth(const char *token);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_proxy_digest_auth(const char *username, const char *password);
 #endif
@@ -3320,6 +3328,14 @@ make_basic_authentication_header(const std::string &username,
   return std::make_pair(key, field);
 }
 
+inline std::pair<std::string, std::string>
+make_bearer_token_authentication_header(const std::string &token,
+                                 bool is_proxy = false) {
+  auto field = "Bearer " + token;
+  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
+  return std::make_pair(key, field);
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline std::pair<std::string, std::string> make_digest_authentication_header(
     const Request &req, const std::map<std::string, std::string> &auth,
@@ -4761,6 +4777,16 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
         proxy_basic_auth_username_, proxy_basic_auth_password_, true));
   }
 
+  if (!bearer_token_auth_token_.empty()) {
+    headers.insert(make_bearer_token_authentication_header(
+        bearer_token_auth_token_, false));
+  }
+
+  if (!proxy_bearer_token_auth_token_.empty()) {
+    headers.insert(make_bearer_token_authentication_header(
+        proxy_bearer_token_auth_token_, true));
+  }
+
   detail::write_headers(bstrm, req, headers);
 
   // Flush buffer
@@ -5253,6 +5279,10 @@ inline void ClientImpl::set_basic_auth(const char *username,
   basic_auth_password_ = password;
 }
 
+inline void ClientImpl::set_bearer_token_auth(const char *token) {
+  bearer_token_auth_token_ = token;
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void ClientImpl::set_digest_auth(const char *username,
                                         const char *password) {
@@ -5286,6 +5316,10 @@ inline void ClientImpl::set_proxy_basic_auth(const char *username,
                                              const char *password) {
   proxy_basic_auth_username_ = username;
   proxy_basic_auth_password_ = password;
+}
+
+inline void ClientImpl::set_proxy_bearer_token_auth(const char *token) {
+  proxy_bearer_token_auth_token_ = token;
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -6186,6 +6220,9 @@ inline void Client::set_write_timeout(time_t sec, time_t usec) {
 inline void Client::set_basic_auth(const char *username, const char *password) {
   cli_->set_basic_auth(username, password);
 }
+inline void Client::set_bearer_token_auth(const char *token) {
+  cli_->set_bearer_token_auth(token);
+}
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_digest_auth(const char *username,
                                     const char *password) {
@@ -6212,6 +6249,9 @@ inline void Client::set_proxy(const char *host, int port) {
 inline void Client::set_proxy_basic_auth(const char *username,
                                          const char *password) {
   cli_->set_proxy_basic_auth(username, password);
+}
+inline void Client::set_proxy_bearer_token_auth(const char *token) {
+  cli_->set_proxy_bearer_token_auth(token);
 }
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_proxy_digest_auth(const char *username,
