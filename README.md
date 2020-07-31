@@ -447,6 +447,9 @@ cli.set_basic_auth("user", "pass");
 
 // Digest Authentication
 cli.set_digest_auth("user", "pass");
+
+// Bearer Token Authentication
+cli.set_bearer_token_auth("token");
 ```
 
 NOTE: OpenSSL is required for Digest Authentication.
@@ -461,6 +464,9 @@ cli.set_proxy_basic_auth("user", "pass");
 
 // Digest Authentication
 cli.set_proxy_digest_auth("user", "pass");
+
+// Bearer Token Authentication
+cli.set_proxy_bearer_token_auth("pass");
 ```
 
 NOTE: OpenSSL is required for Digest Authentication.
