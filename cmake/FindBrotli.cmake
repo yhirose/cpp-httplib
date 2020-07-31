@@ -35,6 +35,7 @@ endif()
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
 	if(BROTLI_USE_STATIC_LIBS)
+		# Have to use _STATIC to tell PkgConfig to find the static libs.
 		pkg_check_modules(Brotli_common_STATIC QUIET IMPORTED_TARGET libbrotlicommon)
 		pkg_check_modules(Brotli_decoder_STATIC QUIET IMPORTED_TARGET libbrotlidec)
 		pkg_check_modules(Brotli_encoder_STATIC QUIET IMPORTED_TARGET libbrotlienc)
@@ -53,7 +54,7 @@ find_path(Brotli_INCLUDE_DIR
 )
 
 # Also check if Brotli_decoder was defined, as it can be passed by the end-user
-if(NOT TARGET PkgConfig::Brotli_decoder AND NOT Brotli_decoder)
+if(NOT TARGET PkgConfig::Brotli_decoder AND NOT Brotli_decoder AND NOT TARGET PkgConfig::Brotli_decoder_STATIC)
 	if(BROTLI_USE_STATIC_LIBS)
 		list(APPEND _brotli_decoder_lib_names
 			"brotlidec-static"
@@ -77,7 +78,7 @@ if(NOT TARGET PkgConfig::Brotli_decoder AND NOT Brotli_decoder)
 endif()
 
 # Also check if Brotli_encoder was defined, as it can be passed by the end-user
-if(NOT TARGET PkgConfig::Brotli_encoder AND NOT Brotli_encoder)
+if(NOT TARGET PkgConfig::Brotli_encoder AND NOT Brotli_encoder AND NOT TARGET PkgConfig::Brotli_encoder_STATIC)
 	if(BROTLI_USE_STATIC_LIBS)
 		list(APPEND _brotli_encoder_lib_names
 			"brotlienc-static"
@@ -101,7 +102,7 @@ if(NOT TARGET PkgConfig::Brotli_encoder AND NOT Brotli_encoder)
 endif()
 
 # Also check if Brotli_common was defined, as it can be passed by the end-user
-if(NOT TARGET PkgConfig::Brotli_common AND NOT Brotli_common)
+if(NOT TARGET PkgConfig::Brotli_common AND NOT Brotli_common AND NOT TARGET PkgConfig::Brotli_common_STATIC)
 	if(BROTLI_USE_STATIC_LIBS)
 		list(APPEND _brotli_common_lib_names
 			"brotlicommon-static"
@@ -129,13 +130,18 @@ set(_brotli_req_vars "")
 # Note that the case here needs to match the case we used elsewhere in this file.
 foreach(_target_name "common" "decoder" "encoder")
 	# The PkgConfig IMPORTED_TARGET has PkgConfig:: prefixed to it.
-	if(TARGET PkgConfig::Brotli_${_target_name})
-		add_library(Brotli::${_target_name} ALIAS PkgConfig::Brotli_${_target_name})
+	if(TARGET PkgConfig::Brotli_${_target_name} OR TARGET PkgConfig::Brotli_${_target_name}_STATIC)
+		set(_stat_str "")
+		if(BROTLI_USE_STATIC_LIBS)
+			set(_stat_str "_STATIC")
+		endif()
+		# Can't use generators for ALIAS targets, so you get this jank
+		add_library(Brotli::${_target_name} ALIAS PkgConfig::Brotli_${_target_name}${_stat_str})
 
-		if(Brotli_FIND_REQUIRED_${_target_name})
 			# The PkgConfig version of the library has a slightly different path to its lib.
+		if(Brotli_FIND_REQUIRED_${_target_name})
 			if(BROTLI_USE_STATIC_LIBS)
-				list(APPEND _brotli_req_vars "Brotli_${_target_name}_STATIC_LINK_LIBRARIES")
+				list(APPEND _brotli_req_vars "Brotli_${_target_name}_STATIC_LIBRARIES")
 			else()
 				list(APPEND _brotli_req_vars "Brotli_${_target_name}_LINK_LIBRARIES")
 			endif()
