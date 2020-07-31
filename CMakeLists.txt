@@ -1,6 +1,6 @@
 #[[
 	Build options:
-	* BUILD_SHARED_LIBS (default off) builds as a static library (if HTTPLIB_COMPILE is ON)
+	* BUILD_SHARED_LIBS (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
@@ -60,17 +60,21 @@
 ]]
 cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
 
-# Gets the latest tag as a string like "v0.6.6"
-# Can silently fail if git isn't on the system
-execute_process(COMMAND git describe --tags --abbrev=0
-	OUTPUT_VARIABLE _raw_version_string
-	ERROR_VARIABLE _git_tag_error
-)
+# On systems without Git installed, there were errors since execute_process seemed to not throw an error without it?
+find_package(Git QUIET)
+if(Git_FOUND)
+	# Gets the latest tag as a string like "v0.6.6"
+	# Can silently fail if git isn't on the system
+	execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
+		OUTPUT_VARIABLE _raw_version_string
+		ERROR_VARIABLE _git_tag_error
+	)
+endif()
 
 # execute_process can fail silenty, so check for an error
 # if there was an error, just use the user agent as a version
-if(_git_tag_error)
-	message(WARNING "cpp-httplib failed to find the latest git tag, falling back to using user agent as the version.")
+if(_git_tag_error OR NOT Git_FOUND)
+	message(WARNING "cpp-httplib failed to find the latest Git tag, falling back to using user agent as the version.")
 	# Get the user agent and use it as a version
 	# This gets the string with the user agent from the header.
 	# This is so the maintainer doesn't actually need to update this manually.
@@ -101,7 +105,7 @@ if(HTTPLIB_COMPILE)
 endif()
 
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
-option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli compression support." ON)
+option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
 # Defaults to static library
 option(BUILD_SHARED_LIBS "Build the library as a shared library instead of static. Has no effect if using header-only." OFF)
 if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
