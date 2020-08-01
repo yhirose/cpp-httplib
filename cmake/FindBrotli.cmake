@@ -160,6 +160,9 @@ foreach(_target_name "common" "decoder" "encoder")
 	elseif(Brotli_FIND_REQUIRED_${_target_name})
 		# Only bother with an error/failure if they actually required the lib.
 		brotli_err_msg("Failed to find Brotli's ${_target_name} library. Try manually defining \"Brotli_${_target_name}\" to its path on your system.")
+		# If the compnent was required but not found, you set XXX_FOUND to false to signify failure to find component(s)
+		# This is used in find_package_handle_standard_args's HANDLE_COMPONENTS (I think)
+		set(Brotli_FOUND FALSE)
 	endif()
 endforeach()
 
@@ -167,6 +170,7 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Brotli
 	FOUND_VAR Brotli_FOUND
 	REQUIRED_VARS ${_brotli_req_vars}
+	HANDLE_COMPONENTS
 )
 
 if(Brotli_FOUND)
