@@ -294,10 +294,10 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -306,7 +306,7 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
   ASSERT_TRUE(res != nullptr);
 
   std::string out;
-  httplib::detail::read_file("./image.jpg", out);
+  detail::read_file("./image.jpg", out);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, res->body);
@@ -317,10 +317,10 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -334,7 +334,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   ASSERT_TRUE(res != nullptr);
 
   std::string out;
-  httplib::detail::read_file("./image.jpg", out);
+  detail::read_file("./image.jpg", out);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, body);
@@ -345,10 +345,10 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -366,7 +366,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   ASSERT_TRUE(res != nullptr);
 
   std::string out;
-  httplib::detail::read_file("./image.jpg", out);
+  detail::read_file("./image.jpg", out);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, body);
@@ -377,15 +377,15 @@ TEST(RangeTest, FromHTTPBin) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(5);
 
   {
-    httplib::Headers headers;
+    Headers headers;
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -393,7 +393,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{1, -1}})};
+    Headers headers = {make_range_header({{1, -1}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("bcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -401,7 +401,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{1, 10}})};
+    Headers headers = {make_range_header({{1, 10}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("bcdefghijk", res->body);
@@ -409,7 +409,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{0, 31}})};
+    Headers headers = {make_range_header({{0, 31}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -417,7 +417,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{0, -1}})};
+    Headers headers = {make_range_header({{0, -1}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -425,7 +425,7 @@ TEST(RangeTest, FromHTTPBin) {
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{0, 32}})};
+    Headers headers = {make_range_header({{0, 32}})};
     auto res = cli.Get("/range/32", headers);
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(416, res->status);
@@ -437,10 +437,10 @@ TEST(ConnectionErrorTest, InvalidHost) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -452,9 +452,9 @@ TEST(ConnectionErrorTest, InvalidHost2) {
   auto host = "httpbin.org/";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
   cli.set_connection_timeout(2);
 
@@ -467,10 +467,10 @@ TEST(ConnectionErrorTest, InvalidPort) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 44380;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 8080;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -483,10 +483,10 @@ TEST(ConnectionErrorTest, Timeout) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 44380;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 8080;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -499,10 +499,10 @@ TEST(CancelTest, NoCancel) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(5);
 
@@ -517,10 +517,10 @@ TEST(CancelTest, WithCancelSmallPayload) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
@@ -533,15 +533,15 @@ TEST(CancelTest, WithCancelLargePayload) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(5);
 
   uint32_t count = 0;
-  httplib::Headers headers;
+  Headers headers;
   auto res = cli.Get("/range/65536", headers,
                      [&count](uint64_t, uint64_t) { return (count++ == 0); });
   ASSERT_TRUE(res == nullptr);
@@ -552,10 +552,10 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
 
   {
@@ -565,9 +565,8 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   }
 
   {
-    auto res =
-        cli.Get("/basic-auth/hello/world",
-                {httplib::make_basic_authentication_header("hello", "world")});
+    auto res = cli.Get("/basic-auth/hello/world",
+                       {make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
               res->body);
@@ -602,7 +601,7 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 TEST(DigestAuthTest, FromHTTPWatch) {
   auto host = "httpbin.org";
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 
   {
     auto res = cli.Get("/digest-auth/auth/hello/world");
@@ -651,9 +650,9 @@ TEST(AbsoluteRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
@@ -666,9 +665,9 @@ TEST(RedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
@@ -681,9 +680,9 @@ TEST(RelativeRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
@@ -696,9 +695,9 @@ TEST(TooManyRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
@@ -709,7 +708,7 @@ TEST(TooManyRedirectTest, Redirect) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest, Redirect) {
-  httplib::Client cli("yahoo.com");
+  Client cli("yahoo.com");
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -723,7 +722,7 @@ TEST(YahooRedirectTest, Redirect) {
 
 #if 0
 TEST(HttpsToHttpRedirectTest, Redirect) {
-  httplib::SSLClient cli("httpbin.org");
+  SSLClient cli("httpbin.org");
   cli.set_follow_location(true);
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
@@ -772,7 +771,7 @@ TEST(RedirectToDifferentPort, Redirect) {
 }
 
 TEST(UrlWithSpace, Redirect) {
-  httplib::SSLClient cli("edge.forgecdn.net");
+  SSLClient cli("edge.forgecdn.net");
   cli.set_follow_location(true);
 
   auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
@@ -2091,7 +2090,7 @@ TEST_F(ServerTest, PutLargeFileWithGzip) {
 
 TEST_F(ServerTest, PutContentWithDeflate) {
   cli_.set_compress(false);
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Content-Encoding", "deflate");
   // PUT in deflate format:
   auto res = cli_.Put("/put", headers,
@@ -2103,7 +2102,7 @@ TEST_F(ServerTest, PutContentWithDeflate) {
 }
 
 TEST_F(ServerTest, GetStreamedChunkedWithGzip) {
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
 
   auto res = cli_.Get("/streamed-chunked", headers);
@@ -2113,7 +2112,7 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip) {
 }
 
 TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
 
   auto res = cli_.Get("/streamed-chunked2", headers);
@@ -2125,7 +2124,7 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST_F(ServerTest, GetStreamedChunkedWithBrotli) {
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Accept-Encoding", "brotli");
 
   auto res = cli_.Get("/streamed-chunked", headers);
@@ -2135,7 +2134,7 @@ TEST_F(ServerTest, GetStreamedChunkedWithBrotli) {
 }
 
 TEST_F(ServerTest, GetStreamedChunkedWithBrotli2) {
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Accept-Encoding", "brotli");
 
   auto res = cli_.Get("/streamed-chunked2", headers);
@@ -2289,7 +2288,7 @@ TEST_F(ServerTest, KeepAlive) {
   EXPECT_EQ("close", res->get_header_value("Connection"));
 
   res = cli_.Post(
-      "/empty", 0, [&](size_t, size_t, httplib::DataSink &) { return true; },
+      "/empty", 0, [&](size_t, size_t, DataSink &) { return true; },
       "text/plain");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(200, res->status);
@@ -2337,12 +2336,12 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res =
-      cli_.Get("/compress", headers, [&](const char *data, uint64_t data_length) {
-        EXPECT_EQ(data_length, 100);
-        body.append(data, data_length);
-        return true;
-      });
+  auto res = cli_.Get("/compress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(data_length, 100);
+                        body.append(data, data_length);
+                        return true;
+                      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -2372,12 +2371,12 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   Headers headers;
   std::string body;
-  auto res =
-      cli_.Get("/compress", headers, [&](const char *data, uint64_t data_length) {
-        EXPECT_EQ(data_length, 100);
-        body.append(data, data_length);
-        return true;
-      });
+  auto res = cli_.Get("/compress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(data_length, 100);
+                        body.append(data, data_length);
+                        return true;
+                      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
@@ -2408,12 +2407,12 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res =
-      cli_.Get("/nocompress", headers, [&](const char *data, uint64_t data_length) {
-        EXPECT_EQ(data_length, 100);
-        body.append(data, data_length);
-        return true;
-      });
+  auto res = cli_.Get("/nocompress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(data_length, 100);
+                        body.append(data, data_length);
+                        return true;
+                      });
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(false, res->has_header("Content-Encoding"));
@@ -3003,7 +3002,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
@@ -3074,7 +3073,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT, client_cert, client_private_key);
+  SSLClient cli(HOST, PORT, client_cert, client_private_key);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
@@ -3100,7 +3099,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT);
+  SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
   cli.set_connection_timeout(30);
   ASSERT_TRUE(res == nullptr);
@@ -3122,7 +3121,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
@@ -3143,24 +3142,24 @@ TEST(CleanupTest, WSACleanup) {
 
 // #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
 // TEST(NoSSLSupport, SimpleInterface) {
-//   httplib::Client cli("https://yahoo.com");
+//   Client cli("https://yahoo.com");
 //   ASSERT_FALSE(cli.is_valid());
 // }
 // #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(InvalidScheme, SimpleInterface) {
-  httplib::Client cli("scheme://yahoo.com");
+  Client cli("scheme://yahoo.com");
   ASSERT_FALSE(cli.is_valid());
 }
 
 TEST(NoScheme, SimpleInterface) {
-  httplib::Client cli("yahoo.com:80");
+  Client cli("yahoo.com:80");
   ASSERT_TRUE(cli.is_valid());
 }
 
 TEST(YahooRedirectTest2, SimpleInterface) {
-  httplib::Client cli("http://yahoo.com");
+  Client cli("http://yahoo.com");
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -3173,7 +3172,7 @@ TEST(YahooRedirectTest2, SimpleInterface) {
 }
 
 TEST(YahooRedirectTest3, SimpleInterface) {
-  httplib::Client cli("https://yahoo.com");
+  Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res != nullptr);
@@ -3187,7 +3186,7 @@ TEST(YahooRedirectTest3, SimpleInterface) {
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
-  httplib::Client cli("https://cdnjs.cloudflare.com");
+  Client cli("https://cdnjs.cloudflare.com");
   auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
                      {{"Accept-Encoding", "brotli"}});
 
@@ -3202,7 +3201,7 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 #if 0
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   auto res =
-      httplib::Client("https://httpbin.org")
+      Client("https://httpbin.org")
           .set_follow_location(true)
           .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
