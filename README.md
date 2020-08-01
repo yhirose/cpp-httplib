@@ -286,9 +286,13 @@ int main(void)
 {
   httplib::Client cli("localhost", 1234);
 
-  auto res = cli.Get("/hi");
-  if (res && res->status == 200) {
-    std::cout << res->body << std::endl;
+  if (auto res = cli.Get("/hi")) {
+    if (res->status == 200) {
+      std::cout << res->body << std::endl;
+    }
+  } else {
+    auto err = res.error();
+    ...
   }
 }
 ```
@@ -434,13 +438,12 @@ auto res = cli_.Post(
 httplib::Client client(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
-std::shared_ptr<httplib::Response> res =
-  cli.Get("/", [](uint64_t len, uint64_t total) {
-    printf("%lld / %lld bytes => %d%% complete\n",
-      len, total,
-      (int)(len*100/total));
-    return true; // return 'false' if you want to cancel the request.
-  }
+auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
+  printf("%lld / %lld bytes => %d%% complete\n",
+    len, total,
+    (int)(len*100/total));
+  return true; // return 'false' if you want to cancel the request.
+}
 );
 ```
 
