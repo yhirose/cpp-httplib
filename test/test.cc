@@ -354,7 +354,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 
   std::string body;
   auto res = cli.Get(
-      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137", Headers(),
+      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
       [&](const Response &response) {
         EXPECT_EQ(200, response.status);
         return true;
@@ -372,6 +372,26 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   EXPECT_EQ(out, body);
 }
 
+TEST(DefaultHeadersTest, FromHTTPBin) {
+  Client cli("httpbin.org");
+  cli.set_default_headers({make_range_header({{1, 10}})});
+  cli.set_connection_timeout(5);
+
+  {
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ("bcdefghijk", res->body);
+    EXPECT_EQ(206, res->status);
+  }
+
+  {
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res != nullptr);
+    EXPECT_EQ("bcdefghijk", res->body);
+    EXPECT_EQ(206, res->status);
+  }
+}
+
 TEST(RangeTest, FromHTTPBin) {
   auto host = "httpbin.org";
 
@@ -385,8 +405,7 @@ TEST(RangeTest, FromHTTPBin) {
   cli.set_connection_timeout(5);
 
   {
-    Headers headers;
-    auto res = cli.Get("/range/32", headers);
+    auto res = cli.Get("/range/32");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
@@ -541,8 +560,7 @@ TEST(CancelTest, WithCancelLargePayload) {
   cli.set_connection_timeout(5);
 
   uint32_t count = 0;
-  Headers headers;
-  auto res = cli.Get("/range/65536", headers,
+  auto res = cli.Get("/range/65536",
                      [&count](uint64_t, uint64_t) { return (count++ == 0); });
   ASSERT_TRUE(res == nullptr);
 }
@@ -2319,8 +2337,7 @@ TEST_F(ServerTest, Gzip) {
 }
 
 TEST_F(ServerTest, GzipWithoutAcceptEncoding) {
-  Headers headers;
-  auto res = cli_.Get("/compress", headers);
+  auto res = cli_.Get("/compress");
 
   ASSERT_TRUE(res != nullptr);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
@@ -2369,9 +2386,8 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
 }
 
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
-  Headers headers;
   std::string body;
-  auto res = cli_.Get("/compress", headers,
+  auto res = cli_.Get("/compress",
                       [&](const char *data, uint64_t data_length) {
                         EXPECT_EQ(data_length, 100);
                         body.append(data, data_length);

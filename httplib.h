@@ -702,9 +702,16 @@ public:
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ContentReceiver content_receiver,
                                 Progress progress);
+  std::shared_ptr<Response> Get(const char *path,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver);
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ResponseHandler response_handler,
                                 ContentReceiver content_receiver);
+  std::shared_ptr<Response> Get(const char *path,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver,
+                                Progress progress);
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ResponseHandler response_handler,
                                 ContentReceiver content_receiver,
@@ -781,6 +788,8 @@ public:
 
   void stop();
 
+  void set_default_headers(Headers headers);
+
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
 
@@ -837,6 +846,9 @@ protected:
   Socket socket_;
   mutable std::mutex socket_mutex_;
   std::recursive_mutex request_mutex_;
+
+  // Default headers
+  Headers default_headers_;
 
   // Settings
   std::string client_cert_path_;
@@ -967,10 +979,17 @@ public:
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ContentReceiver content_receiver,
                                 Progress progress);
+  std::shared_ptr<Response> Get(const char *path,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver);
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
                                 ResponseHandler response_handler,
                                 ContentReceiver content_receiver);
   std::shared_ptr<Response> Get(const char *path, const Headers &headers,
+                                ResponseHandler response_handler,
+                                ContentReceiver content_receiver,
+                                Progress progress);
+  std::shared_ptr<Response> Get(const char *path,
                                 ResponseHandler response_handler,
                                 ContentReceiver content_receiver,
                                 Progress progress);
@@ -1043,6 +1062,8 @@ public:
   size_t is_socket_open() const;
 
   void stop();
+
+  void set_default_headers(Headers headers);
 
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
@@ -3285,7 +3306,7 @@ make_basic_authentication_header(const std::string &username,
 
 inline std::pair<std::string, std::string>
 make_bearer_token_authentication_header(const std::string &token,
-                                 bool is_proxy = false) {
+                                        bool is_proxy = false) {
   auto field = "Bearer " + token;
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
@@ -4788,7 +4809,8 @@ inline std::shared_ptr<Response> ClientImpl::send_with_content_provider(
     ContentProvider content_provider, const char *content_type) {
   Request req;
   req.method = method;
-  req.headers = headers;
+  req.headers = default_headers_;
+  req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
   if (content_type) { req.headers.emplace("Content-Type", content_type); }
@@ -4928,7 +4950,8 @@ ClientImpl::Get(const char *path, const Headers &headers, Progress progress) {
   Request req;
   req.method = "GET";
   req.path = path;
-  req.headers = headers;
+  req.headers = default_headers_;
+  req.headers.insert(headers.begin(), headers.end());
   req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
@@ -4961,11 +4984,25 @@ ClientImpl::Get(const char *path, const Headers &headers,
 }
 
 inline std::shared_ptr<Response>
+ClientImpl::Get(const char *path, ResponseHandler response_handler,
+                ContentReceiver content_receiver) {
+  return Get(path, Headers(), std::move(response_handler), content_receiver,
+             Progress());
+}
+
+inline std::shared_ptr<Response>
 ClientImpl::Get(const char *path, const Headers &headers,
                 ResponseHandler response_handler,
                 ContentReceiver content_receiver) {
   return Get(path, headers, std::move(response_handler), content_receiver,
              Progress());
+}
+
+inline std::shared_ptr<Response>
+ClientImpl::Get(const char *path, ResponseHandler response_handler,
+                ContentReceiver content_receiver, Progress progress) {
+  return Get(path, Headers(), std::move(response_handler), content_receiver,
+             progress);
 }
 
 inline std::shared_ptr<Response>
@@ -4975,7 +5012,8 @@ ClientImpl::Get(const char *path, const Headers &headers,
   Request req;
   req.method = "GET";
   req.path = path;
-  req.headers = headers;
+  req.headers = default_headers_;
+  req.headers.insert(headers.begin(), headers.end());
   req.response_handler = std::move(response_handler);
   req.content_receiver = std::move(content_receiver);
   req.progress = std::move(progress);
@@ -4992,7 +5030,8 @@ inline std::shared_ptr<Response> ClientImpl::Head(const char *path,
                                                   const Headers &headers) {
   Request req;
   req.method = "HEAD";
-  req.headers = headers;
+  req.headers = default_headers_;
+  req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
   auto res = std::make_shared<Response>();
@@ -5171,7 +5210,8 @@ inline std::shared_ptr<Response> ClientImpl::Delete(const char *path,
                                                     const char *content_type) {
   Request req;
   req.method = "DELETE";
-  req.headers = headers;
+  req.headers = default_headers_;
+  req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
   if (content_type) { req.headers.emplace("Content-Type", content_type); }
@@ -5190,8 +5230,9 @@ inline std::shared_ptr<Response> ClientImpl::Options(const char *path,
                                                      const Headers &headers) {
   Request req;
   req.method = "OPTIONS";
+  req.headers = default_headers_;
+  req.headers.insert(headers.begin(), headers.end());
   req.path = path;
-  req.headers = headers;
 
   auto res = std::make_shared<Response>();
 
@@ -5249,6 +5290,10 @@ inline void ClientImpl::set_digest_auth(const char *username,
 inline void ClientImpl::set_keep_alive(bool on) { keep_alive_ = on; }
 
 inline void ClientImpl::set_follow_location(bool on) { follow_location_ = on; }
+
+inline void ClientImpl::set_default_headers(Headers headers) {
+  default_headers_ = std::move(headers);
+}
 
 inline void ClientImpl::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
 
@@ -6002,10 +6047,22 @@ inline std::shared_ptr<Response> Client::Get(const char *path,
   return cli_->Get(path, headers, content_receiver, progress);
 }
 inline std::shared_ptr<Response> Client::Get(const char *path,
+                                             ResponseHandler response_handler,
+                                             ContentReceiver content_receiver) {
+  return cli_->Get(path, Headers(), response_handler, content_receiver);
+}
+inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
                                              ResponseHandler response_handler,
                                              ContentReceiver content_receiver) {
   return cli_->Get(path, headers, response_handler, content_receiver);
+}
+inline std::shared_ptr<Response> Client::Get(const char *path,
+                                             ResponseHandler response_handler,
+                                             ContentReceiver content_receiver,
+                                             Progress progress) {
+  return cli_->Get(path, Headers(), response_handler, content_receiver,
+                   progress);
 }
 inline std::shared_ptr<Response> Client::Get(const char *path,
                                              const Headers &headers,
@@ -6156,6 +6213,10 @@ inline bool Client::send(const Request &req, Response &res) {
 inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
 
 inline void Client::stop() { cli_->stop(); }
+
+inline void Client::set_default_headers(Headers headers) {
+  cli_->set_default_headers(std::move(headers));
+}
 
 inline void Client::set_tcp_nodelay(bool on) { cli_->set_tcp_nodelay(on); }
 inline void Client::set_socket_options(SocketOptions socket_options) {
