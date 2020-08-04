@@ -311,6 +311,13 @@ httplib::Headers headers = {
 };
 auto res = cli.Get("/hi", headers);
 ```
+or
+```c++
+cli.set_default_headers({
+  { "Accept-Encoding", "gzip, deflate" }
+});
+auto res = cli.Get("/hi");
+```
 
 ### POST
 
