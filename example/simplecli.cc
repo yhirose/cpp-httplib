@@ -17,7 +17,7 @@ int main(void) {
   auto scheme_host_port = "http://localhost:8080";
 #endif
 
-  auto res = httplib::Client2(scheme_host_port).Get("/hi");
+  auto res = httplib::Client(scheme_host_port).Get("/hi");
 
   if (res) {
     cout << res->status << endl;

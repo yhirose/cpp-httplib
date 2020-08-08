@@ -1,6 +1,6 @@
 
 #CXX = clang++
-CXXFLAGS = -std=c++14 -I.. -Wall -Wextra -pthread
+CXXFLAGS = -std=c++11 -I.. -Wall -Wextra -pthread
 
 OPENSSL_DIR = /usr/local/opt/openssl
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto

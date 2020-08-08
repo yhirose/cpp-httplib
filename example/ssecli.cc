@@ -11,7 +11,7 @@
 using namespace std;
 
 int main(void) {
-  httplib::Client2("http://localhost:1234")
+  httplib::Client("http://localhost:1234")
       .Get("/event1", [&](const char *data, size_t data_length) {
         std::cout << string(data, data_length);
         return true;
