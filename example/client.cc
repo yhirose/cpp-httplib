@@ -23,12 +23,12 @@ int main(void) {
   httplib::Client cli("localhost", 8080);
 #endif
 
-  auto res = cli.Get("/hi");
-  if (res) {
+  if (auto res = cli.Get("/hi")) {
     cout << res->status << endl;
     cout << res->get_header_value("Content-Type") << endl;
     cout << res->body << endl;
   } else {
+    cout << "error code: " << res.error() << std::endl;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto result = cli.get_openssl_verify_result();
     if (result) {
