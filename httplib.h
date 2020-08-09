@@ -693,8 +693,8 @@ class Result {
 public:
   Result(std::shared_ptr<Response> res, Error err) : res_(res), err_(err) {}
   operator bool() { return res_ != nullptr; }
-  bool operator==(nullptr_t) const { return res_ == nullptr; }
-  bool operator!=(nullptr_t) const { return res_ != nullptr; }
+  bool operator==(std::nullptr_t) const { return res_ == nullptr; }
+  bool operator!=(std::nullptr_t) const { return res_ != nullptr; }
   const Response &value() { return *res_; }
   const Response &operator*() { return *res_; }
   const Response *operator->() { return res_.get(); }
