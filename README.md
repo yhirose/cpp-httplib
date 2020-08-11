@@ -175,6 +175,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 
   res.set_content_provider(
     data->size(), // Content length
+    "text/plain", // Content type
     [data](size_t offset, size_t length, DataSink &sink) {
       const auto &d = *data;
       sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
