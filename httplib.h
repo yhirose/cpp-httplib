@@ -3573,7 +3573,7 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &... args) {
   std::array<char, bufsiz> buf;
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
-  auto sn = _snprintf_s(buf, bufsiz - 1, buf.size() - 1, fmt, args...);
+  auto sn = _snprintf_s(buf.data(), bufsiz - 1, buf.size() - 1, fmt, args...);
 #else
   auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
 #endif
