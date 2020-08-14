@@ -3189,8 +3189,7 @@ get_range_offset_and_length(const Request &req, const Response &res,
 
 inline bool expect_content(const Request &req) {
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
-      req.method == "PRI" ||
-      (req.method == "DELETE" && req.has_header("Content-Length"))) {
+      req.method == "PRI" || req.method == "DELETE") {
     return true;
   }
   // TODO: check if Content-Length is set
@@ -4151,6 +4150,10 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
     };
   } else {
     out = receiver;
+  }
+
+  if (req.method == "DELETE" && !req.has_header("Content-Length")) {
+    return true;
   }
 
   if (!detail::read_content(strm, req, payload_max_length_, res.status, nullptr,
