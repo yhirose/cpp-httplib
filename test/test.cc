@@ -1895,8 +1895,7 @@ TEST_F(ServerTest, ClientStop) {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
       ASSERT_TRUE(!res);
-      EXPECT_TRUE(res.error() == Error::Canceled ||
-                  res.error() == Error::Read);
+      EXPECT_TRUE(res.error() == Error::Canceled || res.error() == Error::Read);
     }));
   }
 
@@ -2721,6 +2720,46 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(2));
+
+  svr.stop();
+
+  listen_thread.join();
+  get_thread.join();
+
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(StreamingTest, NoContentLengthStreaming) {
+  Server svr;
+
+  svr.Get("/stream", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        "text/plain", [](size_t offset, DataSink &sink) {
+          if (offset < 6) {
+            sink.os << (offset < 3 ? "a" : "b");
+          } else {
+            sink.done();
+          }
+          return true;
+        });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  Client client(HOST, PORT);
+
+  auto get_thread = std::thread([&client]() {
+    auto res = client.Get("/stream", [](const char *data, size_t len) -> bool {
+      EXPECT_EQ("aaabbb", std::string(data, len));
+      return true;
+    });
+  });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
   svr.stop();
 
