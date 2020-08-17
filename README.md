@@ -185,6 +185,25 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 });
 ```
 
+Without content length:
+
+```cpp
+svr.Get("/stream", [&](const Request &req, Response &res) {
+  res.set_content_provider(
+    "text/plain", // Content type
+    [&](size_t offset, size_t length, DataSink &sink) {
+      if (/* there is still data */) {
+        std::vector<char> data;
+        // prepare data...
+        sink.write(data.data(), data.size());
+      } else {
+        done(); // No more data
+      }
+      return true; // return 'false' if you want to cancel the process.
+    });
+});
+```
+
 ### Chunked transfer encoding
 
 ```cpp
@@ -194,7 +213,7 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
       sink.write("123", 3);
       sink.write("345", 3);
       sink.write("789", 3);
-      sink.done();
+      sink.done(); // No more data
       return true; // return 'false' if you want to cancel the process.
     }
   );
