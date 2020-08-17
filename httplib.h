@@ -697,13 +697,13 @@ enum Error {
 class Result {
 public:
   Result(std::shared_ptr<Response> res, Error err) : res_(res), err_(err) {}
-  operator bool() { return res_ != nullptr; }
+  operator bool() const { return res_ != nullptr; }
   bool operator==(std::nullptr_t) const { return res_ == nullptr; }
   bool operator!=(std::nullptr_t) const { return res_ != nullptr; }
-  const Response &value() { return *res_; }
-  const Response &operator*() { return *res_; }
-  const Response *operator->() { return res_.get(); }
-  Error error() { return err_; }
+  const Response &value() const { return *res_; }
+  const Response &operator*() const { return *res_; }
+  const Response *operator->() const { return res_.get(); }
+  Error error() const { return err_; }
 
 private:
   std::shared_ptr<Response> res_;
