@@ -281,7 +281,7 @@ public:
 private:
   class data_sink_streambuf : public std::streambuf {
   public:
-    data_sink_streambuf(DataSink &sink) : sink_(sink) {}
+    explicit data_sink_streambuf(DataSink &sink) : sink_(sink) {}
 
   protected:
     std::streamsize xsputn(const char *s, std::streamsize n) {
@@ -402,15 +402,15 @@ struct Response {
 
   void set_content_provider(
       size_t length, const char *content_type, ContentProvider provider,
-      std::function<void()> resource_releaser = [] {});
+      const std::function<void()> &resource_releaser = nullptr);
 
   void set_content_provider(
       const char *content_type, ContentProviderWithoutLength provider,
-      std::function<void()> resource_releaser = [] {});
+      const std::function<void()> &resource_releaser = nullptr);
 
   void set_chunked_content_provider(
       const char *content_type, ContentProviderWithoutLength provider,
-      std::function<void()> resource_releaser = [] {});
+      const std::function<void()> &resource_releaser = nullptr);
 
   Response() = default;
   Response(const Response &) = default;
@@ -634,10 +634,11 @@ private:
 
   bool routing(Request &req, Response &res, Stream &strm);
   bool handle_file_request(Request &req, Response &res, bool head = false);
-  bool dispatch_request(Request &req, Response &res, Handlers &handlers);
-  bool dispatch_request_for_content_reader(Request &req, Response &res,
-                                           ContentReader content_reader,
-                                           HandlersForContentReader &handlers);
+  bool dispatch_request(Request &req, Response &res, const Handlers &handlers);
+  bool
+  dispatch_request_for_content_reader(Request &req, Response &res,
+                                      ContentReader content_reader,
+                                      const HandlersForContentReader &handlers);
 
   bool parse_request_line(const char *s, Request &req);
   bool write_response(Stream &strm, bool close_connection, const Request &req,
@@ -696,7 +697,8 @@ enum Error {
 
 class Result {
 public:
-  Result(std::shared_ptr<Response> res, Error err) : res_(res), err_(err) {}
+  Result(const std::shared_ptr<Response> &res, Error err)
+      : res_(res), err_(err) {}
   operator bool() const { return res_ != nullptr; }
   bool operator==(std::nullptr_t) const { return res_ == nullptr; }
   bool operator!=(std::nullptr_t) const { return res_ != nullptr; }
@@ -899,7 +901,7 @@ protected:
   std::string interface_;
 
   std::string proxy_host_;
-  int proxy_port_;
+  int proxy_port_ = -1;
 
   std::string proxy_basic_auth_username_;
   std::string proxy_basic_auth_password_;
@@ -1971,7 +1973,7 @@ inline socket_t create_client_socket(const char *host, int port,
       });
 
   if (sock != INVALID_SOCKET) {
-    if (error != Error::Success) { error = Error::Success; }
+    error = Error::Success;
   } else {
     if (error == Error::Success) { error = Error::Connection; }
   }
@@ -2607,7 +2609,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
                   Progress progress, ContentReceiver receiver,
                   bool decompress) {
   return prepare_content_receiver(
-      x, status, receiver, decompress, [&](ContentReceiver &out) {
+      x, status, receiver, decompress, [&](const ContentReceiver &out) {
         auto ret = true;
         auto exceed_payload_max_length = false;
 
@@ -2835,7 +2837,7 @@ inline std::string params_to_query_str(const Params &params) {
 }
 
 inline void parse_query_text(const std::string &s, Params &params) {
-  split(&s[0], &s[s.size()], '&', [&](const char *b, const char *e) {
+  split(s.data(), s.data() + s.size(), '&', [&](const char *b, const char *e) {
     std::string key;
     std::string val;
     split(b, e, '=', [&](const char *b2, const char *e2) {
@@ -3019,14 +3021,14 @@ public:
       }
       case 4: { // Boundary
         if (crlf_.size() > buf_.size()) { return true; }
-        if (buf_.find(crlf_) == 0) {
+        if (buf_.compare(0, crlf_.size(), crlf_) == 0) {
           buf_.erase(0, crlf_.size());
           off_ += crlf_.size();
           state_ = 1;
         } else {
           auto pattern = dash_ + crlf_;
           if (pattern.size() > buf_.size()) { return true; }
-          if (buf_.find(pattern) == 0) {
+          if (buf_.compare(0, pattern.size(), pattern) == 0) {
             buf_.erase(0, pattern.size());
             off_ += pattern.size();
             is_valid_ = true;
@@ -3568,7 +3570,7 @@ inline void Response::set_content(std::string s, const char *content_type) {
 inline void
 Response::set_content_provider(size_t in_length, const char *content_type,
                                ContentProvider provider,
-                               std::function<void()> resource_releaser) {
+                               const std::function<void()> &resource_releaser) {
   assert(in_length > 0);
   set_header("Content-Type", content_type);
   content_length_ = in_length;
@@ -3579,9 +3581,10 @@ Response::set_content_provider(size_t in_length, const char *content_type,
   is_chunked_content_provider = false;
 }
 
-inline void Response::set_content_provider(
-    const char *content_type, ContentProviderWithoutLength provider,
-    std::function<void()> resource_releaser) {
+inline void
+Response::set_content_provider(const char *content_type,
+                               ContentProviderWithoutLength provider,
+                               const std::function<void()> &resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = [provider](size_t offset, size_t, DataSink &sink) {
@@ -3593,7 +3596,7 @@ inline void Response::set_content_provider(
 
 inline void Response::set_chunked_content_provider(
     const char *content_type, ContentProviderWithoutLength provider,
-    std::function<void()> resource_releaser) {
+    const std::function<void()> &resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = [provider](size_t offset, size_t, DataSink &sink) {
@@ -3727,11 +3730,13 @@ inline const std::string &BufferStream::get_buffer() const { return buffer; }
 } // namespace detail
 
 // HTTP server implementation
-inline Server::Server() : svr_sock_(INVALID_SOCKET), is_running_(false) {
+inline Server::Server()
+    : new_task_queue(
+          [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); }),
+      svr_sock_(INVALID_SOCKET), is_running_(false) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
-  new_task_queue = [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); };
 }
 
 inline Server::~Server() {}
@@ -4233,7 +4238,7 @@ inline bool Server::handle_file_request(Request &req, Response &res,
     const auto &base_dir = kv.second;
 
     // Prefix match
-    if (!req.path.find(mount_point)) {
+    if (!req.path.compare(0, mount_point.size(), mount_point)) {
       std::string sub_path = "/" + req.path.substr(mount_point.size());
       if (detail::is_valid_path(sub_path)) {
         auto path = base_dir + sub_path;
@@ -4417,7 +4422,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 }
 
 inline bool Server::dispatch_request(Request &req, Response &res,
-                                     Handlers &handlers) {
+                                     const Handlers &handlers) {
 
   try {
     for (const auto &x : handlers) {
@@ -4441,7 +4446,7 @@ inline bool Server::dispatch_request(Request &req, Response &res,
 
 inline bool Server::dispatch_request_for_content_reader(
     Request &req, Response &res, ContentReader content_reader,
-    HandlersForContentReader &handlers) {
+    const HandlersForContentReader &handlers) {
   for (const auto &x : handlers) {
     const auto &pattern = x.first;
     const auto &handler = x.second;
@@ -4569,7 +4574,7 @@ inline bool ClientImpl::is_valid() const { return true; }
 inline Error ClientImpl::get_last_error() const { return error_; }
 
 inline socket_t ClientImpl::create_client_socket() const {
-  if (!proxy_host_.empty()) {
+  if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
         proxy_host_.c_str(), proxy_port_, tcp_nodelay_, socket_options_,
         connection_timeout_sec_, connection_timeout_usec_, interface_, error_);
@@ -4632,7 +4637,7 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
       // TODO: refactoring
       if (is_ssl()) {
         auto &scli = static_cast<SSLClient &>(*this);
-        if (!proxy_host_.empty()) {
+        if (!proxy_host_.empty() && proxy_port_ != -1) {
           bool success = false;
           if (!scli.connect_with_proxy(socket_, res, success)) {
             return success;
@@ -4669,7 +4674,7 @@ inline bool ClientImpl::handle_request(Stream &strm, const Request &req,
 
   bool ret;
 
-  if (!is_ssl() && !proxy_host_.empty()) {
+  if (!is_ssl() && !proxy_host_.empty() && proxy_port_ != -1) {
     auto req2 = req;
     req2.path = "http://" + host_and_port_ + req.path;
     ret = process_request(strm, req2, res, close_connection);
