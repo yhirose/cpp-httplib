@@ -66,6 +66,7 @@ if(Git_FOUND)
 	# Gets the latest tag as a string like "v0.6.6"
 	# Can silently fail if git isn't on the system
 	execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
+		WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 		OUTPUT_VARIABLE _raw_version_string
 		ERROR_VARIABLE _git_tag_error
 	)
