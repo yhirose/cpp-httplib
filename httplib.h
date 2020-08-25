@@ -428,6 +428,19 @@ struct Response {
   ContentProvider content_provider_;
   std::function<void()> content_provider_resource_releaser_;
   bool is_chunked_content_provider = false;
+
+  class ContentProviderAdapter {
+  public:
+    explicit ContentProviderAdapter(ContentProviderWithoutLength&& content_provider):
+        content_provider_(content_provider) {}
+
+    bool operator()(size_t offset, size_t, DataSink& sink) {
+      return content_provider_(offset, sink);
+    }
+
+  private:
+    ContentProviderWithoutLength content_provider_;
+  };
 };
 
 class Stream {
@@ -3574,9 +3587,7 @@ Response::set_content_provider(size_t in_length, const char *content_type,
   assert(in_length > 0);
   set_header("Content-Type", content_type);
   content_length_ = in_length;
-  content_provider_ = [provider](size_t offset, size_t length, DataSink &sink) {
-    return provider(offset, length, sink);
-  };
+  content_provider_ = std::move(provider);
   content_provider_resource_releaser_ = resource_releaser;
   is_chunked_content_provider = false;
 }
@@ -3587,9 +3598,7 @@ Response::set_content_provider(const char *content_type,
                                const std::function<void()> &resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
-  content_provider_ = [provider](size_t offset, size_t, DataSink &sink) {
-    return provider(offset, sink);
-  };
+  content_provider_ = ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = resource_releaser;
   is_chunked_content_provider = false;
 }
@@ -3599,9 +3608,7 @@ inline void Response::set_chunked_content_provider(
     const std::function<void()> &resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
-  content_provider_ = [provider](size_t offset, size_t, DataSink &sink) {
-    return provider(offset, sink);
-  };
+  content_provider_ = ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = resource_releaser;
   is_chunked_content_provider = true;
 }
