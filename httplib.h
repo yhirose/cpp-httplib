@@ -1454,8 +1454,11 @@ inline std::pair<int, int> trim(const char *b, const char *e, int left,
 template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   int i = 0;
   int beg = 0;
+  if(!b) {
+    return;
+  }
 
-  while (e ? (b + i != e) : (b[i] != '\0')) {
+  while (e ? (b + i < e) : (b[i] != '\0')) {
     if (b[i] == d) {
       auto r = trim(b, e, beg, i);
       fn(&b[r.first], &b[r.second]);
@@ -2847,7 +2850,10 @@ inline void parse_query_text(const std::string &s, Params &params) {
         val.assign(b2, e2);
       }
     });
-    params.emplace(decode_url(key, true), decode_url(val, true));
+
+    if(!key.empty()) {
+      params.emplace(decode_url(key, true), decode_url(val, true));
+    }
   });
 }
 
