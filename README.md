@@ -197,7 +197,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
         // prepare data...
         sink.write(data.data(), data.size());
       } else {
-        done(); // No more data
+        sink.done(); // No more data
       }
       return true; // return 'false' if you want to cancel the process.
     });
