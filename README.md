@@ -13,9 +13,11 @@ Server Example
 ```c++
 #include <httplib.h>
 
-int main(void)
+using namespace httplib;
+
+int main()
 {
-  using namespace httplib;
+
 
   Server svr;
 
