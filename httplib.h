@@ -428,19 +428,6 @@ struct Response {
   ContentProvider content_provider_;
   std::function<void()> content_provider_resource_releaser_;
   bool is_chunked_content_provider = false;
-
-  class ContentProviderAdapter {
-  public:
-    explicit ContentProviderAdapter(ContentProviderWithoutLength&& content_provider):
-        content_provider_(content_provider) {}
-
-    bool operator()(size_t offset, size_t, DataSink& sink) {
-      return content_provider_(offset, sink);
-    }
-
-  private:
-    ContentProviderWithoutLength content_provider_;
-  };
 };
 
 class Stream {
@@ -3329,39 +3316,6 @@ public:
 static WSInit wsinit_;
 #endif
 
-} // namespace detail
-
-// Header utilities
-inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
-  std::string field = "bytes=";
-  auto i = 0;
-  for (auto r : ranges) {
-    if (i != 0) { field += ", "; }
-    if (r.first != -1) { field += std::to_string(r.first); }
-    field += '-';
-    if (r.second != -1) { field += std::to_string(r.second); }
-    i++;
-  }
-  return std::make_pair("Range", field);
-}
-
-inline std::pair<std::string, std::string>
-make_basic_authentication_header(const std::string &username,
-                                 const std::string &password,
-                                 bool is_proxy = false) {
-  auto field = "Basic " + detail::base64_encode(username + ":" + password);
-  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
-  return std::make_pair(key, field);
-}
-
-inline std::pair<std::string, std::string>
-make_bearer_token_authentication_header(const std::string &token,
-                                        bool is_proxy = false) {
-  auto field = "Bearer " + token;
-  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
-  return std::make_pair(key, field);
-}
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline std::pair<std::string, std::string> make_digest_authentication_header(
     const Request &req, const std::map<std::string, std::string> &auth,
@@ -3457,6 +3411,53 @@ inline std::string random_string(size_t length) {
   std::string str(length, 0);
   std::generate_n(str.begin(), length, randchar);
   return str;
+}
+
+class ContentProviderAdapter {
+public:
+  explicit ContentProviderAdapter(
+      ContentProviderWithoutLength &&content_provider)
+      : content_provider_(content_provider) {}
+
+  bool operator()(size_t offset, size_t, DataSink &sink) {
+    return content_provider_(offset, sink);
+  }
+
+private:
+  ContentProviderWithoutLength content_provider_;
+};
+
+} // namespace detail
+
+// Header utilities
+inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
+  std::string field = "bytes=";
+  auto i = 0;
+  for (auto r : ranges) {
+    if (i != 0) { field += ", "; }
+    if (r.first != -1) { field += std::to_string(r.first); }
+    field += '-';
+    if (r.second != -1) { field += std::to_string(r.second); }
+    i++;
+  }
+  return std::make_pair("Range", field);
+}
+
+inline std::pair<std::string, std::string>
+make_basic_authentication_header(const std::string &username,
+                                 const std::string &password,
+                                 bool is_proxy = false) {
+  auto field = "Basic " + detail::base64_encode(username + ":" + password);
+  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
+  return std::make_pair(key, field);
+}
+
+inline std::pair<std::string, std::string>
+make_bearer_token_authentication_header(const std::string &token,
+                                        bool is_proxy = false) {
+  auto field = "Bearer " + token;
+  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
+  return std::make_pair(key, field);
 }
 
 // Request implementation
@@ -3598,7 +3599,7 @@ Response::set_content_provider(const char *content_type,
                                const std::function<void()> &resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
-  content_provider_ = ContentProviderAdapter(std::move(provider));
+  content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = resource_releaser;
   is_chunked_content_provider = false;
 }
@@ -3608,7 +3609,7 @@ inline void Response::set_chunked_content_provider(
     const std::function<void()> &resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
-  content_provider_ = ContentProviderAdapter(std::move(provider));
+  content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = resource_releaser;
   is_chunked_content_provider = true;
 }
@@ -4706,13 +4707,13 @@ inline bool ClientImpl::handle_request(Stream &strm, const Request &req,
 
     if (!username.empty() && !password.empty()) {
       std::map<std::string, std::string> auth;
-      if (parse_www_authenticate(res, auth, is_proxy)) {
+      if (detail::parse_www_authenticate(res, auth, is_proxy)) {
         Request new_req = req;
         new_req.authorization_count_ += 1;
         auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
         new_req.headers.erase(key);
-        new_req.headers.insert(make_digest_authentication_header(
-            req, auth, new_req.authorization_count_, random_string(10),
+        new_req.headers.insert(detail::make_digest_authentication_header(
+            req, auth, new_req.authorization_count_, detail::random_string(10),
             username, password, is_proxy));
 
         Response new_res;
@@ -5811,7 +5812,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
     if (!proxy_digest_auth_username_.empty() &&
         !proxy_digest_auth_password_.empty()) {
       std::map<std::string, std::string> auth;
-      if (parse_www_authenticate(res2, auth, true)) {
+      if (detail::parse_www_authenticate(res2, auth, true)) {
         Response res3;
         if (!detail::process_client_socket(
                 socket.sock, read_timeout_sec_, read_timeout_usec_,
@@ -5819,8 +5820,8 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
                   Request req3;
                   req3.method = "CONNECT";
                   req3.path = host_and_port_;
-                  req3.headers.insert(make_digest_authentication_header(
-                      req3, auth, 1, random_string(10),
+                  req3.headers.insert(detail::make_digest_authentication_header(
+                      req3, auth, 1, detail::random_string(10),
                       proxy_digest_auth_username_, proxy_digest_auth_password_,
                       true));
                   return process_request(strm, req3, res3, false);
