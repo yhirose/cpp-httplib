@@ -5071,7 +5071,8 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
-  return Result{send(req, *res) ? res : nullptr, get_last_error()};
+  auto ret = send(req, *res);
+  return Result{ret ? res : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Get(const char *path,
@@ -5134,7 +5135,8 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   req.progress = std::move(progress);
 
   auto res = std::make_shared<Response>();
-  return Result{send(req, *res) ? res : nullptr, get_last_error()};
+  auto ret = send(req, *res);
+  return Result{ret ? res : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Head(const char *path) {
@@ -5149,7 +5151,8 @@ inline Result ClientImpl::Head(const char *path, const Headers &headers) {
   req.path = path;
 
   auto res = std::make_shared<Response>();
-  return Result{send(req, *res) ? res : nullptr, get_last_error()};
+  auto ret = send(req, *res);
+  return Result{ret ? res : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Post(const char *path) {
@@ -5164,9 +5167,9 @@ inline Result ClientImpl::Post(const char *path, const std::string &body,
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                const std::string &body,
                                const char *content_type) {
-  return Result{send_with_content_provider("POST", path, headers, body, 0,
-                                           nullptr, content_type),
-                get_last_error()};
+  auto ret = send_with_content_provider("POST", path, headers, body, 0, nullptr,
+                                        content_type);
+  return Result{ret, get_last_error()};
 }
 
 inline Result ClientImpl::Post(const char *path, const Params &params) {
@@ -5183,10 +5186,10 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                size_t content_length,
                                ContentProvider content_provider,
                                const char *content_type) {
-  return Result{send_with_content_provider("POST", path, headers, std::string(),
-                                           content_length, content_provider,
-                                           content_type),
-                get_last_error()};
+  auto ret = send_with_content_provider("POST", path, headers, std::string(),
+                                        content_length, content_provider,
+                                        content_type);
+  return Result{ret, get_last_error()};
 }
 
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
@@ -5238,9 +5241,9 @@ inline Result ClientImpl::Put(const char *path, const std::string &body,
 inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               const std::string &body,
                               const char *content_type) {
-  return Result{send_with_content_provider("PUT", path, headers, body, 0,
-                                           nullptr, content_type),
-                get_last_error()};
+  auto ret = send_with_content_provider("PUT", path, headers, body, 0, nullptr,
+                                        content_type);
+  return Result{ret, get_last_error()};
 }
 
 inline Result ClientImpl::Put(const char *path, size_t content_length,
@@ -5253,10 +5256,10 @@ inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               size_t content_length,
                               ContentProvider content_provider,
                               const char *content_type) {
-  return Result{send_with_content_provider("PUT", path, headers, std::string(),
-                                           content_length, content_provider,
-                                           content_type),
-                get_last_error()};
+  auto ret = send_with_content_provider("PUT", path, headers, std::string(),
+                                        content_length, content_provider,
+                                        content_type);
+  return Result{ret, get_last_error()};
 }
 
 inline Result ClientImpl::Put(const char *path, const Params &params) {
@@ -5277,9 +5280,9 @@ inline Result ClientImpl::Patch(const char *path, const std::string &body,
 inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 const std::string &body,
                                 const char *content_type) {
-  return Result{send_with_content_provider("PATCH", path, headers, body, 0,
-                                           nullptr, content_type),
-                get_last_error()};
+  auto ret = send_with_content_provider("PATCH", path, headers, body, 0,
+                                        nullptr, content_type);
+  return Result{ret, get_last_error()};
 }
 
 inline Result ClientImpl::Patch(const char *path, size_t content_length,
@@ -5292,10 +5295,10 @@ inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 size_t content_length,
                                 ContentProvider content_provider,
                                 const char *content_type) {
-  return Result{send_with_content_provider("PATCH", path, headers,
-                                           std::string(), content_length,
-                                           content_provider, content_type),
-                get_last_error()};
+  auto ret = send_with_content_provider("PATCH", path, headers, std::string(),
+                                        content_length, content_provider,
+                                        content_type);
+  return Result{ret, get_last_error()};
 }
 
 inline Result ClientImpl::Delete(const char *path) {
@@ -5324,7 +5327,8 @@ inline Result ClientImpl::Delete(const char *path, const Headers &headers,
   req.body = body;
 
   auto res = std::make_shared<Response>();
-  return Result{send(req, *res) ? res : nullptr, get_last_error()};
+  auto ret = send(req, *res);
+  return Result{ret ? res : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Options(const char *path) {
@@ -5339,7 +5343,8 @@ inline Result ClientImpl::Options(const char *path, const Headers &headers) {
   req.path = path;
 
   auto res = std::make_shared<Response>();
-  return Result{send(req, *res) ? res : nullptr, get_last_error()};
+  auto ret = send(req, *res);
+  return Result{ret ? res : nullptr, get_last_error()};
 }
 
 inline size_t ClientImpl::is_socket_open() const {
