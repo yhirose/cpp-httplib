@@ -66,12 +66,23 @@ TEST(SplitTest, ParseQueryString) {
   EXPECT_EQ("val3", dic.find("key3")->second);
 }
 
-TEST(SplitTest, ParseQueryWithSingleSpaceChar) {
-  string s = " ";
-  Params dict;
-  detail::parse_query_text(s, dict);
-  EXPECT_TRUE(dict.empty());
+TEST(SplitTest, ParseInvalidQueryTests) {
+
+  {
+    string s = " ";
+    Params dict;
+    detail::parse_query_text(s, dict);
+    EXPECT_TRUE(dict.empty());
+  }
+
+  {
+    string s = " = =";
+    Params dict;
+    detail::parse_query_text(s, dict);
+    EXPECT_TRUE(dict.empty());
+  }
 }
+
 
 TEST(ParseQueryTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
