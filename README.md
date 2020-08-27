@@ -12,7 +12,7 @@ NOTE: This is a 'blocking' HTTP library. If you are looking for a 'non-blocking'
 Simple examples
 ---------------
 
-### [Server](https://repl.it/@yhirose/cpp-httplib-server#main.cpp):
+#### Server
 
 ```c++
 httplib::Server svr;
@@ -24,7 +24,7 @@ svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
 svr.listen("0.0.0.0", 8080);
 ```
 
-### [Client](https://repl.it/@yhirose/cpp-httplib-client#main.cpp):
+#### Client
 
 ```c++
 httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
@@ -34,6 +34,11 @@ auto res = cli.Get("/hi");
 res->status; // 200
 res->body;   // "Hello World!"
 ```
+
+### Try out the examples on Repl.it!
+
+1. Run server at https://repl.it/@yhirose/cpp-httplib-server
+2. Run client at https://repl.it/@yhirose/cpp-httplib-client
 
 Server
 ------
