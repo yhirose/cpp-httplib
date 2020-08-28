@@ -1455,10 +1455,12 @@ template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   int i = 0;
   int beg = 0;
 
-  while (e ? (b + i != e) : (b[i] != '\0')) {
+  while (e ? (b + i < e) : (b[i] != '\0')) {
     if (b[i] == d) {
       auto r = trim(b, e, beg, i);
-      fn(&b[r.first], &b[r.second]);
+      if (r.first < r.second) {
+        fn(&b[r.first], &b[r.second]);
+      }
       beg = i + 1;
     }
     i++;
@@ -1466,7 +1468,9 @@ template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
 
   if (i) {
     auto r = trim(b, e, beg, i);
-    fn(&b[r.first], &b[r.second]);
+    if (r.first < r.second) {
+      fn(&b[r.first], &b[r.second]);
+    }
   }
 }
 
@@ -2832,7 +2836,6 @@ inline std::string params_to_query_str(const Params &params) {
     query += "=";
     query += encode_url(it->second);
   }
-
   return query;
 }
 
@@ -2847,7 +2850,10 @@ inline void parse_query_text(const std::string &s, Params &params) {
         val.assign(b2, e2);
       }
     });
-    params.emplace(decode_url(key, true), decode_url(val, true));
+
+    if(!key.empty()) {
+      params.emplace(decode_url(key, true), decode_url(val, true));
+    }
   });
 }
 
