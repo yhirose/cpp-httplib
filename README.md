@@ -7,8 +7,41 @@ A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
 
-Server Example
---------------
+NOTE: This is a 'blocking' HTTP library. If you are looking for a 'non-blocking' library, this is not the one that you want.
+
+Simple examples
+---------------
+
+#### Server
+
+```c++
+httplib::Server svr;
+
+svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
+  res.set_content("Hello World!", "text/plain");
+});
+
+svr.listen("0.0.0.0", 8080);
+```
+
+#### Client
+
+```c++
+httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
+
+auto res = cli.Get("/hi");
+
+res->status; // 200
+res->body;   // "Hello World!"
+```
+
+### Try out the examples on Repl.it!
+
+1. Run server at https://repl.it/@yhirose/cpp-httplib-server
+2. Run client at https://repl.it/@yhirose/cpp-httplib-client
+
+Server
+------
 
 ```c++
 #include <httplib.h>
@@ -197,7 +230,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
         // prepare data...
         sink.write(data.data(), data.size());
       } else {
-        done(); // No more data
+        sink.done(); // No more data
       }
       return true; // return 'false' if you want to cancel the process.
     });
@@ -295,8 +328,8 @@ svr.new_task_queue = [] {
 };
 ```
 
-Client Example
---------------
+Client
+------
 
 ```c++
 #include <httplib.h>
@@ -564,9 +597,9 @@ NOTE: cpp-httplib currently supports only version 1.1.1.
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 
-SSLServer svr("./cert.pem", "./key.pem");
+httplib::SSLServer svr("./cert.pem", "./key.pem");
 
-SSLClient cli("localhost", 8080);
+httplib::SSLClient cli("localhost", 1234); // or `httplib::Client cli("https://localhost:1234");`
 cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(true);
 ```
