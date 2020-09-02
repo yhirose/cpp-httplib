@@ -1032,6 +1032,23 @@ protected:
                    },
                    [i] { delete i; });
              })
+        .Get("/streamed-chunked-large",
+             [&] (const Request & /*req*/, Response &res) {
+               auto i = new int(0);
+               res.set_chunked_content_provider(
+                   "text/plain",
+                   [i](size_t /*offset*/, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
+                     if (*i < 3) {
+                       sink.os << get_large_test_chunk(*i);
+                     } else {
+                       sink.done();
+                     }
+                     (*i)++;
+                     return true;
+                   },
+                   [i] { delete i; });
+             })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
@@ -1325,6 +1342,14 @@ protected:
       t.join();
     }
     t_.join();
+  }
+
+  static std::string get_large_test_chunk(int chunk_index) {
+    std::string s;
+    for (int i = 1; s.size() < 1000; ++i) {
+      s += std::to_string(std::hash<int>()(chunk_index * i));
+    }
+    return s;
   }
 
   map<string, string> persons_;
@@ -2174,6 +2199,20 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedChunkedWithGzipLarge) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+
+  auto res = cli_.Get("/streamed-chunked-large", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  std::string expected_body;
+  for (int i = 0; i < 3; ++i) {
+    expected_body += get_large_test_chunk(i);
+  }
+  EXPECT_EQ(expected_body, res->body);
 }
 #endif
 
