@@ -2175,6 +2175,49 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
 }
+
+
+TEST(GzipDecompressor, ChunkedDecompression) {
+  std::string data;
+  for (size_t i = 0; i < 32 * 1024; ++i) {
+    data.push_back(static_cast<char>('a' + i % 26));
+  }
+
+  std::string compressed_data;
+  {
+    httplib::detail::gzip_compressor compressor;
+    bool result = compressor.compress(
+        data.data(),
+        data.size(),
+        /*last=*/true,
+        [&] (const char* data, size_t size) {
+          compressed_data.insert(compressed_data.size(), data, size);
+          return true;
+        });
+    ASSERT_TRUE(result);
+  }
+
+  std::string decompressed_data;
+  {
+    httplib::detail::gzip_decompressor decompressor;
+
+    // Chunk size is chosen specificaly to have a decompressed chunk size equal to 16384 bytes
+    // 16384 bytes is the size of decompressor output buffer
+    size_t chunk_size = 130;
+    for (size_t chunk_begin = 0; chunk_begin < compressed_data.size(); chunk_begin += chunk_size) {
+      size_t current_chunk_size = std::min(compressed_data.size() - chunk_begin, chunk_size);
+      bool result = decompressor.decompress(
+          compressed_data.data() + chunk_begin,
+          current_chunk_size,
+          [&] (const char* data, size_t size) {
+            decompressed_data.insert(decompressed_data.size(), data, size);
+            return true;
+          });
+      ASSERT_TRUE(result);
+    }
+  }
+  ASSERT_EQ(data, decompressed_data);
+}
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
