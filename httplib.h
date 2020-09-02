@@ -2266,7 +2266,7 @@ public:
     strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
     std::array<char, 16384> buff{};
-    do {
+    while (strm_.avail_in > 0) {
       strm_.avail_out = buff.size();
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
 
@@ -2281,7 +2281,7 @@ public:
       if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
         return false;
       }
-    } while (strm_.avail_out == 0);
+    }
 
     return ret == Z_OK || ret == Z_STREAM_END;
   }
