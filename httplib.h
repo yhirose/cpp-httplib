@@ -2979,7 +2979,7 @@ public:
             std::smatch m;
             const std::string header_name = "content-type:";
             if (contains_header(header, header_name)) {
-              header.erase(header.begin(), header.begin() + 13);
+              header.erase(header.begin(), header.begin() + header_name.size());
               trim(header);
               file_.content_type = header;
             } else if (std::regex_match(header, m, re_content_disposition)) {
