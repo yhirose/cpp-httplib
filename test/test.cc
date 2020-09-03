@@ -43,6 +43,23 @@ TEST(StartupTest, WSAStartup) {
   ASSERT_EQ(0, ret);
 }
 #endif
+TEST(TrimTests, TrimStringTests) {
+  {
+    std::string s = "abc";
+    detail::trim(s);
+    EXPECT_EQ("abc", s);
+  }
+  {
+    std::string s = "  abc  ";
+    detail::trim(s);
+    EXPECT_EQ("abc", s);
+  }
+  {
+    std::string s = "";
+    detail::trim(s);
+    EXPECT_TRUE( s.empty() );
+  }
+}
 
 TEST(SplitTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
@@ -1082,7 +1099,7 @@ protected:
               })
         .Post("/multipart",
               [&](const Request &req, Response & /*res*/) {
-                EXPECT_EQ(5u, req.files.size());
+                EXPECT_EQ(6u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
                 ASSERT_TRUE(req.body.empty());
 
@@ -1110,6 +1127,13 @@ protected:
                   EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("application/octet-stream", file.content_type);
                   EXPECT_EQ(0u, file.content.size());
+                }
+
+                {
+                  const auto &file = req.get_file_value("file4");
+                  EXPECT_TRUE(file.filename.empty());
+                  EXPECT_EQ(0u, file.content.size());
+                  EXPECT_EQ("application/json  tmp-string", file.content_type);
                 }
               })
         .Post("/empty",
@@ -1803,6 +1827,7 @@ TEST_F(ServerTest, MultipartFormData) {
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
       {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
       {"file3", "", "", "application/octet-stream"},
+      {"file4", "", "", "   application/json  tmp-string    "}
   };
 
   auto res = cli_.Post("/multipart", items);

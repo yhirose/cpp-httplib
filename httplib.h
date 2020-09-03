@@ -1452,6 +1452,13 @@ inline std::pair<int, int> trim(const char *b, const char *e, int left,
   return std::make_pair(left, right);
 }
 
+inline void trim(std::string &s) {
+  auto is_not_space = [](int ch) { return !std::isspace(ch); };
+  s.erase(s.begin(), std::find_if(s.begin(), s.end(), is_not_space));
+  s.erase(std::find_if(s.rbegin(), s.rend(), is_not_space).base(), s.end());
+}
+
+
 template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   int i = 0;
   int beg = 0;
@@ -2828,6 +2835,18 @@ inline bool redirect(T &cli, const Request &req, Response &res,
   return ret;
 }
 
+inline bool contains_header(const std::string &header, const std::string &name) {
+  if (header.length() >= name.length()) {
+    for (int i = 0; i < name.length(); ++i) {
+      if (std::tolower(header[i]) != std::tolower(name[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 inline std::string params_to_query_str(const Params &params) {
   std::string query;
 
@@ -2914,8 +2933,6 @@ public:
 
   template <typename T, typename U>
   bool parse(const char *buf, size_t n, T content_callback, U header_callback) {
-    static const std::regex re_content_type(R"(^Content-Type:\s*(.*?)\s*$)",
-                                            std::regex_constants::icase);
 
     static const std::regex re_content_disposition(
         "^Content-Disposition:\\s*form-data;\\s*name=\"(.*?)\"(?:;\\s*filename="
@@ -2961,8 +2978,11 @@ public:
           auto header = buf_.substr(0, pos);
           {
             std::smatch m;
-            if (std::regex_match(header, m, re_content_type)) {
-              file_.content_type = m[1];
+            const std::string header_name = "content-type:";
+            if (contains_header(header, header_name)) {
+              header.erase(header.begin(), header.begin() + header_name.size());
+              trim(header);
+              file_.content_type = header;
             } else if (std::regex_match(header, m, re_content_disposition)) {
               file_.name = m[1];
               file_.filename = m[2];
