@@ -43,22 +43,11 @@ TEST(StartupTest, WSAStartup) {
   ASSERT_EQ(0, ret);
 }
 #endif
+
 TEST(TrimTests, TrimStringTests) {
-  {
-    std::string s = "abc";
-    detail::trim(s);
-    EXPECT_EQ("abc", s);
-  }
-  {
-    std::string s = "  abc  ";
-    detail::trim(s);
-    EXPECT_EQ("abc", s);
-  }
-  {
-    std::string s = "";
-    detail::trim(s);
-    EXPECT_TRUE( s.empty() );
-  }
+  EXPECT_EQ("abc", detail::trim_copy("abc"));
+  EXPECT_EQ("abc", detail::trim_copy("  abc  "));
+  EXPECT_TRUE(detail::trim_copy("").empty());
 }
 
 TEST(SplitTest, ParseQueryString) {
@@ -99,7 +88,6 @@ TEST(SplitTest, ParseInvalidQueryTests) {
     EXPECT_TRUE(dict.empty());
   }
 }
-
 
 TEST(ParseQueryTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
@@ -1827,8 +1815,7 @@ TEST_F(ServerTest, MultipartFormData) {
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
       {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
       {"file3", "", "", "application/octet-stream"},
-      {"file4", "", "", "   application/json  tmp-string    "}
-  };
+      {"file4", "", "", "   application/json  tmp-string    "}};
 
   auto res = cli_.Post("/multipart", items);
 
@@ -2201,7 +2188,6 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
   EXPECT_EQ(std::string("123456789"), res->body);
 }
 
-
 TEST(GzipDecompressor, ChunkedDecompression) {
   std::string data;
   for (size_t i = 0; i < 32 * 1024; ++i) {
@@ -2212,10 +2198,8 @@ TEST(GzipDecompressor, ChunkedDecompression) {
   {
     httplib::detail::gzip_compressor compressor;
     bool result = compressor.compress(
-        data.data(),
-        data.size(),
-        /*last=*/true,
-        [&] (const char* data, size_t size) {
+        data.data(), data.size(),
+        /*last=*/true, [&](const char *data, size_t size) {
           compressed_data.insert(compressed_data.size(), data, size);
           return true;
         });
@@ -2226,15 +2210,16 @@ TEST(GzipDecompressor, ChunkedDecompression) {
   {
     httplib::detail::gzip_decompressor decompressor;
 
-    // Chunk size is chosen specificaly to have a decompressed chunk size equal to 16384 bytes
-    // 16384 bytes is the size of decompressor output buffer
+    // Chunk size is chosen specificaly to have a decompressed chunk size equal
+    // to 16384 bytes 16384 bytes is the size of decompressor output buffer
     size_t chunk_size = 130;
-    for (size_t chunk_begin = 0; chunk_begin < compressed_data.size(); chunk_begin += chunk_size) {
-      size_t current_chunk_size = std::min(compressed_data.size() - chunk_begin, chunk_size);
+    for (size_t chunk_begin = 0; chunk_begin < compressed_data.size();
+         chunk_begin += chunk_size) {
+      size_t current_chunk_size =
+          std::min(compressed_data.size() - chunk_begin, chunk_size);
       bool result = decompressor.decompress(
-          compressed_data.data() + chunk_begin,
-          current_chunk_size,
-          [&] (const char* data, size_t size) {
+          compressed_data.data() + chunk_begin, current_chunk_size,
+          [&](const char *data, size_t size) {
             decompressed_data.insert(decompressed_data.size(), data, size);
             return true;
           });
@@ -2819,15 +2804,14 @@ TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
 
   svr.Get("/stream", [](const Request & /*req*/, Response &res) {
-    res.set_content_provider(
-        "text/plain", [](size_t offset, DataSink &sink) {
-          if (offset < 6) {
-            sink.os << (offset < 3 ? "a" : "b");
-          } else {
-            sink.done();
-          }
-          return true;
-        });
+    res.set_content_provider("text/plain", [](size_t offset, DataSink &sink) {
+      if (offset < 6) {
+        sink.os << (offset < 3 ? "a" : "b");
+      } else {
+        sink.done();
+      }
+      return true;
+    });
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });

@@ -1248,6 +1248,14 @@ inline std::string from_i_to_hex(size_t n) {
   return ret;
 }
 
+inline bool start_with(const std::string &a, const std::string &b) {
+  if (a.size() < b.size()) { return false; }
+  for (size_t i = 0; i < b.size(); i++) {
+    if (std::tolower(a[i]) != std::tolower(b[i])) { return false; }
+  }
+  return true;
+}
+
 inline size_t to_utf8(int code, char *buff) {
   if (code < 0x0080) {
     buff[0] = (code & 0x7F);
@@ -1441,34 +1449,32 @@ inline std::string file_extension(const std::string &path) {
   return std::string();
 }
 
-inline std::pair<int, int> trim(const char *b, const char *e, int left,
-                                int right) {
-  while (b + left < e && b[left] == ' ') {
+inline bool is_space_or_tab(char c) { return c == ' ' || c == '\t'; }
+
+inline std::pair<size_t, size_t> trim(const char *b, const char *e, size_t left,
+                                      size_t right) {
+  while (b + left < e && is_space_or_tab(b[left])) {
     left++;
   }
-  while (right - 1 >= 0 && b[right - 1] == ' ') {
+  while (right > 0 && is_space_or_tab(b[right - 1])) {
     right--;
   }
   return std::make_pair(left, right);
 }
 
-inline void trim(std::string &s) {
-  auto is_not_space = [](int ch) { return !std::isspace(ch); };
-  s.erase(s.begin(), std::find_if(s.begin(), s.end(), is_not_space));
-  s.erase(std::find_if(s.rbegin(), s.rend(), is_not_space).base(), s.end());
+inline std::string trim_copy(const std::string &s) {
+  auto r = trim(s.data(), s.data() + s.size(), 0, s.size());
+  return s.substr(r.first, r.second - r.first);
 }
 
-
 template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
-  int i = 0;
-  int beg = 0;
+  size_t i = 0;
+  size_t beg = 0;
 
   while (e ? (b + i < e) : (b[i] != '\0')) {
     if (b[i] == d) {
       auto r = trim(b, e, beg, i);
-      if (r.first < r.second) {
-        fn(&b[r.first], &b[r.second]);
-      }
+      if (r.first < r.second) { fn(&b[r.first], &b[r.second]); }
       beg = i + 1;
     }
     i++;
@@ -1476,9 +1482,7 @@ template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
 
   if (i) {
     auto r = trim(b, e, beg, i);
-    if (r.first < r.second) {
-      fn(&b[r.first], &b[r.second]);
-    }
+    if (r.first < r.second) { fn(&b[r.first], &b[r.second]); }
   }
 }
 
@@ -2429,26 +2433,34 @@ inline uint64_t get_header_value<uint64_t>(const Headers &headers,
   return def;
 }
 
-inline void parse_header(const char *beg, const char *end, Headers &headers) {
+template <typename T>
+inline bool parse_header(const char *beg, const char *end, T fn) {
+  // Skip trailing spaces and tabs.
+  while (beg < end && is_space_or_tab(end[-1])) {
+    end--;
+  }
+
   auto p = beg;
   while (p < end && *p != ':') {
     p++;
   }
-  if (p < end) {
-    auto key_end = p;
-    p++; // skip ':'
-    while (p < end && (*p == ' ' || *p == '\t')) {
-      p++;
-    }
-    if (p < end) {
-      auto val_begin = p;
-      while (p < end) {
-        p++;
-      }
-      headers.emplace(std::string(beg, key_end),
-                      decode_url(std::string(val_begin, end), true));
-    }
+
+  if (p == end) { return false; }
+
+  auto key_end = p;
+
+  if (*p++ != ':') { return false; }
+
+  while (p < end && is_space_or_tab(*p)) {
+    p++;
   }
+
+  if (p < end) {
+    fn(std::string(beg, key_end), decode_url(std::string(p, end), true));
+    return true;
+  }
+
+  return false;
 }
 
 inline bool read_headers(Stream &strm, Headers &headers) {
@@ -2467,13 +2479,13 @@ inline bool read_headers(Stream &strm, Headers &headers) {
       continue; // Skip invalid line.
     }
 
-    // Skip trailing spaces and tabs.
+    // Exclude CRLF
     auto end = line_reader.ptr() + line_reader.size() - 2;
-    while (line_reader.ptr() < end && (end[-1] == ' ' || end[-1] == '\t')) {
-      end--;
-    }
 
-    parse_header(line_reader.ptr(), end, headers);
+    parse_header(line_reader.ptr(), end,
+                 [&](std::string &&key, std::string &&val) {
+                   headers.emplace(std::move(key), std::move(val));
+                 });
   }
 
   return true;
@@ -2835,18 +2847,6 @@ inline bool redirect(T &cli, const Request &req, Response &res,
   return ret;
 }
 
-inline bool contains_header(const std::string &header, const std::string &name) {
-  if (header.length() >= name.length()) {
-    for (int i = 0; i < name.length(); ++i) {
-      if (std::tolower(header[i]) != std::tolower(name[i])) {
-        return false;
-      }
-    }
-    return true;
-  }
-  return false;
-}
-
 inline std::string params_to_query_str(const Params &params) {
   std::string query;
 
@@ -2871,7 +2871,7 @@ inline void parse_query_text(const std::string &s, Params &params) {
       }
     });
 
-    if(!key.empty()) {
+    if (!key.empty()) {
       params.emplace(decode_url(key, true), decode_url(val, true));
     }
   });
@@ -2975,15 +2975,13 @@ public:
             break;
           }
 
-          auto header = buf_.substr(0, pos);
-          {
+          static const std::string header_name = "content-type:";
+          const auto header = buf_.substr(0, pos);
+          if (start_with(header, header_name)) {
+            file_.content_type = trim_copy(header.substr(header_name.size()));
+          } else {
             std::smatch m;
-            const std::string header_name = "content-type:";
-            if (contains_header(header, header_name)) {
-              header.erase(header.begin(), header.begin() + header_name.size());
-              trim(header);
-              file_.content_type = header;
-            } else if (std::regex_match(header, m, re_content_disposition)) {
+            if (std::regex_match(header, m, re_content_disposition)) {
               file_.name = m[1];
               file_.filename = m[2];
             }
