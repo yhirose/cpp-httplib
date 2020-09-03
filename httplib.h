@@ -384,6 +384,7 @@ struct Request {
 struct Response {
   std::string version;
   int status = -1;
+  std::string reason;
   Headers headers;
   std::string body;
 
@@ -4621,12 +4622,13 @@ inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
 
   if (!line_reader.getline()) { return false; }
 
-  const static std::regex re("(HTTP/1\\.[01]) (\\d+).*?\r\n");
+  const static std::regex re("(HTTP/1\\.[01]) (\\d+) (.*?)\r\n");
 
   std::cmatch m;
   if (std::regex_match(line_reader.ptr(), m, re)) {
     res.version = std::string(m[1]);
     res.status = std::stoi(std::string(m[2]));
+    res.reason = std::string(m[3]);
   }
 
   return true;
@@ -5035,7 +5037,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
   }
 
   if (res.get_header_value("Connection") == "close" ||
-      res.version == "HTTP/1.0") {
+      (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
     stop_core();
   }
 
