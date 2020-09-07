@@ -367,7 +367,7 @@ struct Request {
   size_t get_header_value_count(const char *key) const;
   void set_header(const char *key, const char *val);
   void set_header(const char *key, const std::string &val);
-
+  std::string get_cookie(const char *name) const;
   bool has_param(const char *key) const;
   std::string get_param_value(const char *key, size_t id = 0) const;
   size_t get_param_value_count(const char *key) const;
@@ -395,7 +395,29 @@ struct Response {
   size_t get_header_value_count(const char *key) const;
   void set_header(const char *key, const char *val);
   void set_header(const char *key, const std::string &val);
-
+  void set_cookie(const char *name) {
+    set_cookie(name, "", 0, "/", "", false, false);
+  }
+  void set_cookie(const char *name, const std::string &val) {
+    set_cookie(name, val, 0, "/", "", false, false);
+  }
+  void set_cookie(const char *name, const std::string &val, int expires) {
+    set_cookie(name, val, expires, "/", "", false, false);
+  }
+  void set_cookie(const char *name, const std::string &val, int expires,
+                  std::string path) {
+    set_cookie(name, val, expires, path, "", false, false);
+  }
+  void set_cookie(const char *name, const std::string &val, int expires,
+                  std::string path, std::string domain) {
+    set_cookie(name, val, expires, path, domain, false, false);
+  }
+  void set_cookie(const char *name, const std::string &val, int expires,
+                  std::string path, std::string domain, bool secure) {
+    set_cookie(name, val, expires, path, domain, secure, false);
+  }
+  void set_cookie(const char *name, const std::string &val, int expires,
+                  std::string path, std::string domain, bool secure, bool httponly);
   void set_redirect(const char *url, int status = 302);
   void set_redirect(const std::string &url, int status = 302);
   void set_content(const char *s, size_t n, const char *content_type);
@@ -3516,6 +3538,17 @@ inline void Request::set_header(const char *key, const std::string &val) {
   }
 }
 
+inline std::string Request::get_cookie(const char *name) const {
+  if (!has_header("Cookie")) return std::string();
+  std::string cookies = get_header_value("Cookie");
+  if (cookies.empty()) return std::string();
+  size_t pos = (" " + cookies).find(std::string(" ") + name + std::string("="));
+  if (pos == std::string::npos) return std::string();
+  size_t len = pos + strlen(name) + 1;
+  std::string cookie = cookies.substr(len, cookies.find(";", len));
+  return detail::decode_url(cookie, true);
+}
+
 inline bool Request::has_param(const char *key) const {
   return params.find(key) != params.end();
 }
@@ -3578,6 +3611,27 @@ inline void Response::set_header(const char *key, const std::string &val) {
   if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
     headers.emplace(key, val);
   }
+}
+
+//https://snapwebsites.org/mo_references_view/libsnapwebsites-doc-1.7/http__cookie_8cpp_source.html
+inline void Response::set_cookie(const char *name, const std::string &val, int expires,
+                  std::string path, std::string domain, bool secure, bool httponly) {
+  std::string cookie = name + std::string("=") + detail::encode_url(val);
+  if(!domain.empty()) cookie += "; Domain=" + domain;
+  if(expires < 0) {
+    cookie += "; Expires=Thu, 01-Jan-1970 00:00:01 GMT";
+  } else {
+    time_t result = time(NULL);
+    result += expires * 24 * 60 * 60;
+    char timestamp[64] = {0};
+    // http://www.cplusplus.com/reference/ctime/strftime/
+    strftime(timestamp, sizeof(timestamp), "%a, %d-%b-%Y %T GMT", localtime(&result));
+    cookie += "; Expires=" + std::string(timestamp);
+  }
+  if(!path.empty()) cookie += "; Path=" + path;
+  if(secure)  cookie += "; Secure";
+  if(httponly)  cookie += "; HttpOnly";
+  set_header("Set-Cookie",cookie);
 }
 
 inline void Response::set_redirect(const char *url, int stat) {
