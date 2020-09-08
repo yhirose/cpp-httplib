@@ -80,6 +80,10 @@
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 #endif
 
+#ifndef CPPHTTPLIB_COMPRESSION_BUFSIZ
+#define CPPHTTPLIB_COMPRESSION_BUFSIZ size_t(16384u)
+#endif
+
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
 #define CPPHTTPLIB_THREAD_POOL_COUNT                                           \
   ((std::max)(8u, std::thread::hardware_concurrency() > 0                      \
@@ -2226,7 +2230,7 @@ public:
 
     int ret = Z_OK;
 
-    std::array<char, 16384> buff{};
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     do {
       strm_.avail_out = buff.size();
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
@@ -2277,7 +2281,7 @@ public:
     strm_.avail_in = static_cast<decltype(strm_.avail_in)>(data_length);
     strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
-    std::array<char, 16384> buff{};
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     while (strm_.avail_in > 0) {
       strm_.avail_out = buff.size();
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
@@ -2315,7 +2319,7 @@ public:
 
   bool compress(const char *data, size_t data_length, bool last,
                 Callback callback) override {
-    std::array<uint8_t, 16384> buff{};
+    std::array<uint8_t, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
 
     auto operation = last ? BROTLI_OPERATION_FINISH : BROTLI_OPERATION_PROCESS;
     auto available_in = data_length;
@@ -2378,17 +2382,17 @@ public:
     decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
 
     while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
-      char output[1024];
-      char *next_out = output;
-      size_t avail_out = sizeof(output);
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> output;
+      char *next_out = output.data();
+      size_t avail_out = output.size();
 
       decoder_r = BrotliDecoderDecompressStream(
           decoder_s, &avail_in, &next_in, &avail_out,
-          reinterpret_cast<unsigned char **>(&next_out), &total_out);
+          reinterpret_cast<uint8_t **>(&next_out), &total_out);
 
       if (decoder_r == BROTLI_DECODER_RESULT_ERROR) { return false; }
 
-      if (!callback((const char *)output, sizeof(output) - avail_out)) {
+      if (!callback(output.data(), output.size() - avail_out)) {
         return false;
       }
     }
