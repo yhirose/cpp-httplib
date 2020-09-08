@@ -2381,7 +2381,7 @@ public:
 
     decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
 
-    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff;
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
       char *next_out = buff.data();
       size_t avail_out = buff.size();
