@@ -2381,10 +2381,10 @@ public:
 
     decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
 
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff;
     while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
-      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> output;
-      char *next_out = output.data();
-      size_t avail_out = output.size();
+      char *next_out = buff.data();
+      size_t avail_out = buff.size();
 
       decoder_r = BrotliDecoderDecompressStream(
           decoder_s, &avail_in, &next_in, &avail_out,
@@ -2392,7 +2392,7 @@ public:
 
       if (decoder_r == BROTLI_DECODER_RESULT_ERROR) { return false; }
 
-      if (!callback(output.data(), output.size() - avail_out)) {
+      if (!callback(buff.data(), buff.size() - avail_out)) {
         return false;
       }
     }
