@@ -2464,7 +2464,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
   }
 
   if (p < end) {
-    fn(std::string(beg, key_end), decode_url(std::string(p, end), true));
+    fn(std::string(beg, key_end), decode_url(std::string(p, end), false));
     return true;
   }
 
