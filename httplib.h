@@ -1933,7 +1933,11 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
   return ret;
 }
 
-#ifndef _WIN32
+#if !defined _WIN32 && !defined ANDROID
+#define USE_IF2IP
+#endif
+
+#ifdef USE_IF2IP
 inline std::string if2ip(const std::string &ifn) {
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
@@ -1963,7 +1967,7 @@ inline socket_t create_client_socket(const char *host, int port,
       host, port, 0, tcp_nodelay, socket_options,
       [&](socket_t sock, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
-#ifndef _WIN32
+#ifdef USE_IF2IP
           auto ip = if2ip(intf);
           if (ip.empty()) { ip = intf; }
           if (!bind_ip_address(sock, ip.c_str())) {
