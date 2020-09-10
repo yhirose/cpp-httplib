@@ -4768,7 +4768,7 @@ inline bool ClientImpl::redirect(const Request &req, Response &res) {
     return false;
   }
 
-  auto location = res.get_header_value("location");
+  auto location = detail::decode_url(res.get_header_value("location"), true);
   if (location.empty()) { return false; }
 
   const static std::regex re(
