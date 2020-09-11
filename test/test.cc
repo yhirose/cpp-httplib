@@ -2323,6 +2323,41 @@ TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, PostMulitpartPlusBoundary) {
+  MultipartFormDataItems items = {
+      {"text1", "text default", "", ""},
+      {"text2", "aωb", "", ""},
+      {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+      {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"file3", "", "", "application/octet-stream"},
+  };
+
+  auto boundary = std::string("+++++");
+
+  std::string body;
+
+  for (const auto &item : items) {
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+    if (!item.filename.empty()) {
+      body += "; filename=\"" + item.filename + "\"";
+    }
+    body += "\r\n";
+    if (!item.content_type.empty()) {
+      body += "Content-Type: " + item.content_type + "\r\n";
+    }
+    body += "\r\n";
+    body += item.content + "\r\n";
+  }
+  body += "--" + boundary + "--\r\n";
+
+  std::string content_type = "multipart/form-data; boundary=" + boundary;
+  auto res = cli_.Post("/content_receiver", body, content_type.c_str());
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
 TEST_F(ServerTest, PostContentReceiverGzip) {
   cli_.set_compress(true);
   auto res = cli_.Post("/content_receiver", "content", "text/plain");
