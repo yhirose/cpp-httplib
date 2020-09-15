@@ -297,12 +297,17 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 
 ### Default thread pool support
 
+`ThreadPool` is used as a **default** task queue, and the default thread count is 8, or `std::thread::hardware_concurrency()`. You can change it with `CPPHTTPLIB_THREAD_POOL_COUNT`.
 
-`ThreadPool` is used as a default task queue, and the default thread count is set to value from `std::thread::hardware_concurrency()`.
+If you want to set the thread count at runtime, there is no convenient way... But here is how.
 
-You can change the thread count by setting `CPPHTTPLIB_THREAD_POOL_COUNT`.
+```cpp
+svr.new_task_queue = [] { return new ThreadPool(12); };
+```
 
 ### Override the default thread pool with yours
+
+You can supply your own thread pool implementation according to your need.
 
 ```cpp
 class YourThreadPoolTaskQueue : public TaskQueue {
