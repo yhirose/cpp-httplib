@@ -1333,8 +1333,11 @@ protected:
 
   virtual void TearDown() {
     svr_.stop();
-    for (auto &t : request_threads_) {
-      t.join();
+    if (!request_threads_.empty()) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      for (auto &t : request_threads_) {
+        t.join();
+      }
     }
     t_.join();
   }
@@ -2051,7 +2054,6 @@ TEST_F(ServerTest, SlowRequest) {
       std::thread([=]() { auto res = cli_.Get("/slow"); }));
   request_threads_.push_back(
       std::thread([=]() { auto res = cli_.Get("/slow"); }));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 TEST_F(ServerTest, SlowPost) {
