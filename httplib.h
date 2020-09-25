@@ -16,10 +16,6 @@
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #endif
 
-#ifndef CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND
-#define CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND 0
-#endif
-
 #ifndef CPPHTTPLIB_KEEPALIVE_MAX_COUNT
 #define CPPHTTPLIB_KEEPALIVE_MAX_COUNT 5
 #endif
@@ -180,6 +176,7 @@ using socket_t = int;
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cctype>
 #include <climits>
 #include <condition_variable>
 #include <errno.h>
@@ -196,7 +193,6 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
-#include <cctype>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -596,6 +592,7 @@ public:
   void set_socket_options(SocketOptions socket_options);
 
   void set_keep_alive_max_count(size_t count);
+  void set_keep_alive_timeout(time_t sec);
   void set_read_timeout(time_t sec, time_t usec = 0);
   void set_write_timeout(time_t sec, time_t usec = 0);
   void set_idle_interval(time_t sec, time_t usec = 0);
@@ -620,6 +617,7 @@ protected:
 
   std::atomic<socket_t> svr_sock_;
   size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
+  time_t keep_alive_timeout_sec_ = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
   time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
   time_t read_timeout_usec_ = CPPHTTPLIB_READ_TIMEOUT_USECOND;
   time_t write_timeout_sec_ = CPPHTTPLIB_WRITE_TIMEOUT_SECOND;
@@ -1740,7 +1738,7 @@ private:
   size_t position = 0;
 };
 
-inline bool keep_alive(socket_t sock) {
+inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
   using namespace std::chrono;
   auto start = steady_clock::now();
   while (true) {
@@ -1750,8 +1748,7 @@ inline bool keep_alive(socket_t sock) {
     } else if (val == 0) {
       auto current = steady_clock::now();
       auto duration = duration_cast<milliseconds>(current - start);
-      auto timeout = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND * 1000 +
-                     CPPHTTPLIB_KEEPALIVE_TIMEOUT_USECOND / 1000;
+      auto timeout = keep_alive_timeout_sec * 1000;
       if (duration.count() > timeout) { return false; }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     } else {
@@ -1761,13 +1758,13 @@ inline bool keep_alive(socket_t sock) {
 }
 
 template <typename T>
-inline bool process_server_socket_core(socket_t sock,
-                                       size_t keep_alive_max_count,
-                                       T callback) {
+inline bool
+process_server_socket_core(socket_t sock, size_t keep_alive_max_count,
+                           time_t keep_alive_timeout_sec, T callback) {
   assert(keep_alive_max_count > 0);
   auto ret = false;
   auto count = keep_alive_max_count;
-  while (count > 0 && keep_alive(sock)) {
+  while (count > 0 && keep_alive(sock, keep_alive_timeout_sec)) {
     auto close_connection = count == 1;
     auto connection_closed = false;
     ret = callback(close_connection, connection_closed);
@@ -1778,13 +1775,13 @@ inline bool process_server_socket_core(socket_t sock,
 }
 
 template <typename T>
-inline bool process_server_socket(socket_t sock, size_t keep_alive_max_count,
-                                  time_t read_timeout_sec,
-                                  time_t read_timeout_usec,
-                                  time_t write_timeout_sec,
-                                  time_t write_timeout_usec, T callback) {
+inline bool
+process_server_socket(socket_t sock, size_t keep_alive_max_count,
+                      time_t keep_alive_timeout_sec, time_t read_timeout_sec,
+                      time_t read_timeout_usec, time_t write_timeout_sec,
+                      time_t write_timeout_usec, T callback) {
   return process_server_socket_core(
-      sock, keep_alive_max_count,
+      sock, keep_alive_max_count, keep_alive_timeout_sec,
       [&](bool close_connection, bool connection_closed) {
         SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                           write_timeout_sec, write_timeout_usec);
@@ -2397,9 +2394,7 @@ public:
 
       if (decoder_r == BROTLI_DECODER_RESULT_ERROR) { return false; }
 
-      if (!callback(buff.data(), buff.size() - avail_out)) {
-        return false;
-      }
+      if (!callback(buff.data(), buff.size() - avail_out)) { return false; }
     }
 
     return decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
@@ -3896,6 +3891,10 @@ inline void Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
 }
 
+inline void Server::set_keep_alive_timeout(time_t sec) {
+  keep_alive_timeout_sec_ = sec;
+}
+
 inline void Server::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
@@ -3979,10 +3978,11 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
   // Headers
   if (close_connection || req.get_header_value("Connection") == "close") {
     res.set_header("Connection", "close");
-  }
-
-  if (!close_connection && req.get_header_value("Connection") == "Keep-Alive") {
-    res.set_header("Connection", "Keep-Alive");
+  } else {
+    std::stringstream ss;
+    ss << "timeout=" << keep_alive_timeout_sec_
+       << ", max=" << keep_alive_max_count_;
+    res.set_header("Keep-Alive", ss.str());
   }
 
   if (!res.has_header("Content-Type") &&
@@ -4583,8 +4583,8 @@ inline bool Server::is_valid() const { return true; }
 
 inline bool Server::process_and_close_socket(socket_t sock) {
   auto ret = detail::process_server_socket(
-      sock, keep_alive_max_count_, read_timeout_sec_, read_timeout_usec_,
-      write_timeout_sec_, write_timeout_usec_,
+      sock, keep_alive_max_count_, keep_alive_timeout_sec_, read_timeout_sec_,
+      read_timeout_usec_, write_timeout_sec_, write_timeout_usec_,
       [this](Stream &strm, bool close_connection, bool &connection_closed) {
         return process_request(strm, close_connection, connection_closed,
                                nullptr);
@@ -5527,11 +5527,12 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl,
 template <typename T>
 inline bool
 process_server_socket_ssl(SSL *ssl, socket_t sock, size_t keep_alive_max_count,
+                          time_t keep_alive_timeout_sec,
                           time_t read_timeout_sec, time_t read_timeout_usec,
                           time_t write_timeout_sec, time_t write_timeout_usec,
                           T callback) {
   return process_server_socket_core(
-      sock, keep_alive_max_count,
+      sock, keep_alive_max_count, keep_alive_timeout_sec,
       [&](bool close_connection, bool connection_closed) {
         SSLSocketStream strm(sock, ssl, read_timeout_sec, read_timeout_usec,
                              write_timeout_sec, write_timeout_usec);
@@ -5738,8 +5739,9 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
   if (ssl) {
     auto ret = detail::process_server_socket_ssl(
-        ssl, sock, keep_alive_max_count_, read_timeout_sec_, read_timeout_usec_,
-        write_timeout_sec_, write_timeout_usec_,
+        ssl, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
+        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+        write_timeout_usec_,
         [this, ssl](Stream &strm, bool close_connection,
                     bool &connection_closed) {
           return process_request(strm, close_connection, connection_closed,
