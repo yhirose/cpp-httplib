@@ -190,6 +190,7 @@ using socket_t = int;
 #include <mutex>
 #include <random>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <thread>
