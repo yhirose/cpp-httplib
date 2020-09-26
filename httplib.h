@@ -4653,7 +4653,17 @@ inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
   const static std::regex re("(HTTP/1\\.[01]) (\\d+) (.*?)\r\n");
 
   std::cmatch m;
-  if (std::regex_match(line_reader.ptr(), m, re)) {
+  if (!std::regex_match(line_reader.ptr(), m, re)) { return false; }
+  res.version = std::string(m[1]);
+  res.status = std::stoi(std::string(m[2]));
+  res.reason = std::string(m[3]);
+
+  // Ignore '100 Continue'
+  while (res.status == 100) {
+    if (!line_reader.getline()) { return false; } // CRLF
+    if (!line_reader.getline()) { return false; } // next response line
+
+    if (!std::regex_match(line_reader.ptr(), m, re)) { return false; }
     res.version = std::string(m[1]);
     res.status = std::stoi(std::string(m[2]));
     res.reason = std::string(m[3]);
