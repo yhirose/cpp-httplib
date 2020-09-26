@@ -1783,7 +1783,7 @@ process_server_socket(socket_t sock, size_t keep_alive_max_count,
                       time_t write_timeout_usec, T callback) {
   return process_server_socket_core(
       sock, keep_alive_max_count, keep_alive_timeout_sec,
-      [&](bool close_connection, bool connection_closed) {
+      [&](bool close_connection, bool &connection_closed) {
         SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                           write_timeout_sec, write_timeout_usec);
         return callback(strm, close_connection, connection_closed);
@@ -5534,7 +5534,7 @@ process_server_socket_ssl(SSL *ssl, socket_t sock, size_t keep_alive_max_count,
                           T callback) {
   return process_server_socket_core(
       sock, keep_alive_max_count, keep_alive_timeout_sec,
-      [&](bool close_connection, bool connection_closed) {
+      [&](bool close_connection, bool &connection_closed) {
         SSLSocketStream strm(sock, ssl, read_timeout_sec, read_timeout_usec,
                              write_timeout_sec, write_timeout_usec);
         return callback(strm, close_connection, connection_closed);
