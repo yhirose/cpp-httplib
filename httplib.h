@@ -5815,6 +5815,9 @@ inline SSLClient::SSLClient(const std::string &host, int port,
 
 inline SSLClient::~SSLClient() {
   if (ctx_) { SSL_CTX_free(ctx_); }
+  if (ca_cert_store_) {
+    X509_STORE_free(ca_cert_store_);
+  }
 }
 
 inline bool SSLClient::is_valid() const { return ctx_; }
@@ -5912,6 +5915,7 @@ inline bool SSLClient::load_certs() {
       if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store_) {
         SSL_CTX_set_cert_store(ctx_, ca_cert_store_);
       }
+      ca_cert_store_ = nullptr;
     } else {
 #ifdef _WIN32
       detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
