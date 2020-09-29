@@ -2070,9 +2070,14 @@ TEST_F(ServerTest, SlowPost) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, SlowPostFail) {
+  char buffer[64 * 1024];
+  memset(buffer, 0x42, sizeof(buffer));
 
   cli_.set_write_timeout(0, 0);
-  res = cli_.Post(
+  auto res = cli_.Post(
       "/slowpost", 64 * 1024 * 1024,
       [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
         sink.write(buffer, sizeof(buffer));
