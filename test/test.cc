@@ -3124,6 +3124,8 @@ TEST(SSLClientTest, UnusedClient) {
   X509_STORE_load_locations(ca_store, "/etc/ssl/certs/ca-certificates.crt",
                             nullptr);
   httplib_client.set_ca_cert_store(ca_store);
+  //Uncommenting following line will leak ca_store
+  // httplib_client->Get("/");
 }
 
 TEST(SSLClientTest, ServerNameIndication) {
