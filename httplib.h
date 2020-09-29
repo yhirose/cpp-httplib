@@ -87,6 +87,10 @@
                       : 0))
 #endif
 
+#ifndef CPPHTTPLIB_SERVER_CERTIFICATE_VERIFICATION
+#define CPPHTTPLIB_SERVER_CERTIFICATE_VERIFICATION true
+#endif
+
 /*
  * Headers
  */
@@ -1196,7 +1200,7 @@ private:
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
   X509_STORE *ca_cert_store_ = nullptr;
-  bool server_certificate_verification_ = true;
+  bool server_certificate_verification_ = CPPHTTPLIB_SERVER_CERTIFICATE_VERIFICATION;
   long verify_result_ = 0;
 
   friend class ClientImpl;
