@@ -839,6 +839,10 @@ public:
   void set_proxy_digest_auth(const char *username, const char *password);
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  void enable_server_certificate_verification(bool enabled);
+#endif
+
   void set_logger(Logger logger);
 
 protected:
@@ -858,6 +862,8 @@ protected:
                        bool close_connection);
 
   Error get_last_error() const;
+
+  void copy_settings(const ClientImpl &rhs);
 
   // Error state
   mutable Error error_ = Error::Success;
@@ -916,41 +922,11 @@ protected:
   std::string proxy_digest_auth_password_;
 #endif
 
-  Logger logger_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  bool server_certificate_verification_ = true;
+#endif
 
-  void copy_settings(const ClientImpl &rhs) {
-    client_cert_path_ = rhs.client_cert_path_;
-    client_key_path_ = rhs.client_key_path_;
-    connection_timeout_sec_ = rhs.connection_timeout_sec_;
-    read_timeout_sec_ = rhs.read_timeout_sec_;
-    read_timeout_usec_ = rhs.read_timeout_usec_;
-    write_timeout_sec_ = rhs.write_timeout_sec_;
-    write_timeout_usec_ = rhs.write_timeout_usec_;
-    basic_auth_username_ = rhs.basic_auth_username_;
-    basic_auth_password_ = rhs.basic_auth_password_;
-    bearer_token_auth_token_ = rhs.bearer_token_auth_token_;
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    digest_auth_username_ = rhs.digest_auth_username_;
-    digest_auth_password_ = rhs.digest_auth_password_;
-#endif
-    keep_alive_ = rhs.keep_alive_;
-    follow_location_ = rhs.follow_location_;
-    tcp_nodelay_ = rhs.tcp_nodelay_;
-    socket_options_ = rhs.socket_options_;
-    compress_ = rhs.compress_;
-    decompress_ = rhs.decompress_;
-    interface_ = rhs.interface_;
-    proxy_host_ = rhs.proxy_host_;
-    proxy_port_ = rhs.proxy_port_;
-    proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
-    proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
-    proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    proxy_digest_auth_username_ = rhs.proxy_digest_auth_username_;
-    proxy_digest_auth_password_ = rhs.proxy_digest_auth_password_;
-#endif
-    logger_ = rhs.logger_;
-  }
+  Logger logger_;
 
 private:
   socket_t create_client_socket() const;
@@ -1096,16 +1072,18 @@ public:
   void set_proxy_digest_auth(const char *username, const char *password);
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  void enable_server_certificate_verification(bool enabled);
+#endif
+
   void set_logger(Logger logger);
 
   // SSL
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  Client &set_ca_cert_path(const char *ca_cert_file_path,
-                           const char *ca_cert_dir_path = nullptr);
+  void set_ca_cert_path(const char *ca_cert_file_path,
+                        const char *ca_cert_dir_path = nullptr);
 
-  Client &set_ca_cert_store(X509_STORE *ca_cert_store);
-
-  Client &enable_server_certificate_verification(bool enabled);
+  void set_ca_cert_store(X509_STORE *ca_cert_store);
 
   long get_openssl_verify_result() const;
 
@@ -1163,8 +1141,6 @@ public:
 
   void set_ca_cert_store(X509_STORE *ca_cert_store);
 
-  void enable_server_certificate_verification(bool enabled);
-
   long get_openssl_verify_result() const;
 
   SSL_CTX *ssl_context() const;
@@ -1195,7 +1171,6 @@ private:
 
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
-  bool server_certificate_verification_ = true;
   long verify_result_ = 0;
 
   friend class ClientImpl;
@@ -4615,6 +4590,43 @@ inline bool ClientImpl::is_valid() const { return true; }
 
 inline Error ClientImpl::get_last_error() const { return error_; }
 
+inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
+  client_cert_path_ = rhs.client_cert_path_;
+  client_key_path_ = rhs.client_key_path_;
+  connection_timeout_sec_ = rhs.connection_timeout_sec_;
+  read_timeout_sec_ = rhs.read_timeout_sec_;
+  read_timeout_usec_ = rhs.read_timeout_usec_;
+  write_timeout_sec_ = rhs.write_timeout_sec_;
+  write_timeout_usec_ = rhs.write_timeout_usec_;
+  basic_auth_username_ = rhs.basic_auth_username_;
+  basic_auth_password_ = rhs.basic_auth_password_;
+  bearer_token_auth_token_ = rhs.bearer_token_auth_token_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  digest_auth_username_ = rhs.digest_auth_username_;
+  digest_auth_password_ = rhs.digest_auth_password_;
+#endif
+  keep_alive_ = rhs.keep_alive_;
+  follow_location_ = rhs.follow_location_;
+  tcp_nodelay_ = rhs.tcp_nodelay_;
+  socket_options_ = rhs.socket_options_;
+  compress_ = rhs.compress_;
+  decompress_ = rhs.decompress_;
+  interface_ = rhs.interface_;
+  proxy_host_ = rhs.proxy_host_;
+  proxy_port_ = rhs.proxy_port_;
+  proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
+  proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
+  proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  proxy_digest_auth_username_ = rhs.proxy_digest_auth_username_;
+  proxy_digest_auth_password_ = rhs.proxy_digest_auth_password_;
+#endif
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  server_certificate_verification_ = rhs.server_certificate_verification_;
+#endif
+  logger_ = rhs.logger_;
+}
+
 inline socket_t ClientImpl::create_client_socket() const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
@@ -5488,6 +5500,12 @@ inline void ClientImpl::set_proxy_digest_auth(const char *username,
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
+  server_certificate_verification_ = enabled;
+}
+#endif
+
 inline void ClientImpl::set_logger(Logger logger) {
   logger_ = std::move(logger);
 }
@@ -5835,10 +5853,6 @@ inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
       X509_STORE_free(ca_cert_store);
     }
   }
-}
-
-inline void SSLClient::enable_server_certificate_verification(bool enabled) {
-  server_certificate_verification_ = enabled;
 }
 
 inline long SSLClient::get_openssl_verify_result() const {
@@ -6417,31 +6431,27 @@ inline void Client::set_proxy_digest_auth(const char *username,
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+inline void Client::enable_server_certificate_verification(bool enabled) {
+  cli_->enable_server_certificate_verification(enabled);
+}
+#endif
+
 inline void Client::set_logger(Logger logger) { cli_->set_logger(logger); }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-inline Client &Client::set_ca_cert_path(const char *ca_cert_file_path,
-                                        const char *ca_cert_dir_path) {
+inline void Client::set_ca_cert_path(const char *ca_cert_file_path,
+                                     const char *ca_cert_dir_path) {
   if (is_ssl_) {
     static_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
                                                      ca_cert_dir_path);
   }
-  return *this;
 }
 
-inline Client &Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
+inline void Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (is_ssl_) {
     static_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
   }
-  return *this;
-}
-
-inline Client &Client::enable_server_certificate_verification(bool enabled) {
-  if (is_ssl_) {
-    static_cast<SSLClient &>(*cli_).enable_server_certificate_verification(
-        enabled);
-  }
-  return *this;
 }
 
 inline long Client::get_openssl_verify_result() const {
