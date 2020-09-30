@@ -1195,7 +1195,6 @@ private:
 
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
-  X509_STORE *ca_cert_store_ = nullptr;
   bool server_certificate_verification_ = true;
   long verify_result_ = 0;
 
@@ -5815,9 +5814,6 @@ inline SSLClient::SSLClient(const std::string &host, int port,
 
 inline SSLClient::~SSLClient() {
   if (ctx_) { SSL_CTX_free(ctx_); }
-  if (ca_cert_store_) {
-    X509_STORE_free(ca_cert_store_);
-  }
 }
 
 inline bool SSLClient::is_valid() const { return ctx_; }
@@ -5829,7 +5825,16 @@ inline void SSLClient::set_ca_cert_path(const char *ca_cert_file_path,
 }
 
 inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
-  if (ca_cert_store) { ca_cert_store_ = ca_cert_store; }
+  if (ca_cert_store) {
+    if(ctx_) {
+      if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store) {
+        // Free memory allocated for old cert and use new store `ca_cert_store`
+        SSL_CTX_set_cert_store(ctx_, ca_cert_store);
+      }
+    } else {
+      X509_STORE_free(ca_cert_store);
+    }
+  }
 }
 
 inline void SSLClient::enable_server_certificate_verification(bool enabled) {
@@ -5911,11 +5916,6 @@ inline bool SSLClient::load_certs() {
                                          ca_cert_dir_path_.c_str())) {
         ret = false;
       }
-    } else if (ca_cert_store_ != nullptr) {
-      if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store_) {
-        SSL_CTX_set_cert_store(ctx_, ca_cert_store_);
-      }
-      ca_cert_store_ = nullptr;
     } else {
 #ifdef _WIN32
       detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
