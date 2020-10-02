@@ -3125,6 +3125,19 @@ TEST_F(PayloadMaxLengthTest, ExceedLimit) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(SSLClientTest, UpdateCAStore) {
+  httplib::SSLClient httplib_client("www.google.com");
+  auto ca_store_1 = X509_STORE_new();
+  X509_STORE_load_locations(ca_store_1, "/etc/ssl/certs/ca-certificates.crt",
+                            nullptr);
+  httplib_client.set_ca_cert_store(ca_store_1);
+
+  auto ca_store_2 = X509_STORE_new();
+  X509_STORE_load_locations(ca_store_2, "/etc/ssl/certs/ca-certificates.crt",
+                            nullptr);
+  httplib_client.set_ca_cert_store(ca_store_2);
+}
+
 TEST(SSLClientTest, ServerNameIndication) {
   SSLClient cli("httpbin.org", 443);
   auto res = cli.Get("/get");
