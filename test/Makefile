@@ -27,11 +27,13 @@ all : test fuzz_test
 proxy : test_proxy
 	./test_proxy
 
+# TODO Add -fsanitize=address
 test : test.cc ../httplib.h Makefile cert.pem
-	$(CXX) -o test $(CXXFLAGS) -fsanitize=address  test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread
+	$(CXX) -o test $(CXXFLAGS) test.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread
 
+# TODO Add -fsanitize=address
 test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
-	$(CXX) -o test_proxy $(CXXFLAGS) -fsanitize=address  test_proxy.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread
+	$(CXX) -o test_proxy $(CXXFLAGS) test_proxy.cc gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread
 
 cert.pem:
 	openssl genrsa 2048 > key.pem
