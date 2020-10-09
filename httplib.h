@@ -4881,7 +4881,10 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
       auto length = std::to_string(req.content_length);
       headers.emplace("Content-Length", length);
     } else {
-      headers.emplace("Content-Length", "0");
+      if (req.method == "POST" || req.method == "PUT" ||
+          req.method == "PATCH") {
+        headers.emplace("Content-Length", "0");
+      }
     }
   } else {
     if (!req.has_header("Content-Type")) {
@@ -5844,7 +5847,7 @@ inline void SSLClient::set_ca_cert_path(const char *ca_cert_file_path,
 
 inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (ca_cert_store) {
-    if(ctx_) {
+    if (ctx_) {
       if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store) {
         // Free memory allocated for old cert and use new store `ca_cert_store`
         SSL_CTX_set_cert_store(ctx_, ca_cert_store);
