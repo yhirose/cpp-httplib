@@ -20,7 +20,7 @@ jobs:
       uses: actions/checkout@v2
     - name: install brotli library on ubuntu
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y libbrotli-dev
+      run: sudo apt update && sudo apt-get install -y libbrotli-dev
     - name: install brotli library on macOS
       if: matrix.os == 'macOS-latest'
       run: brew install brotli
