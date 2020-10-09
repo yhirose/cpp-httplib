@@ -2991,6 +2991,50 @@ TEST(KeepAliveTest, ReadTimeout) {
   ASSERT_FALSE(svr.is_running());
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(KeepAliveTest, ReadTimeoutSSL) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/a", [&](const Request & /*req*/, Response &res) {
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    res.set_content("a", "text/plain");
+  });
+
+  svr.Get("/b", [&](const Request & /*req*/, Response &res) {
+    res.set_content("b", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() {
+    svr.listen("localhost", PORT);
+  });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  SSLClient cli("localhost", PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+  cli.set_read_timeout(1);
+
+  auto resa = cli.Get("/a");
+  ASSERT_TRUE(!resa);
+  EXPECT_EQ(Error::Read, resa.error());
+
+  auto resb = cli.Get("/b");
+  ASSERT_TRUE(resb);
+  EXPECT_EQ(200, resb->status);
+  EXPECT_EQ("b", resb->body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+#endif
+
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()
