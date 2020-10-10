@@ -1,5 +1,5 @@
 //
-//  chunckedcli.cc
+//  downloadcli.cc
 //
 //  Copyright (c) 2019 Yuji Hirose. All rights reserved.
 //  MIT License
@@ -30,29 +30,32 @@ int main(void) {
   };
 
   httplib::ContentReceiver content_receiver;
-  std::ofstream sample_output_file("./ca-bundle-downloaded.crt", std::ios::out | std::ios::binary);
+  std::ofstream sample_output_file("./ca-bundle-downloaded.crt",
+                                   std::ios::out | std::ios::binary);
   if (sample_output_file) {
     content_receiver = [&](const char *data, size_t data_length) {
-        sample_output_file.write(data, data_length);
-        return true;
+      sample_output_file.write(data, data_length);
+      return true;
     };
   }
 
   httplib::Progress progress_tracker;
   progress_tracker = [](uint64_t len, uint64_t total) {
-    printf("Progress ===> %lld / %lld bytes (%d%% complete)\n",
-           len, total, (int)(len * 100 / total));
+    printf("Progress ===> %lld / %lld bytes (%d%% complete)\n", len, total,
+           (int)(len * 100 / total));
     return true; // return 'false' if you want to cancel the request.
   };
 
-  if (auto res = cli.Get("/download_file", headers, response_handler, content_receiver, progress_tracker)) {
-      std::cout << "File downloaded." << std::endl;
+  if (auto res = cli.Get("/download_file", headers, response_handler,
+                         content_receiver, progress_tracker)) {
+    std::cout << "File downloaded." << std::endl;
   } else {
-      std::cout << "error code: " << res.error() << std::endl;
+    std::cout << "error code: " << res.error() << std::endl;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     auto result = cli.get_openssl_verify_result();
     if (result) {
-        std::cout << "verify error: " << X509_verify_cert_error_string(result) << std::endl;
+      std::cout << "verify error: " << X509_verify_cert_error_string(result)
+                << std::endl;
     }
 #endif
   }

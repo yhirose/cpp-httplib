@@ -4913,7 +4913,7 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
     headers.emplace("User-Agent", "cpp-httplib/0.7");
   }
 
-  bool is_chuncked_transfer = false;
+  bool is_chunked_transfer = false;
 
   if (req.body.empty()) {
     if (req.content_provider) {
@@ -4921,10 +4921,10 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
         auto length = std::to_string(req.content_length);
         headers.emplace("Content-Length", length);
       } else if (!req.has_header("Transfer-Encoding")) {
-        headers.emplace("Transfer-Encoding", "chuncked");
-        is_chuncked_transfer = true;
+        headers.emplace("Transfer-Encoding", "chunked");
+        is_chunked_transfer = true;
       } else {
-        is_chuncked_transfer = true;
+        is_chunked_transfer = true;
       }
 
     } else {
@@ -4981,7 +4981,7 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
 
       DataSink data_sink;
       data_sink.write = [&](const char *d, size_t l) {
-        if (is_chuncked_transfer) {
+        if (is_chunked_transfer) {
           // Emit chunked response header and footer for each chunk
 
           std::string before_payload_part = detail::from_i_to_hex(l) + "\r\n";
@@ -5014,7 +5014,7 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
       };
 
       data_sink.done = [&](void) {
-        if (is_chuncked_transfer) {
+        if (is_chunked_transfer) {
           static const std::string done_marker("0\r\n\r\n");
           if (!detail::write_data(strm, done_marker.data(),
                                   done_marker.size())) {
