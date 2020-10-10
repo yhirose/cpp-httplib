@@ -10,7 +10,6 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
 BROTLI_DIR = /usr/local/opt/brotli
 BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
-# BROTLI_STATIC_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -l:libbrotlicommon.a -l:libbrotlienc.a -l:libbrotlidec.a
 
 # By default, use standalone_fuzz_target_runner.
 # This runner does no fuzzing, but simply executes the inputs
@@ -53,8 +52,7 @@ fuzz_test: server_fuzzer
 # -Wl,-Bstatic $(OPENSSL_SUPPORT)   -Wl,-Bdynamic -ldl  $(ZLIB_SUPPORT)  $(BROTLI_SUPPORT)
 # $(BROTLI_STATIC_SUPPORT)
 server_fuzzer : fuzzing/server_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
-	$(CXX) $(CXXFLAGS) -o $@  $< -Wl,-Bstatic $(OPENSSL_SUPPORT)  -Wl,-Bdynamic -ldl  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread
-	zip -q -r server_fuzzer_seed_corpus.zip fuzzing/corpus
+	$(CXX) $(CXXFLAGS) -o $@  $< $(OPENSSL_SUPPORT)  $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(LIB_FUZZING_ENGINE) -pthread
 
 # Standalone fuzz runner, which just reads inputs from fuzzing/corpus/ dir and
 # feeds it to server_fuzzer.
