@@ -3826,8 +3826,9 @@ inline bool Server::set_mount_point(const char *mount_point, const char *dir,
                                     const char* cache_control) {
   if (detail::is_dir(dir)) {
     std::string mnt = mount_point ? mount_point : "/";
+    std::string cache = cache_control ? cache_control : "no-cache";
     if (!mnt.empty() && mnt[0] == '/') {
-      base_dirs_.push_back({mnt, dir, cache_control});
+      base_dirs_.push_back({mnt, dir, cache});
       return true;
     }
   }
