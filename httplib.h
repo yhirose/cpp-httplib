@@ -580,7 +580,7 @@ public:
 
   bool set_base_dir(const char *dir, const char *mount_point = nullptr);
   bool set_mount_point(const char *mount_point, const char *dir,
-                       const char *cache_control = nullptr);
+                       Headers headers = Headers());
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
@@ -668,7 +668,7 @@ private:
   struct MountPointEntry { 
     std::string mount_point;
     std::string base_dir;
-    std::string cache_control;
+    Headers headers;
   };
   std::vector<MountPointEntry> base_dirs_;
 
@@ -3823,12 +3823,11 @@ inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
 }
 
 inline bool Server::set_mount_point(const char *mount_point, const char *dir,
-                                    const char* cache_control) {
+                                    Headers headers) {
   if (detail::is_dir(dir)) {
     std::string mnt = mount_point ? mount_point : "/";
-    std::string cache = cache_control ? cache_control : "no-cache";
     if (!mnt.empty() && mnt[0] == '/') {
-      base_dirs_.push_back({mnt, dir, cache});
+      base_dirs_.push_back({mnt, dir, std::move(headers)});
       return true;
     }
   }
@@ -4272,8 +4271,8 @@ inline bool Server::handle_file_request(Request &req, Response &res,
           auto type =
               detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
-          if (!entry.cache_control.empty()) {
-            res.set_header("Cache-Control", entry.cache_control);
+          for (const auto& [key, value] : entry.headers) {
+            res.set_header(key.c_str(), value);
           }
           res.status = 200;
           if (!head && file_request_handler_) {
