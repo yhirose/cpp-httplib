@@ -4271,8 +4271,8 @@ inline bool Server::handle_file_request(Request &req, Response &res,
           auto type =
               detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
-          for (const auto& [key, value] : entry.headers) {
-            res.set_header(key.c_str(), value);
+          for (const auto& kv : entry.headers) {
+            res.set_header(kv.first.c_str(), kv.second);
           }
           res.status = 200;
           if (!head && file_request_handler_) {
