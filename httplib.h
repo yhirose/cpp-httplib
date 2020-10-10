@@ -1229,7 +1229,7 @@ inline std::string from_i_to_hex(size_t n) {
 inline bool start_with(const std::string &a, const std::string &b) {
   if (a.size() < b.size()) { return false; }
   for (size_t i = 0; i < b.size(); i++) {
-    if (std::tolower(a[i]) != std::tolower(b[i])) { return false; }
+    if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
   }
   return true;
 }
