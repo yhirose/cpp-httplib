@@ -2547,8 +2547,7 @@ inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
 
     if (chunk_len == 0) { break; }
 
-    if (!read_content_with_length(strm, chunk_len, nullptr, 
-                                  std::move(out))) {
+    if (!read_content_with_length(strm, chunk_len, nullptr, out)) {
       return false;
     }
 
@@ -4494,7 +4493,7 @@ inline bool Server::dispatch_request_for_content_reader(
     const auto &handler = x.second;
 
     if (std::regex_match(req.path, req.matches, pattern)) {
-      handler(req, res, std::move(content_reader));
+      handler(req, res, content_reader);
       return true;
     }
   }
