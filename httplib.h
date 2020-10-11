@@ -697,7 +697,8 @@ enum Error {
   Canceled,
   SSLConnection,
   SSLLoadingCerts,
-  SSLServerVerification
+  SSLServerVerification,
+  UnsupportedMultipartBoundaryChars
 };
 
 class Result {
@@ -770,6 +771,9 @@ public:
   Result Post(const char *path, const MultipartFormDataItems &items);
   Result Post(const char *path, const Headers &headers,
               const MultipartFormDataItems &items);
+  Result Post(const char *path, const Headers &headers,
+              const MultipartFormDataItems &items,
+              const std::string& boundary);
 
   Result Put(const char *path);
   Result Put(const char *path, const std::string &body,
@@ -1005,6 +1009,9 @@ public:
   Result Post(const char *path, const MultipartFormDataItems &items);
   Result Post(const char *path, const Headers &headers,
               const MultipartFormDataItems &items);
+  Result Post(const char *path, const Headers &headers,
+              const MultipartFormDataItems &items,
+              const std::string& boundary);
   Result Put(const char *path);
   Result Put(const char *path, const std::string &body,
              const char *content_type);
@@ -3083,8 +3090,13 @@ inline std::string make_multipart_data_boundary() {
   static const char data[] =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+  // std::random_device might actually be deterministic on some
+  // platforms, but due to lack of support in the c++ standard library,
+  // doing better requires either some ugly hacks or breaking portability.
   std::random_device seed_gen;
-  std::mt19937 engine(seed_gen());
+  // Request 128 bits of entropy for initialization
+  std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(), seed_gen()};
+  std::mt19937 engine(seed_sequence);
 
   std::string result = "--cpp-httplib-multipart-data-";
 
@@ -5265,7 +5277,18 @@ inline Result ClientImpl::Post(const char *path,
 
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                const MultipartFormDataItems &items) {
-  auto boundary = detail::make_multipart_data_boundary();
+  return Post(path, headers, items, detail::make_multipart_data_boundary());
+}
+inline Result ClientImpl::Post(const char *path, const Headers &headers,
+                               const MultipartFormDataItems &items,
+                               const std::string& boundary) {
+  for (size_t i = 0; i < boundary.size(); i++) {
+    char c = boundary[i];
+    if (!std::isalnum(c) && c != '-' && c != '_') {
+      error_ = Error::UnsupportedMultipartBoundaryChars;
+      return Result{nullptr, error_};
+    }
+  }
 
   std::string body;
 
@@ -6297,6 +6320,11 @@ inline Result Client::Post(const char *path,
 inline Result Client::Post(const char *path, const Headers &headers,
                            const MultipartFormDataItems &items) {
   return cli_->Post(path, headers, items);
+}
+inline Result Client::Post(const char *path, const Headers &headers,
+                           const MultipartFormDataItems &items,
+                           const std::string& boundary) {
+  return cli_->Post(path, headers, items, boundary);
 }
 inline Result Client::Put(const char *path) { return cli_->Put(path); }
 inline Result Client::Put(const char *path, const std::string &body,
