@@ -579,7 +579,8 @@ public:
   Server &Options(const char *pattern, Handler handler);
 
   bool set_base_dir(const char *dir, const char *mount_point = nullptr);
-  bool set_mount_point(const char *mount_point, const char *dir);
+  bool set_mount_point(const char *mount_point, const char *dir,
+                       Headers headers = Headers());
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
@@ -663,9 +664,15 @@ private:
                          ContentReceiver multipart_receiver);
 
   virtual bool process_and_close_socket(socket_t sock);
+  
+  struct MountPointEntry { 
+    std::string mount_point;
+    std::string base_dir;
+    Headers headers;
+  };
+  std::vector<MountPointEntry> base_dirs_;
 
   std::atomic<bool> is_running_;
-  std::vector<std::pair<std::string, std::string>> base_dirs_;
   std::map<std::string, std::string> file_extension_and_mimetype_map_;
   Handler file_request_handler_;
   Handlers get_handlers_;
@@ -3815,11 +3822,12 @@ inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
   return set_mount_point(mount_point, dir);
 }
 
-inline bool Server::set_mount_point(const char *mount_point, const char *dir) {
+inline bool Server::set_mount_point(const char *mount_point, const char *dir,
+                                    Headers headers) {
   if (detail::is_dir(dir)) {
     std::string mnt = mount_point ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
-      base_dirs_.emplace_back(mnt, dir);
+      base_dirs_.push_back({mnt, dir, std::move(headers)});
       return true;
     }
   }
@@ -3828,7 +3836,7 @@ inline bool Server::set_mount_point(const char *mount_point, const char *dir) {
 
 inline bool Server::remove_mount_point(const char *mount_point) {
   for (auto it = base_dirs_.begin(); it != base_dirs_.end(); ++it) {
-    if (it->first == mount_point) {
+    if (it->mount_point == mount_point) {
       base_dirs_.erase(it);
       return true;
     }
@@ -4250,15 +4258,12 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
 
 inline bool Server::handle_file_request(Request &req, Response &res,
                                         bool head) {
-  for (const auto &kv : base_dirs_) {
-    const auto &mount_point = kv.first;
-    const auto &base_dir = kv.second;
-
+  for (const auto &entry : base_dirs_) {
     // Prefix match
-    if (!req.path.compare(0, mount_point.size(), mount_point)) {
-      std::string sub_path = "/" + req.path.substr(mount_point.size());
+    if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
+      std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
       if (detail::is_valid_path(sub_path)) {
-        auto path = base_dir + sub_path;
+        auto path = entry.base_dir + sub_path;
         if (path.back() == '/') { path += "index.html"; }
 
         if (detail::is_file(path)) {
@@ -4266,6 +4271,9 @@ inline bool Server::handle_file_request(Request &req, Response &res,
           auto type =
               detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
+          for (const auto& kv : entry.headers) {
+            res.set_header(kv.first.c_str(), kv.second);
+          }
           res.status = 200;
           if (!head && file_request_handler_) {
             file_request_handler_(req, res);
