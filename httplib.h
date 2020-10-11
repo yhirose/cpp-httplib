@@ -87,6 +87,10 @@
                       : 0))
 #endif
 
+#ifndef CPPHTTPLIB_THREAD_SLEEP_UMILISECONDS
+#define CPPHTTPLIB_THREAD_SLEEP_UMILISECONDS 1
+#endif
+
 /*
  * Headers
  */
@@ -194,6 +198,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <chrono>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -5680,8 +5685,28 @@ inline bool SSLSocketStream::is_writable() const {
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
-  if (SSL_pending(ssl_) > 0 || is_readable()) {
-    return SSL_read(ssl_, ptr, static_cast<int>(size));
+  if (is_readable()) {
+    const auto current_time = std::chrono::steady_clock::now();
+    const unsigned int timeout_miliseconds = (read_timeout_sec_ * 1000) + read_timeout_usec_;
+    
+#if defined(__linux__) || defined(__APPLE__)
+    const unsigned int thread_sleep_time = CPPHTTPLIB_THREAD_SLEEP_UMILISECONDS * 1000;
+#elif defined(_WIN32) || defined(_WIN64)
+    const unsigned int thread_sleep_time = CPPHTTPLIB_THREAD_SLEEP_UMILISECONDS;
+#endif
+    while (std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - current_time)
+                              .count() < timeout_miliseconds) {
+        if (SSL_pending(ssl_) > 0) {
+          return SSL_read(ssl_, ptr, static_cast<int>(size));
+        }
+#if defined(__linux__) || defined(__APPLE__)
+        // usleep takes sleep time in us (1 millionth of a second)
+        usleep(thread_sleep_time);
+#elif defined(_WIN32) || defined(_WIN64)
+        Sleep(thread_sleep_time);
+#endif
+      }
   }
   return -1;
 }
