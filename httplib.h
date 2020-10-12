@@ -4912,10 +4912,19 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
     headers.emplace("User-Agent", "cpp-httplib/0.7");
   }
 
+  bool is_chunked_transfer = false;
+
   if (req.body.empty()) {
     if (req.content_provider) {
-      auto length = std::to_string(req.content_length);
-      headers.emplace("Content-Length", length);
+      if (req.content_length > 0) {
+        auto length = std::to_string(req.content_length);
+        headers.emplace("Content-Length", length);
+      } else if (!req.has_header("Transfer-Encoding")) {
+        headers.emplace("Transfer-Encoding", "chunked");
+        is_chunked_transfer = true;
+      } else {
+        is_chunked_transfer = true;
+      }
     } else {
       if (req.method == "POST" || req.method == "PUT" ||
           req.method == "PATCH") {
@@ -4973,18 +4982,63 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
 
       DataSink data_sink;
       data_sink.write = [&](const char *d, size_t l) {
-        if (ok) {
-          if (detail::write_data(strm, d, l)) {
-            offset += l;
-          } else {
+        if (is_chunked_transfer) {
+          // Emit chunked response header and footer for each chunk
+          std::string before_payload_part = detail::from_i_to_hex(l) + "\r\n";
+          size_t chunk_total_size = before_payload_part.size(); // size and r-n
+          chunk_total_size += l;                                // itself
+          chunk_total_size += 2;                                // r-n
+
+          std::vector<unsigned char> chunk_compiled;
+          chunk_compiled.reserve(chunk_total_size);
+          std::memcpy(chunk_compiled.data(), before_payload_part.c_str(),
+                      before_payload_part.size());
+          std::memcpy(chunk_compiled.data() + before_payload_part.size(), d, l);
+          chunk_compiled.data()[before_payload_part.size() + l] = '\r';
+          chunk_compiled.data()[before_payload_part.size() + l + 1] = '\n';
+
+          if (!detail::write_data(strm, (const char *)chunk_compiled.data(),
+                                  chunk_total_size)) {
+            ok = false;
+            return;
+          }
+        } else {
+          if (ok) {
+            if (detail::write_data(strm, d, l)) {
+              offset += l;
+            } else {
+              ok = false;
+            }
+          }
+        }
+      };
+
+      data_sink.done = [&](void) {
+        if (is_chunked_transfer) {
+          static const std::string done_marker("0\r\n\r\n");
+          if (!detail::write_data(strm, done_marker.data(),
+                                  done_marker.size())) {
             ok = false;
           }
         }
       };
+
       data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
-      while (offset < end_offset) {
-        if (!req.content_provider(offset, end_offset - offset, data_sink)) {
+      if (end_offset > 0) // if content_length is provided
+      {
+        while (offset < end_offset) {
+          if (!req.content_provider(offset, end_offset - offset, data_sink)) {
+            error_ = Error::Canceled;
+            return false;
+          }
+          if (!ok) {
+            error_ = Error::Write;
+            return false;
+          }
+        }
+      } else {
+        if (!req.content_provider(offset, -1, data_sink)) {
           error_ = Error::Canceled;
           return false;
         }
