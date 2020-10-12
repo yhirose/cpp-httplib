@@ -4919,10 +4919,13 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
       if (req.content_length > 0) {
         auto length = std::to_string(req.content_length);
         headers.emplace("Content-Length", length);
-      } else if (!req.has_header("Transfer-Encoding")) {
-        headers.emplace("Transfer-Encoding", "chunked");
-        is_chunked_transfer = true;
       } else {
+        if (!req.has_header("Transfer-Encoding")) {
+          headers.emplace("Transfer-Encoding", "chunked");
+        }
+        if (!req.has_header("Content-Length")) {
+          headers.emplace("Content-Length", "0");
+        }
         is_chunked_transfer = true;
       }
     } else {
@@ -5000,7 +5003,6 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
           if (!detail::write_data(strm, (const char *)chunk_compiled.data(),
                                   chunk_total_size)) {
             ok = false;
-            return;
           }
         } else {
           if (ok) {
@@ -5041,6 +5043,10 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
         if (!req.content_provider(offset, -1, data_sink)) {
           error_ = Error::Canceled;
           return false;
+        }
+        else
+        {
+          data_sink.done();
         }
         if (!ok) {
           error_ = Error::Write;
