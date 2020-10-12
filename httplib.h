@@ -5685,7 +5685,6 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
   if (is_readable()) {
     const auto current_time = std::chrono::steady_clock::now();
     const unsigned int timeout_miliseconds = (read_timeout_sec_ * 1000) + read_timeout_usec_;
-    const unsigned int thread_sleep_time = CPPHTTPLIB_THREAD_SLEEP_UMILISECONDS;
     while (std::chrono::duration_cast<std::chrono::milliseconds>(
                               std::chrono::steady_clock::now() - current_time)
                               .count() < timeout_miliseconds) {
