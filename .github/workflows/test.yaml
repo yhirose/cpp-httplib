@@ -27,6 +27,9 @@ jobs:
     - name: make
       if: matrix.os != 'windows-latest'
       run: cd test && make
+    - name: check fuzz test target
+      if: maxtrix.os == 'ubuntu-latest'
+      run: cd test && make -f Makefile.fuzz_test
     - name: setup msbuild on windows
       if: matrix.os == 'windows-latest'
       uses: warrenbuckley/Setup-MSBuild@v1
