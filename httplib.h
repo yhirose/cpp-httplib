@@ -237,6 +237,27 @@ namespace httplib {
 
 namespace detail {
 
+/*
+ * Backport std::make_unique from C++14.
+ *
+ * NOTE: This code came up with the following stackoverflow post:
+ * https://stackoverflow.com/questions/10149840/c-arrays-and-make-unique
+ *
+ */
+
+template <class T, class... Args>
+typename std::enable_if<!std::is_array<T>::value, std::unique_ptr<T>>::type
+make_unique(Args &&... args) {
+  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
+template <class T>
+typename std::enable_if<std::is_array<T>::value, std::unique_ptr<T>>::type
+make_unique(std::size_t n) {
+  typedef typename std::remove_extent<T>::type RT;
+  return std::unique_ptr<T>(new RT[n]);
+}
+
 struct ci {
   bool operator()(const std::string &s1, const std::string &s2) const {
     return std::lexicographical_compare(
@@ -713,8 +734,8 @@ enum Error {
 
 class Result {
 public:
-  Result(const std::shared_ptr<Response> &res, Error err)
-      : res_(res), err_(err) {}
+  Result(std::unique_ptr<Response> res, Error err)
+      : res_(std::move(res)), err_(err) {}
   operator bool() const { return res_ != nullptr; }
   bool operator==(std::nullptr_t) const { return res_ == nullptr; }
   bool operator!=(std::nullptr_t) const { return res_ != nullptr; }
@@ -724,7 +745,7 @@ public:
   Error error() const { return err_; }
 
 private:
-  std::shared_ptr<Response> res_;
+  std::unique_ptr<Response> res_;
   Error err_;
 };
 
@@ -950,7 +971,7 @@ private:
   bool handle_request(Stream &strm, const Request &req, Response &res,
                       bool close_connection);
   void stop_core();
-  std::shared_ptr<Response> send_with_content_provider(
+  std::unique_ptr<Response> send_with_content_provider(
       const char *method, const char *path, const Headers &headers,
       const std::string &body, size_t content_length,
       ContentProvider content_provider, const char *content_type);
@@ -1108,7 +1129,7 @@ public:
 #endif
 
 private:
-  std::shared_ptr<ClientImpl> cli_;
+  std::unique_ptr<ClientImpl> cli_;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool is_ssl_ = false;
@@ -2584,19 +2605,19 @@ bool prepare_content_receiver(T &x, int &status, ContentReceiver receiver,
                               bool decompress, U callback) {
   if (decompress) {
     std::string encoding = x.get_header_value("Content-Encoding");
-    std::shared_ptr<decompressor> decompressor;
+    std::unique_ptr<decompressor> decompressor;
 
     if (encoding.find("gzip") != std::string::npos ||
         encoding.find("deflate") != std::string::npos) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-      decompressor = std::make_shared<gzip_decompressor>();
+      decompressor = detail::make_unique<gzip_decompressor>();
 #else
       status = 415;
       return false;
 #endif
     } else if (encoding.find("br") != std::string::npos) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-      decompressor = std::make_shared<brotli_decompressor>();
+      decompressor = detail::make_unique<brotli_decompressor>();
 #else
       status = 415;
       return false;
@@ -4066,16 +4087,16 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
     }
 
     if (type != detail::EncodingType::None) {
-      std::shared_ptr<detail::compressor> compressor;
+      std::unique_ptr<detail::compressor> compressor;
 
       if (type == detail::EncodingType::Gzip) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        compressor = std::make_shared<detail::gzip_compressor>();
+        compressor = detail::make_unique<detail::gzip_compressor>();
         res.set_header("Content-Encoding", "gzip");
 #endif
       } else if (type == detail::EncodingType::Brotli) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-        compressor = std::make_shared<detail::brotli_compressor>();
+        compressor = detail::make_unique<detail::brotli_compressor>();
         res.set_header("Content-Encoding", "brotli");
 #endif
       }
@@ -4157,17 +4178,17 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
     if (res.is_chunked_content_provider) {
       auto type = detail::encoding_type(req, res);
 
-      std::shared_ptr<detail::compressor> compressor;
+      std::unique_ptr<detail::compressor> compressor;
       if (type == detail::EncodingType::Gzip) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        compressor = std::make_shared<detail::gzip_compressor>();
+        compressor = detail::make_unique<detail::gzip_compressor>();
 #endif
       } else if (type == detail::EncodingType::Brotli) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-        compressor = std::make_shared<detail::brotli_compressor>();
+        compressor = detail::make_unique<detail::brotli_compressor>();
 #endif
       } else {
-        compressor = std::make_shared<detail::nocompressor>();
+        compressor = detail::make_unique<detail::nocompressor>();
       }
       assert(compressor != nullptr);
 
@@ -5001,7 +5022,7 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
   return true;
 }
 
-inline std::shared_ptr<Response> ClientImpl::send_with_content_provider(
+inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
     const char *method, const char *path, const Headers &headers,
     const std::string &body, size_t content_length,
     ContentProvider content_provider, const char *content_type) {
@@ -5070,9 +5091,9 @@ inline std::shared_ptr<Response> ClientImpl::send_with_content_provider(
     }
   }
 
-  auto res = std::make_shared<Response>();
+  auto res = detail::make_unique<Response>();
 
-  return send(req, *res) ? res : nullptr;
+  return send(req, *res) ? std::move(res) : nullptr;
 }
 
 inline bool ClientImpl::process_request(Stream &strm, const Request &req,
@@ -5168,9 +5189,9 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   req.headers.insert(headers.begin(), headers.end());
   req.progress = std::move(progress);
 
-  auto res = std::make_shared<Response>();
+  auto res = detail::make_unique<Response>();
   auto ret = send(req, *res);
-  return Result{ret ? res : nullptr, get_last_error()};
+  return Result{ret ? std::move(res) : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Get(const char *path,
@@ -5232,9 +5253,9 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   req.content_receiver = std::move(content_receiver);
   req.progress = std::move(progress);
 
-  auto res = std::make_shared<Response>();
+  auto res = detail::make_unique<Response>();
   auto ret = send(req, *res);
-  return Result{ret ? res : nullptr, get_last_error()};
+  return Result{ret ? std::move(res) : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Head(const char *path) {
@@ -5248,9 +5269,9 @@ inline Result ClientImpl::Head(const char *path, const Headers &headers) {
   req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
-  auto res = std::make_shared<Response>();
+  auto res = detail::make_unique<Response>();
   auto ret = send(req, *res);
-  return Result{ret ? res : nullptr, get_last_error()};
+  return Result{ret ? std::move(res) : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Post(const char *path) {
@@ -5267,7 +5288,7 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                const char *content_type) {
   auto ret = send_with_content_provider("POST", path, headers, body, 0, nullptr,
                                         content_type);
-  return Result{ret, get_last_error()};
+  return Result{std::move(ret), get_last_error()};
 }
 
 inline Result ClientImpl::Post(const char *path, const Params &params) {
@@ -5289,7 +5310,7 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                         content_length,
                                         std::move(content_provider),
                                         content_type);
-  return Result{ret, get_last_error()};
+  return Result{std::move(ret), get_last_error()};
 }
 
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
@@ -5354,7 +5375,7 @@ inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               const char *content_type) {
   auto ret = send_with_content_provider("PUT", path, headers, body, 0, nullptr,
                                         content_type);
-  return Result{ret, get_last_error()};
+  return Result{std::move(ret), get_last_error()};
 }
 
 inline Result ClientImpl::Put(const char *path, size_t content_length,
@@ -5372,7 +5393,7 @@ inline Result ClientImpl::Put(const char *path, const Headers &headers,
                                         content_length,
                                         std::move(content_provider),
                                         content_type);
-  return Result{ret, get_last_error()};
+  return Result{std::move(ret), get_last_error()};
 }
 
 inline Result ClientImpl::Put(const char *path, const Params &params) {
@@ -5395,7 +5416,7 @@ inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 const char *content_type) {
   auto ret = send_with_content_provider("PATCH", path, headers, body, 0,
                                         nullptr, content_type);
-  return Result{ret, get_last_error()};
+  return Result{std::move(ret), get_last_error()};
 }
 
 inline Result ClientImpl::Patch(const char *path, size_t content_length,
@@ -5413,7 +5434,7 @@ inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                         content_length,
                                         std::move(content_provider),
                                         content_type);
-  return Result{ret, get_last_error()};
+  return Result{std::move(ret), get_last_error()};
 }
 
 inline Result ClientImpl::Delete(const char *path) {
@@ -5441,9 +5462,9 @@ inline Result ClientImpl::Delete(const char *path, const Headers &headers,
   if (content_type) { req.headers.emplace("Content-Type", content_type); }
   req.body = body;
 
-  auto res = std::make_shared<Response>();
+  auto res = detail::make_unique<Response>();
   auto ret = send(req, *res);
-  return Result{ret ? res : nullptr, get_last_error()};
+  return Result{ret ? std::move(res) : nullptr, get_last_error()};
 }
 
 inline Result ClientImpl::Options(const char *path) {
@@ -5457,9 +5478,9 @@ inline Result ClientImpl::Options(const char *path, const Headers &headers) {
   req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
-  auto res = std::make_shared<Response>();
+  auto res = detail::make_unique<Response>();
   auto ret = send(req, *res);
-  return Result{ret ? res : nullptr, get_last_error()};
+  return Result{ret ? std::move(res) : nullptr, get_last_error()};
 }
 
 inline size_t ClientImpl::is_socket_open() const {
@@ -6234,28 +6255,28 @@ inline Client::Client(const char *scheme_host_port,
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      cli_ = std::make_shared<SSLClient>(host.c_str(), port, client_cert_path,
-                                         client_key_path);
+      cli_ = detail::make_unique<SSLClient>(host.c_str(), port,
+                                            client_cert_path, client_key_path);
       is_ssl_ = is_ssl;
 #endif
     } else {
-      cli_ = std::make_shared<ClientImpl>(host.c_str(), port, client_cert_path,
-                                          client_key_path);
+      cli_ = detail::make_unique<ClientImpl>(host.c_str(), port,
+                                             client_cert_path, client_key_path);
     }
   } else {
-    cli_ = std::make_shared<ClientImpl>(scheme_host_port, 80, client_cert_path,
-                                        client_key_path);
+    cli_ = detail::make_unique<ClientImpl>(scheme_host_port, 80,
+                                           client_cert_path, client_key_path);
   }
 }
 
 inline Client::Client(const std::string &host, int port)
-    : cli_(std::make_shared<ClientImpl>(host, port)) {}
+    : cli_(detail::make_unique<ClientImpl>(host, port)) {}
 
 inline Client::Client(const std::string &host, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path)
-    : cli_(std::make_shared<ClientImpl>(host, port, client_cert_path,
-                                        client_key_path)) {}
+    : cli_(detail::make_unique<ClientImpl>(host, port, client_cert_path,
+                                           client_key_path)) {}
 
 inline Client::~Client() {}
 
