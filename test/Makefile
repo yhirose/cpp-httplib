@@ -1,4 +1,3 @@
-
 #CXX = clang++
 CXXFLAGS = -ggdb -O0 -std=c++11 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I. -Wall -Wextra -Wtype-limits -Wconversion #-fsanitize=address
 
