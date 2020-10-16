@@ -5,6 +5,7 @@
 #include <chrono>
 #include <future>
 #include <thread>
+#include <atomic>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -2761,7 +2762,7 @@ TEST_F(ServerTest, Brotli) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
-  Error error = Error::Success;
+  std::atomic<Error> error(Error::Success);
 
   auto client_sock =
       detail::create_client_socket(HOST, PORT, false, nullptr,
