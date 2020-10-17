@@ -2949,7 +2949,7 @@ public:
   bool is_valid() const { return is_valid_; }
 
   template <typename T, typename U>
-  bool parse(const char *buf, size_t n, const T &content_callback, const U &header_callback) {
+  bool parse(const char *buf, size_t n, T content_callback, U header_callback) {
 
     static const std::regex re_content_disposition(
         "^Content-Disposition:\\s*form-data;\\s*name=\"(.*?)\"(?:;\\s*filename="
