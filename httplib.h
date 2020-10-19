@@ -5856,9 +5856,12 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
         });
 
     detail::ssl_delete(ctx_mutex_, ssl, ret);
+    detail::shutdown_socket(sock);
+    detail::close_socket(sock);
     return ret;
   }
 
+  detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return false;
 }
