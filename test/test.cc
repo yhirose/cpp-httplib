@@ -1897,6 +1897,30 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
+TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=-3"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("efg"), res->body);
+}
+
+
+TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=-9999"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
+}
+
+
 TEST_F(ServerTest, GetStreamedWithRangeError) {
   auto res = cli_.Get("/streamed-with-range", {
     {"Range", "bytes=92233720368547758079223372036854775806-92233720368547758079223372036854775807"}
