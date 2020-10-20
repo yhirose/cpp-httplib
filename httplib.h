@@ -173,6 +173,7 @@ using socket_t = int;
 #define INVALID_SOCKET (-1)
 #endif //_WIN32
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
@@ -3153,7 +3154,7 @@ get_range_offset_and_length(const Request &req, size_t content_length,
   auto slen = static_cast<ssize_t>(content_length);
 
   if (r.first == -1) {
-    r.first = slen - r.second;
+    r.first = std::max(static_cast<ssize_t>(0), slen - r.second);
     r.second = slen - 1;
   }
 
