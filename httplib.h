@@ -326,6 +326,10 @@ using ContentProvider =
 using ContentProviderWithoutLength =
     std::function<bool(size_t offset, DataSink &sink)>;
 
+using ContentReceiver2 =
+    std::function<bool(const char *data, size_t data_length, uint64_t offset,
+                       uint64_t total_length)>;
+
 using ContentReceiver =
     std::function<bool(const char *data, size_t data_length)>;
 
@@ -378,7 +382,7 @@ struct Request {
   // for client
   size_t redirect_count = CPPHTTPLIB_REDIRECT_MAX_COUNT;
   ResponseHandler response_handler;
-  ContentReceiver content_receiver;
+  ContentReceiver2 content_receiver;
   size_t content_length = 0;
   ContentProvider content_provider;
   Progress progress;
@@ -2508,7 +2512,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 }
 
 inline bool read_content_with_length(Stream &strm, uint64_t len,
-                                     Progress progress, ContentReceiver out) {
+                                     Progress progress, ContentReceiver2 out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
   uint64_t r = 0;
@@ -2517,8 +2521,7 @@ inline bool read_content_with_length(Stream &strm, uint64_t len,
     auto n = strm.read(buf, (std::min)(read_len, CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return false; }
 
-    if (!out(buf, static_cast<size_t>(n))) { return false; }
-
+    if (!out(buf, static_cast<size_t>(n), r, len)) { return false; }
     r += static_cast<uint64_t>(n);
 
     if (progress) {
@@ -2540,8 +2543,9 @@ inline void skip_content_with_length(Stream &strm, uint64_t len) {
   }
 }
 
-inline bool read_content_without_length(Stream &strm, ContentReceiver out) {
+inline bool read_content_without_length(Stream &strm, ContentReceiver2 out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
+  uint64_t r = 0;
   for (;;) {
     auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
     if (n < 0) {
@@ -2549,13 +2553,15 @@ inline bool read_content_without_length(Stream &strm, ContentReceiver out) {
     } else if (n == 0) {
       return true;
     }
-    if (!out(buf, static_cast<size_t>(n))) { return false; }
+
+    if (!out(buf, static_cast<size_t>(n), r, 0)) { return false; }
+    r += static_cast<uint64_t>(n);
   }
 
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm, ContentReceiver out) {
+inline bool read_content_chunked(Stream &strm, ContentReceiver2 out) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -2600,7 +2606,7 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
 }
 
 template <typename T, typename U>
-bool prepare_content_receiver(T &x, int &status, ContentReceiver receiver,
+bool prepare_content_receiver(T &x, int &status, ContentReceiver2 receiver,
                               bool decompress, U callback) {
   if (decompress) {
     std::string encoding = x.get_header_value("Content-Encoding");
@@ -2625,10 +2631,12 @@ bool prepare_content_receiver(T &x, int &status, ContentReceiver receiver,
 
     if (decompressor) {
       if (decompressor->is_valid()) {
-        ContentReceiver out = [&](const char *buf, size_t n) {
-          return decompressor->decompress(
-              buf, n,
-              [&](const char *buf, size_t n) { return receiver(buf, n); });
+        ContentReceiver2 out = [&](const char *buf, size_t n, uint64_t off,
+                                   uint64_t len) {
+          return decompressor->decompress(buf, n,
+                                          [&](const char *buf, size_t n) {
+                                            return receiver(buf, n, off, len);
+                                          });
         };
         return callback(std::move(out));
       } else {
@@ -2638,19 +2646,20 @@ bool prepare_content_receiver(T &x, int &status, ContentReceiver receiver,
     }
   }
 
-  ContentReceiver out = [&](const char *buf, size_t n) {
-    return receiver(buf, n);
+  ContentReceiver2 out = [&](const char *buf, size_t n, uint64_t off,
+                             uint64_t len) {
+    return receiver(buf, n, off, len);
   };
   return callback(std::move(out));
 }
 
 template <typename T>
 bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
-                  Progress progress, ContentReceiver receiver,
+                  Progress progress, ContentReceiver2 receiver,
                   bool decompress) {
   return prepare_content_receiver(
       x, status, std::move(receiver), decompress,
-      [&](const ContentReceiver &out) {
+      [&](const ContentReceiver2 &out) {
         auto ret = true;
         auto exceed_payload_max_length = false;
 
@@ -4254,7 +4263,7 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
                                       MultipartContentHeader mulitpart_header,
                                       ContentReceiver multipart_receiver) {
   detail::MultipartFormDataParser multipart_form_data_parser;
-  ContentReceiver out;
+  ContentReceiver2 out;
 
   if (req.is_multipart_form_data()) {
     const auto &content_type = req.get_header_value("Content-Type");
@@ -4265,7 +4274,7 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
     }
 
     multipart_form_data_parser.set_boundary(std::move(boundary));
-    out = [&](const char *buf, size_t n) {
+    out = [&](const char *buf, size_t n, uint64_t /*off*/, uint64_t /*len*/) {
       /* For debug
       size_t pos = 0;
       while (pos < n) {
@@ -4281,7 +4290,8 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
                                               mulitpart_header);
     };
   } else {
-    out = std::move(receiver);
+    out = [receiver](const char *buf, size_t n, uint64_t /*off*/,
+                     uint64_t /*len*/) { return receiver(buf, n); };
   }
 
   if (req.method == "DELETE" && !req.has_header("Content-Length")) {
@@ -5123,12 +5133,15 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
   if (req.method != "HEAD" && req.method != "CONNECT") {
     auto out =
         req.content_receiver
-            ? static_cast<ContentReceiver>([&](const char *buf, size_t n) {
-                auto ret = req.content_receiver(buf, n);
-                if (!ret) { error_ = Error::Canceled; }
-                return ret;
-              })
-            : static_cast<ContentReceiver>([&](const char *buf, size_t n) {
+            ? static_cast<ContentReceiver2>(
+                  [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
+                    auto ret = req.content_receiver(buf, n, off, len);
+                    if (!ret) { error_ = Error::Canceled; }
+                    return ret;
+                  })
+            : static_cast<ContentReceiver2>([&](const char *buf, size_t n,
+                                                uint64_t /*off*/,
+                                                uint64_t /*len*/) {
                 if (res.body.size() + n > res.body.max_size()) { return false; }
                 res.body.append(buf, n);
                 return true;
@@ -5253,7 +5266,11 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   req.headers = default_headers_;
   req.headers.insert(headers.begin(), headers.end());
   req.response_handler = std::move(response_handler);
-  req.content_receiver = std::move(content_receiver);
+  req.content_receiver =
+      [content_receiver](const char *data, size_t data_length,
+                         uint64_t /*offset*/, uint64_t /*total_length*/) {
+        return content_receiver(data, data_length);
+      };
   req.progress = std::move(progress);
 
   auto res = detail::make_unique<Response>();
