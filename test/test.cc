@@ -1897,6 +1897,14 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
+TEST_F(ServerTest, GetStreamedWithRangeError) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=92233720368547758079223372036854775806-92233720368547758079223372036854775807"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(416, res->status);
+}
+
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});

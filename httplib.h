@@ -688,8 +688,8 @@ private:
                          ContentReceiver multipart_receiver);
 
   virtual bool process_and_close_socket(socket_t sock);
-  
-  struct MountPointEntry { 
+
+  struct MountPointEntry {
     std::string mount_point;
     std::string base_dir;
     Headers headers;
@@ -803,8 +803,7 @@ public:
   Result Post(const char *path, const Headers &headers,
               const MultipartFormDataItems &items);
   Result Post(const char *path, const Headers &headers,
-              const MultipartFormDataItems &items,
-              const std::string& boundary);
+              const MultipartFormDataItems &items, const std::string &boundary);
 
   Result Put(const char *path);
   Result Put(const char *path, const std::string &body,
@@ -1041,8 +1040,7 @@ public:
   Result Post(const char *path, const Headers &headers,
               const MultipartFormDataItems &items);
   Result Post(const char *path, const Headers &headers,
-              const MultipartFormDataItems &items,
-              const std::string& boundary);
+              const MultipartFormDataItems &items, const std::string &boundary);
   Result Put(const char *path);
   Result Put(const char *path, const std::string &body,
              const char *content_type);
@@ -2650,7 +2648,8 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
                   Progress progress, ContentReceiver receiver,
                   bool decompress) {
   return prepare_content_receiver(
-      x, status, std::move(receiver), decompress, [&](const ContentReceiver &out) {
+      x, status, std::move(receiver), decompress,
+      [&](const ContentReceiver &out) {
         auto ret = true;
         auto exceed_payload_max_length = false;
 
@@ -2907,37 +2906,40 @@ inline bool parse_multipart_boundary(const std::string &content_type,
 }
 
 inline bool parse_range_header(const std::string &s, Ranges &ranges) {
-  static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
-  std::smatch m;
-  if (std::regex_match(s, m, re_first_range)) {
-    auto pos = static_cast<size_t>(m.position(1));
-    auto len = static_cast<size_t>(m.length(1));
-    bool all_valid_ranges = true;
-    split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
-      if (!all_valid_ranges) return;
-      static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
-      std::cmatch cm;
-      if (std::regex_match(b, e, cm, re_another_range)) {
-        ssize_t first = -1;
-        if (!cm.str(1).empty()) {
-          first = static_cast<ssize_t>(std::stoll(cm.str(1)));
-        }
+  try {
+    static auto re_first_range =
+        std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
+    std::smatch m;
+    if (std::regex_match(s, m, re_first_range)) {
+      auto pos = static_cast<size_t>(m.position(1));
+      auto len = static_cast<size_t>(m.length(1));
+      bool all_valid_ranges = true;
+      split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
+        if (!all_valid_ranges) return;
+        static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
+        std::cmatch cm;
+        if (std::regex_match(b, e, cm, re_another_range)) {
+          ssize_t first = -1;
+          if (!cm.str(1).empty()) {
+            first = static_cast<ssize_t>(std::stoll(cm.str(1)));
+          }
 
-        ssize_t last = -1;
-        if (!cm.str(2).empty()) {
-          last = static_cast<ssize_t>(std::stoll(cm.str(2)));
-        }
+          ssize_t last = -1;
+          if (!cm.str(2).empty()) {
+            last = static_cast<ssize_t>(std::stoll(cm.str(2)));
+          }
 
-        if (first != -1 && last != -1 && first > last) {
-          all_valid_ranges = false;
-          return;
+          if (first != -1 && last != -1 && first > last) {
+            all_valid_ranges = false;
+            return;
+          }
+          ranges.emplace_back(std::make_pair(first, last));
         }
-        ranges.emplace_back(std::make_pair(first, last));
-      }
-    });
-    return all_valid_ranges;
-  }
-  return false;
+      });
+      return all_valid_ranges;
+    }
+    return false;
+  } catch (...) { return false; }
 }
 
 class MultipartFormDataParser {
@@ -2949,7 +2951,8 @@ public:
   bool is_valid() const { return is_valid_; }
 
   template <typename T, typename U>
-  bool parse(const char *buf, size_t n, const T &content_callback, const U &header_callback) {
+  bool parse(const char *buf, size_t n, const T &content_callback,
+             const U &header_callback) {
 
     static const std::regex re_content_disposition(
         "^Content-Disposition:\\s*form-data;\\s*name=\"(.*?)\"(?:;\\s*filename="
@@ -3797,14 +3800,14 @@ inline Server::Server()
 inline Server::~Server() {}
 
 inline Server &Server::Get(const char *pattern, Handler handler) {
-  get_handlers_.push_back(std::make_pair(std::regex(pattern),
-                                         std::move(handler)));
+  get_handlers_.push_back(
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Post(const char *pattern, Handler handler) {
-  post_handlers_.push_back(std::make_pair(std::regex(pattern),
-                                          std::move(handler)));
+  post_handlers_.push_back(
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
@@ -3816,8 +3819,8 @@ inline Server &Server::Post(const char *pattern,
 }
 
 inline Server &Server::Put(const char *pattern, Handler handler) {
-  put_handlers_.push_back(std::make_pair(std::regex(pattern),
-                                         std::move(handler)));
+  put_handlers_.push_back(
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
@@ -3829,8 +3832,8 @@ inline Server &Server::Put(const char *pattern,
 }
 
 inline Server &Server::Patch(const char *pattern, Handler handler) {
-  patch_handlers_.push_back(std::make_pair(std::regex(pattern),
-                                           std::move(handler)));
+  patch_handlers_.push_back(
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
@@ -3842,8 +3845,8 @@ inline Server &Server::Patch(const char *pattern,
 }
 
 inline Server &Server::Delete(const char *pattern, Handler handler) {
-  delete_handlers_.push_back(std::make_pair(std::regex(pattern),
-                                            std::move(handler)));
+  delete_handlers_.push_back(
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
@@ -3855,8 +3858,8 @@ inline Server &Server::Delete(const char *pattern,
 }
 
 inline Server &Server::Options(const char *pattern, Handler handler) {
-  options_handlers_.push_back(std::make_pair(std::regex(pattern),
-                                             std::move(handler)));
+  options_handlers_.push_back(
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
@@ -4240,7 +4243,7 @@ inline bool Server::read_content_with_content_receiver(
     Stream &strm, Request &req, Response &res, ContentReceiver receiver,
     MultipartContentHeader multipart_header,
     ContentReceiver multipart_receiver) {
-  return read_content_core(strm, req, res, std::move(receiver), 
+  return read_content_core(strm, req, res, std::move(receiver),
                            std::move(multipart_header),
                            std::move(multipart_receiver));
 }
@@ -4314,7 +4317,7 @@ inline bool Server::handle_file_request(Request &req, Response &res,
           auto type =
               detail::find_content_type(path, file_extension_and_mimetype_map_);
           if (type) { res.set_header("Content-Type", type); }
-          for (const auto& kv : entry.headers) {
+          for (const auto &kv : entry.headers) {
             res.set_header(kv.first.c_str(), kv.second);
           }
           res.status = 200;
@@ -4435,9 +4438,8 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
     {
       ContentReader reader(
           [&](ContentReceiver receiver) {
-            return read_content_with_content_receiver(strm, req, res,
-                                                      std::move(receiver),
-                                                      nullptr, nullptr);
+            return read_content_with_content_receiver(
+                strm, req, res, std::move(receiver), nullptr, nullptr);
           },
           [&](MultipartContentHeader header, ContentReceiver receiver) {
             return read_content_with_content_receiver(strm, req, res, nullptr,
@@ -4580,7 +4582,8 @@ Server::process_request(Stream &strm, bool close_connection,
   if (req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
     if (!detail::parse_range_header(range_header_value, req.ranges)) {
-      // TODO: error
+      res.status = 416;
+      return write_response(strm, close_connection, req, res);
     }
   }
 
@@ -5160,10 +5163,9 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
 inline bool
 ClientImpl::process_socket(Socket &socket,
                            std::function<bool(Stream &strm)> callback) {
-  return detail::process_client_socket(socket.sock, read_timeout_sec_,
-                                       read_timeout_usec_, write_timeout_sec_,
-                                       write_timeout_usec_,
-                                       std::move(callback));
+  return detail::process_client_socket(
+      socket.sock, read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+      write_timeout_usec_, std::move(callback));
 }
 
 inline bool ClientImpl::is_ssl() const { return false; }
@@ -5306,10 +5308,9 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                size_t content_length,
                                ContentProvider content_provider,
                                const char *content_type) {
-  auto ret = send_with_content_provider("POST", path, headers, std::string(),
-                                        content_length,
-                                        std::move(content_provider),
-                                        content_type);
+  auto ret = send_with_content_provider(
+      "POST", path, headers, std::string(), content_length,
+      std::move(content_provider), content_type);
   return Result{std::move(ret), get_last_error()};
 }
 
@@ -5330,7 +5331,7 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
 }
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                const MultipartFormDataItems &items,
-                               const std::string& boundary) {
+                               const std::string &boundary) {
   for (size_t i = 0; i < boundary.size(); i++) {
     char c = boundary[i];
     if (!std::isalnum(c) && c != '-' && c != '_') {
@@ -5389,10 +5390,9 @@ inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               size_t content_length,
                               ContentProvider content_provider,
                               const char *content_type) {
-  auto ret = send_with_content_provider("PUT", path, headers, std::string(),
-                                        content_length,
-                                        std::move(content_provider),
-                                        content_type);
+  auto ret = send_with_content_provider(
+      "PUT", path, headers, std::string(), content_length,
+      std::move(content_provider), content_type);
   return Result{std::move(ret), get_last_error()};
 }
 
@@ -5430,10 +5430,9 @@ inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 size_t content_length,
                                 ContentProvider content_provider,
                                 const char *content_type) {
-  auto ret = send_with_content_provider("PATCH", path, headers, std::string(),
-                                        content_length,
-                                        std::move(content_provider),
-                                        content_type);
+  auto ret = send_with_content_provider(
+      "PATCH", path, headers, std::string(), content_length,
+      std::move(content_provider), content_type);
   return Result{std::move(ret), get_last_error()};
 }
 
@@ -6381,7 +6380,7 @@ inline Result Client::Post(const char *path, const Headers &headers,
 }
 inline Result Client::Post(const char *path, const Headers &headers,
                            const MultipartFormDataItems &items,
-                           const std::string& boundary) {
+                           const std::string &boundary) {
   return cli_->Post(path, headers, items, boundary);
 }
 inline Result Client::Put(const char *path) { return cli_->Put(path); }
