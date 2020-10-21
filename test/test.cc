@@ -3427,17 +3427,15 @@ TEST(CleanupTest, WSACleanup) {
 }
 #endif
 
-// #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
-// TEST(NoSSLSupport, SimpleInterface) {
-//   Client cli("https://yahoo.com");
-//   ASSERT_FALSE(cli.is_valid());
-// }
-// #endif
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(NoSSLSupport, SimpleInterface) {
+  ASSERT_ANY_THROW(Client cli("https://yahoo.com"));
+}
+#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(InvalidScheme, SimpleInterface) {
-  Client cli("scheme://yahoo.com");
-  ASSERT_FALSE(cli.is_valid());
+  ASSERT_ANY_THROW(Client cli("scheme://yahoo.com"));
 }
 
 TEST(NoScheme, SimpleInterface) {
