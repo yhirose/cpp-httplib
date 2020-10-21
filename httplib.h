@@ -2906,42 +2906,39 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   return !boundary.empty();
 }
 
-inline bool parse_range_header(const std::string &s, Ranges &ranges) {
-  try {
-    static auto re_first_range =
-        std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
-    std::smatch m;
-    if (std::regex_match(s, m, re_first_range)) {
-      auto pos = static_cast<size_t>(m.position(1));
-      auto len = static_cast<size_t>(m.length(1));
-      bool all_valid_ranges = true;
-      split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
-        if (!all_valid_ranges) return;
-        static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
-        std::cmatch cm;
-        if (std::regex_match(b, e, cm, re_another_range)) {
-          ssize_t first = -1;
-          if (!cm.str(1).empty()) {
-            first = static_cast<ssize_t>(std::stoll(cm.str(1)));
-          }
-
-          ssize_t last = -1;
-          if (!cm.str(2).empty()) {
-            last = static_cast<ssize_t>(std::stoll(cm.str(2)));
-          }
-
-          if (first != -1 && last != -1 && first > last) {
-            all_valid_ranges = false;
-            return;
-          }
-          ranges.emplace_back(std::make_pair(first, last));
+inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
+  static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
+  std::smatch m;
+  if (std::regex_match(s, m, re_first_range)) {
+    auto pos = static_cast<size_t>(m.position(1));
+    auto len = static_cast<size_t>(m.length(1));
+    bool all_valid_ranges = true;
+    split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
+      if (!all_valid_ranges) return;
+      static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
+      std::cmatch cm;
+      if (std::regex_match(b, e, cm, re_another_range)) {
+        ssize_t first = -1;
+        if (!cm.str(1).empty()) {
+          first = static_cast<ssize_t>(std::stoll(cm.str(1)));
         }
-      });
-      return all_valid_ranges;
-    }
-    return false;
-  } catch (...) { return false; }
-}
+
+        ssize_t last = -1;
+        if (!cm.str(2).empty()) {
+          last = static_cast<ssize_t>(std::stoll(cm.str(2)));
+        }
+
+        if (first != -1 && last != -1 && first > last) {
+          all_valid_ranges = false;
+          return;
+        }
+        ranges.emplace_back(std::make_pair(first, last));
+      }
+    });
+    return all_valid_ranges;
+  }
+  return false;
+} catch (...) { return false; }
 
 class MultipartFormDataParser {
 public:
@@ -4500,7 +4497,6 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 
 inline bool Server::dispatch_request(Request &req, Response &res,
                                      const Handlers &handlers) {
-
   try {
     for (const auto &x : handlers) {
       const auto &pattern = x.first;
