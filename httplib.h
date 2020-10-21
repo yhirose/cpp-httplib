@@ -6242,6 +6242,8 @@ inline Client::Client(const char *scheme_host_port,
 #else
     if (!scheme.empty() && scheme != "http") {
 #endif
+      std::string msg = "'" + scheme + "' scheme is not supported.";
+      throw std::invalid_argument(msg);
       return;
     }
 
