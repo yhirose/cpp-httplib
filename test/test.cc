@@ -3299,6 +3299,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   t.join();
 }
 
+#if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
 TEST(SSLClientServerTest, MemoryClientCertPresent) {
   X509 *server_cert;
   EVP_PKEY *server_private_key;
@@ -3374,6 +3375,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   t.join();
 }
+#endif
 
 TEST(SSLClientServerTest, ClientCertMissing) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,

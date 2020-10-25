@@ -5737,22 +5737,7 @@ inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl,
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec) {
-  {
-    timeval tv;
-    tv.tv_sec = static_cast<long>(read_timeout_sec);
-    tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<char *>(&tv),
-               sizeof(tv));
-  }
-  {
-    timeval tv;
-    tv.tv_sec = static_cast<long>(write_timeout_sec);
-    tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
-
-    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<char *>(&tv),
-               sizeof(tv));
-  }
+  SSL_clear_mode(ssl, SSL_MODE_AUTO_RETRY);
 }
 
 inline SSLSocketStream::~SSLSocketStream() {}
@@ -5767,8 +5752,27 @@ inline bool SSLSocketStream::is_writable() const {
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
-  if (SSL_pending(ssl_) > 0 || is_readable()) {
+  if (SSL_pending(ssl_) > 0) {
     return SSL_read(ssl_, ptr, static_cast<int>(size));
+  } else if (is_readable()) {
+    auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
+    if (ret < 0) {
+      auto err = SSL_get_error(ssl_, ret);
+      while (err == SSL_ERROR_WANT_READ) {
+        if (SSL_pending(ssl_) > 0) {
+          return SSL_read(ssl_, ptr, static_cast<int>(size));
+        } else if (is_readable()) {
+          ret = SSL_read(ssl_, ptr, static_cast<int>(size));
+          if (ret >= 0) {
+            return ret;
+          }
+          err = SSL_get_error(ssl_, ret);
+        } else {
+          return -1;
+        }
+      }
+    }
+    return ret;
   }
   return -1;
 }
