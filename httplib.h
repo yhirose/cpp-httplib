@@ -6104,12 +6104,12 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
 }
 
 inline void SSLClient::close_socket(Socket &socket, bool process_socket_ret) {
-  detail::close_socket(socket.sock);
-  socket_.sock = INVALID_SOCKET;
   if (socket.ssl) {
     detail::ssl_delete(ctx_mutex_, socket.ssl, process_socket_ret);
     socket_.ssl = nullptr;
   }
+  detail::close_socket(socket.sock);
+  socket_.sock = INVALID_SOCKET;
 }
 
 inline bool
