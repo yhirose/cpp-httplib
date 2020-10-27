@@ -3164,7 +3164,7 @@ get_range_offset_and_length(const Request &req, size_t content_length,
   auto slen = static_cast<ssize_t>(content_length);
 
   if (r.first == -1) {
-    r.first = std::max(static_cast<ssize_t>(0), slen - r.second);
+    r.first = (std::max)(static_cast<ssize_t>(0), slen - r.second);
     r.second = slen - 1;
   }
 
