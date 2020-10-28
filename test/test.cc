@@ -1897,6 +1897,38 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
+TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=-3"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("3", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("efg"), res->body);
+}
+
+
+TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=-9999"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
+}
+
+
+TEST_F(ServerTest, GetStreamedWithRangeError) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=92233720368547758079223372036854775806-92233720368547758079223372036854775807"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(416, res->status);
+}
+
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
@@ -3267,6 +3299,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   t.join();
 }
 
+#if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
 TEST(SSLClientServerTest, MemoryClientCertPresent) {
   X509 *server_cert;
   EVP_PKEY *server_private_key;
@@ -3342,6 +3375,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   t.join();
 }
+#endif
 
 TEST(SSLClientServerTest, ClientCertMissing) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
@@ -3395,17 +3429,15 @@ TEST(CleanupTest, WSACleanup) {
 }
 #endif
 
-// #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
-// TEST(NoSSLSupport, SimpleInterface) {
-//   Client cli("https://yahoo.com");
-//   ASSERT_FALSE(cli.is_valid());
-// }
-// #endif
+#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(NoSSLSupport, SimpleInterface) {
+  ASSERT_ANY_THROW(Client cli("https://yahoo.com"));
+}
+#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(InvalidScheme, SimpleInterface) {
-  Client cli("scheme://yahoo.com");
-  ASSERT_FALSE(cli.is_valid());
+  ASSERT_ANY_THROW(Client cli("scheme://yahoo.com"));
 }
 
 TEST(NoScheme, SimpleInterface) {
