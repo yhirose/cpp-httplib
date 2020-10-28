@@ -365,6 +365,27 @@ httplib::Client cli("http://localhost:8080");
 httplib::Client cli("https://localhost");
 ```
 
+### Error code
+
+Here is the list of errors from `Result::error()`.
+
+```c++
+enum Error {
+  Success = 0,
+  Unknown,
+  Connection,
+  BindIPAddress,
+  Read,
+  Write,
+  ExceedRedirectCount,
+  Canceled,
+  SSLConnection,
+  SSLLoadingCerts,
+  SSLServerVerification,
+  UnsupportedMultipartBoundaryChars
+};
+```
+
 ### GET with HTTP headers
 
 ```c++
