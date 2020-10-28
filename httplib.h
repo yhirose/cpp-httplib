@@ -745,8 +745,11 @@ public:
   bool operator==(std::nullptr_t) const { return res_ == nullptr; }
   bool operator!=(std::nullptr_t) const { return res_ != nullptr; }
   const Response &value() const { return *res_; }
+  Response &value() { return *res_; }
   const Response &operator*() const { return *res_; }
+  Response &operator*() { return *res_; }
   const Response *operator->() const { return res_.get(); }
+  Response *operator->() { return res_.get(); }
   Error error() const { return err_; }
 
 private:
