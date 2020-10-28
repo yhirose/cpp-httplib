@@ -395,6 +395,79 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   EXPECT_EQ(out, body);
 }
 
+TEST(ChunkedEncodingTest, TransferDataWithoutContentLength) {
+  Server svr8080;
+  
+  //create a put listener for reading content, and write it as an output file
+  svr8080.Put("/chunked_transfer_receiver", [&](const Request & /*req*/, Response &res, const ContentReader& content_reader) {
+    std::ofstream sample_output_file("./image_out.jpg", std::ios::out | std::ios::binary);
+    content_reader([&](const char *data, size_t data_length) {
+        sample_output_file.write(data, data_length);
+        if (data_length < CPPHTTPLIB_RECV_BUFSIZ)
+        {
+            sample_output_file.close();
+        }
+        return true;
+    });
+  });
+
+  auto thread8080 = std::thread([&]() { svr8080.listen("localhost", 8080); });
+  while (!svr8080.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", 8080);  
+
+  //open a sample input file for providing in put request
+  ContentProvider content_provider;
+  std::ifstream sample_input_file("./image.jpg", std::ios::in | std::ios::binary);
+  if (sample_input_file) {
+    content_provider = [&](size_t offset, size_t length, httplib::DataSink &sink) {
+      do {
+        char buffer[CPPHTTPLIB_RECV_BUFSIZ];
+        sample_input_file.read(buffer, CPPHTTPLIB_RECV_BUFSIZ);
+        size_t read_bytes = sample_input_file.gcount();
+        if (read_bytes > 0) {
+          sink.write(buffer + offset, read_bytes);
+        }
+      } while (sample_input_file.gcount() > 0);
+
+      return true;
+    };
+  }
+
+  Headers headers;
+  size_t content_length = 0;
+  //make unknown content length put request
+  auto res = cli.Put("/chunked_transfer_receiver", headers, content_length, content_provider, "application/octet-stream");
+  
+  //calculate output file size
+  std::ifstream result_input_file("./image_out.jpg", std::ios::binary);
+  const auto result_file_size_begin = result_input_file.tellg();
+  result_input_file.seekg(0, std::ios::end);
+  const auto result_file_size_end = result_input_file.tellg();
+  result_input_file.close();
+
+  //calculate input file size
+  std::ifstream input_file("./image.jpg", std::ios::binary);
+  const auto input_file_size_begin = input_file.tellg();
+  input_file.seekg(0, std::ios::end);
+  const auto input_file_size_end = input_file.tellg();
+  input_file.close();
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ((result_file_size_end - result_file_size_begin), (input_file_size_end - input_file_size_begin));
+
+  //remove output file
+  remove("image_out.jpg");
+
+  svr8080.stop();
+  thread8080.join();
+  ASSERT_FALSE(svr8080.is_running());
+}
+
 TEST(DefaultHeadersTest, FromHTTPBin) {
   Client cli("httpbin.org");
   cli.set_default_headers({make_range_header({{1, 10}})});
