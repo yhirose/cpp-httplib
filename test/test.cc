@@ -1938,6 +1938,14 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
   EXPECT_EQ(416, res->status);
 }
 
+TEST_F(ServerTest, GetStreamedWithOffsetGreaterThanContent) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=10000000-"}
+  });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(416, res->status);
+}
+
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
