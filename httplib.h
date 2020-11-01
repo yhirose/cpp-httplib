@@ -3174,7 +3174,7 @@ get_range_offset_and_length(const Request &req, size_t content_length,
   if (r.second == -1 || r.second >= slen) {
     r.second = slen - 1;
   }
-  return std::make_pair(r.first, r.second - r.first + 1);
+  return std::make_pair(r.first, static_cast<size_t>(r.second - r.first) + 1);
 }
 
 inline std::string make_content_range_header_field(size_t offset, size_t length,

@@ -1946,6 +1946,16 @@ TEST_F(ServerTest, GetStreamedWithOffsetGreaterThanContent) {
   EXPECT_EQ(416, res->status);
 }
 
+TEST_F(ServerTest, GetStreamedWithMaxLongLength) {
+  auto res = cli_.Get("/streamed-with-range", {
+    {"Range", "bytes=0-9223372036854775807"}
+  });
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
+}
+
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
