@@ -6225,17 +6225,15 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
         auto name = (const char *)ASN1_STRING_get0_data(val->d.ia5);
         auto name_len = (size_t)ASN1_STRING_length(val->d.ia5);
 
-        if (strlen(name) == name_len) {
-          switch (type) {
-          case GEN_DNS: dsn_matched = check_host_name(name, name_len); break;
+        switch (type) {
+        case GEN_DNS: dsn_matched = check_host_name(name, name_len); break;
 
-          case GEN_IPADD:
-            if (!memcmp(&addr6, name, addr_len) ||
-                !memcmp(&addr, name, addr_len)) {
-              ip_mached = true;
-            }
-            break;
+        case GEN_IPADD:
+          if (!memcmp(&addr6, name, addr_len) ||
+              !memcmp(&addr, name, addr_len)) {
+            ip_mached = true;
           }
+          break;
         }
       }
     }
