@@ -5627,7 +5627,9 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
   }
 
   if (ssl) {
+    set_nonblocking(sock, true);
     auto bio = BIO_new_socket(static_cast<int>(sock), BIO_NOCLOSE);
+    BIO_set_nbio(bio, 1);
     SSL_set_bio(ssl, bio, bio);
 
     if (!setup(ssl) || SSL_connect_or_accept(ssl) != 1) {
@@ -5636,8 +5638,11 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
         std::lock_guard<std::mutex> guard(ctx_mutex);
         SSL_free(ssl);
       }
+      set_nonblocking(sock, false);
       return nullptr;
     }
+    BIO_set_nbio(bio, 0);
+    set_nonblocking(sock, false);
   }
 
   return ssl;
@@ -5651,6 +5656,32 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl,
 
   std::lock_guard<std::mutex> guard(ctx_mutex);
   SSL_free(ssl);
+}
+
+template <typename U>
+bool   ssl_connect_or_accept_nonblocking(socket_t sock, SSL *ssl, U ssl_connect_or_accept,
+                                time_t timeout_sec, time_t timeout_usec) {
+  int res = 0;
+  while ((res = ssl_connect_or_accept(ssl)) != 1) {
+    auto err = SSL_get_error(ssl, res);
+    switch (err)
+    {
+    case SSL_ERROR_WANT_READ:
+      if (select_read(sock, timeout_sec, timeout_usec) > 0) {
+        continue;
+      }
+      break;
+    case SSL_ERROR_WANT_WRITE:
+      if (select_write(sock, timeout_sec, timeout_usec) > 0) {
+        continue;
+      }
+      break;
+    default:
+      break;
+    }
+    return false;
+  }
+  return true;
 }
 
 template <typename T>
@@ -5867,8 +5898,14 @@ inline SSLServer::~SSLServer() {
 inline bool SSLServer::is_valid() const { return ctx_; }
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
-  auto ssl = detail::ssl_new(sock, ctx_, ctx_mutex_, SSL_accept,
-                             [](SSL * /*ssl*/) { return true; });
+  auto ssl = detail::ssl_new(
+      sock, ctx_, ctx_mutex_,
+      [&](SSL *ssl) {
+        return detail::  ssl_connect_or_accept_nonblocking(sock, ssl, SSL_accept, read_timeout_sec_, read_timeout_usec_);
+      },
+      [](SSL * /*ssl*/) {
+        return true;
+      });
 
   if (ssl) {
     auto ret = detail::process_server_socket_ssl(
@@ -6062,7 +6099,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
           SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
         }
 
-        if (SSL_connect(ssl) != 1) {
+        if (!detail::  ssl_connect_or_accept_nonblocking(socket.sock, ssl, SSL_connect,
+                           connection_timeout_sec_, connection_timeout_usec_)) {
           error_ = Error::SSLConnection;
           return false;
         }
