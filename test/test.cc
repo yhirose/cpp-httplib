@@ -3250,7 +3250,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
 
-  svr.Get("/test", [&](const Request &req, Response &res) {
+  svr.Get("/test", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
     svr.stop();
     ASSERT_TRUE(true);
