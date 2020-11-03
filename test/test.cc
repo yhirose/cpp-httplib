@@ -7,6 +7,7 @@
 #include <thread>
 
 #define SERVER_CERT_FILE "./cert.pem"
+#define SERVER_CERT2_FILE "./cert2.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
 #define CA_CERT_FILE "./ca-bundle.crt"
 #define CLIENT_CA_CERT_FILE "./rootCA.cert.pem"
@@ -3243,6 +3244,31 @@ TEST(SSLClientTest, ServerCertificateVerification3) {
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
+}
+
+TEST(SSLClientTest, ServerCertificateVerification4) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    res.set_content("test", "text/plain");
+    svr.stop();
+    ASSERT_TRUE(true);
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  SSLClient cli("127.0.0.1", PORT);
+  cli.set_ca_cert_path(SERVER_CERT2_FILE);
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+
+  t.join();
 }
 
 TEST(SSLClientTest, WildcardHostNameMatch) {
