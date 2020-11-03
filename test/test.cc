@@ -1897,15 +1897,6 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
-TEST_F(ServerTest, GetStreamedWithRangeGreaterThanContentSize) {
-  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{0, 999}})}});
-  ASSERT_TRUE(res);
-  EXPECT_EQ(206, res->status);
-  EXPECT_EQ("7", res->get_header_value("Content-Length"));
-  EXPECT_EQ(true, res->has_header("Content-Range"));
-  EXPECT_EQ(std::string("abcdefg"), res->body);
-}
-
 TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
   auto res = cli_.Get("/streamed-with-range", {
     {"Range", "bytes=-3"}
@@ -1938,18 +1929,9 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
   EXPECT_EQ(416, res->status);
 }
 
-TEST_F(ServerTest, GetStreamedWithOffsetGreaterThanContent) {
-  auto res = cli_.Get("/streamed-with-range", {
-    {"Range", "bytes=10000000-"}
-  });
-  ASSERT_TRUE(res);
-  EXPECT_EQ(416, res->status);
-}
-
-TEST_F(ServerTest, GetStreamedWithMaxLongLength) {
-  auto res = cli_.Get("/streamed-with-range", {
-    {"Range", "bytes=0-9223372036854775807"}
-  });
+//Tests long long overflow.
+TEST_F(ServerTest, GetRangeWithMaxLongLength) {
+  auto res = cli_.Get("/with-range",{{"Range", "bytes=0-9223372036854775807"}});
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("7", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -2038,6 +2020,12 @@ TEST_F(ServerTest, GetWithRange4) {
   EXPECT_EQ(std::string("fg"), res->body);
 }
 
+//TEST_F(ServerTest, GetWithRangeOffsetGreaterThanContent) {
+//  auto res = cli_.Get("/with-range", {{make_range_header({{10000, 20000}})}});
+//  ASSERT_TRUE(res);
+//  EXPECT_EQ(416, res->status);
+//}
+
 TEST_F(ServerTest, GetWithRangeMultipart) {
   auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
@@ -2046,6 +2034,12 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
   EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(269, res->body.size());
 }
+
+//TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
+//  auto res = cli_.Get("/with-range", {{make_range_header({{-1, 2}, {10000, 30000}})}});
+//  ASSERT_TRUE(res);
+//  EXPECT_EQ(416, res->status);
+//}
 
 TEST_F(ServerTest, GetStreamedChunked) {
   auto res = cli_.Get("/streamed-chunked");

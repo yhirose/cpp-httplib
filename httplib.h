@@ -3171,7 +3171,7 @@ get_range_offset_and_length(const Request &req, size_t content_length,
     r.second = slen - 1;
   }
 
-  if (r.second == -1 || r.second >= slen) {
+  if (r.second == -1) {
     r.second = slen - 1;
   }
   return std::make_pair(r.first, static_cast<size_t>(r.second - r.first) + 1);
