@@ -1974,8 +1974,7 @@ TEST_F(ServerTest, ClientStop) {
     }));
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
+  std::this_thread::sleep_for(std::chrono::seconds(2));
   while (cli_.is_socket_open()) {
     cli_.stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
