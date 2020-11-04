@@ -19,7 +19,8 @@ all : server_fuzzer
 
 # Fuzz target, so that you can choose which $(LIB_FUZZING_ENGINE) to use.
 server_fuzzer : server_fuzzer.cc ../../httplib.h
-	$(CXX) $(CXXFLAGS) -o $@  $<  -Wl,-Bstatic $(OPENSSL_SUPPORT)  -Wl,-Bdynamic -ldl  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread
+# 	$(CXX) $(CXXFLAGS) -o $@  $<  -Wl,-Bstatic $(OPENSSL_SUPPORT)  -Wl,-Bdynamic -ldl  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread
+	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread
 	zip -q -r server_fuzzer_seed_corpus.zip corpus
 
 clean:
