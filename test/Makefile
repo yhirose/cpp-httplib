@@ -1,5 +1,5 @@
 #CXX = clang++
-CXXFLAGS = -ggdb -O0 -std=c++11 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I. -Wall -Wextra -Wtype-limits -Wconversion #-fsanitize=address
+CXXFLAGS = -g -std=c++11 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I. -Wall -Wextra -Wtype-limits -Wconversion #-fsanitize=address
 
 OPENSSL_DIR = /usr/local/opt/openssl@1.1
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
