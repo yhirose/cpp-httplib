@@ -1140,7 +1140,7 @@ private:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool is_ssl_ = false;
 #endif
-}; // namespace httplib
+};
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class SSLServer : public Server {
@@ -5660,25 +5660,21 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl,
 }
 
 template <typename U>
-bool   ssl_connect_or_accept_nonblocking(socket_t sock, SSL *ssl, U ssl_connect_or_accept,
-                                time_t timeout_sec, time_t timeout_usec) {
+bool ssl_connect_or_accept_nonblocking(socket_t sock, SSL *ssl,
+                                       U ssl_connect_or_accept,
+                                       time_t timeout_sec,
+                                       time_t timeout_usec) {
   int res = 0;
   while ((res = ssl_connect_or_accept(ssl)) != 1) {
     auto err = SSL_get_error(ssl, res);
-    switch (err)
-    {
+    switch (err) {
     case SSL_ERROR_WANT_READ:
-      if (select_read(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (select_read(sock, timeout_sec, timeout_usec) > 0) { continue; }
       break;
     case SSL_ERROR_WANT_WRITE:
-      if (select_write(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (select_write(sock, timeout_sec, timeout_usec) > 0) { continue; }
       break;
-    default:
-      break;
+    default: break;
     }
     return false;
   }
@@ -5798,9 +5794,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
           return SSL_read(ssl_, ptr, static_cast<int>(size));
         } else if (is_readable()) {
           ret = SSL_read(ssl_, ptr, static_cast<int>(size));
-          if (ret >= 0) {
-            return ret;
-          }
+          if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
         } else {
           return -1;
@@ -5902,11 +5896,10 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
   auto ssl = detail::ssl_new(
       sock, ctx_, ctx_mutex_,
       [&](SSL *ssl) {
-        return detail::  ssl_connect_or_accept_nonblocking(sock, ssl, SSL_accept, read_timeout_sec_, read_timeout_usec_);
+        return detail::ssl_connect_or_accept_nonblocking(
+            sock, ssl, SSL_accept, read_timeout_sec_, read_timeout_usec_);
       },
-      [](SSL * /*ssl*/) {
-        return true;
-      });
+      [](SSL * /*ssl*/) { return true; });
 
   if (ssl) {
     auto ret = detail::process_server_socket_ssl(
@@ -6100,8 +6093,9 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
           SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
         }
 
-        if (!detail::  ssl_connect_or_accept_nonblocking(socket.sock, ssl, SSL_connect,
-                           connection_timeout_sec_, connection_timeout_usec_)) {
+        if (!detail::ssl_connect_or_accept_nonblocking(
+                socket.sock, ssl, SSL_connect, connection_timeout_sec_,
+                connection_timeout_usec_)) {
           error_ = Error::SSLConnection;
           return false;
         }
