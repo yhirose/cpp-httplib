@@ -681,9 +681,10 @@ private:
   bool write_response(Stream &strm, bool close_connection, const Request &req,
                       Response &res);
   bool write_response_with_content(Stream &strm, bool close_connection,
-                                   const Request &req, Response &res,
-                                   std::string &content_type,
-                                   std::string &boundary);
+                                   const Request &req, Response &res);
+  bool write_response_core(Stream &strm, bool close_connection,
+                           const Request &req, Response &res,
+                           std::string &content_type, std::string &boundary);
   bool write_content_with_provider(Stream &strm, const Request &req,
                                    Response &res, const std::string &boundary,
                                    const std::string &content_type);
@@ -4012,13 +4013,26 @@ inline bool Server::write_response(Stream &strm, bool close_connection,
                                    const Request &req, Response &res) {
   std::string content_type;
   std::string boundary;
-  return write_response_with_content(strm, close_connection, req, res,
-                                     content_type, boundary);
+  return write_response_core(strm, close_connection, req, res, content_type,
+                             boundary);
 }
 
-inline bool Server::write_response_with_content(
-    Stream &strm, bool close_connection, const Request &req, Response &res,
-    std::string &content_type, std::string &boundary) {
+inline bool Server::write_response_with_content(Stream &strm,
+                                                bool close_connection,
+                                                const Request &req,
+                                                Response &res) {
+  std::string content_type;
+  std::string boundary;
+  apply_ranges(req, res, content_type, boundary);
+
+  return write_response_core(strm, close_connection, req, res, content_type,
+                             boundary);
+}
+
+inline bool Server::write_response_core(Stream &strm, bool close_connection,
+                                        const Request &req, Response &res,
+                                        std::string &content_type,
+                                        std::string &boundary) {
   assert(res.status != -1);
 
   if (400 <= res.status && error_handler_) { error_handler_(req, res); }
@@ -4649,16 +4663,11 @@ Server::process_request(Stream &strm, bool close_connection,
   // Rounting
   if (routing(req, res, strm)) {
     if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
+    return write_response_with_content(strm, close_connection, req, res);
   } else {
     if (res.status == -1) { res.status = 404; }
+    return write_response(strm, close_connection, req, res);
   }
-
-  std::string content_type;
-  std::string boundary;
-  apply_ranges(req, res, content_type, boundary);
-
-  return write_response_with_content(strm, close_connection, req, res,
-                                     content_type, boundary);
 }
 
 inline bool Server::is_valid() const { return true; }
