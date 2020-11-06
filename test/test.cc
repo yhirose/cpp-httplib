@@ -400,7 +400,7 @@ TEST(ChunkedEncodingTest, TransferDataWithoutContentLength) {
 
   // create a put listener for reading content, and write it as an output file
   svr8080.Put("/chunked_transfer_receiver",
-              [&](const Request & /*req*/, Response &res, const ContentReader &content_reader) {
+              [&](const Request & /*req*/, Response /*&res*/, const ContentReader &content_reader) {
                 std::ofstream sample_output_file("./image_out.jpg", std::ios::out | std::ios::binary);
 
                 content_reader([&](const char *data, size_t data_length) {
@@ -419,6 +419,7 @@ TEST(ChunkedEncodingTest, TransferDataWithoutContentLength) {
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   Client cli("localhost", 8080);
+  //cli.set_compress(true);
 
   // open a sample input file for providing in put request
   ContentProvider content_provider;
