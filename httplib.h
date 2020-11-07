@@ -3771,7 +3771,7 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   }
   return send(sock_, ptr, static_cast<int>(size), 0);
 #else
-  return handle_EINTR([&]() { return send(sock_, ptr, size, 0); });
+  return handle_EINTR([&]() { return send(sock_, ptr, size, MSG_NOSIGNAL); });
 #endif
 }
 
