@@ -3470,6 +3470,47 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
   t.join();
 }
+
+TEST(SSLClientServerTest, SSLConnectTimeout) {
+  class NoListenSSLServer : public SSLServer {
+    public:
+      NoListenSSLServer(const char *cert_path, const char *private_key_path, const char *client_ca_cert_file_path,
+                        const char *client_ca_cert_dir_path = nullptr)
+        : SSLServer(cert_path, private_key_path, client_ca_cert_file_path, client_ca_cert_dir_path)
+        , stop_(false)
+      {}
+
+      bool stop_;
+    private:
+      bool process_and_close_socket(socket_t sock) override {
+        // Don't create SSL context
+        while (!stop_) {
+           std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+      }
+  };
+  NoListenSSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(1);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  svr.stop_ = true;
+  svr.stop();
+  t.join();
+}
 #endif
 
 #ifdef _WIN32
