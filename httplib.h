@@ -430,7 +430,7 @@ struct Response {
   void set_redirect(const char *url, int status = 302);
   void set_redirect(const std::string &url, int status = 302);
   void set_content(const char *s, size_t n, const char *content_type);
-  void set_content(std::string s, const char *content_type);
+  void set_content(const std::string &s, const char *content_type);
 
   void set_content_provider(
       size_t length, const char *content_type, ContentProvider provider,
@@ -3643,12 +3643,15 @@ inline void Response::set_redirect(const std::string &url, int stat) {
 inline void Response::set_content(const char *s, size_t n,
                                   const char *content_type) {
   body.assign(s, n);
+
+  auto rng = headers.equal_range("Content-Type");
+  headers.erase(rng.first, rng.second);
   set_header("Content-Type", content_type);
 }
 
-inline void Response::set_content(std::string s, const char *content_type) {
-  body = std::move(s);
-  set_header("Content-Type", content_type);
+inline void Response::set_content(const std::string &s,
+                                  const char *content_type) {
+  set_content(s.data(), s.size(), content_type);
 }
 
 inline void

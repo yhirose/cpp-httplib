@@ -135,6 +135,17 @@ TEST(GetHeaderValueTest, RegularValue) {
   EXPECT_STREQ("text/html", val);
 }
 
+TEST(GetHeaderValueTest, SetContent) {
+  Response res;
+
+  res.set_content("html", "text/html");
+  EXPECT_EQ("text/html", res.get_header_value("Content-Type"));
+
+  res.set_content("text", "text/plain");
+  EXPECT_EQ(1, res.get_header_value_count("Content-Type"));
+  EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
+}
+
 TEST(GetHeaderValueTest, RegularValueInt) {
   Headers headers = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
   auto val =
