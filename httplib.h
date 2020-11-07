@@ -3762,6 +3762,12 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 #endif
 }
 
+#ifdef MSG_NOSIGNAL
+#define HTTPLIB_MSG_NOSIGNAL MSG_NOSIGNAL
+#else
+#define HTTPLIB_MSG_NOSIGNAL 0
+#endif
+
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!is_writable()) { return -1; }
 
@@ -3771,7 +3777,7 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   }
   return send(sock_, ptr, static_cast<int>(size), 0);
 #else
-  return handle_EINTR([&]() { return send(sock_, ptr, size, MSG_NOSIGNAL); });
+  return handle_EINTR([&]() { return send(sock_, ptr, size, HTTPLIB_MSG_NOSIGNAL); });
 #endif
 }
 
