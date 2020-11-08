@@ -3482,11 +3482,12 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
 
       bool stop_;
     private:
-      bool process_and_close_socket(socket_t sock) override {
+      bool process_and_close_socket(socket_t /*sock*/) override {
         // Don't create SSL context
         while (!stop_) {
            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+        return true;
       }
   };
   NoListenSSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
