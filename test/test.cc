@@ -841,7 +841,7 @@ TEST(UrlWithSpace, Redirect) {
 }
 #endif
 
-TEST(Server, BindDualStack) {
+TEST(BindServerTest, BindDualStack) {
   Server svr;
 
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
@@ -874,7 +874,7 @@ TEST(Server, BindDualStack) {
   ASSERT_FALSE(svr.is_running());
 }
 
-TEST(Server, BindAndListenSeparately) {
+TEST(BindServerTest, BindAndListenSeparately) {
   Server svr;
   int port = svr.bind_to_any_port("0.0.0.0");
   ASSERT_TRUE(svr.is_valid());
@@ -883,7 +883,7 @@ TEST(Server, BindAndListenSeparately) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(SSLServer, BindAndListenSeparately) {
+TEST(BindServerTest, BindAndListenSeparatelySSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   int port = svr.bind_to_any_port("0.0.0.0");
@@ -892,6 +892,41 @@ TEST(SSLServer, BindAndListenSeparately) {
   svr.stop();
 }
 #endif
+
+TEST(ErrorHandlerTest, ContentLength) {
+  Server svr;
+
+  svr.set_error_handler([](const Request & /*req*/, Response &res) {
+    res.status = 200;
+    res.set_content("abcdefghijklmnopqrstuvwxyz",
+                    "text/html"); // <= Content-Length still 13
+  });
+
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!\n", "text/plain");
+    res.status = 524;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+    EXPECT_EQ("26", res->get_header_value("Content-Length"));
+    EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
 
 class ServerTest : public ::testing::Test {
 protected:
@@ -3473,24 +3508,27 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
 TEST(SSLClientServerTest, SSLConnectTimeout) {
   class NoListenSSLServer : public SSLServer {
-    public:
-      NoListenSSLServer(const char *cert_path, const char *private_key_path, const char *client_ca_cert_file_path,
-                        const char *client_ca_cert_dir_path = nullptr)
-        : SSLServer(cert_path, private_key_path, client_ca_cert_file_path, client_ca_cert_dir_path)
-        , stop_(false)
-      {}
+  public:
+    NoListenSSLServer(const char *cert_path, const char *private_key_path,
+                      const char *client_ca_cert_file_path,
+                      const char *client_ca_cert_dir_path = nullptr)
+        : SSLServer(cert_path, private_key_path, client_ca_cert_file_path,
+                    client_ca_cert_dir_path),
+          stop_(false) {}
 
-      bool stop_;
-    private:
-      bool process_and_close_socket(socket_t /*sock*/) override {
-        // Don't create SSL context
-        while (!stop_) {
-           std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        return true;
+    bool stop_;
+
+  private:
+    bool process_and_close_socket(socket_t /*sock*/) override {
+      // Don't create SSL context
+      while (!stop_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
+      return true;
+    }
   };
-  NoListenSSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  NoListenSSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
+                        CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &, Response &res) {

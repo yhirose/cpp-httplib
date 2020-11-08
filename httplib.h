@@ -692,7 +692,7 @@ private:
                                    const Request &req, Response &res);
   bool write_response_core(Stream &strm, bool close_connection,
                            const Request &req, Response &res,
-                           std::string &content_type, std::string &boundary);
+                           bool need_apply_ranges);
   bool write_content_with_provider(Stream &strm, const Request &req,
                                    Response &res, const std::string &boundary,
                                    const std::string &content_type);
@@ -3769,7 +3769,8 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
   }
   return recv(sock_, ptr, static_cast<int>(size), CPPHTTPLIB_RECV_FLAGS);
 #else
-  return handle_EINTR([&]() { return recv(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS); });
+  return handle_EINTR(
+      [&]() { return recv(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS); });
 #endif
 }
 
@@ -3782,7 +3783,8 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   }
   return send(sock_, ptr, static_cast<int>(size), CPPHTTPLIB_SEND_FLAGS);
 #else
-  return handle_EINTR([&]() { return send(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS); });
+  return handle_EINTR(
+      [&]() { return send(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS); });
 #endif
 }
 
@@ -4022,31 +4024,26 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
 
 inline bool Server::write_response(Stream &strm, bool close_connection,
                                    const Request &req, Response &res) {
-  std::string content_type;
-  std::string boundary;
-  return write_response_core(strm, close_connection, req, res, content_type,
-                             boundary);
+  return write_response_core(strm, close_connection, req, res, false);
 }
 
 inline bool Server::write_response_with_content(Stream &strm,
                                                 bool close_connection,
                                                 const Request &req,
                                                 Response &res) {
-  std::string content_type;
-  std::string boundary;
-  apply_ranges(req, res, content_type, boundary);
-
-  return write_response_core(strm, close_connection, req, res, content_type,
-                             boundary);
+  return write_response_core(strm, close_connection, req, res, true);
 }
 
 inline bool Server::write_response_core(Stream &strm, bool close_connection,
                                         const Request &req, Response &res,
-                                        std::string &content_type,
-                                        std::string &boundary) {
+                                        bool need_apply_ranges) {
   assert(res.status != -1);
 
   if (400 <= res.status && error_handler_) { error_handler_(req, res); }
+
+  std::string content_type;
+  std::string boundary;
+  if (need_apply_ranges) { apply_ranges(req, res, content_type, boundary); }
 
   // Headers
   if (close_connection || req.get_header_value("Connection") == "close") {
