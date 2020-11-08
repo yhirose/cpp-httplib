@@ -87,6 +87,14 @@
                       : 0))
 #endif
 
+#ifndef CPPHTTPLIB_RECV_FLAGS
+#define CPPHTTPLIB_RECV_FLAGS 0
+#endif
+
+#ifndef CPPHTTPLIB_SEND_FLAGS
+#define CPPHTTPLIB_SEND_FLAGS 0
+#endif
+
 /*
  * Headers
  */
@@ -3759,9 +3767,9 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
   if (size > static_cast<size_t>((std::numeric_limits<int>::max)())) {
     return -1;
   }
-  return recv(sock_, ptr, static_cast<int>(size), 0);
+  return recv(sock_, ptr, static_cast<int>(size), CPPHTTPLIB_RECV_FLAGS);
 #else
-  return handle_EINTR([&]() { return recv(sock_, ptr, size, 0); });
+  return handle_EINTR([&]() { return recv(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS); });
 #endif
 }
 
@@ -3772,9 +3780,9 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (size > static_cast<size_t>((std::numeric_limits<int>::max)())) {
     return -1;
   }
-  return send(sock_, ptr, static_cast<int>(size), 0);
+  return send(sock_, ptr, static_cast<int>(size), CPPHTTPLIB_SEND_FLAGS);
 #else
-  return handle_EINTR([&]() { return send(sock_, ptr, size, 0); });
+  return handle_EINTR([&]() { return send(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS); });
 #endif
 }
 
