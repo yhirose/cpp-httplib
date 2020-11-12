@@ -55,10 +55,9 @@
 
 	-------------------------------------------------------------------------------
 
-	FindPython3 requires Cmake v3.12
 	ARCH_INDEPENDENT option of write_basic_package_version_file() requires Cmake v3.14
 ]]
-cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.13.0 FATAL_ERROR)
 
 # On systems without Git installed, there were errors since execute_process seemed to not throw an error without it?
 find_package(Git QUIET)
@@ -99,7 +98,7 @@ option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build.
 option(HTTPLIB_USE_OPENSSL_IF_AVAILABLE "Uses OpenSSL (if available) to enable HTTPS support." ON)
 option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib compression support." ON)
 # Lets you compile the program as a regular library instead of header-only
-option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
+option(HTTPLIB_COMPILE "If ON, uses a go script to split the header into a compilable header & source file." OFF)
 # Just setting this variable here for people building in-tree
 if(HTTPLIB_COMPILE)
 	set(HTTPLIB_IS_COMPILED TRUE)
@@ -160,23 +159,21 @@ if(HTTPLIB_COMPILE)
 	configure_file(split.py "${CMAKE_CURRENT_BINARY_DIR}/split.py"
 		COPYONLY
 	)
-	# Needs to be in the same dir as the python script
+	# Needs to be in the same dir as the go script
 	configure_file(httplib.h "${CMAKE_CURRENT_BINARY_DIR}/httplib.h"
 		COPYONLY
 	)
 
 	# Used outside of this if-else
 	set(_INTERFACE_OR_PUBLIC PUBLIC)
-	# Brings in the Python3_EXECUTABLE path we can use.
-	find_package(Python3 REQUIRED)
 	# Actually split the file
 	# Keeps the output in the build dir to not pollute the main dir
-	execute_process(COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/split.py"
+	execute_process(COMMAND "${CMAKE_CURRENT_BINARY_DIR}/split"
 		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 		ERROR_VARIABLE _httplib_split_error
 	)
 	if(_httplib_split_error)
-		message(FATAL_ERROR "Failed when trying to split Cpp-httplib with the Python script.\n${_httplib_split_error}")
+		message(FATAL_ERROR "Failed when trying to split Cpp-httplib with the go script.\n${_httplib_split_error}")
 	endif()
 
 	# split.py puts output in "out"
@@ -276,7 +273,7 @@ else()
 		COMPATIBILITY SameMajorVersion
 		# Tells Cmake that it's a header-only lib
 		# Mildly useful for end-users :)
-		ARCH_INDEPENDENT
+		#ARCH_INDEPENDENT
 	)
 endif()
 
