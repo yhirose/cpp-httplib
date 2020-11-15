@@ -480,6 +480,7 @@ public:
   virtual ssize_t read(char *ptr, size_t size) = 0;
   virtual ssize_t write(const char *ptr, size_t size) = 0;
   virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
+  virtual socket_t socket() const = 0;
 
   template <typename... Args>
   ssize_t write_format(const char *fmt, const Args &... args);
@@ -1627,6 +1628,10 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
+#ifndef _WIN32
+  if (sock >= FD_SETSIZE) { return 1; }
+#endif
+
   fd_set fds;
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
@@ -1651,6 +1656,10 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
+#ifndef _WIN32
+  if (sock >= FD_SETSIZE) { return 1; }
+#endif
+
   fd_set fds;
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
@@ -1684,6 +1693,10 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
   }
   return false;
 #else
+#ifndef _WIN32
+  if (sock >= FD_SETSIZE) { return false; }
+#endif
+
   fd_set fdsr;
   FD_ZERO(&fdsr);
   FD_SET(sock, &fdsr);
@@ -1721,6 +1734,7 @@ public:
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  socket_t socket() const override;
 
 private:
   socket_t sock_;
@@ -1743,6 +1757,7 @@ public:
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  socket_t socket() const override;
 
 private:
   socket_t sock_;
@@ -1764,6 +1779,7 @@ public:
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  socket_t socket() const override;
 
   const std::string &get_buffer() const;
 
@@ -2980,7 +2996,7 @@ public:
   bool is_valid() const { return is_valid_; }
 
   bool parse(const char *buf, size_t n, const ContentReceiver &content_callback,
-	  const MultipartContentHeader &header_callback) {
+             const MultipartContentHeader &header_callback) {
 
     static const std::regex re_content_disposition(
         "^Content-Disposition:\\s*form-data;\\s*name=\"(.*?)\"(?:;\\s*filename="
@@ -3792,6 +3808,8 @@ inline void SocketStream::get_remote_ip_and_port(std::string &ip,
   return detail::get_remote_ip_and_port(sock_, ip, port);
 }
 
+inline socket_t SocketStream::socket() const { return sock_; }
+
 // Buffer stream implementation
 inline bool BufferStream::is_readable() const { return true; }
 
@@ -3814,6 +3832,8 @@ inline ssize_t BufferStream::write(const char *ptr, size_t size) {
 
 inline void BufferStream::get_remote_ip_and_port(std::string & /*ip*/,
                                                  int & /*port*/) const {}
+
+inline socket_t BufferStream::socket() const { return 0; }
 
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
@@ -4613,6 +4633,20 @@ Server::process_request(Stream &strm, bool close_connection,
   Response res;
 
   res.version = "HTTP/1.1";
+
+#ifdef _WIN32
+  // TODO: Increase FD_SETSIZE statically (libzmq), dynamically (MySQL).
+#else
+#ifndef CPPHTTPLIB_USE_POLL
+  // Socket file descriptor exceeded FD_SETSIZE...
+  if (strm.socket() >= FD_SETSIZE) {
+    Headers dummy;
+    detail::read_headers(strm, dummy);
+    res.status = 500;
+    return write_response(strm, close_connection, req, res);
+  }
+#endif
+#endif
 
   // Check if the request URI doesn't exceed the limit
   if (line_reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
@@ -5863,6 +5897,8 @@ inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
                                                     int &port) const {
   detail::get_remote_ip_and_port(sock_, ip, port);
 }
+
+inline socket_t SSLSocketStream::socket() const { return sock_; }
 
 static SSLInit sslinit_;
 
