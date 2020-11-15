@@ -35,6 +35,8 @@ class FuzzedStream : public httplib::Stream {
     port = 8080;
   }
 
+  socket_t socket() const override { return 0; }
+
  private:
   const uint8_t* data_;
   size_t size_;
