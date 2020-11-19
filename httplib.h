@@ -4581,7 +4581,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       } else if (type == detail::EncodingType::Brotli) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
         compressor = detail::make_unique<detail::brotli_compressor>();
-        content_encoding = "brotli";
+        content_encoding = "br";
 #endif
       }
 
