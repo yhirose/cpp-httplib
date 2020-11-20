@@ -2334,7 +2334,7 @@ TEST(GzipDecompressor, ChunkedDecompression) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST_F(ServerTest, GetStreamedChunkedWithBrotli) {
   Headers headers;
-  headers.emplace("Accept-Encoding", "brotli");
+  headers.emplace("Accept-Encoding", "br");
 
   auto res = cli_.Get("/streamed-chunked", headers);
   ASSERT_TRUE(res);
@@ -2344,7 +2344,7 @@ TEST_F(ServerTest, GetStreamedChunkedWithBrotli) {
 
 TEST_F(ServerTest, GetStreamedChunkedWithBrotli2) {
   Headers headers;
-  headers.emplace("Accept-Encoding", "brotli");
+  headers.emplace("Accept-Encoding", "br");
 
   auto res = cli_.Get("/streamed-chunked2", headers);
   ASSERT_TRUE(res);
@@ -2693,7 +2693,7 @@ TEST_F(ServerTest, Brotli) {
   auto res = cli_.Get("/compress", headers);
 
   ASSERT_TRUE(res);
-  EXPECT_EQ("brotli", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("br", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("19", res->get_header_value("Content-Length"));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
@@ -3628,7 +3628,7 @@ TEST(YahooRedirectTest3, NewResultInterface) {
 TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
   Client cli("https://cdnjs.cloudflare.com");
   auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
-                     {{"Accept-Encoding", "brotli"}});
+                     {{"Accept-Encoding", "br"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
