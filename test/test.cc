@@ -2217,6 +2217,31 @@ TEST_F(ServerTest, PostWithContentProviderAbort) {
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
+TEST_F(ServerTest, PutWithContentProviderWithoutLength) {
+  auto res = cli_.Put(
+      "/put",
+      [](size_t /*offset*/, DataSink &sink) {
+        EXPECT_TRUE(sink.is_writable());
+        sink.os << "PUT";
+        sink.done();
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, PostWithContentProviderWithoutLengthAbort) {
+  auto res = cli_.Post(
+      "/post", [](size_t /*offset*/, DataSink & /*sink*/) { return false; },
+      "text/plain");
+
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   cli_.set_compress(true);
@@ -2241,6 +2266,33 @@ TEST_F(ServerTest, PostWithContentProviderWithGzipAbort) {
       [](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) {
         return false;
       },
+      "text/plain");
+
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST_F(ServerTest, PutWithContentProviderWithoutLengthWithGzip) {
+  cli_.set_compress(true);
+  auto res = cli_.Put(
+      "/put",
+      [](size_t /*offset*/, DataSink &sink) {
+        EXPECT_TRUE(sink.is_writable());
+        sink.os << "PUT";
+        sink.done();
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, PostWithContentProviderWithoutLengthWithGzipAbort) {
+  cli_.set_compress(true);
+  auto res = cli_.Post(
+      "/post", [](size_t /*offset*/, DataSink & /*sink*/) { return false; },
       "text/plain");
 
   ASSERT_TRUE(!res);
@@ -3627,8 +3679,8 @@ TEST(YahooRedirectTest3, NewResultInterface) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
   Client cli("https://cdnjs.cloudflare.com");
-  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
-                     {{"Accept-Encoding", "br"}});
+  auto res =
+      cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "br"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
