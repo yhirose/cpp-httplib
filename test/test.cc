@@ -778,6 +778,7 @@ TEST(YahooRedirectTest, Redirect) {
   res = cli.Get("/");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
+  EXPECT_EQ("https://yahoo.com/", res->location);
 }
 
 #if 0
@@ -1434,6 +1435,7 @@ TEST_F(ServerTest, GetMethod302Redirect) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("Hello World!", res->body);
+  EXPECT_EQ("/hi", res->location);
 }
 
 TEST_F(ServerTest, GetMethod404) {
@@ -1662,6 +1664,7 @@ TEST_F(ServerTest, PostMethod303Redirect) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("redirected.", res->body);
+  EXPECT_EQ("/2", res->location);
 }
 
 TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
@@ -3638,6 +3641,7 @@ TEST(YahooRedirectTest2, SimpleInterface) {
   res = cli.Get("/");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
+  EXPECT_EQ("https://yahoo.com/", res->location);
 }
 
 TEST(YahooRedirectTest3, SimpleInterface) {
@@ -3651,6 +3655,7 @@ TEST(YahooRedirectTest3, SimpleInterface) {
   res = cli.Get("/");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
+  EXPECT_EQ("https://www.yahoo.com/", res->location);
 }
 
 TEST(YahooRedirectTest3, NewResultInterface) {
@@ -3674,6 +3679,7 @@ TEST(YahooRedirectTest3, NewResultInterface) {
   EXPECT_EQ(200, res.value().status);
   EXPECT_EQ(200, (*res).status);
   EXPECT_EQ(200, res->status);
+  EXPECT_EQ("https://www.yahoo.com/", res->location);
 }
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT

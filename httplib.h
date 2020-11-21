@@ -428,6 +428,7 @@ struct Response {
   std::string reason;
   Headers headers;
   std::string body;
+  std::string location; // Redirect location
 
   bool has_header(const char *key) const;
   std::string get_header_value(const char *key, size_t id = 0) const;
@@ -2954,7 +2955,8 @@ inline bool write_content_chunked(Stream &strm,
 
 template <typename T>
 inline bool redirect(T &cli, const Request &req, Response &res,
-                     const std::string &path) {
+                     const std::string &path,
+                     const std::string &location) {
   Request new_req = req;
   new_req.path = path;
   new_req.redirect_count_ -= 1;
@@ -2968,7 +2970,10 @@ inline bool redirect(T &cli, const Request &req, Response &res,
   Response new_res;
 
   auto ret = cli.send(new_req, new_res);
-  if (ret) { res = new_res; }
+  if (ret) {
+    new_res.location = location;
+    res = new_res;
+  }
   return ret;
 }
 
@@ -5027,13 +5032,13 @@ inline bool ClientImpl::redirect(const Request &req, Response &res) {
   if (next_path.empty()) { next_path = "/"; }
 
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
-    return detail::redirect(*this, req, res, next_path);
+    return detail::redirect(*this, req, res, next_path, location);
   } else {
     if (next_scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       SSLClient cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
-      auto ret = detail::redirect(cli, req, res, next_path);
+      auto ret = detail::redirect(cli, req, res, next_path, location);
       if (!ret) { error_ = cli.get_last_error(); }
       return ret;
 #else
@@ -5042,7 +5047,7 @@ inline bool ClientImpl::redirect(const Request &req, Response &res) {
     } else {
       ClientImpl cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
-      auto ret = detail::redirect(cli, req, res, next_path);
+      auto ret = detail::redirect(cli, req, res, next_path, location);
       if (!ret) { error_ = cli.get_last_error(); }
       return ret;
     }
