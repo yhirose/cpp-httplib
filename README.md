@@ -502,10 +502,25 @@ auto res = cli.Get(
 ```cpp
 std::string body = ...;
 
-auto res = cli_.Post(
+auto res = cli.Post(
   "/stream", body.size(),
   [](size_t offset, size_t length, DataSink &sink) {
     sink.write(body.data() + offset, length);
+    return true; // return 'false' if you want to cancel the request.
+  },
+  "text/plain");
+```
+
+### Chunked transfer encoding
+
+```cpp
+auto res = cli.Post(
+  "/stream",
+  [](size_t offset, DataSink &sink) {
+    sink.os << "chunked data 1";
+    sink.os << "chunked data 2";
+    sink.os << "chunked data 3";
+    sink.done();
     return true; // return 'false' if you want to cancel the request.
   },
   "text/plain");
