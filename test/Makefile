@@ -1,5 +1,5 @@
 #CXX = clang++
-CXXFLAGS = -ggdb -O0 -std=c++11 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I. -Wall -Wextra -Wtype-limits -Wconversion #-fsanitize=address
+CXXFLAGS = -g -std=c++11 -DGTEST_USE_OWN_TR1_TUPLE -I.. -I. -Wall -Wextra -Wtype-limits -Wconversion #-fsanitize=address
 
 OPENSSL_DIR = /usr/local/opt/openssl@1.1
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
@@ -24,6 +24,7 @@ test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 cert.pem:
 	openssl genrsa 2048 > key.pem
 	openssl req -new -batch -config test.conf -key key.pem | openssl x509 -days 3650 -req -signkey key.pem > cert.pem
+	openssl req -x509 -config test.conf -key key.pem -sha256 -days 3650 -nodes -out cert2.pem -extensions SAN
 	openssl genrsa 2048 > rootCA.key.pem
 	openssl req -x509 -new -batch -config test.rootCA.conf -key rootCA.key.pem -days 1024 > rootCA.cert.pem
 	openssl genrsa 2048 > client.key.pem
