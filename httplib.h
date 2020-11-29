@@ -1038,7 +1038,6 @@ private:
       ContentProviderWithoutLength content_provider_without_length,
       const char *content_type);
 
-  // socket is const because this function is called when socket_mutex_ is not locked
   virtual bool process_socket(const Socket &socket,
                               std::function<bool(Stream &strm)> callback);
   virtual bool is_ssl() const;
@@ -2065,7 +2064,8 @@ inline socket_t create_client_socket(const char *host, int port,
                                      bool tcp_nodelay,
                                      SocketOptions socket_options,
                                      time_t timeout_sec, time_t timeout_usec,
-                                     const std::string &intf, std::atomic<Error> &error) {
+                                     const std::string &intf,
+                                     std::atomic<Error> &error) {
   auto sock = create_socket(
       host, port, 0, tcp_nodelay, std::move(socket_options),
       [&](socket_t sock, struct addrinfo &ai) -> bool {
@@ -2812,7 +2812,7 @@ inline bool write_data(Stream &strm, const char *d, size_t l) {
 template <typename T>
 inline bool write_content(Stream &strm, const ContentProvider &content_provider,
                           size_t offset, size_t length, T is_shutting_down,
-                          Error &error) {
+                          std::atomic<Error> &error) {
   size_t end_offset = offset + length;
   auto ok = true;
   DataSink data_sink;
@@ -2848,7 +2848,7 @@ template <typename T>
 inline bool write_content(Stream &strm, const ContentProvider &content_provider,
                           size_t offset, size_t length,
                           const T &is_shutting_down) {
-  Error error;
+  std::atomic<Error> error;
   return write_content(strm, content_provider, offset, length, is_shutting_down,
                        error);
 }
@@ -2882,9 +2882,10 @@ write_content_without_length(Stream &strm,
 }
 
 template <typename T, typename U>
-inline bool
-write_content_chunked(Stream &strm, const ContentProvider &content_provider,
-                      const T &is_shutting_down, U &compressor, Error &error) {
+inline bool write_content_chunked(Stream &strm,
+                                  const ContentProvider &content_provider,
+                                  const T &is_shutting_down, U &compressor,
+                                  std::atomic<Error> &error) {
   size_t offset = 0;
   auto data_available = true;
   auto ok = true;
@@ -2967,15 +2968,14 @@ template <typename T, typename U>
 inline bool write_content_chunked(Stream &strm,
                                   const ContentProvider &content_provider,
                                   const T &is_shutting_down, U &compressor) {
-  Error error;
+  std::atomic<Error> error;
   return write_content_chunked(strm, content_provider, is_shutting_down,
                                compressor, error);
 }
 
 template <typename T>
 inline bool redirect(T &cli, const Request &req, Response &res,
-                     const std::string &path,
-                     const std::string &location) {
+                     const std::string &path, const std::string &location) {
   Request new_req = req;
   new_req.path = path;
   new_req.redirect_count_ -= 1;
@@ -4877,21 +4877,19 @@ inline bool ClientImpl::create_and_connect_socket(Socket &socket) {
   return true;
 }
 
-inline void ClientImpl::shutdown_ssl(Socket &socket, bool shutdown_gracefully) {
-  (void)socket;
-  (void)shutdown_gracefully;
-  //If there are any requests in flight from threads other than us, then it's
-  //a thread-unsafe race because individual ssl* objects are not thread-safe. 
+inline void ClientImpl::shutdown_ssl(Socket & /*socket*/,
+                                     bool /*shutdown_gracefully*/) {
+  // If there are any requests in flight from threads other than us, then it's
+  // a thread-unsafe race because individual ssl* objects are not thread-safe.
   assert(socket_requests_in_flight_ == 0 ||
          socket_requests_are_from_thread_ == std::this_thread::get_id());
 }
 
 inline void ClientImpl::shutdown_socket(Socket &socket) {
-  if (socket.sock == INVALID_SOCKET)
-    return;  
+  if (socket.sock == INVALID_SOCKET) { return; }
   detail::shutdown_socket(socket.sock);
 }
- 
+
 inline void ClientImpl::close_socket(Socket &socket) {
   // If there are requests in flight in another thread, usually closing
   // the socket will be fine and they will simply receive an error when
@@ -4905,8 +4903,7 @@ inline void ClientImpl::close_socket(Socket &socket) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   assert(socket.ssl == nullptr);
 #endif
-  if (socket.sock == INVALID_SOCKET)
-    return;
+  if (socket.sock == INVALID_SOCKET) { return; }
   detail::close_socket(socket.sock);
   socket.sock = INVALID_SOCKET;
 }
@@ -4917,7 +4914,7 @@ inline void ClientImpl::lock_socket_and_shutdown_and_close() {
   shutdown_socket(socket_);
   close_socket(socket_);
 }
- 
+
 inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
   std::array<char, 2048> buf;
 
@@ -4952,17 +4949,17 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
 
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    // Set this to false immediately - if it ever gets set to true by the end of the
-    // request, we know another thread instructed us to close the socket.
+    // Set this to false immediately - if it ever gets set to true by the end of
+    // the request, we know another thread instructed us to close the socket.
     socket_should_be_closed_when_request_is_done_ = false;
 
     auto is_alive = false;
     if (socket_.is_open()) {
       is_alive = detail::select_write(socket_.sock, 0, 0) > 0;
       if (!is_alive) {
-        // Attempt to avoid sigpipe by shutting down nongracefully if it seems like
-        // the other side has already closed the connection
-        // Also, there cannot be any requests in flight from other threads since we locked
+        // Attempt to avoid sigpipe by shutting down nongracefully if it seems
+        // like the other side has already closed the connection Also, there
+        // cannot be any requests in flight from other threads since we locked
         // request_mutex_, so safe to close everything immediately
         const bool shutdown_gracefully = false;
         shutdown_ssl(socket_, shutdown_gracefully);
@@ -4990,8 +4987,9 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
 #endif
     }
 
-    // Mark the current socket as being in use so that it cannot be closed by anyone
-    // else while this request is ongoing, even though we will be releasing the mutex.
+    // Mark the current socket as being in use so that it cannot be closed by
+    // anyone else while this request is ongoing, even though we will be
+    // releasing the mutex.
     if (socket_requests_in_flight_ > 1) {
       assert(socket_requests_are_from_thread_ == std::this_thread::get_id());
     }
@@ -5004,7 +5002,7 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
     return handle_request(strm, req, res, close_connection);
   });
 
-  //Briefly lock mutex in order to mark that a request is no longer ongoing
+  // Briefly lock mutex in order to mark that a request is no longer ongoing
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
     socket_requests_in_flight_ -= 1;
@@ -5013,9 +5011,8 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
       socket_requests_are_from_thread_ = std::thread::id();
     }
 
-    if (socket_should_be_closed_when_request_is_done_ ||
-        close_connection ||
-        !ret ) {
+    if (socket_should_be_closed_when_request_is_done_ || close_connection ||
+        !ret) {
       shutdown_ssl(socket_, true);
       shutdown_socket(socket_);
       close_socket(socket_);
@@ -5410,11 +5407,12 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
     // for this to be safe. Maybe a code refactor (such as moving this out to
     // the send function and getting rid of the recursiveness of the mutex)
     // could make this more obvious.
-    
-    // This is safe to call because process_request is only called by handle_request
-    // which is only called by send, which locks the request mutex during the process.
-    // It would be a bug to call it from a different thread since it's a thread-safety
-    // issue to do these things to the socket if another thread is using the socket.
+
+    // This is safe to call because process_request is only called by
+    // handle_request which is only called by send, which locks the request
+    // mutex during the process. It would be a bug to call it from a different
+    // thread since it's a thread-safety issue to do these things to the socket
+    // if another thread is using the socket.
     lock_socket_and_shutdown_and_close();
   }
 
@@ -5802,23 +5800,25 @@ inline size_t ClientImpl::is_socket_open() const {
 
 inline void ClientImpl::stop() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
-  // There is no guarantee that this doesn't get overwritten later, but set it so that
-  // there is a good chance that any threads stopping as a result pick up this error.
+  // There is no guarantee that this doesn't get overwritten later, but set it
+  // so that there is a good chance that any threads stopping as a result pick
+  // up this error.
   error_ = Error::Canceled;
-  
-  // If there is anything ongoing right now, the ONLY thread-safe thing we can do
-  // is to shutdown_socket, so that threads using this socket suddenly discover
-  // they can't read/write any more and error out.
-  // Everything else (closing the socket, shutting ssl down) is unsafe because these
-  // actions are not thread-safe.
+
+  // If there is anything ongoing right now, the ONLY thread-safe thing we can
+  // do is to shutdown_socket, so that threads using this socket suddenly
+  // discover they can't read/write any more and error out. Everything else
+  // (closing the socket, shutting ssl down) is unsafe because these actions are
+  // not thread-safe.
   if (socket_requests_in_flight_ > 0) {
     shutdown_socket(socket_);
-    // Aside from that, we set a flag for the socket to be closed when we're done.
+    // Aside from that, we set a flag for the socket to be closed when we're
+    // done.
     socket_should_be_closed_when_request_is_done_ = true;
     return;
   }
 
-  //Otherwise, sitll holding the mutex, we can shut everything down ourselves
+  // Otherwise, sitll holding the mutex, we can shut everything down ourselves
   shutdown_ssl(socket_, true);
   shutdown_socket(socket_);
   close_socket(socket_);
@@ -5951,10 +5951,9 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl,
                        bool shutdown_gracefully) {
   // sometimes we may want to skip this to try to avoid SIGPIPE if we know
   // the remote has closed the network connection
-  // Note that it is not always possible to avoid SIGPIPE, this is merely a best-efforts.
-  if (shutdown_gracefully) {
-    SSL_shutdown(ssl); 
-  }
+  // Note that it is not always possible to avoid SIGPIPE, this is merely a
+  // best-efforts.
+  if (shutdown_gracefully) { SSL_shutdown(ssl); }
 
   std::lock_guard<std::mutex> guard(ctx_mutex);
   SSL_free(ssl);
@@ -6215,8 +6214,8 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
                                  [&](Request &req) { req.ssl = ssl; });
         });
 
-    // Shutdown gracefully if the result seemed successful, non-gracefully if the
-    // connection appeared to be closed.
+    // Shutdown gracefully if the result seemed successful, non-gracefully if
+    // the connection appeared to be closed.
     const bool shutdown_gracefully = ret;
     detail::ssl_delete(ctx_mutex_, ssl, shutdown_gracefully);
     return ret;
@@ -6325,7 +6324,8 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
             req2.path = host_and_port_;
             return process_request(strm, req2, res2, false);
           })) {
-    // Thread-safe to close everything because we are assuming there are no requests in flight
+    // Thread-safe to close everything because we are assuming there are no
+    // requests in flight
     shutdown_ssl(socket, true);
     shutdown_socket(socket);
     close_socket(socket);
@@ -6351,7 +6351,8 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
                       true));
                   return process_request(strm, req3, res3, false);
                 })) {
-          // Thread-safe to close everything because we are assuming there are no requests in flight
+          // Thread-safe to close everything because we are assuming there are
+          // no requests in flight
           shutdown_ssl(socket, true);
           shutdown_socket(socket);
           close_socket(socket);
