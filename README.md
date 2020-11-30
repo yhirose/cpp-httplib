@@ -275,6 +275,7 @@ svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
 
 ```cpp
 svr.set_keep_alive_max_count(2); // Default is 5
+svr.set_keep_alive_timeout(10);  // Default is 5
 ```
 
 ### Timeout
