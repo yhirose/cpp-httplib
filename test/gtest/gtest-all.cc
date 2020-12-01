@@ -42,8 +42,9 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #elif __GNUC__
-#pragma gcc diagnostic push
-#pragma gcc diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
 #endif
 
 // The following lines pull in the real gtest *.cc files.
@@ -9127,5 +9128,5 @@ const char* TypedTestCasePState::VerifyRegisteredTestNames(
 #if __clang__
 #pragma clang diagnostic pop
 #elif __GNUC__
-#pragma gcc diagnostic pop
+#pragma GCC diagnostic pop
 #endif

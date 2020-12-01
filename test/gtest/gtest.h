@@ -63,8 +63,9 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-compare"
 #elif __GNUC__
-#pragma gcc diagnostic push
-#pragma gcc diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic ignored "-Wconversion"
 #endif
 
 // Copyright 2005, Google Inc.
@@ -18353,8 +18354,8 @@ AssertionResult CmpHelperEQ(const char* expected_expression,
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-compare"
 #elif __GNUC__
-#pragma gcc diagnostic push
-#pragma gcc diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
   if (expected == actual) {
@@ -18366,7 +18367,7 @@ AssertionResult CmpHelperEQ(const char* expected_expression,
 #elif __clang__
 #pragma clang diagnostic pop
 #elif __GNUC__
-#pragma gcc diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 
   return EqFailure(expected_expression,
@@ -19564,7 +19565,7 @@ bool StaticAssertTypeEq() {
 #if __clang__
 #pragma clang diagnostic pop
 #elif __GNUC__
-#pragma gcc diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 
 #endif  // GTEST_INCLUDE_GTEST_GTEST_H_
