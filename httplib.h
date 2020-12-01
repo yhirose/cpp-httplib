@@ -1340,14 +1340,6 @@ inline std::string from_i_to_hex(size_t n) {
   return ret;
 }
 
-inline bool start_with(const std::string &a, const std::string &b) {
-  if (a.size() < b.size()) { return false; }
-  for (size_t i = 0; i < b.size(); i++) {
-    if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
-  }
-  return true;
-}
-
 inline size_t to_utf8(int code, char *buff) {
   if (code < 0x0080) {
     buff[0] = (code & 0x7F);
@@ -3126,7 +3118,7 @@ public:
 
           static const std::string header_name = "content-type:";
           const auto header = buf_.substr(0, pos);
-          if (start_with(header, header_name)) {
+          if (start_with_case_ignore(header, header_name)) {
             file_.content_type = trim_copy(header.substr(header_name.size()));
           } else {
             std::smatch m;
@@ -3148,15 +3140,7 @@ public:
           auto pattern = crlf_ + dash_;
           if (pattern.size() > buf_.size()) { return true; }
 
-          auto pos = buf_.find(pattern);
-          if (pos == std::string::npos) {
-            pos = buf_.size();
-            while (pos > 0) {
-              auto c = buf_[pos - 1];
-              if (c != '\r' && c != '\n' && c != '-') { break; }
-              pos--;
-            }
-          }
+          auto pos = find_string(buf_, pattern);
 
           if (!content_callback(buf_.data(), pos)) {
             is_valid_ = false;
@@ -3166,7 +3150,6 @@ public:
           off_ += pos;
           buf_.erase(0, pos);
         }
-
         {
           auto pattern = crlf_ + dash_ + boundary_;
           if (pattern.size() > buf_.size()) { return true; }
@@ -3228,6 +3211,43 @@ private:
     file_.name.clear();
     file_.filename.clear();
     file_.content_type.clear();
+  }
+
+  bool start_with_case_ignore(const std::string &a,
+                              const std::string &b) const {
+    if (a.size() < b.size()) { return false; }
+    for (size_t i = 0; i < b.size(); i++) {
+      if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
+    }
+    return true;
+  }
+
+  bool start_with(const std::string &a, size_t off,
+                  const std::string &b) const {
+    if (a.size() - off < b.size()) { return false; }
+    for (size_t i = 0; i < b.size(); i++) {
+      if (a[i + off] != b[i]) { return false; }
+    }
+    return true;
+  }
+
+  size_t find_string(const std::string &s, const std::string &pattern) const {
+    auto c = pattern.front();
+
+    size_t off = 0;
+    while (off < s.size()) {
+      auto pos = s.find(c, off);
+      if (pos == std::string::npos) { return s.size(); }
+
+      auto rem = s.size() - pos;
+      if (pattern.size() > rem) { return pos; }
+
+      if (start_with(s, pos, pattern)) { return pos; }
+
+      off = pos + 1;
+    }
+
+    return s.size();
   }
 
   std::string boundary_;

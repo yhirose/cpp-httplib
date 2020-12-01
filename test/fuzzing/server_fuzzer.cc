@@ -1,28 +1,26 @@
-#include <memory>
 #include <httplib.h>
+#include <memory>
 
 class FuzzedStream : public httplib::Stream {
- public:
-  FuzzedStream(const uint8_t* data, size_t size)
+public:
+  FuzzedStream(const uint8_t *data, size_t size)
       : data_(data), size_(size), read_pos_(0) {}
 
-  ssize_t read(char* ptr, size_t size) override {
-    if (size + read_pos_ > size_) {
-      size = size_ - read_pos_;
-    }
+  ssize_t read(char *ptr, size_t size) override {
+    if (size + read_pos_ > size_) { size = size_ - read_pos_; }
     memcpy(ptr, data_ + read_pos_, size);
     read_pos_ += size;
-    return size;
+    return static_cast<ssize_t>(size);
   }
 
-  ssize_t write(const char* ptr, size_t size) override {
+  ssize_t write(const char *ptr, size_t size) override {
     response_.append(ptr, size);
     return static_cast<int>(size);
   }
 
-  int write(const char* ptr) { return write(ptr, strlen(ptr)); }
+  ssize_t write(const char *ptr) { return write(ptr, strlen(ptr)); }
 
-  int write(const std::string& s) { return write(s.data(), s.size()); }
+  ssize_t write(const std::string &s) { return write(s.data(), s.size()); }
 
   std::string get_remote_addr() const { return ""; }
 
@@ -37,16 +35,16 @@ class FuzzedStream : public httplib::Stream {
 
   socket_t socket() const override { return 0; }
 
- private:
-  const uint8_t* data_;
+private:
+  const uint8_t *data_;
   size_t size_;
   size_t read_pos_;
   std::string response_;
 };
 
 class FuzzableServer : public httplib::Server {
- public:
-  void ProcessFuzzedRequest(FuzzedStream& stream) {
+public:
+  void ProcessFuzzedRequest(FuzzedStream &stream) {
     bool connection_close = false;
     process_request(stream, /*last_connection=*/false, connection_close,
                     nullptr);
@@ -55,35 +53,35 @@ class FuzzableServer : public httplib::Server {
 
 static FuzzableServer g_server;
 
-extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv) {
+extern "C" int LLVMFuzzerInitialize(int * /*argc*/, char *** /*argv*/) {
   g_server.Get(R"(.*)",
-                [&](const httplib::Request& req, httplib::Response& res) {
+               [&](const httplib::Request & /*req*/, httplib::Response &res) {
+                 res.set_content("response content", "text/plain");
+               });
+  g_server.Post(R"(.*)",
+                [&](const httplib::Request & /*req*/, httplib::Response &res) {
                   res.set_content("response content", "text/plain");
                 });
-  g_server.Post(R"(.*)",
-                 [&](const httplib::Request& req, httplib::Response& res) {
+  g_server.Put(R"(.*)",
+               [&](const httplib::Request & /*req*/, httplib::Response &res) {
+                 res.set_content("response content", "text/plain");
+               });
+  g_server.Patch(R"(.*)",
+                 [&](const httplib::Request & /*req*/, httplib::Response &res) {
                    res.set_content("response content", "text/plain");
                  });
-  g_server.Put(R"(.*)",
-                [&](const httplib::Request& req, httplib::Response& res) {
-                  res.set_content("response content", "text/plain");
-                });
-  g_server.Patch(R"(.*)",
-                  [&](const httplib::Request& req, httplib::Response& res) {
-                    res.set_content("response content", "text/plain");
-                  });
-  g_server.Delete(R"(.*)",
-                   [&](const httplib::Request& req, httplib::Response& res) {
-                     res.set_content("response content", "text/plain");
-                   });
-  g_server.Options(R"(.*)",
-                    [&](const httplib::Request& req, httplib::Response& res) {
-                      res.set_content("response content", "text/plain");
-                    });
+  g_server.Delete(
+      R"(.*)", [&](const httplib::Request & /*req*/, httplib::Response &res) {
+        res.set_content("response content", "text/plain");
+      });
+  g_server.Options(
+      R"(.*)", [&](const httplib::Request & /*req*/, httplib::Response &res) {
+        res.set_content("response content", "text/plain");
+      });
   return 0;
 }
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   FuzzedStream stream{data, size};
   g_server.ProcessFuzzedRequest(stream);
   return 0;
