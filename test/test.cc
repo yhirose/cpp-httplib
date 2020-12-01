@@ -2,10 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <thread>
-#include <atomic>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -1759,7 +1759,8 @@ TEST_F(ServerTest, LongHeader) {
       "@@@@@@@@@@@@@@@@");
 
   auto res = std::make_shared<Response>();
-  auto ret = cli_.send(req, *res);
+  auto error = Error::Success;
+  auto ret = cli_.send(req, *res, error);
 
   ASSERT_TRUE(ret);
   EXPECT_EQ(200, res->status);
@@ -1819,7 +1820,8 @@ TEST_F(ServerTest, TooLongHeader) {
       "@@@@@@@@@@@@@@@@@");
 
   auto res = std::make_shared<Response>();
-  auto ret = cli_.send(req, *res);
+  auto error = Error::Success;
+  auto ret = cli_.send(req, *res, error);
 
   ASSERT_TRUE(ret);
   EXPECT_EQ(200, res->status);
@@ -1908,7 +1910,8 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   req.body = "4\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n";
 
   auto res = std::make_shared<Response>();
-  auto ret = cli_.send(req, *res);
+  auto error = Error::Success;
+  auto ret = cli_.send(req, *res, error);
 
   ASSERT_TRUE(ret);
   EXPECT_EQ(200, res->status);
@@ -2125,7 +2128,8 @@ TEST_F(ServerTest, LargeChunkedPost) {
   req.body = chunk + chunk + chunk + chunk + chunk + chunk + "0\r\n\r\n";
 
   auto res = std::make_shared<Response>();
-  auto ret = cli_.send(req, *res);
+  auto error = Error::Success;
+  auto ret = cli_.send(req, *res, error);
 
   ASSERT_TRUE(ret);
   EXPECT_EQ(200, res->status);
@@ -2551,7 +2555,8 @@ TEST_F(ServerTest, HTTP2Magic) {
   req.body = "SM";
 
   auto res = std::make_shared<Response>();
-  auto ret = cli_.send(req, *res);
+  auto error = Error::Success;
+  auto ret = cli_.send(req, *res, error);
 
   ASSERT_TRUE(ret);
   EXPECT_EQ(400, res->status);
@@ -2762,7 +2767,7 @@ TEST_F(ServerTest, Brotli) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
-  std::atomic<Error> error(Error::Success);
+  auto error = Error::Success;
 
   auto client_sock =
       detail::create_client_socket(HOST, PORT, false, nullptr,

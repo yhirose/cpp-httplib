@@ -753,7 +753,8 @@ enum Error {
   SSLConnection,
   SSLLoadingCerts,
   SSLServerVerification,
-  UnsupportedMultipartBoundaryChars
+  UnsupportedMultipartBoundaryChars,
+  Compression,
 };
 
 class Result {
@@ -878,7 +879,8 @@ public:
   Result Options(const char *path);
   Result Options(const char *path, const Headers &headers);
 
-  bool send(const Request &req, Response &res);
+  bool send(const Request &req, Response &res, Error &error);
+  Result send(const Request &req);
 
   size_t is_socket_open() const;
 
@@ -931,7 +933,7 @@ protected:
     bool is_open() const { return sock != INVALID_SOCKET; }
   };
 
-  virtual bool create_and_connect_socket(Socket &socket);
+  virtual bool create_and_connect_socket(Socket &socket, Error &error);
 
   // All of:
   //   shutdown_ssl
@@ -949,15 +951,12 @@ protected:
   void lock_socket_and_shutdown_and_close();
 
   bool process_request(Stream &strm, const Request &req, Response &res,
-                       bool close_connection);
+                       bool close_connection, Error &error);
 
-  bool write_content_with_provider(Stream &strm, const Request &req);
-  Error get_last_error() const;
+  bool write_content_with_provider(Stream &strm, const Request &req,
+                                   Error &error);
 
   void copy_settings(const ClientImpl &rhs);
-
-  // Error state
-  mutable std::atomic<Error> error_;
 
   // Socket endoint information
   const std::string host_;
@@ -970,7 +969,7 @@ protected:
   std::recursive_mutex request_mutex_;
 
   // These are all protected under socket_mutex
-  int socket_requests_in_flight_ = 0;
+  size_t socket_requests_in_flight_ = 0;
   std::thread::id socket_requests_are_from_thread_ = std::thread::id();
   bool socket_should_be_closed_when_request_is_done_ = false;
 
@@ -1025,13 +1024,20 @@ protected:
   Logger logger_;
 
 private:
-  socket_t create_client_socket() const;
+  socket_t create_client_socket(Error &error) const;
   bool read_response_line(Stream &strm, Response &res);
-  bool write_request(Stream &strm, const Request &req, bool close_connection);
-  bool redirect(const Request &req, Response &res);
+  bool write_request(Stream &strm, const Request &req, bool close_connection,
+                     Error &error);
+  bool redirect(const Request &req, Response &res, Error &error);
   bool handle_request(Stream &strm, const Request &req, Response &res,
-                      bool close_connection);
+                      bool close_connection, Error &error);
   std::unique_ptr<Response> send_with_content_provider(
+      const char *method, const char *path, const Headers &headers,
+      const std::string &body, size_t content_length,
+      ContentProvider content_provider,
+      ContentProviderWithoutLength content_provider_without_length,
+      const char *content_type, Error &error);
+  Result send_with_content_provider(
       const char *method, const char *path, const Headers &headers,
       const std::string &body, size_t content_length,
       ContentProvider content_provider,
@@ -1149,7 +1155,8 @@ public:
   Result Options(const char *path);
   Result Options(const char *path, const Headers &headers);
 
-  bool send(const Request &req, Response &res);
+  bool send(const Request &req, Response &res, Error &error);
+  Result send(const Request &req);
 
   size_t is_socket_open() const;
 
@@ -1260,15 +1267,16 @@ public:
   SSL_CTX *ssl_context() const;
 
 private:
-  bool create_and_connect_socket(Socket &socket) override;
+  bool create_and_connect_socket(Socket &socket, Error &error) override;
   void shutdown_ssl(Socket &socket, bool shutdown_gracefully) override;
 
   bool process_socket(const Socket &socket,
                       std::function<bool(Stream &strm)> callback) override;
   bool is_ssl() const override;
 
-  bool connect_with_proxy(Socket &sock, Response &res, bool &success);
-  bool initialize_ssl(Socket &socket);
+  bool connect_with_proxy(Socket &sock, Response &res, bool &success,
+                          Error &error);
+  bool initialize_ssl(Socket &socket, Error &error);
 
   bool load_certs();
 
@@ -2056,8 +2064,7 @@ inline socket_t create_client_socket(const char *host, int port,
                                      bool tcp_nodelay,
                                      SocketOptions socket_options,
                                      time_t timeout_sec, time_t timeout_usec,
-                                     const std::string &intf,
-                                     std::atomic<Error> &error) {
+                                     const std::string &intf, Error &error) {
   auto sock = create_socket(
       host, port, 0, tcp_nodelay, std::move(socket_options),
       [&](socket_t sock, struct addrinfo &ai) -> bool {
@@ -2804,7 +2811,7 @@ inline bool write_data(Stream &strm, const char *d, size_t l) {
 template <typename T>
 inline bool write_content(Stream &strm, const ContentProvider &content_provider,
                           size_t offset, size_t length, T is_shutting_down,
-                          std::atomic<Error> &error) {
+                          Error &error) {
   size_t end_offset = offset + length;
   auto ok = true;
   DataSink data_sink;
@@ -2840,7 +2847,7 @@ template <typename T>
 inline bool write_content(Stream &strm, const ContentProvider &content_provider,
                           size_t offset, size_t length,
                           const T &is_shutting_down) {
-  std::atomic<Error> error;
+  auto error = Error::Success;
   return write_content(strm, content_provider, offset, length, is_shutting_down,
                        error);
 }
@@ -2874,10 +2881,9 @@ write_content_without_length(Stream &strm,
 }
 
 template <typename T, typename U>
-inline bool write_content_chunked(Stream &strm,
-                                  const ContentProvider &content_provider,
-                                  const T &is_shutting_down, U &compressor,
-                                  std::atomic<Error> &error) {
+inline bool
+write_content_chunked(Stream &strm, const ContentProvider &content_provider,
+                      const T &is_shutting_down, U &compressor, Error &error) {
   size_t offset = 0;
   auto data_available = true;
   auto ok = true;
@@ -2960,14 +2966,15 @@ template <typename T, typename U>
 inline bool write_content_chunked(Stream &strm,
                                   const ContentProvider &content_provider,
                                   const T &is_shutting_down, U &compressor) {
-  std::atomic<Error> error;
+  auto error = Error::Success;
   return write_content_chunked(strm, content_provider, is_shutting_down,
                                compressor, error);
 }
 
 template <typename T>
 inline bool redirect(T &cli, const Request &req, Response &res,
-                     const std::string &path, const std::string &location) {
+                     const std::string &path, const std::string &location,
+                     Error &error) {
   Request new_req = req;
   new_req.path = path;
   new_req.redirect_count_ -= 1;
@@ -2980,7 +2987,7 @@ inline bool redirect(T &cli, const Request &req, Response &res,
 
   Response new_res;
 
-  auto ret = cli.send(new_req, new_res);
+  auto ret = cli.send(new_req, new_res, error);
   if (ret) {
     new_res.location = location;
     res = new_res;
@@ -4832,15 +4839,14 @@ inline ClientImpl::ClientImpl(const std::string &host, int port)
 inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
-    : error_(Error::Success), host_(host), port_(port),
+    // : (Error::Success), host_(host), port_(port),
+    : host_(host), port_(port),
       host_and_port_(host_ + ":" + std::to_string(port_)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() { lock_socket_and_shutdown_and_close(); }
 
 inline bool ClientImpl::is_valid() const { return true; }
-
-inline Error ClientImpl::get_last_error() const { return error_; }
 
 inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   client_cert_path_ = rhs.client_cert_path_;
@@ -4879,19 +4885,20 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   logger_ = rhs.logger_;
 }
 
-inline socket_t ClientImpl::create_client_socket() const {
+inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
         proxy_host_.c_str(), proxy_port_, tcp_nodelay_, socket_options_,
-        connection_timeout_sec_, connection_timeout_usec_, interface_, error_);
+        connection_timeout_sec_, connection_timeout_usec_, interface_, error);
   }
   return detail::create_client_socket(
       host_.c_str(), port_, tcp_nodelay_, socket_options_,
-      connection_timeout_sec_, connection_timeout_usec_, interface_, error_);
+      connection_timeout_sec_, connection_timeout_usec_, interface_, error);
 }
 
-inline bool ClientImpl::create_and_connect_socket(Socket &socket) {
-  auto sock = create_client_socket();
+inline bool ClientImpl::create_and_connect_socket(Socket &socket,
+                                                  Error &error) {
+  auto sock = create_client_socket(error);
   if (sock == INVALID_SOCKET) { return false; }
   socket.sock = sock;
   return true;
@@ -4919,6 +4926,7 @@ inline void ClientImpl::close_socket(Socket &socket) {
   // than the one they intended!
   assert(socket_requests_in_flight_ == 0 ||
          socket_requests_are_from_thread_ == std::this_thread::get_id());
+
   // It is also a bug if this happens while SSL is still active
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   assert(socket.ssl == nullptr);
@@ -4964,7 +4972,7 @@ inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
   return true;
 }
 
-inline bool ClientImpl::send(const Request &req, Response &res) {
+inline bool ClientImpl::send(const Request &req, Response &res, Error &error) {
   std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
 
   {
@@ -4989,7 +4997,7 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
     }
 
     if (!is_alive) {
-      if (!create_and_connect_socket(socket_)) { return false; }
+      if (!create_and_connect_socket(socket_, error)) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       // TODO: refactoring
@@ -4997,12 +5005,12 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
         auto &scli = static_cast<SSLClient &>(*this);
         if (!proxy_host_.empty() && proxy_port_ != -1) {
           bool success = false;
-          if (!scli.connect_with_proxy(socket_, res, success)) {
+          if (!scli.connect_with_proxy(socket_, res, success, error)) {
             return success;
           }
         }
 
-        if (!scli.initialize_ssl(socket_)) { return false; }
+        if (!scli.initialize_ssl(socket_, error)) { return false; }
       }
 #endif
     }
@@ -5019,7 +5027,7 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
 
   auto close_connection = !keep_alive_;
   auto ret = process_socket(socket_, [&](Stream &strm) {
-    return handle_request(strm, req, res, close_connection);
+    return handle_request(strm, req, res, close_connection, error);
   });
 
   // Briefly lock mutex in order to mark that a request is no longer ongoing
@@ -5040,16 +5048,24 @@ inline bool ClientImpl::send(const Request &req, Response &res) {
   }
 
   if (!ret) {
-    if (error_ == Error::Success) { error_ = Error::Unknown; }
+    if (error == Error::Success) { error = Error::Unknown; }
   }
 
   return ret;
 }
 
+inline Result ClientImpl::send(const Request &req) {
+  auto res = detail::make_unique<Response>();
+  auto error = Error::Success;
+  auto ret = send(req, *res, error);
+  return Result{ret ? std::move(res) : nullptr, error};
+}
+
 inline bool ClientImpl::handle_request(Stream &strm, const Request &req,
-                                       Response &res, bool close_connection) {
+                                       Response &res, bool close_connection,
+                                       Error &error) {
   if (req.path.empty()) {
-    error_ = Error::Connection;
+    error = Error::Connection;
     return false;
   }
 
@@ -5058,15 +5074,15 @@ inline bool ClientImpl::handle_request(Stream &strm, const Request &req,
   if (!is_ssl() && !proxy_host_.empty() && proxy_port_ != -1) {
     auto req2 = req;
     req2.path = "http://" + host_and_port_ + req.path;
-    ret = process_request(strm, req2, res, close_connection);
+    ret = process_request(strm, req2, res, close_connection, error);
   } else {
-    ret = process_request(strm, req, res, close_connection);
+    ret = process_request(strm, req, res, close_connection, error);
   }
 
   if (!ret) { return false; }
 
   if (300 < res.status && res.status < 400 && follow_location_) {
-    ret = redirect(req, res);
+    ret = redirect(req, res, error);
   }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -5091,7 +5107,7 @@ inline bool ClientImpl::handle_request(Stream &strm, const Request &req,
 
         Response new_res;
 
-        ret = send(new_req, new_res);
+        ret = send(new_req, new_res, error);
         if (ret) { res = new_res; }
       }
     }
@@ -5101,9 +5117,10 @@ inline bool ClientImpl::handle_request(Stream &strm, const Request &req,
   return ret;
 }
 
-inline bool ClientImpl::redirect(const Request &req, Response &res) {
+inline bool ClientImpl::redirect(const Request &req, Response &res,
+                                 Error &error) {
   if (req.redirect_count_ == 0) {
-    error_ = Error::ExceedRedirectCount;
+    error = Error::ExceedRedirectCount;
     return false;
   }
 
@@ -5135,30 +5152,27 @@ inline bool ClientImpl::redirect(const Request &req, Response &res) {
   if (next_path.empty()) { next_path = "/"; }
 
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
-    return detail::redirect(*this, req, res, next_path, location);
+    return detail::redirect(*this, req, res, next_path, location, error);
   } else {
     if (next_scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       SSLClient cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
-      auto ret = detail::redirect(cli, req, res, next_path, location);
-      if (!ret) { error_ = cli.get_last_error(); }
-      return ret;
+      return detail::redirect(cli, req, res, next_path, location, error);
 #else
       return false;
 #endif
     } else {
       ClientImpl cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
-      auto ret = detail::redirect(cli, req, res, next_path, location);
-      if (!ret) { error_ = cli.get_last_error(); }
-      return ret;
+      return detail::redirect(cli, req, res, next_path, location, error);
     }
   }
 }
 
 inline bool ClientImpl::write_content_with_provider(Stream &strm,
-                                                    const Request &req) {
+                                                    const Request &req,
+                                                    Error &error) {
   auto is_shutting_down = []() { return false; };
 
   if (req.is_chunked_content_provider_) {
@@ -5174,15 +5188,15 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
     }
 
     return detail::write_content_chunked(strm, req.content_provider_,
-                                         is_shutting_down, *compressor, error_);
+                                         is_shutting_down, *compressor, error);
   } else {
     return detail::write_content(strm, req.content_provider_, 0,
-                                 req.content_length_, is_shutting_down, error_);
+                                 req.content_length_, is_shutting_down, error);
   }
 } // namespace httplib
 
 inline bool ClientImpl::write_request(Stream &strm, const Request &req,
-                                      bool close_connection) {
+                                      bool close_connection, Error &error) {
   detail::BufferStream bstrm;
 
   // Request line
@@ -5265,13 +5279,13 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
   // Flush buffer
   auto &data = bstrm.get_buffer();
   if (!detail::write_data(strm, data.data(), data.size())) {
-    error_ = Error::Write;
+    error = Error::Write;
     return false;
   }
 
   // Body
   if (req.body.empty()) {
-    return write_content_with_provider(strm, req);
+    return write_content_with_provider(strm, req, error);
   } else {
     return detail::write_data(strm, req.body.data(), req.body.size());
   }
@@ -5284,7 +5298,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
     const std::string &body, size_t content_length,
     ContentProvider content_provider,
     ContentProviderWithoutLength content_provider_without_length,
-    const char *content_type) {
+    const char *content_type, Error &error) {
 
   Request req;
   req.method = method;
@@ -5330,7 +5344,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
 
       while (ok && offset < content_length) {
         if (!content_provider(offset, content_length - offset, data_sink)) {
-          error_ = Error::Canceled;
+          error = Error::Canceled;
           return nullptr;
         }
       }
@@ -5340,6 +5354,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
                                  req.body.append(data, data_len);
                                  return true;
                                })) {
+        error = Error::Compression;
         return nullptr;
       }
     }
@@ -5362,25 +5377,38 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
   }
 
   auto res = detail::make_unique<Response>();
+  return send(req, *res, error) ? std::move(res) : nullptr;
+}
 
-  return send(req, *res) ? std::move(res) : nullptr;
+inline Result ClientImpl::send_with_content_provider(
+    const char *method, const char *path, const Headers &headers,
+    const std::string &body, size_t content_length,
+    ContentProvider content_provider,
+    ContentProviderWithoutLength content_provider_without_length,
+    const char *content_type) {
+  auto error = Error::Success;
+  auto res = send_with_content_provider(
+      method, path, headers, body, content_length, std::move(content_provider),
+      std::move(content_provider_without_length), content_type, error);
+  return Result{std::move(res), error};
 }
 
 inline bool ClientImpl::process_request(Stream &strm, const Request &req,
-                                        Response &res, bool close_connection) {
+                                        Response &res, bool close_connection,
+                                        Error &error) {
   // Send request
-  if (!write_request(strm, req, close_connection)) { return false; }
+  if (!write_request(strm, req, close_connection, error)) { return false; }
 
   // Receive response and headers
   if (!read_response_line(strm, res) ||
       !detail::read_headers(strm, res.headers)) {
-    error_ = Error::Read;
+    error = Error::Read;
     return false;
   }
 
   if (req.response_handler_) {
     if (!req.response_handler_(res)) {
-      error_ = Error::Canceled;
+      error = Error::Canceled;
       return false;
     }
   }
@@ -5392,7 +5420,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
             ? static_cast<ContentReceiverWithProgress>(
                   [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
                     auto ret = req.content_receiver_(buf, n, off, len);
-                    if (!ret) { error_ = Error::Canceled; }
+                    if (!ret) { error = Error::Canceled; }
                     return ret;
                   })
             : static_cast<ContentReceiverWithProgress>(
@@ -5408,17 +5436,23 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
     auto progress = [&](uint64_t current, uint64_t total) {
       if (!req.progress_) { return true; }
       auto ret = req.progress_(current, total);
-      if (!ret) { error_ = Error::Canceled; }
+      if (!ret) { error = Error::Canceled; }
       return ret;
     };
 
     int dummy_status;
+    // std::cout << "A" << std::endl;
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
                               dummy_status, std::move(progress), std::move(out),
                               decompress_)) {
-      if (error_ != Error::Canceled) { error_ = Error::Read; }
+      // std::cout << "B" << std::endl;
+      if (error != Error::Canceled) {
+        // std::cout << "C" << std::endl;
+        error = Error::Read;
+      }
       return false;
     }
+    // std::cout << "D" << std::endl;
   }
 
   if (res.get_header_value("Connection") == "close" ||
@@ -5473,9 +5507,7 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   req.headers.insert(headers.begin(), headers.end());
   req.progress_ = std::move(progress);
 
-  auto res = detail::make_unique<Response>();
-  auto ret = send(req, *res);
-  return Result{ret ? std::move(res) : nullptr, get_last_error()};
+  return send(req);
 }
 
 inline Result ClientImpl::Get(const char *path,
@@ -5541,9 +5573,7 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
       };
   req.progress_ = std::move(progress);
 
-  auto res = detail::make_unique<Response>();
-  auto ret = send(req, *res);
-  return Result{ret ? std::move(res) : nullptr, get_last_error()};
+  return send(req);
 }
 
 inline Result ClientImpl::Head(const char *path) {
@@ -5557,9 +5587,7 @@ inline Result ClientImpl::Head(const char *path, const Headers &headers) {
   req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
-  auto res = detail::make_unique<Response>();
-  auto ret = send(req, *res);
-  return Result{ret ? std::move(res) : nullptr, get_last_error()};
+  return send(req);
 }
 
 inline Result ClientImpl::Post(const char *path) {
@@ -5574,9 +5602,8 @@ inline Result ClientImpl::Post(const char *path, const std::string &body,
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                const std::string &body,
                                const char *content_type) {
-  auto ret = send_with_content_provider("POST", path, headers, body, 0, nullptr,
-                                        nullptr, content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("POST", path, headers, body, 0, nullptr,
+                                    nullptr, content_type);
 }
 
 inline Result ClientImpl::Post(const char *path, const Params &params) {
@@ -5600,19 +5627,17 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                size_t content_length,
                                ContentProvider content_provider,
                                const char *content_type) {
-  auto ret = send_with_content_provider(
-      "POST", path, headers, std::string(), content_length,
-      std::move(content_provider), nullptr, content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("POST", path, headers, std::string(),
+                                    content_length, std::move(content_provider),
+                                    nullptr, content_type);
 }
 
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                ContentProviderWithoutLength content_provider,
                                const char *content_type) {
-  auto ret = send_with_content_provider("POST", path, headers, std::string(), 0,
-                                        nullptr, std::move(content_provider),
-                                        content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("POST", path, headers, std::string(), 0,
+                                    nullptr, std::move(content_provider),
+                                    content_type);
 }
 
 inline Result ClientImpl::Post(const char *path, const Headers &headers,
@@ -5636,8 +5661,7 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
   for (size_t i = 0; i < boundary.size(); i++) {
     char c = boundary[i];
     if (!std::isalnum(c) && c != '-' && c != '_') {
-      error_ = Error::UnsupportedMultipartBoundaryChars;
-      return Result{nullptr, error_};
+      return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
     }
   }
 
@@ -5675,9 +5699,8 @@ inline Result ClientImpl::Put(const char *path, const std::string &body,
 inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               const std::string &body,
                               const char *content_type) {
-  auto ret = send_with_content_provider("PUT", path, headers, body, 0, nullptr,
-                                        nullptr, content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("PUT", path, headers, body, 0, nullptr,
+                                    nullptr, content_type);
 }
 
 inline Result ClientImpl::Put(const char *path, size_t content_length,
@@ -5697,19 +5720,17 @@ inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               size_t content_length,
                               ContentProvider content_provider,
                               const char *content_type) {
-  auto ret = send_with_content_provider(
-      "PUT", path, headers, std::string(), content_length,
-      std::move(content_provider), nullptr, content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("PUT", path, headers, std::string(),
+                                    content_length, std::move(content_provider),
+                                    nullptr, content_type);
 }
 
 inline Result ClientImpl::Put(const char *path, const Headers &headers,
                               ContentProviderWithoutLength content_provider,
                               const char *content_type) {
-  auto ret = send_with_content_provider("PUT", path, headers, std::string(), 0,
-                                        nullptr, std::move(content_provider),
-                                        content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("PUT", path, headers, std::string(), 0,
+                                    nullptr, std::move(content_provider),
+                                    content_type);
 }
 
 inline Result ClientImpl::Put(const char *path, const Params &params) {
@@ -5730,9 +5751,8 @@ inline Result ClientImpl::Patch(const char *path, const std::string &body,
 inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 const std::string &body,
                                 const char *content_type) {
-  auto ret = send_with_content_provider("PATCH", path, headers, body, 0,
-                                        nullptr, nullptr, content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("PATCH", path, headers, body, 0, nullptr,
+                                    nullptr, content_type);
 }
 
 inline Result ClientImpl::Patch(const char *path, size_t content_length,
@@ -5752,19 +5772,17 @@ inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 size_t content_length,
                                 ContentProvider content_provider,
                                 const char *content_type) {
-  auto ret = send_with_content_provider(
-      "PATCH", path, headers, std::string(), content_length,
-      std::move(content_provider), nullptr, content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("PATCH", path, headers, std::string(),
+                                    content_length, std::move(content_provider),
+                                    nullptr, content_type);
 }
 
 inline Result ClientImpl::Patch(const char *path, const Headers &headers,
                                 ContentProviderWithoutLength content_provider,
                                 const char *content_type) {
-  auto ret = send_with_content_provider("PATCH", path, headers, std::string(),
-                                        0, nullptr, std::move(content_provider),
-                                        content_type);
-  return Result{std::move(ret), get_last_error()};
+  return send_with_content_provider("PATCH", path, headers, std::string(), 0,
+                                    nullptr, std::move(content_provider),
+                                    content_type);
 }
 
 inline Result ClientImpl::Delete(const char *path) {
@@ -5792,9 +5810,7 @@ inline Result ClientImpl::Delete(const char *path, const Headers &headers,
   if (content_type) { req.headers.emplace("Content-Type", content_type); }
   req.body = body;
 
-  auto res = detail::make_unique<Response>();
-  auto ret = send(req, *res);
-  return Result{ret ? std::move(res) : nullptr, get_last_error()};
+  return send(req);
 }
 
 inline Result ClientImpl::Options(const char *path) {
@@ -5808,9 +5824,7 @@ inline Result ClientImpl::Options(const char *path, const Headers &headers) {
   req.headers.insert(headers.begin(), headers.end());
   req.path = path;
 
-  auto res = detail::make_unique<Response>();
-  auto ret = send(req, *res);
-  return Result{ret ? std::move(res) : nullptr, get_last_error()};
+  return send(req);
 }
 
 inline size_t ClientImpl::is_socket_open() const {
@@ -5820,10 +5834,6 @@ inline size_t ClientImpl::is_socket_open() const {
 
 inline void ClientImpl::stop() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
-  // There is no guarantee that this doesn't get overwritten later, but set it
-  // so that there is a good chance that any threads stopping as a result pick
-  // up this error.
-  error_ = Error::Canceled;
 
   // If there is anything ongoing right now, the ONLY thread-safe thing we can
   // do is to shutdown_socket, so that threads using this socket suddenly
@@ -5832,6 +5842,7 @@ inline void ClientImpl::stop() {
   // not thread-safe.
   if (socket_requests_in_flight_ > 0) {
     shutdown_socket(socket_);
+
     // Aside from that, we set a flag for the socket to be closed when we're
     // done.
     socket_should_be_closed_when_request_is_done_ = true;
@@ -6327,13 +6338,13 @@ inline long SSLClient::get_openssl_verify_result() const {
 
 inline SSL_CTX *SSLClient::ssl_context() const { return ctx_; }
 
-inline bool SSLClient::create_and_connect_socket(Socket &socket) {
-  return is_valid() && ClientImpl::create_and_connect_socket(socket);
+inline bool SSLClient::create_and_connect_socket(Socket &socket, Error &error) {
+  return is_valid() && ClientImpl::create_and_connect_socket(socket, error);
 }
 
 // Assumes that socket_mutex_ is locked and that there are no requests in flight
 inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
-                                          bool &success) {
+                                          bool &success, Error &error) {
   success = true;
   Response res2;
   if (!detail::process_client_socket(
@@ -6342,7 +6353,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
             Request req2;
             req2.method = "CONNECT";
             req2.path = host_and_port_;
-            return process_request(strm, req2, res2, false);
+            return process_request(strm, req2, res2, false, error);
           })) {
     // Thread-safe to close everything because we are assuming there are no
     // requests in flight
@@ -6369,7 +6380,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
                       req3, auth, 1, detail::random_string(10),
                       proxy_digest_auth_username_, proxy_digest_auth_password_,
                       true));
-                  return process_request(strm, req3, res3, false);
+                  return process_request(strm, req3, res3, false, error);
                 })) {
           // Thread-safe to close everything because we are assuming there are
           // no requests in flight
@@ -6416,13 +6427,13 @@ inline bool SSLClient::load_certs() {
   return ret;
 }
 
-inline bool SSLClient::initialize_ssl(Socket &socket) {
+inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   auto ssl = detail::ssl_new(
       socket.sock, ctx_, ctx_mutex_,
       [&](SSL *ssl) {
         if (server_certificate_verification_) {
           if (!load_certs()) {
-            error_ = Error::SSLLoadingCerts;
+            error = Error::SSLLoadingCerts;
             return false;
           }
           SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
@@ -6431,7 +6442,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
         if (!detail::ssl_connect_or_accept_nonblocking(
                 socket.sock, ssl, SSL_connect, connection_timeout_sec_,
                 connection_timeout_usec_)) {
-          error_ = Error::SSLConnection;
+          error = Error::SSLConnection;
           return false;
         }
 
@@ -6439,20 +6450,20 @@ inline bool SSLClient::initialize_ssl(Socket &socket) {
           verify_result_ = SSL_get_verify_result(ssl);
 
           if (verify_result_ != X509_V_OK) {
-            error_ = Error::SSLServerVerification;
+            error = Error::SSLServerVerification;
             return false;
           }
 
           auto server_cert = SSL_get_peer_certificate(ssl);
 
           if (server_cert == nullptr) {
-            error_ = Error::SSLServerVerification;
+            error = Error::SSLServerVerification;
             return false;
           }
 
           if (!verify_host(server_cert)) {
             X509_free(server_cert);
-            error_ = Error::SSLServerVerification;
+            error = Error::SSLServerVerification;
             return false;
           }
           X509_free(server_cert);
@@ -6880,9 +6891,11 @@ inline Result Client::Options(const char *path, const Headers &headers) {
   return cli_->Options(path, headers);
 }
 
-inline bool Client::send(const Request &req, Response &res) {
-  return cli_->send(req, res);
+inline bool Client::send(const Request &req, Response &res, Error &error) {
+  return cli_->send(req, res, error);
 }
+
+inline Result Client::send(const Request &req) { return cli_->send(req); }
 
 inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
 
