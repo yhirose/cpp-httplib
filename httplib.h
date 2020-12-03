@@ -5441,18 +5441,14 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
     };
 
     int dummy_status;
-    // std::cout << "A" << std::endl;
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
                               dummy_status, std::move(progress), std::move(out),
                               decompress_)) {
-      // std::cout << "B" << std::endl;
       if (error != Error::Canceled) {
-        // std::cout << "C" << std::endl;
         error = Error::Read;
       }
       return false;
     }
-    // std::cout << "D" << std::endl;
   }
 
   if (res.get_header_value("Connection") == "close" ||
