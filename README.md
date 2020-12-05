@@ -719,7 +719,7 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 #include <httplib.h>
 ```
 
-Note: Cygwin on Windows is not supported.
+Note: Windows 8 or lower and Cygwin on Windows are not supported.
 
 License
 -------
