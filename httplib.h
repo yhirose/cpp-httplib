@@ -203,6 +203,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <iomanip>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -214,7 +215,6 @@ using socket_t = int;
 #include <openssl/applink.c>
 #endif
 
-#include <iomanip>
 #include <iostream>
 #include <sstream>
 
