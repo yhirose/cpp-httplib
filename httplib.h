@@ -2151,6 +2151,8 @@ find_content_type(const std::string &path,
     return "text/css";
   } else if (ext == "jpeg" || ext == "jpg") {
     return "image/jpg";
+  } else if (ext == "vtt") {
+    return "text/vtt";
   } else if (ext == "png") {
     return "image/png";
   } else if (ext == "gif") {
@@ -2171,6 +2173,8 @@ find_content_type(const std::string &path,
     return "application/xml";
   } else if (ext == "xhtml") {
     return "application/xhtml+xml";
+  } else if (ext == "mp4") {
+    return "video/mp4";
   }
   return nullptr;
 }
@@ -4396,7 +4400,7 @@ inline bool Server::handle_file_request(Request &req, Response &res,
           for (const auto &kv : entry.headers) {
             res.set_header(kv.first.c_str(), kv.second);
           }
-          res.status = 200;
+          res.status = req.has_header("Range") ? 206 : 200;
           if (!head && file_request_handler_) {
             file_request_handler_(req, res);
           }
