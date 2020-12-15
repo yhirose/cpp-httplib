@@ -4958,9 +4958,18 @@ inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
 
   std::cmatch m;
   if (!std::regex_match(line_reader.ptr(), m, re)) { return true; }
-  res.version = std::string(m[1]);
-  res.status = std::stoi(std::string(m[2]));
-  res.reason = std::string(m[3]);
+  try {
+    res.version = std::string(m[1]);
+    res.status = std::stol(std::string(m[2]));
+    res.reason = std::string(m[3]);
+  }
+  catch (const std::exception &ex) {
+    res.status = 500;
+    res.set_header("EXCEPTION_WHAT", "exception detail unavailable in google3");
+  } catch (...) {
+    res.status = 500;
+    res.set_header("EXCEPTION_WHAT", "UNKNOWN");
+  }
 
   // Ignore '100 Continue'
   while (res.status == 100) {
