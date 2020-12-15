@@ -4965,7 +4965,7 @@ inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
   }
   catch (const std::exception &ex) {
     res.status = 500;
-    res.set_header("EXCEPTION_WHAT", "exception detail unavailable in google3");
+    res.set_header("EXCEPTION_WHAT", ex.what());
   } catch (...) {
     res.status = 500;
     res.set_header("EXCEPTION_WHAT", "UNKNOWN");
