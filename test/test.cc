@@ -1676,6 +1676,16 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   EXPECT_EQ("abcde", res->body);
 }
 
+TEST_F(ServerTest, StaticFileRange) {
+  auto res = cli_.Get("/dir/test.abcde", {{make_range_header({{2, 3}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("cd"), res->body);
+}
+
 TEST_F(ServerTest, InvalidBaseDirMount) {
   EXPECT_EQ(false, svr_.set_mount_point("invalid_mount_point", "./www3"));
 }
