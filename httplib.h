@@ -1025,7 +1025,7 @@ protected:
 
 private:
   socket_t create_client_socket(Error &error) const;
-  bool read_response_line(Stream &strm, Response &res);
+  bool read_response_line(Stream &strm, const Request &req, Response &res);
   bool write_request(Stream &strm, const Request &req, bool close_connection,
                      Error &error);
   bool redirect(const Request &req, Response &res, Error &error);
@@ -4947,17 +4947,20 @@ inline void ClientImpl::lock_socket_and_shutdown_and_close() {
   close_socket(socket_);
 }
 
-inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
+inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
+                                           Response &res) {
   std::array<char, 2048> buf;
 
   detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
 
   if (!line_reader.getline()) { return false; }
 
-  const static std::regex re("(HTTP/1\\.[01]) (\\d+) (.*?)\r\n");
+  const static std::regex re("(HTTP/1\\.[01]) (\\d{3}) (.*?)\r\n");
 
   std::cmatch m;
-  if (!std::regex_match(line_reader.ptr(), m, re)) { return true; }
+  if (!std::regex_match(line_reader.ptr(), m, re)) {
+    return req.method == "CONNECT";
+  }
   res.version = std::string(m[1]);
   res.status = std::stoi(std::string(m[2]));
   res.reason = std::string(m[3]);
@@ -5404,7 +5407,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
   if (!write_request(strm, req, close_connection, error)) { return false; }
 
   // Receive response and headers
-  if (!read_response_line(strm, res) ||
+  if (!read_response_line(strm, req, res) ||
       !detail::read_headers(strm, res.headers)) {
     error = Error::Read;
     return false;
@@ -5448,9 +5451,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
                               dummy_status, std::move(progress), std::move(out),
                               decompress_)) {
-      if (error != Error::Canceled) {
-        error = Error::Read;
-      }
+      if (error != Error::Canceled) { error = Error::Read; }
       return false;
     }
   }

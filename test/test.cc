@@ -930,6 +930,31 @@ TEST(ErrorHandlerTest, ContentLength) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(InvalidFormatTest, StatusCode) {
+  Server svr;
+
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!\n", "text/plain");
+    res.status = 9999; // Status should be a three-digit code...
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi");
+    ASSERT_FALSE(res);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 class ServerTest : public ::testing::Test {
 protected:
   ServerTest()
