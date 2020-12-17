@@ -132,7 +132,7 @@ The followings are built-in mappings:
 | ico       | image/x-icon           |
 | json      | application/json       |
 | pdf       | application/pdf        |
-| js        | application/javascript |
+| js, mjs   | application/javascript |
 | wasm      | application/wasm       |
 | xml       | application/xml        |
 | xhtml     | application/xhtml+xml  |
