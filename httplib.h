@@ -2165,7 +2165,7 @@ find_content_type(const std::string &path,
     return "application/json";
   } else if (ext == "pdf") {
     return "application/pdf";
-  } else if (ext == "js" || ext == "mjs") {
+  } else if (ext == "js") {
     return "application/javascript";
   } else if (ext == "wasm") {
     return "application/wasm";
