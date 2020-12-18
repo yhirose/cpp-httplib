@@ -203,6 +203,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <iomanip>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -214,7 +215,6 @@ using socket_t = int;
 #include <openssl/applink.c>
 #endif
 
-#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -1455,6 +1455,33 @@ inline bool is_valid_path(const std::string &path) {
   }
 
   return true;
+}
+
+inline std::string encode_query_param(const std::string &value){
+  std::ostringstream escaped;
+  escaped.fill('0');
+  escaped << std::hex;
+
+  for (char const &c: value) {
+    if (std::isalnum(c) ||
+        c == '-'  ||
+        c == '_'  ||
+        c == '.'  ||
+        c == '!'  ||
+        c == '~'  ||
+        c == '*'  ||
+        c == '\'' ||
+        c == '('  ||
+        c == ')') {
+      escaped << c;
+    } else {
+      escaped << std::uppercase;
+      escaped << '%' << std::setw(2) << static_cast<int>(static_cast<unsigned char>(c));
+      escaped << std::nouppercase;
+    }
+  }
+
+  return escaped.str();
 }
 
 inline std::string encode_url(const std::string &s) {
@@ -3045,7 +3072,7 @@ inline std::string params_to_query_str(const Params &params) {
     if (it != params.begin()) { query += "&"; }
     query += it->first;
     query += "=";
-    query += encode_url(it->second);
+    query += encode_query_param(it->second);
   }
   return query;
 }
