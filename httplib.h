@@ -1025,7 +1025,7 @@ protected:
 
 private:
   socket_t create_client_socket(Error &error) const;
-  bool read_response_line(Stream &strm, Response &res);
+  bool read_response_line(Stream &strm, const Request &req, Response &res);
   bool write_request(Stream &strm, const Request &req, bool close_connection,
                      Error &error);
   bool redirect(const Request &req, Response &res, Error &error);
@@ -2153,6 +2153,25 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
   }
 }
 
+inline constexpr unsigned int str2tag_core(const char *s, size_t l,
+                                           unsigned int h) {
+  return (l == 0) ? h
+                  : str2tag_core(s + 1, l - 1,
+                                 (h * 33) ^ static_cast<unsigned char>(*s));
+}
+
+inline unsigned int str2tag(const std::string &s) {
+  return str2tag_core(s.data(), s.size(), 0);
+}
+
+namespace udl {
+
+  inline constexpr unsigned int operator"" _(const char *s, size_t l) {
+    return str2tag_core(s, l, 0);
+  }
+
+} // namespace udl
+
 inline const char *
 find_content_type(const std::string &path,
                   const std::map<std::string, std::string> &user_data) {
@@ -2161,36 +2180,60 @@ find_content_type(const std::string &path,
   auto it = user_data.find(ext);
   if (it != user_data.end()) { return it->second.c_str(); }
 
-  if (ext == "txt") {
-    return "text/plain";
-  } else if (ext == "html" || ext == "htm") {
-    return "text/html";
-  } else if (ext == "css") {
-    return "text/css";
-  } else if (ext == "jpeg" || ext == "jpg") {
-    return "image/jpg";
-  } else if (ext == "png") {
-    return "image/png";
-  } else if (ext == "gif") {
-    return "image/gif";
-  } else if (ext == "svg") {
-    return "image/svg+xml";
-  } else if (ext == "ico") {
-    return "image/x-icon";
-  } else if (ext == "json") {
-    return "application/json";
-  } else if (ext == "pdf") {
-    return "application/pdf";
-  } else if (ext == "js") {
-    return "application/javascript";
-  } else if (ext == "wasm") {
-    return "application/wasm";
-  } else if (ext == "xml") {
-    return "application/xml";
-  } else if (ext == "xhtml") {
-    return "application/xhtml+xml";
+  using udl::operator""_;
+
+  switch (str2tag(ext)) {
+    default: return nullptr;
+    case "css"_: return "text/css";
+    case "csv"_: return "text/csv";
+    case "txt"_: return "text/plain";
+    case "vtt"_: return "text/vtt";
+    case "htm"_:
+    case "html"_: return "text/html";
+
+    case "apng"_: return "image/apng";
+    case "avif"_: return "image/avif";
+    case "bmp"_: return "image/bmp";
+    case "gif"_: return "image/gif";
+    case "png"_: return "image/png";	
+    case "svg"_: return "image/svg+xml";
+    case "webp"_: return "image/webp";
+    case "ico"_: return "image/x-icon";
+    case "tif"_: return "image/tiff";
+    case "tiff"_: return "image/tiff";
+    case "jpg"_:
+    case "jpeg"_: return "image/jpeg";
+
+    case "mp4"_: return "video/mp4";
+    case "mpeg"_: return "video/mpeg";
+    case "webm"_: return "video/webm";
+
+    case "mp3"_: return "audio/mp3";
+    case "mpga"_: return "audio/mpeg";
+    case "weba"_: return "audio/webm";
+    case "wav"_: return "audio/wave";
+
+    case "otf"_: return "font/otf";
+    case "ttf"_: return "font/ttf";
+    case "woff"_: return "font/woff";
+    case "woff2"_: return "font/woff2";
+
+    case "7z"_: return "application/x-7z-compressed";
+    case "atom"_: return "application/atom+xml";
+    case "pdf"_: return "application/pdf";
+    case "js"_:
+    case "mjs"_: return "application/javascript";
+    case "json"_: return "application/json";
+    case "rss"_: return "application/rss+xml";
+    case "tar"_: return "application/x-tar";
+    case "xht"_:
+    case "xhtml"_: return "application/xhtml+xml";
+    case "xslt"_: return "application/xslt+xml";
+    case "xml"_: return "application/xml";
+    case "gz"_: return "application/gzip";
+    case "zip"_: return "application/zip";
+    case "wasm"_: return "application/wasm";
   }
-  return nullptr;
 }
 
 inline const char *status_message(int status) {
@@ -4414,7 +4457,7 @@ inline bool Server::handle_file_request(Request &req, Response &res,
           for (const auto &kv : entry.headers) {
             res.set_header(kv.first.c_str(), kv.second);
           }
-          res.status = 200;
+          res.status = req.has_header("Range") ? 206 : 200;
           if (!head && file_request_handler_) {
             file_request_handler_(req, res);
           }
@@ -4961,17 +5004,20 @@ inline void ClientImpl::lock_socket_and_shutdown_and_close() {
   close_socket(socket_);
 }
 
-inline bool ClientImpl::read_response_line(Stream &strm, Response &res) {
+inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
+                                           Response &res) {
   std::array<char, 2048> buf;
 
   detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
 
   if (!line_reader.getline()) { return false; }
 
-  const static std::regex re("(HTTP/1\\.[01]) (\\d+) (.*?)\r\n");
+  const static std::regex re("(HTTP/1\\.[01]) (\\d{3}) (.*?)\r\n");
 
   std::cmatch m;
-  if (!std::regex_match(line_reader.ptr(), m, re)) { return true; }
+  if (!std::regex_match(line_reader.ptr(), m, re)) {
+    return req.method == "CONNECT";
+  }
   res.version = std::string(m[1]);
   res.status = std::stoi(std::string(m[2]));
   res.reason = std::string(m[3]);
@@ -5418,7 +5464,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
   if (!write_request(strm, req, close_connection, error)) { return false; }
 
   // Receive response and headers
-  if (!read_response_line(strm, res) ||
+  if (!read_response_line(strm, req, res) ||
       !detail::read_headers(strm, res.headers)) {
     error = Error::Read;
     return false;
@@ -5462,9 +5508,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
                               dummy_status, std::move(progress), std::move(out),
                               decompress_)) {
-      if (error != Error::Canceled) {
-        error = Error::Read;
-      }
+      if (error != Error::Canceled) { error = Error::Read; }
       return false;
     }
   }

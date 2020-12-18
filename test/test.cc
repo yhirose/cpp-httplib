@@ -930,6 +930,31 @@ TEST(ErrorHandlerTest, ContentLength) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(InvalidFormatTest, StatusCode) {
+  Server svr;
+
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!\n", "text/plain");
+    res.status = 9999; // Status should be a three-digit code...
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi");
+    ASSERT_FALSE(res);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 class ServerTest : public ::testing::Test {
 protected:
   ServerTest()
@@ -1674,6 +1699,16 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
   EXPECT_EQ("abcde", res->body);
+}
+
+TEST_F(ServerTest, StaticFileRange) {
+  auto res = cli_.Get("/dir/test.abcde", {{make_range_header({{2, 3}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("cd"), res->body);
 }
 
 TEST_F(ServerTest, InvalidBaseDirMount) {
