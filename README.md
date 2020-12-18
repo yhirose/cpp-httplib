@@ -647,7 +647,7 @@ res = cli.Get("/");
 res->status; // 200
 ```
 
-### Use a specitic network interface
+### Use a specific network interface
 
 NOTE: This feature is not available on Windows, yet.
 
