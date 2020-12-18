@@ -1463,7 +1463,16 @@ inline std::string encode_query_param(const std::string &value){
   escaped << std::hex;
 
   for (char const &c: value) {
-    if (std::isalnum(c) || c == '-' || c == '_' || c == '.'||  c == '~') {
+    if (std::isalnum(c) ||
+        c == '-'  ||
+        c == '_'  ||
+        c == '.'  ||
+        c == '!'  ||
+        c == '~'  ||
+        c == '*'  ||
+        c == '\'' ||
+        c == '('  ||
+        c == ')') {
       escaped << c;
     } else {
       escaped << std::uppercase;
