@@ -2142,7 +2142,7 @@ inline constexpr unsigned int str2tag_core(const char *s, size_t l,
                                  (h * 33) ^ static_cast<unsigned char>(*s));
 }
 
-inline constexpr unsigned int str2tag(const std::string &s) {
+inline unsigned int str2tag(const std::string &s) {
   return str2tag_core(s.data(), s.size(), 0);
 }
 
