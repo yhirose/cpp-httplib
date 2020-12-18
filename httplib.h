@@ -2166,13 +2166,16 @@ find_content_type(const std::string &path,
 
   switch (str2tag(ext)) {
     default: return nullptr;
-    case "pdf"_: return "application/pdf";
-    case "atom"_: return "application/atom+xml";
-    case "bmp"_: return "image/bmp";
-    case "css"_ : return "text/css";
+    case "css"_: return "text/css";
     case "csv"_: return "text/csv";
+    case "txt"_: return "text/plain";
+    case "vtt"_: return "text/vtt";
+    case "htm"_:
+    case "html"_: return "text/html";
+
     case "apng"_: return "image/apng";
     case "avif"_: return "image/avif";
+    case "bmp"_: return "image/bmp";
     case "gif"_: return "image/gif";
     case "png"_: return "image/png";	
     case "svg"_: return "image/svg+xml";
@@ -2180,37 +2183,38 @@ find_content_type(const std::string &path,
     case "ico"_: return "image/x-icon";
     case "tif"_: return "image/tiff";
     case "tiff"_: return "image/tiff";
-    case "htm"_:
-    case "html"_: return "text/html";
+    case "jpg"_:
+    case "jpeg"_: return "image/jpeg";
+
+    case "mp4"_: return "video/mp4";
+    case "mpeg"_: return "video/mpeg";
+    case "webm"_: return "video/webm";
+
+    case "mp3"_: return "audio/mp3";
+    case "mpga"_: return "audio/mpeg";
+    case "weba"_: return "audio/webm";
+    case "wav"_: return "audio/wave";
+
+    case "otf"_: return "font/otf";
+    case "ttf"_: return "font/ttf";
     case "woff"_: return "font/woff";
     case "woff2"_: return "font/woff2";
+
+    case "7z"_: return "application/x-7z-compressed";
+    case "atom"_: return "application/atom+xml";
+    case "pdf"_: return "application/pdf";
     case "js"_:
     case "mjs"_: return "application/javascript";
     case "json"_: return "application/json";
-    case "jpg"_:
-    case "jpeg"_: return "image/jpeg";
-    case "mp3"_: return "audio/mp3";
-    case "mpga"_: return "audio/mpeg";
-    case "mp4"_: return "video/mp4";
-    case "mpeg"_: return "video/mpeg";
-    case "weba"_: return "audio/webm";
-    case "webm"_: return "video/webm";
-    case "otf"_: return "font/otf";
-    case "ttf"_: return "font/ttf";
     case "rss"_: return "application/rss+xml";
     case "tar"_: return "application/x-tar";
-    case "txt"_: return "text/plain";
     case "xht"_:
     case "xhtml"_: return "application/xhtml+xml";
     case "xslt"_: return "application/xslt+xml";
     case "xml"_: return "application/xml";
-    case "yaml"_:	 return "text/yaml";
     case "gz"_: return "application/gzip";
     case "zip"_: return "application/zip";
-    case "vtt"_: return "text/vtt";
     case "wasm"_: return "application/wasm";
-    case "wav"_: return "audio/wave";
-    case "7z"_: return "application/x-7z-compressed";
   }
 }
 
