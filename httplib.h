@@ -2148,9 +2148,9 @@ inline unsigned int str2tag(const std::string &s) {
 
 namespace udl {
 
-inline constexpr unsigned int operator"" _(const char *s, size_t l) {
-  return str2tag_core(s, l, 0);
-}
+  inline constexpr unsigned int operator"" _(const char *s, size_t l) {
+    return str2tag_core(s, l, 0);
+  }
 
 } // namespace udl
 
@@ -2162,28 +2162,60 @@ find_content_type(const std::string &path,
   auto it = user_data.find(ext);
   if (it != user_data.end()) { return it->second.c_str(); }
 
-  using namespace udl;
+  using udl::operator""_;
 
   switch (str2tag(ext)) {
-  case "txt"_: return "text/plain";
-  case "html"_:
-  case "htm"_: return "text/html";
-  case "css"_: return "text/css";
-  case "jpeg"_:
-  case "jpg"_: return "image/jpg";
-  case "vtt"_: return "text/vtt";
-  case "png"_: return "image/png";
-  case "gif"_: return "image/gif";
-  case "svg"_: return "image/svg+xml";
-  case "ico"_: return "image/x-icon";
-  case "json"_: return "application/json";
-  case "pdf"_: return "application/pdf";
-  case "js"_: return "application/javascript";
-  case "wasm"_: return "application/wasm";
-  case "xml"_: return "application/xml";
-  case "xhtml"_: return "application/xhtml+xml";
-  case "mp4"_: return "video/mp4";
-  default: return nullptr;
+    default: return nullptr;
+    case "pdf"_: return "application/pdf";
+    case "atom"_: return "application/atom+xml";
+    case "bmp"_: return "image/bmp";
+    case "css"_ : return "text/css";
+    case "csv"_: return "text/csv";
+    case "apng"_: return "image/apng";
+    case "avif"_: return "image/avif";
+    case "gif"_: return "image/gif";
+    case "png"_: return "image/png";	
+    case "svg"_: return "image/svg+xml";
+    case "webp"_: return "image/webp";
+    case "bmp"_: return "image/bmp";
+    case "ico"_: return "image/x-icon";
+    case "tif"_: return "image/tiff";
+    case "tiff"_: return "image/tiff";
+    case "htm"_:
+    case "html"_: return "text/html";
+    case "ico"_: return "image/x-icon";
+    case "woff"_: return "font/woff";
+    case "woff2"_: return "font/woff2";
+    case "js"_:
+    case "mjs"_: return "application/javascript";
+    case "json"_: return "application/json";
+    case "jpg"_:
+    case "jpeg"_: return "image/jpeg";
+    case "mp3"_: return "audio/mp3";
+    case "mpga"_: return "audio/mpeg";
+    case "mp4"_: return "video/mp4";
+    case "mpeg"_: return "video/mpeg";
+    case "weba"_: return "audio/webm";
+    case "webm"_: return "video/webm";
+    case "png"_: return "image/png";
+    case "otf"_: return "font/otf";
+    case "ttf"_: return "font/ttf";
+    case "rss"_: return "application/rss+xml";
+    case "svg"_: return "image/svg+xml";
+    case "tar"_: return "application/x-tar";
+    case "txt"_: return "text/plain";
+    case "ttf"_: return "font/ttf";
+    case "webp"_: return "image/webp";
+    case "xhtml"_: return "application/xhtml+xml";
+    case "xslt"_: return "application/xslt+xml";
+    case "xml"_: return "application/xml";
+    case "yaml"_:	 return "text/yaml";
+    case "gz"_: return "application/gzip";
+    case "zip"_: return "application/zip";
+    case "vtt"_: return "text/vtt";
+    case "wasm"_: return "application/wasm";
+    case "wav"_: return "audio/wave";
+    case "7z"_: return "application/x-7z-compressed";
   }
 }
 
