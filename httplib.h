@@ -2135,6 +2135,25 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
   }
 }
 
+inline constexpr unsigned int str2tag_core(const char *s, size_t l,
+                                           unsigned int h) {
+  return (l == 0) ? h
+                  : str2tag_core(s + 1, l - 1,
+                                 (h * 33) ^ static_cast<unsigned char>(*s));
+}
+
+inline unsigned int str2tag(const std::string &s) {
+  return str2tag_core(s.data(), s.size(), 0);
+}
+
+namespace udl {
+
+inline constexpr unsigned int operator"" _(const char *s, size_t l) {
+  return str2tag_core(s, l, 0);
+}
+
+} // namespace udl
+
 inline const char *
 find_content_type(const std::string &path,
                   const std::map<std::string, std::string> &user_data) {
@@ -2143,40 +2162,29 @@ find_content_type(const std::string &path,
   auto it = user_data.find(ext);
   if (it != user_data.end()) { return it->second.c_str(); }
 
-  if (ext == "txt") {
-    return "text/plain";
-  } else if (ext == "html" || ext == "htm") {
-    return "text/html";
-  } else if (ext == "css") {
-    return "text/css";
-  } else if (ext == "jpeg" || ext == "jpg") {
-    return "image/jpg";
-  } else if (ext == "vtt") {
-    return "text/vtt";
-  } else if (ext == "png") {
-    return "image/png";
-  } else if (ext == "gif") {
-    return "image/gif";
-  } else if (ext == "svg") {
-    return "image/svg+xml";
-  } else if (ext == "ico") {
-    return "image/x-icon";
-  } else if (ext == "json") {
-    return "application/json";
-  } else if (ext == "pdf") {
-    return "application/pdf";
-  } else if (ext == "js") {
-    return "application/javascript";
-  } else if (ext == "wasm") {
-    return "application/wasm";
-  } else if (ext == "xml") {
-    return "application/xml";
-  } else if (ext == "xhtml") {
-    return "application/xhtml+xml";
-  } else if (ext == "mp4") {
-    return "video/mp4";
+  using namespace udl;
+
+  switch (str2tag(ext)) {
+  case "txt"_: return "text/plain";
+  case "html"_:
+  case "htm"_: return "text/html";
+  case "css"_: return "text/css";
+  case "jpeg"_:
+  case "jpg"_: return "image/jpg";
+  case "vtt"_: return "text/vtt";
+  case "png"_: return "image/png";
+  case "gif"_: return "image/gif";
+  case "svg"_: return "image/svg+xml";
+  case "ico"_: return "image/x-icon";
+  case "json"_: return "application/json";
+  case "pdf"_: return "application/pdf";
+  case "js"_: return "application/javascript";
+  case "wasm"_: return "application/wasm";
+  case "xml"_: return "application/xml";
+  case "xhtml"_: return "application/xhtml+xml";
+  case "mp4"_: return "video/mp4";
+  default: return nullptr;
   }
-  return nullptr;
 }
 
 inline const char *status_message(int status) {
