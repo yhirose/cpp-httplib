@@ -2206,6 +2206,7 @@ find_content_type(const std::string &path,
     case "txt"_: return "text/plain";
     case "ttf"_: return "font/ttf";
     case "webp"_: return "image/webp";
+    case "xht"_:
     case "xhtml"_: return "application/xhtml+xml";
     case "xslt"_: return "application/xslt+xml";
     case "xml"_: return "application/xml";
