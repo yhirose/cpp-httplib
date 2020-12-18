@@ -2177,13 +2177,11 @@ find_content_type(const std::string &path,
     case "png"_: return "image/png";	
     case "svg"_: return "image/svg+xml";
     case "webp"_: return "image/webp";
-    case "bmp"_: return "image/bmp";
     case "ico"_: return "image/x-icon";
     case "tif"_: return "image/tiff";
     case "tiff"_: return "image/tiff";
     case "htm"_:
     case "html"_: return "text/html";
-    case "ico"_: return "image/x-icon";
     case "woff"_: return "font/woff";
     case "woff2"_: return "font/woff2";
     case "js"_:
@@ -2197,15 +2195,11 @@ find_content_type(const std::string &path,
     case "mpeg"_: return "video/mpeg";
     case "weba"_: return "audio/webm";
     case "webm"_: return "video/webm";
-    case "png"_: return "image/png";
     case "otf"_: return "font/otf";
     case "ttf"_: return "font/ttf";
     case "rss"_: return "application/rss+xml";
-    case "svg"_: return "image/svg+xml";
     case "tar"_: return "application/x-tar";
     case "txt"_: return "text/plain";
-    case "ttf"_: return "font/ttf";
-    case "webp"_: return "image/webp";
     case "xht"_:
     case "xhtml"_: return "application/xhtml+xml";
     case "xslt"_: return "application/xslt+xml";
