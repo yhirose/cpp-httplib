@@ -6301,8 +6301,9 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
       },
       [](SSL * /*ssl*/) { return true; });
 
+  bool ret = false;
   if (ssl) {
-    auto ret = detail::process_server_socket_ssl(
+    ret = detail::process_server_socket_ssl(
         ssl, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
         read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
         write_timeout_usec_,
@@ -6316,12 +6317,11 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
     // the connection appeared to be closed.
     const bool shutdown_gracefully = ret;
     detail::ssl_delete(ctx_mutex_, ssl, shutdown_gracefully);
-    return ret;
   }
 
   detail::shutdown_socket(sock);
   detail::close_socket(sock);
-  return false;
+  return ret;
 }
 
 // SSL HTTP client implementation
