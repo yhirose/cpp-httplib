@@ -3004,6 +3004,12 @@ TEST(ServerRequestParsingTest, InvalidHeaderTextWithExtraCR) {
                    "Content-Type: text/plain\r\n\r");
 }
 
+TEST(ServerRequestParsingTest, InvalidSpaceInURL) {
+  std::string out;
+  test_raw_request("GET /h i HTTP/1.1\r\n\r\n", &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 
