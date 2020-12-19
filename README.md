@@ -5,7 +5,7 @@ cpp-httplib
 
 A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
-It's extremely easy to setup. Just include **httplib.h** file in your code!
+It's extremely easy to setup. Just include the **httplib.h** file in your code!
 
 NOTE: This is a 'blocking' HTTP library. If you are looking for a 'non-blocking' library, this is not the one that you want.
 
@@ -163,7 +163,7 @@ The followings are built-in mappings:
 | zip        | application/zip             |
 | wasm       | application/wasm            |
 
-NOTE: These the static file server methods are not thread safe.
+NOTE: These static file server methods are not thread-safe.
 
 ### Logging
 
@@ -197,7 +197,7 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 });
 ```
 
-### Receive content with Content receiver
+### Receive content with a content receiver
 
 ```cpp
 svr.Post("/content_receiver",
@@ -224,7 +224,7 @@ svr.Post("/content_receiver",
   });
 ```
 
-### Send content with Content provider
+### Send content with the content provider
 
 ```cpp
 const size_t DATA_CHUNK_SIZE = 4;
@@ -281,7 +281,7 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 
 ### 'Expect: 100-continue' handler
 
-As default, the server sends `100 Continue` response for `Expect: 100-continue` header.
+By default, the server sends a `100 Continue` response for an `Expect: 100-continue` header.
 
 ```cpp
 // Send a '417 Expectation Failed' response.
@@ -312,7 +312,7 @@ svr.set_write_timeout(5, 0); // 5 seconds
 svr.set_idle_interval(0, 100000); // 100 milliseconds
 ```
 
-### Set maximum payload length for reading request body
+### Set maximum payload length for reading a request body
 
 ```c++
 svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
@@ -497,7 +497,7 @@ cli.set_read_timeout(5, 0); // 5 seconds
 cli.set_write_timeout(5, 0); // 5 seconds
 ```
 
-### Receive content with Content receiver
+### Receive content with a content receiver
 
 ```c++
 std::string body;
@@ -524,7 +524,7 @@ auto res = cli.Get(
   });
 ```
 
-### Send content with Content provider
+### Send content with a content provider
 
 ```cpp
 std::string body = ...;
@@ -681,7 +681,7 @@ be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 Compression
 -----------
 
-The server can applie compression to the following MIME type contents:
+The server can apply compression to the following MIME type contents:
 
   * all text types except text/event-stream
   * image/svg+xml
