@@ -8,29 +8,29 @@ using namespace httplib;
 template <typename T>
 void ProxyTest(T& cli, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
-  auto res = cli.Get("/get");
+  auto res = cli.Get("/httpbin/get");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(407, res->status);
 }
 
 TEST(ProxyTest, NoSSLBasic) {
-  Client cli("httpbin.org");
+  Client cli("nghttp2.org");
   ProxyTest(cli, true);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(ProxyTest, SSLBasic) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("nghttp2.org");
   ProxyTest(cli, true);
 }
 
 TEST(ProxyTest, NoSSLDigest) {
-  Client cli("httpbin.org");
+  Client cli("nghttp2.org");
   ProxyTest(cli, false);
 }
 
 TEST(ProxyTest, SSLDigest) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("nghttp2.org");
   ProxyTest(cli, false);
 }
 #endif
@@ -54,28 +54,26 @@ void RedirectProxyText(T& cli, const char *path, bool basic) {
   EXPECT_EQ(200, res->status);
 }
 
-#if 0
 TEST(RedirectTest, HTTPBinNoSSLBasic) {
-  Client cli("httpbin.org");
-  RedirectProxyText(cli, "/redirect/2", true);
+  Client cli("nghttp2.org");
+  RedirectProxyText(cli, "/httpbin/redirect/2", true);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(RedirectTest, HTTPBinNoSSLDigest) {
-  Client cli("httpbin.org");
-  RedirectProxyText(cli, "/redirect/2", false);
+  Client cli("nghttp2.org");
+  RedirectProxyText(cli, "/httpbin/redirect/2", false);
 }
 
 TEST(RedirectTest, HTTPBinSSLBasic) {
-  SSLClient cli("httpbin.org");
-  RedirectProxyText(cli, "/redirect/2", true);
+  SSLClient cli("nghttp2.org");
+  RedirectProxyText(cli, "/httpbin/redirect/2", true);
 }
 
 TEST(RedirectTest, HTTPBinSSLDigest) {
-  SSLClient cli("httpbin.org");
-  RedirectProxyText(cli, "/redirect/2", false);
+  SSLClient cli("nghttp2.org");
+  RedirectProxyText(cli, "/httpbin/redirect/2", false);
 }
-#endif
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -218,7 +216,8 @@ TEST(DigestAuthTest, NoSSL) {
 
 // ----------------------------------------------------------------------------
 
-void KeepAliveTest(Client& cli, bool basic) {
+template <typename T>
+void KeepAliveTest(T& cli, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
   if (basic) {
     cli.set_proxy_basic_auth("hello", "world");
@@ -234,20 +233,20 @@ void KeepAliveTest(Client& cli, bool basic) {
 #endif
 
   {
-    auto res = cli.Get("/get");
+    auto res = cli.Get("/httpbin/get");
     EXPECT_EQ(200, res->status);
   }
   {
-    auto res = cli.Get("/redirect/2");
+    auto res = cli.Get("/httpbin/redirect/2");
     EXPECT_EQ(200, res->status);
   }
 
   {
     std::vector<std::string> paths = {
-        "/digest-auth/auth/hello/world/MD5",
-        "/digest-auth/auth/hello/world/SHA-256",
-        "/digest-auth/auth/hello/world/SHA-512",
-        "/digest-auth/auth-int/hello/world/MD5",
+        "/httpbin/digest-auth/auth/hello/world/MD5",
+        "/httpbin/digest-auth/auth/hello/world/SHA-256",
+        "/httpbin/digest-auth/auth/hello/world/SHA-512",
+        "/httpbin/digest-auth/auth-int/hello/world/MD5",
     };
 
     for (auto path: paths) {
@@ -258,34 +257,32 @@ void KeepAliveTest(Client& cli, bool basic) {
   }
 
   {
-    int count = 100;
+    int count = 10;
     while (count--) {
-      auto res = cli.Get("/get");
+      auto res = cli.Get("/httpbin/get");
       EXPECT_EQ(200, res->status);
     }
   }
 }
 
-#if 0
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, NoSSLWithBasic) {
-  Client cli("httpbin.org");
+  Client cli("nghttp2.org");
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, SSLWithBasic) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("nghttp2.org");
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, NoSSLWithDigest) {
-  Client cli("httpbin.org");
+  Client cli("nghttp2.org");
   KeepAliveTest(cli, false);
 }
 
 TEST(KeepAliveTest, SSLWithDigest) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("nghttp2.org");
   KeepAliveTest(cli, false);
 }
-#endif
 #endif

@@ -718,9 +718,8 @@ TEST(DigestAuthTest, FromHTTPWatch) {
 }
 #endif
 
-#if 0
 TEST(AbsoluteRedirectTest, Redirect) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
@@ -729,13 +728,13 @@ TEST(AbsoluteRedirectTest, Redirect) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/absolute-redirect/3");
+  auto res = cli.Get("/httpbin/absolute-redirect/3");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST(RedirectTest, Redirect) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
@@ -744,13 +743,13 @@ TEST(RedirectTest, Redirect) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/redirect/3");
+  auto res = cli.Get("/httpbin/redirect/3");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST(RelativeRedirectTest, Redirect) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
@@ -759,13 +758,13 @@ TEST(RelativeRedirectTest, Redirect) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/relative-redirect/3");
+  auto res = cli.Get("/httpbin/relative-redirect/3");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST(TooManyRedirectTest, Redirect) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
@@ -774,11 +773,10 @@ TEST(TooManyRedirectTest, Redirect) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/redirect/21");
+  auto res = cli.Get("/httpbin/redirect/21");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
-#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest, Redirect) {
@@ -795,16 +793,14 @@ TEST(YahooRedirectTest, Redirect) {
   EXPECT_EQ("https://yahoo.com/", res->location);
 }
 
-#if 0
 TEST(HttpsToHttpRedirectTest, Redirect) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("nghttp2.org");
   cli.set_follow_location(true);
-  auto res =
-      cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  auto res = cli.Get(
+      "/httpbin/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
-#endif
 
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr8080;
@@ -3756,15 +3752,14 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 }
 #endif
 
-#if 0
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
-  auto res =
-      Client("https://httpbin.org")
-          .set_follow_location(true)
-          .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  Client cli("https://nghttp2.org");
+  cli.set_follow_location(true);
+  auto res = cli.Get(
+      "/httpbin/"
+      "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
-#endif
 #endif
