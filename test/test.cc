@@ -46,16 +46,17 @@ TEST(StartupTest, WSAStartup) {
 }
 #endif
 
-TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest){
+TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 
   EXPECT_EQ(detail::encode_query_param(unescapedCharacters), "-_.!~*'()");
 }
 
-TEST(EncodeQueryParamTest, ParseReservedCharactersTest){
+TEST(EncodeQueryParamTest, ParseReservedCharactersTest) {
   string reservedCharacters = ";,/?:@&=+$";
 
-  EXPECT_EQ(detail::encode_query_param(reservedCharacters), "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
+  EXPECT_EQ(detail::encode_query_param(reservedCharacters),
+            "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
 }
 
 TEST(TrimTests, TrimStringTests) {
