@@ -120,48 +120,28 @@ svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
 
 The followings are built-in mappings:
 
-| Extension  |          MIME Type          |
-| :--------- | :-------------------------- |
-| css        | text/css                    |
-| csv        | text/csv                    |
-| txt        | text/plain                  |
-| vtt        | text/vtt                    |
-| html, htm  | text/html                   |
-| apng       | image/apng                  |
-| avif       | image/avif                  |
-| bmp        | image/bmp                   |
-| gif        | image/gif                   |
-| png        | image/png                   |
-| svg        | image/svg+xml               |
-| webp       | image/webp                  |
-| ico        | image/x-icon                |
-| tif        | image/tiff                  |
-| tiff       | image/tiff                  |
-| jpeg, jpg  | image/jpeg                  |
-| mp4        | video/mp4                   |
-| mpeg       | video/mpeg                  |
-| webm       | video/webm                  |
-| mp3        | audio/mp3                   |
-| mpga       | audio/mpeg                  |
-| weba       | audio/webm                  |
-| wav        | audio/wave                  |
-| otf        | font/otf                    |
-| ttf        | font/ttf                    |
-| woff       | font/woff                   |
-| woff2      | font/woff2                  |
-| 7z         | application/x-7z-compressed |
-| atom       | application/atom+xml        |
-| pdf        | application/pdf             |
-| mjs, js    | application/javascript      |
-| json       | application/json            |
-| rss        | application/rss+xml         |
-| tar        | application/x-tar           |
-| xhtml, xht | application/xhtml+xml       |
-| xslt       | application/xslt+xml        |
-| xml        | application/xml             |
-| gz         | application/gzip            |
-| zip        | application/zip             |
-| wasm       | application/wasm            |
+| Extension  |          MIME Type          | Extension  |          MIME Type          |
+| :--------- | :-------------------------- | :--------- | :-------------------------- |
+| css        | text/css                    | mpga       | audio/mpeg                  |
+| csv        | text/csv                    | weba       | audio/webm                  |
+| txt        | text/plain                  | wav        | audio/wave                  |
+| vtt        | text/vtt                    | otf        | font/otf                    |
+| html, htm  | text/html                   | ttf        | font/ttf                    |
+| apng       | image/apng                  | woff       | font/woff                   |
+| avif       | image/avif                  | woff2      | font/woff2                  |
+| bmp        | image/bmp                   | 7z         | application/x-7z-compressed |
+| gif        | image/gif                   | atom       | application/atom+xml        |
+| png        | image/png                   | pdf        | application/pdf             |
+| svg        | image/svg+xml               | mjs, js    | application/javascript      |
+| webp       | image/webp                  | json       | application/json            |
+| ico        | image/x-icon                | rss        | application/rss+xml         |
+| tif        | image/tiff                  | tar        | application/x-tar           |
+| tiff       | image/tiff                  | xhtml, xht | application/xhtml+xml       |
+| jpeg, jpg  | image/jpeg                  | xslt       | application/xslt+xml        |
+| mp4        | video/mp4                   | xml        | application/xml             |
+| mpeg       | video/mpeg                  | gz         | application/gzip            |
+| webm       | video/webm                  | zip        | application/zip             |
+| mp3        | audio/mp3                   | wasm       | application/wasm            |
 
 NOTE: These static file server methods are not thread-safe.
 
