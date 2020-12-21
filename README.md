@@ -27,40 +27,20 @@ svr.listen("0.0.0.0", 8080);
 #### Client
 
 ```c++
-httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+
+httplib::Client cli("https://cpp-httplib-server.yhirose.repl.co");
 
 auto res = cli.Get("/hi");
 
-res->status; // 200
-res->body;   // "Hello World!"
+res->status;
+res->body;
 ```
 
 ### Try out the examples on Repl.it!
 
 1. Run server at https://repl.it/@yhirose/cpp-httplib-server
 2. Run client at https://repl.it/@yhirose/cpp-httplib-client
-
-OpenSSL Support
----------------
-
-SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
-
-NOTE: cpp-httplib currently supports only version 1.1.1.
-
-```c++
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-
-httplib::SSLServer svr("./cert.pem", "./key.pem");
-
-httplib::SSLClient cli("localhost", 1234); // or `httplib::Client cli("https://localhost:1234");`
-cli.set_ca_cert_path("./ca-bundle.crt");
-cli.enable_server_certificate_verification(true);
-```
-
-Note: When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE
-can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its
-internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might
-be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
 Server
 ------
@@ -392,6 +372,7 @@ httplib::Client cli("localhost:8080");
 httplib::Client cli("http://localhost");
 httplib::Client cli("http://localhost:8080");
 httplib::Client cli("https://localhost");
+httplib::SSLClient cli("localhost");
 ```
 
 ### Error code
@@ -692,6 +673,31 @@ cli.set_decompress(false);
 res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate, br"}});
 res->body; // Compressed data
 ```
+
+SSL Support
+-----------
+
+SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
+
+NOTE: cpp-httplib currently supports only version 1.1.1.
+
+```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+
+// Server
+httplib::SSLServer svr("./cert.pem", "./key.pem");
+
+// Client
+httplib::Client cli("https://localhost:1234");
+
+// Use your CA bundle
+cli.set_ca_cert_path("./ca-bundle.crt");
+
+// Disable cert verification
+cli.enable_server_certificate_verification(false);
+```
+
+Note: When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
 Split httplib.h into .h and .cc
 -------------------------------
