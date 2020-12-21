@@ -40,6 +40,28 @@ res->body;   // "Hello World!"
 1. Run server at https://repl.it/@yhirose/cpp-httplib-server
 2. Run client at https://repl.it/@yhirose/cpp-httplib-client
 
+OpenSSL Support
+---------------
+
+SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
+
+NOTE: cpp-httplib currently supports only version 1.1.1.
+
+```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+
+httplib::SSLServer svr("./cert.pem", "./key.pem");
+
+httplib::SSLClient cli("localhost", 1234); // or `httplib::Client cli("https://localhost:1234");`
+cli.set_ca_cert_path("./ca-bundle.crt");
+cli.enable_server_certificate_verification(true);
+```
+
+Note: When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE
+can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its
+internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might
+be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
+
 Server
 ------
 
@@ -634,29 +656,6 @@ NOTE: This feature is not available on Windows, yet.
 ```cpp
 cli.set_interface("eth0"); // Interface name, IP address or host name
 ```
-
-OpenSSL Support
----------------
-
-SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
-
-NOTE: cpp-httplib currently supports only version 1.1.1.
-
-```c++
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-
-httplib::SSLServer svr("./cert.pem", "./key.pem");
-
-httplib::SSLClient cli("localhost", 1234); // or `httplib::Client cli("https://localhost:1234");`
-cli.set_ca_cert_path("./ca-bundle.crt");
-cli.enable_server_certificate_verification(true);
-```
-
-Note: When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE
-can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its
-internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might
-be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
-
 
 Compression
 -----------
