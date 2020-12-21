@@ -15,7 +15,12 @@ Simple examples
 #### Server
 
 ```c++
+// HTTP
 httplib::Server svr;
+
+// HTTPS
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+httplib::SSLServer svr;
 
 svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
   res.set_content("Hello World!", "text/plain");
@@ -27,12 +32,14 @@ svr.listen("0.0.0.0", 8080);
 #### Client
 
 ```c++
-#define CPPHTTPLIB_OPENSSL_SUPPORT
+// HTTP
+httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
 
+// HTTPS
+#define CPPHTTPLIB_OPENSSL_SUPPORT
 httplib::Client cli("https://cpp-httplib-server.yhirose.repl.co");
 
 auto res = cli.Get("/hi");
-
 res->status;
 res->body;
 ```
