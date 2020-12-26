@@ -257,6 +257,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 ```cpp
 svr.Get("/chunked", [&](const Request& req, Response& res) {
   res.set_chunked_content_provider(
+    "text/plain",
     [](size_t offset, DataSink &sink) {
       sink.write("123", 3);
       sink.write("345", 3);
