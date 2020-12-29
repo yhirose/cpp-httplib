@@ -953,6 +953,77 @@ TEST(ErrorHandlerTest, ContentLength) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(RoutingHandlerTest, PreRoutingHandler) {
+  Server svr;
+
+  svr.set_pre_routing_handler([](const Request &req, Response &res) {
+    if (req.path == "/routing_handler") {
+      res.set_header("PRE_ROUTING", "on");
+      res.set_content("Routing Handler", "text/plain");
+      return true;
+    }
+    return false;
+  });
+
+  svr.set_error_handler([](const Request & /*req*/, Response &res) {
+    res.set_content("Error", "text/html");
+  });
+
+  svr.set_post_routing_handler([](const Request &req, Response &res) {
+    if (req.path == "/routing_handler") {
+      res.set_header("POST_ROUTING", "on");
+    }
+  });
+
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!\n", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/routing_handler");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("Routing Handler", res->body);
+    EXPECT_EQ(1, res->get_header_value_count("PRE_ROUTING"));
+    EXPECT_EQ("on", res->get_header_value("PRE_ROUTING"));
+    EXPECT_EQ(1, res->get_header_value_count("POST_ROUTING"));
+    EXPECT_EQ("on", res->get_header_value("POST_ROUTING"));
+  }
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("Hello World!\n", res->body);
+    EXPECT_EQ(0, res->get_header_value_count("PRE_ROUTING"));
+    EXPECT_EQ(0, res->get_header_value_count("POST_ROUTING"));
+  }
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/aaa");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(404, res->status);
+    EXPECT_EQ("Error", res->body);
+    EXPECT_EQ(0, res->get_header_value_count("PRE_ROUTING"));
+    EXPECT_EQ(0, res->get_header_value_count("POST_ROUTING"));
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 TEST(InvalidFormatTest, StatusCode) {
   Server svr;
 
