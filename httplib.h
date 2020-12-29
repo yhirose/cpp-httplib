@@ -4240,7 +4240,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   std::string boundary;
   if (need_apply_ranges) { apply_ranges(req, res, content_type, boundary); }
 
-  // Headers
+  // Preapre additional headers
   if (close_connection || req.get_header_value("Connection") == "close") {
     res.set_header("Connection", "close");
   } else {
@@ -4266,17 +4266,21 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   detail::BufferStream bstrm;
 
-  // Response line
-  if (!bstrm.write_format("HTTP/1.1 %d %s\r\n", res.status,
-                          detail::status_message(res.status))) {
-    return false;
+  // Response line and headers
+  {
+    detail::BufferStream bstrm;
+
+    if (!bstrm.write_format("HTTP/1.1 %d %s\r\n", res.status,
+                            detail::status_message(res.status))) {
+      return false;
+    }
+
+    if (!detail::write_headers(bstrm, res, Headers())) { return false; }
+
+    // Flush buffer
+    auto &data = bstrm.get_buffer();
+    strm.write(data.data(), data.size());
   }
-
-  if (!detail::write_headers(bstrm, res, Headers())) { return false; }
-
-  // Flush buffer
-  auto &data = bstrm.get_buffer();
-  strm.write(data.data(), data.size());
 
   // Body
   auto ret = true;
@@ -5264,14 +5268,7 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
 
 inline bool ClientImpl::write_request(Stream &strm, const Request &req,
                                       bool close_connection, Error &error) {
-  detail::BufferStream bstrm;
-
-  // Request line
-  const auto &path = detail::encode_url(req.path);
-
-  bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
-
-  // Additonal headers
+  // Prepare additonal headers
   Headers headers;
   if (close_connection) { headers.emplace("Connection", "close"); }
 
@@ -5341,13 +5338,21 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
         proxy_bearer_token_auth_token_, true));
   }
 
-  detail::write_headers(bstrm, req, headers);
+  // Request line and headers
+  {
+    detail::BufferStream bstrm;
 
-  // Flush buffer
-  auto &data = bstrm.get_buffer();
-  if (!detail::write_data(strm, data.data(), data.size())) {
-    error = Error::Write;
-    return false;
+    const auto &path = detail::encode_url(req.path);
+    bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
+
+    detail::write_headers(bstrm, req, headers);
+
+    // Flush buffer
+    auto &data = bstrm.get_buffer();
+    if (!detail::write_data(strm, data.data(), data.size())) {
+      error = Error::Write;
+      return false;
+    }
   }
 
   // Body
