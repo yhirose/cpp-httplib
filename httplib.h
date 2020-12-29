@@ -680,7 +680,8 @@ private:
   bool listen_internal();
 
   bool routing(Request &req, Response &res, Stream &strm);
-  bool handle_file_request(Request &req, Response &res, bool head = false);
+  bool handle_file_request(const Request &req, Response &res,
+                           bool head = false);
   bool dispatch_request(Request &req, Response &res, const Handlers &handlers);
   bool
   dispatch_request_for_content_reader(Request &req, Response &res,
@@ -4441,7 +4442,7 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
   return true;
 }
 
-inline bool Server::handle_file_request(Request &req, Response &res,
+inline bool Server::handle_file_request(const Request &req, Response &res,
                                         bool head) {
   for (const auto &entry : base_dirs_) {
     // Prefix match
