@@ -4,7 +4,6 @@
 //  Copyright (c) 2020 Yuji Hirose. All rights reserved.
 //  MIT License
 //
-
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
@@ -1287,7 +1286,11 @@ private:
 
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
+#if __MINGW32__ || (WINVER < 0x0602)
+  std::atomic<bool> initialize_cert_;
+#else
   std::once_flag initialize_cert_;
+#endif
 
   std::vector<std::string> host_components_;
 
@@ -6463,7 +6466,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
 inline bool SSLClient::load_certs() {
   bool ret = true;
 
-  std::call_once(initialize_cert_, [&]() {
+  auto f_load_certs_impl = [&]() {
     std::lock_guard<std::mutex> guard(ctx_mutex_);
     if (!ca_cert_file_path_.empty()) {
       if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
@@ -6482,7 +6485,16 @@ inline bool SSLClient::load_certs() {
       SSL_CTX_set_default_verify_paths(ctx_);
 #endif
     }
-  });
+  };
+
+#if __MINGW32__ || (WINVER < 0x0602)
+  if (!initialize_cert_) {
+      f_load_certs_impl();
+      initialize_cert_.store(true);
+  }
+#else
+  std::call_once(initialize_cert_, f_load_certs_impl);
+#endif
 
   return ret;
 }
@@ -6605,7 +6617,44 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
   struct in_addr addr;
   size_t addr_len = 0;
 
-#ifndef __MINGW32__
+#if __MINGW32__ || (WINVER < 0x0603)
+  auto f_legacy_inet_pton = [](int af, char *address, struct in6_addr &addr6,
+                               struct in_addr &addr) -> bool
+  {
+    sockaddr_storage storage;
+    INT szStorage = sizeof(sockaddr_storage);
+    ZeroMemory(&storage, szStorage);
+
+    if (WSAStringToAddressA(address, af, NULL, (struct sockaddr*)&storage, &szStorage) == 0) {
+      if (af == AF_INET6)
+      {
+        addr6 = ((struct sockaddr_in6 *)&storage)->sin6_addr;
+        return true;
+      }
+      else if (af == AF_INET)
+      {
+        addr = ((struct sockaddr_in *)&storage)->sin_addr;
+        return true;
+      }
+    }
+    return false;
+  };
+
+  constexpr size_t sz_buffer = INET6_ADDRSTRLEN + 1;
+  auto buffer = std::make_unique<char[]>(INET6_ADDRSTRLEN + 1);
+  ZeroMemory(buffer.get(), sz_buffer);
+  std::copy(host_.begin(), host_.end(), buffer.get());
+
+  if (f_legacy_inet_pton(AF_INET6, buffer.get(), addr6, addr)) {
+    type = GEN_IPADD;
+    addr_len = sizeof(struct in6_addr);
+  } else if (f_legacy_inet_pton(AF_INET6, buffer.get(), addr6, addr)) {
+    type = GEN_IPADD;
+    addr_len = sizeof(struct in_addr);
+  }
+
+
+#else
   if (inet_pton(AF_INET6, host_.c_str(), &addr6)) {
     type = GEN_IPADD;
     addr_len = sizeof(struct in6_addr);
