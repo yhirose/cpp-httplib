@@ -59,19 +59,18 @@ TEST(EncodeQueryParamTest, ParseReservedCharactersTest) {
             "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
 }
 
-TEST(EncodeQueryParamTest, TestUTF8Characters){
+TEST(EncodeQueryParamTest, TestUTF8Characters) {
   string chineseCharacters = "中国語";
   string russianCharacters = "дом";
   string brazilianCharacters = "óculos";
 
   EXPECT_EQ(detail::encode_query_param(chineseCharacters),
-      "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
+            "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
 
   EXPECT_EQ(detail::encode_query_param(russianCharacters),
-      "%D0%B4%D0%BE%D0%BC");
+            "%D0%B4%D0%BE%D0%BC");
 
-  EXPECT_EQ(detail::encode_query_param(brazilianCharacters),
-      "%C3%B3culos");
+  EXPECT_EQ(detail::encode_query_param(brazilianCharacters), "%C3%B3culos");
 }
 
 TEST(TrimTests, TrimStringTests) {
@@ -3150,7 +3149,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
 
   svr.Get("/hi", [&](const Request & /*req*/, Response & /*res*/) {
     throw std::runtime_error("exception...");
-    //res.set_content("Hello World!", "text/plain");
+    // res.set_content("Hello World!", "text/plain");
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
@@ -3205,6 +3204,39 @@ TEST(KeepAliveTest, ReadTimeout) {
   ASSERT_TRUE(resb);
   EXPECT_EQ(200, resb->status);
   EXPECT_EQ("b", resb->body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
+  Server svr;
+
+  svr.set_error_handler([](Request const &, Response &res) -> void {
+    res.set_chunked_content_provider(
+        "text/plain", [](std::size_t const, DataSink &sink) -> bool {
+          sink.os << "hello";
+          sink.os << "world";
+          sink.done();
+          return true;
+        });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(404, res->status);
+  EXPECT_EQ("helloworld", res->body);
 
   svr.stop();
   listen_thread.join();
@@ -3770,9 +3802,9 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   Client cli("https://nghttp2.org");
   cli.set_follow_location(true);
-  auto res = cli.Get(
-      "/httpbin/"
-      "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  auto res =
+      cli.Get("/httpbin/"
+              "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
