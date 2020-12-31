@@ -4264,8 +4264,6 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     res.set_header("Accept-Ranges", "bytes");
   }
 
-  detail::BufferStream bstrm;
-
   // Response line and headers
   {
     detail::BufferStream bstrm;
