@@ -59,6 +59,21 @@ TEST(EncodeQueryParamTest, ParseReservedCharactersTest) {
             "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
 }
 
+TEST(EncodeQueryParamTest, TestUTF8Characters){
+  string chineseCharacters = "中国語";
+  string russianCharacters = "дом";
+  string brazilianCharacters = "óculos";
+
+  EXPECT_EQ(detail::encode_query_param(chineseCharacters),
+      "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
+
+  EXPECT_EQ(detail::encode_query_param(russianCharacters),
+      "%D0%B4%D0%BE%D0%BC");
+
+  EXPECT_EQ(detail::encode_query_param(brazilianCharacters),
+      "%C3%B3culos");
+}
+
 TEST(TrimTests, TrimStringTests) {
   EXPECT_EQ("abc", detail::trim_copy("abc"));
   EXPECT_EQ("abc", detail::trim_copy("  abc  "));
