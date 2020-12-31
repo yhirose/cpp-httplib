@@ -4235,7 +4235,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
                                         bool need_apply_ranges) {
   assert(res.status != -1);
 
-  if (400 <= res.status && error_handler_) { error_handler_(req, res); }
+  if (400 <= res.status && error_handler_) {
+    error_handler_(req, res);
+    need_apply_ranges = true;
+  }
 
   std::string content_type;
   std::string boundary;
