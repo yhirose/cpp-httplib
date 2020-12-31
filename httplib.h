@@ -3555,7 +3555,7 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
   if (!hStore) { return false; }
 
   PCCERT_CONTEXT pContext = NULL;
-  while (pContext = CertEnumCertificatesInStore(hStore, pContext)) {
+  while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) != nullptr) {
     auto encoded_cert =
         static_cast<const unsigned char *>(pContext->pbCertEncoded);
 
@@ -4348,7 +4348,6 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
                                                   is_shutting_down);
     }
   }
-  return true;
 }
 
 inline bool Server::read_content(Stream &strm, Request &req, Response &res) {

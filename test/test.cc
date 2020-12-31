@@ -3148,9 +3148,9 @@ TEST(MountTest, Unmount) {
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
 
-  svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
+  svr.Get("/hi", [&](const Request & /*req*/, Response & /*res*/) {
     throw std::runtime_error("exception...");
-    res.set_content("Hello World!", "text/plain");
+    //res.set_content("Hello World!", "text/plain");
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
