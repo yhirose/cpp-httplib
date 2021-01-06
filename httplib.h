@@ -377,6 +377,7 @@ struct Request {
   std::string path;
   Headers headers;
   std::string body;
+  char * alt_body = nullptr;
 
   std::string remote_addr;
   int remote_port = -1;
@@ -844,6 +845,8 @@ public:
              const char *content_type);
   Result Put(const char *path, const Headers &headers, const std::string &body,
              const char *content_type);
+  Result Put(const char *path, const Headers &headers, size_t content_length,
+             const std::unique_ptr<char[]> &body, const char *content_type);
   Result Put(const char *path, size_t content_length,
              ContentProvider content_provider, const char *content_type);
   Result Put(const char *path, ContentProviderWithoutLength content_provider,
@@ -1032,9 +1035,13 @@ private:
   bool redirect(const Request &req, Response &res, Error &error);
   bool handle_request(Stream &strm, const Request &req, Response &res,
                       bool close_connection, Error &error);
+  Result send_with_content_provider(
+      const char *method, const char *path, const Headers &headers,
+      const std::unique_ptr<char[]> &body, size_t content_length,
+      ContentProvider content_provider, const char *content_type);
   std::unique_ptr<Response> send_with_content_provider(
       const char *method, const char *path, const Headers &headers,
-      const std::string &body, size_t content_length,
+      const std::string &body, const std::unique_ptr<char[]> &altbody,  size_t content_length,
       ContentProvider content_provider,
       ContentProviderWithoutLength content_provider_without_length,
       const char *content_type, Error &error);
@@ -1120,6 +1127,8 @@ public:
   Result Put(const char *path, const std::string &body,
              const char *content_type);
   Result Put(const char *path, const Headers &headers, const std::string &body,
+             const char *content_type);
+  Result Put(const char *path, const Headers &headers, size_t content_length, const std::unique_ptr<char []> &body,
              const char *content_type);
   Result Put(const char *path, size_t content_length,
              ContentProvider content_provider, const char *content_type);
@@ -5296,7 +5305,8 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
     headers.emplace("User-Agent", "cpp-httplib/0.7");
   }
 
-  if (req.body.empty()) {
+  if (req.body.empty() && req.alt_body == nullptr) {
+
     if (req.content_provider_) {
       if (!req.is_chunked_content_provider_) {
         auto length = std::to_string(req.content_length_);
@@ -5314,7 +5324,7 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
     }
 
     if (!req.has_header("Content-Length")) {
-      auto length = std::to_string(req.body.size());
+      auto length = (req.alt_body != nullptr) ? std::to_string(req.content_length_) : std::to_string(req.body.size());
       headers.emplace("Content-Length", length);
     }
   }
@@ -5358,6 +5368,10 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
   }
 
   // Body
+  if (req.alt_body != nullptr){
+      return detail::write_data(strm, req.alt_body, req.content_length_);
+  }
+
   if (req.body.empty()) {
     return write_content_with_provider(strm, req, error);
   } else {
@@ -5369,7 +5383,7 @@ inline bool ClientImpl::write_request(Stream &strm, const Request &req,
 
 inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
     const char *method, const char *path, const Headers &headers,
-    const std::string &body, size_t content_length,
+    const std::string &body, const std::unique_ptr<char[]> & altbody, size_t content_length,
     ContentProvider content_provider,
     ContentProviderWithoutLength content_provider_without_length,
     const char *content_type, Error &error) {
@@ -5445,6 +5459,11 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
           std::move(content_provider_without_length));
       req.is_chunked_content_provider_ = true;
       req.headers.emplace("Transfer-Encoding", "chunked");
+    } else if (altbody) {
+      req.content_length_ = content_length;
+      req.alt_body = altbody.get();
+      req.is_chunked_content_provider_ = false;
+
     } else {
       req.body = body;
     }
@@ -5462,8 +5481,20 @@ inline Result ClientImpl::send_with_content_provider(
     const char *content_type) {
   auto error = Error::Success;
   auto res = send_with_content_provider(
-      method, path, headers, body, content_length, std::move(content_provider),
+      method, path, headers, body, nullptr, content_length, std::move(content_provider),
       std::move(content_provider_without_length), content_type, error);
+  return Result{std::move(res), error};
+}
+
+inline Result ClientImpl::send_with_content_provider(
+    const char *method, const char *path, const Headers &headers,
+    const std::unique_ptr<char[]> &body, size_t content_length,
+    ContentProvider content_provider,
+    const char *content_type) {
+  auto error = Error::Success;
+  auto res = send_with_content_provider(
+      method, path, headers, "", body, content_length, nullptr,
+      nullptr, content_type, error);
   return Result{std::move(res), error};
 }
 
@@ -5770,7 +5801,13 @@ inline Result ClientImpl::Put(const char *path, const Headers &headers,
   return send_with_content_provider("PUT", path, headers, body, 0, nullptr,
                                     nullptr, content_type);
 }
-
+inline Result ClientImpl::Put(const char *path, const Headers &headers,
+                              size_t content_length,
+                              const std::unique_ptr<char[]> &body,
+                              const char *content_type) {
+  return send_with_content_provider("PUT", path, headers, body, content_length,
+                                    nullptr, content_type);
+}
 inline Result ClientImpl::Put(const char *path, size_t content_length,
                               ContentProvider content_provider,
                               const char *content_type) {
@@ -6879,6 +6916,10 @@ inline Result Client::Put(const char *path, const std::string &body,
 inline Result Client::Put(const char *path, const Headers &headers,
                           const std::string &body, const char *content_type) {
   return cli_->Put(path, headers, body, content_type);
+}
+inline Result Client::Put(const char *path, const Headers &headers, size_t content_length,
+                          const std::unique_ptr<char[]> &body, const char *content_type) {
+  return cli_->Put(path, headers, content_length, body, content_type);
 }
 inline Result Client::Put(const char *path, size_t content_length,
                           ContentProvider content_provider,
