@@ -15,11 +15,13 @@ Simple examples
 #### Server
 
 ```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
+
 // HTTP
 httplib::Server svr;
 
 // HTTPS
-#define CPPHTTPLIB_OPENSSL_SUPPORT
 httplib::SSLServer svr;
 
 svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
@@ -32,11 +34,13 @@ svr.listen("0.0.0.0", 8080);
 #### Client
 
 ```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
+
 // HTTP
 httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
 
 // HTTPS
-#define CPPHTTPLIB_OPENSSL_SUPPORT
 httplib::Client cli("https://cpp-httplib-server.yhirose.repl.co");
 
 auto res = cli.Get("/hi");
@@ -711,6 +715,7 @@ NOTE: cpp-httplib currently supports only version 1.1.1.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
 
 // Server
 httplib::SSLServer svr("./cert.pem", "./key.pem");
