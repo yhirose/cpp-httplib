@@ -173,6 +173,26 @@ svr.set_error_handler([](const auto& req, auto& res) {
 });
 ```
 
+### Pre routing handler
+
+```cpp
+svr.set_pre_routing_handler([](const auto& req, auto& res) -> bool {
+  if (req.path == "/hello") {
+    res.set_content("world", "text/html");
+    return true; // This request is handled
+  }
+  return false; // Let the router handle this request
+});
+```
+
+### Post routing handler
+
+```cpp
+svr.set_post_routing_handler([](const auto& req, auto& res) {
+  res.set_header("ADDITIONAL_HEADER", "value");
+});
+```
+
 ### 'multipart/form-data' POST data
 
 ```cpp
