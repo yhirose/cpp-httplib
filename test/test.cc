@@ -959,10 +959,23 @@ TEST(NoContentTest, ContentLength) {
   svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.status = 204;
   });
-  auto res = cli.Get("/hi");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(204, res->status);
-  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(204, res->status);
+    EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(RoutingHandlerTest, PreRoutingHandler) {
