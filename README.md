@@ -15,11 +15,13 @@ Simple examples
 #### Server
 
 ```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
+
 // HTTP
 httplib::Server svr;
 
 // HTTPS
-#define CPPHTTPLIB_OPENSSL_SUPPORT
 httplib::SSLServer svr;
 
 svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
@@ -32,11 +34,13 @@ svr.listen("0.0.0.0", 8080);
 #### Client
 
 ```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
+
 // HTTP
 httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
 
 // HTTPS
-#define CPPHTTPLIB_OPENSSL_SUPPORT
 httplib::Client cli("https://cpp-httplib-server.yhirose.repl.co");
 
 auto res = cli.Get("/hi");
@@ -170,6 +174,26 @@ svr.set_error_handler([](const auto& req, auto& res) {
   char buf[BUFSIZ];
   snprintf(buf, sizeof(buf), fmt, res.status);
   res.set_content(buf, "text/html");
+});
+```
+
+### Pre routing handler
+
+```cpp
+svr.set_pre_routing_handler([](const auto& req, auto& res) -> bool {
+  if (req.path == "/hello") {
+    res.set_content("world", "text/html");
+    return true; // This request is handled
+  }
+  return false; // Let the router handle this request
+});
+```
+
+### Post routing handler
+
+```cpp
+svr.set_post_routing_handler([](const auto& req, auto& res) {
+  res.set_header("ADDITIONAL_HEADER", "value");
 });
 ```
 
@@ -691,6 +715,7 @@ NOTE: cpp-httplib currently supports only version 1.1.1.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
 
 // Server
 httplib::SSLServer svr("./cert.pem", "./key.pem");
