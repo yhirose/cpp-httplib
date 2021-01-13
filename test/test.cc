@@ -1012,7 +1012,6 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   {
     Client cli(HOST, PORT);
 
-
     auto res = cli.Get("/routing_handler");
     ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
