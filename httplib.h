@@ -5544,7 +5544,7 @@ inline bool ClientImpl::process_request(Stream &strm, const Request &req,
   }
 
   // Body
-  if (req.method != "HEAD" && req.method != "CONNECT") {
+  if ((res.status != 204) && req.method != "HEAD" && req.method != "CONNECT") {
     auto out =
         req.content_receiver_
             ? static_cast<ContentReceiverWithProgress>(
