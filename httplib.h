@@ -619,6 +619,10 @@ public:
   Server &Delete(const char *pattern, Handler handler);
   Server &Delete(const char *pattern, HandlerWithContentReader handler);
   Server &Options(const char *pattern, Handler handler);
+  Server &set_error_handler(HandlerWithReturn handler);
+  Server &set_error_handler(Handler handler);
+  Server &set_pre_routing_handler(HandlerWithReturn handler);
+  Server &set_post_routing_handler(Handler handler);
 
   bool set_base_dir(const char *dir, const char *mount_point = nullptr);
   bool set_mount_point(const char *mount_point, const char *dir,
@@ -627,11 +631,6 @@ public:
   void set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
   void set_file_request_handler(Handler handler);
-
-  void set_error_handler(HandlerWithReturn handler);
-  void set_error_handler(Handler handler);
-  void set_pre_routing_handler(HandlerWithReturn handler);
-  void set_post_routing_handler(Handler handler);
 
   void set_expect_100_continue_handler(Expect100ContinueHandler handler);
   void set_logger(Logger logger);
