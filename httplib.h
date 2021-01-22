@@ -619,10 +619,6 @@ public:
   Server &Delete(const char *pattern, Handler handler);
   Server &Delete(const char *pattern, HandlerWithContentReader handler);
   Server &Options(const char *pattern, Handler handler);
-  Server &set_error_handler(HandlerWithReturn handler);
-  Server &set_error_handler(Handler handler);
-  Server &set_pre_routing_handler(HandlerWithReturn handler);
-  Server &set_post_routing_handler(Handler handler);
 
   bool set_base_dir(const char *dir, const char *mount_point = nullptr);
   bool set_mount_point(const char *mount_point, const char *dir,
@@ -630,10 +626,15 @@ public:
   bool remove_mount_point(const char *mount_point);
   void set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
-  void set_file_request_handler(Handler handler);
+  Server &set_file_request_handler(Handler handler);
 
-  void set_expect_100_continue_handler(Expect100ContinueHandler handler);
-  void set_logger(Logger logger);
+  Server &set_error_handler(HandlerWithReturn handler);
+  Server &set_error_handler(Handler handler);
+  Server &set_pre_routing_handler(HandlerWithReturn handler);
+  Server &set_post_routing_handler(Handler handler);
+
+  Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
+  Server &set_logger(Logger logger);
 
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
@@ -4162,8 +4163,10 @@ inline void Server::set_file_extension_and_mimetype_mapping(const char *ext,
   file_extension_and_mimetype_map_[ext] = mime;
 }
 
-inline void Server::set_file_request_handler(Handler handler) {
+inline Server &Server::set_file_request_handler(Handler handler) {
   file_request_handler_ = std::move(handler);
+
+  return *this;
 }
 
 inline Server &Server::set_error_handler(HandlerWithReturn handler) {
@@ -4189,11 +4192,17 @@ inline Server &Server::set_post_routing_handler(Handler handler) {
   return *this;
 }
 
-inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
+inline Server &Server::set_logger(Logger logger) {
+  logger_ = std::move(logger);
 
-inline void
-Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
+  return *this;
+}
+
+inline Server
+&Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   expect_100_continue_handler_ = std::move(handler);
+
+  return *this;
 }
 
 inline void Server::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
