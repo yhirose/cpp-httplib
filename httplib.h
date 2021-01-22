@@ -631,6 +631,7 @@ public:
   Server &set_error_handler(HandlerWithReturn handler);
   Server &set_error_handler(Handler handler);
   Server &set_pre_routing_handler(HandlerWithReturn handler);
+  Server &set_pre_routing_handler(Handler handler);
   Server &set_post_routing_handler(Handler handler);
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
@@ -4173,6 +4174,7 @@ inline Server &Server::set_file_request_handler(Handler handler) {
 
 inline Server &Server::set_error_handler(HandlerWithReturn handler) {
   error_handler_ = std::move(handler);
+
   return *this;
 }
 
@@ -4181,16 +4183,28 @@ inline Server &Server::set_error_handler(Handler handler) {
     handler(req, res);
     return true;
   };
+
   return *this;
 }
 
 inline Server &Server::set_pre_routing_handler(HandlerWithReturn handler) {
   pre_routing_handler_ = std::move(handler);
+
+  return *this;
+}
+
+inline Server &Server::set_pre_routing_handler(Handler handler) {
+  pre_routing_handler_ = [handler = std::move(handler)](const Request &req, Response &res) {
+    handler(req, res);
+    return true;
+  };
+
   return *this;
 }
 
 inline Server &Server::set_post_routing_handler(Handler handler) {
   post_routing_handler_ = std::move(handler);
+
   return *this;
 }
 
