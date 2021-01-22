@@ -4196,7 +4196,7 @@ inline Server &Server::set_pre_routing_handler(HandlerWithReturn handler) {
 inline Server &Server::set_pre_routing_handler(Handler handler) {
   pre_routing_handler_ = [handler = std::move(handler)](const Request &req, Response &res) {
     handler(req, res);
-    return true;
+    return false;
   };
 
   return *this;
