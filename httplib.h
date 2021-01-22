@@ -624,28 +624,28 @@ public:
   bool set_mount_point(const char *mount_point, const char *dir,
                        Headers headers = Headers());
   bool remove_mount_point(const char *mount_point);
-  void set_file_extension_and_mimetype_mapping(const char *ext,
+  Server &set_file_extension_and_mimetype_mapping(const char *ext,
                                                const char *mime);
-  void set_file_request_handler(Handler handler);
+  Server &set_file_request_handler(Handler handler);
 
-  void set_error_handler(HandlerWithReturn handler);
-  void set_error_handler(Handler handler);
-  void set_pre_routing_handler(HandlerWithReturn handler);
-  void set_post_routing_handler(Handler handler);
+  Server &set_error_handler(HandlerWithReturn handler);
+  Server &set_error_handler(Handler handler);
+  Server &set_pre_routing_handler(HandlerWithReturn handler);
+  Server &set_post_routing_handler(Handler handler);
 
-  void set_expect_100_continue_handler(Expect100ContinueHandler handler);
-  void set_logger(Logger logger);
+  Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
+  Server &set_logger(Logger logger);
 
-  void set_tcp_nodelay(bool on);
-  void set_socket_options(SocketOptions socket_options);
+  Server &set_tcp_nodelay(bool on);
+  Server &set_socket_options(SocketOptions socket_options);
 
-  void set_keep_alive_max_count(size_t count);
-  void set_keep_alive_timeout(time_t sec);
-  void set_read_timeout(time_t sec, time_t usec = 0);
-  void set_write_timeout(time_t sec, time_t usec = 0);
-  void set_idle_interval(time_t sec, time_t usec = 0);
+  Server &set_keep_alive_max_count(size_t count);
+  Server &set_keep_alive_timeout(time_t sec);
+  Server &set_read_timeout(time_t sec, time_t usec = 0);
+  Server &set_write_timeout(time_t sec, time_t usec = 0);
+  Server &set_idle_interval(time_t sec, time_t usec = 0);
 
-  void set_payload_max_length(size_t length);
+  Server &set_payload_max_length(size_t length);
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
   int bind_to_any_port(const char *host, int socket_flags = 0);
@@ -4158,72 +4158,104 @@ inline bool Server::remove_mount_point(const char *mount_point) {
   return false;
 }
 
-inline void Server::set_file_extension_and_mimetype_mapping(const char *ext,
+inline Server &Server::set_file_extension_and_mimetype_mapping(const char *ext,
                                                             const char *mime) {
   file_extension_and_mimetype_map_[ext] = mime;
+
+  return *this;
 }
 
-inline void Server::set_file_request_handler(Handler handler) {
+inline Server &Server::set_file_request_handler(Handler handler) {
   file_request_handler_ = std::move(handler);
+
+  return *this;
 }
 
-inline void Server::set_error_handler(HandlerWithReturn handler) {
+inline Server &Server::set_error_handler(HandlerWithReturn handler) {
   error_handler_ = std::move(handler);
+  return *this;
 }
 
-inline void Server::set_error_handler(Handler handler) {
+inline Server &Server::set_error_handler(Handler handler) {
   error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
     return true;
   };
+  return *this;
 }
 
-inline void Server::set_pre_routing_handler(HandlerWithReturn handler) {
+inline Server &Server::set_pre_routing_handler(HandlerWithReturn handler) {
   pre_routing_handler_ = std::move(handler);
+  return *this;
 }
 
-inline void Server::set_post_routing_handler(Handler handler) {
+inline Server &Server::set_post_routing_handler(Handler handler) {
   post_routing_handler_ = std::move(handler);
+  return *this;
 }
 
-inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
+inline Server &Server::set_logger(Logger logger) {
+  logger_ = std::move(logger);
 
-inline void
-Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
+  return *this;
+}
+
+inline Server
+&Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   expect_100_continue_handler_ = std::move(handler);
+
+  return *this;
 }
 
-inline void Server::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
+inline Server &Server::set_tcp_nodelay(bool on) {
+  tcp_nodelay_ = on;
 
-inline void Server::set_socket_options(SocketOptions socket_options) {
+  return *this;
+}
+
+inline Server &Server::set_socket_options(SocketOptions socket_options) {
   socket_options_ = std::move(socket_options);
+
+  return *this;
 }
 
-inline void Server::set_keep_alive_max_count(size_t count) {
+inline Server &Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
+
+  return *this;
 }
 
-inline void Server::set_keep_alive_timeout(time_t sec) {
+inline Server &Server::set_keep_alive_timeout(time_t sec) {
   keep_alive_timeout_sec_ = sec;
+
+  return *this;
 }
 
-inline void Server::set_read_timeout(time_t sec, time_t usec) {
+inline Server &Server::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
+
+  return *this;
 }
 
-inline void Server::set_write_timeout(time_t sec, time_t usec) {
+inline Server &Server::set_write_timeout(time_t sec, time_t usec) {
   write_timeout_sec_ = sec;
   write_timeout_usec_ = usec;
+
+  return *this;
 }
 
-inline void Server::set_idle_interval(time_t sec, time_t usec) {
+inline Server &Server::set_idle_interval(time_t sec, time_t usec) {
   idle_interval_sec_ = sec;
   idle_interval_usec_ = usec;
+
+  return *this;
 }
 
-inline void Server::set_payload_max_length(size_t length) {
+inline Server &Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
+
+  return *this;
 }
 
 inline bool Server::bind_to_port(const char *host, int port, int socket_flags) {
