@@ -4166,23 +4166,27 @@ inline void Server::set_file_request_handler(Handler handler) {
   file_request_handler_ = std::move(handler);
 }
 
-inline void Server::set_error_handler(HandlerWithReturn handler) {
+inline Server &Server::set_error_handler(HandlerWithReturn handler) {
   error_handler_ = std::move(handler);
+  return *this;
 }
 
-inline void Server::set_error_handler(Handler handler) {
+inline Server &Server::set_error_handler(Handler handler) {
   error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
     return true;
   };
+  return *this;
 }
 
-inline void Server::set_pre_routing_handler(HandlerWithReturn handler) {
+inline Server &Server::set_pre_routing_handler(HandlerWithReturn handler) {
   pre_routing_handler_ = std::move(handler);
+  return *this;
 }
 
-inline void Server::set_post_routing_handler(Handler handler) {
+inline Server &Server::set_post_routing_handler(Handler handler) {
   post_routing_handler_ = std::move(handler);
+  return *this;
 }
 
 inline void Server::set_logger(Logger logger) { logger_ = std::move(logger); }
