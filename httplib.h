@@ -639,7 +639,7 @@ public:
                        Headers headers = Headers());
   bool remove_mount_point(const char *mount_point);
   Server &set_file_extension_and_mimetype_mapping(const char *ext,
-                                               const char *mime);
+                                                  const char *mime);
   Server &set_file_request_handler(Handler handler);
 
   Server &set_error_handler(HandlerWithReturn handler);
@@ -834,6 +834,14 @@ public:
   Result Get(const char *path, const Headers &headers,
              ResponseHandler response_handler, ContentReceiver content_receiver,
              Progress progress);
+
+  Result Get(const char *path, const Params &params, const Headers &headers,
+             Progress progress = nullptr);
+  Result Get(const char *path, const Params &params, const Headers &headers,
+             ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const char *path, const Params &params, const Headers &headers,
+             ResponseHandler response_handler, ContentReceiver content_receiver,
+             Progress progress = nullptr);
 
   Result Head(const char *path);
   Result Head(const char *path, const Headers &headers);
@@ -1127,6 +1135,14 @@ public:
              Progress progress);
   Result Get(const char *path, ResponseHandler response_handler,
              ContentReceiver content_receiver, Progress progress);
+
+  Result Get(const char *path, const Params &params, const Headers &headers,
+             Progress progress = nullptr);
+  Result Get(const char *path, const Params &params, const Headers &headers,
+             ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const char *path, const Params &params, const Headers &headers,
+             ResponseHandler response_handler, ContentReceiver content_receiver,
+             Progress progress = nullptr);
 
   Result Head(const char *path);
   Result Head(const char *path, const Headers &headers);
@@ -3125,6 +3141,14 @@ inline std::string params_to_query_str(const Params &params) {
   return query;
 }
 
+inline std::string append_query_params(const char *path, const Params &params) {
+  std::string path_with_query = path;
+  const static std::regex re("[^?]+\\?.*");
+  auto delm = std::regex_match(path, re) ? '&' : '?';
+  path_with_query += delm + params_to_query_str(params);
+  return path_with_query;
+}
+
 inline void parse_query_text(const std::string &s, Params &params) {
   split(s.data(), s.data() + s.size(), '&', [&](const char *b, const char *e) {
     std::string key;
@@ -4222,8 +4246,9 @@ inline bool Server::remove_mount_point(const char *mount_point) {
   return false;
 }
 
-inline Server &Server::set_file_extension_and_mimetype_mapping(const char *ext,
-                                                            const char *mime) {
+inline Server &
+Server::set_file_extension_and_mimetype_mapping(const char *ext,
+                                                const char *mime) {
   file_extension_and_mimetype_map_[ext] = mime;
 
   return *this;
@@ -4264,8 +4289,8 @@ inline Server &Server::set_logger(Logger logger) {
   return *this;
 }
 
-inline Server
-&Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
+inline Server &
+Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   expect_100_continue_handler_ = std::move(handler);
 
   return *this;
@@ -5796,6 +5821,35 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
   return send(req);
 }
 
+inline Result ClientImpl::Get(const char *path, const Params &params,
+                              const Headers &headers, Progress progress) {
+  if (params.empty()) { return Get(path, headers); }
+
+  std::string path_with_query = detail::append_query_params(path, params);
+  return Get(path_with_query.c_str(), headers, progress);
+}
+
+inline Result ClientImpl::Get(const char *path, const Params &params,
+                              const Headers &headers,
+                              ContentReceiver content_receiver,
+                              Progress progress) {
+  return Get(path, params, headers, nullptr, content_receiver, progress);
+}
+
+inline Result ClientImpl::Get(const char *path, const Params &params,
+                              const Headers &headers,
+                              ResponseHandler response_handler,
+                              ContentReceiver content_receiver,
+                              Progress progress) {
+  if (params.empty()) {
+    return Get(path, headers, response_handler, content_receiver, progress);
+  }
+
+  std::string path_with_query = detail::append_query_params(path, params);
+  return Get(path_with_query.c_str(), params, headers, response_handler,
+             content_receiver, progress);
+}
+
 inline Result ClientImpl::Head(const char *path) {
   return Head(path, Headers());
 }
@@ -7019,6 +7073,22 @@ inline Result Client::Get(const char *path, const Headers &headers,
                           ContentReceiver content_receiver, Progress progress) {
   return cli_->Get(path, headers, std::move(response_handler),
                    std::move(content_receiver), std::move(progress));
+}
+inline Result Client::Get(const char *path, const Params &params,
+                          const Headers &headers, Progress progress) {
+  return cli_->Get(path, params, headers, progress);
+}
+inline Result Client::Get(const char *path, const Params &params,
+                          const Headers &headers,
+                          ContentReceiver content_receiver, Progress progress) {
+  return cli_->Get(path, params, headers, content_receiver, progress);
+}
+inline Result Client::Get(const char *path, const Params &params,
+                          const Headers &headers,
+                          ResponseHandler response_handler,
+                          ContentReceiver content_receiver, Progress progress) {
+  return cli_->Get(path, params, headers, response_handler, content_receiver,
+                   progress);
 }
 
 inline Result Client::Head(const char *path) { return cli_->Head(path); }
