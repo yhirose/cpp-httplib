@@ -816,6 +816,31 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST(HttpsToHttpRedirectTest2, Redirect) {
+  SSLClient cli("nghttp2.org");
+  cli.set_follow_location(true);
+
+  Params params;
+  params.emplace("url", "http://www.google.com");
+  params.emplace("status_code", "302");
+
+  auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST(HttpsToHttpRedirectTest3, Redirect) {
+  SSLClient cli("nghttp2.org");
+  cli.set_follow_location(true);
+
+  Params params;
+  params.emplace("url", "http://www.google.com");
+
+  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr8080;
   Server svr8081;
@@ -956,9 +981,8 @@ TEST(ErrorHandlerTest, ContentLength) {
 TEST(NoContentTest, ContentLength) {
   Server svr;
 
-  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
-    res.status = 204;
-  });
+  svr.Get("/hi",
+          [](const Request & /*req*/, Response &res) { res.status = 204; });
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
@@ -3979,13 +4003,38 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 }
 #endif
 
-TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
+TEST(HttpsToHttpRedirectTest, SimpleInterface) {
   Client cli("https://nghttp2.org");
   cli.set_follow_location(true);
   auto res =
       cli.Get("/httpbin/"
               "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
+  Client cli("https://nghttp2.org");
+  cli.set_follow_location(true);
+
+  Params params;
+  params.emplace("url", "http://www.google.com");
+  params.emplace("status_code", "302");
+
+  auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST(HttpsToHttpRedirectTest3, SimpleInterface) {
+  Client cli("https://nghttp2.org");
+  cli.set_follow_location(true);
+
+  Params params;
+  params.emplace("url", "http://www.google.com");
+
+  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
