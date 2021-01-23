@@ -1009,9 +1009,9 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     if (req.path == "/routing_handler") {
       res.set_header("PRE_ROUTING", "on");
       res.set_content("Routing Handler", "text/plain");
-      return true;
+      return httplib::Server::HandlerResponse::Handled;
     }
-    return false;
+    return httplib::Server::HandlerResponse::Unhandled;
   });
 
   svr.set_error_handler([](const Request & /*req*/, Response &res) {

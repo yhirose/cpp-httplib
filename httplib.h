@@ -597,9 +597,17 @@ inline void default_socket_options(socket_t sock) {
 class Server {
 public:
   using Handler = std::function<void(const Request &, Response &)>;
-  using HandlerWithReturn = std::function<bool(const Request &, Response &)>;
+
+  enum class HandlerResponse {
+    Handled,
+    Unhandled,
+  };
+  using HandlerWithResponse =
+      std::function<HandlerResponse(const Request &, Response &)>;
+
   using HandlerWithContentReader = std::function<void(
       const Request &, Response &, const ContentReader &content_reader)>;
+
   using Expect100ContinueHandler =
       std::function<int(const Request &, Response &)>;
 
@@ -642,9 +650,9 @@ public:
                                                   const char *mime);
   Server &set_file_request_handler(Handler handler);
 
-  Server &set_error_handler(HandlerWithReturn handler);
+  Server &set_error_handler(HandlerWithResponse handler);
   Server &set_error_handler(Handler handler);
-  Server &set_pre_routing_handler(HandlerWithReturn handler);
+  Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
@@ -753,8 +761,8 @@ private:
   Handlers delete_handlers_;
   HandlersForContentReader delete_handlers_for_content_reader_;
   Handlers options_handlers_;
-  HandlerWithReturn error_handler_;
-  HandlerWithReturn pre_routing_handler_;
+  HandlerWithResponse error_handler_;
+  HandlerWithResponse pre_routing_handler_;
   Handler post_routing_handler_;
   Logger logger_;
   Expect100ContinueHandler expect_100_continue_handler_;
@@ -4260,7 +4268,7 @@ inline Server &Server::set_file_request_handler(Handler handler) {
   return *this;
 }
 
-inline Server &Server::set_error_handler(HandlerWithReturn handler) {
+inline Server &Server::set_error_handler(HandlerWithResponse handler) {
   error_handler_ = std::move(handler);
   return *this;
 }
@@ -4268,12 +4276,12 @@ inline Server &Server::set_error_handler(HandlerWithReturn handler) {
 inline Server &Server::set_error_handler(Handler handler) {
   error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
-    return true;
+    return HandlerResponse::Handled;
   };
   return *this;
 }
 
-inline Server &Server::set_pre_routing_handler(HandlerWithReturn handler) {
+inline Server &Server::set_pre_routing_handler(HandlerWithResponse handler) {
   pre_routing_handler_ = std::move(handler);
   return *this;
 }
@@ -4411,7 +4419,8 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
                                         bool need_apply_ranges) {
   assert(res.status != -1);
 
-  if (400 <= res.status && error_handler_ && error_handler_(req, res)) {
+  if (400 <= res.status && error_handler_ &&
+      error_handler_(req, res) == HandlerResponse::Handled) {
     need_apply_ranges = true;
   }
 
@@ -4748,7 +4757,10 @@ inline bool Server::listen_internal() {
 }
 
 inline bool Server::routing(Request &req, Response &res, Stream &strm) {
-  if (pre_routing_handler_ && pre_routing_handler_(req, res)) { return true; }
+  if (pre_routing_handler_ &&
+      pre_routing_handler_(req, res) == HandlerResponse::Handled) {
+    return true;
+  }
 
   // File handler
   bool is_head_request = req.method == "HEAD";
