@@ -7,7 +7,7 @@ A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include the **httplib.h** file in your code!
 
-NOTE: This is a 'blocking' HTTP library. If you are looking for a 'non-blocking' library, this is not the one that you want.
+NOTE: This is a multi-threaded 'blocking' HTTP library. If you are looking for a 'non-blocking' library, this is not the one that you want.
 
 Simple examples
 ---------------
