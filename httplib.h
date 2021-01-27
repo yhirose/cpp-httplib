@@ -2484,7 +2484,7 @@ public:
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
 
       ret = deflate(&strm_, flush);
-      assert(ret != Z_STREAM_ERROR);
+      if (ret == Z_STREAM_ERROR) { return false; }
 
       if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
         return false;
