@@ -386,7 +386,7 @@ int main(void)
   httplib::Client cli("localhost", 1234);
 
   if (auto res = cli.Get("/hi")) {
-    if (res->status == 200) {
+    if (res && res->status == 200) {
       std::cout << res->body << std::endl;
     }
   } else {
