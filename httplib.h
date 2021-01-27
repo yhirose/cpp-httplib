@@ -4794,17 +4794,29 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
           });
 
       if (req.method == "POST") {
-        return dispatch_request_for_content_reader(
-            req, res, std::move(reader), post_handlers_for_content_reader_);
+        if (dispatch_request_for_content_reader(
+            req, res, std::move(reader),
+            post_handlers_for_content_reader_)) {
+          return true;
+        }
       } else if (req.method == "PUT") {
-        return dispatch_request_for_content_reader(
-            req, res, std::move(reader), put_handlers_for_content_reader_);
+        if (dispatch_request_for_content_reader(
+            req, res, std::move(reader),
+            put_handlers_for_content_reader_)) {
+          return true;
+        }
       } else if (req.method == "PATCH") {
-        return dispatch_request_for_content_reader(
-            req, res, std::move(reader), patch_handlers_for_content_reader_);
+        if (dispatch_request_for_content_reader(
+            req, res, std::move(reader),
+            patch_handlers_for_content_reader_)) {
+          return true;
+        }
       } else if (req.method == "DELETE") {
-        return dispatch_request_for_content_reader(
-            req, res, std::move(reader), delete_handlers_for_content_reader_);
+        if (dispatch_request_for_content_reader(
+            req, res, std::move(reader),
+            delete_handlers_for_content_reader_)) {
+          return true;
+        }
       }
     }
 
