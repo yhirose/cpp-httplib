@@ -982,7 +982,7 @@ TEST(ErrorHandlerTest, ContentLength) {
 TEST(ExceptionHandlerTest, ContentLength) {
   Server svr;
 
-  svr.set_exception_handler([](const Request & /*req*/, Response &res, std::exception & e) {
+  svr.set_exception_handler([](const Request & /*req*/, Response &res, std::exception & /*e*/) {
     res.status = 500;
     res.set_content("abcdefghijklmnopqrstuvwxyz",
                     "text/html"); // <= Content-Length still 13
