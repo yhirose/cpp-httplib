@@ -177,6 +177,16 @@ svr.set_error_handler([](const auto& req, auto& res) {
 });
 ```
 
+### Exception handler
+
+```cpp
+svr.set_error_handler([](const auto& req, auto& res) {
+  res.status = 500;
+  res.set_content("<h1>Error 500</h1><p>Internal Server Error</p>",
+                  "text/html");
+});
+```
+
 ### Pre routing handler
 
 ```cpp

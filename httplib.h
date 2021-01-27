@@ -611,6 +611,9 @@ public:
   using HandlerWithContentReader = std::function<void(
       const Request &, Response &, const ContentReader &content_reader)>;
 
+  using ExceptionHandlerWithResponse =
+      std::function<HandlerResponse(const Request &, Response &, std::exception &e)>;
+
   using Expect100ContinueHandler =
       std::function<int(const Request &, Response &)>;
 
@@ -656,6 +659,7 @@ public:
   Server &set_error_handler(HandlerWithResponse handler);
   Server &set_error_handler(Handler handler);
   Server &set_exception_handler(ExceptionHandler handler);
+  Server &set_exception_handler(ExceptionHandlerWithResponse handler);
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
 
@@ -766,7 +770,7 @@ private:
   HandlersForContentReader delete_handlers_for_content_reader_;
   Handlers options_handlers_;
   HandlerWithResponse error_handler_;
-  ExceptionHandler exception_handler_;
+  ExceptionHandlerWithResponse exception_handler_;
   HandlerWithResponse pre_routing_handler_;
   Handler post_routing_handler_;
   Logger logger_;
@@ -4286,8 +4290,16 @@ inline Server &Server::set_error_handler(Handler handler) {
   return *this;
 }
 
-inline Server &Server::set_exception_handler(ExceptionHandler handler) {
+inline Server &Server::set_exception_handler(ExceptionHandlerWithResponse handler) {
   exception_handler_ = std::move(handler);
+  return *this;
+}
+
+inline Server &Server::set_exception_handler(ExceptionHandler handler) {
+  exception_handler_ = [handler](const Request &req, Response &res, std::exception &e) {
+    handler(req, res, e);
+    return HandlerResponse::Handled;
+  };
   return *this;
 }
 
@@ -4845,22 +4857,14 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 
 inline bool Server::dispatch_request(Request &req, Response &res,
                                      const Handlers &handlers) {
-  try {
-    for (const auto &x : handlers) {
-      const auto &pattern = x.first;
-      const auto &handler = x.second;
+  for (const auto &x : handlers) {
+    const auto &pattern = x.first;
+    const auto &handler = x.second;
 
-      if (std::regex_match(req.path, req.matches, pattern)) {
-        handler(req, res);
-        return true;
-      }
+    if (std::regex_match(req.path, req.matches, pattern)) {
+      handler(req, res);
+      return true;
     }
-  } catch (const std::exception &ex) {
-    res.status = 500;
-    res.set_header("EXCEPTION_WHAT", ex.what());
-  } catch (...) {
-    res.status = 500;
-    res.set_header("EXCEPTION_WHAT", "UNKNOWN");
   }
   return false;
 }
@@ -5079,10 +5083,9 @@ Server::process_request(Stream &strm, bool close_connection,
     routed = routing(req, res, strm);
   } catch (std::exception & e) {
     if (exception_handler_)
-      exception_handler_(req, res, e);
+      routed = exception_handler_(req, res, e) == HandlerResponse::Handled;
     else
       throw e;
-    routed = false;
   }
 
   if (routed) {
