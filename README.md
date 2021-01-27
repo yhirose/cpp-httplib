@@ -183,9 +183,9 @@ svr.set_error_handler([](const auto& req, auto& res) {
 svr.set_pre_routing_handler([](const auto& req, auto& res) -> bool {
   if (req.path == "/hello") {
     res.set_content("world", "text/html");
-    return true; // This request is handled
+    return Server::HandlerResponse::Handled;
   }
-  return false; // Let the router handle this request
+  return Server::HandlerResponse::Unhandled;
 });
 ```
 
