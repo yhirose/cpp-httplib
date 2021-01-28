@@ -6983,7 +6983,7 @@ inline Client::Client(const char *scheme_host_port)
 inline Client::Client(const char *scheme_host_port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path) {
-  const static std::regex re(R"(^(?:([a-z]+)://)?([^:/?#]+)(?::(\d+))?)");
+  const static std::regex re(R"(^(?:([a-z]+)://)?([^:/?#]+)(?::(\d+))?/?)");
 
   std::cmatch m;
   if (std::regex_match(scheme_host_port, m, re)) {
