@@ -178,12 +178,15 @@ svr.set_error_handler([](const auto& req, auto& res) {
 ```
 
 ### Exception handler
+The exception handler gets called if a user routing handler throws an error.
 
 ```cpp
-svr.set_error_handler([](const auto& req, auto& res) {
+svr.set_exception_handler([](const auto& req, auto& res, std::exception &e) {
   res.status = 500;
-  res.set_content("<h1>Error 500</h1><p>Internal Server Error</p>",
-                  "text/html");
+  auto fmt = "<h1>Error 500</h1><p>%s</p>";
+  char buf[BUFSIZ];
+  snprintf(buf, sizeof(buf), fmt, e.what());
+  res.set_content(buf, "text/html");
 });
 ```
 
