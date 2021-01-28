@@ -598,6 +598,9 @@ class Server {
 public:
   using Handler = std::function<void(const Request &, Response &)>;
 
+  using ExceptionHandler =
+      std::function<void(const Request &, Response &, std::exception &e)>;
+
   enum class HandlerResponse {
     Handled,
     Unhandled,
@@ -652,6 +655,7 @@ public:
 
   Server &set_error_handler(HandlerWithResponse handler);
   Server &set_error_handler(Handler handler);
+  Server &set_exception_handler(ExceptionHandler handler);
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
 
@@ -762,6 +766,7 @@ private:
   HandlersForContentReader delete_handlers_for_content_reader_;
   Handlers options_handlers_;
   HandlerWithResponse error_handler_;
+  ExceptionHandler exception_handler_;
   HandlerWithResponse pre_routing_handler_;
   Handler post_routing_handler_;
   Logger logger_;
@@ -4281,6 +4286,11 @@ inline Server &Server::set_error_handler(Handler handler) {
   return *this;
 }
 
+inline Server &Server::set_exception_handler(ExceptionHandler handler) {
+  exception_handler_ = std::move(handler);
+  return *this;
+}
+
 inline Server &Server::set_pre_routing_handler(HandlerWithResponse handler) {
   pre_routing_handler_ = std::move(handler);
   return *this;
@@ -4785,26 +4795,26 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 
       if (req.method == "POST") {
         if (dispatch_request_for_content_reader(
-                req, res, std::move(reader),
-                post_handlers_for_content_reader_)) {
+            req, res, std::move(reader),
+            post_handlers_for_content_reader_)) {
           return true;
         }
       } else if (req.method == "PUT") {
         if (dispatch_request_for_content_reader(
-                req, res, std::move(reader),
-                put_handlers_for_content_reader_)) {
+            req, res, std::move(reader),
+            put_handlers_for_content_reader_)) {
           return true;
         }
       } else if (req.method == "PATCH") {
         if (dispatch_request_for_content_reader(
-                req, res, std::move(reader),
-                patch_handlers_for_content_reader_)) {
+            req, res, std::move(reader),
+            patch_handlers_for_content_reader_)) {
           return true;
         }
       } else if (req.method == "DELETE") {
         if (dispatch_request_for_content_reader(
-                req, res, std::move(reader),
-                delete_handlers_for_content_reader_)) {
+            req, res, std::move(reader),
+            delete_handlers_for_content_reader_)) {
           return true;
         }
       }
@@ -4835,22 +4845,14 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 
 inline bool Server::dispatch_request(Request &req, Response &res,
                                      const Handlers &handlers) {
-  try {
-    for (const auto &x : handlers) {
-      const auto &pattern = x.first;
-      const auto &handler = x.second;
+  for (const auto &x : handlers) {
+    const auto &pattern = x.first;
+    const auto &handler = x.second;
 
-      if (std::regex_match(req.path, req.matches, pattern)) {
-        handler(req, res);
-        return true;
-      }
+    if (std::regex_match(req.path, req.matches, pattern)) {
+      handler(req, res);
+      return true;
     }
-  } catch (const std::exception &ex) {
-    res.status = 500;
-    res.set_header("EXCEPTION_WHAT", ex.what());
-  } catch (...) {
-    res.status = 500;
-    res.set_header("EXCEPTION_WHAT", "UNKNOWN");
   }
   return false;
 }
@@ -5064,7 +5066,23 @@ Server::process_request(Stream &strm, bool close_connection,
   }
 
   // Rounting
-  if (routing(req, res, strm)) {
+  bool routed = false;
+  try {
+    routed = routing(req, res, strm);
+  } catch (std::exception & e) {
+    if (exception_handler_) {
+      exception_handler_(req, res, e);
+      routed = true;
+    } else {
+      res.status = 500;
+      res.set_header("EXCEPTION_WHAT", e.what());
+    }
+  } catch (...) {
+    res.status = 500;
+    res.set_header("EXCEPTION_WHAT", "UNKNOWN");
+  }
+
+  if (routed) {
     if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
     return write_response_with_content(strm, close_connection, req, res);
   } else {

@@ -177,6 +177,19 @@ svr.set_error_handler([](const auto& req, auto& res) {
 });
 ```
 
+### Exception handler
+The exception handler gets called if a user routing handler throws an error.
+
+```cpp
+svr.set_exception_handler([](const auto& req, auto& res, std::exception &e) {
+  res.status = 500;
+  auto fmt = "<h1>Error 500</h1><p>%s</p>";
+  char buf[BUFSIZ];
+  snprintf(buf, sizeof(buf), fmt, e.what());
+  res.set_content(buf, "text/html");
+});
+```
+
 ### Pre routing handler
 
 ```cpp

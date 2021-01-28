@@ -6,6 +6,7 @@
 #include <chrono>
 #include <future>
 #include <thread>
+#include <stdexcept>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -968,6 +969,41 @@ TEST(ErrorHandlerTest, ContentLength) {
     auto res = cli.Get("/hi");
     ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
+    EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+    EXPECT_EQ("26", res->get_header_value("Content-Length"));
+    EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(ExceptionHandlerTest, ContentLength) {
+  Server svr;
+
+  svr.set_exception_handler([](const Request & /*req*/, Response &res, std::exception & /*e*/) {
+    res.status = 500;
+    res.set_content("abcdefghijklmnopqrstuvwxyz",
+                    "text/html"); // <= Content-Length still 13
+  });
+
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!\n", "text/plain");
+    throw std::runtime_error("abc");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(500, res->status);
     EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
     EXPECT_EQ("26", res->get_header_value("Content-Length"));
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
