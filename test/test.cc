@@ -5,8 +5,8 @@
 #include <atomic>
 #include <chrono>
 #include <future>
-#include <thread>
 #include <stdexcept>
+#include <thread>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -549,12 +549,11 @@ TEST(ConnectionErrorTest, InvalidHost2) {
 
 TEST(ConnectionErrorTest, InvalidPort) {
   auto host = "localhost";
+  auto port = 44380;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto port = 44380;
   SSLClient cli(host, port);
 #else
-  auto port = 8080;
   Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
@@ -982,11 +981,12 @@ TEST(ErrorHandlerTest, ContentLength) {
 TEST(ExceptionHandlerTest, ContentLength) {
   Server svr;
 
-  svr.set_exception_handler([](const Request & /*req*/, Response &res, std::exception & /*e*/) {
-    res.status = 500;
-    res.set_content("abcdefghijklmnopqrstuvwxyz",
-                    "text/html"); // <= Content-Length still 13
-  });
+  svr.set_exception_handler(
+      [](const Request & /*req*/, Response &res, std::exception & /*e*/) {
+        res.status = 500;
+        res.set_content("abcdefghijklmnopqrstuvwxyz",
+                        "text/html"); // <= Content-Length still 13
+      });
 
   svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!\n", "text/plain");
@@ -2614,6 +2614,24 @@ TEST_F(ServerTest, PutLargeFileWithGzip) {
   EXPECT_EQ(LARGE_DATA, res->body);
 }
 
+TEST_F(ServerTest, PutLargeFileWithGzip2) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  Client cli("https://localhost:1234");
+  cli.enable_server_certificate_verification(false);
+#else
+  Client cli("http://localhost:1234");
+#endif
+  cli.set_compress(true);
+
+  auto res = cli.Put("/put-large", LARGE_DATA, "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(LARGE_DATA, res->body);
+  EXPECT_EQ(101942u, res.get_request_header_value<uint64_t>("Content-Length"));
+  EXPECT_EQ("gzip", res.get_request_header_value("Content-Encoding"));
+}
+
 TEST_F(ServerTest, PutContentWithDeflate) {
   cli_.set_compress(false);
   Headers headers;
@@ -3405,7 +3423,8 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   auto res = cli.Get("/hi");
   ASSERT_TRUE(res);
   EXPECT_EQ(500, res->status);
-  ASSERT_FALSE(res->has_header("EXCEPTION_WHAT"));
+  ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
+  EXPECT_EQ("exception...", res->get_header_value("EXCEPTION_WHAT"));
 
   svr.stop();
   listen_thread.join();
@@ -3963,7 +3982,6 @@ TEST(NoSSLSupport, SimpleInterface) {
 }
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(InvalidScheme, SimpleInterface) {
   ASSERT_ANY_THROW(Client cli("scheme://yahoo.com"));
 }
@@ -3973,6 +3991,19 @@ TEST(NoScheme, SimpleInterface) {
   ASSERT_TRUE(cli.is_valid());
 }
 
+TEST(SendAPI, SimpleInterface) {
+  Client cli("http://yahoo.com");
+
+  Request req;
+  req.method = "GET";
+  req.path = "/";
+  auto res = cli.send(req);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(301, res->status);
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest2, SimpleInterface) {
   Client cli("http://yahoo.com");
 
