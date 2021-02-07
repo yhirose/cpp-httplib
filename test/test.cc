@@ -417,16 +417,16 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   cli.set_connection_timeout(2);
 
   std::string body;
-  auto res = cli.Get(
-      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
-      [&](const Response &response) {
-        EXPECT_EQ(200, response.status);
-        return true;
-      },
-      [&](const char *data, size_t data_length) {
-        body.append(data, data_length);
-        return true;
-      });
+  auto res =
+      cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
+              [&](const Response &response) {
+                EXPECT_EQ(200, response.status);
+                return true;
+              },
+              [&](const char *data, size_t data_length) {
+                body.append(data, data_length);
+                return true;
+              });
   ASSERT_TRUE(res);
 
   std::string out;
@@ -2315,7 +2315,8 @@ TEST_F(ServerTest, ClientStop) {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
       ASSERT_TRUE(!res);
-      EXPECT_TRUE(res.error() == Error::Canceled || res.error() == Error::Read);
+      EXPECT_TRUE(res.error() == Error::Canceled ||
+                  res.error() == Error::Read || res.error() == Error::Write);
     }));
   }
 
@@ -2460,13 +2461,13 @@ TEST_F(ServerTest, SlowPost) {
   char buffer[64 * 1024];
   memset(buffer, 0x42, sizeof(buffer));
 
-  auto res = cli_.Post(
-      "/slowpost", 64 * 1024 * 1024,
-      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        sink.write(buffer, sizeof(buffer));
-        return true;
-      },
-      "text/plain");
+  auto res =
+      cli_.Post("/slowpost", 64 * 1024 * 1024,
+                [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+                  sink.write(buffer, sizeof(buffer));
+                  return true;
+                },
+                "text/plain");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
@@ -2477,13 +2478,13 @@ TEST_F(ServerTest, SlowPostFail) {
   memset(buffer, 0x42, sizeof(buffer));
 
   cli_.set_write_timeout(0, 0);
-  auto res = cli_.Post(
-      "/slowpost", 64 * 1024 * 1024,
-      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        sink.write(buffer, sizeof(buffer));
-        return true;
-      },
-      "text/plain");
+  auto res =
+      cli_.Post("/slowpost", 64 * 1024 * 1024,
+                [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+                  sink.write(buffer, sizeof(buffer));
+                  return true;
+                },
+                "text/plain");
 
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Write, res.error());
@@ -2497,14 +2498,13 @@ TEST_F(ServerTest, Put) {
 }
 
 TEST_F(ServerTest, PutWithContentProvider) {
-  auto res = cli_.Put(
-      "/put", 3,
-      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
-        sink.os << "PUT";
-        return true;
-      },
-      "text/plain");
+  auto res = cli_.Put("/put", 3,
+                      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+                        EXPECT_TRUE(sink.is_writable());
+                        sink.os << "PUT";
+                        return true;
+                      },
+                      "text/plain");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
@@ -2512,27 +2512,24 @@ TEST_F(ServerTest, PutWithContentProvider) {
 }
 
 TEST_F(ServerTest, PostWithContentProviderAbort) {
-  auto res = cli_.Post(
-      "/post", 42,
-      [](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) {
-        return false;
-      },
-      "text/plain");
+  auto res = cli_.Post("/post", 42,
+                       [](size_t /*offset*/, size_t /*length*/,
+                          DataSink & /*sink*/) { return false; },
+                       "text/plain");
 
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST_F(ServerTest, PutWithContentProviderWithoutLength) {
-  auto res = cli_.Put(
-      "/put",
-      [](size_t /*offset*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
-        sink.os << "PUT";
-        sink.done();
-        return true;
-      },
-      "text/plain");
+  auto res = cli_.Put("/put",
+                      [](size_t /*offset*/, DataSink &sink) {
+                        EXPECT_TRUE(sink.is_writable());
+                        sink.os << "PUT";
+                        sink.done();
+                        return true;
+                      },
+                      "text/plain");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
@@ -2551,14 +2548,13 @@ TEST_F(ServerTest, PostWithContentProviderWithoutLengthAbort) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   cli_.set_compress(true);
-  auto res = cli_.Put(
-      "/put", 3,
-      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
-        sink.os << "PUT";
-        return true;
-      },
-      "text/plain");
+  auto res = cli_.Put("/put", 3,
+                      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+                        EXPECT_TRUE(sink.is_writable());
+                        sink.os << "PUT";
+                        return true;
+                      },
+                      "text/plain");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
@@ -2567,12 +2563,10 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
 
 TEST_F(ServerTest, PostWithContentProviderWithGzipAbort) {
   cli_.set_compress(true);
-  auto res = cli_.Post(
-      "/post", 42,
-      [](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) {
-        return false;
-      },
-      "text/plain");
+  auto res = cli_.Post("/post", 42,
+                       [](size_t /*offset*/, size_t /*length*/,
+                          DataSink & /*sink*/) { return false; },
+                       "text/plain");
 
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
@@ -2580,15 +2574,14 @@ TEST_F(ServerTest, PostWithContentProviderWithGzipAbort) {
 
 TEST_F(ServerTest, PutWithContentProviderWithoutLengthWithGzip) {
   cli_.set_compress(true);
-  auto res = cli_.Put(
-      "/put",
-      [](size_t /*offset*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
-        sink.os << "PUT";
-        sink.done();
-        return true;
-      },
-      "text/plain");
+  auto res = cli_.Put("/put",
+                      [](size_t /*offset*/, DataSink &sink) {
+                        EXPECT_TRUE(sink.is_writable());
+                        sink.os << "PUT";
+                        sink.done();
+                        return true;
+                      },
+                      "text/plain");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
@@ -2908,9 +2901,8 @@ TEST_F(ServerTest, KeepAlive) {
   EXPECT_EQ("empty", res->body);
   EXPECT_EQ("close", res->get_header_value("Connection"));
 
-  res = cli_.Post(
-      "/empty", 0, [&](size_t, size_t, DataSink &) { return true; },
-      "text/plain");
+  res = cli_.Post("/empty", 0, [&](size_t, size_t, DataSink &) { return true; },
+                  "text/plain");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
