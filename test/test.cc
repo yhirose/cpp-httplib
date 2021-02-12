@@ -1644,6 +1644,7 @@ TEST_F(ServerTest, GetMethod200) {
   ASSERT_TRUE(res);
   EXPECT_EQ("HTTP/1.1", res->version);
   EXPECT_EQ(200, res->status);
+  EXPECT_EQ("OK", res->reason);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);

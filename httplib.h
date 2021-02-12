@@ -5257,7 +5257,7 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
   if (!line_reader.getline()) { return false; }
 
-  const static std::regex re("(HTTP/1\\.[01]) (\\d{3}) (.*?)\r\n");
+  const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
 
   std::cmatch m;
   if (!std::regex_match(line_reader.ptr(), m, re)) {
