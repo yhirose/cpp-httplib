@@ -1792,8 +1792,75 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
   return res;
 }
 
+#ifdef CPPHTTPLIB_USE_WSA_EVENT
+WSAEVENT g_wsa_event = WSACreateEvent();
+inline void thread_safe_interrupt_reading() {
+  WSASetEvent(g_wsa_event);
+}
+#endif
+
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
-#ifdef CPPHTTPLIB_USE_POLL
+#ifdef CPPHTTPLIB_USE_WSA_EVENT
+  WSAEVENT event = WSACreateEvent();
+  if(event == WSA_INVALID_EVENT) return -1;
+
+  int status = [&] {
+    // The WSAEventSelect function automatically sets socket to nonblocking mode
+    if(WSAEventSelect(sock, event, FD_READ | FD_CLOSE) == SOCKET_ERROR) { printf("WSAEventSelect failed\n");return -1;}
+
+    int status = [&] {
+      // We have to check if the data was there before calling WSAEventSelect.
+      // In this case, after WSAEventSelect the event will not be signaled
+      //  and WSAWaitForMultipleEvents will stuck until more data is received.
+      u_long bytes_available = 0;
+      ioctlsocket(sock, FIONREAD, &bytes_available);
+      if(bytes_available != 0) return 1;
+
+      // In case of calling select or WSAPoll from a network thread, we are going
+      //  to lock trying to call shutdown(sock, SD_BOTH) from the gui thread.
+      WSAEVENT events[] = { event, g_wsa_event };
+      DWORD status = WSAWaitForMultipleEvents(ARRAYSIZE(events), events, FALSE, sec * 1000 + usec / 1000, FALSE);
+      switch(status) {
+        case WSA_WAIT_FAILED: {
+          printf("WSAWaitForMultipleEvents failed\n");
+        } break;
+        case WSA_WAIT_TIMEOUT: return 0;
+        case WSA_WAIT_EVENT_0 + 0: {  // event signaled
+          WSANETWORKEVENTS NetworkEvents;
+          ZeroMemory(&NetworkEvents, sizeof(NetworkEvents));
+          if(WSAEnumNetworkEvents(sock, event, &NetworkEvents) == SOCKET_ERROR) {printf("WSAEnumNetworkEvents failed\n");return -1;}
+
+          if((NetworkEvents.lNetworkEvents & FD_READ) != 0) {
+            if(NetworkEvents.iErrorCode[FD_READ_BIT] == 0) return 1;
+            WSASetLastError(NetworkEvents.iErrorCode[FD_READ_BIT]);
+            return -1;
+          }
+          if((NetworkEvents.lNetworkEvents & FD_CLOSE) != 0) {
+            WSASetLastError(NetworkEvents.iErrorCode[FD_CLOSE_BIT]);
+            return 1;
+          }
+        } break;
+        case WSA_WAIT_EVENT_0 + 1: {  // g_wsa_event signaled
+          printf("g_wsa_event signaled\n");
+        } break;
+        default: {
+          printf("status failed %d %08X\n", status, WSAGetLastError());
+        } break;
+      }
+      return -1;
+    }();
+
+    // Set socket s back to blocking mode. First necessary to clear the event record.
+    if(WSAEventSelect(sock, NULL, 0) == SOCKET_ERROR) {printf("WSAEventSelect2 failed\n");return -1;}
+    // Then call ioctlsocket or WSAIoctl to set the socket back to blocking mode.
+    u_long iMode = 0;
+    if (ioctlsocket(sock, FIONBIO, &iMode) != NO_ERROR) return status;
+
+    return status;
+  }();
+  CloseHandle(event);
+  return status;
+#elif defined(CPPHTTPLIB_USE_POLL)
   struct pollfd pfd_read;
   pfd_read.fd = sock;
   pfd_read.events = POLLIN;
