@@ -1793,7 +1793,8 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
 }
 
 #ifdef CPPHTTPLIB_USE_WSA_EVENT
-WSAEVENT g_wsa_event = WSACreateEvent();
+WSAEVENT g_wsa_event = WSACreateEvent();  // manual-reset event object with an initial state of nonsignaled
+//HANDLE g_wsa_event = CreateEvent(NULL, TRUE, FALSE, NULL);  // can be used too
 inline void thread_safe_interrupt_reading() {
   WSASetEvent(g_wsa_event);
 }
@@ -1806,7 +1807,8 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 
   int status = [&] {
     // The WSAEventSelect function automatically sets socket to nonblocking mode
-    if(WSAEventSelect(sock, event, FD_READ | FD_CLOSE) == SOCKET_ERROR) { printf("WSAEventSelect failed\n");return -1;}
+    // for some reason this function is used in accept operations.
+    if(WSAEventSelect(sock, event, FD_ACCEPT | FD_READ | FD_CLOSE) == SOCKET_ERROR) { printf("WSAEventSelect failed\n");return -1;}
 
     int status = [&] {
       // We have to check if the data was there before calling WSAEventSelect.
@@ -1830,6 +1832,11 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
           ZeroMemory(&NetworkEvents, sizeof(NetworkEvents));
           if(WSAEnumNetworkEvents(sock, event, &NetworkEvents) == SOCKET_ERROR) {printf("WSAEnumNetworkEvents failed\n");return -1;}
 
+          if((NetworkEvents.lNetworkEvents & FD_ACCEPT) != 0) {
+            if(NetworkEvents.iErrorCode[FD_ACCEPT_BIT] == 0) return 1;
+            WSASetLastError(NetworkEvents.iErrorCode[FD_ACCEPT_BIT]);
+            return -1;
+          }
           if((NetworkEvents.lNetworkEvents & FD_READ) != 0) {
             if(NetworkEvents.iErrorCode[FD_READ_BIT] == 0) return 1;
             WSASetLastError(NetworkEvents.iErrorCode[FD_READ_BIT]);
@@ -4822,6 +4829,11 @@ inline bool Server::listen_internal() {
 #endif
         auto val = detail::select_read(svr_sock_, idle_interval_sec_,
                                        idle_interval_usec_);
+        if (val == -1) {
+          ret = false;
+          break;
+        }
+
         if (val == 0) { // Timeout
           task_queue->on_idle();
           continue;

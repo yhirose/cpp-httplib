@@ -4099,3 +4099,115 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface) {
   EXPECT_EQ(200, res->status);
 }
 #endif
+
+#ifdef _WIN32
+class join_thread {
+  std::thread thread;
+public:
+  template<class Fn>
+  explicit join_thread(Fn fun) : thread(fun) {}
+  ~join_thread() {
+    thread.join();
+  }
+};
+template<typename T>
+class ptr_guard {
+  std::mutex &lock;
+  T **ptr;
+public:
+  ptr_guard(std::mutex &lock, T **ptr, T *value) : lock(lock), ptr(ptr) {
+    std::lock_guard<std::mutex> guard(lock);
+    *ptr = value;
+  }
+  ~ptr_guard() {
+    std::lock_guard<std::mutex> guard(lock);
+    *ptr = nullptr;
+  }
+};
+TEST(ReadingInterruptTest, Test) {
+  std::mutex ptr_lock;
+  std::promise<int> serverStartPromise;
+  auto serverStartFuture = serverStartPromise.get_future();
+  auto gui_thread = std::thread([&]{
+    std::promise<bool> requestPromise;
+    auto requestFuture = requestPromise.get_future();
+    Client *pCli = nullptr;
+    join_thread network_thread([&]{  // auto join thread at the end of scope
+      int port = serverStartFuture.get();  // wait for server start
+      Client cli("localhost", port);
+      ptr_guard<Client> pCli_guard(ptr_lock, &pCli, &cli);  // thread safe object access from gui_thread
+      auto start = std::chrono::steady_clock::now();
+      auto R = cli.Post("server_event", [&] (size_t offset, DataSink &sink) -> bool {
+        requestPromise.set_value(true);  // We are connected at this point and the user wants to interact with the gui.
+        std::string content = R"({"event":"test"})";
+        sink.write(content.data(), content.size());
+        sink.done();
+        return true;
+      }, "application/json");
+      // server is not answering in 1 second
+      auto timePassed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+
+      if(R.error() == httplib::Connection) requestPromise.set_value(false);  // in case of server error
+      ASSERT_NE(R.error(), httplib::Connection);
+
+      ASSERT_LT(timePassed, 1000);
+      ASSERT_FALSE(R);  // because we was interrupted
+//      ASSERT_EQ(R.error(), httplib::Canceled);
+      // finally pCli = nullptr
+    });
+    ASSERT_TRUE(requestFuture.get());  // wait for request start
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // user decided to close gui after 100 ms
+    // At this point we are already sent all data and waiting for response
+    {
+      std::lock_guard<std::mutex> guard(ptr_lock);
+      if(pCli != nullptr) {
+        auto start = std::chrono::steady_clock::now();
+#ifdef CPPHTTPLIB_USE_WSA_EVENT
+        httplib::detail::thread_safe_interrupt_reading();  // test fix
+#endif
+        pCli->stop();  // async stop network operations
+        auto timePassed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        ASSERT_LT(timePassed, 100);  // don't think stop operation should be blocking. we can wait on network thread instead
+      } else {
+        printf("network thread already stopped\n");
+      }
+      // finally ptr_lock.unlock();
+    }
+    // finally join network_thread
+  });
+  Server *pSrv = nullptr;
+  join_thread server_thread([&] {  // auto join thread at the end of scope
+    Server srv;
+    ptr_guard<Server> pSrv_guard(ptr_lock, &pSrv, &srv);  // thread safe object access from main thread
+    int ackCount = 0;
+    srv.Post("server_event", [&](const Request &req, Response &res) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));  // wait for some event happen on server side
+      res.body = req.body;
+      ackCount++;
+    });
+    int port = srv.bind_to_any_port("localhost");
+    ASSERT_NE(port, -1);
+    serverStartPromise.set_value(port);
+    srv.listen_after_bind();
+    ASSERT_EQ(ackCount, 1);
+    // finally pSrv = nullptr
+  });
+  gui_thread.join();
+  {
+    std::lock_guard<std::mutex> guard(ptr_lock);
+    if(pSrv != nullptr) {
+      auto start = std::chrono::steady_clock::now();
+#ifdef CPPHTTPLIB_USE_WSA_EVENT
+      httplib::detail::thread_safe_interrupt_reading();  // test fix
+#endif
+      pSrv->stop();  // there lock problem too
+      auto timePassed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+      ASSERT_LT(timePassed, 100);  // don't think stop operation should be blocking. we can wait on network thread instead
+    } else {
+      printf("server thread already stopped\n");
+    }
+    // finally ptr_lock.unlock();
+  }
+  // finally join server_thread
+}
+#endif
