@@ -204,6 +204,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <set>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #include <openssl/err.h>
@@ -3171,7 +3172,14 @@ inline std::string append_query_params(const char *path, const Params &params) {
 }
 
 inline void parse_query_text(const std::string &s, Params &params) {
+  std::set<std::string> cache;
   split(s.data(), s.data() + s.size(), '&', [&](const char *b, const char *e) {
+    std::string kv(b, e);
+    if (cache.find(kv) != cache.end()) {
+      return;
+    }
+    cache.insert(kv);
+
     std::string key;
     std::string val;
     split(b, e, '=', [&](const char *b2, const char *e2) {
