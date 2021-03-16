@@ -5933,7 +5933,7 @@ inline Result ClientImpl::Get(const char *path, const Params &params,
   }
 
   std::string path_with_query = detail::append_query_params(path, params);
-  return Get(path_with_query.c_str(), params, headers, response_handler,
+  return Get(path_with_query.c_str(), headers, response_handler,
              content_receiver, progress);
 }
 

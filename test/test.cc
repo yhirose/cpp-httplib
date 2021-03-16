@@ -3495,6 +3495,69 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(GetWithParametersTest, GetWithParameters) {
+  Server svr;
+
+  svr.Get("/", [&](const Request & req, Response &res) {
+    auto text = req.get_param_value("hello");
+    res.set_content(text, "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  Params params;
+  params.emplace("hello", "world");
+  auto res = cli.Get("/", params, Headers{});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("world", res->body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(GetWithParametersTest, GetWithParameters2) {
+  Server svr;
+
+  svr.Get("/", [&](const Request & req, Response &res) {
+    auto text = req.get_param_value("hello");
+    res.set_content(text, "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  Params params;
+  params.emplace("hello", "world");
+
+  std::string body;
+  auto res = cli.Get("/", params, Headers{}, [&](const char *data, size_t data_length) {
+    body.append(data, data_length);
+    return true;
+  });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("world", body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, ReadTimeoutSSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
