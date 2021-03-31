@@ -3794,7 +3794,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   SSLClient cli("127.0.0.1", PORT);
   cli.set_ca_cert_path(SERVER_CERT2_FILE);
   cli.enable_server_certificate_verification(true);
-  cli.set_connection_timeout(30);
+  cli.set_connection_timeout(std::chrono::seconds(30));
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
@@ -3848,7 +3848,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
-  cli.set_connection_timeout(30);
+  cli.set_connection_timeout(std::chrono::seconds(30));
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
@@ -3920,7 +3920,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   SSLClient cli(HOST, PORT, client_cert, client_private_key);
   cli.enable_server_certificate_verification(false);
-  cli.set_connection_timeout(30);
+  cli.set_connection_timeout(std::chrono::seconds(30));
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
@@ -3947,7 +3947,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
 
   SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
-  cli.set_connection_timeout(30);
+  cli.set_connection_timeout(std::chrono::seconds(30));
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLServerVerification, res.error());
 
@@ -3970,7 +3970,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
-  cli.set_connection_timeout(30);
+  cli.set_connection_timeout(std::chrono::seconds(30));
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
@@ -4013,7 +4013,7 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
-  cli.set_connection_timeout(1);
+  cli.set_connection_timeout(std::chrono::seconds(1));
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
