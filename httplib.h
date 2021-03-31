@@ -577,6 +577,26 @@ using Logger = std::function<void(const Request &, const Response &)>;
 
 using SocketOptions = std::function<void(socket_t sock)>;
 
+class Timeout {
+public:
+  Timeout(time_t sec, time_t usec) : _sec(sec), _usec(usec) {}
+
+  template <class Rep, class Period>
+  Timeout(const std::chrono::duration<Rep, Period> &time) {
+    _sec = std::chrono::duration_cast<std::chrono::seconds>(time).count();
+    _usec = std::chrono::duration_cast<std::chrono::microseconds>(
+                time - std::chrono::seconds(_sec))
+                .count();
+  }
+
+  time_t sec() const { return _sec; }
+  time_t usec() const { return _usec; }
+
+private:
+  time_t _sec;
+  time_t _usec;
+};
+
 inline void default_socket_options(socket_t sock) {
   int yes = 1;
 #ifdef _WIN32
@@ -668,9 +688,13 @@ public:
 
   Server &set_keep_alive_max_count(size_t count);
   Server &set_keep_alive_timeout(time_t sec);
-  Server &set_read_timeout(time_t sec, time_t usec = 0);
-  Server &set_write_timeout(time_t sec, time_t usec = 0);
-  Server &set_idle_interval(time_t sec, time_t usec = 0);
+
+  template <class Rep, class Period>
+  Server &set_read_timeout(const std::chrono::duration<Rep, Period> &time);
+  template <class Rep, class Period>
+  Server &set_write_timeout(const std::chrono::duration<Rep, Period> &time);
+  template <class Rep, class Period>
+  Server &set_idle_interval(const std::chrono::duration<Rep, Period> &time);
 
   Server &set_payload_max_length(size_t length);
 
@@ -692,14 +716,15 @@ protected:
 
   std::atomic<socket_t> svr_sock_;
   size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
-  time_t keep_alive_timeout_sec_ = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
-  time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
-  time_t read_timeout_usec_ = CPPHTTPLIB_READ_TIMEOUT_USECOND;
-  time_t write_timeout_sec_ = CPPHTTPLIB_WRITE_TIMEOUT_SECOND;
-  time_t write_timeout_usec_ = CPPHTTPLIB_WRITE_TIMEOUT_USECOND;
-  time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
-  time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+  time_t keep_alive_timeout_sec_ = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
+
+  Timeout read_timeout_ = {CPPHTTPLIB_READ_TIMEOUT_SECOND,
+                           CPPHTTPLIB_READ_TIMEOUT_USECOND};
+  Timeout write_timeout_ = {CPPHTTPLIB_WRITE_TIMEOUT_SECOND,
+                            CPPHTTPLIB_WRITE_TIMEOUT_USECOND};
+  Timeout idle_interval_ = {CPPHTTPLIB_IDLE_INTERVAL_SECOND,
+                            CPPHTTPLIB_IDLE_INTERVAL_USECOND};
 
 private:
   using Handlers = std::vector<std::pair<std::regex, Handler>>;
@@ -965,9 +990,12 @@ public:
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
 
-  void set_connection_timeout(time_t sec, time_t usec = 0);
-  void set_read_timeout(time_t sec, time_t usec = 0);
-  void set_write_timeout(time_t sec, time_t usec = 0);
+  template <class Rep, class Period>
+  void set_connection_timeout(const std::chrono::duration<Rep, Period> &time);
+  template <class Rep, class Period>
+  void set_read_timeout(const std::chrono::duration<Rep, Period> &time);
+  template <class Rep, class Period>
+  void set_write_timeout(const std::chrono::duration<Rep, Period> &time);
 
   void set_basic_auth(const char *username, const char *password);
   void set_bearer_token_auth(const char *token);
@@ -1056,12 +1084,12 @@ protected:
   std::string client_cert_path_;
   std::string client_key_path_;
 
-  time_t connection_timeout_sec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND;
-  time_t connection_timeout_usec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND;
-  time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
-  time_t read_timeout_usec_ = CPPHTTPLIB_READ_TIMEOUT_USECOND;
-  time_t write_timeout_sec_ = CPPHTTPLIB_WRITE_TIMEOUT_SECOND;
-  time_t write_timeout_usec_ = CPPHTTPLIB_WRITE_TIMEOUT_USECOND;
+  Timeout connection_timeout_ = {CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND,
+                                 CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND};
+  Timeout read_timeout_ = {CPPHTTPLIB_READ_TIMEOUT_SECOND,
+                           CPPHTTPLIB_READ_TIMEOUT_USECOND};
+  Timeout write_timeout_ = {CPPHTTPLIB_WRITE_TIMEOUT_SECOND,
+                            CPPHTTPLIB_WRITE_TIMEOUT_USECOND};
 
   std::string basic_auth_username_;
   std::string basic_auth_password_;
@@ -1267,9 +1295,12 @@ public:
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
 
-  void set_connection_timeout(time_t sec, time_t usec = 0);
-  void set_read_timeout(time_t sec, time_t usec = 0);
-  void set_write_timeout(time_t sec, time_t usec = 0);
+  template <class Rep, class Period>
+  void set_connection_timeout(const std::chrono::duration<Rep, Period> &time);
+  template <class Rep, class Period>
+  void set_read_timeout(const std::chrono::duration<Rep, Period> &time);
+  template <class Rep, class Period>
+  void set_write_timeout(const std::chrono::duration<Rep, Period> &time);
 
   void set_basic_auth(const char *username, const char *password);
   void set_bearer_token_auth(const char *token);
@@ -4374,23 +4405,23 @@ inline Server &Server::set_keep_alive_timeout(time_t sec) {
   return *this;
 }
 
-inline Server &Server::set_read_timeout(time_t sec, time_t usec) {
-  read_timeout_sec_ = sec;
-  read_timeout_usec_ = usec;
+template <class Rep, class Period>
+inline Server &Server::set_read_timeout(const std::chrono::duration<Rep, Period> &time) {
+  read_timeout_ = time;
 
   return *this;
 }
 
-inline Server &Server::set_write_timeout(time_t sec, time_t usec) {
-  write_timeout_sec_ = sec;
-  write_timeout_usec_ = usec;
+template <class Rep, class Period>
+inline Server &Server::set_write_timeout(const std::chrono::duration<Rep, Period> &time) {
+  write_timeout_ = time;
 
   return *this;
 }
 
-inline Server &Server::set_idle_interval(time_t sec, time_t usec) {
-  idle_interval_sec_ = sec;
-  idle_interval_usec_ = usec;
+template <class Rep, class Period>
+inline Server &Server::set_idle_interval(const std::chrono::duration<Rep, Period> &time) {
+  idle_interval_ = time;
 
   return *this;
 }
@@ -4761,8 +4792,8 @@ inline bool Server::listen_internal() {
 #ifndef _WIN32
       if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
 #endif
-        auto val = detail::select_read(svr_sock_, idle_interval_sec_,
-                                       idle_interval_usec_);
+        auto val = detail::select_read(svr_sock_, idle_interval_.sec(),
+                                       idle_interval_.usec());
         if (val == 0) { // Timeout
           task_queue->on_idle();
           continue;
@@ -5131,8 +5162,8 @@ inline bool Server::is_valid() const { return true; }
 
 inline bool Server::process_and_close_socket(socket_t sock) {
   auto ret = detail::process_server_socket(
-      sock, keep_alive_max_count_, keep_alive_timeout_sec_, read_timeout_sec_,
-      read_timeout_usec_, write_timeout_sec_, write_timeout_usec_,
+      sock, keep_alive_max_count_, keep_alive_timeout_sec_, read_timeout_.sec(),
+      read_timeout_.usec(), write_timeout_.sec(), write_timeout_.usec(),
       [this](Stream &strm, bool close_connection, bool &connection_closed) {
         return process_request(strm, close_connection, connection_closed,
                                nullptr);
@@ -5165,11 +5196,9 @@ inline bool ClientImpl::is_valid() const { return true; }
 inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   client_cert_path_ = rhs.client_cert_path_;
   client_key_path_ = rhs.client_key_path_;
-  connection_timeout_sec_ = rhs.connection_timeout_sec_;
-  read_timeout_sec_ = rhs.read_timeout_sec_;
-  read_timeout_usec_ = rhs.read_timeout_usec_;
-  write_timeout_sec_ = rhs.write_timeout_sec_;
-  write_timeout_usec_ = rhs.write_timeout_usec_;
+  connection_timeout_ = rhs.connection_timeout_;
+  read_timeout_ = rhs.read_timeout_;
+  write_timeout_ = rhs.write_timeout_;
   basic_auth_username_ = rhs.basic_auth_username_;
   basic_auth_password_ = rhs.basic_auth_password_;
   bearer_token_auth_token_ = rhs.bearer_token_auth_token_;
@@ -5203,11 +5232,11 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
         proxy_host_.c_str(), proxy_port_, tcp_nodelay_, socket_options_,
-        connection_timeout_sec_, connection_timeout_usec_, interface_, error);
+        connection_timeout_.sec(), connection_timeout_.usec(), interface_, error);
   }
   return detail::create_client_socket(
       host_.c_str(), port_, tcp_nodelay_, socket_options_,
-      connection_timeout_sec_, connection_timeout_usec_, interface_, error);
+      connection_timeout_.sec(), connection_timeout_.usec(), interface_, error);
 }
 
 inline bool ClientImpl::create_and_connect_socket(Socket &socket,
@@ -5814,8 +5843,8 @@ inline bool
 ClientImpl::process_socket(const Socket &socket,
                            std::function<bool(Stream &strm)> callback) {
   return detail::process_client_socket(
-      socket.sock, read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_, std::move(callback));
+      socket.sock, read_timeout_.sec(), read_timeout_.usec(), write_timeout_.sec(),
+      write_timeout_.usec(), std::move(callback));
 }
 
 inline bool ClientImpl::is_ssl() const { return false; }
@@ -6268,19 +6297,19 @@ inline void ClientImpl::stop() {
   close_socket(socket_);
 }
 
-inline void ClientImpl::set_connection_timeout(time_t sec, time_t usec) {
-  connection_timeout_sec_ = sec;
-  connection_timeout_usec_ = usec;
+template <class Rep, class Period>
+inline void ClientImpl::set_connection_timeout(const std::chrono::duration<Rep, Period> &time) {
+  connection_timeout_ = time;
 }
 
-inline void ClientImpl::set_read_timeout(time_t sec, time_t usec) {
-  read_timeout_sec_ = sec;
-  read_timeout_usec_ = usec;
+template <class Rep, class Period>
+inline void ClientImpl::set_read_timeout(const std::chrono::duration<Rep, Period> &time) {
+  read_timeout_ = time;
 }
 
-inline void ClientImpl::set_write_timeout(time_t sec, time_t usec) {
-  write_timeout_sec_ = sec;
-  write_timeout_usec_ = usec;
+template <class Rep, class Period>
+inline void ClientImpl::set_write_timeout(const std::chrono::duration<Rep, Period> &time) {
+  write_timeout_ = time;
 }
 
 inline void ClientImpl::set_basic_auth(const char *username,
@@ -7376,14 +7405,17 @@ inline void Client::set_socket_options(SocketOptions socket_options) {
   cli_->set_socket_options(std::move(socket_options));
 }
 
-inline void Client::set_connection_timeout(time_t sec, time_t usec) {
-  cli_->set_connection_timeout(sec, usec);
+template <class Rep, class Period>
+inline void Client::set_connection_timeout(const std::chrono::duration<Rep, Period> &time) {
+  cli_->set_connection_timeout(time);
 }
-inline void Client::set_read_timeout(time_t sec, time_t usec) {
-  cli_->set_read_timeout(sec, usec);
+template <class Rep, class Period>
+inline void Client::set_read_timeout(const std::chrono::duration<Rep, Period> &time) {
+  cli_->set_read_timeout(time);
 }
-inline void Client::set_write_timeout(time_t sec, time_t usec) {
-  cli_->set_write_timeout(sec, usec);
+template <class Rep, class Period>
+inline void Client::set_write_timeout(const std::chrono::duration<Rep, Period> &time) {
+  cli_->set_write_timeout(time);
 }
 
 inline void Client::set_basic_auth(const char *username, const char *password) {

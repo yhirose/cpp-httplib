@@ -363,7 +363,7 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
@@ -386,7 +386,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   std::string body;
   auto res =
@@ -414,7 +414,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   std::string body;
   auto res =
@@ -439,7 +439,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 TEST(DefaultHeadersTest, FromHTTPBin) {
   Client cli("httpbin.org");
   cli.set_default_headers({make_range_header({{1, 10}})});
-  cli.set_connection_timeout(5);
+  cli.set_connection_timeout(std::chrono::seconds(5));
 
   {
     auto res = cli.Get("/range/32");
@@ -466,7 +466,7 @@ TEST(RangeTest, FromHTTPBin) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(5);
+  cli.set_connection_timeout(std::chrono::seconds(5));
 
   {
     auto res = cli.Get("/range/32");
@@ -525,7 +525,7 @@ TEST(ConnectionErrorTest, InvalidHost) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
@@ -540,7 +540,7 @@ TEST(ConnectionErrorTest, InvalidHost2) {
 #else
   Client cli(host);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
@@ -556,7 +556,7 @@ TEST(ConnectionErrorTest, InvalidPort) {
 #else
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
@@ -573,7 +573,7 @@ TEST(ConnectionErrorTest, Timeout) {
   auto port = 8080;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(2);
+  cli.set_connection_timeout(std::chrono::seconds(2));
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
@@ -590,7 +590,7 @@ TEST(CancelTest, NoCancel) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(5);
+  cli.set_connection_timeout(std::chrono::seconds(5));
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res);
@@ -610,7 +610,7 @@ TEST(CancelTest, WithCancelSmallPayload) {
 #endif
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
-  cli.set_connection_timeout(5);
+  cli.set_connection_timeout(std::chrono::seconds(5));
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -625,7 +625,7 @@ TEST(CancelTest, WithCancelLargePayload) {
   auto port = 80;
   Client cli(host, port);
 #endif
-  cli.set_connection_timeout(5);
+  cli.set_connection_timeout(std::chrono::seconds(5));
 
   uint32_t count = 0;
   auto res = cli.Get("/range/65536",
@@ -2478,7 +2478,7 @@ TEST_F(ServerTest, SlowPostFail) {
   char buffer[64 * 1024];
   memset(buffer, 0x42, sizeof(buffer));
 
-  cli_.set_write_timeout(0, 0);
+  cli_.set_write_timeout(std::chrono::microseconds(0));
   auto res =
       cli_.Post("/slowpost", 64 * 1024 * 1024,
                 [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
@@ -3146,7 +3146,7 @@ static void test_raw_request(const std::string &req,
   // bug to reproduce, probably to force the server to process a request
   // without a trailing blank line.
   const time_t client_read_timeout_sec = 1;
-  svr.set_read_timeout(client_read_timeout_sec + 1, 0);
+  svr.set_read_timeout(std::chrono::seconds(client_read_timeout_sec + 1));
   bool listen_thread_ok = false;
   thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
@@ -3446,7 +3446,7 @@ TEST(KeepAliveTest, ReadTimeout) {
 
   Client cli("localhost", PORT);
   cli.set_keep_alive(true);
-  cli.set_read_timeout(1);
+  cli.set_read_timeout(std::chrono::seconds(1));
 
   auto resa = cli.Get("/a");
   ASSERT_TRUE(!resa);
