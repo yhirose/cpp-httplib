@@ -3583,7 +3583,7 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
   cli.set_keep_alive(true);
-  cli.set_read_timeout(1);
+  cli.set_read_timeout(std::chrono::seconds(1));
 
   auto resa = cli.Get("/a");
   ASSERT_TRUE(!resa);

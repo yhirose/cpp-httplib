@@ -4790,7 +4790,7 @@ inline bool Server::listen_internal() {
 
     while (svr_sock_ != INVALID_SOCKET) {
 #ifndef _WIN32
-      if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
+      if (idle_interval_.sec() > 0 || idle_interval_.usec() > 0) {
 #endif
         auto val = detail::select_read(svr_sock_, idle_interval_.sec(),
                                        idle_interval_.usec());
@@ -6672,7 +6672,7 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
       sock, ctx_, ctx_mutex_,
       [&](SSL *ssl) {
         return detail::ssl_connect_or_accept_nonblocking(
-            sock, ssl, SSL_accept, read_timeout_sec_, read_timeout_usec_);
+            sock, ssl, SSL_accept, read_timeout_.sec(), read_timeout_.usec());
       },
       [](SSL * /*ssl*/) { return true; });
 
@@ -6680,8 +6680,8 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
   if (ssl) {
     ret = detail::process_server_socket_ssl(
         ssl, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-        write_timeout_usec_,
+        read_timeout_.sec(), read_timeout_.usec(), write_timeout_.sec(),
+        write_timeout_.usec(),
         [this, ssl](Stream &strm, bool close_connection,
                     bool &connection_closed) {
           return process_request(strm, close_connection, connection_closed,
@@ -6790,8 +6790,8 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
   success = true;
   Response res2;
   if (!detail::process_client_socket(
-          socket.sock, read_timeout_sec_, read_timeout_usec_,
-          write_timeout_sec_, write_timeout_usec_, [&](Stream &strm) {
+          socket.sock, read_timeout_.sec(), read_timeout_.usec(),
+          write_timeout_.sec(), write_timeout_.usec(), [&](Stream &strm) {
             Request req2;
             req2.method = "CONNECT";
             req2.path = host_and_port_;
@@ -6813,8 +6813,8 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
       if (detail::parse_www_authenticate(res2, auth, true)) {
         Response res3;
         if (!detail::process_client_socket(
-                socket.sock, read_timeout_sec_, read_timeout_usec_,
-                write_timeout_sec_, write_timeout_usec_, [&](Stream &strm) {
+                socket.sock, read_timeout_.sec(), read_timeout_.usec(),
+                write_timeout_.sec(), write_timeout_.usec(), [&](Stream &strm) {
                   Request req3;
                   req3.method = "CONNECT";
                   req3.path = host_and_port_;
@@ -6882,8 +6882,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         }
 
         if (!detail::ssl_connect_or_accept_nonblocking(
-                socket.sock, ssl, SSL_connect, connection_timeout_sec_,
-                connection_timeout_usec_)) {
+                socket.sock, ssl, SSL_connect, connection_timeout_.sec(),
+                connection_timeout_.usec())) {
           error = Error::SSLConnection;
           return false;
         }
@@ -6945,8 +6945,8 @@ SSLClient::process_socket(const Socket &socket,
                           std::function<bool(Stream &strm)> callback) {
   assert(socket.ssl);
   return detail::process_client_socket_ssl(
-      socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
-      write_timeout_sec_, write_timeout_usec_, std::move(callback));
+      socket.ssl, socket.sock, read_timeout_.sec(), read_timeout_.usec(),
+      write_timeout_.sec(), write_timeout_.usec(), std::move(callback));
 }
 
 inline bool SSLClient::is_ssl() const { return true; }
