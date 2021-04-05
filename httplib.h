@@ -5820,6 +5820,9 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
         req.content_receiver
             ? static_cast<ContentReceiverWithProgress>(
                   [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
+                    if (300 < res.status && res.status < 400 && follow_location_) {
+                      return true;
+                    }
                     auto ret = req.content_receiver(buf, n, off, len);
                     if (!ret) { error = Error::Canceled; }
                     return ret;

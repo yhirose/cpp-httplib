@@ -889,6 +889,64 @@ TEST(UrlWithSpace, Redirect) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(18527, res->get_header_value<uint64_t>("Content-Length"));
 }
+
+TEST(RedirectFromPageWithContent, Redirect) {
+  Server svr;
+
+  svr.Get("/1", [&](const Request & /*req*/, Response &res) {
+    res.set_content("___", "text/plain");
+    res.set_redirect("/2");
+  });
+
+  svr.Get("/2", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto th = std::thread([&]() { svr.listen("localhost", PORT); });
+
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli("localhost", PORT);
+    cli.set_follow_location(true);
+
+    std::string body;
+    auto res = cli.Get("/1",
+      [&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("Hello World!", body);
+  }
+
+  {
+    Client cli("localhost", PORT);
+
+    std::string body;
+    auto res = cli.Get("/1",
+      [&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(302, res->status);
+    EXPECT_EQ("___", body);
+  }
+
+  svr.stop();
+  th.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 #endif
 
 TEST(BindServerTest, BindDualStack) {
