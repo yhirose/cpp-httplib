@@ -5807,22 +5807,22 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     return false;
   }
 
-  if (req.response_handler) {
-    if (!req.response_handler(res)) {
-      error = Error::Canceled;
-      return false;
-    }
-  }
-
   // Body
   if ((res.status != 204) && req.method != "HEAD" && req.method != "CONNECT") {
+    auto redirect = 300 < res.status && res.status < 400 && follow_location_;
+
+    if (req.response_handler && !redirect) {
+      if (!req.response_handler(res)) {
+        error = Error::Canceled;
+        return false;
+      }
+    }
+
     auto out =
         req.content_receiver
             ? static_cast<ContentReceiverWithProgress>(
                   [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
-                    if (300 < res.status && res.status < 400 && follow_location_) {
-                      return true;
-                    }
+                    if (redirect) { return true; }
                     auto ret = req.content_receiver(buf, n, off, len);
                     if (!ret) { error = Error::Canceled; }
                     return ret;
@@ -5838,7 +5838,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                   });
 
     auto progress = [&](uint64_t current, uint64_t total) {
-      if (!req.progress) { return true; }
+      if (!req.progress || redirect) { return true; }
       auto ret = req.progress(current, total);
       if (!ret) { error = Error::Canceled; }
       return ret;
