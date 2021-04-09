@@ -395,7 +395,7 @@ struct Request {
   ContentReceiverWithProgress content_receiver;
   Progress progress;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  const SSL *ssl;
+  const SSL *ssl = nullptr;
 #endif
 
   bool has_header(const char *key) const;
@@ -786,7 +786,7 @@ private:
   SocketOptions socket_options_ = default_socket_options;
 };
 
-enum Error {
+enum class Error {
   Success = 0,
   Unknown,
   Connection,
