@@ -20,8 +20,6 @@ using namespace std;
 class EventDispatcher {
 public:
   EventDispatcher() {
-    id_ = 0;
-    cid_ = -1;
   }
 
   void wait_event(DataSink *sink) {
@@ -41,8 +39,8 @@ public:
 private:
   mutex m_;
   condition_variable cv_;
-  atomic_int id_;
-  atomic_int cid_;
+  atomic_int id_ = 0;
+  atomic_int cid_ = -1;
   string message_;
 };
 
