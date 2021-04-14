@@ -2065,8 +2065,9 @@ inline int shutdown_socket(socket_t sock) {
 }
 
 template <typename BindOrConnect>
-socket_t create_socket(const char *host, int port, int address_family, int socket_flags,
-                       bool tcp_nodelay, SocketOptions socket_options,
+socket_t create_socket(const char *host, int port, int address_family,
+                       int socket_flags, bool tcp_nodelay,
+                       SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
   struct addrinfo hints;
@@ -2214,8 +2215,7 @@ inline std::string if2ip(const std::string &ifn) {
 #endif
 
 inline socket_t create_client_socket(const char *host, int port,
-    int address_family,
-                                     bool tcp_nodelay,
+                                     int address_family, bool tcp_nodelay,
                                      SocketOptions socket_options,
                                      time_t timeout_sec, time_t timeout_usec,
                                      const std::string &intf, Error &error) {
@@ -4771,7 +4771,8 @@ inline socket_t
 Server::create_server_socket(const char *host, int port, int socket_flags,
                              SocketOptions socket_options) const {
   return detail::create_socket(
-      host, port, address_family_, socket_flags, tcp_nodelay_, std::move(socket_options),
+      host, port, address_family_, socket_flags, tcp_nodelay_,
+      std::move(socket_options),
       [](socket_t sock, struct addrinfo &ai) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
@@ -5260,8 +5261,9 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
-        proxy_host_.c_str(), proxy_port_, address_family_, tcp_nodelay_, socket_options_,
-        connection_timeout_sec_, connection_timeout_usec_, interface_, error);
+        proxy_host_.c_str(), proxy_port_, address_family_, tcp_nodelay_,
+        socket_options_, connection_timeout_sec_, connection_timeout_usec_,
+        interface_, error);
   }
   return detail::create_client_socket(
       host_.c_str(), port_, address_family_, tcp_nodelay_, socket_options_,
@@ -6392,7 +6394,9 @@ inline void ClientImpl::set_default_headers(Headers headers) {
   default_headers_ = std::move(headers);
 }
 
-inline void ClientImpl::set_address_family(int family) { address_family_ = family; }
+inline void ClientImpl::set_address_family(int family) {
+  address_family_ = family;
+}
 
 inline void ClientImpl::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
 
@@ -7456,7 +7460,9 @@ inline void Client::set_default_headers(Headers headers) {
   cli_->set_default_headers(std::move(headers));
 }
 
-inline void Client::set_address_family(int family) { cli_->set_address_family(family); }
+inline void Client::set_address_family(int family) {
+  cli_->set_address_family(family);
+}
 
 inline void Client::set_tcp_nodelay(bool on) { cli_->set_tcp_nodelay(on); }
 
