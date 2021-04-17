@@ -3145,7 +3145,10 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
 
   auto client_sock =
       detail::create_client_socket(HOST, PORT, AF_UNSPEC, false, nullptr,
-                                   /*timeout_sec=*/5, 0, std::string(), error);
+                                   /*connection_timeout_sec=*/5, 0,
+                                   /*read_timeout_sec=*/5, 0,
+                                   /*write_timeout_sec=*/5, 0,
+                                   std::string(), error);
 
   if (client_sock == INVALID_SOCKET) { return false; }
 

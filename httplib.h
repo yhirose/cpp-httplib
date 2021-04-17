@@ -2091,8 +2091,9 @@ socket_t create_socket(const char *host, int port, int address_family,
   for (auto rp = result; rp; rp = rp->ai_next) {
     // Create a socket
 #ifdef _WIN32
-    auto sock = WSASocketW(rp->ai_family, rp->ai_socktype, rp->ai_protocol,
-                           nullptr, 0, WSA_FLAG_NO_HANDLE_INHERIT);
+    auto sock =
+        WSASocketW(rp->ai_family, rp->ai_socktype, rp->ai_protocol, nullptr, 0,
+                   WSA_FLAG_NO_HANDLE_INHERIT | WSA_FLAG_OVERLAPPED);
     /**
      * Since the WSA_FLAG_NO_HANDLE_INHERIT is only supported on Windows 7 SP1
      * and above the socket creation fails on older Windows Systems.
@@ -2214,11 +2215,12 @@ inline std::string if2ip(const std::string &ifn) {
 }
 #endif
 
-inline socket_t create_client_socket(const char *host, int port,
-                                     int address_family, bool tcp_nodelay,
-                                     SocketOptions socket_options,
-                                     time_t timeout_sec, time_t timeout_usec,
-                                     const std::string &intf, Error &error) {
+inline socket_t create_client_socket(
+    const char *host, int port, int address_family, bool tcp_nodelay,
+    SocketOptions socket_options, time_t connection_timeout_sec,
+    time_t connection_timeout_usec, time_t read_timeout_sec,
+    time_t read_timeout_usec, time_t write_timeout_sec,
+    time_t write_timeout_usec, const std::string &intf, Error &error) {
   auto sock = create_socket(
       host, port, address_family, 0, tcp_nodelay, std::move(socket_options),
       [&](socket_t sock, struct addrinfo &ai) -> bool {
@@ -2240,7 +2242,8 @@ inline socket_t create_client_socket(const char *host, int port,
 
         if (ret < 0) {
           if (is_connection_error() ||
-              !wait_until_socket_is_ready(sock, timeout_sec, timeout_usec)) {
+              !wait_until_socket_is_ready(sock, connection_timeout_sec,
+                                          connection_timeout_usec)) {
             close_socket(sock);
             error = Error::Connection;
             return false;
@@ -2248,6 +2251,21 @@ inline socket_t create_client_socket(const char *host, int port,
         }
 
         set_nonblocking(sock, false);
+
+        {
+          timeval tv;
+          tv.tv_sec = static_cast<long>(read_timeout_sec);
+          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
+          setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+        }
+        {
+          timeval tv;
+          tv.tv_sec = static_cast<long>(write_timeout_sec);
+          tv.tv_usec =
+          static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
+          setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+        }
+
         error = Error::Success;
         return true;
       });
@@ -4847,6 +4865,19 @@ inline bool Server::listen_internal() {
         break;
       }
 
+      {
+        timeval tv;
+        tv.tv_sec = static_cast<long>(read_timeout_sec_);
+        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+      }
+      {
+        timeval tv;
+        tv.tv_sec = static_cast<long>(write_timeout_sec_);
+        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec_);
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+      }
+
 #if __cplusplus > 201703L
       task_queue->enqueue([=, this]() { process_and_close_socket(sock); });
 #else
@@ -5263,11 +5294,14 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
     return detail::create_client_socket(
         proxy_host_.c_str(), proxy_port_, address_family_, tcp_nodelay_,
         socket_options_, connection_timeout_sec_, connection_timeout_usec_,
-        interface_, error);
+        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+        write_timeout_usec_, interface_, error);
   }
   return detail::create_client_socket(
       host_.c_str(), port_, address_family_, tcp_nodelay_, socket_options_,
-      connection_timeout_sec_, connection_timeout_usec_, interface_, error);
+      connection_timeout_sec_, connection_timeout_usec_, read_timeout_sec_,
+      read_timeout_usec_, write_timeout_sec_, write_timeout_usec_, interface_,
+      error);
 }
 
 inline bool ClientImpl::create_and_connect_socket(Socket &socket,
