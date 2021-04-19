@@ -1366,7 +1366,8 @@ protected:
                      const auto &d = *data;
                      auto out_len =
                          std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
-                     sink.write(&d[static_cast<size_t>(offset)], out_len);
+                     auto ret = sink.write(&d[static_cast<size_t>(offset)], out_len);
+                     EXPECT_TRUE(ret);
                      return true;
                    },
                    [data] { delete data; });
@@ -2521,7 +2522,8 @@ TEST_F(ServerTest, SlowPost) {
   auto res = cli_.Post(
       "/slowpost", 64 * 1024 * 1024,
       [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        sink.write(buffer, sizeof(buffer));
+        auto ret = sink.write(buffer, sizeof(buffer));
+        EXPECT_TRUE(ret);
         return true;
       },
       "text/plain");
@@ -3349,7 +3351,8 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
                                                              DataSink &sink) {
       char buffer[27];
       auto size = static_cast<size_t>(sprintf(buffer, "data:%ld\n\n", offset));
-      sink.write(buffer, size);
+      auto ret = sink.write(buffer, size);
+      EXPECT_TRUE(ret);
       std::this_thread::sleep_for(std::chrono::seconds(1));
       return true;
     });
