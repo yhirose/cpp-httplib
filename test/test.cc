@@ -3880,6 +3880,7 @@ TEST(SSLClientTest, WildcardHostNameMatch) {
 
   cli.set_ca_cert_path(CA_CERT_FILE);
   cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
