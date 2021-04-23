@@ -2244,7 +2244,6 @@ inline socket_t create_client_socket(
           if (is_connection_error() ||
               !wait_until_socket_is_ready(sock, connection_timeout_sec,
                                           connection_timeout_usec)) {
-            close_socket(sock);
             error = Error::Connection;
             return false;
           }
