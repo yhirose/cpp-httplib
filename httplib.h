@@ -1612,7 +1612,8 @@ inline std::string encode_query_param(const std::string &value) {
 
 inline std::string encode_url(const std::string &s) {
   std::string result;
-
+  result.reserve(s.size());
+  
   for (size_t i = 0; s[i]; i++) {
     switch (s[i]) {
     case ' ': result += "%20"; break;
