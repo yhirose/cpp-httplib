@@ -804,6 +804,12 @@ enum class Error {
   Compression,
 };
 
+inline std::ostream& operator << (std::ostream& os, const Error& obj)
+{
+   os << static_cast<std::underlying_type<Error>::type>(obj);
+   return os;
+}
+
 class Result {
 public:
   Result(std::unique_ptr<Response> &&res, Error err,
