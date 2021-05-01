@@ -7,6 +7,7 @@
 #include <future>
 #include <stdexcept>
 #include <thread>
+#include <sstream>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -545,6 +546,23 @@ TEST(ConnectionErrorTest, InvalidHost2) {
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Connection, res.error());
+}
+
+TEST(ConnectionErrorTest, InvalidHostCheckResultErrorToString) {
+  auto host = "httpbin.org/";
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli(host);
+#else
+  Client cli(host);
+#endif
+  cli.set_connection_timeout(std::chrono::seconds(2));
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(!res);
+  stringstream s;
+  s << "error code: " << res.error();
+  EXPECT_EQ("error code: 2", s.str());
 }
 
 TEST(ConnectionErrorTest, InvalidPort) {
