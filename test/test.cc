@@ -1317,6 +1317,21 @@ protected:
                   EXPECT_EQ("application/json  tmp-string", file.content_type);
                 }
               })
+        .Post("multi_value",
+                [&](const Request &req, Response &res) {
+                ASSERT_TRUE(req.body.empty());
+                {
+                  const auto &file_values = req.get_file_multi_value("k_multi_value");
+                  std::vector<std::string> values{"first value", "second value"};
+                  auto it = file_values.begin();
+                  auto value_it = values.begin();
+                  for (; it != file_values.end(); it++) {
+                    EXPECT_EQ("text/plain", it->content_type);
+                    EXPECT_EQ(*value_it, it->content);
+                    value_it++;
+                  }
+                }
+              })
         .Post("/empty",
               [&](const Request &req, Response &res) {
                 EXPECT_EQ(req.body, "");
@@ -2113,6 +2128,16 @@ TEST_F(ServerTest, MultipartFormData) {
 
   auto res = cli_.Post("/multipart", items);
 
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, ddd) {
+  MultipartFormDataItems items = {
+    {"k_multi_value", "first value", "", "text/plain"},
+    {"k_multi_value", "second value ", "", "text/plain"},
+  };
+  auto res = cli_.Post("/multi_value", items);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
