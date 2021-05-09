@@ -615,7 +615,7 @@ public:
   using Expect100ContinueHandler =
       std::function<int(const Request &, Response &)>;
 
-  Server();
+  Server(int thread_count = CPPHTTPLIB_THREAD_POOL_COUNT);
 
   virtual ~Server();
 
@@ -4209,9 +4209,9 @@ inline const std::string &BufferStream::get_buffer() const { return buffer; }
 } // namespace detail
 
 // HTTP server implementation
-inline Server::Server()
+inline Server::Server(int thread_count)
     : new_task_queue(
-          [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); }),
+          [=] { return new ThreadPool(thread_count); }),
       svr_sock_(INVALID_SOCKET), is_running_(false) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
