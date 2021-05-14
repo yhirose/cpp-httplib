@@ -1005,6 +1005,8 @@ public:
   void set_keep_alive(bool on);
   void set_follow_location(bool on);
 
+  void set_url_encode(bool on);
+
   void set_compress(bool on);
 
   void set_decompress(bool on);
@@ -1100,6 +1102,8 @@ protected:
 
   bool keep_alive_ = false;
   bool follow_location_ = false;
+
+  bool url_encode_ = true;
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
@@ -1317,6 +1321,8 @@ public:
 
   void set_keep_alive(bool on);
   void set_follow_location(bool on);
+
+  void set_url_encode(bool on);
 
   void set_compress(bool on);
 
@@ -5276,6 +5282,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 #endif
   keep_alive_ = rhs.keep_alive_;
   follow_location_ = rhs.follow_location_;
+  url_encode_ = rhs.url_encode_;
   tcp_nodelay_ = rhs.tcp_nodelay_;
   socket_options_ = rhs.socket_options_;
   compress_ = rhs.compress_;
@@ -5703,7 +5710,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   {
     detail::BufferStream bstrm;
 
-    const auto &path = detail::encode_url(req.path);
+    const auto &path = url_encode_ ? detail::encode_url(req.path) : req.path;
     bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
 
     detail::write_headers(bstrm, req.headers);
@@ -6431,6 +6438,8 @@ inline void ClientImpl::set_digest_auth(const char *username,
 inline void ClientImpl::set_keep_alive(bool on) { keep_alive_ = on; }
 
 inline void ClientImpl::set_follow_location(bool on) { follow_location_ = on; }
+
+inline void ClientImpl::set_url_encode(bool on) { url_encode_ = on; }
 
 inline void ClientImpl::set_default_headers(Headers headers) {
   default_headers_ = std::move(headers);
@@ -7559,6 +7568,8 @@ inline void Client::set_keep_alive(bool on) { cli_->set_keep_alive(on); }
 inline void Client::set_follow_location(bool on) {
   cli_->set_follow_location(on);
 }
+
+inline void Client::set_url_encode(bool on) { cli_->set_url_encode(on); }
 
 inline void Client::set_compress(bool on) { cli_->set_compress(on); }
 

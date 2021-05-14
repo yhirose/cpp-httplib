@@ -965,6 +965,42 @@ TEST(RedirectFromPageWithContent, Redirect) {
 
 #endif
 
+TEST(PathUrlEncodeTest, PathUrlEncode) {
+  Server svr;
+
+  svr.Get("/foo", [](const Request & req, Response &res) {
+    auto a = req.params.find("a");
+    if (a != req.params.end()) {
+      res.set_content((*a).second, "text/plain");
+      res.status = 200;
+    } else {
+      res.status = 400;
+    }
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_url_encode(false);
+
+    auto res = cli.Get("/foo?a=explicitly+encoded");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    // This expects it back with a space, as the `+` won't have been
+    // url-encoded, and server-side the params get decoded turning `+`
+    // into spaces.
+    EXPECT_EQ("explicitly encoded", res->body);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 TEST(BindServerTest, BindDualStack) {
   Server svr;
 
