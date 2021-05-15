@@ -5283,6 +5283,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   keep_alive_ = rhs.keep_alive_;
   follow_location_ = rhs.follow_location_;
   url_encode_ = rhs.url_encode_;
+  address_family_ = rhs.address_family_;
   tcp_nodelay_ = rhs.tcp_nodelay_;
   socket_options_ = rhs.socket_options_;
   compress_ = rhs.compress_;
