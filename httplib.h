@@ -2230,45 +2230,45 @@ inline socket_t create_client_socket(
     time_t write_timeout_usec, const std::string &intf, Error &error) {
   auto sock = create_socket(
       host, port, address_family, 0, tcp_nodelay, std::move(socket_options),
-      [&](socket_t sock, struct addrinfo &ai) -> bool {
+      [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
           auto ip = if2ip(intf);
           if (ip.empty()) { ip = intf; }
-          if (!bind_ip_address(sock, ip.c_str())) {
+          if (!bind_ip_address(sock2, ip.c_str())) {
             error = Error::BindIPAddress;
             return false;
           }
 #endif
         }
 
-        set_nonblocking(sock, true);
+        set_nonblocking(sock2, true);
 
         auto ret =
-            ::connect(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
+            ::connect(sock2, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
 
         if (ret < 0) {
           if (is_connection_error() ||
-              !wait_until_socket_is_ready(sock, connection_timeout_sec,
+              !wait_until_socket_is_ready(sock2, connection_timeout_sec,
                                           connection_timeout_usec)) {
             error = Error::Connection;
             return false;
           }
         }
 
-        set_nonblocking(sock, false);
+        set_nonblocking(sock2, false);
 
         {
           timeval tv;
           tv.tv_sec = static_cast<long>(read_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-          setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
         }
         {
           timeval tv;
           tv.tv_sec = static_cast<long>(write_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
-          setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
         }
 
         error = Error::Success;
@@ -2946,8 +2946,8 @@ bool prepare_content_receiver(T &x, int &status,
         ContentReceiverWithProgress out = [&](const char *buf, size_t n,
                                               uint64_t off, uint64_t len) {
           return decompressor->decompress(buf, n,
-                                          [&](const char *buf, size_t n) {
-                                            return receiver(buf, n, off, len);
+                                          [&](const char *buf2, size_t n2) {
+                                            return receiver(buf2, n2, off, len);
                                           });
         };
         return callback(std::move(out));
