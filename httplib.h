@@ -372,18 +372,62 @@ public:
 
 using Range = std::pair<ssize_t, ssize_t>;
 using Ranges = std::vector<Range>;
-
-struct Request {
-  std::string method;
-  std::string path;
+namespace detail {
+bool has_crlf(const char *s) {
+  auto p = s;
+  while (*p) {
+    if (*p == '\r' || *p == '\n') { return true; }
+    p++;
+  }
+  return false;
+}
+const char *get_header_value(const Headers &headers, const char *key,
+                             size_t id = 0, const char *def = nullptr) {
+  auto rng = headers.equal_range(key);
+  auto it = rng.first;
+  std::advance(it, static_cast<ssize_t>(id));
+  if (it != rng.second) { return it->second.c_str(); }
+  return def;
+}
+}
+struct Message {
   Headers headers;
   std::string body;
+  std::string version;
+  size_t content_length_ = 0;
+  bool has_header(const char *key) const {
+    return headers.find(key) != headers.end();
+  }
+  std::string get_header_value(const char *key, size_t id = 0) const {
+    return detail::get_header_value(headers, key, id, "");
+  }
+  template <typename T>
+  T get_header_value(const char *key, size_t id = 0) const {
+    return detail::get_header_value<T>(headers, key, id, 0);
+  }
+  size_t get_header_value_count(const char *key) const {
+    auto r = headers.equal_range(key);
+    return static_cast<size_t>(std::distance(r.first, r.second));
+  }
+  void set_header(const char *key, const char *val) {
+    if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
+      headers.emplace(key, val);
+    }
+  }
+  void set_header(const char *key, const std::string &val) {
+    if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
+      headers.emplace(key, val);
+    }
+  }
+};
+struct Request:public Message {
+  std::string method;
+  std::string path;
 
   std::string remote_addr;
   int remote_port = -1;
 
   // for server
-  std::string version;
   std::string target;
   Params params;
   MultipartFormDataMap files;
@@ -398,14 +442,6 @@ struct Request {
   const SSL *ssl = nullptr;
 #endif
 
-  bool has_header(const char *key) const;
-  std::string get_header_value(const char *key, size_t id = 0) const;
-  template <typename T>
-  T get_header_value(const char *key, size_t id = 0) const;
-  size_t get_header_value_count(const char *key) const;
-  void set_header(const char *key, const char *val);
-  void set_header(const char *key, const std::string &val);
-
   bool has_param(const char *key) const;
   std::string get_param_value(const char *key, size_t id = 0) const;
   size_t get_param_value_count(const char *key) const;
@@ -417,32 +453,27 @@ struct Request {
 
   // private members...
   size_t redirect_count_ = CPPHTTPLIB_REDIRECT_MAX_COUNT;
-  size_t content_length_ = 0;
   ContentProvider content_provider_;
   bool is_chunked_content_provider_ = false;
   size_t authorization_count_ = 0;
 };
 
-struct Response {
-  std::string version;
+struct Response : public Message {
   int status = -1;
   std::string reason;
-  Headers headers;
-  std::string body;
   std::string location; // Redirect location
-
-  bool has_header(const char *key) const;
-  std::string get_header_value(const char *key, size_t id = 0) const;
-  template <typename T>
-  T get_header_value(const char *key, size_t id = 0) const;
-  size_t get_header_value_count(const char *key) const;
-  void set_header(const char *key, const char *val);
-  void set_header(const char *key, const std::string &val);
 
   void set_redirect(const char *url, int status = 302);
   void set_redirect(const std::string &url, int status = 302);
-  void set_content(const char *s, size_t n, const char *content_type);
-  void set_content(const std::string &s, const char *content_type);
+  void set_content(const char *s, size_t n, const char *content_type) {
+  body.assign(s, n);
+  auto rng = headers.equal_range("Content-Type");
+  headers.erase(rng.first, rng.second);
+  set_header("Content-Type", content_type);
+}
+  void set_content(const std::string &s, const char *content_type) {
+  set_content(s.data(), s.size(), content_type);
+}
 
   void set_content_provider(
       size_t length, const char *content_type, ContentProvider provider,
@@ -468,7 +499,6 @@ struct Response {
   }
 
   // private members...
-  size_t content_length_ = 0;
   ContentProvider content_provider_;
   std::function<void()> content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
@@ -2737,19 +2767,6 @@ private:
 };
 #endif
 
-inline bool has_header(const Headers &headers, const char *key) {
-  return headers.find(key) != headers.end();
-}
-
-inline const char *get_header_value(const Headers &headers, const char *key,
-                                    size_t id = 0, const char *def = nullptr) {
-  auto rng = headers.equal_range(key);
-  auto it = rng.first;
-  std::advance(it, static_cast<ssize_t>(id));
-  if (it != rng.second) { return it->second.c_str(); }
-  return def;
-}
-
 template <typename T>
 inline T get_header_value(const Headers & /*headers*/, const char * /*key*/,
                           size_t /*id*/ = 0, uint64_t /*def*/ = 0) {}
@@ -2983,7 +3000,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 
         if (is_chunked_transfer_encoding(x.headers)) {
           ret = read_content_chunked(strm, out);
-        } else if (!has_header(x.headers, "Content-Length")) {
+        } else if (!x.has_header("Content-Length")) {
           ret = read_content_without_length(strm, out);
         } else {
           auto len = get_header_value<uint64_t>(x.headers, "Content-Length");
@@ -3668,15 +3685,6 @@ inline bool expect_content(const Request &req) {
   return false;
 }
 
-inline bool has_crlf(const char *s) {
-  auto p = s;
-  while (*p) {
-    if (*p == '\r' || *p == '\n') { return true; }
-    p++;
-  }
-  return false;
-}
-
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 template <typename CTX, typename Init, typename Update, typename Final>
 inline std::string message_digest(const std::string &s, Init init,
@@ -3908,37 +3916,6 @@ make_bearer_token_authentication_header(const std::string &token,
   return std::make_pair(key, std::move(field));
 }
 
-// Request implementation
-inline bool Request::has_header(const char *key) const {
-  return detail::has_header(headers, key);
-}
-
-inline std::string Request::get_header_value(const char *key, size_t id) const {
-  return detail::get_header_value(headers, key, id, "");
-}
-
-template <typename T>
-inline T Request::get_header_value(const char *key, size_t id) const {
-  return detail::get_header_value<T>(headers, key, id, 0);
-}
-
-inline size_t Request::get_header_value_count(const char *key) const {
-  auto r = headers.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
-}
-
-inline void Request::set_header(const char *key, const char *val) {
-  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
-    headers.emplace(key, val);
-  }
-}
-
-inline void Request::set_header(const char *key, const std::string &val) {
-  if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
-    headers.emplace(key, val);
-  }
-}
-
 inline bool Request::has_param(const char *key) const {
   return params.find(key) != params.end();
 }
@@ -3971,38 +3948,6 @@ inline MultipartFormData Request::get_file_value(const char *key) const {
   return MultipartFormData();
 }
 
-// Response implementation
-inline bool Response::has_header(const char *key) const {
-  return headers.find(key) != headers.end();
-}
-
-inline std::string Response::get_header_value(const char *key,
-                                              size_t id) const {
-  return detail::get_header_value(headers, key, id, "");
-}
-
-template <typename T>
-inline T Response::get_header_value(const char *key, size_t id) const {
-  return detail::get_header_value<T>(headers, key, id, 0);
-}
-
-inline size_t Response::get_header_value_count(const char *key) const {
-  auto r = headers.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
-}
-
-inline void Response::set_header(const char *key, const char *val) {
-  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
-    headers.emplace(key, val);
-  }
-}
-
-inline void Response::set_header(const char *key, const std::string &val) {
-  if (!detail::has_crlf(key) && !detail::has_crlf(val.c_str())) {
-    headers.emplace(key, val);
-  }
-}
-
 inline void Response::set_redirect(const char *url, int stat) {
   if (!detail::has_crlf(url)) {
     set_header("Location", url);
@@ -4016,20 +3961,6 @@ inline void Response::set_redirect(const char *url, int stat) {
 
 inline void Response::set_redirect(const std::string &url, int stat) {
   set_redirect(url.c_str(), stat);
-}
-
-inline void Response::set_content(const char *s, size_t n,
-                                  const char *content_type) {
-  body.assign(s, n);
-
-  auto rng = headers.equal_range("Content-Type");
-  headers.erase(rng.first, rng.second);
-  set_header("Content-Type", content_type);
-}
-
-inline void Response::set_content(const std::string &s,
-                                  const char *content_type) {
-  set_content(s.data(), s.size(), content_type);
 }
 
 inline void
