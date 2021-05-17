@@ -39,8 +39,8 @@ public:
 private:
   mutex m_;
   condition_variable cv_;
-  atomic_int id_ = 0;
-  atomic_int cid_ = -1;
+  atomic_int id_{0};
+  atomic_int cid_{-1};
   string message_;
 };
 
