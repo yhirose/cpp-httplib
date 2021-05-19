@@ -1413,6 +1413,7 @@ public:
 private:
   bool create_and_connect_socket(Socket &socket, Error &error) override;
   void shutdown_ssl(Socket &socket, bool shutdown_gracefully) override;
+  void shutdown_ssl_impl(Socket &socket, bool shutdown_socket);
 
   bool process_socket(const Socket &socket,
                       std::function<bool(Stream &strm)> callback) override;
@@ -5261,7 +5262,11 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
       host_and_port_(host_ + ":" + std::to_string(port_)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
-inline ClientImpl::~ClientImpl() { lock_socket_and_shutdown_and_close(); }
+inline ClientImpl::~ClientImpl() {
+  std::lock_guard<std::mutex> guard(socket_mutex_);
+  shutdown_socket(socket_);
+  close_socket(socket_);
+}
 
 inline bool ClientImpl::is_valid() const { return true; }
 
@@ -6862,7 +6867,7 @@ inline SSLClient::~SSLClient() {
   // Make sure to shut down SSL since shutdown_ssl will resolve to the
   // base function rather than the derived function once we get to the
   // base class destructor, and won't free the SSL (causing a leak).
-  SSLClient::shutdown_ssl(socket_, true);
+  shutdown_ssl_impl(socket_, true);
 }
 
 inline bool SSLClient::is_valid() const { return ctx_; }
@@ -7041,6 +7046,10 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 }
 
 inline void SSLClient::shutdown_ssl(Socket &socket, bool shutdown_gracefully) {
+  shutdown_ssl_impl(socket, shutdown_gracefully);
+}
+
+inline void SSLClient::shutdown_ssl_impl(Socket &socket, bool shutdown_gracefully) {
   if (socket.sock == INVALID_SOCKET) {
     assert(socket.ssl == nullptr);
     return;
