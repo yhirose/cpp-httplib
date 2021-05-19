@@ -2564,7 +2564,7 @@ public:
 
     std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     do {
-      strm_.avail_out = (uInt)buff.size();
+      strm_.avail_out = static_cast<uInt>(buff.size());
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
 
       ret = deflate(&strm_, flush);
@@ -2615,7 +2615,7 @@ public:
 
     std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     while (strm_.avail_in > 0) {
-      strm_.avail_out = (uInt)buff.size();
+      strm_.avail_out = static_cast<uInt>(buff.size());
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
 
       ret = inflate(&strm_, Z_NO_FLUSH);
