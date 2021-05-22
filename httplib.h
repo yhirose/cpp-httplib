@@ -804,10 +804,9 @@ enum class Error {
   Compression,
 };
 
-inline std::ostream& operator << (std::ostream& os, const Error& obj)
-{
-   os << static_cast<std::underlying_type<Error>::type>(obj);
-   return os;
+inline std::ostream &operator<<(std::ostream &os, const Error &obj) {
+  os << static_cast<std::underlying_type<Error>::type>(obj);
+  return os;
 }
 
 class Result {
@@ -1625,7 +1624,7 @@ inline std::string encode_query_param(const std::string &value) {
 inline std::string encode_url(const std::string &s) {
   std::string result;
   result.reserve(s.size());
-  
+
   for (size_t i = 0; s[i]; i++) {
     switch (s[i]) {
     case ' ': result += "%20"; break;
@@ -3123,9 +3122,7 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
           // Emit chunked response header and footer for each chunk
           auto chunk =
               from_i_to_hex(payload.size()) + "\r\n" + payload + "\r\n";
-          if (!write_data(strm, chunk.data(), chunk.size())) {
-            ok = false;
-          }
+          if (!write_data(strm, chunk.data(), chunk.size())) { ok = false; }
         }
       } else {
         ok = false;
@@ -6674,7 +6671,12 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
+#ifdef _WIN32
+      while (err == SSL_ERROR_WANT_READ ||
+             err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT) {
+#else
       while (err == SSL_ERROR_WANT_READ) {
+#endif
         if (SSL_pending(ssl_) > 0) {
           return SSL_read(ssl_, ptr, static_cast<int>(size));
         } else if (is_readable()) {
