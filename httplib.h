@@ -1051,10 +1051,6 @@ protected:
   void shutdown_socket(Socket &socket);
   void close_socket(Socket &socket);
 
-  // Similar to shutdown_ssl and close_socket, this should NOT be called
-  // concurrently with a DIFFERENT thread sending requests from the socket
-  void lock_socket_and_shutdown_and_close();
-
   bool process_request(Stream &strm, Request &req, Response &res,
                        bool close_connection, Error &error);
 
@@ -5364,13 +5360,6 @@ inline void ClientImpl::close_socket(Socket &socket) {
   socket.sock = INVALID_SOCKET;
 }
 
-inline void ClientImpl::lock_socket_and_shutdown_and_close() {
-  std::lock_guard<std::mutex> guard(socket_mutex_);
-  shutdown_ssl(socket_, true);
-  shutdown_socket(socket_);
-  close_socket(socket_);
-}
-
 inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
                                            Response &res) {
   std::array<char, 2048> buf;
@@ -5919,7 +5908,10 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     // mutex during the process. It would be a bug to call it from a different
     // thread since it's a thread-safety issue to do these things to the socket
     // if another thread is using the socket.
-    lock_socket_and_shutdown_and_close();
+    std::lock_guard<std::mutex> guard(socket_mutex_);
+    shutdown_ssl(socket_, true);
+    shutdown_socket(socket_);
+    close_socket(socket_);
   }
 
   // Log
