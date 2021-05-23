@@ -667,6 +667,8 @@ public:
   Server &set_tcp_nodelay(bool on);
   Server &set_socket_options(SocketOptions socket_options);
 
+  Server &set_default_headers(Headers headers);
+
   Server &set_keep_alive_max_count(size_t count);
   Server &set_keep_alive_timeout(time_t sec);
 
@@ -786,6 +788,8 @@ private:
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   SocketOptions socket_options_ = default_socket_options;
+
+  Headers default_headers_;
 };
 
 enum class Error {
@@ -4427,6 +4431,11 @@ inline Server &Server::set_socket_options(SocketOptions socket_options) {
   return *this;
 }
 
+inline Server &Server::set_default_headers(Headers headers) {
+  default_headers_ = std::move(headers);
+  return *this;
+}
+
 inline Server &Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
   return *this;
@@ -5130,6 +5139,12 @@ Server::process_request(Stream &strm, bool close_connection,
   Response res;
 
   res.version = "HTTP/1.1";
+
+  for (const auto &header : default_headers_) {
+    if (res.headers.find(header.first) == res.headers.end()) {
+      res.headers.insert(header);
+    }
+  }
 
 #ifdef _WIN32
   // TODO: Increase FD_SETSIZE statically (libzmq), dynamically (MySQL).

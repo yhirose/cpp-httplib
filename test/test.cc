@@ -5,9 +5,9 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
-#include <sstream>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -435,26 +435,6 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, body);
-}
-
-TEST(DefaultHeadersTest, FromHTTPBin) {
-  Client cli("httpbin.org");
-  cli.set_default_headers({make_range_header({{1, 10}})});
-  cli.set_connection_timeout(5);
-
-  {
-    auto res = cli.Get("/range/32");
-    ASSERT_TRUE(res);
-    EXPECT_EQ("bcdefghijk", res->body);
-    EXPECT_EQ(206, res->status);
-  }
-
-  {
-    auto res = cli.Get("/range/32");
-    ASSERT_TRUE(res);
-    EXPECT_EQ("bcdefghijk", res->body);
-    EXPECT_EQ(206, res->status);
-  }
 }
 
 TEST(RangeTest, FromHTTPBin) {
@@ -968,7 +948,7 @@ TEST(RedirectFromPageWithContent, Redirect) {
 TEST(PathUrlEncodeTest, PathUrlEncode) {
   Server svr;
 
-  svr.Get("/foo", [](const Request & req, Response &res) {
+  svr.Get("/foo", [](const Request &req, Response &res) {
     auto a = req.params.find("a");
     if (a != req.params.end()) {
       res.set_content((*a).second, "text/plain");
@@ -1420,7 +1400,8 @@ protected:
                      const auto &d = *data;
                      auto out_len =
                          std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
-                     auto ret = sink.write(&d[static_cast<size_t>(offset)], out_len);
+                     auto ret =
+                         sink.write(&d[static_cast<size_t>(offset)], out_len);
                      EXPECT_TRUE(ret);
                      return true;
                    },
@@ -3199,12 +3180,11 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
   auto error = Error::Success;
 
-  auto client_sock =
-      detail::create_client_socket(HOST, PORT, AF_UNSPEC, false, nullptr,
-                                   /*connection_timeout_sec=*/5, 0,
-                                   /*read_timeout_sec=*/5, 0,
-                                   /*write_timeout_sec=*/5, 0,
-                                   std::string(), error);
+  auto client_sock = detail::create_client_socket(
+      HOST, PORT, AF_UNSPEC, false, nullptr,
+      /*connection_timeout_sec=*/5, 0,
+      /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
 
   if (client_sock == INVALID_SOCKET) { return false; }
 
@@ -3678,6 +3658,54 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("world", body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(ClientDefaultHeadersTest, DefaultHeaders) {
+  Client cli("httpbin.org");
+  cli.set_default_headers({make_range_header({{1, 10}})});
+  cli.set_connection_timeout(5);
+
+  {
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res);
+    EXPECT_EQ("bcdefghijk", res->body);
+    EXPECT_EQ(206, res->status);
+  }
+
+  {
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res);
+    EXPECT_EQ("bcdefghijk", res->body);
+    EXPECT_EQ(206, res->status);
+  }
+}
+
+TEST(ServerDefaultHeadersTest, DefaultHeaders) {
+  Server svr;
+  svr.set_default_headers({{"Hello", "World"}});
+
+  svr.Get("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("ok", res->body);
+  EXPECT_EQ("World", res->get_header_value("Hello"));
 
   svr.stop();
   listen_thread.join();
