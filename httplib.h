@@ -446,11 +446,13 @@ struct Response {
 
   void set_content_provider(
       size_t length, const char *content_type, ContentProvider provider,
-      const std::function<void()> &resource_releaser = nullptr);
+      const std::function<void()> &resource_releaser = nullptr,
+      const std::function<void(bool)>& result_callback = nullptr);
 
   void set_content_provider(
       const char *content_type, ContentProviderWithoutLength provider,
-      const std::function<void()> &resource_releaser = nullptr);
+      const std::function<void()> &resource_releaser = nullptr,
+      const std::function<void(bool)> &result_callback = nullptr);
 
   void set_chunked_content_provider(
       const char *content_type, ContentProviderWithoutLength provider,
@@ -471,6 +473,7 @@ struct Response {
   size_t content_length_ = 0;
   ContentProvider content_provider_;
   std::function<void()> content_provider_resource_releaser_;
+  std::function<void(bool)> content_provider_result_callback_;
   bool is_chunked_content_provider_ = false;
 };
 
@@ -4033,23 +4036,27 @@ inline void Response::set_content(const std::string &s,
 inline void
 Response::set_content_provider(size_t in_length, const char *content_type,
                                ContentProvider provider,
-                               const std::function<void()> &resource_releaser) {
+                               const std::function<void()> &resource_releaser,
+                               const std::function<void(bool)>& result_callback) {
   assert(in_length > 0);
   set_header("Content-Type", content_type);
   content_length_ = in_length;
   content_provider_ = std::move(provider);
   content_provider_resource_releaser_ = resource_releaser;
+  content_provider_result_callback_ = result_callback;
   is_chunked_content_provider_ = false;
 }
 
 inline void
 Response::set_content_provider(const char *content_type,
                                ContentProviderWithoutLength provider,
-                               const std::function<void()> &resource_releaser) {
+                               const std::function<void()> &resource_releaser,
+                               const std::function<void(bool)> &result_callback) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = resource_releaser;
+  content_provider_result_callback_ = result_callback;
   is_chunked_content_provider_ = false;
 }
 
@@ -5232,7 +5239,11 @@ Server::process_request(Stream &strm, bool close_connection,
 
   if (routed) {
     if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
-    return write_response_with_content(strm, close_connection, req, res);
+    bool success = write_response_with_content(strm, close_connection, req, res);
+    if (res.content_provider_result_callback_) {
+       res.content_provider_result_callback_(success);
+    }
+    return success;
   } else {
     if (res.status == -1) { res.status = 404; }
     return write_response(strm, close_connection, req, res);

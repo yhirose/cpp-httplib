@@ -1389,6 +1389,27 @@ protected:
                      return true;
                    });
              })
+        .Get("/streamed-result-success",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content_provider(
+                   6, "text/plain",
+                   [](size_t offset, size_t /*length*/, DataSink &sink) {
+                     sink.os << (offset < 3 ? "a" : "b");
+                     return true;
+                   },
+                   []() {}, 
+                   [](bool success) { EXPECT_TRUE(success); }
+               );
+             })
+        .Get("/streamed-result-failure",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content_provider(
+                   6, "text/plain",
+                   [](size_t offset, size_t /*length*/, DataSink &sink) {
+                     return false;
+                   },
+                   []() {}, [](bool success) { EXPECT_FALSE(success); });
+             })
         .Get("/streamed-with-range",
              [&](const Request & /*req*/, Response &res) {
                auto data = new std::string("abcdefg");
@@ -2322,6 +2343,19 @@ TEST_F(ServerTest, GetStreamed) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(std::string("aaabbb"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedResultSuccess) {
+  auto res = cli_.Get("/streamed-result-success");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("aaabbb"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedResultFailure) {
+  auto res = cli_.Get("/streamed-result-failure");
+  ASSERT_FALSE(res);
 }
 
 TEST_F(ServerTest, GetStreamedWithRange1) {
