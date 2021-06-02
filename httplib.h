@@ -337,7 +337,7 @@ using ContentProvider =
 using ContentProviderWithoutLength =
     std::function<bool(size_t offset, DataSink &sink)>;
 
-using ContentProviderResourceReleaser = std::function<void()>;
+using ContentProviderResourceReleaser = std::function<void(bool success)>;
 
 using ContentReceiverWithProgress =
     std::function<bool(const char *data, size_t data_length, uint64_t offset,
@@ -465,7 +465,7 @@ struct Response {
   Response &operator=(Response &&) = default;
   ~Response() {
     if (content_provider_resource_releaser_) {
-      content_provider_resource_releaser_();
+      content_provider_resource_releaser_(content_provider_success_);
     }
   }
 
@@ -474,6 +474,7 @@ struct Response {
   ContentProvider content_provider_;
   ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
+  bool content_provider_success_ = false;
 };
 
 class Stream {
@@ -4614,8 +4615,11 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     if (!res.body.empty()) {
       if (!strm.write(res.body)) { ret = false; }
     } else if (res.content_provider_) {
-      if (!write_content_with_provider(strm, req, res, boundary,
-                                       content_type)) {
+      if (write_content_with_provider(strm, req, res, boundary,
+                                      content_type)) {
+        res.content_provider_success_ = true;
+      } else {
+        res.content_provider_success_ = false;
         ret = false;
       }
     }

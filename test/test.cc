@@ -1378,7 +1378,10 @@ protected:
                      (*i)++;
                      return true;
                    },
-                   [i] { delete i; });
+                   [i](bool success) {
+                     EXPECT_TRUE(success);
+                     delete i;
+                   });
              })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
@@ -1405,7 +1408,10 @@ protected:
                      EXPECT_TRUE(ret);
                      return true;
                    },
-                   [data] { delete data; });
+                   [data](bool success) {
+                     EXPECT_TRUE(success);
+                     delete data;
+                   });
              })
         .Get("/streamed-cancel",
              [&](const Request & /*req*/, Response &res) {
@@ -3561,6 +3567,44 @@ TEST(KeepAliveTest, ReadTimeout) {
   ASSERT_TRUE(resb);
   EXPECT_EQ(200, resb->status);
   EXPECT_EQ("b", resb->body);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(ClientProblemDetectionTest, ContentProvider) {
+  Server svr;
+
+  size_t content_length = 1024 * 1024;
+
+  svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        content_length, "text/plain",
+        [&](size_t offset, size_t length, DataSink &sink) {
+          auto out_len = std::min(length, static_cast<size_t>(1024));
+          std::string out(out_len, '@');
+          sink.write(out.data(), out_len);
+          return offset < 4096;
+        },
+        [](bool success) { ASSERT_FALSE(success); });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/hi", [&](const char * /*data*/, size_t /*data_length*/) {
+    return false;
+  });
+
+  ASSERT_FALSE(res);
 
   svr.stop();
   listen_thread.join();

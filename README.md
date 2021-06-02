@@ -266,7 +266,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
       sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
       return true; // return 'false' if you want to cancel the process.
     },
-    [data] { delete data; });
+    [data](bool success) { delete data; });
 });
 ```
 
