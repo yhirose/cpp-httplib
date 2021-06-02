@@ -337,6 +337,8 @@ using ContentProvider =
 using ContentProviderWithoutLength =
     std::function<bool(size_t offset, DataSink &sink)>;
 
+using ContentProviderResourceReleaser = std::function<void()>;
+
 using ContentReceiverWithProgress =
     std::function<bool(const char *data, size_t data_length, uint64_t offset,
                        uint64_t total_length)>;
@@ -446,15 +448,15 @@ struct Response {
 
   void set_content_provider(
       size_t length, const char *content_type, ContentProvider provider,
-      const std::function<void()> &resource_releaser = nullptr);
+      ContentProviderResourceReleaser resource_releaser = nullptr);
 
   void set_content_provider(
       const char *content_type, ContentProviderWithoutLength provider,
-      const std::function<void()> &resource_releaser = nullptr);
+      ContentProviderResourceReleaser resource_releaser = nullptr);
 
   void set_chunked_content_provider(
       const char *content_type, ContentProviderWithoutLength provider,
-      const std::function<void()> &resource_releaser = nullptr);
+      ContentProviderResourceReleaser resource_releaser = nullptr);
 
   Response() = default;
   Response(const Response &) = default;
@@ -470,7 +472,7 @@ struct Response {
   // private members...
   size_t content_length_ = 0;
   ContentProvider content_provider_;
-  std::function<void()> content_provider_resource_releaser_;
+  ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
 };
 
@@ -4030,10 +4032,9 @@ inline void Response::set_content(const std::string &s,
   set_content(s.data(), s.size(), content_type);
 }
 
-inline void
-Response::set_content_provider(size_t in_length, const char *content_type,
-                               ContentProvider provider,
-                               const std::function<void()> &resource_releaser) {
+inline void Response::set_content_provider(
+    size_t in_length, const char *content_type, ContentProvider provider,
+    ContentProviderResourceReleaser resource_releaser) {
   assert(in_length > 0);
   set_header("Content-Type", content_type);
   content_length_ = in_length;
@@ -4042,10 +4043,9 @@ Response::set_content_provider(size_t in_length, const char *content_type,
   is_chunked_content_provider_ = false;
 }
 
-inline void
-Response::set_content_provider(const char *content_type,
-                               ContentProviderWithoutLength provider,
-                               const std::function<void()> &resource_releaser) {
+inline void Response::set_content_provider(
+    const char *content_type, ContentProviderWithoutLength provider,
+    ContentProviderResourceReleaser resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
@@ -4055,7 +4055,7 @@ Response::set_content_provider(const char *content_type,
 
 inline void Response::set_chunked_content_provider(
     const char *content_type, ContentProviderWithoutLength provider,
-    const std::function<void()> &resource_releaser) {
+    ContentProviderResourceReleaser resource_releaser) {
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
@@ -7058,7 +7058,8 @@ inline void SSLClient::shutdown_ssl(Socket &socket, bool shutdown_gracefully) {
   shutdown_ssl_impl(socket, shutdown_gracefully);
 }
 
-inline void SSLClient::shutdown_ssl_impl(Socket &socket, bool shutdown_gracefully) {
+inline void SSLClient::shutdown_ssl_impl(Socket &socket,
+                                         bool shutdown_gracefully) {
   if (socket.sock == INVALID_SOCKET) {
     assert(socket.ssl == nullptr);
     return;
