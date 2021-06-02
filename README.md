@@ -599,7 +599,12 @@ auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
 ![progress](https://user-images.githubusercontent.com/236374/33138910-495c4ecc-cf86-11e7-8693-2fc6d09615c4.gif)
 
 ### Authentication
-
+#### Server
+```cpp
+// Server digest Authentication
+svr.set_digest_auth("user", "pass", "realm");
+```
+#### Client
 ```cpp
 // Basic Authentication
 cli.set_basic_auth("user", "pass");
@@ -614,7 +619,6 @@ cli.set_bearer_token_auth("token");
 NOTE: OpenSSL is required for Digest Authentication.
 
 ### Proxy server support
-
 ```cpp
 cli.set_proxy("host", port);
 
