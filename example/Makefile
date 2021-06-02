@@ -10,7 +10,7 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 BROTLI_DIR = /usr/local/opt/brotli
 # BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon-static -lbrotlienc-static -lbrotlidec-static
 
-all: server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark
+all: server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark digestsvr
 
 server : server.cc ../httplib.h Makefile
 	$(CXX) -o server $(CXXFLAGS) server.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
@@ -41,6 +41,9 @@ ssecli : ssecli.cc ../httplib.h Makefile
 
 benchmark : benchmark.cc ../httplib.h Makefile
 	$(CXX) -o benchmark $(CXXFLAGS) benchmark.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
+
+digestsvr : digestsvr.cc ../httplib.h Makefile
+	$(CXX) -o digestsvr $(CXXFLAGS) digestsvr.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
 pem:
 	openssl genrsa 2048 > key.pem

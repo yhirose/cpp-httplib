@@ -683,7 +683,85 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(DigestAuthTest, FromHTTPWatch) {
+class DigestAuthTest : public ::testing::Test {
+protected:
+  DigestAuthTest() {}
+
+  virtual void SetUp() {
+    svr_.set_digest_auth("user", "pass");
+
+    svr_.Get("/hi", [&](const Request & /*req*/, Response &res) {
+      res.set_content("Authenticated", "text/plain");
+    });
+
+    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
+
+    while (!svr_.is_running()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  virtual void TearDown() {
+
+    svr_.stop();
+    t_.join();
+  }
+
+  Server svr_;
+  thread t_;
+};
+
+TEST_F(DigestAuthTest, GetMethod200) {
+  auto host = HOST;
+  auto port = PORT;
+  Client cli(host, port);
+
+  {
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(401, res->status);
+  }
+
+  {
+    std::vector<std::string> paths = {
+        "/hi",
+        "/%68%69",
+        "/hi?param=something&group=Brand%2CBrand.Name%2CNetwork"
+    };
+
+    cli.set_digest_auth("user", "pass");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      EXPECT_EQ("Authenticated",
+                res->body);
+      EXPECT_EQ(200, res->status);
+    }
+
+    cli.set_digest_auth("user", "bad");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      EXPECT_EQ(401, res->status);
+    }
+
+    cli.set_digest_auth("bad", "pass");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      EXPECT_EQ(401, res->status);
+    }
+
+    cli.set_digest_auth("bad", "bad");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      EXPECT_EQ(401, res->status);
+    }
+  }
+}
+
+TEST_F(DigestAuthTest, FromHTTPWatch) {
   auto host = "httpbin.org";
   auto port = 443;
   SSLClient cli(host, port);

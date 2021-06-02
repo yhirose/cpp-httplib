@@ -595,6 +595,187 @@ inline void default_socket_options(socket_t sock) {
 #endif
 }
 
+namespace digestauth {
+
+namespace parameter {
+
+enum Enum {
+  USERNAME,
+  REALM,
+  NONCE,
+  URI,
+  QOP,
+  NC,
+  CNONCE,
+  ALGORITHM,
+  RESPONSE,
+
+  BAD
+};
+
+inline Enum valueOf(const std::string& s) {
+  if (s == "username") return USERNAME;
+  if (s == "realm") return REALM;
+  if (s == "nonce") return NONCE;
+  if (s == "uri") return URI;
+  if (s == "qop") return QOP;
+  if (s == "nc") return NC;
+  if (s == "cnonce") return CNONCE;
+  if (s == "algorithm") return ALGORITHM;
+  if (s == "response") return RESPONSE;
+  return BAD;
+}
+
+inline const char* c_str(Enum e) {
+  switch (e) {
+    case USERNAME: return "username";
+    case REALM: return "realm";
+    case NONCE: return "nonce";
+    case URI: return "uri";
+    case QOP: return "qop";
+    case NC: return "nc";
+    case CNONCE: return "cnonce";
+    case ALGORITHM: return "algorithm";
+    case RESPONSE: return "response";
+    default: return "";
+  }
+}
+
+inline std::string name(Enum e) {
+  return std::string(c_str(e));
+}
+
+} // namespace parameter
+
+namespace qop {
+
+enum Enum {
+  AUTH,
+  AUTH_INT,
+  NONE
+};
+
+inline Enum valueOf(const std::string& s) {
+  if (s == "auth") return AUTH;
+  if (s == "auth-int") return AUTH_INT;
+  return NONE;
+}
+
+inline const char* c_str(Enum e) {
+  switch (e) {
+    case AUTH_INT: return "auth-int";
+    default: return "auth";
+  }
+}
+
+inline std::string name(Enum e) {
+  return std::string(c_str(e));
+}
+
+} // namespace qop
+
+enum class Algorithm {
+  MD5, MD5_sess
+};
+
+using DigestParams = std::map<parameter::Enum, std::string>;
+
+class Digest {
+public:
+  explicit Digest(const std::string &username, const std::string &password,
+                  const std::string &realm, const std::string &key,
+                  Algorithm algorithm, qop::Enum qop);
+
+  /**
+   * Authenticate the HTTP digest response.
+   * @param response digest response (HTTP "Authorization" header value).
+   * @param method HTTP method.
+   * @return true if successfully authenticated, false otherwise.
+   */
+  bool authenticate_digest_response(const std::string &response,
+                                    const std::string &method);
+
+  /**
+   * Generate and return the digest request header to be sent in the HTTP 401
+   * response. The value is appended to the HTTP "WWW-Authenticate" response
+   * header when responding to the unauthorized access.
+   * @return generated digest request HTTP header value
+   */
+  std::string generate_digest_request();
+
+  /**
+   * Reset nonce_ parameter value and return it.
+   * @return newly generated nonce.
+   */
+  std::string reset_nonce();
+
+private:
+  /**
+   * Generates nonce value. The nonce value should be re-set every time the server
+   * responds with 401 Unauthenticated. Nonce value is set by hashing:
+   *
+   * MD5(timestamp ":" realm <":" key>)
+   *
+   * @param key to be appended at the end. Used to produce a more random nonce. (optional)
+   * @return nonce value
+   */
+  std::string generate_nonce(const std::string &key);
+
+  /**
+   * Parse digest response.
+   * @param response digest response in the HTTP "Authorization" header.
+   * @return Params map with parsed parameters and values.
+   */
+  static DigestParams parse_digest_response(const std::string &response);
+
+  /**
+   * Digest locally and compare it to the response. Returns true if the
+   * values match.
+   * @param algorithm MD5/MD5-sess.
+   * @param method HTTP method.
+   * @param params received digest parameters.
+   * @return return true if our digest-response value match with received response, false if not.
+   */
+  bool digest_auth(Algorithm algorithm, const std::string &method, const DigestParams &params);
+
+  /**
+   * Generate the secret HA1 hash used in digest.
+   * @param params received digest parameters.
+   * @param algorithm MD5/MD5-sess.
+   * @return HA1.
+   */
+  std::string generate_HA1(const DigestParams &params, Algorithm algorithm);
+
+  /**
+   * Generate the secret HA2 hash used in digest.
+   * @param params received digest parameters.
+   * @param method HTTP method.
+   * @param encode should I encode URI.
+   * @param percent_encode should I percent_encode URI (only one or none is possible to use)
+   * @return HA2.
+   */
+  std::string generate_HA2(const DigestParams &params, const std::string &method, bool encode = false, bool percent_encode = false);
+
+  /**
+   * Do local digest with given parameters.
+   * @param HA1 string.
+   * @param HA2 string.
+   * @param params received digest parameters.
+   * @return digested string.
+   */
+  std::string digest(const std::string& HA1, const std::string& HA2, const DigestParams& params);
+
+  std::string username_;
+  std::string password_;
+  std::string realm_;
+  std::string nonce_;
+  std::string key_;
+  Algorithm algorithm_;
+  qop::Enum qop_;
+};
+
+} // namespace digestauth
+
 class Server {
 public:
   using Handler = std::function<void(const Request &, Response &)>;
@@ -685,6 +866,9 @@ public:
   Server &set_idle_interval(const std::chrono::duration<Rep, Period> &duration);
 
   Server &set_payload_max_length(size_t length);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  Server &set_digest_auth(const char *username, const char *password, const char *realm = "cpp-httplib");
+#endif
 
   bool bind_to_port(const char *host, int port, int socket_flags = 0);
   int bind_to_any_port(const char *host, int socket_flags = 0);
@@ -788,7 +972,10 @@ private:
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   SocketOptions socket_options_ = default_socket_options;
-
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  bool use_digest_ = false;
+  std::unique_ptr<digestauth::Digest> digest_ = nullptr;
+#endif
   Headers default_headers_;
 };
 
@@ -1620,6 +1807,19 @@ inline std::string encode_query_param(const std::string &value) {
   }
 
   return escaped.str();
+}
+
+inline std::string percent_encode_url(const std::string &s) {
+  std::string result;
+  result.reserve(s.size());
+
+  std::stringstream ss;
+  ss << "/";
+  for(long unsigned int i=1; i<s.size(); ++i)
+    ss << "%" << std::hex << (int)s[i];
+  result = ss.str();
+
+  return result;
 }
 
 inline std::string encode_url(const std::string &s) {
@@ -3875,6 +4075,262 @@ inline void duration_to_sec_and_usec(const T &duration, U callback) {
 
 } // namespace detail
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+namespace digestauth {
+
+namespace util {
+
+inline std::vector<std::string>
+split(const std::string& s, char delim, unsigned max = 9999) {
+  std::vector<std::string> subs;
+  size_t pos = 0;
+
+  if (!s.empty()) {
+    size_t next = s.find(delim);
+    while (subs.size() < max - 1 && next != std::string::npos) {
+      subs.push_back(s.substr(pos, next - pos));
+      pos = next + 1;
+      next = s.find(delim, pos);
+    }
+    subs.push_back(s.substr(pos));
+  }
+
+  return subs;
+}
+
+inline std::vector<std::string>
+split(const std::string& s, const std::string& delim, unsigned max = 9999) {
+  std::vector<std::string> subs;
+  size_t pos = 0;
+
+  if (!s.empty()) {
+    size_t next = s.find(delim);
+    while (subs.size() < max - 1 && next != std::string::npos) {
+      subs.push_back(s.substr(pos, next - pos));
+      pos = next + delim.size();
+      next = s.find(delim, pos);
+    }
+    subs.push_back(s.substr(pos));
+  }
+
+  return subs;
+}
+
+inline std::string
+replace_all(std::string source, const std::string& pattern, const std::string& replace) {
+  size_t pos = source.find(pattern);
+  while( pos != std::string::npos)
+  {
+    source.replace(pos, pattern.size(), replace);
+    pos = source.find(pattern, pos + replace.size());
+  }
+  return source;
+}
+
+inline bool
+starts_with(const std::string& s, const std::string& prefix) {
+  return (0 == s.compare(0, prefix.size(), prefix));
+}
+
+inline std::string
+trim_whitespace(const std::string& s) {
+  unsigned start = 0;
+  while (s.size() > start && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n')) {
+    ++start;
+  }
+  long unsigned end = s.size();
+  while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\n')) {
+    --end;
+  }
+  return s.substr(start, (end - start));
+}
+
+} // namespace util
+
+inline Digest::
+Digest(const std::string &username, const std::string &password,
+       const std::string &realm, const std::string &key,
+       Algorithm algorithm, qop::Enum qop) :
+        username_(username),
+        password_(password),
+        realm_(realm),
+        key_(key),
+        algorithm_(algorithm),
+        qop_(qop) {
+  nonce_ = generate_nonce(key_); // generate first nonce
+}
+
+inline bool Digest::
+authenticate_digest_response(const std::string &response, const std::string &method) {
+  // Check if there is Digest at the beginning
+  auto r = util::trim_whitespace(response);
+  if (util::starts_with(r, "Digest")) {
+    try {
+      if (digest_auth(algorithm_, method, parse_digest_response(r))) {
+        return true;
+      }
+    } catch (const std::out_of_range&) {}
+  }
+  reset_nonce();
+  return false;
+}
+
+inline std::string Digest::
+generate_digest_request() {
+  std::string request = "Digest realm=\"" + realm_ + "\", nonce=\"" + nonce_ + "\", algorithm=";
+  if (algorithm_ == Algorithm::MD5) request.append("MD5");
+  else request.append("MD5-sess");
+  if (qop_ == qop::AUTH) request.append(", qop=\"auth\"");
+  else if (qop_ == qop::AUTH_INT) request.append(", qop=\"auth-int\"");
+  return request;
+}
+
+inline std::string Digest::
+reset_nonce() {
+  nonce_ = generate_nonce(key_);
+  return nonce_;
+}
+
+inline std::string Digest::
+generate_nonce(const std::string &key) {
+  std::string nonce;
+  auto tp = std::to_string(time(nullptr));
+  nonce = tp + ":" + realm_;
+  if (!key.empty()) {
+    nonce.append(":" + key);
+  }
+  return detail::MD5(nonce);
+}
+
+inline DigestParams Digest::
+parse_digest_response(const std::string &response) {
+  DigestParams params;
+  std::string::size_type keyStart = 0;
+  std::string::size_type keyEnd;
+  std::string::size_type valStart;
+  std::string::size_type valEnd;
+
+  auto res = util::split(response, "Digest").at(1);
+
+  while((keyEnd = res.find('=', keyStart)) != std::string::npos) {
+
+    if((valStart = res.find_first_not_of("=, ", keyEnd)) == std::string::npos) {
+      break;
+    }
+
+    if (res[valStart] == '\"') {
+      valEnd = res.find('\"', valStart+1);
+      keyStart = res.find_first_not_of(", ", keyStart);
+      std::string key = res.substr(keyStart, keyEnd - keyStart);
+      switch (parameter::valueOf(key)) {
+        case parameter::BAD:
+          continue;
+        default:
+          params[parameter::valueOf(key)] = res.substr(valStart + 1, valEnd - valStart - 1);
+          break;
+      }
+    } else {
+      valEnd = res.find(',', valStart);
+      keyStart = res.find_first_not_of(", ", keyStart);
+      std::string key = res.substr(keyStart, keyEnd - keyStart);
+      switch (parameter::valueOf(key)) {
+        case parameter::BAD:
+          continue;
+        default:
+          params[parameter::valueOf(key)] = res.substr(valStart, valEnd - valStart);
+          break;
+      }
+    }
+
+    keyStart = valEnd;
+    if(keyStart != std::string::npos)
+      ++keyStart;
+  }
+
+  return params;
+}
+
+inline bool Digest::
+digest_auth(Algorithm algorithm, const std::string &method, const DigestParams &params) {
+  // Get response, and make your own digest response given the params
+  // Return true if the values are the same, false if not
+  try {
+    std::string response = params.at(parameter::RESPONSE);
+    auto HA1 = generate_HA1(params, algorithm);
+    if (digest(HA1,generate_HA2(params, method), params) == response) {
+      return true;
+    } else if (digest(HA1, generate_HA2(params, method, true), params) == response) {
+      return true;
+    } else if (digest(HA1, generate_HA2(params, method, false, true), params) == response) {
+      return true;
+    } else {
+      return false;
+    }
+  } catch (const std::out_of_range& ex) {}
+  return false;
+}
+
+inline std::string Digest::
+generate_HA1(const DigestParams &params, Algorithm algorithm) {
+  std::string A1 = username_ + ":" + realm_ + ":" + password_;
+  std::string HA1 = detail::MD5(A1);
+  switch (algorithm) {
+    case Algorithm::MD5_sess:
+      A1 = HA1 + ":" + params.at(parameter::NONCE) + ":" + params.at(parameter::CNONCE);
+      HA1 = detail::MD5(A1);
+    default:
+      break;
+  }
+  return HA1;
+}
+
+inline std::string Digest::
+generate_HA2(const DigestParams &params, const std::string &method, bool encode, bool percent_encode) {
+  try {
+    switch (qop::valueOf(params.at(parameter::QOP))) {
+      case qop::AUTH_INT:
+        // TODO: Implement auth-int hash
+        // A2 = Method ":" digest-uri-value ":" MD5(entity-body)
+        return "";
+      default:
+        throw std::out_of_range("");
+    }
+  } catch (const std::out_of_range&) {
+    std::string uri = params.at(parameter::URI);
+    if (encode) {
+      uri = detail::encode_url(uri);
+    }
+    if (percent_encode) {
+      uri = detail::percent_encode_url(uri);
+    }
+    std::string A2 = method + ":" + uri;
+    std::string HA2 = detail::MD5(A2);
+    return HA2;
+  }
+}
+
+inline std::string Digest::
+digest(const std::string &HA1, const std::string &HA2, const DigestParams &params) {
+  // H(HA1:nonce:nc-value:cnoncevalue:qopvalue:HA2) // IF AUTH
+  // H(HA1:nonce:HA2) // IF NOT AUTH
+  std::string toDigest;
+
+  if (params.count(parameter::QOP) != 0) {
+    toDigest = HA1 + ":" + nonce_ + ":" +
+               params.at(parameter::NC) + ":" +
+               params.at(parameter::CNONCE) + ":" +
+               params.at(parameter::QOP) + ":" +
+               HA2;
+  } else {
+    toDigest = HA1 + ":" + nonce_ + ":" + HA2;
+  }
+
+  return detail::MD5(toDigest);
+}
+
+} // namespace digestauth
+#endif
+
 // Header utilities
 inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
   std::string field = "bytes=";
@@ -4492,6 +4948,20 @@ inline Server &Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
   return *this;
 }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+inline Server &Server::
+set_digest_auth(const char *username, const char *password, const char *realm) {
+  use_digest_ = true;
+  digest_ = std::unique_ptr<digestauth::Digest>(new digestauth::Digest(username,
+                                                                       password,
+                                                                       realm,
+                                                                       "",
+                                                                       digestauth::Algorithm::MD5,
+                                                                       digestauth::qop::AUTH));
+  return *this;
+}
+#endif
 
 inline bool Server::bind_to_port(const char *host, int port, int socket_flags) {
   if (bind_internal(host, port, socket_flags) < 0) return false;
@@ -5187,6 +5657,24 @@ Server::process_request(Stream &strm, bool close_connection,
   strm.get_remote_ip_and_port(req.remote_addr, req.remote_port);
   req.set_header("REMOTE_ADDR", req.remote_addr);
   req.set_header("REMOTE_PORT", std::to_string(req.remote_port));
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  if (use_digest_ && digest_ != nullptr) {
+    if (req.has_header("Authorization")) {
+      if (!digest_->authenticate_digest_response(req.get_header_value("Authorization"), req.method)) {
+        res.set_header("WWW-Authenticate", digest_->generate_digest_request());
+        res.status = 401;
+        res.set_content("Unauthorized :(", "text/html");
+        return write_response(strm, close_connection, req, res);
+      }
+    } else {
+      res.set_header("WWW-Authenticate", digest_->generate_digest_request());
+      res.status = 401;
+      res.set_content("Unauthorized :(", "text/html");
+      return write_response(strm, close_connection, req, res);
+    }
+  }
+#endif
 
   if (req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
