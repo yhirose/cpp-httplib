@@ -6687,15 +6687,17 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
+      int n = 1000;
 #ifdef _WIN32
-      while (err == SSL_ERROR_WANT_READ ||
-             err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT) {
+      while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
+             err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT)) {
 #else
-      while (err == SSL_ERROR_WANT_READ) {
+      while (--n >= 0 && err == SSL_ERROR_WANT_READ) {
 #endif
         if (SSL_pending(ssl_) > 0) {
           return SSL_read(ssl_, ptr, static_cast<int>(size));
         } else if (is_readable()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
           ret = SSL_read(ssl_, ptr, static_cast<int>(size));
           if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
