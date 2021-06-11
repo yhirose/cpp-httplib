@@ -5696,7 +5696,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!basic_auth_password_.empty()) {
+  if (!basic_auth_password_.empty() || !basic_auth_username_.empty()) {
     req.headers.insert(make_basic_authentication_header(
         basic_auth_username_, basic_auth_password_, false));
   }
