@@ -1,10 +1,3 @@
-//
-//  sse.cc
-//
-//  Copyright (c) 2020 Yuji Hirose. All rights reserved.
-//  MIT License
-//
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>

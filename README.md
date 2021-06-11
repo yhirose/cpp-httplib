@@ -781,7 +781,7 @@ Note: Windows 8 or lower and Cygwin on Windows are not supported.
 License
 -------
 
-MIT license (© 2020 Yuji Hirose)
+MIT license (© 2021 Yuji Hirose)
 
 Special Thanks To
 -----------------
