@@ -5649,7 +5649,11 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
 inline bool ClientImpl::write_request(Stream &strm, Request &req,
                                       bool close_connection, Error &error) {
   // Prepare additional headers
-  if (close_connection) { req.headers.emplace("Connection", "close"); }
+  if (close_connection) {
+    if (!req.has_header("Connection")) {
+      req.headers.emplace("Connection", "close"); 
+    }
+  }
 
   if (!req.has_header("Host")) {
     if (is_ssl()) {
@@ -5677,7 +5681,9 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     if (req.content_provider_) {
       if (!req.is_chunked_content_provider_) {
         auto length = std::to_string(req.content_length_);
-        req.headers.emplace("Content-Length", length);
+        if (!req.has_header("Content-Length")) {
+          req.headers.emplace("Content-Length", length);
+        }
       }
     } else {
       if (req.method == "POST" || req.method == "PUT" ||
