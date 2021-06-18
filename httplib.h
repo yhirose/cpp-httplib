@@ -5737,11 +5737,9 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   // Body
   if (req.body.empty()) {
     return write_content_with_provider(strm, req, error);
-  } else {
-    return detail::write_data(strm, req.body.data(), req.body.size());
   }
 
-  return true;
+  return detail::write_data(strm, req.body.data(), req.body.size());
 }
 
 inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
