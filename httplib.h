@@ -4615,8 +4615,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     if (!res.body.empty()) {
       if (!strm.write(res.body)) { ret = false; }
     } else if (res.content_provider_) {
-      if (write_content_with_provider(strm, req, res, boundary,
-                                      content_type)) {
+      if (write_content_with_provider(strm, req, res, boundary, content_type)) {
         res.content_provider_success_ = true;
       } else {
         res.content_provider_success_ = false;
@@ -5551,8 +5550,8 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
       if (detail::parse_www_authenticate(res, auth, is_proxy)) {
         Request new_req = req;
         new_req.authorization_count_ += 1;
-        auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
-        new_req.headers.erase(key);
+        new_req.headers.erase(is_proxy ? "Proxy-Authorization"
+                                       : "Authorization");
         new_req.headers.insert(detail::make_digest_authentication_header(
             req, auth, new_req.authorization_count_, detail::random_string(10),
             username, password, is_proxy));
@@ -5649,7 +5648,11 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
 inline bool ClientImpl::write_request(Stream &strm, Request &req,
                                       bool close_connection, Error &error) {
   // Prepare additional headers
-  if (close_connection) { req.headers.emplace("Connection", "close"); }
+  if (close_connection) {
+    if (!req.has_header("Connection")) {
+      req.headers.emplace("Connection", "close");
+    }
+  }
 
   if (!req.has_header("Host")) {
     if (is_ssl()) {
@@ -5676,8 +5679,10 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   if (req.body.empty()) {
     if (req.content_provider_) {
       if (!req.is_chunked_content_provider_) {
-        auto length = std::to_string(req.content_length_);
-        req.headers.emplace("Content-Length", length);
+        if (!req.has_header("Content-Length")) {
+          auto length = std::to_string(req.content_length_);
+          req.headers.emplace("Content-Length", length);
+        }
       }
     } else {
       if (req.method == "POST" || req.method == "PUT" ||
@@ -5697,24 +5702,32 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   }
 
   if (!basic_auth_password_.empty() || !basic_auth_username_.empty()) {
-    req.headers.insert(make_basic_authentication_header(
-        basic_auth_username_, basic_auth_password_, false));
+    if (!req.has_header("Authorization")) {
+      req.headers.insert(make_basic_authentication_header(
+          basic_auth_username_, basic_auth_password_, false));
+    }
   }
 
   if (!proxy_basic_auth_username_.empty() &&
       !proxy_basic_auth_password_.empty()) {
-    req.headers.insert(make_basic_authentication_header(
-        proxy_basic_auth_username_, proxy_basic_auth_password_, true));
+    if (!req.has_header("Proxy-Authorization")) {
+      req.headers.insert(make_basic_authentication_header(
+          proxy_basic_auth_username_, proxy_basic_auth_password_, true));
+    }
   }
 
   if (!bearer_token_auth_token_.empty()) {
-    req.headers.insert(make_bearer_token_authentication_header(
-        bearer_token_auth_token_, false));
+    if (!req.has_header("Authorization")) {
+      req.headers.insert(make_bearer_token_authentication_header(
+          bearer_token_auth_token_, false));
+    }
   }
 
   if (!proxy_bearer_token_auth_token_.empty()) {
-    req.headers.insert(make_bearer_token_authentication_header(
-        proxy_bearer_token_auth_token_, true));
+    if (!req.has_header("Proxy-Authorization")) {
+      req.headers.insert(make_bearer_token_authentication_header(
+          proxy_bearer_token_auth_token_, true));
+    }
   }
 
   // Request line and headers
@@ -6687,8 +6700,9 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
       auto err = SSL_get_error(ssl_, ret);
       int n = 1000;
 #ifdef _WIN32
-      while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
-             err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT)) {
+      while (--n >= 0 &&
+             (err == SSL_ERROR_WANT_READ ||
+              err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT)) {
 #else
       while (--n >= 0 && err == SSL_ERROR_WANT_READ) {
 #endif
