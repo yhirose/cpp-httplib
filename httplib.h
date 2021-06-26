@@ -4703,7 +4703,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
             return true;
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
-    if (!content_type.find("application/x-www-form-urlencoded")) {
+    if (content_type.find("application/x-www-form-urlencoded") == std::string::npos) {
       detail::parse_query_text(req.body, req.params);
     }
     return true;
