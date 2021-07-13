@@ -4540,9 +4540,9 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
     if (count != 3) { return false; }
   }
 
-  const std::set<std::string> methods{"GET",    "HEAD",    "POST",    "PUT",
-                                      "DELETE", "CONNECT", "OPTIONS", "TRACE",
-                                      "PATCH",  "PRI"};
+  static const std::set<std::string> methods{
+      "GET",     "HEAD",    "POST",  "PUT",   "DELETE",
+      "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
 
   if (methods.find(req.method) == methods.end()) { return false; }
 
