@@ -4520,25 +4520,58 @@ inline void Server::stop() {
 }
 
 inline bool Server::parse_request_line(const char *s, Request &req) {
-  const static std::regex re(
-      "(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH|PRI) "
-      "(([^? ]+)(?:\\?([^ ]*?))?) (HTTP/1\\.[01])\r\n");
+  auto len = strlen(s);
+  if (len < 2 || s[len - 2] != '\r' || s[len - 1] != '\n') { return false; }
+  len -= 2;
 
-  std::cmatch m;
-  if (std::regex_match(s, m, re)) {
-    req.version = std::string(m[5]);
-    req.method = std::string(m[1]);
-    req.target = std::string(m[2]);
-    req.path = detail::decode_url(m[3], false);
+  {
+    size_t count = 0;
 
-    // Parse query text
-    auto len = std::distance(m[4].first, m[4].second);
-    if (len > 0) { detail::parse_query_text(m[4], req.params); }
+    detail::split(s, s + len, ' ', [&](const char *b, const char *e) {
+      switch (count) {
+      case 0: req.method = std::string(b, e); break;
+      case 1: req.target = std::string(b, e); break;
+      case 2: req.version = std::string(b, e); break;
+      default: break;
+      }
+      count++;
+    });
 
-    return true;
+    if (count != 3) { return false; }
   }
 
-  return false;
+  const std::set<std::string> methods{"GET",    "HEAD",    "POST",    "PUT",
+                                      "DELETE", "CONNECT", "OPTIONS", "TRACE",
+                                      "PATCH",  "PRI"};
+
+  if (methods.find(req.method) == methods.end()) { return false; }
+
+  if (req.version != "HTTP/1.1" && req.version != "HTTP/1.0") { return false; }
+
+  {
+    size_t count = 0;
+
+    detail::split(req.target.data(), req.target.data() + req.target.size(), '?',
+                  [&](const char *b, const char *e) {
+                    switch (count) {
+                    case 0:
+                      req.path = detail::decode_url(std::string(b, e), false);
+                      break;
+                    case 1: {
+                      if (e - b > 0) {
+                        detail::parse_query_text(std::string(b, e), req.params);
+                      }
+                      break;
+                    }
+                    default: break;
+                    }
+                    count++;
+                  });
+
+    if (count > 2) { return false; }
+  }
+
+  return true;
 }
 
 inline bool Server::write_response(Stream &strm, bool close_connection,
