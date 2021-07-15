@@ -3706,25 +3706,59 @@ TEST(GetWithParametersTest, GetWithParameters) {
   Server svr;
 
   svr.Get("/", [&](const Request &req, Response &res) {
-    auto text = req.get_param_value("hello");
-    res.set_content(text, "text/plain");
+    EXPECT_EQ("world", req.get_param_value("hello"));
+    EXPECT_EQ("world2", req.get_param_value("hello2"));
+    EXPECT_EQ("world3", req.get_param_value("hello3"));
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  svr.Get("/params", [&](const Request &req, Response &res) {
+    EXPECT_EQ("world", req.get_param_value("hello"));
+    EXPECT_EQ("world2", req.get_param_value("hello2"));
+    EXPECT_EQ("world3", req.get_param_value("hello3"));
+  });
+
+  svr.Get(R"(/resources/([a-z0-9\\-]+))", [&](const Request& req, Response& res) {
+    EXPECT_EQ("resource-id", req.matches[1]);
+    EXPECT_EQ("foo", req.get_param_value("param1"));
+    EXPECT_EQ("bar", req.get_param_value("param2"));
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
-  Client cli("localhost", PORT);
+  {
+    Client cli(HOST, PORT);
 
-  Params params;
-  params.emplace("hello", "world");
-  auto res = cli.Get("/", params, Headers{});
+    Params params;
+    params.emplace("hello", "world");
+    params.emplace("hello2", "world2");
+    params.emplace("hello3", "world3");
+    auto res = cli.Get("/", params, Headers{});
 
-  ASSERT_TRUE(res);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ("world", res->body);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+  }
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/params?hello=world&hello2=world2&hello3=world3");
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+  }
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/resources/resource-id?param1=foo&param2=bar");
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+  }
 
   svr.stop();
   listen_thread.join();
