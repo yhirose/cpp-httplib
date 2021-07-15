@@ -839,6 +839,18 @@ TEST(HttpsToHttpRedirectTest3, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST(UrlWithSpace, Redirect) {
+  SSLClient cli("edge.forgecdn.net");
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(18527, res->get_header_value<uint64_t>("Content-Length"));
+}
+
+#endif
+
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr8080;
   Server svr8081;
@@ -876,16 +888,6 @@ TEST(RedirectToDifferentPort, Redirect) {
   thread8081.join();
   ASSERT_FALSE(svr8080.is_running());
   ASSERT_FALSE(svr8081.is_running());
-}
-
-TEST(UrlWithSpace, Redirect) {
-  SSLClient cli("edge.forgecdn.net");
-  cli.set_follow_location(true);
-
-  auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(200, res->status);
-  EXPECT_EQ(18527, res->get_header_value<uint64_t>("Content-Length"));
 }
 
 TEST(RedirectFromPageWithContent, Redirect) {
@@ -943,7 +945,61 @@ TEST(RedirectFromPageWithContent, Redirect) {
   ASSERT_FALSE(svr.is_running());
 }
 
-#endif
+TEST(RedirectFromPageWithContentIP6, Redirect) {
+  Server svr;
+
+  svr.Get("/1", [&](const Request & /*req*/, Response &res) {
+    res.set_content("___", "text/plain");
+    // res.set_redirect("/2");
+    res.set_redirect("http://[::1]:1234/2");
+  });
+
+  svr.Get("/2", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto th = std::thread([&]() { svr.listen("::1", 1234); });
+
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli("http://[::1]:1234");
+    cli.set_follow_location(true);
+
+    std::string body;
+    auto res = cli.Get("/1", [&](const char *data, size_t data_length) {
+      body.append(data, data_length);
+      return true;
+    });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("Hello World!", body);
+  }
+
+  {
+    Client cli("http://[::1]:1234");
+
+    std::string body;
+    auto res = cli.Get("/1", [&](const char *data, size_t data_length) {
+      body.append(data, data_length);
+      return true;
+    });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(302, res->status);
+    EXPECT_EQ("___", body);
+  }
+
+  svr.stop();
+  th.join();
+  ASSERT_FALSE(svr.is_running());
+}
 
 TEST(PathUrlEncodeTest, PathUrlEncode) {
   Server svr;
@@ -2717,10 +2773,12 @@ TEST_F(ServerTest, PutLargeFileWithGzip) {
 
 TEST_F(ServerTest, PutLargeFileWithGzip2) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  Client cli("https://localhost:1234");
+  std::string s = std::string("https://") + HOST + ":" + std::to_string(PORT);
+  Client cli(s.c_str());
   cli.enable_server_certificate_verification(false);
 #else
-  Client cli("http://localhost:1234");
+  std::string s = std::string("http://") + HOST + ":" + std::to_string(PORT);
+  Client cli(s.c_str());
 #endif
   cli.set_compress(true);
 

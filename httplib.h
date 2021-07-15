@@ -5611,7 +5611,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (location.empty()) { return false; }
 
   const static std::regex re(
-      R"(^(?:(https?):)?(?://([^:/?#]*)(?::(\d+))?)?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
+      R"((?:(https?):)?(?://(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*(?:\?[^#]*)?)(?:#.*)?)");
 
   std::smatch m;
   if (!std::regex_match(location, m, re)) { return false; }
@@ -5620,8 +5620,9 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
   auto next_scheme = m[1].str();
   auto next_host = m[2].str();
-  auto port_str = m[3].str();
-  auto next_path = m[4].str();
+  if (next_host.empty()) { next_host = m[3].str(); }
+  auto port_str = m[4].str();
+  auto next_path = m[5].str();
 
   auto next_port = port_;
   if (!port_str.empty()) {
@@ -7266,7 +7267,8 @@ inline Client::Client(const char *scheme_host_port)
 inline Client::Client(const char *scheme_host_port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path) {
-  const static std::regex re(R"(^(?:([a-z]+)://)?([^:/?#]+)(?::(\d+))?)");
+  const static std::regex re(
+      R"((?:([a-z]+):\/\/)?(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)");
 
   std::cmatch m;
   if (std::regex_match(scheme_host_port, m, re)) {
@@ -7285,8 +7287,9 @@ inline Client::Client(const char *scheme_host_port,
     auto is_ssl = scheme == "https";
 
     auto host = m[2].str();
+    if (host.empty()) { host = m[3].str(); }
 
-    auto port_str = m[3].str();
+    auto port_str = m[4].str();
     auto port = !port_str.empty() ? std::stoi(port_str) : (is_ssl ? 443 : 80);
 
     if (is_ssl) {
