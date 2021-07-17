@@ -954,7 +954,11 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     res.set_redirect("http://[::1]:1234/2");
   });
 
-  svr.Get("/2", [&](const Request & /*req*/, Response &res) {
+  svr.Get("/2", [&](const Request &req, Response &res) {
+    auto host_header = req.headers.find("Host");
+    ASSERT_TRUE(host_header != req.headers.end());
+    EXPECT_EQ("[::1]:1234", host_header->second);
+
     res.set_content("Hello World!", "text/plain");
   });
 

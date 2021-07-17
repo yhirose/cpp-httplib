@@ -1153,6 +1153,8 @@ private:
       ContentProviderWithoutLength content_provider_without_length,
       const char *content_type);
 
+  std::string adjust_host_string(const std::string &host) const;
+
   virtual bool process_socket(const Socket &socket,
                               std::function<bool(Stream &strm)> callback);
   virtual bool is_ssl() const;
@@ -5301,9 +5303,8 @@ inline ClientImpl::ClientImpl(const std::string &host, int port)
 inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
-    // : (Error::Success), host_(host), port_(port),
     : host_(host), port_(port),
-      host_and_port_(host_ + ":" + std::to_string(port_)),
+      host_and_port_(adjust_host_string(host) + ":" + std::to_string(port)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
@@ -5896,6 +5897,13 @@ inline Result ClientImpl::send_with_content_provider(
       std::move(content_provider_without_length), content_type, error);
 
   return Result{std::move(res), error, std::move(req.headers)};
+}
+
+inline std::string ClientImpl::adjust_host_string(const std::string &host) const {
+  if (host.find(':') != std::string::npos) {
+    return "[" + host + "]";
+  }
+  return host;
 }
 
 inline bool ClientImpl::process_request(Stream &strm, Request &req,
