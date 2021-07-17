@@ -624,35 +624,22 @@ public:
 
   virtual bool is_valid() const;
 
-  Server &Get(const char *pattern, Handler handler);
-  Server &Get(const char *pattern, size_t pattern_len, Handler handler);
-  Server &Post(const char *pattern, Handler handler);
-  Server &Post(const char *pattern, size_t pattern_len, Handler handler);
-  Server &Post(const char *pattern, HandlerWithContentReader handler);
-  Server &Post(const char *pattern, size_t pattern_len,
-               HandlerWithContentReader handler);
-  Server &Put(const char *pattern, Handler handler);
-  Server &Put(const char *pattern, size_t pattern_len, Handler handler);
-  Server &Put(const char *pattern, HandlerWithContentReader handler);
-  Server &Put(const char *pattern, size_t pattern_len,
-              HandlerWithContentReader handler);
-  Server &Patch(const char *pattern, Handler handler);
-  Server &Patch(const char *pattern, size_t pattern_len, Handler handler);
-  Server &Patch(const char *pattern, HandlerWithContentReader handler);
-  Server &Patch(const char *pattern, size_t pattern_len,
-                HandlerWithContentReader handler);
-  Server &Delete(const char *pattern, Handler handler);
-  Server &Delete(const char *pattern, size_t pattern_len, Handler handler);
-  Server &Delete(const char *pattern, HandlerWithContentReader handler);
-  Server &Delete(const char *pattern, size_t pattern_len,
-                 HandlerWithContentReader handler);
-  Server &Options(const char *pattern, Handler handler);
-  Server &Options(const char *pattern, size_t pattern_len, Handler handler);
+  Server &Get(const std::string &pattern, Handler handler);
+  Server &Post(const std::string &pattern, Handler handler);
+  Server &Post(const std::string &pattern, HandlerWithContentReader handler);
+  Server &Put(const std::string &pattern, Handler handler);
+  Server &Put(const std::string &pattern, HandlerWithContentReader handler);
+  Server &Patch(const std::string &pattern, Handler handler);
+  Server &Patch(const std::string &pattern, HandlerWithContentReader handler);
+  Server &Delete(const std::string &pattern, Handler handler);
+  Server &Delete(const std::string &pattern, HandlerWithContentReader handler);
+  Server &Options(const std::string &pattern, Handler handler);
 
-  bool set_base_dir(const char *dir, const char *mount_point = nullptr);
-  bool set_mount_point(const char *mount_point, const char *dir,
+  bool set_base_dir(const std::string &dir,
+                    const std::string &mount_point = nullptr);
+  bool set_mount_point(const std::string &mount_point, const std::string &dir,
                        Headers headers = Headers());
-  bool remove_mount_point(const char *mount_point);
+  bool remove_mount_point(const std::string &mount_point);
   Server &set_file_extension_and_mimetype_mapping(const char *ext,
                                                   const char *mime);
   Server &set_file_request_handler(Handler handler);
@@ -1163,9 +1150,9 @@ private:
 class Client {
 public:
   // Universal interface
-  explicit Client(const char *scheme_host_port);
+  explicit Client(const std::string &scheme_host_port);
 
-  explicit Client(const char *scheme_host_port,
+  explicit Client(const std::string &scheme_host_port,
                   const std::string &client_cert_path,
                   const std::string &client_key_path);
 
@@ -4227,128 +4214,79 @@ inline Server::Server()
 
 inline Server::~Server() {}
 
-inline Server &Server::Get(const char *pattern, Handler handler) {
-  return Get(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Get(const char *pattern, size_t pattern_len,
-                           Handler handler) {
+inline Server &Server::Get(const std::string &pattern, Handler handler) {
   get_handlers_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Post(const char *pattern, Handler handler) {
-  return Post(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Post(const char *pattern, size_t pattern_len,
-                            Handler handler) {
+inline Server &Server::Post(const std::string &pattern, Handler handler) {
   post_handlers_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Post(const char *pattern,
-                            HandlerWithContentReader handler) {
-  return Post(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Post(const char *pattern, size_t pattern_len,
+inline Server &Server::Post(const std::string &pattern,
                             HandlerWithContentReader handler) {
   post_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Put(const char *pattern, Handler handler) {
-  return Put(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Put(const char *pattern, size_t pattern_len,
-                           Handler handler) {
+inline Server &Server::Put(const std::string &pattern, Handler handler) {
   put_handlers_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Put(const char *pattern,
-                           HandlerWithContentReader handler) {
-  return Put(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Put(const char *pattern, size_t pattern_len,
+inline Server &Server::Put(const std::string &pattern,
                            HandlerWithContentReader handler) {
   put_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Patch(const char *pattern, Handler handler) {
-  return Patch(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Patch(const char *pattern, size_t pattern_len,
-                             Handler handler) {
+inline Server &Server::Patch(const std::string &pattern, Handler handler) {
   patch_handlers_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Patch(const char *pattern,
-                             HandlerWithContentReader handler) {
-  return Patch(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Patch(const char *pattern, size_t pattern_len,
+inline Server &Server::Patch(const std::string &pattern,
                              HandlerWithContentReader handler) {
   patch_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Delete(const char *pattern, Handler handler) {
-  return Delete(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Delete(const char *pattern, size_t pattern_len,
-                              Handler handler) {
+inline Server &Server::Delete(const std::string &pattern, Handler handler) {
   delete_handlers_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Delete(const char *pattern,
-                              HandlerWithContentReader handler) {
-  return Delete(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Delete(const char *pattern, size_t pattern_len,
+inline Server &Server::Delete(const std::string &pattern,
                               HandlerWithContentReader handler) {
   delete_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline Server &Server::Options(const char *pattern, Handler handler) {
-  return Options(pattern, strlen(pattern), handler);
-}
-
-inline Server &Server::Options(const char *pattern, size_t pattern_len,
-                               Handler handler) {
+inline Server &Server::Options(const std::string &pattern, Handler handler) {
   options_handlers_.push_back(
-      std::make_pair(std::regex(pattern, pattern_len), std::move(handler)));
+      std::make_pair(std::regex(pattern), std::move(handler)));
   return *this;
 }
 
-inline bool Server::set_base_dir(const char *dir, const char *mount_point) {
+inline bool Server::set_base_dir(const std::string &dir,
+                                 const std::string &mount_point) {
   return set_mount_point(mount_point, dir);
 }
 
-inline bool Server::set_mount_point(const char *mount_point, const char *dir,
-                                    Headers headers) {
+inline bool Server::set_mount_point(const std::string &mount_point,
+                                    const std::string &dir, Headers headers) {
   if (detail::is_dir(dir)) {
-    std::string mnt = mount_point ? mount_point : "/";
+    std::string mnt = !mount_point.empty() ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
       base_dirs_.push_back({mnt, dir, std::move(headers)});
       return true;
@@ -4357,7 +4295,7 @@ inline bool Server::set_mount_point(const char *mount_point, const char *dir,
   return false;
 }
 
-inline bool Server::remove_mount_point(const char *mount_point) {
+inline bool Server::remove_mount_point(const std::string &mount_point) {
   for (auto it = base_dirs_.begin(); it != base_dirs_.end(); ++it) {
     if (it->mount_point == mount_point) {
       base_dirs_.erase(it);
@@ -5899,10 +5837,9 @@ inline Result ClientImpl::send_with_content_provider(
   return Result{std::move(res), error, std::move(req.headers)};
 }
 
-inline std::string ClientImpl::adjust_host_string(const std::string &host) const {
-  if (host.find(':') != std::string::npos) {
-    return "[" + host + "]";
-  }
+inline std::string
+ClientImpl::adjust_host_string(const std::string &host) const {
+  if (host.find(':') != std::string::npos) { return "[" + host + "]"; }
   return host;
 }
 
@@ -7269,16 +7206,16 @@ inline bool SSLClient::check_host_name(const char *pattern,
 #endif
 
 // Universal client implementation
-inline Client::Client(const char *scheme_host_port)
+inline Client::Client(const std::string &scheme_host_port)
     : Client(scheme_host_port, std::string(), std::string()) {}
 
-inline Client::Client(const char *scheme_host_port,
+inline Client::Client(const std::string &scheme_host_port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path) {
   const static std::regex re(
       R"((?:([a-z]+):\/\/)?(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)");
 
-  std::cmatch m;
+  std::smatch m;
   if (std::regex_match(scheme_host_port, m, re)) {
     auto scheme = m[1].str();
 
