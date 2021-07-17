@@ -172,7 +172,7 @@ TEST(GetHeaderValueTest, SetContent) {
   EXPECT_EQ("text/html", res.get_header_value("Content-Type"));
 
   res.set_content("text", "text/plain");
-  EXPECT_EQ(1, res.get_header_value_count("Content-Type"));
+  EXPECT_EQ(1U, res.get_header_value_count("Content-Type"));
   EXPECT_EQ("text/plain", res.get_header_value("Content-Type"));
 }
 
@@ -846,7 +846,7 @@ TEST(UrlWithSpace, Redirect) {
   auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ(18527, res->get_header_value<uint64_t>("Content-Length"));
+  EXPECT_EQ(18527U, res->get_header_value<uint64_t>("Content-Length"));
 }
 
 #endif
@@ -1222,9 +1222,9 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("Routing Handler", res->body);
-    EXPECT_EQ(1, res->get_header_value_count("PRE_ROUTING"));
+    EXPECT_EQ(1U, res->get_header_value_count("PRE_ROUTING"));
     EXPECT_EQ("on", res->get_header_value("PRE_ROUTING"));
-    EXPECT_EQ(1, res->get_header_value_count("POST_ROUTING"));
+    EXPECT_EQ(1U, res->get_header_value_count("POST_ROUTING"));
     EXPECT_EQ("on", res->get_header_value("POST_ROUTING"));
   }
 
@@ -1235,8 +1235,8 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("Hello World!\n", res->body);
-    EXPECT_EQ(0, res->get_header_value_count("PRE_ROUTING"));
-    EXPECT_EQ(0, res->get_header_value_count("POST_ROUTING"));
+    EXPECT_EQ(0U, res->get_header_value_count("PRE_ROUTING"));
+    EXPECT_EQ(0U, res->get_header_value_count("POST_ROUTING"));
   }
 
   {
@@ -1246,8 +1246,8 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     ASSERT_TRUE(res);
     EXPECT_EQ(404, res->status);
     EXPECT_EQ("Error", res->body);
-    EXPECT_EQ(0, res->get_header_value_count("PRE_ROUTING"));
-    EXPECT_EQ(0, res->get_header_value_count("POST_ROUTING"));
+    EXPECT_EQ(0U, res->get_header_value_count("PRE_ROUTING"));
+    EXPECT_EQ(0U, res->get_header_value_count("POST_ROUTING"));
   }
 
   svr.stop();
@@ -1306,31 +1306,31 @@ protected:
         .Get("/http_response_splitting",
              [&](const Request & /*req*/, Response &res) {
                res.set_header("a", "1\r\nSet-Cookie: a=1");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("a"));
 
                res.set_header("a", "1\nSet-Cookie: a=1");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("a"));
 
                res.set_header("a", "1\rSet-Cookie: a=1");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("a"));
 
                res.set_header("a\r\nb", "0");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("a"));
 
                res.set_header("a\rb", "0");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("a"));
 
                res.set_header("a\nb", "0");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("a"));
 
                res.set_redirect("1\r\nSet-Cookie: a=1");
-               EXPECT_EQ(0, res.headers.size());
+               EXPECT_EQ(0U, res.headers.size());
                EXPECT_FALSE(res.has_header("Location"));
              })
         .Get("/slow",
@@ -1648,7 +1648,7 @@ protected:
                 } else {
                   std::string body;
                   content_reader([&](const char *data, size_t data_length) {
-                    EXPECT_EQ(data_length, 7);
+                    EXPECT_EQ(7U, data_length);
                     body.append(data, data_length);
                     return true;
                   });
@@ -1696,7 +1696,7 @@ protected:
              })
         .Post("/binary",
               [&](const Request &req, Response &res) {
-                EXPECT_EQ(4, req.body.size());
+                EXPECT_EQ(4U, req.body.size());
                 EXPECT_EQ("application/octet-stream",
                           req.get_header_value("Content-Type"));
                 EXPECT_EQ("4", req.get_header_value("Content-Length"));
@@ -1704,7 +1704,7 @@ protected:
               })
         .Put("/binary",
              [&](const Request &req, Response &res) {
-               EXPECT_EQ(4, req.body.size());
+               EXPECT_EQ(4U, req.body.size());
                EXPECT_EQ("application/octet-stream",
                          req.get_header_value("Content-Type"));
                EXPECT_EQ("4", req.get_header_value("Content-Length"));
@@ -1712,7 +1712,7 @@ protected:
              })
         .Patch("/binary",
                [&](const Request &req, Response &res) {
-                 EXPECT_EQ(4, req.body.size());
+                 EXPECT_EQ(4U, req.body.size());
                  EXPECT_EQ("application/octet-stream",
                            req.get_header_value("Content-Type"));
                  EXPECT_EQ("4", req.get_header_value("Content-Length"));
@@ -1720,7 +1720,7 @@ protected:
                })
         .Delete("/binary",
                 [&](const Request &req, Response &res) {
-                  EXPECT_EQ(4, req.body.size());
+                  EXPECT_EQ(4U, req.body.size());
                   EXPECT_EQ("application/octet-stream",
                             req.get_header_value("Content-Type"));
                   EXPECT_EQ("4", req.get_header_value("Content-Length"));
@@ -1800,7 +1800,7 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("OK", res->reason);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
+  EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 }
 
@@ -1810,7 +1810,7 @@ TEST_F(ServerTest, GetMethod200withPercentEncoding) {
   EXPECT_EQ("HTTP/1.1", res->version);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_EQ(1, res->get_header_value_count("Content-Type"));
+  EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 }
 
@@ -2088,25 +2088,25 @@ TEST_F(ServerTest, Binary) {
                        "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 
   res = cli_.Put("/binary", binary.data(), binary.size(),
                  "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 
   res = cli_.Patch("/binary", binary.data(), binary.size(),
                    "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 
   res = cli_.Delete("/binary", binary.data(), binary.size(),
                     "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 }
 
 TEST_F(ServerTest, BinaryString) {
@@ -2115,22 +2115,22 @@ TEST_F(ServerTest, BinaryString) {
   auto res = cli_.Post("/binary", binary, "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 
   res = cli_.Put("/binary", binary, "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 
   res = cli_.Patch("/binary", binary, "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 
   res = cli_.Delete("/binary", binary, "application/octet-stream");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-  ASSERT_EQ(4, res->body.size());
+  ASSERT_EQ(4U, res->body.size());
 }
 
 TEST_F(ServerTest, EmptyRequest) {
@@ -2446,7 +2446,7 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("269", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
-  EXPECT_EQ(269, res->body.size());
+  EXPECT_EQ(269U, res->body.size());
 }
 
 TEST_F(ServerTest, GetStreamedEndless) {
@@ -2533,7 +2533,7 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("269", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
-  EXPECT_EQ(269, res->body.size());
+  EXPECT_EQ(269U, res->body.size());
 }
 
 TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
@@ -3124,7 +3124,7 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   std::string body;
   auto res = cli_.Get("/compress", headers,
                       [&](const char *data, uint64_t data_length) {
-                        EXPECT_EQ(data_length, 100);
+                        EXPECT_EQ(100U, data_length);
                         body.append(data, data_length);
                         return true;
                       });
@@ -3150,14 +3150,14 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("33", res->get_header_value("Content-Length"));
-  EXPECT_EQ(33, res->body.size());
+  EXPECT_EQ(33U, res->body.size());
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   std::string body;
   auto res = cli_.Get("/compress", [&](const char *data, uint64_t data_length) {
-    EXPECT_EQ(data_length, 100);
+    EXPECT_EQ(100U, data_length);
     body.append(data, data_length);
     return true;
   });
@@ -3193,7 +3193,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   std::string body;
   auto res = cli_.Get("/nocompress", headers,
                       [&](const char *data, uint64_t data_length) {
-                        EXPECT_EQ(data_length, 100);
+                        EXPECT_EQ(100U, data_length);
                         body.append(data, data_length);
                         return true;
                       });
@@ -3705,19 +3705,19 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
 TEST(GetWithParametersTest, GetWithParameters) {
   Server svr;
 
-  svr.Get("/", [&](const Request &req, Response &res) {
+  svr.Get("/", [&](const Request &req, Response &) {
     EXPECT_EQ("world", req.get_param_value("hello"));
     EXPECT_EQ("world2", req.get_param_value("hello2"));
     EXPECT_EQ("world3", req.get_param_value("hello3"));
   });
 
-  svr.Get("/params", [&](const Request &req, Response &res) {
+  svr.Get("/params", [&](const Request &req, Response &) {
     EXPECT_EQ("world", req.get_param_value("hello"));
     EXPECT_EQ("world2", req.get_param_value("hello2"));
     EXPECT_EQ("world3", req.get_param_value("hello3"));
   });
 
-  svr.Get(R"(/resources/([a-z0-9\\-]+))", [&](const Request& req, Response& res) {
+  svr.Get(R"(/resources/([a-z0-9\\-]+))", [&](const Request& req, Response&) {
     EXPECT_EQ("resource-id", req.matches[1]);
     EXPECT_EQ("foo", req.get_param_value("param1"));
     EXPECT_EQ("bar", req.get_param_value("param2"));
@@ -4411,7 +4411,7 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ(287630, res->body.size());
+  EXPECT_EQ(287630U, res->body.size());
   EXPECT_EQ("application/javascript; charset=utf-8",
             res->get_header_value("Content-Type"));
 }
