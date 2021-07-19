@@ -3452,7 +3452,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
     res.set_chunked_content_provider("text/event-stream", [](size_t offset,
                                                              DataSink &sink) {
       char buffer[27];
-      auto size = static_cast<size_t>(sprintf(buffer, "data:%ld\n\n", offset));
+      auto size = static_cast<size_t>(sprintf(buffer, "data:%zd\n\n", offset));
       auto ret = sink.write(buffer, size);
       EXPECT_TRUE(ret);
       std::this_thread::sleep_for(std::chrono::seconds(1));
