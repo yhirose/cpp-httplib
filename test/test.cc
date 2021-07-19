@@ -3293,14 +3293,14 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   // Only space and horizontal tab are whitespace. Make sure other whitespace-
   // like characters are not treated the same - use vertical tab and escape.
   const std::string req = "GET /validate-ws-in-headers HTTP/1.1\r\n"
-                          "foo: \t \v bar \e\t \r\n"
+                          "foo: \t \v bar \x1B\t \r\n"
                           "Connection: close\r\n"
                           "\r\n";
 
   ASSERT_TRUE(send_request(5, req));
   svr.stop();
   t.join();
-  EXPECT_EQ(header_value, "\v bar \e");
+  EXPECT_EQ(header_value, "\v bar \x1B");
 }
 
 // Sends a raw request and verifies that there isn't a crash or exception.
