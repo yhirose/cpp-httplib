@@ -2868,6 +2868,52 @@ TEST(GzipDecompressor, ChunkedDecompression) {
   }
   ASSERT_EQ(data, decompressed_data);
 }
+
+TEST(GzipDecompressor, LargeRandomData) {
+
+  // prepare large random data that is difficult to be compressed and is
+  // expected to have large size even when compressed
+  std::random_device seed_gen;
+  std::mt19937 random(seed_gen());
+  constexpr auto large_size_byte = 4294967296UL;            // 4GiB
+  constexpr auto data_size = large_size_byte + 134217728UL; // + 128MiB
+  std::vector<std::uint32_t> data(data_size / sizeof(std::uint32_t));
+  std::generate(data.begin(), data.end(), [&]() { return random(); });
+
+  // compress data over 4GiB
+  std::string compressed_data;
+  compressed_data.reserve(large_size_byte + 536870912UL); // + 512MiB reserved
+  httplib::detail::gzip_compressor compressor;
+  auto result = compressor.compress(reinterpret_cast<const char *>(data.data()),
+                                    data.size() * sizeof(std::uint32_t), true,
+                                    [&](const char *data, size_t size) {
+                                      compressed_data.insert(
+                                          compressed_data.size(), data, size);
+                                      return true;
+                                    });
+  ASSERT_TRUE(result);
+
+  // FIXME: compressed data size is expected to be greater than 4GiB,
+  // but there is no guarantee
+  // ASSERT_TRUE(compressed_data.size() >= large_size_byte);
+
+  // decompress data over 4GiB
+  std::string decompressed_data;
+  decompressed_data.reserve(data_size);
+  httplib::detail::gzip_decompressor decompressor;
+  result = decompressor.decompress(
+      compressed_data.data(), compressed_data.size(),
+      [&](const char *data, size_t size) {
+        decompressed_data.insert(decompressed_data.size(), data, size);
+        return true;
+      });
+  ASSERT_TRUE(result);
+
+  // compare
+  ASSERT_EQ(data_size, decompressed_data.size());
+  ASSERT_TRUE(std::memcmp(data.data(), decompressed_data.data(), data_size) ==
+              0);
+}
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
