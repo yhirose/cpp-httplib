@@ -798,8 +798,31 @@ enum class Error {
   Compression,
 };
 
+inline std::string to_string(const Error error) {
+  switch (error) {
+  case Error::Success: return "Success";
+  case Error::Connection: return "Connection";
+  case Error::BindIPAddress: return "BindIPAddress";
+  case Error::Read: return "Read";
+  case Error::Write: return "Write";
+  case Error::ExceedRedirectCount: return "ExceedRedirectCount";
+  case Error::Canceled: return "Canceled";
+  case Error::SSLConnection: return "SSLConnection";
+  case Error::SSLLoadingCerts: return "SSLLoadingCerts";
+  case Error::SSLServerVerification: return "SSLServerVerification";
+  case Error::UnsupportedMultipartBoundaryChars:
+    return "UnsupportedMultipartBoundaryChars";
+  case Error::Compression: return "Compression";
+  case Error::Unknown: return "Unknown";
+  default: break;
+  }
+
+  return "Invalid";
+}
+
 inline std::ostream &operator<<(std::ostream &os, const Error &obj) {
-  os << static_cast<std::underlying_type<Error>::type>(obj);
+  os << to_string(obj);
+  os << " (" << static_cast<std::underlying_type<Error>::type>(obj) << ')';
   return os;
 }
 

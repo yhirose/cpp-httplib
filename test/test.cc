@@ -542,7 +542,7 @@ TEST(ConnectionErrorTest, InvalidHostCheckResultErrorToString) {
   ASSERT_TRUE(!res);
   stringstream s;
   s << "error code: " << res.error();
-  EXPECT_EQ("error code: 2", s.str());
+  EXPECT_EQ("error code: Connection (2)", s.str());
 }
 
 TEST(ConnectionErrorTest, InvalidPort) {
