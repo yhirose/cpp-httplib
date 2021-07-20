@@ -4456,4 +4456,38 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
+
+TEST(HttpToHttpsRedirectTest, CertFile) {
+  Server svr;
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:1235/index");
+    svr.stop();
+  });
+
+  SSLServer ssl_svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr.is_valid());
+  ssl_svr.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+    ssl_svr.stop();
+  });
+
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  thread t2 = thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  Client cli("127.0.0.1", PORT);
+  cli.set_ca_cert_path(SERVER_CERT2_FILE);
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/index");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+
+  t.join();
+  t2.join();
+}
 #endif

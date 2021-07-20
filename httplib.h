@@ -1037,6 +1037,12 @@ public:
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  void set_ca_cert_path(const char *ca_cert_file_path,
+                        const char *ca_cert_dir_path = nullptr);
+  void set_ca_cert_store(X509_STORE *ca_cert_store);
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
 #endif
 
@@ -1135,6 +1141,13 @@ protected:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   std::string proxy_digest_auth_username_;
   std::string proxy_digest_auth_password_;
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  std::string ca_cert_file_path_;
+  std::string ca_cert_dir_path_;
+
+  X509_STORE *ca_cert_store_ = nullptr;
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1415,9 +1428,6 @@ public:
 
   bool is_valid() const override;
 
-  void set_ca_cert_path(const char *ca_cert_file_path,
-                        const char *ca_cert_dir_path = nullptr);
-
   void set_ca_cert_store(X509_STORE *ca_cert_store);
 
   long get_openssl_verify_result() const;
@@ -1450,8 +1460,6 @@ private:
 
   std::vector<std::string> host_components_;
 
-  std::string ca_cert_file_path_;
-  std::string ca_cert_dir_path_;
   long verify_result_ = 0;
 
   friend class ClientImpl;
@@ -5310,6 +5318,11 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   proxy_digest_auth_password_ = rhs.proxy_digest_auth_password_;
 #endif
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  ca_cert_file_path_ = rhs.ca_cert_file_path_;
+  ca_cert_dir_path_ = rhs.ca_cert_dir_path_;
+  ca_cert_store_ = rhs.ca_cert_store_;
+#endif
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   server_certificate_verification_ = rhs.server_certificate_verification_;
 #endif
   logger_ = rhs.logger_;
@@ -5604,6 +5617,9 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       SSLClient cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
+      if (ca_cert_store_) {
+        cli.set_ca_cert_store(ca_cert_store_);
+      }
       return detail::redirect(cli, req, res, next_path, location, error);
 #else
       return false;
@@ -6512,6 +6528,20 @@ inline void ClientImpl::set_proxy_digest_auth(const char *username,
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+inline void ClientImpl::set_ca_cert_path(const char *ca_cert_file_path,
+                                        const char *ca_cert_dir_path) {
+  if (ca_cert_file_path) { ca_cert_file_path_ = ca_cert_file_path; }
+  if (ca_cert_dir_path) { ca_cert_dir_path_ = ca_cert_dir_path; }
+}
+
+inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
+  if (ca_cert_store && ca_cert_store != ca_cert_store_) {
+    ca_cert_store_ = ca_cert_store;
+  }
+}
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
   server_certificate_verification_ = enabled;
 }
@@ -6900,12 +6930,6 @@ inline SSLClient::~SSLClient() {
 }
 
 inline bool SSLClient::is_valid() const { return ctx_; }
-
-inline void SSLClient::set_ca_cert_path(const char *ca_cert_file_path,
-                                        const char *ca_cert_dir_path) {
-  if (ca_cert_file_path) { ca_cert_file_path_ = ca_cert_file_path; }
-  if (ca_cert_dir_path) { ca_cert_dir_path_ = ca_cert_dir_path; }
-}
 
 inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (ca_cert_store) {
@@ -7649,15 +7673,14 @@ inline void Client::set_logger(Logger logger) { cli_->set_logger(logger); }
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_ca_cert_path(const char *ca_cert_file_path,
                                      const char *ca_cert_dir_path) {
-  if (is_ssl_) {
-    static_cast<SSLClient &>(*cli_).set_ca_cert_path(ca_cert_file_path,
-                                                     ca_cert_dir_path);
-  }
+  cli_->set_ca_cert_path(ca_cert_file_path, ca_cert_dir_path);
 }
 
 inline void Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (is_ssl_) {
     static_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+  } else {
+    cli_->set_ca_cert_store(ca_cert_store);
   }
 }
 
