@@ -2578,28 +2578,40 @@ public:
                 Callback callback) override {
     assert(is_valid_);
 
-    auto flush = last ? Z_FINISH : Z_NO_FLUSH;
-
-    strm_.avail_in = static_cast<decltype(strm_.avail_in)>(data_length);
-    strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
-
-    int ret = Z_OK;
-
-    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     do {
-      strm_.avail_out = static_cast<uInt>(buff.size());
-      strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
+      constexpr size_t max_avail_in =
+          std::numeric_limits<decltype(strm_.avail_in)>::max();
 
-      ret = deflate(&strm_, flush);
-      if (ret == Z_STREAM_ERROR) { return false; }
+      strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
+          std::min(data_length, max_avail_in));
+      strm_.next_in =
+          const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
-      if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
-        return false;
-      }
-    } while (strm_.avail_out == 0);
+      data_length -= strm_.avail_in;
+      data += strm_.avail_in;
 
-    assert((last && ret == Z_STREAM_END) || (!last && ret == Z_OK));
-    assert(strm_.avail_in == 0);
+      auto flush = (last && data_length == 0) ? Z_FINISH : Z_NO_FLUSH;
+      int ret = Z_OK;
+
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
+      do {
+        strm_.avail_out = static_cast<uInt>(buff.size());
+        strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
+
+        ret = deflate(&strm_, flush);
+        if (ret == Z_STREAM_ERROR) { return false; }
+
+        if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
+          return false;
+        }
+      } while (strm_.avail_out == 0);
+
+      assert((flush == Z_FINISH && ret == Z_STREAM_END) ||
+             (flush == Z_NO_FLUSH && ret == Z_OK));
+      assert(strm_.avail_in == 0);
+
+    } while (data_length > 0);
+
     return true;
   }
 
@@ -2633,28 +2645,41 @@ public:
 
     int ret = Z_OK;
 
-    strm_.avail_in = static_cast<decltype(strm_.avail_in)>(data_length);
-    strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
+    do {
+      constexpr size_t max_avail_in =
+          std::numeric_limits<decltype(strm_.avail_in)>::max();
 
-    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
-    while (strm_.avail_in > 0) {
-      strm_.avail_out = static_cast<uInt>(buff.size());
-      strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
+      strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
+          std::min(data_length, max_avail_in));
+      strm_.next_in =
+          const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
-      ret = inflate(&strm_, Z_NO_FLUSH);
-      assert(ret != Z_STREAM_ERROR);
-      switch (ret) {
-      case Z_NEED_DICT:
-      case Z_DATA_ERROR:
-      case Z_MEM_ERROR: inflateEnd(&strm_); return false;
+      data_length -= strm_.avail_in;
+      data += strm_.avail_in;
+
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
+      while (strm_.avail_in > 0) {
+        strm_.avail_out = static_cast<uInt>(buff.size());
+        strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
+
+        ret = inflate(&strm_, Z_NO_FLUSH);
+        assert(ret != Z_STREAM_ERROR);
+        switch (ret) {
+        case Z_NEED_DICT:
+        case Z_DATA_ERROR:
+        case Z_MEM_ERROR: inflateEnd(&strm_); return false;
+        }
+
+        if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
+          return false;
+        }
       }
 
-      if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
-        return false;
-      }
-    }
+      if (ret != Z_OK && ret != Z_STREAM_END) return false;
 
-    return ret == Z_OK || ret == Z_STREAM_END;
+    } while (data_length > 0);
+
+    return true;
   }
 
 private:
