@@ -2869,6 +2869,7 @@ TEST(GzipDecompressor, ChunkedDecompression) {
   ASSERT_EQ(data, decompressed_data);
 }
 
+#ifdef _WIN32
 TEST(GzipDecompressor, LargeRandomData) {
 
   // prepare large random data that is difficult to be compressed and is
@@ -2914,6 +2915,7 @@ TEST(GzipDecompressor, LargeRandomData) {
   ASSERT_TRUE(std::memcmp(data.data(), decompressed_data.data(), data_size) ==
               0);
 }
+#endif
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
