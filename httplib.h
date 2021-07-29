@@ -257,7 +257,7 @@ namespace detail {
 
 template <class T, class... Args>
 typename std::enable_if<!std::is_array<T>::value, std::unique_ptr<T>>::type
-make_unique(Args &&...args) {
+make_unique(Args &&... args) {
   return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
@@ -490,7 +490,7 @@ public:
   virtual socket_t socket() const = 0;
 
   template <typename... Args>
-  ssize_t write_format(const char *fmt, const Args &...args);
+  ssize_t write_format(const char *fmt, const Args &... args);
   ssize_t write(const char *ptr);
   ssize_t write(const std::string &s);
 };
@@ -1465,6 +1465,153 @@ private:
   friend class ClientImpl;
 };
 #endif
+
+/*
+ * Implementation of template methods.
+ */
+
+namespace detail {
+
+template <typename T, typename U>
+inline void duration_to_sec_and_usec(const T &duration, U callback) {
+  auto sec = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+  auto usec = std::chrono::duration_cast<std::chrono::microseconds>(
+                  duration - std::chrono::seconds(sec))
+                  .count();
+  callback(sec, usec);
+}
+
+template <typename T>
+inline T get_header_value(const Headers & /*headers*/, const char * /*key*/,
+                          size_t /*id*/ = 0, uint64_t /*def*/ = 0) {}
+
+template <>
+inline uint64_t get_header_value<uint64_t>(const Headers &headers,
+                                           const char *key, size_t id,
+                                           uint64_t def) {
+  auto rng = headers.equal_range(key);
+  auto it = rng.first;
+  std::advance(it, static_cast<ssize_t>(id));
+  if (it != rng.second) {
+    return std::strtoull(it->second.data(), nullptr, 10);
+  }
+  return def;
+}
+
+} // namespace detail
+
+template <typename T>
+inline T Request::get_header_value(const char *key, size_t id) const {
+  return detail::get_header_value<T>(headers, key, id, 0);
+}
+
+template <typename T>
+inline T Response::get_header_value(const char *key, size_t id) const {
+  return detail::get_header_value<T>(headers, key, id, 0);
+}
+
+template <typename... Args>
+inline ssize_t Stream::write_format(const char *fmt, const Args &... args) {
+  const auto bufsiz = 2048;
+  std::array<char, bufsiz> buf;
+
+#if defined(_MSC_VER) && _MSC_VER < 1900
+  auto sn = _snprintf_s(buf.data(), bufsiz - 1, buf.size() - 1, fmt, args...);
+#else
+  auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
+#endif
+  if (sn <= 0) { return sn; }
+
+  auto n = static_cast<size_t>(sn);
+
+  if (n >= buf.size() - 1) {
+    std::vector<char> glowable_buf(buf.size());
+
+    while (n >= glowable_buf.size() - 1) {
+      glowable_buf.resize(glowable_buf.size() * 2);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+      n = static_cast<size_t>(_snprintf_s(&glowable_buf[0], glowable_buf.size(),
+                                          glowable_buf.size() - 1, fmt,
+                                          args...));
+#else
+      n = static_cast<size_t>(
+          snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
+#endif
+    }
+    return write(&glowable_buf[0], n);
+  } else {
+    return write(buf.data(), n);
+  }
+}
+
+template <class Rep, class Period>
+inline Server &
+Server::set_read_timeout(const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(
+      duration, [&](time_t sec, time_t usec) { set_read_timeout(sec, usec); });
+  return *this;
+}
+
+template <class Rep, class Period>
+inline Server &
+Server::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(
+      duration, [&](time_t sec, time_t usec) { set_write_timeout(sec, usec); });
+  return *this;
+}
+
+template <class Rep, class Period>
+inline Server &
+Server::set_idle_interval(const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(
+      duration, [&](time_t sec, time_t usec) { set_idle_interval(sec, usec); });
+  return *this;
+}
+
+template <typename T>
+inline T Result::get_request_header_value(const char *key, size_t id) const {
+  return detail::get_header_value<T>(request_headers_, key, id, 0);
+}
+
+template <class Rep, class Period>
+inline void ClientImpl::set_connection_timeout(
+    const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(duration, [&](time_t sec, time_t usec) {
+    set_connection_timeout(sec, usec);
+  });
+}
+
+template <class Rep, class Period>
+inline void ClientImpl::set_read_timeout(
+    const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(
+      duration, [&](time_t sec, time_t usec) { set_read_timeout(sec, usec); });
+}
+
+template <class Rep, class Period>
+inline void ClientImpl::set_write_timeout(
+    const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(
+      duration, [&](time_t sec, time_t usec) { set_write_timeout(sec, usec); });
+}
+
+template <class Rep, class Period>
+inline void Client::set_connection_timeout(
+    const std::chrono::duration<Rep, Period> &duration) {
+  cli_->set_connection_timeout(duration);
+}
+
+template <class Rep, class Period>
+inline void
+Client::set_read_timeout(const std::chrono::duration<Rep, Period> &duration) {
+  cli_->set_read_timeout(duration);
+}
+
+template <class Rep, class Period>
+inline void
+Client::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
+  cli_->set_write_timeout(duration);
+}
 
 // ----------------------------------------------------------------------------
 
@@ -2799,23 +2946,6 @@ inline const char *get_header_value(const Headers &headers, const char *key,
 }
 
 template <typename T>
-inline T get_header_value(const Headers & /*headers*/, const char * /*key*/,
-                          size_t /*id*/ = 0, uint64_t /*def*/ = 0) {}
-
-template <>
-inline uint64_t get_header_value<uint64_t>(const Headers &headers,
-                                           const char *key, size_t id,
-                                           uint64_t def) {
-  auto rng = headers.equal_range(key);
-  auto it = rng.first;
-  std::advance(it, static_cast<ssize_t>(id));
-  if (it != rng.second) {
-    return std::strtoull(it->second.data(), nullptr, 10);
-  }
-  return def;
-}
-
-template <typename T>
 inline bool parse_header(const char *beg, const char *end, T fn) {
   // Skip trailing spaces and tabs.
   while (beg < end && is_space_or_tab(end[-1])) {
@@ -3827,9 +3957,9 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 
   string response;
   {
-    auto H = algo == "SHA-256"   ? detail::SHA_256
-             : algo == "SHA-512" ? detail::SHA_512
-                                 : detail::MD5;
+    auto H = algo == "SHA-256"
+                 ? detail::SHA_256
+                 : algo == "SHA-512" ? detail::SHA_512 : detail::MD5;
 
     auto A1 = username + ":" + auth.at("realm") + ":" + password;
 
@@ -3912,15 +4042,6 @@ private:
   ContentProviderWithoutLength content_provider_;
 };
 
-template <typename T, typename U>
-inline void duration_to_sec_and_usec(const T &duration, U callback) {
-  auto sec = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-  auto usec = std::chrono::duration_cast<std::chrono::microseconds>(
-                  duration - std::chrono::seconds(sec))
-                  .count();
-  callback(sec, usec);
-}
-
 } // namespace detail
 
 // Header utilities
@@ -3961,11 +4082,6 @@ inline bool Request::has_header(const char *key) const {
 
 inline std::string Request::get_header_value(const char *key, size_t id) const {
   return detail::get_header_value(headers, key, id, "");
-}
-
-template <typename T>
-inline T Request::get_header_value(const char *key, size_t id) const {
-  return detail::get_header_value<T>(headers, key, id, 0);
 }
 
 inline size_t Request::get_header_value_count(const char *key) const {
@@ -4025,11 +4141,6 @@ inline bool Response::has_header(const char *key) const {
 inline std::string Response::get_header_value(const char *key,
                                               size_t id) const {
   return detail::get_header_value(headers, key, id, "");
-}
-
-template <typename T>
-inline T Response::get_header_value(const char *key, size_t id) const {
-  return detail::get_header_value<T>(headers, key, id, 0);
 }
 
 inline size_t Response::get_header_value_count(const char *key) const {
@@ -4119,11 +4230,6 @@ inline std::string Result::get_request_header_value(const char *key,
   return detail::get_header_value(request_headers_, key, id, "");
 }
 
-template <typename T>
-inline T Result::get_request_header_value(const char *key, size_t id) const {
-  return detail::get_header_value<T>(request_headers_, key, id, 0);
-}
-
 inline size_t Result::get_request_header_value_count(const char *key) const {
   auto r = request_headers_.equal_range(key);
   return static_cast<size_t>(std::distance(r.first, r.second));
@@ -4136,40 +4242,6 @@ inline ssize_t Stream::write(const char *ptr) {
 
 inline ssize_t Stream::write(const std::string &s) {
   return write(s.data(), s.size());
-}
-
-template <typename... Args>
-inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
-  const auto bufsiz = 2048;
-  std::array<char, bufsiz> buf;
-
-#if defined(_MSC_VER) && _MSC_VER < 1900
-  auto sn = _snprintf_s(buf.data(), bufsiz - 1, buf.size() - 1, fmt, args...);
-#else
-  auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
-#endif
-  if (sn <= 0) { return sn; }
-
-  auto n = static_cast<size_t>(sn);
-
-  if (n >= buf.size() - 1) {
-    std::vector<char> glowable_buf(buf.size());
-
-    while (n >= glowable_buf.size() - 1) {
-      glowable_buf.resize(glowable_buf.size() * 2);
-#if defined(_MSC_VER) && _MSC_VER < 1900
-      n = static_cast<size_t>(_snprintf_s(&glowable_buf[0], glowable_buf.size(),
-                                          glowable_buf.size() - 1, fmt,
-                                          args...));
-#else
-      n = static_cast<size_t>(
-          snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
-#endif
-    }
-    return write(&glowable_buf[0], n);
-  } else {
-    return write(buf.data(), n);
-  }
 }
 
 namespace detail {
@@ -4449,39 +4521,15 @@ inline Server &Server::set_read_timeout(time_t sec, time_t usec) {
   return *this;
 }
 
-template <class Rep, class Period>
-inline Server &
-Server::set_read_timeout(const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(
-      duration, [&](time_t sec, time_t usec) { set_read_timeout(sec, usec); });
-  return *this;
-}
-
 inline Server &Server::set_write_timeout(time_t sec, time_t usec) {
   write_timeout_sec_ = sec;
   write_timeout_usec_ = usec;
   return *this;
 }
 
-template <class Rep, class Period>
-inline Server &
-Server::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(
-      duration, [&](time_t sec, time_t usec) { set_write_timeout(sec, usec); });
-  return *this;
-}
-
 inline Server &Server::set_idle_interval(time_t sec, time_t usec) {
   idle_interval_sec_ = sec;
   idle_interval_usec_ = usec;
-  return *this;
-}
-
-template <class Rep, class Period>
-inline Server &
-Server::set_idle_interval(const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(
-      duration, [&](time_t sec, time_t usec) { set_idle_interval(sec, usec); });
   return *this;
 }
 
@@ -5642,9 +5690,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       SSLClient cli(next_host.c_str(), next_port);
       cli.copy_settings(*this);
-      if (ca_cert_store_) {
-        cli.set_ca_cert_store(ca_cert_store_);
-      }
+      if (ca_cert_store_) { cli.set_ca_cert_store(ca_cert_store_); }
       return detail::redirect(cli, req, res, next_path, location, error);
 #else
       return false;
@@ -6453,36 +6499,14 @@ inline void ClientImpl::set_connection_timeout(time_t sec, time_t usec) {
   connection_timeout_usec_ = usec;
 }
 
-template <class Rep, class Period>
-inline void ClientImpl::set_connection_timeout(
-    const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(duration, [&](time_t sec, time_t usec) {
-    set_connection_timeout(sec, usec);
-  });
-}
-
 inline void ClientImpl::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
 }
 
-template <class Rep, class Period>
-inline void ClientImpl::set_read_timeout(
-    const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(
-      duration, [&](time_t sec, time_t usec) { set_read_timeout(sec, usec); });
-}
-
 inline void ClientImpl::set_write_timeout(time_t sec, time_t usec) {
   write_timeout_sec_ = sec;
   write_timeout_usec_ = usec;
-}
-
-template <class Rep, class Period>
-inline void ClientImpl::set_write_timeout(
-    const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(
-      duration, [&](time_t sec, time_t usec) { set_write_timeout(sec, usec); });
 }
 
 inline void ClientImpl::set_basic_auth(const char *username,
@@ -6554,7 +6578,7 @@ inline void ClientImpl::set_proxy_digest_auth(const char *username,
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void ClientImpl::set_ca_cert_path(const char *ca_cert_file_path,
-                                        const char *ca_cert_dir_path) {
+                                         const char *ca_cert_dir_path) {
   if (ca_cert_file_path) { ca_cert_file_path_ = ca_cert_file_path; }
   if (ca_cert_dir_path) { ca_cert_dir_path_ = ca_cert_dir_path; }
 }
@@ -7616,30 +7640,12 @@ inline void Client::set_connection_timeout(time_t sec, time_t usec) {
   cli_->set_connection_timeout(sec, usec);
 }
 
-template <class Rep, class Period>
-inline void Client::set_connection_timeout(
-    const std::chrono::duration<Rep, Period> &duration) {
-  cli_->set_connection_timeout(duration);
-}
-
 inline void Client::set_read_timeout(time_t sec, time_t usec) {
   cli_->set_read_timeout(sec, usec);
 }
 
-template <class Rep, class Period>
-inline void
-Client::set_read_timeout(const std::chrono::duration<Rep, Period> &duration) {
-  cli_->set_read_timeout(duration);
-}
-
 inline void Client::set_write_timeout(time_t sec, time_t usec) {
   cli_->set_write_timeout(sec, usec);
-}
-
-template <class Rep, class Period>
-inline void
-Client::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
-  cli_->set_write_timeout(duration);
 }
 
 inline void Client::set_basic_auth(const char *username, const char *password) {
