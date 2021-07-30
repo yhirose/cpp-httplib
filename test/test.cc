@@ -852,42 +852,49 @@ TEST(UrlWithSpace, Redirect) {
 #endif
 
 TEST(RedirectToDifferentPort, Redirect) {
-  Server svr8080;
-  Server svr8081;
-
-  svr8080.Get("/1", [&](const Request & /*req*/, Response &res) {
-    res.set_redirect("http://localhost:8081/2");
-  });
-
-  svr8081.Get("/2", [&](const Request & /*req*/, Response &res) {
+  Server svr1;
+  svr1.Get("/1", [&](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto thread8080 = std::thread([&]() { svr8080.listen("localhost", 8080); });
+  int svr1_port = 0;
+  auto thread1 = std::thread([&]() {
+    svr1_port = svr1.bind_to_any_port("localhost");
+    svr1.listen_after_bind();
+  });
 
-  auto thread8081 = std::thread([&]() { svr8081.listen("localhost", 8081); });
+  Server svr2;
+  svr2.Get("/2", [&](const Request & /*req*/, Response &res) {
+    res.set_redirect("http://localhost:" + std::to_string(svr1_port) + "/1");
+  });
 
-  while (!svr8080.is_running() || !svr8081.is_running()) {
+  int svr2_port = 0;
+  auto thread2 = std::thread([&]() {
+    svr2_port = svr2.bind_to_any_port("localhost");
+    svr2.listen_after_bind();
+  });
+
+  while (!svr1.is_running() || !svr2.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
-  Client cli("localhost", 8080);
+  Client cli("localhost", svr2_port);
   cli.set_follow_location(true);
 
-  auto res = cli.Get("/1");
+  auto res = cli.Get("/2");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("Hello World!", res->body);
 
-  svr8080.stop();
-  svr8081.stop();
-  thread8080.join();
-  thread8081.join();
-  ASSERT_FALSE(svr8080.is_running());
-  ASSERT_FALSE(svr8081.is_running());
+  svr1.stop();
+  svr2.stop();
+  thread1.join();
+  thread2.join();
+  ASSERT_FALSE(svr1.is_running());
+  ASSERT_FALSE(svr2.is_running());
 }
 
 TEST(RedirectFromPageWithContent, Redirect) {
@@ -3769,7 +3776,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
     EXPECT_EQ("world3", req.get_param_value("hello3"));
   });
 
-  svr.Get(R"(/resources/([a-z0-9\\-]+))", [&](const Request& req, Response&) {
+  svr.Get(R"(/resources/([a-z0-9\\-]+))", [&](const Request &req, Response &) {
     EXPECT_EQ("resource-id", req.matches[1]);
     EXPECT_EQ("foo", req.get_param_value("param1"));
     EXPECT_EQ("bar", req.get_param_value("param2"));
@@ -4519,7 +4526,6 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
     res.set_content("test", "text/plain");
     ssl_svr.stop();
   });
-
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
   thread t2 = thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
