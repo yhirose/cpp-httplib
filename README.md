@@ -749,10 +749,20 @@ res->body; // Compressed data
 Split httplib.h into .h and .cc
 -------------------------------
 
-```bash
-> python3 split.py
-> ls out
-httplib.h  httplib.cc
+```console
+$ ./split.py -h
+usage: split.py [-h] [-e EXTENSION] [-o OUT]
+
+This script splits httplib.h into .h and .cc parts.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -e EXTENSION, --extension EXTENSION
+                        extension of the implementation file (default: cc)
+  -o OUT, --out OUT     where to write the files (default: out)
+
+$ ./split.py
+Wrote out/httplib.h and out/httplib.cc
 ```
 
 NOTE
