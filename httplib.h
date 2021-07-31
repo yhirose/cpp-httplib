@@ -1613,10 +1613,191 @@ Client::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
   cli_->set_write_timeout(duration);
 }
 
+/*
+ * Forward declarations and types that will be part of the .h file if split into
+ * .h + .cc.
+ */
+
+std::pair<std::string, std::string> make_range_header(Ranges ranges);
+
+std::pair<std::string, std::string>
+make_basic_authentication_header(const std::string &username,
+                                 const std::string &password,
+                                 bool is_proxy = false);
+
+namespace detail {
+
+std::string encode_query_param(const std::string &value);
+
+void read_file(const std::string &path, std::string &out);
+
+std::string trim_copy(const std::string &s);
+
+void split(const char *b, const char *e, char d,
+           std::function<void(const char *, const char *)> fn);
+
+bool process_client_socket(socket_t sock, time_t read_timeout_sec,
+                           time_t read_timeout_usec, time_t write_timeout_sec,
+                           time_t write_timeout_usec,
+                           std::function<bool(Stream &)> callback);
+
+socket_t create_client_socket(const char *host, int port, int address_family,
+                              bool tcp_nodelay, SocketOptions socket_options,
+                              time_t connection_timeout_sec,
+                              time_t connection_timeout_usec,
+                              time_t read_timeout_sec, time_t read_timeout_usec,
+                              time_t write_timeout_sec,
+                              time_t write_timeout_usec,
+                              const std::string &intf, Error &error);
+
+const char *get_header_value(const Headers &headers, const char *key,
+                             size_t id = 0, const char *def = nullptr);
+
+std::string params_to_query_str(const Params &params);
+
+void parse_query_text(const std::string &s, Params &params);
+
+bool parse_range_header(const std::string &s, Ranges &ranges);
+
+int close_socket(socket_t sock);
+
+enum class EncodingType { None = 0, Gzip, Brotli };
+
+EncodingType encoding_type(const Request &req, const Response &res);
+
+class BufferStream : public Stream {
+public:
+  BufferStream() = default;
+  ~BufferStream() override = default;
+
+  bool is_readable() const override;
+  bool is_writable() const override;
+  ssize_t read(char *ptr, size_t size) override;
+  ssize_t write(const char *ptr, size_t size) override;
+  void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  socket_t socket() const override;
+
+  const std::string &get_buffer() const;
+
+private:
+  std::string buffer;
+  size_t position = 0;
+};
+
+class compressor {
+public:
+  virtual ~compressor() = default;
+
+  typedef std::function<bool(const char *data, size_t data_len)> Callback;
+  virtual bool compress(const char *data, size_t data_length, bool last,
+                        Callback callback) = 0;
+};
+
+class decompressor {
+public:
+  virtual ~decompressor() = default;
+
+  virtual bool is_valid() const = 0;
+
+  typedef std::function<bool(const char *data, size_t data_len)> Callback;
+  virtual bool decompress(const char *data, size_t data_length,
+                          Callback callback) = 0;
+};
+
+class nocompressor : public compressor {
+public:
+  virtual ~nocompressor() = default;
+
+  bool compress(const char *data, size_t data_length, bool /*last*/,
+                Callback callback) override;
+};
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+class gzip_compressor : public compressor {
+public:
+  gzip_compressor();
+  ~gzip_compressor();
+
+  bool compress(const char *data, size_t data_length, bool last,
+                Callback callback) override;
+
+private:
+  bool is_valid_ = false;
+  z_stream strm_;
+};
+
+class gzip_decompressor : public decompressor {
+public:
+  gzip_decompressor();
+  ~gzip_decompressor();
+
+  bool is_valid() const override;
+
+  bool decompress(const char *data, size_t data_length,
+                  Callback callback) override;
+
+private:
+  bool is_valid_ = false;
+  z_stream strm_;
+};
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+class brotli_compressor : public compressor {
+public:
+  brotli_compressor();
+  ~brotli_compressor();
+
+  bool compress(const char *data, size_t data_length, bool last,
+                Callback callback) override;
+
+private:
+  BrotliEncoderState *state_ = nullptr;
+};
+
+class brotli_decompressor : public decompressor {
+public:
+  brotli_decompressor();
+  ~brotli_decompressor();
+
+  bool is_valid() const override;
+
+  bool decompress(const char *data, size_t data_length,
+                  Callback callback) override;
+
+private:
+  BrotliDecoderResult decoder_r;
+  BrotliDecoderState *decoder_s = nullptr;
+};
+#endif
+
+// NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
+// to store data. The call can set memory on stack for performance.
+class stream_line_reader {
+public:
+  stream_line_reader(Stream &strm, char *fixed_buffer,
+                     size_t fixed_buffer_size);
+  const char *ptr() const;
+  size_t size() const;
+  bool end_with_crlf() const;
+  bool getline();
+
+private:
+  void append(char c);
+
+  Stream &strm_;
+  char *fixed_buffer_;
+  const size_t fixed_buffer_size_;
+  size_t fixed_buffer_used_size_ = 0;
+  std::string glowable_buffer_;
+};
+
+} // namespace detail
+
 // ----------------------------------------------------------------------------
 
 /*
- * Implementation
+ * Implementation that will be part of the .cc file if split into .h + .cc.
  */
 
 namespace detail {
@@ -1895,7 +2076,8 @@ inline std::string trim_copy(const std::string &s) {
   return s.substr(r.first, r.second - r.first);
 }
 
-template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
+inline void split(const char *b, const char *e, char d,
+                  std::function<void(const char *, const char *)> fn) {
   size_t i = 0;
   size_t beg = 0;
 
@@ -1914,81 +2096,70 @@ template <class Fn> void split(const char *b, const char *e, char d, Fn fn) {
   }
 }
 
-// NOTE: until the read size reaches `fixed_buffer_size`, use `fixed_buffer`
-// to store data. The call can set memory on stack for performance.
-class stream_line_reader {
-public:
-  stream_line_reader(Stream &strm, char *fixed_buffer, size_t fixed_buffer_size)
-      : strm_(strm), fixed_buffer_(fixed_buffer),
-        fixed_buffer_size_(fixed_buffer_size) {}
+inline stream_line_reader::stream_line_reader(Stream &strm, char *fixed_buffer,
+                                              size_t fixed_buffer_size)
+    : strm_(strm), fixed_buffer_(fixed_buffer),
+      fixed_buffer_size_(fixed_buffer_size) {}
 
-  const char *ptr() const {
-    if (glowable_buffer_.empty()) {
-      return fixed_buffer_;
-    } else {
-      return glowable_buffer_.data();
-    }
+inline const char *stream_line_reader::ptr() const {
+  if (glowable_buffer_.empty()) {
+    return fixed_buffer_;
+  } else {
+    return glowable_buffer_.data();
   }
+}
 
-  size_t size() const {
-    if (glowable_buffer_.empty()) {
-      return fixed_buffer_used_size_;
-    } else {
-      return glowable_buffer_.size();
-    }
+inline size_t stream_line_reader::size() const {
+  if (glowable_buffer_.empty()) {
+    return fixed_buffer_used_size_;
+  } else {
+    return glowable_buffer_.size();
   }
+}
 
-  bool end_with_crlf() const {
-    auto end = ptr() + size();
-    return size() >= 2 && end[-2] == '\r' && end[-1] == '\n';
-  }
+inline bool stream_line_reader::end_with_crlf() const {
+  auto end = ptr() + size();
+  return size() >= 2 && end[-2] == '\r' && end[-1] == '\n';
+}
 
-  bool getline() {
-    fixed_buffer_used_size_ = 0;
-    glowable_buffer_.clear();
+inline bool stream_line_reader::getline() {
+  fixed_buffer_used_size_ = 0;
+  glowable_buffer_.clear();
 
-    for (size_t i = 0;; i++) {
-      char byte;
-      auto n = strm_.read(&byte, 1);
+  for (size_t i = 0;; i++) {
+    char byte;
+    auto n = strm_.read(&byte, 1);
 
-      if (n < 0) {
+    if (n < 0) {
+      return false;
+    } else if (n == 0) {
+      if (i == 0) {
         return false;
-      } else if (n == 0) {
-        if (i == 0) {
-          return false;
-        } else {
-          break;
-        }
+      } else {
+        break;
       }
-
-      append(byte);
-
-      if (byte == '\n') { break; }
     }
 
-    return true;
+    append(byte);
+
+    if (byte == '\n') { break; }
   }
 
-private:
-  void append(char c) {
-    if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
-      fixed_buffer_[fixed_buffer_used_size_++] = c;
-      fixed_buffer_[fixed_buffer_used_size_] = '\0';
-    } else {
-      if (glowable_buffer_.empty()) {
-        assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
-        glowable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
-      }
-      glowable_buffer_ += c;
+  return true;
+}
+
+inline void stream_line_reader::append(char c) {
+  if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
+    fixed_buffer_[fixed_buffer_used_size_++] = c;
+    fixed_buffer_[fixed_buffer_used_size_] = '\0';
+  } else {
+    if (glowable_buffer_.empty()) {
+      assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
+      glowable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
     }
+    glowable_buffer_ += c;
   }
-
-  Stream &strm_;
-  char *fixed_buffer_;
-  const size_t fixed_buffer_size_;
-  size_t fixed_buffer_used_size_ = 0;
-  std::string glowable_buffer_;
-};
+}
 
 inline int close_socket(socket_t sock) {
 #ifdef _WIN32
@@ -2159,25 +2330,6 @@ private:
 };
 #endif
 
-class BufferStream : public Stream {
-public:
-  BufferStream() = default;
-  ~BufferStream() override = default;
-
-  bool is_readable() const override;
-  bool is_writable() const override;
-  ssize_t read(char *ptr, size_t size) override;
-  ssize_t write(const char *ptr, size_t size) override;
-  void get_remote_ip_and_port(std::string &ip, int &port) const override;
-  socket_t socket() const override;
-
-  const std::string &get_buffer() const;
-
-private:
-  std::string buffer;
-  size_t position = 0;
-};
-
 inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
   using namespace std::chrono;
   auto start = steady_clock::now();
@@ -2229,11 +2381,11 @@ process_server_socket(socket_t sock, size_t keep_alive_max_count,
       });
 }
 
-template <typename T>
 inline bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                                   time_t read_timeout_usec,
                                   time_t write_timeout_sec,
-                                  time_t write_timeout_usec, T callback) {
+                                  time_t write_timeout_usec,
+                                  std::function<bool(Stream &)> callback) {
   SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                     write_timeout_sec, write_timeout_usec);
   return callback(strm);
@@ -2650,8 +2802,6 @@ inline bool can_compress_content_type(const std::string &content_type) {
          content_type == "application/xhtml+xml";
 }
 
-enum class EncodingType { None = 0, Gzip, Brotli };
-
 inline EncodingType encoding_type(const Request &req, const Response &res) {
   auto ret =
       detail::can_compress_content_type(res.get_header_value("Content-Type"));
@@ -2675,261 +2825,209 @@ inline EncodingType encoding_type(const Request &req, const Response &res) {
   return EncodingType::None;
 }
 
-class compressor {
-public:
-  virtual ~compressor(){};
-
-  typedef std::function<bool(const char *data, size_t data_len)> Callback;
-  virtual bool compress(const char *data, size_t data_length, bool last,
-                        Callback callback) = 0;
-};
-
-class decompressor {
-public:
-  virtual ~decompressor() {}
-
-  virtual bool is_valid() const = 0;
-
-  typedef std::function<bool(const char *data, size_t data_len)> Callback;
-  virtual bool decompress(const char *data, size_t data_length,
-                          Callback callback) = 0;
-};
-
-class nocompressor : public compressor {
-public:
-  ~nocompressor(){};
-
-  bool compress(const char *data, size_t data_length, bool /*last*/,
-                Callback callback) override {
-    if (!data_length) { return true; }
-    return callback(data, data_length);
-  }
-};
+inline bool nocompressor::compress(const char *data, size_t data_length,
+                                   bool /*last*/, Callback callback) {
+  if (!data_length) { return true; }
+  return callback(data, data_length);
+}
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-class gzip_compressor : public compressor {
-public:
-  gzip_compressor() {
-    std::memset(&strm_, 0, sizeof(strm_));
-    strm_.zalloc = Z_NULL;
-    strm_.zfree = Z_NULL;
-    strm_.opaque = Z_NULL;
+inline gzip_compressor::gzip_compressor() {
+  std::memset(&strm_, 0, sizeof(strm_));
+  strm_.zalloc = Z_NULL;
+  strm_.zfree = Z_NULL;
+  strm_.opaque = Z_NULL;
 
-    is_valid_ = deflateInit2(&strm_, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
-                             Z_DEFAULT_STRATEGY) == Z_OK;
-  }
+  is_valid_ = deflateInit2(&strm_, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+                           Z_DEFAULT_STRATEGY) == Z_OK;
+}
 
-  ~gzip_compressor() { deflateEnd(&strm_); }
+inline gzip_compressor::~gzip_compressor() { deflateEnd(&strm_); }
 
-  bool compress(const char *data, size_t data_length, bool last,
-                Callback callback) override {
-    assert(is_valid_);
+inline bool gzip_compressor::compress(const char *data, size_t data_length,
+                                      bool last, Callback callback) {
+  assert(is_valid_);
 
-    do {
-      constexpr size_t max_avail_in =
-          std::numeric_limits<decltype(strm_.avail_in)>::max();
+  do {
+    constexpr size_t max_avail_in =
+        std::numeric_limits<decltype(strm_.avail_in)>::max();
 
-      strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
-          std::min(data_length, max_avail_in));
-      strm_.next_in =
-          const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
+    strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
+        std::min(data_length, max_avail_in));
+    strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
-      data_length -= strm_.avail_in;
-      data += strm_.avail_in;
+    data_length -= strm_.avail_in;
+    data += strm_.avail_in;
 
-      auto flush = (last && data_length == 0) ? Z_FINISH : Z_NO_FLUSH;
-      int ret = Z_OK;
-
-      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
-      do {
-        strm_.avail_out = static_cast<uInt>(buff.size());
-        strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
-
-        ret = deflate(&strm_, flush);
-        if (ret == Z_STREAM_ERROR) { return false; }
-
-        if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
-          return false;
-        }
-      } while (strm_.avail_out == 0);
-
-      assert((flush == Z_FINISH && ret == Z_STREAM_END) ||
-             (flush == Z_NO_FLUSH && ret == Z_OK));
-      assert(strm_.avail_in == 0);
-
-    } while (data_length > 0);
-
-    return true;
-  }
-
-private:
-  bool is_valid_ = false;
-  z_stream strm_;
-};
-
-class gzip_decompressor : public decompressor {
-public:
-  gzip_decompressor() {
-    std::memset(&strm_, 0, sizeof(strm_));
-    strm_.zalloc = Z_NULL;
-    strm_.zfree = Z_NULL;
-    strm_.opaque = Z_NULL;
-
-    // 15 is the value of wbits, which should be at the maximum possible value
-    // to ensure that any gzip stream can be decoded. The offset of 32 specifies
-    // that the stream type should be automatically detected either gzip or
-    // deflate.
-    is_valid_ = inflateInit2(&strm_, 32 + 15) == Z_OK;
-  }
-
-  ~gzip_decompressor() { inflateEnd(&strm_); }
-
-  bool is_valid() const override { return is_valid_; }
-
-  bool decompress(const char *data, size_t data_length,
-                  Callback callback) override {
-    assert(is_valid_);
-
+    auto flush = (last && data_length == 0) ? Z_FINISH : Z_NO_FLUSH;
     int ret = Z_OK;
 
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     do {
-      constexpr size_t max_avail_in =
-          std::numeric_limits<decltype(strm_.avail_in)>::max();
+      strm_.avail_out = static_cast<uInt>(buff.size());
+      strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
 
-      strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
-          std::min(data_length, max_avail_in));
-      strm_.next_in =
-          const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
+      ret = deflate(&strm_, flush);
+      if (ret == Z_STREAM_ERROR) { return false; }
 
-      data_length -= strm_.avail_in;
-      data += strm_.avail_in;
+      if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
+        return false;
+      }
+    } while (strm_.avail_out == 0);
 
-      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
-      while (strm_.avail_in > 0) {
-        strm_.avail_out = static_cast<uInt>(buff.size());
-        strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
+    assert((flush == Z_FINISH && ret == Z_STREAM_END) ||
+           (flush == Z_NO_FLUSH && ret == Z_OK));
+    assert(strm_.avail_in == 0);
 
-        ret = inflate(&strm_, Z_NO_FLUSH);
-        assert(ret != Z_STREAM_ERROR);
-        switch (ret) {
-        case Z_NEED_DICT:
-        case Z_DATA_ERROR:
-        case Z_MEM_ERROR: inflateEnd(&strm_); return false;
-        }
+  } while (data_length > 0);
 
-        if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
-          return false;
-        }
+  return true;
+}
+
+inline gzip_decompressor::gzip_decompressor() {
+  std::memset(&strm_, 0, sizeof(strm_));
+  strm_.zalloc = Z_NULL;
+  strm_.zfree = Z_NULL;
+  strm_.opaque = Z_NULL;
+
+  // 15 is the value of wbits, which should be at the maximum possible value
+  // to ensure that any gzip stream can be decoded. The offset of 32 specifies
+  // that the stream type should be automatically detected either gzip or
+  // deflate.
+  is_valid_ = inflateInit2(&strm_, 32 + 15) == Z_OK;
+}
+
+inline gzip_decompressor::~gzip_decompressor() { inflateEnd(&strm_); }
+
+inline bool gzip_decompressor::is_valid() const { return is_valid_; }
+
+inline bool gzip_decompressor::decompress(const char *data, size_t data_length,
+                                          Callback callback) {
+  assert(is_valid_);
+
+  int ret = Z_OK;
+
+  do {
+    constexpr size_t max_avail_in =
+        std::numeric_limits<decltype(strm_.avail_in)>::max();
+
+    strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
+        std::min(data_length, max_avail_in));
+    strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
+
+    data_length -= strm_.avail_in;
+    data += strm_.avail_in;
+
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
+    while (strm_.avail_in > 0) {
+      strm_.avail_out = static_cast<uInt>(buff.size());
+      strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
+
+      ret = inflate(&strm_, Z_NO_FLUSH);
+      assert(ret != Z_STREAM_ERROR);
+      switch (ret) {
+      case Z_NEED_DICT:
+      case Z_DATA_ERROR:
+      case Z_MEM_ERROR: inflateEnd(&strm_); return false;
       }
 
-      if (ret != Z_OK && ret != Z_STREAM_END) return false;
+      if (!callback(buff.data(), buff.size() - strm_.avail_out)) {
+        return false;
+      }
+    }
 
-    } while (data_length > 0);
+    if (ret != Z_OK && ret != Z_STREAM_END) return false;
 
-    return true;
-  }
+  } while (data_length > 0);
 
-private:
-  bool is_valid_ = false;
-  z_stream strm_;
-};
+  return true;
+}
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-class brotli_compressor : public compressor {
-public:
-  brotli_compressor() {
-    state_ = BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
-  }
+inline brotli_compressor::brotli_compressor() {
+  state_ = BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
+}
 
-  ~brotli_compressor() { BrotliEncoderDestroyInstance(state_); }
+inline brotli_compressor::~brotli_compressor() {
+  BrotliEncoderDestroyInstance(state_);
+}
 
-  bool compress(const char *data, size_t data_length, bool last,
-                Callback callback) override {
-    std::array<uint8_t, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
+inline bool brotli_compressor::compress(const char *data, size_t data_length,
+                                        bool last, Callback callback) {
+  std::array<uint8_t, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
 
-    auto operation = last ? BROTLI_OPERATION_FINISH : BROTLI_OPERATION_PROCESS;
-    auto available_in = data_length;
-    auto next_in = reinterpret_cast<const uint8_t *>(data);
+  auto operation = last ? BROTLI_OPERATION_FINISH : BROTLI_OPERATION_PROCESS;
+  auto available_in = data_length;
+  auto next_in = reinterpret_cast<const uint8_t *>(data);
 
-    for (;;) {
-      if (last) {
-        if (BrotliEncoderIsFinished(state_)) { break; }
-      } else {
-        if (!available_in) { break; }
-      }
-
-      auto available_out = buff.size();
-      auto next_out = buff.data();
-
-      if (!BrotliEncoderCompressStream(state_, operation, &available_in,
-                                       &next_in, &available_out, &next_out,
-                                       nullptr)) {
-        return false;
-      }
-
-      auto output_bytes = buff.size() - available_out;
-      if (output_bytes) {
-        callback(reinterpret_cast<const char *>(buff.data()), output_bytes);
-      }
+  for (;;) {
+    if (last) {
+      if (BrotliEncoderIsFinished(state_)) { break; }
+    } else {
+      if (!available_in) { break; }
     }
 
-    return true;
-  }
+    auto available_out = buff.size();
+    auto next_out = buff.data();
 
-private:
-  BrotliEncoderState *state_ = nullptr;
-};
-
-class brotli_decompressor : public decompressor {
-public:
-  brotli_decompressor() {
-    decoder_s = BrotliDecoderCreateInstance(0, 0, 0);
-    decoder_r = decoder_s ? BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT
-                          : BROTLI_DECODER_RESULT_ERROR;
-  }
-
-  ~brotli_decompressor() {
-    if (decoder_s) { BrotliDecoderDestroyInstance(decoder_s); }
-  }
-
-  bool is_valid() const override { return decoder_s; }
-
-  bool decompress(const char *data, size_t data_length,
-                  Callback callback) override {
-    if (decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
-        decoder_r == BROTLI_DECODER_RESULT_ERROR) {
-      return 0;
+    if (!BrotliEncoderCompressStream(state_, operation, &available_in, &next_in,
+                                     &available_out, &next_out, nullptr)) {
+      return false;
     }
 
-    const uint8_t *next_in = (const uint8_t *)data;
-    size_t avail_in = data_length;
-    size_t total_out;
-
-    decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
-
-    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
-    while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
-      char *next_out = buff.data();
-      size_t avail_out = buff.size();
-
-      decoder_r = BrotliDecoderDecompressStream(
-          decoder_s, &avail_in, &next_in, &avail_out,
-          reinterpret_cast<uint8_t **>(&next_out), &total_out);
-
-      if (decoder_r == BROTLI_DECODER_RESULT_ERROR) { return false; }
-
-      if (!callback(buff.data(), buff.size() - avail_out)) { return false; }
+    auto output_bytes = buff.size() - available_out;
+    if (output_bytes) {
+      callback(reinterpret_cast<const char *>(buff.data()), output_bytes);
     }
-
-    return decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
-           decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT;
   }
 
-private:
-  BrotliDecoderResult decoder_r;
-  BrotliDecoderState *decoder_s = nullptr;
-};
+  return true;
+}
+
+inline brotli_decompressor::brotli_decompressor() {
+  decoder_s = BrotliDecoderCreateInstance(0, 0, 0);
+  decoder_r = decoder_s ? BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT
+                        : BROTLI_DECODER_RESULT_ERROR;
+}
+
+inline brotli_decompressor::~brotli_decompressor() {
+  if (decoder_s) { BrotliDecoderDestroyInstance(decoder_s); }
+}
+
+inline bool brotli_decompressor::is_valid() const { return decoder_s; }
+
+inline bool brotli_decompressor::decompress(const char *data,
+                                            size_t data_length,
+                                            Callback callback) {
+  if (decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
+      decoder_r == BROTLI_DECODER_RESULT_ERROR) {
+    return 0;
+  }
+
+  const uint8_t *next_in = (const uint8_t *)data;
+  size_t avail_in = data_length;
+  size_t total_out;
+
+  decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
+
+  std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
+  while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+    char *next_out = buff.data();
+    size_t avail_out = buff.size();
+
+    decoder_r = BrotliDecoderDecompressStream(
+        decoder_s, &avail_in, &next_in, &avail_out,
+        reinterpret_cast<uint8_t **>(&next_out), &total_out);
+
+    if (decoder_r == BROTLI_DECODER_RESULT_ERROR) { return false; }
+
+    if (!callback(buff.data(), buff.size() - avail_out)) { return false; }
+  }
+
+  return decoder_r == BROTLI_DECODER_RESULT_SUCCESS ||
+         decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT;
+}
 #endif
 
 inline bool has_header(const Headers &headers, const char *key) {
@@ -2937,7 +3035,7 @@ inline bool has_header(const Headers &headers, const char *key) {
 }
 
 inline const char *get_header_value(const Headers &headers, const char *key,
-                                    size_t id = 0, const char *def = nullptr) {
+                                    size_t id, const char *def) {
   auto rng = headers.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
@@ -4060,8 +4158,7 @@ inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
 
 inline std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
-                                 const std::string &password,
-                                 bool is_proxy = false) {
+                                 const std::string &password, bool is_proxy) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, std::move(field));
