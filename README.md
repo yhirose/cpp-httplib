@@ -256,6 +256,7 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 svr.Post("/content_receiver",
   [&](const Request &req, Response &res, const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
+      // NOTE: `content_reader` is blocking until every form data field is read
       MultipartFormDataItems files;
       content_reader(
         [&](const MultipartFormData &file) {
@@ -272,7 +273,6 @@ svr.Post("/content_receiver",
         body.append(data, data_length);
         return true;
       });
-      res.set_content(body, "text/plain");
     }
   });
 ```
