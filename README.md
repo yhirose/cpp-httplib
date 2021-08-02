@@ -252,6 +252,8 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 
 ### Receive content with a content receiver
 
+*NOTE: content_reader is blocking until every form data field is read.*
+
 ```cpp
 svr.Post("/content_receiver",
   [&](const Request &req, Response &res, const ContentReader &content_reader) {
@@ -266,6 +268,7 @@ svr.Post("/content_receiver",
           files.back().content.append(data, data_length);
           return true;
         });
+        res.set_content("upload complete", "text/plain");
     } else {
       std::string body;
       content_reader([&](const char *data, size_t data_length) {
