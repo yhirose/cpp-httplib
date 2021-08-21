@@ -18,6 +18,11 @@
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
 
+/* Skip rest of the test if connection failed */
+#define TEST_ONLINE(res) \
+  if (!res && res.error() == Error::Connection) \
+    { GTEST_SKIP(); return; }
+
 using namespace std;
 using namespace httplib;
 
@@ -368,6 +373,7 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
 
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
 
   std::string out;
@@ -396,6 +402,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
                 body.append(data, data_length);
                 return true;
               });
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
 
   std::string out;
@@ -428,6 +435,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
         body.append(data, data_length);
         return true;
       });
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
 
   std::string out;
@@ -451,6 +459,7 @@ TEST(RangeTest, FromHTTPBin) {
 
   {
     auto res = cli.Get("/range/32");
+    TEST_ONLINE(res);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
@@ -591,6 +600,7 @@ TEST(CancelTest, NoCancel) {
   cli.set_connection_timeout(std::chrono::seconds(5));
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
   EXPECT_EQ(200, res->status);
@@ -609,6 +619,7 @@ TEST(CancelTest, WithCancelSmallPayload) {
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
   cli.set_connection_timeout(std::chrono::seconds(5));
+  TEST_ONLINE(res);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -628,6 +639,7 @@ TEST(CancelTest, WithCancelLargePayload) {
   uint32_t count = 0;
   auto res = cli.Get("/range/65536",
                      [&count](uint64_t, uint64_t) { return (count++ == 0); });
+  TEST_ONLINE(res);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -645,6 +657,7 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 
   {
     auto res = cli.Get("/basic-auth/hello/world");
+    TEST_ONLINE(res);
     ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
@@ -690,6 +703,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
 
   {
     auto res = cli.Get("/digest-auth/auth/hello/world");
+    TEST_ONLINE(res);
     ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
@@ -741,6 +755,7 @@ TEST(AbsoluteRedirectTest, Redirect) {
 
   cli.set_follow_location(true);
   auto res = cli.Get("/httpbin/absolute-redirect/3");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -756,6 +771,7 @@ TEST(RedirectTest, Redirect) {
 
   cli.set_follow_location(true);
   auto res = cli.Get("/httpbin/redirect/3");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -771,6 +787,7 @@ TEST(RelativeRedirectTest, Redirect) {
 
   cli.set_follow_location(true);
   auto res = cli.Get("/httpbin/relative-redirect/3");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -786,6 +803,7 @@ TEST(TooManyRedirectTest, Redirect) {
 
   cli.set_follow_location(true);
   auto res = cli.Get("/httpbin/redirect/21");
+  TEST_ONLINE(res);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
@@ -795,11 +813,13 @@ TEST(YahooRedirectTest, Redirect) {
   Client cli("yahoo.com");
 
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 
   cli.set_follow_location(true);
   res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("https://yahoo.com/", res->location);
@@ -810,6 +830,7 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
   cli.set_follow_location(true);
   auto res = cli.Get(
       "/httpbin/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -823,6 +844,7 @@ TEST(HttpsToHttpRedirectTest2, Redirect) {
   params.emplace("status_code", "302");
 
   auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -835,6 +857,7 @@ TEST(HttpsToHttpRedirectTest3, Redirect) {
   params.emplace("url", "http://www.google.com");
 
   auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -844,6 +867,7 @@ TEST(UrlWithSpace, Redirect) {
   cli.set_follow_location(true);
 
   auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(18527U, res->get_header_value<uint64_t>("Content-Length"));
@@ -3866,6 +3890,7 @@ TEST(ClientDefaultHeadersTest, DefaultHeaders) {
 
   {
     auto res = cli.Get("/range/32");
+    TEST_ONLINE(res);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(206, res->status);
@@ -4099,6 +4124,7 @@ TEST(SSLClientTest, UpdateCAStore) {
 TEST(SSLClientTest, ServerNameIndication) {
   SSLClient cli("httpbin.org", 443);
   auto res = cli.Get("/get");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
@@ -4106,6 +4132,7 @@ TEST(SSLClientTest, ServerNameIndication) {
 TEST(SSLClientTest, ServerCertificateVerification1) {
   SSLClient cli("google.com");
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
 }
@@ -4115,6 +4142,7 @@ TEST(SSLClientTest, ServerCertificateVerification2) {
   cli.enable_server_certificate_verification(true);
   cli.set_ca_cert_path("hello");
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLLoadingCerts, res.error());
 }
@@ -4123,6 +4151,7 @@ TEST(SSLClientTest, ServerCertificateVerification3) {
   SSLClient cli("google.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
 }
@@ -4160,6 +4189,7 @@ TEST(SSLClientTest, WildcardHostNameMatch) {
   cli.set_follow_location(true);
 
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
@@ -4405,6 +4435,7 @@ TEST(SendAPI, SimpleInterface) {
   req.path = "/";
   auto res = cli.send(req);
 
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 }
@@ -4414,11 +4445,13 @@ TEST(YahooRedirectTest2, SimpleInterface) {
   Client cli("http://yahoo.com");
 
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 
   cli.set_follow_location(true);
   res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("https://yahoo.com/", res->location);
@@ -4428,6 +4461,7 @@ TEST(YahooRedirectTest3, SimpleInterface) {
   Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 
@@ -4442,6 +4476,7 @@ TEST(YahooRedirectTest3, NewResultInterface) {
   Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   ASSERT_FALSE(!res);
   ASSERT_TRUE(res);
@@ -4468,6 +4503,7 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
   auto res =
       cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "br"}});
 
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(287630U, res->body.size());
@@ -4483,6 +4519,7 @@ TEST(HttpsToHttpRedirectTest, SimpleInterface) {
       cli.Get("/httpbin/"
               "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -4496,6 +4533,7 @@ TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   params.emplace("status_code", "302");
 
   auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
@@ -4508,6 +4546,7 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface) {
   params.emplace("url", "http://www.google.com");
 
   auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  TEST_ONLINE(res);
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
