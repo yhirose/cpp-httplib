@@ -354,7 +354,7 @@ TEST(BufferStreamTest, read) {
   EXPECT_EQ(0, strm.read(buf, 1));
 }
 
-TEST(ChunkedEncodingTest, FromHTTPWatch) {
+TEST(ChunkedEncodingTest, FromHTTPWatch_Online) {
   auto host = "www.httpwatch.com";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -377,7 +377,7 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
   EXPECT_EQ(out, res->body);
 }
 
-TEST(ChunkedEncodingTest, WithContentReceiver) {
+TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   auto host = "www.httpwatch.com";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -405,7 +405,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
   EXPECT_EQ(out, body);
 }
 
-TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
+TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver_Online) {
   auto host = "www.httpwatch.com";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -437,7 +437,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   EXPECT_EQ(out, body);
 }
 
-TEST(RangeTest, FromHTTPBin) {
+TEST(RangeTest, FromHTTPBin_Online) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -578,7 +578,7 @@ TEST(ConnectionErrorTest, Timeout) {
   EXPECT_TRUE(res.error() == Error::Connection);
 }
 
-TEST(CancelTest, NoCancel) {
+TEST(CancelTest, NoCancel_Online) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -596,7 +596,7 @@ TEST(CancelTest, NoCancel) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(CancelTest, WithCancelSmallPayload) {
+TEST(CancelTest, WithCancelSmallPayload_Online) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -613,7 +613,7 @@ TEST(CancelTest, WithCancelSmallPayload) {
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
-TEST(CancelTest, WithCancelLargePayload) {
+TEST(CancelTest, WithCancelLargePayload_Online) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -632,7 +632,7 @@ TEST(CancelTest, WithCancelLargePayload) {
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
-TEST(BaseAuthTest, FromHTTPWatch) {
+TEST(BaseAuthTest, FromHTTPWatch_Online) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -683,7 +683,7 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(DigestAuthTest, FromHTTPWatch) {
+TEST(DigestAuthTest, FromHTTPWatch_Online) {
   auto host = "httpbin.org";
   auto port = 443;
   SSLClient cli(host, port);
@@ -730,7 +730,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
 }
 #endif
 
-TEST(AbsoluteRedirectTest, Redirect) {
+TEST(AbsoluteRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -745,7 +745,7 @@ TEST(AbsoluteRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(RedirectTest, Redirect) {
+TEST(RedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -760,7 +760,7 @@ TEST(RedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(RelativeRedirectTest, Redirect) {
+TEST(RelativeRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -775,7 +775,7 @@ TEST(RelativeRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(TooManyRedirectTest, Redirect) {
+TEST(TooManyRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -791,7 +791,7 @@ TEST(TooManyRedirectTest, Redirect) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(YahooRedirectTest, Redirect) {
+TEST(YahooRedirectTest, Redirect_Online) {
   Client cli("yahoo.com");
 
   auto res = cli.Get("/");
@@ -805,7 +805,7 @@ TEST(YahooRedirectTest, Redirect) {
   EXPECT_EQ("https://yahoo.com/", res->location);
 }
 
-TEST(HttpsToHttpRedirectTest, Redirect) {
+TEST(HttpsToHttpRedirectTest, Redirect_Online) {
   SSLClient cli("nghttp2.org");
   cli.set_follow_location(true);
   auto res = cli.Get(
@@ -814,7 +814,7 @@ TEST(HttpsToHttpRedirectTest, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(HttpsToHttpRedirectTest2, Redirect) {
+TEST(HttpsToHttpRedirectTest2, Redirect_Online) {
   SSLClient cli("nghttp2.org");
   cli.set_follow_location(true);
 
@@ -827,7 +827,7 @@ TEST(HttpsToHttpRedirectTest2, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(HttpsToHttpRedirectTest3, Redirect) {
+TEST(HttpsToHttpRedirectTest3, Redirect_Online) {
   SSLClient cli("nghttp2.org");
   cli.set_follow_location(true);
 
@@ -839,7 +839,7 @@ TEST(HttpsToHttpRedirectTest3, Redirect) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(UrlWithSpace, Redirect) {
+TEST(UrlWithSpace, Redirect_Online) {
   SSLClient cli("edge.forgecdn.net");
   cli.set_follow_location(true);
 
@@ -3859,7 +3859,7 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   ASSERT_FALSE(svr.is_running());
 }
 
-TEST(ClientDefaultHeadersTest, DefaultHeaders) {
+TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
   Client cli("httpbin.org");
   cli.set_default_headers({make_range_header({{1, 10}})});
   cli.set_connection_timeout(5);
@@ -4096,21 +4096,21 @@ TEST(SSLClientTest, UpdateCAStore) {
   httplib_client.set_ca_cert_store(ca_store_2);
 }
 
-TEST(SSLClientTest, ServerNameIndication) {
+TEST(SSLClientTest, ServerNameIndication_Online) {
   SSLClient cli("httpbin.org", 443);
   auto res = cli.Get("/get");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
 
-TEST(SSLClientTest, ServerCertificateVerification1) {
+TEST(SSLClientTest, ServerCertificateVerification1_Online) {
   SSLClient cli("google.com");
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
 }
 
-TEST(SSLClientTest, ServerCertificateVerification2) {
+TEST(SSLClientTest, ServerCertificateVerification2_Online) {
   SSLClient cli("google.com");
   cli.enable_server_certificate_verification(true);
   cli.set_ca_cert_path("hello");
@@ -4119,7 +4119,7 @@ TEST(SSLClientTest, ServerCertificateVerification2) {
   EXPECT_EQ(Error::SSLLoadingCerts, res.error());
 }
 
-TEST(SSLClientTest, ServerCertificateVerification3) {
+TEST(SSLClientTest, ServerCertificateVerification3_Online) {
   SSLClient cli("google.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
   auto res = cli.Get("/");
@@ -4152,7 +4152,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   t.join();
 }
 
-TEST(SSLClientTest, WildcardHostNameMatch) {
+TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   SSLClient cli("www.youtube.com");
 
   cli.set_ca_cert_path(CA_CERT_FILE);
@@ -4397,7 +4397,7 @@ TEST(NoScheme, SimpleInterface) {
   ASSERT_TRUE(cli.is_valid());
 }
 
-TEST(SendAPI, SimpleInterface) {
+TEST(SendAPI, SimpleInterface_Online) {
   Client cli("http://yahoo.com");
 
   Request req;
@@ -4410,7 +4410,7 @@ TEST(SendAPI, SimpleInterface) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(YahooRedirectTest2, SimpleInterface) {
+TEST(YahooRedirectTest2, SimpleInterface_Online) {
   Client cli("http://yahoo.com");
 
   auto res = cli.Get("/");
@@ -4424,7 +4424,7 @@ TEST(YahooRedirectTest2, SimpleInterface) {
   EXPECT_EQ("https://yahoo.com/", res->location);
 }
 
-TEST(YahooRedirectTest3, SimpleInterface) {
+TEST(YahooRedirectTest3, SimpleInterface_Online) {
   Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
@@ -4438,7 +4438,7 @@ TEST(YahooRedirectTest3, SimpleInterface) {
   EXPECT_EQ("https://www.yahoo.com/", res->location);
 }
 
-TEST(YahooRedirectTest3, NewResultInterface) {
+TEST(YahooRedirectTest3, NewResultInterface_Online) {
   Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
@@ -4463,7 +4463,7 @@ TEST(YahooRedirectTest3, NewResultInterface) {
 }
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
+TEST(DecodeWithChunkedEncoding, BrotliEncoding_Online) {
   Client cli("https://cdnjs.cloudflare.com");
   auto res =
       cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "br"}});
@@ -4476,7 +4476,7 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
 }
 #endif
 
-TEST(HttpsToHttpRedirectTest, SimpleInterface) {
+TEST(HttpsToHttpRedirectTest, SimpleInterface_Online) {
   Client cli("https://nghttp2.org");
   cli.set_follow_location(true);
   auto res =
@@ -4487,7 +4487,7 @@ TEST(HttpsToHttpRedirectTest, SimpleInterface) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
+TEST(HttpsToHttpRedirectTest2, SimpleInterface_Online) {
   Client cli("https://nghttp2.org");
   cli.set_follow_location(true);
 
@@ -4500,7 +4500,7 @@ TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST(HttpsToHttpRedirectTest3, SimpleInterface) {
+TEST(HttpsToHttpRedirectTest3, SimpleInterface_Online) {
   Client cli("https://nghttp2.org");
   cli.set_follow_location(true);
 
