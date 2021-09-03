@@ -5,7 +5,6 @@
 project(
   'cpp-httplib',
   'cpp',
-  version: '0.9.4',
   license: 'MIT',
   default_options: [
     'buildtype=release',
@@ -15,6 +14,31 @@ project(
   ],
   meson_version: '>=0.47.0'
 )
+
+# Check just in case downstream decides to edit the source
+# and add a project version
+version = meson.project_version()
+if version == 'undefined'
+  git = find_program('git', required: false)
+  if git.found()
+    result = run_command(git, 'describe', '--tags', '--abbrev=0')
+    if result.returncode() == 0
+      version = result.stdout().strip('v\n')
+    endif
+  endif
+endif
+
+python = import('python').find_installation('python3')
+# If version is still undefined it means that the git method failed
+if version == 'undefined'
+  # Meson doesn't have regular expressions, but since it is implemented
+  # in python we can be sure we can use it to parse the file manually
+  version = run_command(
+      python, '-c', 'import re; raw_version = re.search("User\-Agent.*cpp\-httplib/([0-9]+\.?)+", open("httplib.h").read()).group(0); print(re.search("([0-9]+\\.?)+", raw_version).group(0))'
+  ).stdout().strip()
+endif
+
+message('cpp-httplib version ' + version)
 
 deps = [dependency('threads')]
 args = []
@@ -50,7 +74,6 @@ endif
 cpp_httplib_dep = dependency('', required : false)
 
 if get_option('cpp-httplib_compile')
-  python = import('python').find_installation('python3')
   httplib_ch = custom_target(
     'split',
     input: 'httplib.h',
@@ -64,6 +87,7 @@ if get_option('cpp-httplib_compile')
     sources: httplib_ch,
     dependencies: deps,
     cpp_args: args,
+    version: version,
     install: true
   )
   cpp_httplib_dep = declare_dependency(link_with: lib, sources: httplib_ch[1])
@@ -71,9 +95,11 @@ if get_option('cpp-httplib_compile')
   import('pkgconfig').generate(
     lib,
     description: 'A C++ HTTP/HTTPS server and client library',
-    url: 'https://github.com/yhirose/cpp-httplib'
+    url: 'https://github.com/yhirose/cpp-httplib',
+    version: version
   )
 else
+  install_headers('httplib.h')
   cpp_httplib_dep = declare_dependency(include_directories: include_directories('.'), dependencies: deps)
 endif
 
