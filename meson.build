@@ -7,6 +7,7 @@ project(
   'cpp',
   license: 'MIT',
   default_options: [
+    'cpp_std=c++11',
     'buildtype=release',
     'b_ndebug=if-release',
     'b_lto=true',
@@ -71,7 +72,7 @@ if brotli_found_all
   args += '-DCPPHTTPLIB_BROTLI_SUPPORT'
 endif
 
-cpp_httplib_dep = dependency('', required : false)
+cpp_httplib_dep = dependency('', required: false)
 
 if get_option('cpp-httplib_compile')
   httplib_ch = custom_target(
@@ -105,4 +106,8 @@ endif
 
 if meson.version().version_compare('>=0.54.0')
   meson.override_dependency('cpp-httplib', cpp_httplib_dep)
+endif
+
+if get_option('cpp-httplib_test')
+  subdir('test')
 endif
