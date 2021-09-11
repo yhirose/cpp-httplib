@@ -2640,6 +2640,7 @@ TEST_F(ServerTest, SlowPost) {
   EXPECT_EQ(200, res->status);
 }
 
+#if 0
 TEST_F(ServerTest, SlowPostFail) {
   char buffer[64 * 1024];
   memset(buffer, 0x42, sizeof(buffer));
@@ -2656,6 +2657,7 @@ TEST_F(ServerTest, SlowPostFail) {
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Write, res.error());
 }
+#endif
 
 TEST_F(ServerTest, Put) {
   auto res = cli_.Put("/put", "PUT", "text/plain");
