@@ -259,7 +259,7 @@ namespace detail {
 
 template <class T, class... Args>
 typename std::enable_if<!std::is_array<T>::value, std::unique_ptr<T>>::type
-make_unique(Args &&... args) {
+make_unique(Args &&...args) {
   return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
@@ -492,7 +492,7 @@ public:
   virtual socket_t socket() const = 0;
 
   template <typename... Args>
-  ssize_t write_format(const char *fmt, const Args &... args);
+  ssize_t write_format(const char *fmt, const Args &...args);
   ssize_t write(const char *ptr);
   ssize_t write(const std::string &s);
 };
@@ -1473,7 +1473,7 @@ inline T Response::get_header_value(const char *key, size_t id) const {
 }
 
 template <typename... Args>
-inline ssize_t Stream::write_format(const char *fmt, const Args &... args) {
+inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
   const auto bufsiz = 2048;
   std::array<char, bufsiz> buf;
 
@@ -3957,17 +3957,15 @@ template <typename CTX, typename Init, typename Update, typename Final>
 inline std::string message_digest(const std::string &s, Init init,
                                   Update update, Final final,
                                   size_t digest_length) {
-  using namespace std;
-
   std::vector<unsigned char> md(digest_length, 0);
   CTX ctx;
   init(&ctx);
   update(&ctx, s.data(), s.size());
   final(md.data(), &ctx);
 
-  stringstream ss;
+  std::stringstream ss;
   for (auto c : md) {
-    ss << setfill('0') << setw(2) << hex << (unsigned int)c;
+    ss << std::setfill('0') << std::setw(2) << std::hex << (unsigned int)c;
   }
   return ss.str();
 }
@@ -4035,38 +4033,45 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
     const Request &req, const std::map<std::string, std::string> &auth,
     size_t cnonce_count, const std::string &cnonce, const std::string &username,
     const std::string &password, bool is_proxy = false) {
-  using namespace std;
-
-  string nc;
+  std::string nc;
   {
-    stringstream ss;
-    ss << setfill('0') << setw(8) << hex << cnonce_count;
+    std::stringstream ss;
+    ss << std::setfill('0') << std::setw(8) << std::hex << cnonce_count;
     nc = ss.str();
   }
 
-  auto qop = auth.at("qop");
-  if (qop.find("auth-int") != std::string::npos) {
-    qop = "auth-int";
-  } else {
-    qop = "auth";
+  std::string qop;
+  if (auth.find("qop") != auth.end()) {
+    qop = auth.at("qop");
+    if (qop.find("auth-int") != std::string::npos) {
+      qop = "auth-int";
+    } else if (qop.find("auth") != std::string::npos) {
+      qop = "auth";
+    } else {
+      qop.clear();
+    }
   }
 
   std::string algo = "MD5";
   if (auth.find("algorithm") != auth.end()) { algo = auth.at("algorithm"); }
 
-  string response;
+  std::string response;
   {
-    auto H = algo == "SHA-256"
-                 ? detail::SHA_256
-                 : algo == "SHA-512" ? detail::SHA_512 : detail::MD5;
+    auto H = algo == "SHA-256"   ? detail::SHA_256
+             : algo == "SHA-512" ? detail::SHA_512
+                                 : detail::MD5;
 
     auto A1 = username + ":" + auth.at("realm") + ":" + password;
 
     auto A2 = req.method + ":" + req.path;
     if (qop == "auth-int") { A2 += ":" + H(req.body); }
 
-    response = H(H(A1) + ":" + auth.at("nonce") + ":" + nc + ":" + cnonce +
-                 ":" + qop + ":" + H(A2));
+    if (qop.empty()) {
+      response = H(H(A1) + ":" + auth.at("nonce") + ":" + H(A2));
+    } else {
+      response = H(H(A1) + ":" + auth.at("nonce") + ":" + nc + ":" + cnonce +
+                   ":" + qop + ":" + H(A2));
+    }
   }
 
   auto field = "Digest username=\"" + username + "\", realm=\"" +
