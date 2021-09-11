@@ -1671,6 +1671,10 @@ bool parse_range_header(const std::string &s, Ranges &ranges);
 
 int close_socket(socket_t sock);
 
+ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags);
+
+ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags);
+
 enum class EncodingType { None = 0, Gzip, Brotli };
 
 EncodingType encoding_type(const Request &req, const Response &res);
@@ -2189,6 +2193,34 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
   return res;
 }
 
+inline ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags) {
+  return handle_EINTR([&]() {
+    return recv(sock,
+#ifdef _WIN32
+                static_cast<char *>(ptr),
+                static_cast<int>(size),
+#else
+                ptr,
+                size,
+#endif
+                flags);
+  });
+}
+
+inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags) {
+  return handle_EINTR([&]() {
+    return send(sock,
+#ifdef _WIN32
+                static_cast<const char *>(ptr),
+                static_cast<int>(size),
+#else
+                ptr,
+                size,
+#endif
+                flags);
+  });
+}
+
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
@@ -2313,6 +2345,12 @@ private:
   time_t read_timeout_usec_;
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
+
+  std::vector<char> read_buff_;
+  size_t read_buff_off_ = 0;
+  size_t read_buff_content_size_ = 0;
+
+  static const size_t read_buff_size_ = 1024 * 4;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4368,7 +4406,8 @@ inline SocketStream::SocketStream(socket_t sock, time_t read_timeout_sec,
     : sock_(sock), read_timeout_sec_(read_timeout_sec),
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
-      write_timeout_usec_(write_timeout_usec) {}
+      write_timeout_usec_(write_timeout_usec),
+      read_buff_(read_buff_size_, 0) {}
 
 inline SocketStream::~SocketStream() {}
 
@@ -4381,31 +4420,56 @@ inline bool SocketStream::is_writable() const {
 }
 
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
+#ifdef _WIN32
+  size = std::min(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
+#else
+  size = std::min(size, static_cast<size_t>((std::numeric_limits<ssize_t>::max)()));
+#endif
+
+  if (read_buff_off_ < read_buff_content_size_) {
+    auto remaining_size = read_buff_content_size_ - read_buff_off_;
+    if (size <= remaining_size) {
+      memcpy(ptr, read_buff_.data() + read_buff_off_, size);
+      read_buff_off_ += size;
+      return static_cast<ssize_t>(size);
+    } else {
+      memcpy(ptr, read_buff_.data() + read_buff_off_, remaining_size);
+      read_buff_off_ += remaining_size;
+      return static_cast<ssize_t>(remaining_size);
+    }
+  }
+
   if (!is_readable()) { return -1; }
 
-#ifdef _WIN32
-  if (size > static_cast<size_t>((std::numeric_limits<int>::max)())) {
-    return -1;
+  read_buff_off_ = 0;
+  read_buff_content_size_ = 0;
+
+  if (size < read_buff_size_) {
+    auto n = read_socket(sock_, read_buff_.data(), read_buff_size_, CPPHTTPLIB_RECV_FLAGS);
+    if (n <= 0) {
+      return n;
+    } else if (n <= static_cast<ssize_t>(size)) {
+      memcpy(ptr, read_buff_.data(), static_cast<size_t>(n));
+      return n;
+    } else {
+      memcpy(ptr, read_buff_.data(), size);
+      read_buff_off_ = size;
+      read_buff_content_size_ = static_cast<size_t>(n);
+      return static_cast<ssize_t>(size);
+    }
+  } else {
+    return read_socket(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS);
   }
-  return recv(sock_, ptr, static_cast<int>(size), CPPHTTPLIB_RECV_FLAGS);
-#else
-  return handle_EINTR(
-      [&]() { return recv(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS); });
-#endif
 }
 
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!is_writable()) { return -1; }
 
 #ifdef _WIN32
-  if (size > static_cast<size_t>((std::numeric_limits<int>::max)())) {
-    return -1;
-  }
-  return send(sock_, ptr, static_cast<int>(size), CPPHTTPLIB_SEND_FLAGS);
-#else
-  return handle_EINTR(
-      [&]() { return send(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS); });
+  size = std::min(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #endif
+
+  return send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
 }
 
 inline void SocketStream::get_remote_ip_and_port(std::string &ip,
