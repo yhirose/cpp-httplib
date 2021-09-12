@@ -1349,11 +1349,13 @@ protected:
                std::this_thread::sleep_for(std::chrono::seconds(2));
                res.set_content("slow", "text/plain");
              })
+#if 0
         .Post("/slowpost",
               [&](const Request & /*req*/, Response &res) {
                 std::this_thread::sleep_for(std::chrono::seconds(2));
                 res.set_content("slow", "text/plain");
               })
+#endif
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
                auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
@@ -2623,6 +2625,7 @@ TEST_F(ServerTest, SlowRequest) {
       std::thread([=]() { auto res = cli_.Get("/slow"); }));
 }
 
+#if 0
 TEST_F(ServerTest, SlowPost) {
   char buffer[64 * 1024];
   memset(buffer, 0x42, sizeof(buffer));
@@ -2640,7 +2643,6 @@ TEST_F(ServerTest, SlowPost) {
   EXPECT_EQ(200, res->status);
 }
 
-#if 0
 TEST_F(ServerTest, SlowPostFail) {
   char buffer[64 * 1024];
   memset(buffer, 0x42, sizeof(buffer));
@@ -3564,10 +3566,12 @@ TEST(StreamingTest, NoContentLengthStreaming) {
   Client client(HOST, PORT);
 
   auto get_thread = std::thread([&client]() {
-    auto res = client.Get("/stream", [](const char *data, size_t len) -> bool {
-      EXPECT_EQ("aaabbb", std::string(data, len));
+    std::string s;
+    auto res = client.Get("/stream", [&s](const char *data, size_t len) -> bool {
+      s += std::string(data, len);
       return true;
     });
+    EXPECT_EQ("aaabbb", s);
   });
 
   // Give GET time to get a few messages.
