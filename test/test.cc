@@ -971,8 +971,15 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
 
   auto th = std::thread([&]() { svr.listen("::1", 1234); });
 
-  while (!svr.is_running()) {
+  // When IPV6 support isn't available svr.listen("::1", 1234) never
+  // actually starts anything, so the condition !svr.is_running() will
+  // always remain true, and the loop never stops.
+  // This basically counts how many milliseconds have passed since the
+  // call to svr.listen(), and if after 5 seconds nothing started yet
+  // aborts the test.
+  for (unsigned int milliseconds = 0; !svr.is_running(); milliseconds++) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_LT(milliseconds, 5000U);
   }
 
   // Give GET time to get a few messages.
