@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <type_traits>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -38,6 +39,11 @@ MultipartFormData &get_file_value(MultipartFormDataItems &files,
       [&](const MultipartFormData &file) { return file.name == key; });
   if (it != files.end()) { return *it; }
   throw std::runtime_error("invalid mulitpart form data name error");
+}
+
+TEST(ConstructorTest, MoveConstructible) {
+  EXPECT_FALSE(std::is_copy_constructible<Client>::value);
+  EXPECT_TRUE(std::is_nothrow_move_constructible<Client>::value);
 }
 
 #ifdef _WIN32

@@ -1161,6 +1161,8 @@ public:
                   const std::string &client_cert_path,
                   const std::string &client_key_path);
 
+  Client(Client &&) = default;
+
   ~Client();
 
   bool is_valid() const;
