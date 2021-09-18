@@ -787,7 +787,7 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 #include <httplib.h>
 ```
 
-Note: cpp-httplib officially supports only the latest Visual Studio. It might work with former versions of Visual Studio, but I can no longer verify it. Pull requests are always welcome for the older versions of Visual Sutudio unless they break the C++11 conformance.
+Note: cpp-httplib officially supports only the latest Visual Studio. It might work with former versions of Visual Studio, but I can no longer verify it. Pull requests are always welcome for the older versions of Visual Studio unless they break the C++11 conformance.
 
 Note: Windows 8 or lower and Cygwin on Windows are not supported.
 
