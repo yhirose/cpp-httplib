@@ -2900,10 +2900,10 @@ inline bool gzip_compressor::compress(const char *data, size_t data_length,
 
   do {
     constexpr size_t max_avail_in =
-        std::numeric_limits<decltype(strm_.avail_in)>::max();
+        (std::numeric_limits<decltype(strm_.avail_in)>::max)();
 
     strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
-        std::min(data_length, max_avail_in));
+        (std::min)(data_length, max_avail_in));
     strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
     data_length -= strm_.avail_in;
@@ -2959,10 +2959,10 @@ inline bool gzip_decompressor::decompress(const char *data, size_t data_length,
 
   do {
     constexpr size_t max_avail_in =
-        std::numeric_limits<decltype(strm_.avail_in)>::max();
+        (std::numeric_limits<decltype(strm_.avail_in)>::max)();
 
     strm_.avail_in = static_cast<decltype(strm_.avail_in)>(
-        std::min(data_length, max_avail_in));
+        (std::min)(data_length, max_avail_in));
     strm_.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
 
     data_length -= strm_.avail_in;
@@ -4430,9 +4430,9 @@ inline bool SocketStream::is_writable() const {
 
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
 #ifdef _WIN32
-  size = std::min(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
+  size = (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #else
-  size = std::min(size, static_cast<size_t>((std::numeric_limits<ssize_t>::max)()));
+  size = (std::min)(size, static_cast<size_t>((std::numeric_limits<ssize_t>::max)()));
 #endif
 
   if (read_buff_off_ < read_buff_content_size_) {
@@ -4475,7 +4475,7 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!is_writable()) { return -1; }
 
 #ifdef _WIN32
-  size = std::min(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
+  size = (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #endif
 
   return send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
@@ -5003,7 +5003,7 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
       /* For debug
       size_t pos = 0;
       while (pos < n) {
-        auto read_size = std::min<size_t>(1, n - pos);
+        auto read_size = (std::min)<size_t>(1, n - pos);
         auto ret = multipart_form_data_parser.parse(
             buf + pos, read_size, multipart_receiver, mulitpart_header);
         if (!ret) { return false; }
