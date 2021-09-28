@@ -35,7 +35,7 @@ do_split = True
 if os.path.exists(h_out):
     in_time = os.path.getmtime(in_file)
     out_time = os.path.getmtime(h_out)
-    do_split = in_time > out_time:
+    do_split = in_time > out_time
 
 if do_split:
     with open(in_file) as f:
