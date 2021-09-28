@@ -19,7 +19,25 @@ args_parser.add_argument(
 args = args_parser.parse_args()
 
 cur_dir = os.path.dirname(sys.argv[0])
-with open(cur_dir + '/httplib.h') as f:
+lib_name = 'httplib'
+header_name = '/' + lib_name + '.h'
+source_name = '/' + lib_name + '.' + args.extension
+# get the input file
+in_file = cur_dir + header_name
+# get the output file
+h_out = args.out + header_name
+
+# if the modification time of the out file is after the in file,
+# don't split (as it is already finished)
+if os.path.exists(h_out):
+    in_time = os.path.getmtime(in_file)
+    out_time = os.path.getmtime(h_out)
+    if in_time < out_time:
+        print("{} and {} are up to date".format(h_out, cc_out))
+        return
+
+
+with open(in_file) as f:
     lines = f.readlines()
 
 python_version = sys.version_info[0]
@@ -29,8 +47,7 @@ else:
     os.makedirs(args.out, exist_ok=True)
 
 in_implementation = False
-h_out = args.out + '/httplib.h'
-cc_out = args.out + '/httplib.' + args.extension
+cc_out = args.out + source_name
 with open(h_out, 'w') as fh, open(cc_out, 'w') as fc:
     fc.write('#include "httplib.h"\n')
     fc.write('namespace httplib {\n')
