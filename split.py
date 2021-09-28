@@ -26,6 +26,7 @@ source_name = '/' + lib_name + '.' + args.extension
 in_file = cur_dir + header_name
 # get the output file
 h_out = args.out + header_name
+cc_out = args.out + source_name
 
 # if the modification time of the out file is after the in file,
 # don't split (as it is already finished)
@@ -34,9 +35,8 @@ if os.path.exists(h_out):
     out_time = os.path.getmtime(h_out)
     if in_time < out_time:
         print("{} and {} are up to date".format(h_out, cc_out))
-        return
-
-
+        exit
+        
 with open(in_file) as f:
     lines = f.readlines()
 
