@@ -746,6 +746,12 @@ res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate, br"}});
 res->body; // Compressed data
 ```
 
+Use `poll` instead of `select`
+------------------------------
+
+`select` system call is used as default since it's more widely supported. If you want to let cpp-httplib use `poll` instead, you can do so with `CPPHTTPLIB_USE_POLL`.
+
+
 Split httplib.h into .h and .cc
 -------------------------------
 
