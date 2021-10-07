@@ -825,9 +825,17 @@ class ClientImpl {
 public:
   explicit ClientImpl(const std::string &host);
 
+  explicit ClientImpl(const std::string &host, const std::string &ip);
+
   explicit ClientImpl(const std::string &host, int port);
 
+  explicit ClientImpl(const std::string &host, const std::string &ip, int port);
+
   explicit ClientImpl(const std::string &host, int port,
+                      const std::string &client_cert_path,
+                      const std::string &client_key_path);
+
+  explicit ClientImpl(const std::string &host, const std::string &ip, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path);
 
@@ -1047,6 +1055,7 @@ protected:
   const std::string host_;
   const int port_;
   const std::string host_and_port_;
+  const std::string ip_;
 
   // Current open socket
   Socket socket_;
@@ -1150,14 +1159,27 @@ public:
   // Universal interface
   explicit Client(const std::string &scheme_host_port);
 
+  explicit Client(const std::string &scheme_host_port, const std::string &ip);
+
   explicit Client(const std::string &scheme_host_port,
+                  const std::string &client_cert_path,
+                  const std::string &client_key_path);
+
+  explicit Client(const std::string &scheme_host_port,
+                  const std::string &ip,
                   const std::string &client_cert_path,
                   const std::string &client_key_path);
 
   // HTTP only interface
   explicit Client(const std::string &host, int port);
 
+  explicit Client(const std::string &host, const std::string &ip, int port);
+
   explicit Client(const std::string &host, int port,
+                  const std::string &client_cert_path,
+                  const std::string &client_key_path);
+
+  explicit Client(const std::string &host, const std::string &ip, int port,
                   const std::string &client_cert_path,
                   const std::string &client_key_path);
 
@@ -1379,13 +1401,24 @@ class SSLClient : public ClientImpl {
 public:
   explicit SSLClient(const std::string &host);
 
+  explicit SSLClient(const std::string &host, const std::string &ip);
+
   explicit SSLClient(const std::string &host, int port);
+
+  explicit SSLClient(const std::string &host, const std::string &ip, int port);
 
   explicit SSLClient(const std::string &host, int port,
                      const std::string &client_cert_path,
                      const std::string &client_key_path);
 
+  explicit SSLClient(const std::string &host, const std::string &ip, int port,
+                     const std::string &client_cert_path,
+                     const std::string &client_key_path);
+
   explicit SSLClient(const std::string &host, int port, X509 *client_cert,
+                     EVP_PKEY *client_key);
+
+  explicit SSLClient(const std::string &host, const std::string &ip, int port, X509 *client_cert,
                      EVP_PKEY *client_key);
 
   ~SSLClient() override;
@@ -1653,7 +1686,7 @@ bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t write_timeout_usec,
                            std::function<bool(Stream &)> callback);
 
-socket_t create_client_socket(const char *host, int port, int address_family,
+socket_t create_client_socket(const char *host, const char *ip, int port, int address_family,
                               bool tcp_nodelay, SocketOptions socket_options,
                               time_t connection_timeout_sec,
                               time_t connection_timeout_usec,
@@ -2450,7 +2483,7 @@ inline int shutdown_socket(socket_t sock) {
 }
 
 template <typename BindOrConnect>
-socket_t create_socket(const char *host, int port, int address_family,
+socket_t create_socket(const char *host, const char *ip, int port, int address_family,
                        int socket_flags, bool tcp_nodelay,
                        SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
@@ -2464,9 +2497,17 @@ socket_t create_socket(const char *host, int port, int address_family,
   hints.ai_flags = socket_flags;
   hints.ai_protocol = 0;
 
+  // Ask getaddrinfo to convert IP in c-string to address
+  if(ip[0] != '\0') {
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_flags = AI_NUMERICHOST;
+  }
+
   auto service = std::to_string(port);
 
-  if (getaddrinfo(host, service.c_str(), &hints, &result)) {
+  if (ip[0] != '\0' ?
+      getaddrinfo(ip, service.c_str(), &hints, &result) :
+      getaddrinfo(host, service.c_str(), &hints, &result)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
@@ -2601,13 +2642,13 @@ inline std::string if2ip(const std::string &ifn) {
 #endif
 
 inline socket_t create_client_socket(
-    const char *host, int port, int address_family, bool tcp_nodelay,
+    const char *host, const char *ip, int port, int address_family, bool tcp_nodelay,
     SocketOptions socket_options, time_t connection_timeout_sec,
     time_t connection_timeout_usec, time_t read_timeout_sec,
     time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, const std::string &intf, Error &error) {
   auto sock = create_socket(
-      host, port, address_family, 0, tcp_nodelay, std::move(socket_options),
+      host, ip, port, address_family, 0, tcp_nodelay, std::move(socket_options),
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
@@ -5072,7 +5113,7 @@ inline socket_t
 Server::create_server_socket(const char *host, int port, int socket_flags,
                              SocketOptions socket_options) const {
   return detail::create_socket(
-      host, port, address_family_, socket_flags, tcp_nodelay_,
+      host, "", port, address_family_, socket_flags, tcp_nodelay_,
       std::move(socket_options),
       [](socket_t sock, struct addrinfo &ai) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
@@ -5524,15 +5565,26 @@ inline bool Server::process_and_close_socket(socket_t sock) {
 
 // HTTP client implementation
 inline ClientImpl::ClientImpl(const std::string &host)
-    : ClientImpl(host, 80, std::string(), std::string()) {}
+    : ClientImpl(host, std::string(), 80, std::string(), std::string()) {}
+
+inline ClientImpl::ClientImpl(const std::string &host, const std::string &ip)
+    : ClientImpl(host, ip, 80, std::string(), std::string()) {}
 
 inline ClientImpl::ClientImpl(const std::string &host, int port)
-    : ClientImpl(host, port, std::string(), std::string()) {}
+    : ClientImpl(host, std::string(), port, std::string(), std::string()) {}
+
+inline ClientImpl::ClientImpl(const std::string &host, const std::string &ip, int port)
+    : ClientImpl(host, ip, port, std::string(), std::string()) {}
 
 inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
-    : host_(host), port_(port),
+    : ClientImpl(host, std::string(), port, client_cert_path, client_key_path) {}
+
+inline ClientImpl::ClientImpl(const std::string &host, const std::string &ip, int port,
+                              const std::string &client_cert_path,
+                              const std::string &client_key_path)
+    : host_(host), ip_(ip), port_(port),
       host_and_port_(adjust_host_string(host) + ":" + std::to_string(port)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
@@ -5591,13 +5643,13 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
-        proxy_host_.c_str(), proxy_port_, address_family_, tcp_nodelay_,
+        proxy_host_.c_str(), "", proxy_port_, address_family_, tcp_nodelay_,
         socket_options_, connection_timeout_sec_, connection_timeout_usec_,
         read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
         write_timeout_usec_, interface_, error);
   }
   return detail::create_client_socket(
-      host_.c_str(), port_, address_family_, tcp_nodelay_, socket_options_,
+      host_.c_str(), ip_.c_str(), port_, address_family_, tcp_nodelay_, socket_options_,
       connection_timeout_sec_, connection_timeout_usec_, read_timeout_sec_,
       read_timeout_usec_, write_timeout_sec_, write_timeout_usec_, interface_,
       error);
@@ -7118,15 +7170,26 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
 // SSL HTTP client implementation
 inline SSLClient::SSLClient(const std::string &host)
-    : SSLClient(host, 443, std::string(), std::string()) {}
+    : SSLClient(host, std::string(), 443, std::string(), std::string()) {}
+
+inline SSLClient::SSLClient(const std::string &host, const std::string &ip)
+    : SSLClient(host, ip, 443, std::string(), std::string()) {}
 
 inline SSLClient::SSLClient(const std::string &host, int port)
-    : SSLClient(host, port, std::string(), std::string()) {}
+    : SSLClient(host, std::string(), port, std::string(), std::string()) {}
+
+inline SSLClient::SSLClient(const std::string &host, const std::string &ip, int port)
+    : SSLClient(host, ip, port, std::string(), std::string()) {}
 
 inline SSLClient::SSLClient(const std::string &host, int port,
                             const std::string &client_cert_path,
                             const std::string &client_key_path)
-    : ClientImpl(host, port, client_cert_path, client_key_path) {
+    : SSLClient(host, std::string(), port, client_cert_path, client_key_path) {}
+
+inline SSLClient::SSLClient(const std::string &host, const std::string &ip, int port,
+                            const std::string &client_cert_path,
+                            const std::string &client_key_path)
+    : ClientImpl(host, ip, port, client_cert_path, client_key_path) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
@@ -7145,6 +7208,10 @@ inline SSLClient::SSLClient(const std::string &host, int port,
 }
 
 inline SSLClient::SSLClient(const std::string &host, int port,
+                            X509 *client_cert, EVP_PKEY *client_key)
+    : SSLClient(host, std::string(), port, client_cert, client_key) {}
+
+inline SSLClient::SSLClient(const std::string &host, const std::string &ip, int port,
                             X509 *client_cert, EVP_PKEY *client_key)
     : ClientImpl(host, port) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
@@ -7495,9 +7562,18 @@ inline bool SSLClient::check_host_name(const char *pattern,
 
 // Universal client implementation
 inline Client::Client(const std::string &scheme_host_port)
-    : Client(scheme_host_port, std::string(), std::string()) {}
+    : Client(scheme_host_port, std::string(), std::string(), std::string()) {}
+
+inline Client::Client(const std::string &scheme_host_port, const std::string &ip)
+    : Client(scheme_host_port, ip, std::string(), std::string()) {}
 
 inline Client::Client(const std::string &scheme_host_port,
+                      const std::string &client_cert_path,
+                      const std::string &client_key_path)
+    : Client(scheme_host_port, std::string(), client_cert_path, client_key_path) {}
+
+inline Client::Client(const std::string &scheme_host_port,
+                      const std::string &ip,
                       const std::string &client_cert_path,
                       const std::string &client_key_path) {
   const static std::regex re(
@@ -7527,16 +7603,16 @@ inline Client::Client(const std::string &scheme_host_port,
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      cli_ = detail::make_unique<SSLClient>(host.c_str(), port,
+      cli_ = detail::make_unique<SSLClient>(host.c_str(), ip, port,
                                             client_cert_path, client_key_path);
       is_ssl_ = is_ssl;
 #endif
     } else {
-      cli_ = detail::make_unique<ClientImpl>(host.c_str(), port,
+      cli_ = detail::make_unique<ClientImpl>(host.c_str(), ip, port,
                                              client_cert_path, client_key_path);
     }
   } else {
-    cli_ = detail::make_unique<ClientImpl>(scheme_host_port, 80,
+    cli_ = detail::make_unique<ClientImpl>(scheme_host_port, ip, 80,
                                            client_cert_path, client_key_path);
   }
 }
@@ -7544,10 +7620,19 @@ inline Client::Client(const std::string &scheme_host_port,
 inline Client::Client(const std::string &host, int port)
     : cli_(detail::make_unique<ClientImpl>(host, port)) {}
 
+inline Client::Client(const std::string &host, const std::string &ip, int port)
+    : cli_(detail::make_unique<ClientImpl>(host, ip, port)) {}
+
 inline Client::Client(const std::string &host, int port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path)
     : cli_(detail::make_unique<ClientImpl>(host, port, client_cert_path,
+                                           client_key_path)) {}
+
+inline Client::Client(const std::string &host, const std::string &ip, int port,
+                      const std::string &client_cert_path,
+                      const std::string &client_key_path)
+    : cli_(detail::make_unique<ClientImpl>(host, ip, port, client_cert_path,
                                            client_key_path)) {}
 
 inline Client::~Client() {}
