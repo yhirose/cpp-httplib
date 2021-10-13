@@ -4392,6 +4392,75 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   svr.stop();
   t.join();
 }
+
+TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
+  auto setup_ssl_ctx_callback = [](SSL_CTX &ssl_ctx) {
+    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_COMPRESSION);
+    SSL_CTX_set_options(&ssl_ctx,
+                        SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_SSLv2);
+    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_SSLv3);
+    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_TLSv1);
+    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_TLSv1_1);
+    auto ciphers = "ECDHE-RSA-AES128-SHA256:"
+                   "ECDHE-DSS-AES128-SHA256:"
+                   "ECDHE-RSA-AES256-SHA256:"
+                   "ECDHE-DSS-AES256-SHA256:";
+    SSL_CTX_set_cipher_list(&ssl_ctx, ciphers);
+    if (SSL_CTX_use_certificate_chain_file(&ssl_ctx, SERVER_CERT_FILE) != 1 ||
+        SSL_CTX_use_PrivateKey_file(&ssl_ctx, SERVER_PRIVATE_KEY_FILE,
+                                    SSL_FILETYPE_PEM) != 1) {
+      return false;
+    }
+    SSL_CTX_load_verify_locations(&ssl_ctx, CLIENT_CA_CERT_FILE,
+                                  CLIENT_CA_CERT_DIR);
+    SSL_CTX_set_verify(
+        &ssl_ctx,
+        SSL_VERIFY_PEER |
+            SSL_VERIFY_FAIL_IF_NO_PEER_CERT, // SSL_VERIFY_CLIENT_ONCE,
+        nullptr);
+    return true;
+  };
+  SSLServer svr(setup_ssl_ctx_callback);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    res.set_content("test", "text/plain");
+    svr.stop();
+    ASSERT_TRUE(true);
+
+    auto peer_cert = SSL_get_peer_certificate(req.ssl);
+    ASSERT_TRUE(peer_cert != nullptr);
+
+    auto subject_name = X509_get_subject_name(peer_cert);
+    ASSERT_TRUE(subject_name != nullptr);
+
+    std::string common_name;
+    {
+      char name[BUFSIZ];
+      auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
+                                                name, sizeof(name));
+      common_name.assign(name, static_cast<size_t>(name_len));
+    }
+
+    EXPECT_EQ("Common Name", common_name);
+
+    X509_free(peer_cert);
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+
+  t.join();
+}
 #endif
 
 #ifdef _WIN32

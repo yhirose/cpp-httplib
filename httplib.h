@@ -1364,6 +1364,9 @@ public:
   SSLServer(X509 *cert, EVP_PKEY *private_key,
             X509_STORE *client_ca_cert_store = nullptr);
 
+  SSLServer(
+      const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback);
+
   ~SSLServer() override;
 
   bool is_valid() const override;
@@ -7101,6 +7104,17 @@ inline SSLServer::SSLServer(X509 *cert, EVP_PKEY *private_key,
           SSL_VERIFY_PEER |
               SSL_VERIFY_FAIL_IF_NO_PEER_CERT, // SSL_VERIFY_CLIENT_ONCE,
           nullptr);
+    }
+  }
+}
+
+inline SSLServer::SSLServer(
+    const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback) {
+  ctx_ = SSL_CTX_new(TLS_method());
+  if (ctx_) {
+    if (!setup_ssl_ctx_callback(*ctx_)) {
+      SSL_CTX_free(ctx_);
+      ctx_ = nullptr;
     }
   }
 }
