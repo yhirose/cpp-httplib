@@ -4967,6 +4967,10 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
     if (!content_type.find("application/x-www-form-urlencoded")) {
+      if (req.body.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+        res.status = 413; // NOTE: should be 414?
+        return false;
+      }
       detail::parse_query_text(req.body, req.params);
     }
     return true;
