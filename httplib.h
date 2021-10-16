@@ -1371,6 +1371,9 @@ public:
   SSLServer(X509 *cert, EVP_PKEY *private_key,
             X509_STORE *client_ca_cert_store = nullptr);
 
+  SSLServer(
+      const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback);
+
   ~SSLServer() override;
 
   bool is_valid() const override;
@@ -4982,6 +4985,10 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
     if (!content_type.find("application/x-www-form-urlencoded")) {
+      if (req.body.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+        res.status = 413; // NOTE: should be 414?
+        return false;
+      }
       detail::parse_query_text(req.body, req.params);
     }
     return true;
@@ -7122,6 +7129,17 @@ inline SSLServer::SSLServer(X509 *cert, EVP_PKEY *private_key,
           SSL_VERIFY_PEER |
               SSL_VERIFY_FAIL_IF_NO_PEER_CERT, // SSL_VERIFY_CLIENT_ONCE,
           nullptr);
+    }
+  }
+}
+
+inline SSLServer::SSLServer(
+    const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback) {
+  ctx_ = SSL_CTX_new(TLS_method());
+  if (ctx_) {
+    if (!setup_ssl_ctx_callback(*ctx_)) {
+      SSL_CTX_free(ctx_);
+      ctx_ = nullptr;
     }
   }
 }

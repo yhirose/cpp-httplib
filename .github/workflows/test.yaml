@@ -29,7 +29,7 @@ jobs:
       run: cd test && make -j2
     - name: check fuzz test target
       if: matrix.os == 'ubuntu-latest'
-      run: cd test && make -f Makefile.fuzz_test
+      run: cd test && make fuzz_test
     - name: setup msbuild on windows
       if: matrix.os == 'windows-latest'
       uses: microsoft/setup-msbuild@v1.0.2
