@@ -765,7 +765,7 @@ TEST(SpecifyServerIPAddressTest, RealHostname) {
 
   cli.set_hostname_addr_map({{host, wrong_ip}});
   auto res = cli.Get("/");
-  ASSERT_FALSE(!res);
+  ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Connection, res.error());
 }
 
