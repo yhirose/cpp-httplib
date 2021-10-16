@@ -736,6 +736,39 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
 }
 #endif
 
+TEST(SpecifyServerIPAddressTest, AnotherHostname) {
+  auto host = "google.com";
+  auto another_host = "example.com";
+  auto wrong_ip = "0.0.0.0";
+  
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli(host);
+#else
+  Client cli(host);
+#endif
+
+  cli.set_hostname_addr_map({{another_host, wrong_ip}});
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(301, res->status);
+}
+
+TEST(SpecifyServerIPAddressTest, RealHostname) {
+  auto host = "google.com";
+  auto wrong_ip = "0.0.0.0";
+  
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli(host);
+#else
+  Client cli(host);
+#endif
+
+  cli.set_hostname_addr_map({{host, wrong_ip}});
+  auto res = cli.Get("/");
+  ASSERT_FALSE(!res);
+  EXPECT_EQ(Error::Connection, res.error());
+}
+
 TEST(AbsoluteRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
