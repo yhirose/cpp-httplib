@@ -3354,7 +3354,7 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   auto error = Error::Success;
 
   auto client_sock = detail::create_client_socket(
-      HOST, PORT, AF_UNSPEC, false, nullptr,
+      HOST, "", PORT, AF_UNSPEC, false, nullptr,
       /*connection_timeout_sec=*/5, 0,
       /*read_timeout_sec=*/5, 0,
       /*write_timeout_sec=*/5, 0, std::string(), error);
