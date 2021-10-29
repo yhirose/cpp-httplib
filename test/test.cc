@@ -171,6 +171,12 @@ TEST(GetHeaderValueTest, RegularValue) {
   EXPECT_STREQ("text/html", val);
 }
 
+TEST(GetHeaderValueTest, RegularValueWithDifferentCase) {
+  Headers headers = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
+  auto val = detail::get_header_value(headers, "content-type", 0, "text/plain");
+  EXPECT_STREQ("text/html", val);
+}
+
 TEST(GetHeaderValueTest, SetContent) {
   Response res;
 
