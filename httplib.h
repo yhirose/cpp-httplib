@@ -838,6 +838,8 @@ public:
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
   Result Get(const char *path, Progress progress);
+  Result Get(const char *path, const Params &params);
+  Result Get(const char *path, const Params &params, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
   Result Get(const char *path, const Headers &headers,
@@ -1174,6 +1176,7 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
+  Result Get(const char *path, const Params &params);
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -6288,7 +6291,20 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers,
 
   return send_(std::move(req));
 }
+inline Result ClientImpl::Get(const char *path, const Params &params) {
+  return Get(path, params, Progress());
+}
 
+inline Result ClientImpl::Get(const char *path, const Params &params,
+                              Progress progress) {
+  Request req;
+  req.method = "GET";
+  req.path = path;
+  req.params = params;
+  req.progress = std::move(progress);
+
+  return send_(std::move(req));
+}
 inline Result ClientImpl::Get(const char *path,
                               ContentReceiver content_receiver) {
   return Get(path, Headers(), nullptr, std::move(content_receiver), nullptr);
@@ -7625,6 +7641,9 @@ inline bool Client::is_valid() const {
 inline Result Client::Get(const char *path) { return cli_->Get(path); }
 inline Result Client::Get(const char *path, const Headers &headers) {
   return cli_->Get(path, headers);
+}
+inline Result Client::Get(const char *path, const Params &params) {
+  return cli_->Get(path, params);
 }
 inline Result Client::Get(const char *path, Progress progress) {
   return cli_->Get(path, std::move(progress));
