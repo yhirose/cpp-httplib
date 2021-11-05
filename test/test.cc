@@ -2881,6 +2881,17 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip) {
   EXPECT_EQ(std::string("123456789"), res->body);
 }
 
+TEST_F(ServerTest, GetMethodWithParams) {
+  Params params;
+  params.emplace("test1", "param1");
+
+  auto res = cli_.Get("/getmethodwithparams", params);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+
 TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
