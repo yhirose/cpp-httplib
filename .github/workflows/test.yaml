@@ -47,6 +47,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
+        compile: [true, false]
 
     steps:
     - name: Prepare Git for checkout on Windows
@@ -89,5 +90,5 @@ jobs:
 
     - name: Build and test
       run: |
-        meson setup build -Dcpp-httplib_test=true -Dpkg_config_path=C:\googletest\lib\pkgconfig -Db_vscrt=static_from_buildtype
+        meson setup build -Dcpp-httplib_compile=${{ matrix.compile }} -Dcpp-httplib_test=true -Dpkg_config_path=C:\googletest\lib\pkgconfig -Db_vscrt=static_from_buildtype
         meson test --no-stdsplit --print-errorlogs -C build
