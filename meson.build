@@ -96,6 +96,7 @@ if get_option('cpp-httplib_compile')
   import('pkgconfig').generate(
     lib,
     description: 'A C++ HTTP/HTTPS server and client library',
+    extra_cflags: args,
     url: 'https://github.com/yhirose/cpp-httplib',
     version: version
   )
