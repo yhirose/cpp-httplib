@@ -1,12 +1,16 @@
 #CXX = clang++
 CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion #-fsanitize=address
 
-OPENSSL_DIR = /usr/local/opt/openssl@1.1
+PREFIX = /usr/local
+#PREFIX = $(shell brew --prefix)
+
+OPENSSL_DIR = $(PREFIX)/opt/openssl@1.1
+#OPENSSL_DIR = $(PREFIX)/opt/openssl@3
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
 
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
-BROTLI_DIR = /usr/local/opt/brotli
+BROTLI_DIR = $(PREFIX)/opt/brotli
 BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
 TEST_ARGS = gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread
@@ -64,4 +68,4 @@ cert.pem:
 	#c_rehash .
 
 clean:
-	rm -f test test_proxy server_fuzzer pem *.0 *.o *.1 *.srl httplib.h httplib.cc
+	rm -f test test_split test_proxy server_fuzzer pem *.0 *.o *.1 *.srl httplib.h httplib.cc

@@ -1,14 +1,17 @@
-
 #CXX = clang++
 CXXFLAGS = -std=c++11 -I.. -Wall -Wextra -pthread
 
-OPENSSL_DIR = /usr/local/opt/openssl
+PREFIX = /usr/local
+#PREFIX = $(shell brew --prefix)
+
+OPENSSL_DIR = $(PREFIX)/opt/openssl@1.1
+#OPENSSL_DIR = $(PREFIX)/opt/openssl@3
 OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
 
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
-BROTLI_DIR = /usr/local/opt/brotli
-# BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon-static -lbrotlienc-static -lbrotlidec-static
+BROTLI_DIR = $(PREFIX)/opt/brotli
+BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
 all: server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark
 
@@ -47,4 +50,4 @@ pem:
 	openssl req -new -key key.pem | openssl x509 -days 3650 -req -signkey key.pem > cert.pem
 
 clean:
-	rm server client hello simplecli simplesvr upload redirect ssesvr sselci benchmark *.pem
+	rm server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark *.pem
