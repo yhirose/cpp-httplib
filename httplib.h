@@ -505,7 +505,7 @@ public:
   virtual void enqueue(std::function<void()> fn) = 0;
   virtual void shutdown() = 0;
 
-  virtual void on_idle(){};
+  virtual void on_idle(){}
 };
 
 class ThreadPool : public TaskQueue {
