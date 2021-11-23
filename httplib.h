@@ -351,6 +351,10 @@ using ContentReceiver =
 using MultipartContentHeader =
     std::function<bool(const MultipartFormData &file)>;
 
+// forward declaration required to make typedefs work
+class Stream;
+using CustomProtocolHandlers =
+    std::multimap<std::string, std::function<bool(Stream &strm)>>;
 class ContentReader {
 public:
   using Reader = std::function<bool(ContentReceiver receiver)>;
@@ -398,6 +402,7 @@ struct Request {
   ResponseHandler response_handler;
   ContentReceiverWithProgress content_receiver;
   Progress progress;
+  CustomProtocolHandlers alt_protocol_handlers;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   const SSL *ssl = nullptr;
 #endif
@@ -837,6 +842,7 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
+  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers);
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -1174,6 +1180,7 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
+  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers);
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -6198,38 +6205,58 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    auto out =
-        req.content_receiver
-            ? static_cast<ContentReceiverWithProgress>(
-                  [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
-                    if (redirect) { return true; }
-                    auto ret = req.content_receiver(buf, n, off, len);
-                    if (!ret) { error = Error::Canceled; }
-                    return ret;
-                  })
-            : static_cast<ContentReceiverWithProgress>(
-                  [&](const char *buf, size_t n, uint64_t /*off*/,
-                      uint64_t /*len*/) {
-                    if (res.body.size() + n > res.body.max_size()) {
-                      return false;
-                    }
-                    res.body.append(buf, n);
-                    return true;
-                  });
+    if(res.status == 101 && res.has_header("Upgrade")) {
+      std::stringstream parse_upgrade_header(res.get_header_value("Upgrade"));
+      bool protocol_negotiated = false;
+      while(parse_upgrade_header.good()) {
+        std::string protocol_name;
+        std::getline(parse_upgrade_header, protocol_name, ',');
+        if(req.alt_protocol_handlers.find(protocol_name) != req.alt_protocol_handlers.end()) {
+          protocol_negotiated = true;
+          if(!req.alt_protocol_handlers.find(protocol_name)->second(strm)) {
+            error = Error::Canceled;
+            return false;
+          }
+        }
+      }
+      if(!protocol_negotiated) {
+        error = Error::Canceled;
+        return false;
+      }
+    } else {
+      auto out =
+          req.content_receiver
+              ? static_cast<ContentReceiverWithProgress>(
+                    [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
+                      if (redirect) { return true; }
+                      auto ret = req.content_receiver(buf, n, off, len);
+                      if (!ret) { error = Error::Canceled; }
+                      return ret;
+                    })
+              : static_cast<ContentReceiverWithProgress>(
+                    [&](const char *buf, size_t n, uint64_t /*off*/,
+                        uint64_t /*len*/) {
+                      if (res.body.size() + n > res.body.max_size()) {
+                        return false;
+                      }
+                      res.body.append(buf, n);
+                      return true;
+                    });
 
-    auto progress = [&](uint64_t current, uint64_t total) {
-      if (!req.progress || redirect) { return true; }
-      auto ret = req.progress(current, total);
-      if (!ret) { error = Error::Canceled; }
-      return ret;
-    };
+      auto progress = [&](uint64_t current, uint64_t total) {
+        if (!req.progress || redirect) { return true; }
+        auto ret = req.progress(current, total);
+        if (!ret) { error = Error::Canceled; }
+        return ret;
+      };
 
-    int dummy_status;
-    if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
-                              dummy_status, std::move(progress), std::move(out),
-                              decompress_)) {
-      if (error != Error::Canceled) { error = Error::Read; }
-      return false;
+      int dummy_status;
+      if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
+                                dummy_status, std::move(progress), std::move(out),
+                                decompress_)) {
+        if (error != Error::Canceled) { error = Error::Read; }
+        return false;
+      }
     }
   }
 
@@ -6278,6 +6305,16 @@ inline Result ClientImpl::Get(const char *path, Progress progress) {
 inline Result ClientImpl::Get(const char *path, const Headers &headers) {
   return Get(path, headers, Progress());
 }
+
+inline Result ClientImpl::Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers) {
+  Request req;
+  req.method = "GET";
+  req.path = path;
+  req.headers = headers;
+  req.alt_protocol_handlers = protocol_handlers;
+
+  return send_(std::move(req));
+};
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
                               Progress progress) {
@@ -7626,6 +7663,9 @@ inline bool Client::is_valid() const {
 inline Result Client::Get(const char *path) { return cli_->Get(path); }
 inline Result Client::Get(const char *path, const Headers &headers) {
   return cli_->Get(path, headers);
+}
+inline Result Client::Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers) {
+  return cli_->Get(path, headers, protocol_handlers);
 }
 inline Result Client::Get(const char *path, Progress progress) {
   return cli_->Get(path, std::move(progress));
