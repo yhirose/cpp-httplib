@@ -3611,7 +3611,11 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   return !boundary.empty();
 }
 
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+inline bool parse_range_header(const std::string &s, Ranges &ranges) {
+#else
 inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
+#endif
   static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
   std::smatch m;
   if (std::regex_match(s, m, re_first_range)) {
@@ -3643,7 +3647,11 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
     return all_valid_ranges;
   }
   return false;
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+}
+#else
 } catch (...) { return false; }
+#endif
 
 class MultipartFormDataParser {
 public:
@@ -5505,6 +5513,9 @@ Server::process_request(Stream &strm, bool close_connection,
 
   // Rounting
   bool routed = false;
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  routed = routing(req, res, strm);
+#else
   try {
     routed = routing(req, res, strm);
   } catch (std::exception &e) {
@@ -5519,6 +5530,7 @@ Server::process_request(Stream &strm, bool close_connection,
     res.status = 500;
     res.set_header("EXCEPTION_WHAT", "UNKNOWN");
   }
+#endif
 
   if (routed) {
     if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
@@ -7579,8 +7591,10 @@ inline Client::Client(const std::string &scheme_host_port,
 #else
     if (!scheme.empty() && scheme != "http") {
 #endif
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
       std::string msg = "'" + scheme + "' scheme is not supported.";
       throw std::invalid_argument(msg);
+#endif
       return;
     }
 

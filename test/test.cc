@@ -37,8 +37,12 @@ MultipartFormData &get_file_value(MultipartFormDataItems &files,
   auto it = std::find_if(
       files.begin(), files.end(),
       [&](const MultipartFormData &file) { return file.name == key; });
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  return *it;
+#else
   if (it != files.end()) { return *it; }
   throw std::runtime_error("invalid mulitpart form data name error");
+#endif
 }
 
 TEST(ConstructorTest, MoveConstructible) {
@@ -1187,6 +1191,7 @@ TEST(ErrorHandlerTest, ContentLength) {
   ASSERT_FALSE(svr.is_running());
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionHandlerTest, ContentLength) {
   Server svr;
 
@@ -1222,6 +1227,7 @@ TEST(ExceptionHandlerTest, ContentLength) {
   thread.join();
   ASSERT_FALSE(svr.is_running());
 }
+#endif
 
 TEST(NoContentTest, ContentLength) {
   Server svr;
@@ -3681,6 +3687,7 @@ TEST(MountTest, Unmount) {
   ASSERT_FALSE(svr.is_running());
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
 
@@ -3709,6 +3716,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
+#endif
 
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
@@ -4515,9 +4523,11 @@ TEST(NoSSLSupport, SimpleInterface) {
 }
 #endif
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(InvalidScheme, SimpleInterface) {
   ASSERT_ANY_THROW(Client cli("scheme://yahoo.com"));
 }
+#endif
 
 TEST(NoScheme, SimpleInterface) {
   Client cli("yahoo.com:80");
