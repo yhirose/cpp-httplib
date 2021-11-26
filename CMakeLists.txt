@@ -60,27 +60,11 @@
 ]]
 cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
 
-# On systems without Git installed, there were errors since execute_process seemed to not throw an error without it?
-find_package(Git QUIET)
-if(Git_FOUND)
-	# Gets the latest tag as a string like "v0.6.6"
-	# Can silently fail if git isn't on the system
-	execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
-		WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-		OUTPUT_VARIABLE _raw_version_string
-		ERROR_VARIABLE _git_tag_error
-	)
-endif()
+# Get the user agent and use it as a version
+# This gets the string with the user agent from the header.
+# This is so the maintainer doesn't actually need to update this manually.
+file(STRINGS httplib.h _raw_version_string REGEX "User\-Agent.*cpp\-httplib/([0-9]+\.?)+")
 
-# execute_process can fail silenty, so check for an error
-# if there was an error, just use the user agent as a version
-if(_git_tag_error OR NOT Git_FOUND)
-	message(WARNING "cpp-httplib failed to find the latest Git tag, falling back to using user agent as the version.")
-	# Get the user agent and use it as a version
-	# This gets the string with the user agent from the header.
-	# This is so the maintainer doesn't actually need to update this manually.
-	file(STRINGS httplib.h _raw_version_string REGEX "User\-Agent.*cpp\-httplib/([0-9]+\.?)+")
-endif()
 # Needed since git tags have "v" prefixing them.
 # Also used if the fallback to user agent string is being used.
 string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_raw_version_string}")
