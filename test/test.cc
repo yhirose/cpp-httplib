@@ -746,7 +746,7 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
 }
 #endif
 
-TEST(SpecifyServerIPAddressTest, AnotherHostname) {
+TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
   auto host = "google.com";
   auto another_host = "example.com";
   auto wrong_ip = "0.0.0.0";
@@ -763,7 +763,7 @@ TEST(SpecifyServerIPAddressTest, AnotherHostname) {
   ASSERT_EQ(301, res->status);
 }
 
-TEST(SpecifyServerIPAddressTest, RealHostname) {
+TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
   auto host = "google.com";
   auto wrong_ip = "0.0.0.0";
   
