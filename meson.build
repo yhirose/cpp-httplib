@@ -19,18 +19,7 @@ project(
 # Check just in case downstream decides to edit the source
 # and add a project version
 version = meson.project_version()
-if version == 'undefined'
-  git = find_program('git', required: false)
-  if git.found()
-    result = run_command(git, 'describe', '--tags', '--abbrev=0')
-    if result.returncode() == 0
-      version = result.stdout().strip('v\n')
-    endif
-  endif
-endif
-
 python = import('python').find_installation('python3')
-# If version is still undefined it means that the git method failed
 if version == 'undefined'
   # Meson doesn't have regular expressions, but since it is implemented
   # in python we can be sure we can use it to parse the file manually
