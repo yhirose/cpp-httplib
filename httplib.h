@@ -1408,6 +1408,9 @@ public:
 
   SSL_CTX *ssl_context() const;
 
+  void set_sni(const std::string& sni);
+
+
 private:
   bool create_and_connect_socket(Socket &socket, Error &error) override;
   void shutdown_ssl(Socket &socket, bool shutdown_gracefully) override;
@@ -1435,6 +1438,8 @@ private:
   std::vector<std::string> host_components_;
 
   long verify_result_ = 0;
+  
+  std::string sni_;
 
   friend class ClientImpl;
 };
@@ -7200,7 +7205,7 @@ inline SSLClient::SSLClient(const std::string &host, int port)
 inline SSLClient::SSLClient(const std::string &host, int port,
                             const std::string &client_cert_path,
                             const std::string &client_key_path)
-    : ClientImpl(host, port, client_cert_path, client_key_path) {
+    : ClientImpl(host, port, client_cert_path, client_key_path), sni_(host) {
   ctx_ = SSL_CTX_new(SSLv23_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
@@ -7399,7 +7404,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         return true;
       },
       [&](SSL *ssl) {
-        SSL_set_tlsext_host_name(ssl, host_.c_str());
+        SSL_set_tlsext_host_name(ssl, sni_.c_str());
         return true;
       });
 
@@ -7565,6 +7570,11 @@ inline bool SSLClient::check_host_name(const char *pattern,
 
   return true;
 }
+
+inline void SSLClient::set_sni(const std::string& sni){
+  sni_ = sni;
+}
+
 #endif
 
 // Universal client implementation
