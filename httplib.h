@@ -7571,9 +7571,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
   return true;
 }
 
-inline void SSLClient::set_sni(const std::string& sni){
-  sni_ = sni;
-}
+inline void SSLClient::set_sni(const std::string &sni) { sni_ = sni; }
 
 #endif
 
