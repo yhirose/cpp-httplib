@@ -2628,9 +2628,9 @@ inline socket_t create_client_socket(
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
-          auto ip = if2ip(intf);
-          if (ip.empty()) { ip = intf; }
-          if (!bind_ip_address(sock2, ip.c_str())) {
+          auto ip_addr = if2ip(intf);
+          if (ip_addr.empty()) { ip_addr = intf; }
+          if (!bind_ip_address(sock2, ip_addr.c_str())) {
             error = Error::BindIPAddress;
             return false;
           }
