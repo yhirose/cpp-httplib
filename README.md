@@ -220,7 +220,7 @@ svr.set_exception_handler([](const auto& req, auto& res, std::exception &e) {
 ### Pre routing handler
 
 ```cpp
-svr.set_pre_routing_handler([](const auto& req, auto& res) -> bool {
+svr.set_pre_routing_handler([](const auto& req, auto& res) {
   if (req.path == "/hello") {
     res.set_content("world", "text/html");
     return Server::HandlerResponse::Handled;
