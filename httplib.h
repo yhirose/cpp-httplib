@@ -95,6 +95,10 @@
 #define CPPHTTPLIB_SEND_FLAGS 0
 #endif
 
+#ifndef CPPHTTPLIB_LISTEN_BACKLOG
+#define CPPHTTPLIB_LISTEN_BACKLOG 5
+#endif
+
 /*
  * Headers
  */
@@ -5107,7 +5111,7 @@ Server::create_server_socket(const char *host, int port, int socket_flags,
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
         }
-        if (::listen(sock, 5)) { // Listen through 5 channels
+        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) {
           return false;
         }
         return true;
