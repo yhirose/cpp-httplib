@@ -2337,6 +2337,12 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 #endif
 }
 
+inline bool is_socket_alive(socket_t sock) {
+  char buf[1];
+  return detail::select_read(sock, 0, 0) &&
+         recv(sock, &buf[0], sizeof(buf), MSG_PEEK) != 0;
+}
+
 class SocketStream : public Stream {
 public:
   SocketStream(socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
@@ -5723,13 +5729,14 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
+
     // Set this to false immediately - if it ever gets set to true by the end of
     // the request, we know another thread instructed us to close the socket.
     socket_should_be_closed_when_request_is_done_ = false;
 
     auto is_alive = false;
     if (socket_.is_open()) {
-      is_alive = detail::select_write(socket_.sock, 0, 0) > 0;
+      is_alive = detail::is_socket_alive(socket_.sock);
       if (!is_alive) {
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there

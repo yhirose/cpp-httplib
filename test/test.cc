@@ -3756,6 +3756,36 @@ TEST(KeepAliveTest, ReadTimeout) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(KeepAliveTest, Issue1041) {
+  const auto resourcePath = "/hi";
+
+  Server svr;
+  svr.set_keep_alive_timeout(3);
+
+  svr.Get(resourcePath, [](const httplib::Request &, httplib::Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto a2 = std::async(std::launch::async, [&svr]{ svr.listen(HOST, PORT); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  Client cli(HOST, PORT);
+  cli.set_keep_alive(true);
+
+  auto result = cli.Get(resourcePath);
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  result = cli.Get(resourcePath);
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  svr.stop();
+  a2.wait();
+}
+
 TEST(ClientProblemDetectionTest, ContentProvider) {
   Server svr;
 
