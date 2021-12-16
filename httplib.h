@@ -2337,6 +2337,14 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 #endif
 }
 
+inline bool is_socket_alive(socket_t sock) {
+  if (detail::select_read(sock, 0, 0) == 0) {
+    return true;
+  }
+  char buf[1];
+  return recv(sock, &buf[0], sizeof(buf), MSG_PEEK) > 0;
+}
+
 class SocketStream : public Stream {
 public:
   SocketStream(socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
@@ -5111,7 +5119,9 @@ Server::create_server_socket(const char *host, int port, int socket_flags,
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
         }
-        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) { return false; }
+        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) {
+          return false;
+        }
         return true;
       });
 }
@@ -5728,19 +5738,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 
     auto is_alive = false;
     if (socket_.is_open()) {
-      // Check if the socket is still alive.
-      {
-        auto val = detail::select_read(socket_.sock, 0, 0);
-        if (val < 0) {
-          return false;
-        } else if (val == 0) {
-          is_alive = true;
-        }
-        char buf[1];
-        is_alive =
-            detail::read_socket(socket_.sock, buf, sizeof(buf), MSG_PEEK) > 0;
-      }
-
+      is_alive = detail::is_socket_alive(socket_.sock);
       if (!is_alive) {
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there
