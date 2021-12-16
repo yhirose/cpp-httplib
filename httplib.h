@@ -2338,11 +2338,14 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 }
 
 inline bool is_socket_alive(socket_t sock) {
-  if (detail::select_read(sock, 0, 0) == 0) {
+  const auto val = detail::select_read(sock, 0, 0);
+  if (val == 0) {
     return true;
+  } else if (val < 0 && errno == EBADF) {
+    return false;
   }
   char buf[1];
-  return recv(sock, &buf[0], sizeof(buf), MSG_PEEK) > 0;
+  return detail::read_socket(sock, &buf[0], sizeof(buf), MSG_PEEK) > 0;
 }
 
 class SocketStream : public Stream {
