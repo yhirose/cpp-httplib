@@ -1382,6 +1382,8 @@ public:
 
   bool is_valid() const override;
 
+  SSL_CTX *ssl_context() const;
+
 private:
   bool process_and_close_socket(socket_t sock) override;
 
@@ -7191,6 +7193,8 @@ inline SSLServer::~SSLServer() {
 }
 
 inline bool SSLServer::is_valid() const { return ctx_; }
+
+inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
   auto ssl = detail::ssl_new(
