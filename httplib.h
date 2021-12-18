@@ -2874,7 +2874,8 @@ inline const char *status_message(int status) {
 }
 
 inline bool can_compress_content_type(const std::string &content_type) {
-  return (!content_type.find("text/") && content_type != "text/event-stream") ||
+  return (!content_type.rfind("text/", 0) &&
+          content_type != "text/event-stream") ||
          content_type == "image/svg+xml" ||
          content_type == "application/javascript" ||
          content_type == "application/json" ||
@@ -3681,17 +3682,15 @@ public:
     static const std::string dash_ = "--";
     static const std::string crlf_ = "\r\n";
 
-    buf_.append(buf, n); // TODO: performance improvement
+    buf_append(buf, n);
 
-    while (!buf_.empty()) {
+    while (buf_size() > 0) {
       switch (state_) {
       case 0: { // Initial boundary
         auto pattern = dash_ + boundary_ + crlf_;
-        if (pattern.size() > buf_.size()) { return true; }
-        auto pos = buf_.find(pattern);
-        if (pos != 0) { return false; }
-        buf_.erase(0, pattern.size());
-        off_ += pattern.size();
+        if (pattern.size() > buf_size()) { return true; }
+        if (!buf_start_with(pattern)) { return false; }
+        buf_erase(pattern.size());
         state_ = 1;
         break;
       }
@@ -3701,22 +3700,21 @@ public:
         break;
       }
       case 2: { // Headers
-        auto pos = buf_.find(crlf_);
-        while (pos != std::string::npos) {
+        auto pos = buf_find(crlf_);
+        while (pos < buf_size()) {
           // Empty line
           if (pos == 0) {
             if (!header_callback(file_)) {
               is_valid_ = false;
               return false;
             }
-            buf_.erase(0, crlf_.size());
-            off_ += crlf_.size();
+            buf_erase(crlf_.size());
             state_ = 3;
             break;
           }
 
           static const std::string header_name = "content-type:";
-          const auto header = buf_.substr(0, pos);
+          const auto header = buf_head(pos);
           if (start_with_case_ignore(header, header_name)) {
             file_.content_type = trim_copy(header.substr(header_name.size()));
           } else {
@@ -3727,9 +3725,8 @@ public:
             }
           }
 
-          buf_.erase(0, pos + crlf_.size());
-          off_ += pos + crlf_.size();
-          pos = buf_.find(crlf_);
+          buf_erase(pos + crlf_.size());
+          pos = buf_find(crlf_);
         }
         if (state_ != 3) { return true; }
         break;
@@ -3737,56 +3734,51 @@ public:
       case 3: { // Body
         {
           auto pattern = crlf_ + dash_;
-          if (pattern.size() > buf_.size()) { return true; }
+          if (pattern.size() > buf_size()) { return true; }
 
-          auto pos = find_string(buf_, pattern);
+          auto pos = buf_find(pattern);
 
-          if (!content_callback(buf_.data(), pos)) {
+          if (!content_callback(buf_data(), pos)) {
             is_valid_ = false;
             return false;
           }
 
-          off_ += pos;
-          buf_.erase(0, pos);
+          buf_erase(pos);
         }
         {
           auto pattern = crlf_ + dash_ + boundary_;
-          if (pattern.size() > buf_.size()) { return true; }
+          if (pattern.size() > buf_size()) { return true; }
 
-          auto pos = buf_.find(pattern);
-          if (pos != std::string::npos) {
-            if (!content_callback(buf_.data(), pos)) {
+          auto pos = buf_find(pattern);
+          if (pos < buf_size()) {
+            if (!content_callback(buf_data(), pos)) {
               is_valid_ = false;
               return false;
             }
 
-            off_ += pos + pattern.size();
-            buf_.erase(0, pos + pattern.size());
+            buf_erase(pos + pattern.size());
             state_ = 4;
           } else {
-            if (!content_callback(buf_.data(), pattern.size())) {
+            if (!content_callback(buf_data(), pattern.size())) {
               is_valid_ = false;
               return false;
             }
 
-            off_ += pattern.size();
-            buf_.erase(0, pattern.size());
+            buf_erase(pattern.size());
           }
         }
         break;
       }
       case 4: { // Boundary
-        if (crlf_.size() > buf_.size()) { return true; }
-        if (buf_.compare(0, crlf_.size(), crlf_) == 0) {
-          buf_.erase(0, crlf_.size());
-          off_ += crlf_.size();
+        if (crlf_.size() > buf_size()) { return true; }
+        if (buf_start_with(crlf_)) {
+          buf_erase(crlf_.size());
           state_ = 1;
         } else {
           auto pattern = dash_ + crlf_;
-          if (pattern.size() > buf_.size()) { return true; }
-          if (buf_.compare(0, pattern.size(), pattern) == 0) {
-            buf_.erase(0, pattern.size());
-            off_ += pattern.size();
+          if (pattern.size() > buf_size()) { return true; }
+          if (buf_start_with(pattern)) {
+            buf_erase(pattern.size());
             is_valid_ = true;
             state_ = 5;
           } else {
@@ -3821,41 +3813,80 @@ private:
     return true;
   }
 
-  bool start_with(const std::string &a, size_t off,
+  std::string boundary_;
+
+  size_t state_ = 0;
+  bool is_valid_ = false;
+  MultipartFormData file_;
+
+  // Buffer
+  bool start_with(const std::string &a, size_t spos, size_t epos,
                   const std::string &b) const {
-    if (a.size() - off < b.size()) { return false; }
+    if (epos - spos < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
-      if (a[i + off] != b[i]) { return false; }
+      if (a[i + spos] != b[i]) { return false; }
     }
     return true;
   }
 
-  size_t find_string(const std::string &s, const std::string &pattern) const {
-    auto c = pattern.front();
+  size_t buf_size() const { return buf_epos_ - buf_spos_; }
 
-    size_t off = 0;
-    while (off < s.size()) {
-      auto pos = s.find(c, off);
-      if (pos == std::string::npos) { return s.size(); }
+  const char *buf_data() const { return &buf_[buf_spos_]; }
 
-      auto rem = s.size() - pos;
-      if (pattern.size() > rem) { return pos; }
+  std::string buf_head(size_t l) const { return buf_.substr(buf_spos_, l); }
 
-      if (start_with(s, pos, pattern)) { return pos; }
+  bool buf_start_with(const std::string &s) const {
+    return start_with(buf_, buf_spos_, buf_epos_, s);
+  }
+
+  size_t buf_find(const std::string &s) const {
+    auto c = s.front();
+
+    size_t off = buf_spos_;
+    while (off < buf_epos_) {
+      auto pos = off;
+      while (true) {
+        if (pos == buf_epos_) { return buf_size(); }
+        if (buf_[pos] == c) { break; }
+        pos++;
+      }
+
+      auto remaining_size = buf_epos_ - pos;
+      if (s.size() > remaining_size) { return buf_size(); }
+
+      if (start_with(buf_, pos, buf_epos_, s)) { return pos - buf_spos_; }
 
       off = pos + 1;
     }
 
-    return s.size();
+    return buf_size();
   }
 
-  std::string boundary_;
+  void buf_append(const char *data, size_t n) {
+    auto remaining_size = buf_size();
+    if (remaining_size > 0) {
+      for (size_t i = 0; i < remaining_size; i++) {
+        buf_[i] = buf_[buf_spos_ + i];
+      }
+    }
+    buf_spos_ = 0;
+    buf_epos_ = remaining_size;
+
+    if (remaining_size + n > buf_.size()) {
+      buf_.resize(remaining_size + n);
+    }
+
+    for (size_t i = 0; i < n; i++) {
+      buf_[buf_epos_ + i] = data[i];
+    }
+    buf_epos_ += n;
+  }
+
+  void buf_erase(size_t size) { buf_spos_ += size; }
 
   std::string buf_;
-  size_t state_ = 0;
-  bool is_valid_ = false;
-  size_t off_ = 0;
-  MultipartFormData file_;
+  size_t buf_spos_ = 0;
+  size_t buf_epos_ = 0;
 };
 
 inline std::string to_lower(const char *beg, const char *end) {
@@ -4318,7 +4349,7 @@ inline size_t Request::get_param_value_count(const char *key) const {
 
 inline bool Request::is_multipart_form_data() const {
   const auto &content_type = get_header_value("Content-Type");
-  return !content_type.find("multipart/form-data");
+  return !content_type.rfind("multipart/form-data", 0);
 }
 
 inline bool Request::has_file(const char *key) const {
@@ -5122,9 +5153,7 @@ Server::create_server_socket(const char *host, int port, int socket_flags,
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
         }
-        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) {
-          return false;
-        }
+        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) { return false; }
         return true;
       });
 }
