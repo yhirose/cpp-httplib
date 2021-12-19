@@ -750,7 +750,7 @@ TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
   auto host = "google.com";
   auto another_host = "example.com";
   auto wrong_ip = "0.0.0.0";
-  
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
 #else
@@ -766,7 +766,7 @@ TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
 TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
   auto host = "google.com";
   auto wrong_ip = "0.0.0.0";
-  
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
 #else
@@ -1195,12 +1195,13 @@ TEST(ErrorHandlerTest, ContentLength) {
 TEST(ExceptionHandlerTest, ContentLength) {
   Server svr;
 
-  svr.set_exception_handler(
-      [](const Request & /*req*/, Response &res, std::exception & /*e*/) {
-        res.status = 500;
-        res.set_content("abcdefghijklmnopqrstuvwxyz",
-                        "text/html"); // <= Content-Length still 13
-      });
+  svr.set_exception_handler([](const Request & /*req*/, Response &res,
+                               std::exception &e) {
+    EXPECT_EQ("abc", std::string(e.what()));
+    res.status = 500;
+    res.set_content("abcdefghijklmnopqrstuvwxyz",
+                    "text/html"); // <= Content-Length still 13 at this point
+  });
 
   svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!\n", "text/plain");
@@ -1212,15 +1213,28 @@ TEST(ExceptionHandlerTest, ContentLength) {
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
-  {
+  for (size_t i = 0; i < 10; i++) {
     Client cli(HOST, PORT);
 
-    auto res = cli.Get("/hi");
-    ASSERT_TRUE(res);
-    EXPECT_EQ(500, res->status);
-    EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
-    EXPECT_EQ("26", res->get_header_value("Content-Length"));
-    EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+    for (size_t j = 0; j < 100; j++) {
+      auto res = cli.Get("/hi");
+      ASSERT_TRUE(res);
+      EXPECT_EQ(500, res->status);
+      EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+      EXPECT_EQ("26", res->get_header_value("Content-Length"));
+      EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+    }
+
+    cli.set_keep_alive(true);
+
+    for (size_t j = 0; j < 100; j++) {
+      auto res = cli.Get("/hi");
+      ASSERT_TRUE(res);
+      EXPECT_EQ(500, res->status);
+      EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+      EXPECT_EQ("26", res->get_header_value("Content-Length"));
+      EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+    }
   }
 
   svr.stop();
@@ -3625,10 +3639,11 @@ TEST(StreamingTest, NoContentLengthStreaming) {
 
   auto get_thread = std::thread([&client]() {
     std::string s;
-    auto res = client.Get("/stream", [&s](const char *data, size_t len) -> bool {
-      s += std::string(data, len);
-      return true;
-    });
+    auto res =
+        client.Get("/stream", [&s](const char *data, size_t len) -> bool {
+          s += std::string(data, len);
+          return true;
+        });
     EXPECT_EQ("aaabbb", s);
   });
 
@@ -3766,7 +3781,7 @@ TEST(KeepAliveTest, Issue1041) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto a2 = std::async(std::launch::async, [&svr]{ svr.listen(HOST, PORT); });
+  auto a2 = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   Client cli(HOST, PORT);
