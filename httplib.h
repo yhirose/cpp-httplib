@@ -213,6 +213,12 @@ using socket_t = int;
 #include <thread>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// these are defined in wincrypt.h and it breaks compilation if BoringSSL is used
+#undef X509_NAME
+#undef X509_CERT_PAIR
+#undef X509_EXTENSIONS
+#undef PKCS7_SIGNER_INFO
+
 #include <openssl/err.h>
 #include <openssl/md5.h>
 #include <openssl/ssl.h>
