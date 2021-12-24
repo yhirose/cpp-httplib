@@ -3874,9 +3874,7 @@ private:
     buf_spos_ = 0;
     buf_epos_ = remaining_size;
 
-    if (remaining_size + n > buf_.size()) {
-      buf_.resize(remaining_size + n);
-    }
+    if (remaining_size + n > buf_.size()) { buf_.resize(remaining_size + n); }
 
     for (size_t i = 0; i < n; i++) {
       buf_[buf_epos_ + i] = data[i];
@@ -7063,9 +7061,9 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
       auto err = SSL_get_error(ssl_, ret);
       int n = 1000;
 #ifdef _WIN32
-      while (--n >= 0 &&
-             (err == SSL_ERROR_WANT_READ ||
-              err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT)) {
+      while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
+                          (err == SSL_ERROR_SYSCALL &&
+                           WSAGetLastError() == WSAETIMEDOUT))) {
 #else
       while (--n >= 0 && err == SSL_ERROR_WANT_READ) {
 #endif
@@ -7093,9 +7091,9 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
       auto err = SSL_get_error(ssl_, ret);
       int n = 1000;
 #ifdef _WIN32
-      while (--n >= 0 &&
-             (err == SSL_ERROR_WANT_WRITE ||
-              err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT)) {
+      while (--n >= 0 && (err == SSL_ERROR_WANT_WRITE ||
+                          (err == SSL_ERROR_SYSCALL &&
+                           WSAGetLastError() == WSAETIMEDOUT))) {
 #else
       while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
 #endif
