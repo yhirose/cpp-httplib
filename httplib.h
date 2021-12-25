@@ -60,6 +60,10 @@
 #define CPPHTTPLIB_REQUEST_URI_MAX_LENGTH 8192
 #endif
 
+#ifndef CPPHTTPLIB_HEADER_MAX_LENGTH
+#define CPPHTTPLIB_HEADER_MAX_LENGTH 8192
+#endif
+
 #ifndef CPPHTTPLIB_REDIRECT_MAX_COUNT
 #define CPPHTTPLIB_REDIRECT_MAX_COUNT 20
 #endif
@@ -3178,6 +3182,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
       continue; // Skip invalid line.
     }
 
+    if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
+
     // Exclude CRLF
     auto end = line_reader.ptr() + line_reader.size() - 2;
 
@@ -3703,6 +3709,7 @@ public:
       }
       case 2: { // Headers
         auto pos = buf_find(crlf_);
+        if (pos > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
         while (pos < buf_size()) {
           // Empty line
           if (pos == 0) {
@@ -3866,7 +3873,7 @@ private:
 
   void buf_append(const char *data, size_t n) {
     auto remaining_size = buf_size();
-    if (remaining_size > 0) {
+    if (remaining_size > 0 && buf_spos_ > 0) {
       for (size_t i = 0; i < remaining_size; i++) {
         buf_[i] = buf_[buf_spos_ + i];
       }
