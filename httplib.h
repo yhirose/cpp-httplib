@@ -3916,6 +3916,7 @@ inline std::string make_multipart_data_boundary() {
   // platforms, but due to lack of support in the c++ standard library,
   // doing better requires either some ugly hacks or breaking portability.
   std::random_device seed_gen;
+
   // Request 128 bits of entropy for initialization
   std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(), seed_gen()};
   std::mt19937 engine(seed_sequence);
@@ -5683,6 +5684,7 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
         read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
         write_timeout_usec_, interface_, error);
   }
+
   // Check is custom IP specified for host_
   std::string ip;
   auto it = addr_map_.find(host_);
@@ -6129,11 +6131,6 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
     const char *body, size_t content_length, ContentProvider content_provider,
     ContentProviderWithoutLength content_provider_without_length,
     const char *content_type, Error &error) {
-
-  // Request req;
-  // req.method = method;
-  // req.headers = headers;
-  // req.path = path;
 
   if (content_type) { req.headers.emplace("Content-Type", content_type); }
 
