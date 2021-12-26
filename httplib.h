@@ -1661,6 +1661,8 @@ namespace detail {
 
 std::string encode_query_param(const std::string &value);
 
+std::string decode_url(const std::string &s, bool convert_plus_to_space);
+
 void read_file(const std::string &path, std::string &out);
 
 std::string trim_copy(const std::string &s);

@@ -58,6 +58,14 @@ TEST(StartupTest, WSAStartup) {
 }
 #endif
 
+TEST(DecodeURLTest, PercentCharacter) {
+  EXPECT_EQ(
+      detail::decode_url(
+          R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)",
+          false),
+      R"(descrip=Gastos áéíóúñÑ 6)");
+}
+
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 
