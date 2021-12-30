@@ -218,7 +218,7 @@ using socket_t = int;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 // these are defined in wincrypt.h and it breaks compilation if BoringSSL is used
-#if defined(_WIN32)
+#ifdef _WIN32
 #undef X509_NAME
 #undef X509_CERT_PAIR
 #undef X509_EXTENSIONS
@@ -1950,8 +1950,12 @@ inline std::string base64_encode(const std::string &in) {
 }
 
 inline bool is_file(const std::string &path) {
+#ifdef _WIN32
+  return (_access_s(path.c_str(), 0 ) == 0);
+#else
   struct stat st;
   return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+#endif
 }
 
 inline bool is_dir(const std::string &path) {
