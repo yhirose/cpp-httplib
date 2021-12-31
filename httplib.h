@@ -217,7 +217,8 @@ using socket_t = int;
 #include <thread>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-// these are defined in wincrypt.h and it breaks compilation if BoringSSL is used
+// these are defined in wincrypt.h and it breaks compilation if BoringSSL is
+// used
 #ifdef _WIN32
 #undef X509_NAME
 #undef X509_CERT_PAIR
@@ -1951,7 +1952,7 @@ inline std::string base64_encode(const std::string &in) {
 
 inline bool is_file(const std::string &path) {
 #ifdef _WIN32
-  return (_access_s(path.c_str(), 0 ) == 0);
+  return _access_s(path.c_str(), 0) == 0;
 #else
   struct stat st;
   return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
@@ -2688,25 +2689,29 @@ inline socket_t create_client_socket(
 
         {
 #ifdef _WIN32
-            uint32_t timeout = static_cast<uint32_t>(read_timeout_sec * 1000 + read_timeout_usec / 1000);
-            setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+          auto timeout = static_cast<uint32_t>(read_timeout_sec * 1000 +
+                                               read_timeout_usec / 1000);
+          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+                     sizeof(timeout));
 #else
-            timeval tv;
-            tv.tv_sec = static_cast<long>(read_timeout_sec);
-            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-            setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+          timeval tv;
+          tv.tv_sec = static_cast<long>(read_timeout_sec);
+          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
+          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
 #endif
         }
         {
 
 #ifdef _WIN32
-            uint32_t timeout = static_cast<uint32_t>(write_timeout_sec * 1000 + write_timeout_usec / 1000);
-            setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+          auto timeout = static_cast<uint32_t>(write_timeout_sec * 1000 +
+                                               write_timeout_usec / 1000);
+          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+                     sizeof(timeout));
 #else
-            timeval tv;
-            tv.tv_sec = static_cast<long>(read_timeout_sec);
-            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-            setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+          timeval tv;
+          tv.tv_sec = static_cast<long>(read_timeout_sec);
+          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
+          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
 #endif
         }
 
@@ -5254,29 +5259,33 @@ inline bool Server::listen_internal() {
         break;
       }
 
-        {
+      {
 #ifdef _WIN32
-            uint32_t timeout = static_cast<uint32_t>(read_timeout_sec_ * 1000 + read_timeout_usec_ / 1000);
-            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+        auto timeout = static_cast<uint32_t>(read_timeout_sec_ * 1000 +
+                                             read_timeout_usec_ / 1000);
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+                   sizeof(timeout));
 #else
-            timeval tv;
-            tv.tv_sec = static_cast<long>(read_timeout_sec_);
-            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
-            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+        timeval tv;
+        tv.tv_sec = static_cast<long>(read_timeout_sec_);
+        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
 #endif
-        }
-        {
+      }
+      {
 
 #ifdef _WIN32
-            uint32_t timeout = static_cast<uint32_t>(write_timeout_sec_ * 1000 + write_timeout_usec_ / 1000);
-            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+        auto timeout = static_cast<uint32_t>(write_timeout_sec_ * 1000 +
+                                             write_timeout_usec_ / 1000);
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+                   sizeof(timeout));
 #else
-            timeval tv;
-            tv.tv_sec = static_cast<long>(read_timeout_sec_);
-            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
-            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+        timeval tv;
+        tv.tv_sec = static_cast<long>(read_timeout_sec_);
+        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
 #endif
-        }
+      }
 
 #if __cplusplus > 201703L
       task_queue->enqueue([=, this]() { process_and_close_socket(sock); });
