@@ -2687,16 +2687,27 @@ inline socket_t create_client_socket(
         set_nonblocking(sock2, false);
 
         {
-          timeval tv;
-          tv.tv_sec = static_cast<long>(read_timeout_sec);
-          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+#ifdef _WIN32
+            uint32_t timeout = static_cast<uint32_t>(read_timeout_sec * 1000 + read_timeout_usec / 1000);
+            setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+#else
+            timeval tv;
+            tv.tv_sec = static_cast<long>(read_timeout_sec);
+            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
+            setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+#endif
         }
         {
-          timeval tv;
-          tv.tv_sec = static_cast<long>(write_timeout_sec);
-          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
-          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+
+#ifdef _WIN32
+            uint32_t timeout = static_cast<uint32_t>(write_timeout_sec * 1000 + write_timeout_usec / 1000);
+            setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+#else
+            timeval tv;
+            tv.tv_sec = static_cast<long>(read_timeout_sec);
+            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
+            setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+#endif
         }
 
         error = Error::Success;
@@ -5243,18 +5254,29 @@ inline bool Server::listen_internal() {
         break;
       }
 
-      {
-        timeval tv;
-        tv.tv_sec = static_cast<long>(read_timeout_sec_);
-        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
-      }
-      {
-        timeval tv;
-        tv.tv_sec = static_cast<long>(write_timeout_sec_);
-        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec_);
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
-      }
+        {
+#ifdef _WIN32
+            uint32_t timeout = static_cast<uint32_t>(read_timeout_sec_ * 1000 + read_timeout_usec_ / 1000);
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+#else
+            timeval tv;
+            tv.tv_sec = static_cast<long>(read_timeout_sec_);
+            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+#endif
+        }
+        {
+
+#ifdef _WIN32
+            uint32_t timeout = static_cast<uint32_t>(write_timeout_sec_ * 1000 + write_timeout_usec_ / 1000);
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+#else
+            timeval tv;
+            tv.tv_sec = static_cast<long>(read_timeout_sec_);
+            tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+#endif
+        }
 
 #if __cplusplus > 201703L
       task_queue->enqueue([=, this]() { process_and_close_socket(sock); });
