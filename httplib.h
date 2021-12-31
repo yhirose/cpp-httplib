@@ -1657,6 +1657,10 @@ Client::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
  * .h + .cc.
  */
 
+std::string hosted_at(const char *hostname);
+
+void hosted_at(const char *hostname, std::vector<std::string> &addrs);
+
 std::string append_query_params(const char *path, const Params &params);
 
 std::pair<std::string, std::string> make_range_header(Ranges ranges);
@@ -2499,25 +2503,28 @@ socket_t create_socket(const char *host, const char *ip, int port,
                        SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
+  const char *node = nullptr;
   struct addrinfo hints;
   struct addrinfo *result;
 
   memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_family = address_family;
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_flags = socket_flags;
   hints.ai_protocol = 0;
 
-  // Ask getaddrinfo to convert IP in c-string to address
   if (ip[0] != '\0') {
+    node = ip;
+    // Ask getaddrinfo to convert IP in c-string to address
     hints.ai_family = AF_UNSPEC;
     hints.ai_flags = AI_NUMERICHOST;
+  } else {
+    node = host;
+    hints.ai_family = address_family;
+    hints.ai_flags = socket_flags;
   }
 
   auto service = std::to_string(port);
 
-  if (ip[0] != '\0' ? getaddrinfo(ip, service.c_str(), &hints, &result)
-                    : getaddrinfo(host, service.c_str(), &hints, &result)) {
+  if (getaddrinfo(node, service.c_str(), &hints, &result)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
@@ -2728,7 +2735,7 @@ inline socket_t create_client_socket(
   return sock;
 }
 
-inline void get_remote_ip_and_port(const struct sockaddr_storage &addr,
+inline bool get_remote_ip_and_port(const struct sockaddr_storage &addr,
                                    socklen_t addr_len, std::string &ip,
                                    int &port) {
   if (addr.ss_family == AF_INET) {
@@ -2736,14 +2743,19 @@ inline void get_remote_ip_and_port(const struct sockaddr_storage &addr,
   } else if (addr.ss_family == AF_INET6) {
     port =
         ntohs(reinterpret_cast<const struct sockaddr_in6 *>(&addr)->sin6_port);
+  } else {
+    return false;
   }
 
   std::array<char, NI_MAXHOST> ipstr{};
-  if (!getnameinfo(reinterpret_cast<const struct sockaddr *>(&addr), addr_len,
-                   ipstr.data(), static_cast<socklen_t>(ipstr.size()), nullptr,
-                   0, NI_NUMERICHOST)) {
-    ip = ipstr.data();
+  if (getnameinfo(reinterpret_cast<const struct sockaddr *>(&addr), addr_len,
+                  ipstr.data(), static_cast<socklen_t>(ipstr.size()), nullptr,
+                  0, NI_NUMERICHOST)) {
+    return false;
   }
+
+  ip = ipstr.data();
+  return true;
 }
 
 inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
@@ -4303,6 +4315,41 @@ private:
 };
 
 } // namespace detail
+
+inline std::string hosted_at(const char *hostname) {
+  std::vector<std::string> addrs;
+  hosted_at(hostname, addrs);
+  if (addrs.empty()) { return std::string(); }
+  return addrs[0];
+}
+
+inline void hosted_at(const char *hostname, std::vector<std::string> &addrs) {
+  struct addrinfo hints;
+  struct addrinfo *result;
+
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = 0;
+
+  if (getaddrinfo(hostname, nullptr, &hints, &result)) {
+#if defined __linux__ && !defined __ANDROID__
+    res_init();
+#endif
+    return;
+  }
+
+  for (auto rp = result; rp; rp = rp->ai_next) {
+    const auto &addr =
+        *reinterpret_cast<struct sockaddr_storage *>(rp->ai_addr);
+    std::string ip;
+    int dummy = -1;
+    if (detail::get_remote_ip_and_port(addr, sizeof(struct sockaddr_storage),
+                                       ip, dummy)) {
+      addrs.push_back(ip);
+    }
+  }
+}
 
 inline std::string append_query_params(const char *path, const Params &params) {
   std::string path_with_query = path;

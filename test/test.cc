@@ -401,6 +401,36 @@ TEST(ChunkedEncodingTest, FromHTTPWatch_Online) {
   EXPECT_EQ(out, res->body);
 }
 
+TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
+  auto host = "www.httpwatch.com";
+
+  {
+    auto ip = hosted_at(host);
+    EXPECT_EQ("191.236.16.12", ip);
+  }
+
+  {
+    std::vector<std::string> addrs;
+    hosted_at(host, addrs);
+    EXPECT_EQ(1u, addrs.size());
+  }
+}
+
+TEST(HostnameToIPConversionTest, YouTube_Online) {
+  auto host = "www.youtube.com";
+
+  {
+    auto ip = hosted_at(host);
+    EXPECT_EQ("2607:f8b0:4006:809::200e", ip);
+  }
+
+  {
+    std::vector<std::string> addrs;
+    hosted_at(host, addrs);
+    EXPECT_EQ(20u, addrs.size());
+  }
+}
+
 TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   auto host = "www.httpwatch.com";
 
