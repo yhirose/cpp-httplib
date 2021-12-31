@@ -404,32 +404,27 @@ TEST(ChunkedEncodingTest, FromHTTPWatch_Online) {
 TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
   auto host = "www.httpwatch.com";
 
-  {
-    auto ip = hosted_at(host);
-    EXPECT_EQ("191.236.16.12", ip);
-  }
+  auto ip = hosted_at(host);
+  EXPECT_EQ("191.236.16.12", ip);
 
-  {
-    std::vector<std::string> addrs;
-    hosted_at(host, addrs);
-    EXPECT_EQ(1u, addrs.size());
-  }
+  std::vector<std::string> addrs;
+  hosted_at(host, addrs);
+  EXPECT_EQ(1u, addrs.size());
 }
 
+#if 0 // It depends on each test environment...
 TEST(HostnameToIPConversionTest, YouTube_Online) {
   auto host = "www.youtube.com";
 
-  {
-    auto ip = hosted_at(host);
-    EXPECT_EQ("2607:f8b0:4006:809::200e", ip);
-  }
+  std::vector<std::string> addrs;
+  hosted_at(host, addrs);
 
-  {
-    std::vector<std::string> addrs;
-    hosted_at(host, addrs);
-    EXPECT_EQ(20u, addrs.size());
-  }
+  EXPECT_EQ(20u, addrs.size());
+
+  auto it = std::find(addrs.begin(), addrs.end(), "2607:f8b0:4006:809::200e");
+  EXPECT_TRUE(it != addrs.end());
 }
+#endif
 
 TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   auto host = "www.httpwatch.com";
