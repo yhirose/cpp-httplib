@@ -2689,24 +2689,24 @@ inline socket_t create_client_socket(
         {
 #ifdef _WIN32
             uint32_t timeout = static_cast<uint32_t>(read_timeout_sec * 1000 + read_timeout_usec / 1000);
-            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+            setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 #else
             timeval tv;
             tv.tv_sec = static_cast<long>(read_timeout_sec);
             tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+            setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
 #endif
         }
         {
 
 #ifdef _WIN32
             uint32_t timeout = static_cast<uint32_t>(write_timeout_sec * 1000 + write_timeout_usec / 1000);
-            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+            setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
 #else
             timeval tv;
             tv.tv_sec = static_cast<long>(read_timeout_sec);
             tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+            setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
 #endif
         }
 
