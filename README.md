@@ -303,7 +303,7 @@ Without content length:
 svr.Get("/stream", [&](const Request &req, Response &res) {
   res.set_content_provider(
     "text/plain", // Content type
-    [&](size_t offset, size_t length, DataSink &sink) {
+    [&](size_t offset, DataSink &sink) {
       if (/* there is still data */) {
         std::vector<char> data;
         // prepare data...
