@@ -4239,14 +4239,16 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
     }
   }
 
-  auto field =
-      "Digest username=\"" + username + "\", realm=\"" + auth.at("realm") +
-      "\", nonce=\"" + auth.at("nonce") + "\", uri=\"" + req.path +
-      "\", algorithm=" + algo +
-      (qop.empty() ? ", response=\""
-                   : ", qop=" + qop + ", nc=\"" + nc + "\", cnonce=\"" +
-                         cnonce + "\", response=\"") +
-      response + "\"";
+  auto opaque = (auth.find("opaque") != auth.end()) ? auth.at("opaque") : "";
+
+  auto field = "Digest username=\"" + username + "\", realm=\"" +
+               auth.at("realm") + "\", nonce=\"" + auth.at("nonce") +
+               "\", uri=\"" + req.path + "\", algorithm=" + algo +
+               (qop.empty() ? ", response=\""
+                            : ", qop=" + qop + ", nc=" + nc + ", cnonce=\"" +
+                                  cnonce + "\", response=\"") +
+               response + "\"" +
+               (opaque.empty() ? "" : ", opaque=\"" + opaque + "\"");
 
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
