@@ -1663,6 +1663,11 @@ protected:
                 EXPECT_EQ("0", req.get_header_value("Content-Length"));
                 res.set_content("empty-no-content-type", "text/plain");
               })
+        .Post("/post-large",
+             [&](const Request &req, Response &res) {
+               EXPECT_EQ(req.body, LARGE_DATA);
+               res.set_content(req.body, "text/plain");
+             })
         .Put("/empty-no-content-type",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "");
@@ -2066,6 +2071,13 @@ TEST_F(ServerTest, PostEmptyContentWithNoContentType) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty-no-content-type", res->body);
+}
+
+TEST_F(ServerTest, PostLarge) {
+  auto res = cli_.Post("/post-large", LARGE_DATA, "text/plain");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+  EXPECT_EQ(LARGE_DATA, res->body);
 }
 
 TEST_F(ServerTest, PutEmptyContentWithNoContentType) {
