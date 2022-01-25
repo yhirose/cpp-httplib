@@ -622,9 +622,14 @@ TEST(ConnectionErrorTest, Timeout) {
 #endif
   cli.set_connection_timeout(std::chrono::seconds(2));
 
+  // only probe one address type so that the error reason
+  // correlates to the timed-out IPv4, not the unsupported
+  // IPv6 connection attempt
+  cli.set_address_family(AF_INET);
+
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
-  EXPECT_TRUE(res.error() == Error::Connection);
+  EXPECT_EQ(Error::ConnectionTimeout, res.error());
 }
 
 TEST(CancelTest, NoCancel_Online) {
