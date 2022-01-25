@@ -4302,10 +4302,11 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res);
-  ASSERT_EQ(200, res->status);
 
   t.join();
+
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
 }
 
 TEST(SSLClientTest, WildcardHostNameMatch_Online) {
@@ -4357,10 +4358,11 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res);
-  ASSERT_EQ(200, res->status);
 
   t.join();
+
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
 }
 
 #if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
@@ -4479,10 +4481,11 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res);
-  ASSERT_EQ(200, res->status);
 
   t.join();
+
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
 }
 
 TEST(SSLClientServerTest, SSLConnectTimeout) {
@@ -4522,12 +4525,13 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   cli.set_connection_timeout(1);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(!res);
-  EXPECT_EQ(Error::SSLConnection, res.error());
 
   svr.stop_ = true;
   svr.stop();
   t.join();
+
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
 }
 
 TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
@@ -4593,10 +4597,11 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res);
-  ASSERT_EQ(200, res->status);
 
   t.join();
+
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
 }
 #endif
 
@@ -4765,10 +4770,11 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/index");
-  ASSERT_TRUE(res);
-  ASSERT_EQ(200, res->status);
 
   t.join();
   t2.join();
+
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
 }
 #endif
