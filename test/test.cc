@@ -4374,14 +4374,17 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   EVP_PKEY *client_private_key;
 
   FILE *f = fopen(SERVER_CERT_FILE, "r+");
+  ASSERT_NE(nullptr, f);
   server_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
   fclose(f);
 
   f = fopen(SERVER_PRIVATE_KEY_FILE, "r+");
+  ASSERT_NE(nullptr, f);
   server_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
   fclose(f);
 
   f = fopen(CLIENT_CA_CERT_FILE, "r+");
+  ASSERT_NE(nullptr, f);
   client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
   client_ca_cert_store = X509_STORE_new();
   X509_STORE_add_cert(client_ca_cert_store, client_cert);
@@ -4389,10 +4392,12 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   fclose(f);
 
   f = fopen(CLIENT_CERT_FILE, "r+");
+  ASSERT_NE(nullptr, f);
   client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
   fclose(f);
 
   f = fopen(CLIENT_PRIVATE_KEY_FILE, "r+");
+  ASSERT_NE(nullptr, f);
   client_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
   fclose(f);
 
