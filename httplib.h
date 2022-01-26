@@ -3217,17 +3217,26 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     if (!line_reader.getline()) { return false; }
 
     // Check if the line ends with CRLF.
+    auto line_terminator_len = 2;
     if (line_reader.end_with_crlf()) {
       // Blank line indicates end of headers.
       if (line_reader.size() == 2) { break; }
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+    } else {
+      // Blank line indicates end of headers.
+      if (line_reader.size() == 1) { break; }
+      line_terminator_len = 1;
+    }
+#else
     } else {
       continue; // Skip invalid line.
     }
+#endif
 
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
 
-    // Exclude CRLF
-    auto end = line_reader.ptr() + line_reader.size() - 2;
+    // Exclude line terminator
+    auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     parse_header(line_reader.ptr(), end,
                  [&](std::string &&key, std::string &&val) {
@@ -5837,7 +5846,11 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
   if (!line_reader.getline()) { return false; }
 
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
   const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
+#else
+  const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
+#endif
 
   std::cmatch m;
   if (!std::regex_match(line_reader.ptr(), m, re)) {
