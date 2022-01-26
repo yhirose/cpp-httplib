@@ -799,6 +799,7 @@ enum class Error {
   SSLServerVerification,
   UnsupportedMultipartBoundaryChars,
   Compression,
+  ConnectionTimeout,
 };
 
 std::string to_string(const Error error);
@@ -1594,6 +1595,7 @@ inline std::string to_string(const Error error) {
   case Error::UnsupportedMultipartBoundaryChars:
     return "UnsupportedMultipartBoundaryChars";
   case Error::Compression: return "Compression";
+  case Error::ConnectionTimeout: return "ConnectionTimeout";
   case Error::Unknown: return "Unknown";
   default: break;
   }
@@ -2313,7 +2315,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 #endif
 }
 
-inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
+inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
   pfd_read.fd = sock;
@@ -2323,17 +2325,23 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
 
   auto poll_res = handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 
+  if (poll_res == 0) {
+    return Error::ConnectionTimeout;
+  }
+
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
     socklen_t len = sizeof(error);
     auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
                           reinterpret_cast<char *>(&error), &len);
-    return res >= 0 && !error;
+    auto successful = res >= 0 && !error;
+    return successful ? Error::Success : Error::Connection;
   }
-  return false;
+
+  return Error::Connection;
 #else
 #ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return false; }
+  if (sock >= FD_SETSIZE) { return Error::Connection; }
 #endif
 
   fd_set fdsr;
@@ -2351,14 +2359,19 @@ inline bool wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
     return select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv);
   });
 
+  if (ret == 0) {
+    return Error::ConnectionTimeout;
+  }
+
   if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
     socklen_t len = sizeof(error);
-    return getsockopt(sock, SOL_SOCKET, SO_ERROR,
-                      reinterpret_cast<char *>(&error), &len) >= 0 &&
-           !error;
+    auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
+                          reinterpret_cast<char *>(&error), &len);
+    auto successful = res >= 0 && !error;
+    return successful ? Error::Success : Error::Connection;
   }
-  return false;
+  return Error::Connection;
 #endif
 }
 
@@ -2684,10 +2697,13 @@ inline socket_t create_client_socket(
             ::connect(sock2, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen));
 
         if (ret < 0) {
-          if (is_connection_error() ||
-              !wait_until_socket_is_ready(sock2, connection_timeout_sec,
-                                          connection_timeout_usec)) {
+          if (is_connection_error()) {
             error = Error::Connection;
+            return false;
+          }
+          error = wait_until_socket_is_ready(sock2, connection_timeout_sec,
+                                             connection_timeout_usec);
+          if (error != Error::Success) {
             return false;
           }
         }
