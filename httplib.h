@@ -6159,7 +6159,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   if (!req.has_header("Accept")) { req.headers.emplace("Accept", "*/*"); }
 
   if (!req.has_header("User-Agent")) {
-    req.headers.emplace("User-Agent", "cpp-httplib/0.10.1");
+    req.headers.emplace("User-Agent", "cpp-httplib/0.10.2");
   }
 
   if (req.body.empty()) {
