@@ -19,12 +19,13 @@ project(
 # Check just in case downstream decides to edit the source
 # and add a project version
 version = meson.project_version()
-python = import('python').find_installation('python3')
+python3 = find_program('python3')
 if version == 'undefined'
   # Meson doesn't have regular expressions, but since it is implemented
   # in python we can be sure we can use it to parse the file manually
   version = run_command(
-      python, '-c', 'import re; raw_version = re.search("User\-Agent.*cpp\-httplib/([0-9]+\.?)+", open("httplib.h").read()).group(0); print(re.search("([0-9]+\\.?)+", raw_version).group(0))'
+      python3, '-c', 'import re; raw_version = re.search("User\-Agent.*cpp\-httplib/([0-9]+\.?)+", open("httplib.h").read()).group(0); print(re.search("([0-9]+\\.?)+", raw_version).group(0))',
+      check: true
   ).stdout().strip()
 endif
 
@@ -68,7 +69,7 @@ if get_option('cpp-httplib_compile')
     'split',
     input: 'httplib.h',
     output: ['httplib.cc', 'httplib.h'],
-    command: [python, files('split.py'), '--out', meson.current_build_dir()],
+    command: [python3, files('split.py'), '--out', meson.current_build_dir()],
     install: true,
     install_dir: [false, get_option('includedir')]
   )
@@ -92,6 +93,14 @@ if get_option('cpp-httplib_compile')
 else
   install_headers('httplib.h')
   cpp_httplib_dep = declare_dependency(compile_args: args, dependencies: deps, include_directories: include_directories('.'))
+
+  import('pkgconfig').generate(
+    name: 'cpp-httplib',
+    description: 'A C++ HTTP/HTTPS server and client library',
+    install_dir: join_paths(get_option('datadir'), 'pkgconfig'),
+    url: 'https://github.com/yhirose/cpp-httplib',
+    version: version
+  )
 endif
 
 if meson.version().version_compare('>=0.54.0')
