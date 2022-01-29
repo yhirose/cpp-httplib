@@ -610,7 +610,7 @@ TEST(ConnectionErrorTest, InvalidPort) {
   EXPECT_EQ(Error::Connection, res.error());
 }
 
-TEST(ConnectionErrorTest, Timeout) {
+TEST(ConnectionErrorTest, Timeout_Online) {
   auto host = "google.com";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
