@@ -1,4 +1,4 @@
-From alpine as builder
+FROM alpine as builder
 WORKDIR /src/example
 RUN apk add g++ make openssl-dev zlib-dev brotli-dev
 COPY ./httplib.h /src
@@ -6,7 +6,7 @@ COPY ./example/hello.cc /src/example
 COPY ./example/Makefile /src/example
 RUN make hello
 
-From alpine
+FROM alpine
 RUN apk --no-cache add brotli libstdc++
 COPY --from=builder /src/example/hello /bin/hello
 CMD ["/bin/hello"]
