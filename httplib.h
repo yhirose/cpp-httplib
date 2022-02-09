@@ -2315,7 +2315,8 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 #endif
 }
 
-inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
+inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
+                                        time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
   pfd_read.fd = sock;
@@ -2325,9 +2326,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) 
 
   auto poll_res = handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 
-  if (poll_res == 0) {
-    return Error::ConnectionTimeout;
-  }
+  if (poll_res == 0) { return Error::ConnectionTimeout; }
 
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
@@ -2359,9 +2358,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) 
     return select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv);
   });
 
-  if (ret == 0) {
-    return Error::ConnectionTimeout;
-  }
+  if (ret == 0) { return Error::ConnectionTimeout; }
 
   if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
@@ -2703,9 +2700,7 @@ inline socket_t create_client_socket(
           }
           error = wait_until_socket_is_ready(sock2, connection_timeout_sec,
                                              connection_timeout_usec);
-          if (error != Error::Success) {
-            return false;
-          }
+          if (error != Error::Success) { return false; }
         }
 
         set_nonblocking(sock2, false);
