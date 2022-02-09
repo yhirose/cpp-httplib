@@ -141,6 +141,7 @@ using ssize_t = int;
 #endif // NOMINMAX
 
 #include <io.h>
+#include <winsock.h>
 #include <winsock2.h>
 
 #include <wincrypt.h>
@@ -1011,7 +1012,7 @@ public:
 
   void set_interface(const char *intf);
 
-  void set_proxy(const char *host, int port);
+  void set_proxy(const char *host, int port, bool isSocks = false);
   void set_proxy_basic_auth(const char *username, const char *password);
   void set_proxy_bearer_token_auth(const char *token);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1119,6 +1120,7 @@ protected:
 
   std::string proxy_host_;
   int proxy_port_ = -1;
+  bool proxy_socks_ = false;
 
   std::string proxy_basic_auth_username_;
   std::string proxy_basic_auth_password_;
@@ -1696,6 +1698,10 @@ socket_t create_client_socket(
     time_t connection_timeout_sec, time_t connection_timeout_usec,
     time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, const std::string &intf, Error &error);
+
+bool start_socks(Stream &strm, const std::string &host, const std::string &ip,
+                 int port, const std::string &proxy_user,
+                 const std::string &proxy_pass);
 
 const char *get_header_value(const Headers &headers, const char *key,
                              size_t id = 0, const char *def = nullptr);
@@ -2315,7 +2321,8 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 #endif
 }
 
-inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) {
+inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
+                                        time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
   pfd_read.fd = sock;
@@ -2325,9 +2332,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) 
 
   auto poll_res = handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 
-  if (poll_res == 0) {
-    return Error::ConnectionTimeout;
-  }
+  if (poll_res == 0) { return Error::ConnectionTimeout; }
 
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
     int error = 0;
@@ -2359,9 +2364,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec, time_t usec) 
     return select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv);
   });
 
-  if (ret == 0) {
-    return Error::ConnectionTimeout;
-  }
+  if (ret == 0) { return Error::ConnectionTimeout; }
 
   if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
     int error = 0;
@@ -2703,9 +2706,7 @@ inline socket_t create_client_socket(
           }
           error = wait_until_socket_is_ready(sock2, connection_timeout_sec,
                                              connection_timeout_usec);
-          if (error != Error::Success) {
-            return false;
-          }
+          if (error != Error::Success) { return false; }
         }
 
         set_nonblocking(sock2, false);
@@ -2749,6 +2750,91 @@ inline socket_t create_client_socket(
   }
 
   return sock;
+}
+
+inline bool start_socks(Stream &strm, const std::string &host,
+                        const std::string &ip, int port,
+                        const std::string &proxy_user,
+                        const std::string &proxy_pass) {
+  // send our initial handshake request
+  std::vector<char> raw{
+      0x05, 0x01,
+      0x00}; // TODO: this is a quick hack to write raw data on the stream
+  // if we have a defined username/password, offer this authentication type
+  if (!proxy_user.empty() && !proxy_pass.empty()) {
+    raw[1] = 0x02;
+    raw.push_back(0x02);
+  }
+  strm.write(raw.data(), raw.size());
+
+  // get our handshake response
+  char buf[2];
+  strm.read(buf, 2);
+  if (buf[0] != 0x05) return false; // invalid socks version
+  switch (buf[1]) {
+  case 0x00: break; // nothing to do, no authentication
+  case 0x02:
+    // prepare our authentication package
+    raw.erase();
+    raw.insert(raw.end(), {0x01, static_cast<uint8_t>(proxy_user.size)});
+    raw.insert(raw.end(), proxy_user.begin(), proxy_user.end());
+    raw.push_back(static_cast<uint8_t>(proxy_pass.size()));
+    raw.insert(raw.end(), proxy_pass.begin(), proxy_pass.end());
+    // send auth
+    strm.write(raw.data(), raw.size());
+    // check response
+    strm.read(buf, 2);
+    if (buf[1] != 0x00) return false; // invalid authentication
+    break;
+  default: return false; // No supported auth
+  }
+
+  // create the connection request package
+  raw.erase();
+  raw.insert(raw.end(), {0x05, 0x01, 0x00});
+  if (!ip.empty()) {
+    // TODO: what is about ipv6 here?
+    raw.push_back(0x01);
+    auto ipaddr = inet_addr(ip.c_str());
+    auto *ipptr = reinterpret_cast<char *>(&ipaddr);
+    raw.insert(raw.end(), ipptr, ipptr + 4);
+  } else {
+    raw.push_back(0x03);
+    raw.push_back(host.size());
+    raw.insert(raw.end(), host.begin(), host.end());
+  }
+
+  // append our port
+  auto const nport = htons(static_cast<uint16_t>(port));
+  auto *portptr = reinterpret_cast<char *>(&nport);
+  raw.insert(raw.end(), portptr, portptr + 2);
+
+  strm.write(raw.data(), raw.size());
+
+  // check the response
+  strm.read(buf, 2);
+  if (buf[1] != 0x00)
+    return false; // connection failed, no reason to read the remaining data
+
+  // read the remaining data from the socket
+  strm.read(buf, 2);
+  size_t readLen = 2;
+  switch (buf[1]) {
+  case 0x01: readLen += 4; break;
+  case 0x03:
+    strm.read(buf, 1);
+    readLen += static_cast<size_t>(buf[0]);
+    break;
+  case 0x04: // IPv6 is not yet supported here, but it doesn't hurt to have this
+             // part already
+    readLen += 16;
+    break;
+  }
+
+  char tmp[readLen];
+  strm.read(tmp, readLen);
+
+  return true;
 }
 
 inline bool get_remote_ip_and_port(const struct sockaddr_storage &addr,
@@ -5775,6 +5861,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   interface_ = rhs.interface_;
   proxy_host_ = rhs.proxy_host_;
   proxy_port_ = rhs.proxy_port_;
+  proxy_socks_ = rhs.proxy_socks_;
   proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
   proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
   proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
@@ -5794,19 +5881,31 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 }
 
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
-  if (!proxy_host_.empty() && proxy_port_ != -1) {
-    return detail::create_client_socket(
-        proxy_host_.c_str(), "", proxy_port_, address_family_, tcp_nodelay_,
-        socket_options_, connection_timeout_sec_, connection_timeout_usec_,
-        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-        write_timeout_usec_, interface_, error);
-  }
-
   // Check is custom IP specified for host_
   std::string ip;
   auto it = addr_map_.find(host_);
   if (it != addr_map_.end()) ip = it->second;
 
+  if (!proxy_host_.empty() && proxy_port_ != -1) {
+    auto socket = detail::create_client_socket(
+        proxy_host_.c_str(), "", proxy_port_, address_family_, tcp_nodelay_,
+        socket_options_, connection_timeout_sec_, connection_timeout_usec_,
+        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+        write_timeout_usec_, interface_, error);
+
+    if (proxy_socks_) {
+      auto ret = process_socket(socket_, [&](Stream &strm) {
+        return detail::start_socks(strm, host_, ip, port_,
+                                   proxy_basic_auth_username_,
+                                   proxy_basic_auth_password_);
+      });
+      if(!ret) {
+        error = Error::Connection;
+        return -1;
+      }
+    }
+    return socket;
+  }
   return detail::create_client_socket(
       host_.c_str(), ip.c_str(), port_, address_family_, tcp_nodelay_,
       socket_options_, connection_timeout_sec_, connection_timeout_usec_,
@@ -6194,14 +6293,6 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!proxy_basic_auth_username_.empty() &&
-      !proxy_basic_auth_password_.empty()) {
-    if (!req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_basic_authentication_header(
-          proxy_basic_auth_username_, proxy_basic_auth_password_, true));
-    }
-  }
-
   if (!bearer_token_auth_token_.empty()) {
     if (!req.has_header("Authorization")) {
       req.headers.insert(make_bearer_token_authentication_header(
@@ -6209,10 +6300,22 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!proxy_bearer_token_auth_token_.empty()) {
-    if (!req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_bearer_token_authentication_header(
-          proxy_bearer_token_auth_token_, true));
+  // avoid leaking of authentication data for proxies if
+  // we use a socks proxy.
+  if (!proxy_socks_) {
+    if (!proxy_basic_auth_username_.empty() &&
+        !proxy_basic_auth_password_.empty()) {
+      if (!req.has_header("Proxy-Authorization")) {
+        req.headers.insert(make_basic_authentication_header(
+            proxy_basic_auth_username_, proxy_basic_auth_password_, true));
+      }
+    }
+
+    if (!proxy_bearer_token_auth_token_.empty()) {
+      if (!req.has_header("Proxy-Authorization")) {
+        req.headers.insert(make_bearer_token_authentication_header(
+            proxy_bearer_token_auth_token_, true));
+      }
     }
   }
 
@@ -6961,9 +7064,10 @@ inline void ClientImpl::set_decompress(bool on) { decompress_ = on; }
 
 inline void ClientImpl::set_interface(const char *intf) { interface_ = intf; }
 
-inline void ClientImpl::set_proxy(const char *host, int port) {
+inline void ClientImpl::set_proxy(const char *host, int port, bool isSocks) {
   proxy_host_ = host;
   proxy_port_ = port;
+  proxy_socks_ = isSocks;
 }
 
 inline void ClientImpl::set_proxy_basic_auth(const char *username,
