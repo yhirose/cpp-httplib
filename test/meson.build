@@ -33,6 +33,13 @@ cert2_pem = custom_target(
   command: [openssl, 'req', '-x509', '-config', test_conf, '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-out', '@OUTPUT@', '-extensions', 'SAN']
 )
 
+cert_encrypted_pem = custom_target(
+  'cert_encrypted_pem',
+  input: key_encrypted_pem,
+  output: 'cert_encrypted.pem',
+  command: [openssl, 'req', '-x509', '-config', test_conf, '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-out', '@OUTPUT@', '-extensions', 'SAN']
+)
+
 rootca_key_pem = custom_target(
   'rootca_key_pem',
   output: 'rootCA.key.pem',

@@ -65,6 +65,8 @@ cert.pem:
 	openssl req -x509 -new -batch -config test.rootCA.conf -key rootCA.key.pem -days 1024 > rootCA.cert.pem
 	openssl genrsa 2048 > client.key.pem
 	openssl req -new -batch -config test.conf -key client.key.pem | openssl x509 -days 370 -req -CA rootCA.cert.pem -CAkey rootCA.key.pem -CAcreateserial > client.cert.pem
+	openssl genrsa -passout pass:test123! 2048 > key_encrypted.pem
+	openssl req -new -batch -config test.conf -key key_encrypted.pem | openssl x509 -days 3650 -req -signkey key_encrypted.pem > cert_encrypted.pem
 	#c_rehash .
 
 clean:
