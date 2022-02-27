@@ -1384,7 +1384,8 @@ class SSLServer : public Server {
 public:
   SSLServer(const char *cert_path, const char *private_key_path,
             const char *client_ca_cert_file_path = nullptr,
-            const char *client_ca_cert_dir_path = nullptr);
+            const char *client_ca_cert_dir_path = nullptr,
+            const char *private_key_password = nullptr);
 
   SSLServer(X509 *cert, EVP_PKEY *private_key,
             X509_STORE *client_ca_cert_store = nullptr);
@@ -7250,7 +7251,8 @@ static SSLInit sslinit_;
 // SSL HTTP server implementation
 inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
                             const char *client_ca_cert_file_path,
-                            const char *client_ca_cert_dir_path) {
+                            const char *client_ca_cert_dir_path,
+                            const char *private_key_password) {
   ctx_ = SSL_CTX_new(TLS_server_method());
 
   if (ctx_) {
@@ -7259,6 +7261,11 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
                             SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
 
     SSL_CTX_set_min_proto_version(ctx_, TLS1_1_VERSION);
+
+    // add default password callback before opening encrypted private key
+    if (private_key_password != nullptr && (private_key_password[0] != '\0') ) {
+      SSL_CTX_set_default_passwd_cb_userdata(ctx_, (char *)private_key_password);
+    }
 
     if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) !=

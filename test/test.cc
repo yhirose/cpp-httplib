@@ -18,6 +18,9 @@
 #define CLIENT_CA_CERT_DIR "."
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
+#define SERVER_ENCRYPTED_CERT_FILE "./cert_encrypted.pem"
+#define SERVER_ENCRYPTED_PRIVATE_KEY_FILE "./key_encrypted.pem"
+#define SERVER_ENCRYPTED_PRIVATE_KEY_PASS "test123!"
 
 using namespace std;
 using namespace httplib;
@@ -1187,6 +1190,17 @@ TEST(BindServerTest, BindAndListenSeparately) {
 TEST(BindServerTest, BindAndListenSeparatelySSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(port > 0);
+  svr.stop();
+}
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
+  SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE, nullptr,
+                nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
   int port = svr.bind_to_any_port("0.0.0.0");
   ASSERT_TRUE(svr.is_valid());
   ASSERT_TRUE(port > 0);
