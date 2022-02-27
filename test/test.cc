@@ -1200,8 +1200,8 @@ TEST(BindServerTest, BindAndListenSeparatelySSL) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
-  SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE, nullptr,
-                nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
+  SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE,
+                nullptr, nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
   int port = svr.bind_to_any_port("0.0.0.0");
   ASSERT_TRUE(svr.is_valid());
   ASSERT_TRUE(port > 0);
@@ -1684,10 +1684,10 @@ protected:
                 res.set_content("empty-no-content-type", "text/plain");
               })
         .Post("/post-large",
-             [&](const Request &req, Response &res) {
-               EXPECT_EQ(req.body, LARGE_DATA);
-               res.set_content(req.body, "text/plain");
-             })
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, LARGE_DATA);
+                res.set_content(req.body, "text/plain");
+              })
         .Put("/empty-no-content-type",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "");
