@@ -610,7 +610,8 @@ TEST(ConnectionErrorTest, InvalidPort) {
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
-  EXPECT_EQ(Error::Connection, res.error());
+  EXPECT_TRUE(Error::Connection == res.error() ||
+              Error::ConnectionTimeout == res.error());
 }
 
 TEST(ConnectionErrorTest, Timeout_Online) {
