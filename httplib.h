@@ -2813,10 +2813,12 @@ find_content_type(const std::string &path,
   default: return nullptr;
   case "css"_t: return "text/css";
   case "csv"_t: return "text/csv";
-  case "txt"_t: return "text/plain";
-  case "vtt"_t: return "text/vtt";
   case "htm"_t:
   case "html"_t: return "text/html";
+  case "js"_t:
+  case "mjs"_t: return "text/javascript";
+  case "txt"_t: return "text/plain";
+  case "vtt"_t: return "text/vtt";
 
   case "apng"_t: return "image/apng";
   case "avif"_t: return "image/avif";
@@ -2848,8 +2850,6 @@ find_content_type(const std::string &path,
   case "7z"_t: return "application/x-7z-compressed";
   case "atom"_t: return "application/atom+xml";
   case "pdf"_t: return "application/pdf";
-  case "js"_t:
-  case "mjs"_t: return "application/javascript";
   case "json"_t: return "application/json";
   case "rss"_t: return "application/rss+xml";
   case "tar"_t: return "application/x-tar";
@@ -2934,14 +2934,21 @@ inline const char *status_message(int status) {
 }
 
 inline bool can_compress_content_type(const std::string &content_type) {
-  return (!content_type.rfind("text/", 0) &&
-          content_type != "text/event-stream") ||
-         content_type == "image/svg+xml" ||
-         content_type == "application/javascript" ||
-         content_type == "application/json" ||
-         content_type == "application/xml" ||
-         content_type == "application/protobuf" ||
-         content_type == "application/xhtml+xml";
+  using udl::operator""_t;
+
+  auto tag = str2tag(content_type);
+
+  switch (tag) {
+  case "image/svg+xml"_t:
+  case "application/javascript"_t:
+  case "application/json"_t:
+  case "application/xml"_t:
+  case "application/protobuf"_t:
+  case "application/xhtml+xml"_t: return true;
+
+  default:
+    return !content_type.rfind("text/", 0) && tag != "text/event-stream"_t;
+  }
 }
 
 inline EncodingType encoding_type(const Request &req, const Response &res) {
@@ -3020,7 +3027,6 @@ inline bool gzip_compressor::compress(const char *data, size_t data_length,
     assert((flush == Z_FINISH && ret == Z_STREAM_END) ||
            (flush == Z_NO_FLUSH && ret == Z_OK));
     assert(strm_.avail_in == 0);
-
   } while (data_length > 0);
 
   return true;
@@ -3432,7 +3438,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
         if (!ret) { status = exceed_payload_max_length ? 413 : 400; }
         return ret;
       });
-}
+} // namespace detail
 
 inline ssize_t write_headers(Stream &strm, const Headers &headers) {
   ssize_t write_len = 0;
