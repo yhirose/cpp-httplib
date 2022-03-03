@@ -2574,6 +2574,13 @@ socket_t create_socket(const char *host, const char *ip, int port,
     if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) { continue; }
 #endif
 
+#ifdef __linux__
+#ifdef CPPHTTPLIB_LINUX_TCP_CORK
+    int state = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_CORK, reinterpret_cast<char *>(&state), sizeof(state));
+#endif
+#endif
+
     if (tcp_nodelay) {
       int yes = 1;
       setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&yes),
