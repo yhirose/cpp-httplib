@@ -172,6 +172,11 @@ if(HTTPLIB_COMPILE)
 			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
 			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/httplib.h>
 	)
+	set_target_properties(${PROJECT_NAME}
+		PROPERTIES
+			VERSION ${${PROJECT_NAME}_VERSION}
+			SOVERSION ${${PROJECT_NAME}_VERSION_MAJOR}
+	)
 else()
 	# This is for header-only.
 	set(_INTERFACE_OR_PUBLIC INTERFACE)
