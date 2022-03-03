@@ -18,6 +18,9 @@
 #define CLIENT_CA_CERT_DIR "."
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
+#define SERVER_ENCRYPTED_CERT_FILE "./cert_encrypted.pem"
+#define SERVER_ENCRYPTED_PRIVATE_KEY_FILE "./key_encrypted.pem"
+#define SERVER_ENCRYPTED_PRIVATE_KEY_PASS "test123!"
 
 using namespace std;
 using namespace httplib;
@@ -607,7 +610,8 @@ TEST(ConnectionErrorTest, InvalidPort) {
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
-  EXPECT_EQ(Error::Connection, res.error());
+  EXPECT_TRUE(Error::Connection == res.error() ||
+              Error::ConnectionTimeout == res.error());
 }
 
 TEST(ConnectionErrorTest, Timeout_Online) {
@@ -1194,6 +1198,17 @@ TEST(BindServerTest, BindAndListenSeparatelySSL) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
+  SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE,
+                nullptr, nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(port > 0);
+  svr.stop();
+}
+#endif
+
 TEST(ErrorHandlerTest, ContentLength) {
   Server svr;
 
@@ -1669,10 +1684,10 @@ protected:
                 res.set_content("empty-no-content-type", "text/plain");
               })
         .Post("/post-large",
-             [&](const Request &req, Response &res) {
-               EXPECT_EQ(req.body, LARGE_DATA);
-               res.set_content(req.body, "text/plain");
-             })
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, LARGE_DATA);
+                res.set_content(req.body, "text/plain");
+              })
         .Put("/empty-no-content-type",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "");

@@ -1384,7 +1384,8 @@ class SSLServer : public Server {
 public:
   SSLServer(const char *cert_path, const char *private_key_path,
             const char *client_ca_cert_file_path = nullptr,
-            const char *client_ca_cert_dir_path = nullptr);
+            const char *client_ca_cert_dir_path = nullptr,
+            const char *private_key_password = nullptr);
 
   SSLServer(X509 *cert, EVP_PKEY *private_key,
             X509_STORE *client_ca_cert_store = nullptr);
@@ -2812,10 +2813,12 @@ find_content_type(const std::string &path,
   default: return nullptr;
   case "css"_t: return "text/css";
   case "csv"_t: return "text/csv";
-  case "txt"_t: return "text/plain";
-  case "vtt"_t: return "text/vtt";
   case "htm"_t:
   case "html"_t: return "text/html";
+  case "js"_t:
+  case "mjs"_t: return "text/javascript";
+  case "txt"_t: return "text/plain";
+  case "vtt"_t: return "text/vtt";
 
   case "apng"_t: return "image/apng";
   case "avif"_t: return "image/avif";
@@ -2847,8 +2850,6 @@ find_content_type(const std::string &path,
   case "7z"_t: return "application/x-7z-compressed";
   case "atom"_t: return "application/atom+xml";
   case "pdf"_t: return "application/pdf";
-  case "js"_t:
-  case "mjs"_t: return "application/javascript";
   case "json"_t: return "application/json";
   case "rss"_t: return "application/rss+xml";
   case "tar"_t: return "application/x-tar";
@@ -2933,14 +2934,21 @@ inline const char *status_message(int status) {
 }
 
 inline bool can_compress_content_type(const std::string &content_type) {
-  return (!content_type.rfind("text/", 0) &&
-          content_type != "text/event-stream") ||
-         content_type == "image/svg+xml" ||
-         content_type == "application/javascript" ||
-         content_type == "application/json" ||
-         content_type == "application/xml" ||
-         content_type == "application/protobuf" ||
-         content_type == "application/xhtml+xml";
+  using udl::operator""_t;
+
+  auto tag = str2tag(content_type);
+
+  switch (tag) {
+  case "image/svg+xml"_t:
+  case "application/javascript"_t:
+  case "application/json"_t:
+  case "application/xml"_t:
+  case "application/protobuf"_t:
+  case "application/xhtml+xml"_t: return true;
+
+  default:
+    return !content_type.rfind("text/", 0) && tag != "text/event-stream"_t;
+  }
 }
 
 inline EncodingType encoding_type(const Request &req, const Response &res) {
@@ -3019,7 +3027,6 @@ inline bool gzip_compressor::compress(const char *data, size_t data_length,
     assert((flush == Z_FINISH && ret == Z_STREAM_END) ||
            (flush == Z_NO_FLUSH && ret == Z_OK));
     assert(strm_.avail_in == 0);
-
   } while (data_length > 0);
 
   return true;
@@ -3431,7 +3438,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
         if (!ret) { status = exceed_payload_max_length ? 413 : 400; }
         return ret;
       });
-}
+} // namespace detail
 
 inline ssize_t write_headers(Stream &strm, const Headers &headers) {
   ssize_t write_len = 0;
@@ -6155,7 +6162,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
 
 #ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
   if (!req.has_header("User-Agent")) {
-    req.headers.emplace("User-Agent", "cpp-httplib/0.10.2");
+    req.headers.emplace("User-Agent", "cpp-httplib/0.10.3");
   }
 #endif
 
@@ -7250,7 +7257,8 @@ static SSLInit sslinit_;
 // SSL HTTP server implementation
 inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
                             const char *client_ca_cert_file_path,
-                            const char *client_ca_cert_dir_path) {
+                            const char *client_ca_cert_dir_path,
+                            const char *private_key_password) {
   ctx_ = SSL_CTX_new(TLS_server_method());
 
   if (ctx_) {
@@ -7259,6 +7267,11 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
                             SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
 
     SSL_CTX_set_min_proto_version(ctx_, TLS1_1_VERSION);
+
+    // add default password callback before opening encrypted private key
+    if (private_key_password != nullptr && (private_key_password[0] != '\0') ) {
+      SSL_CTX_set_default_passwd_cb_userdata(ctx_, (char *)private_key_password);
+    }
 
     if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) !=
