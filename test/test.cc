@@ -1416,6 +1416,35 @@ TEST(InvalidFormatTest, StatusCode) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(URLFragmentTest, WithFragment) {
+  Server svr;
+
+  svr.Get("/hi",
+          [](const Request &req, Response &/*res*/) {
+            EXPECT_TRUE(req.target == "/hi");
+          });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi#key1=val1=key2=val2");
+    EXPECT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+
+    res = cli.Get("/hi%23key1=val1=key2=val2");
+    EXPECT_TRUE(res);
+    EXPECT_EQ(404, res->status);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 class ServerTest : public ::testing::Test {
 protected:
   ServerTest()
@@ -4791,7 +4820,6 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   t.join();
   t2.join();
 }
-#endif
 
 TEST(MultipartFormDataTest, LargeData) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
@@ -4855,3 +4883,5 @@ TEST(MultipartFormDataTest, LargeData) {
   svr.stop();
   t.join();
 }
+#endif
+

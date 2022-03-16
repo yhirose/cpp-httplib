@@ -4965,6 +4965,14 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
   if (req.version != "HTTP/1.1" && req.version != "HTTP/1.0") { return false; }
 
   {
+    // Skip URL fragment
+    for (size_t i = 0; i < len; i++) {
+      if (req.target[i] == '#') {
+        req.target.erase(i);
+        break;
+      }
+    }
+
     size_t count = 0;
 
     detail::split(req.target.data(), req.target.data() + req.target.size(), '?',
@@ -7269,8 +7277,9 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
     SSL_CTX_set_min_proto_version(ctx_, TLS1_1_VERSION);
 
     // add default password callback before opening encrypted private key
-    if (private_key_password != nullptr && (private_key_password[0] != '\0') ) {
-      SSL_CTX_set_default_passwd_cb_userdata(ctx_, (char *)private_key_password);
+    if (private_key_password != nullptr && (private_key_password[0] != '\0')) {
+      SSL_CTX_set_default_passwd_cb_userdata(ctx_,
+                                             (char *)private_key_password);
     }
 
     if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
