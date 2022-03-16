@@ -4966,7 +4966,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
 
   {
     // Skip URL fragment
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = 0; i < req.target.size(); i++) {
       if (req.target[i] == '#') {
         req.target.erase(i);
         break;
