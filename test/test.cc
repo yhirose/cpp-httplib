@@ -4792,3 +4792,66 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   t2.join();
 }
 #endif
+
+TEST(MultipartFormDataTest, LargeData) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Post("/post", [&](const Request &req, Response & /*res*/,
+                        const ContentReader &content_reader) {
+    if (req.is_multipart_form_data()) {
+      MultipartFormDataItems files;
+      content_reader(
+          [&](const MultipartFormData &file) {
+            files.push_back(file);
+            return true;
+          },
+          [&](const char *data, size_t data_length) {
+            files.back().content.append(data, data_length);
+            return true;
+          });
+
+        EXPECT_TRUE(std::string(files[0].name) == "document");
+        EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+        EXPECT_TRUE(files[0].filename == "2MB_data");
+        EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+
+        EXPECT_TRUE(files[1].name == "hello");
+        EXPECT_TRUE(files[1].content == "world");
+        EXPECT_TRUE(files[1].filename == "");
+        EXPECT_TRUE(files[1].content_type == "");
+    } else {
+      std::string body;
+      content_reader([&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+    }
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    std::string data(1024 * 1024 * 2, '.');
+    std::stringstream buffer;
+    buffer << data;
+
+    Client cli("https://localhost:8080");
+    cli.enable_server_certificate_verification(false);
+
+    MultipartFormDataItems items{
+        {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+        {"hello", "world", "", ""},
+    };
+
+    auto res = cli.Post("/post", items);
+    ASSERT_TRUE(res);
+    ASSERT_EQ(200, res->status);
+  }
+
+  svr.stop();
+  t.join();
+}
