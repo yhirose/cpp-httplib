@@ -3752,10 +3752,11 @@ public:
   bool parse(const char *buf, size_t n, const ContentReceiver &content_callback,
              const MultipartContentHeader &header_callback) {
 
+    // TODO: support 'filename*'
     static const std::regex re_content_disposition(
-        "^Content-Disposition:\\s*form-data;\\s*name=\"(.*?)\"(?:;\\s*filename="
-        "\"(.*?)\")?\\s*$",
+        R"~(^Content-Disposition:\s*form-data;\s*name="(.*?)"(?:;\s*filename="(.*?)")?(?:;\s*filename\*=\S+)?\s*$)~",
         std::regex_constants::icase);
+
     static const std::string dash_ = "--";
     static const std::string crlf_ = "\r\n";
 
