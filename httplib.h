@@ -6171,7 +6171,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
 
 #ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
   if (!req.has_header("User-Agent")) {
-    req.headers.emplace("User-Agent", "cpp-httplib/0.10.3");
+    req.headers.emplace("User-Agent", "cpp-httplib/0.10.4");
   }
 #endif
 
