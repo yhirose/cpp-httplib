@@ -331,11 +331,11 @@ public:
   DataSink &operator=(DataSink &&) = delete;
 
   bool sendfile(const std::string& path, ssize_t file_offset, size_t length) {
-#ifdef __linux__
     if (!socket_ || !offset_) {
       return false;
     }
 
+#ifdef __linux__
     int fd;
     if ((fd = open(path.c_str(), O_RDONLY)) < 0) {
       return false;
@@ -364,8 +364,6 @@ public:
   }
 
   bool sendfile(const std::string& path) {
-    (void) socket_;
-    (void) offset_;
     // Use std::filesystem::file_size instead once we support C++17
     std::ifstream fs(path, std::ios_base::binary);
     fs.seekg(0, std::ios_base::end);
