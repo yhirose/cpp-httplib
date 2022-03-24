@@ -1650,6 +1650,28 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("abcdefg", "text/plain");
              })
+        .Get("/sendfile",
+             [&](const Request & /*req*/, Response &res) {
+               std::ifstream fs("./image.jpg", std::ios_base::binary);
+               fs.seekg(0, std::ios_base::end);
+               auto size = fs.tellg();
+               res.set_content_provider(
+                   static_cast<size_t>(size), "image/jpeg", [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
+                     EXPECT_TRUE(sink.sendfile("./image.jpg"));
+                     return true;
+                   });
+             })
+        .Get("/sendfile-without-length",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content_provider(
+                   "image/jpeg", [](size_t /*offset*/, DataSink &sink) {
+                     EXPECT_TRUE(sink.is_writable());
+                     EXPECT_TRUE(sink.sendfile("./image.jpg"));
+                     sink.done();
+                     return true;
+                   });
+             })
         .Post("/chunked",
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(req.body, "dechunked post body");
@@ -2734,6 +2756,24 @@ TEST_F(ServerTest, GetStreamedChunked2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, SendFile) {
+  auto res = cli_.Get("/sendfile");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  std::string out;
+  detail::read_file("./image.jpg", out);
+  EXPECT_EQ(out, res->body);
+}
+
+TEST_F(ServerTest, SendFileWithoutLength) {
+  auto res = cli_.Get("/sendfile-without-length");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  std::string out;
+  detail::read_file("./image.jpg", out);
+  EXPECT_EQ(out, res->body);
 }
 
 TEST_F(ServerTest, LargeChunkedPost) {

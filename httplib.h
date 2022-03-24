@@ -173,7 +173,9 @@ using socket_t = SOCKET;
 #include <netdb.h>
 #include <netinet/in.h>
 #ifdef __linux__
+#include <fcntl.h>
 #include <resolv.h>
+#include <sys/sendfile.h>
 #endif
 #include <netinet/tcp.h>
 #ifdef CPPHTTPLIB_USE_POLL
@@ -320,12 +322,56 @@ using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
 
 class DataSink {
 public:
-  DataSink() : os(&sb_), sb_(*this) {}
+  DataSink(socket_t socket = 0, size_t* offset = nullptr)
+    : os(&sb_), sb_(*this), socket_(socket), offset_(offset) {}
 
   DataSink(const DataSink &) = delete;
   DataSink &operator=(const DataSink &) = delete;
   DataSink(DataSink &&) = delete;
   DataSink &operator=(DataSink &&) = delete;
+
+  bool sendfile(const std::string& path, ssize_t file_offset, size_t length) {
+#ifdef __linux__
+    if (!socket_ || !offset_) {
+      return false;
+    }
+
+    int fd;
+    if ((fd = open(path.c_str(), O_RDONLY)) < 0) {
+      return false;
+    }
+
+    size_t total_bytes_written = 0;
+    while (total_bytes_written < length) {
+      ssize_t bytes_written = ::sendfile(socket_, fd, &file_offset, length);
+      if (bytes_written < 0) {
+        close(fd);
+        return false;
+      }
+      total_bytes_written += bytes_written;
+    }
+    *offset_ += total_bytes_written;
+    close(fd);
+    return true;
+#else // __linux__
+    std::string data;
+    std::ifstream fs(path, std::ios_base::binary);
+    fs.seekg(file_offset);
+    data.resize(static_cast<size_t>(length));
+    fs.read(&data[0], static_cast<std::streamsize>(length));
+    return write(&data[0], length);
+#endif // __linux__
+  }
+
+  bool sendfile(const std::string& path) {
+    (void) socket_;
+    (void) offset_;
+    // Use std::filesystem::file_size instead once we support C++17
+    std::ifstream fs(path, std::ios_base::binary);
+    fs.seekg(0, std::ios_base::end);
+    auto size = fs.tellg();
+    return sendfile(path, 0, static_cast<size_t>(size));
+  }
 
   std::function<bool(const char *data, size_t data_len)> write;
   std::function<void()> done;
@@ -348,6 +394,8 @@ private:
   };
 
   data_sink_streambuf sb_;
+  socket_t socket_ = 0;
+  size_t* offset_ = nullptr; // offset of response data
 };
 
 using ContentProvider =
@@ -3470,7 +3518,7 @@ inline bool write_content(Stream &strm, const ContentProvider &content_provider,
                           Error &error) {
   size_t end_offset = offset + length;
   auto ok = true;
-  DataSink data_sink;
+  DataSink data_sink(strm.socket(), &offset);
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
     if (ok) {
@@ -3517,7 +3565,7 @@ write_content_without_length(Stream &strm,
   size_t offset = 0;
   auto data_available = true;
   auto ok = true;
-  DataSink data_sink;
+  DataSink data_sink(strm.socket(), &offset);
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
     if (ok) {
