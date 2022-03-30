@@ -338,6 +338,7 @@ public:
 #ifdef __linux__
     int fd;
     if ((fd = open(path.c_str(), O_RDONLY)) < 0) {
+      std::cerr << "Failed to open file" << std::endl;
       return false;
     }
 
@@ -346,6 +347,7 @@ public:
       ssize_t bytes_written = ::sendfile(socket_, fd, &file_offset, length);
       if (bytes_written < 0) {
         close(fd);
+	std::cerr << "Failed to call sendfile with errno=" << errno << ":" << strerror(errno) << std::endl;
         return false;
       }
       total_bytes_written += bytes_written;
