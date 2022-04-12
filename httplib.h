@@ -2653,9 +2653,10 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
 inline std::string if2ip(int address_family, const std::string &ifn) {
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
+  std::string addr_candidate;
   for (auto ifa = ifap; ifa; ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr && ifa->ifa_addr->sa_family == address_family &&
-        ifn == ifa->ifa_name) {
+    if (ifa->ifa_addr && ifn == ifa->ifa_name && (AF_UNSPEC == address_family ||
+        ifa->ifa_addr->sa_family == address_family)) {
       if (ifa->ifa_addr->sa_family == AF_INET) {
         auto sa = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
         char buf[INET_ADDRSTRLEN];
@@ -2665,16 +2666,24 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
         }
       } else if (ifa->ifa_addr->sa_family == AF_INET6) {
         auto sa = reinterpret_cast<struct sockaddr_in6 *>(ifa->ifa_addr);
-        char buf[INET6_ADDRSTRLEN];
-        if (inet_ntop(AF_INET6, &sa->sin6_addr, buf, INET6_ADDRSTRLEN)) {
-          freeifaddrs(ifap);
-          return std::string(buf, INET6_ADDRSTRLEN);
+        if(!IN6_IS_ADDR_LINKLOCAL(&sa->sin6_addr)) {
+           char buf[INET6_ADDRSTRLEN] = {};
+           if (inet_ntop(AF_INET6, &sa->sin6_addr, buf, INET6_ADDRSTRLEN)) {
+             // equivalent to mac's IN6_IS_ADDR_UNIQUE_LOCAL
+             auto s6_addr_head = sa->sin6_addr.s6_addr[0];
+             if(!(s6_addr_head == 0xfc || s6_addr_head == 0xfd)) {
+               freeifaddrs(ifap);
+               return std::string(buf, INET6_ADDRSTRLEN);
+             } else {
+               addr_candidate = std::string(buf, INET6_ADDRSTRLEN);
+             }
+           }
         }
       }
     }
   }
   freeifaddrs(ifap);
-  return std::string();
+  return addr_candidate.empty() ? addr_candidate : std::string();
 }
 #endif
 
