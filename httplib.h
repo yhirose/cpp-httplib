@@ -2684,7 +2684,7 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
     }
   }
   freeifaddrs(ifap);
-  return addr_candidate.empty() ? addr_candidate : std::string();
+  return addr_candidate;
 }
 #endif
 
