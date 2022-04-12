@@ -1419,10 +1419,9 @@ TEST(InvalidFormatTest, StatusCode) {
 TEST(URLFragmentTest, WithFragment) {
   Server svr;
 
-  svr.Get("/hi",
-          [](const Request &req, Response &/*res*/) {
-            EXPECT_TRUE(req.target == "/hi");
-          });
+  svr.Get("/hi", [](const Request &req, Response & /*res*/) {
+    EXPECT_TRUE(req.target == "/hi");
+  });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
 
@@ -4369,6 +4368,18 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(200, res->status);
 }
 
+TEST(SSLClientTest, SetInterfaceWithINET6) {
+  auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
+  ASSERT_TRUE(cli != nullptr);
+
+  cli->set_address_family(AF_INET6);
+  cli->set_interface("en0");
+
+  auto res = cli->Get("/get");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+}
+
 TEST(SSLClientServerTest, ClientCertPresent) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
@@ -4838,15 +4849,15 @@ TEST(MultipartFormDataTest, LargeData) {
             return true;
           });
 
-        EXPECT_TRUE(std::string(files[0].name) == "document");
-        EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
-        EXPECT_TRUE(files[0].filename == "2MB_data");
-        EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+      EXPECT_TRUE(std::string(files[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+      EXPECT_TRUE(files[0].filename == "2MB_data");
+      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
 
-        EXPECT_TRUE(files[1].name == "hello");
-        EXPECT_TRUE(files[1].content == "world");
-        EXPECT_TRUE(files[1].filename == "");
-        EXPECT_TRUE(files[1].content_type == "");
+      EXPECT_TRUE(files[1].name == "hello");
+      EXPECT_TRUE(files[1].content == "world");
+      EXPECT_TRUE(files[1].filename == "");
+      EXPECT_TRUE(files[1].content_type == "");
     } else {
       std::string body;
       content_reader([&](const char *data, size_t data_length) {
