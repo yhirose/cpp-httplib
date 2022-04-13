@@ -973,7 +973,7 @@ public:
 
   void stop();
 
-  void set_hostname_addr_map(const std::map<std::string, std::string> addr_map);
+  void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
   void set_default_headers(Headers headers);
 
@@ -4212,10 +4212,12 @@ class WSInit {
 public:
   WSInit() {
     WSADATA wsaData;
-    WSAStartup(0x0002, &wsaData);
+    if (WSAStartup(0x0002, &wsaData) == 0) startup = true;
   }
 
-  ~WSInit() { WSACleanup(); }
+  ~WSInit() { if (startup) WSACleanup(); }
+
+  bool startup = false;
 };
 
 static WSInit wsinit_;
@@ -6950,7 +6952,7 @@ inline void ClientImpl::set_follow_location(bool on) { follow_location_ = on; }
 inline void ClientImpl::set_url_encode(bool on) { url_encode_ = on; }
 
 inline void ClientImpl::set_hostname_addr_map(
-    const std::map<std::string, std::string> addr_map) {
+    std::map<std::string, std::string> addr_map) {
   addr_map_ = std::move(addr_map);
 }
 
@@ -8076,7 +8078,7 @@ inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
 inline void Client::stop() { cli_->stop(); }
 
 inline void Client::set_hostname_addr_map(
-    const std::map<std::string, std::string> addr_map) {
+    std::map<std::string, std::string> addr_map) {
   cli_->set_hostname_addr_map(std::move(addr_map));
 }
 
