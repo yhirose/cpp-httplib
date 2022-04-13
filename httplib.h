@@ -2699,11 +2699,6 @@ inline socket_t create_client_socket(
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
-          if (address_family == AF_INET6) {
-            reinterpret_cast<struct sockaddr_in6 *>(&ai.ai_addr)
-                ->sin6_scope_id = if_nametoindex(intf.c_str());
-          }
-
           auto ip = if2ip(address_family, intf);
           if (ip.empty()) { ip = intf; }
           if (!bind_ip_address(sock2, ip.c_str())) {
