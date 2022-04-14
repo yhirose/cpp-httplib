@@ -170,6 +170,7 @@ using socket_t = SOCKET;
 #include <arpa/inet.h>
 #include <cstring>
 #include <ifaddrs.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #ifdef __linux__
@@ -2649,11 +2650,14 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
 #endif
 
 #ifdef USE_IF2IP
-inline std::string if2ip(const std::string &ifn) {
+inline std::string if2ip(int address_family, const std::string &ifn) {
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
+  std::string addr_candidate;
   for (auto ifa = ifap; ifa; ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr && ifn == ifa->ifa_name) {
+    if (ifa->ifa_addr && ifn == ifa->ifa_name &&
+        (AF_UNSPEC == address_family ||
+         ifa->ifa_addr->sa_family == address_family)) {
       if (ifa->ifa_addr->sa_family == AF_INET) {
         auto sa = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
         char buf[INET_ADDRSTRLEN];
@@ -2661,11 +2665,26 @@ inline std::string if2ip(const std::string &ifn) {
           freeifaddrs(ifap);
           return std::string(buf, INET_ADDRSTRLEN);
         }
+      } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+        auto sa = reinterpret_cast<struct sockaddr_in6 *>(ifa->ifa_addr);
+        if (!IN6_IS_ADDR_LINKLOCAL(&sa->sin6_addr)) {
+          char buf[INET6_ADDRSTRLEN] = {};
+          if (inet_ntop(AF_INET6, &sa->sin6_addr, buf, INET6_ADDRSTRLEN)) {
+            // equivalent to mac's IN6_IS_ADDR_UNIQUE_LOCAL
+            auto s6_addr_head = sa->sin6_addr.s6_addr[0];
+            if (s6_addr_head == 0xfc || s6_addr_head == 0xfd) {
+              addr_candidate = std::string(buf, INET6_ADDRSTRLEN);
+            } else {
+              freeifaddrs(ifap);
+              return std::string(buf, INET6_ADDRSTRLEN);
+            }
+          }
+        }
       }
     }
   }
   freeifaddrs(ifap);
-  return std::string();
+  return addr_candidate;
 }
 #endif
 
@@ -2680,7 +2699,7 @@ inline socket_t create_client_socket(
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
-          auto ip = if2ip(intf);
+          auto ip = if2ip(address_family, intf);
           if (ip.empty()) { ip = intf; }
           if (!bind_ip_address(sock2, ip.c_str())) {
             error = Error::BindIPAddress;
