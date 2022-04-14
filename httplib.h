@@ -1308,7 +1308,7 @@ public:
 
   void stop();
 
-  void set_hostname_addr_map(const std::map<std::string, std::string> addr_map);
+  void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
   void set_default_headers(Headers headers);
 
@@ -4212,12 +4212,12 @@ class WSInit {
 public:
   WSInit() {
     WSADATA wsaData;
-    if (WSAStartup(0x0002, &wsaData) == 0) startup = true;
+    if (WSAStartup(0x0002, &wsaData) == 0) is_valid_ = true;
   }
 
-  ~WSInit() { if (startup) WSACleanup(); }
+  ~WSInit() { if (is_valid_) WSACleanup(); }
 
-  bool startup = false;
+  bool is_valid_ = false;
 };
 
 static WSInit wsinit_;
