@@ -18,6 +18,9 @@
 #define CLIENT_CA_CERT_DIR "."
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
+#define SERVER_ENCRYPTED_CERT_FILE "./cert_encrypted.pem"
+#define SERVER_ENCRYPTED_PRIVATE_KEY_FILE "./key_encrypted.pem"
+#define SERVER_ENCRYPTED_PRIVATE_KEY_PASS "test123!"
 
 using namespace std;
 using namespace httplib;
@@ -37,8 +40,12 @@ MultipartFormData &get_file_value(MultipartFormDataItems &files,
   auto it = std::find_if(
       files.begin(), files.end(),
       [&](const MultipartFormData &file) { return file.name == key; });
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  return *it;
+#else
   if (it != files.end()) { return *it; }
   throw std::runtime_error("invalid mulitpart form data name error");
+#endif
 }
 
 TEST(ConstructorTest, MoveConstructible) {
@@ -53,6 +60,14 @@ TEST(StartupTest, WSAStartup) {
   ASSERT_EQ(0, ret);
 }
 #endif
+
+TEST(DecodeURLTest, PercentCharacter) {
+  EXPECT_EQ(
+      detail::decode_url(
+          R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)",
+          false),
+      R"(descrip=Gastos áéíóúñÑ 6)");
+}
 
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
@@ -389,6 +404,31 @@ TEST(ChunkedEncodingTest, FromHTTPWatch_Online) {
   EXPECT_EQ(out, res->body);
 }
 
+TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
+  auto host = "www.httpwatch.com";
+
+  auto ip = hosted_at(host);
+  EXPECT_EQ("191.236.16.12", ip);
+
+  std::vector<std::string> addrs;
+  hosted_at(host, addrs);
+  EXPECT_EQ(1u, addrs.size());
+}
+
+#if 0 // It depends on each test environment...
+TEST(HostnameToIPConversionTest, YouTube_Online) {
+  auto host = "www.youtube.com";
+
+  std::vector<std::string> addrs;
+  hosted_at(host, addrs);
+
+  EXPECT_EQ(20u, addrs.size());
+
+  auto it = std::find(addrs.begin(), addrs.end(), "2607:f8b0:4006:809::200e");
+  EXPECT_TRUE(it != addrs.end());
+}
+#endif
+
 TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   auto host = "www.httpwatch.com";
 
@@ -570,10 +610,11 @@ TEST(ConnectionErrorTest, InvalidPort) {
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
-  EXPECT_EQ(Error::Connection, res.error());
+  EXPECT_TRUE(Error::Connection == res.error() ||
+              Error::ConnectionTimeout == res.error());
 }
 
-TEST(ConnectionErrorTest, Timeout) {
+TEST(ConnectionErrorTest, Timeout_Online) {
   auto host = "google.com";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -585,9 +626,14 @@ TEST(ConnectionErrorTest, Timeout) {
 #endif
   cli.set_connection_timeout(std::chrono::seconds(2));
 
+  // only probe one address type so that the error reason
+  // correlates to the timed-out IPv4, not the unsupported
+  // IPv6 connection attempt
+  cli.set_address_family(AF_INET);
+
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
-  EXPECT_TRUE(res.error() == Error::Connection);
+  EXPECT_EQ(Error::ConnectionTimeout, res.error());
 }
 
 TEST(CancelTest, NoCancel_Online) {
@@ -742,11 +788,11 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
 }
 #endif
 
-TEST(SpecifyServerIPAddressTest, AnotherHostname) {
+TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
   auto host = "google.com";
   auto another_host = "example.com";
   auto wrong_ip = "0.0.0.0";
-  
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
 #else
@@ -759,10 +805,10 @@ TEST(SpecifyServerIPAddressTest, AnotherHostname) {
   ASSERT_EQ(301, res->status);
 }
 
-TEST(SpecifyServerIPAddressTest, RealHostname) {
+TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
   auto host = "google.com";
   auto wrong_ip = "0.0.0.0";
-  
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
 #else
@@ -1152,6 +1198,17 @@ TEST(BindServerTest, BindAndListenSeparatelySSL) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
+  SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE,
+                nullptr, nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(port > 0);
+  svr.stop();
+}
+#endif
+
 TEST(ErrorHandlerTest, ContentLength) {
   Server svr;
 
@@ -1187,15 +1244,17 @@ TEST(ErrorHandlerTest, ContentLength) {
   ASSERT_FALSE(svr.is_running());
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionHandlerTest, ContentLength) {
   Server svr;
 
-  svr.set_exception_handler(
-      [](const Request & /*req*/, Response &res, std::exception & /*e*/) {
-        res.status = 500;
-        res.set_content("abcdefghijklmnopqrstuvwxyz",
-                        "text/html"); // <= Content-Length still 13
-      });
+  svr.set_exception_handler([](const Request & /*req*/, Response &res,
+                               std::exception &e) {
+    EXPECT_EQ("abc", std::string(e.what()));
+    res.status = 500;
+    res.set_content("abcdefghijklmnopqrstuvwxyz",
+                    "text/html"); // <= Content-Length still 13 at this point
+  });
 
   svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!\n", "text/plain");
@@ -1207,21 +1266,35 @@ TEST(ExceptionHandlerTest, ContentLength) {
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
-  {
+  for (size_t i = 0; i < 10; i++) {
     Client cli(HOST, PORT);
 
-    auto res = cli.Get("/hi");
-    ASSERT_TRUE(res);
-    EXPECT_EQ(500, res->status);
-    EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
-    EXPECT_EQ("26", res->get_header_value("Content-Length"));
-    EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+    for (size_t j = 0; j < 100; j++) {
+      auto res = cli.Get("/hi");
+      ASSERT_TRUE(res);
+      EXPECT_EQ(500, res->status);
+      EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+      EXPECT_EQ("26", res->get_header_value("Content-Length"));
+      EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+    }
+
+    cli.set_keep_alive(true);
+
+    for (size_t j = 0; j < 100; j++) {
+      auto res = cli.Get("/hi");
+      ASSERT_TRUE(res);
+      EXPECT_EQ(500, res->status);
+      EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+      EXPECT_EQ("26", res->get_header_value("Content-Length"));
+      EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
+    }
   }
 
   svr.stop();
   thread.join();
   ASSERT_FALSE(svr.is_running());
 }
+#endif
 
 TEST(NoContentTest, ContentLength) {
   Server svr;
@@ -1336,6 +1409,34 @@ TEST(InvalidFormatTest, StatusCode) {
 
     auto res = cli.Get("/hi");
     ASSERT_FALSE(res);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(URLFragmentTest, WithFragment) {
+  Server svr;
+
+  svr.Get("/hi", [](const Request &req, Response & /*res*/) {
+    EXPECT_TRUE(req.target == "/hi");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/hi#key1=val1=key2=val2");
+    EXPECT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+
+    res = cli.Get("/hi%23key1=val1=key2=val2");
+    EXPECT_TRUE(res);
+    EXPECT_EQ(404, res->status);
   }
 
   svr.stop();
@@ -1609,6 +1710,11 @@ protected:
                 EXPECT_FALSE(req.has_header("Content-Type"));
                 EXPECT_EQ("0", req.get_header_value("Content-Length"));
                 res.set_content("empty-no-content-type", "text/plain");
+              })
+        .Post("/post-large",
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, LARGE_DATA);
+                res.set_content(req.body, "text/plain");
               })
         .Put("/empty-no-content-type",
              [&](const Request &req, Response &res) {
@@ -2013,6 +2119,13 @@ TEST_F(ServerTest, PostEmptyContentWithNoContentType) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty-no-content-type", res->body);
+}
+
+TEST_F(ServerTest, PostLarge) {
+  auto res = cli_.Post("/post-large", LARGE_DATA, "text/plain");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+  EXPECT_EQ(LARGE_DATA, res->body);
 }
 
 TEST_F(ServerTest, PutEmptyContentWithNoContentType) {
@@ -3619,10 +3732,11 @@ TEST(StreamingTest, NoContentLengthStreaming) {
 
   auto get_thread = std::thread([&client]() {
     std::string s;
-    auto res = client.Get("/stream", [&s](const char *data, size_t len) -> bool {
-      s += std::string(data, len);
-      return true;
-    });
+    auto res =
+        client.Get("/stream", [&s](const char *data, size_t len) -> bool {
+          s += std::string(data, len);
+          return true;
+        });
     EXPECT_EQ("aaabbb", s);
   });
 
@@ -3681,6 +3795,7 @@ TEST(MountTest, Unmount) {
   ASSERT_FALSE(svr.is_running());
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
 
@@ -3709,6 +3824,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
+#endif
 
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
@@ -3746,6 +3862,36 @@ TEST(KeepAliveTest, ReadTimeout) {
   svr.stop();
   listen_thread.join();
   ASSERT_FALSE(svr.is_running());
+}
+
+TEST(KeepAliveTest, Issue1041) {
+  const auto resourcePath = "/hi";
+
+  Server svr;
+  svr.set_keep_alive_timeout(3);
+
+  svr.Get(resourcePath, [](const httplib::Request &, httplib::Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto a2 = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  Client cli(HOST, PORT);
+  cli.set_keep_alive(true);
+
+  auto result = cli.Get(resourcePath);
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  result = cli.Get(resourcePath);
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  svr.stop();
+  a2.wait();
 }
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
@@ -4222,6 +4368,20 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(200, res->status);
 }
 
+#if 0
+TEST(SSLClientTest, SetInterfaceWithINET6) {
+  auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
+  ASSERT_TRUE(cli != nullptr);
+
+  cli->set_address_family(AF_INET6);
+  cli->set_interface("en0");
+
+  auto res = cli->Get("/get");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+}
+#endif
+
 TEST(SSLClientServerTest, ClientCertPresent) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
@@ -4515,9 +4675,11 @@ TEST(NoSSLSupport, SimpleInterface) {
 }
 #endif
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(InvalidScheme, SimpleInterface) {
   ASSERT_ANY_THROW(Client cli("scheme://yahoo.com"));
 }
+#endif
 
 TEST(NoScheme, SimpleInterface) {
   Client cli("yahoo.com:80");
@@ -4671,4 +4833,68 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   t.join();
   t2.join();
 }
+
+TEST(MultipartFormDataTest, LargeData) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Post("/post", [&](const Request &req, Response & /*res*/,
+                        const ContentReader &content_reader) {
+    if (req.is_multipart_form_data()) {
+      MultipartFormDataItems files;
+      content_reader(
+          [&](const MultipartFormData &file) {
+            files.push_back(file);
+            return true;
+          },
+          [&](const char *data, size_t data_length) {
+            files.back().content.append(data, data_length);
+            return true;
+          });
+
+      EXPECT_TRUE(std::string(files[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+      EXPECT_TRUE(files[0].filename == "2MB_data");
+      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+
+      EXPECT_TRUE(files[1].name == "hello");
+      EXPECT_TRUE(files[1].content == "world");
+      EXPECT_TRUE(files[1].filename == "");
+      EXPECT_TRUE(files[1].content_type == "");
+    } else {
+      std::string body;
+      content_reader([&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+    }
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    std::string data(1024 * 1024 * 2, '.');
+    std::stringstream buffer;
+    buffer << data;
+
+    Client cli("https://localhost:8080");
+    cli.enable_server_certificate_verification(false);
+
+    MultipartFormDataItems items{
+        {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+        {"hello", "world", "", ""},
+    };
+
+    auto res = cli.Post("/post", items);
+    ASSERT_TRUE(res);
+    ASSERT_EQ(200, res->status);
+  }
+
+  svr.stop();
+  t.join();
+}
 #endif
+

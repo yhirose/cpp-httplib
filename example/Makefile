@@ -1,5 +1,5 @@
 #CXX = clang++
-CXXFLAGS = -std=c++11 -I.. -Wall -Wextra -pthread
+CXXFLAGS = -O2 -std=c++11 -I.. -Wall -Wextra -pthread
 
 PREFIX = /usr/local
 #PREFIX = $(shell brew --prefix)

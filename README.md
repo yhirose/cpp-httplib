@@ -183,6 +183,15 @@ The followings are built-in mappings:
 | webm       | video/webm                  | zip        | application/zip             |
 | mp3        | audio/mp3                   | wasm       | application/wasm            |
 
+### File request handler
+
+```cpp
+// The handler is called right before the response is sent to a client
+svr.set_file_request_handler([](const Request &req, Response &res) {
+  ...
+});
+```
+
 NOTE: These static file server methods are not thread-safe.
 
 ### Logging
@@ -220,7 +229,7 @@ svr.set_exception_handler([](const auto& req, auto& res, std::exception &e) {
 ### Pre routing handler
 
 ```cpp
-svr.set_pre_routing_handler([](const auto& req, auto& res) -> bool {
+svr.set_pre_routing_handler([](const auto& req, auto& res) {
   if (req.path == "/hello") {
     res.set_content("world", "text/html");
     return Server::HandlerResponse::Handled;
@@ -303,7 +312,7 @@ Without content length:
 svr.Get("/stream", [&](const Request &req, Response &res) {
   res.set_content_provider(
     "text/plain", // Content type
-    [&](size_t offset, size_t length, DataSink &sink) {
+    [&](size_t offset, DataSink &sink) {
       if (/* there is still data */) {
         std::vector<char> data;
         // prepare data...
