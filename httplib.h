@@ -4166,8 +4166,8 @@ inline bool has_crlf(const char *s) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline std::string message_digest(const std::string &s, const EVP_MD *algo) {
-  auto context = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>
-      (EVP_MD_CTX_new(), EVP_MD_CTX_free);
+  auto context = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>(
+      EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
   unsigned int hash_length = 0;
   unsigned char hash[EVP_MAX_MD_SIZE];
@@ -4178,8 +4178,8 @@ inline std::string message_digest(const std::string &s, const EVP_MD *algo) {
 
   std::stringstream ss;
   for (auto i = 0u; i < hash_length; ++i) {
-    ss << std::hex << std::setw(2) << std::setfill('0') <<
-        (unsigned int) hash[i];
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << (unsigned int)hash[i];
   }
 
   return ss.str();
@@ -4234,7 +4234,9 @@ public:
     if (WSAStartup(0x0002, &wsaData) == 0) is_valid_ = true;
   }
 
-  ~WSInit() { if (is_valid_) WSACleanup(); }
+  ~WSInit() {
+    if (is_valid_) WSACleanup();
+  }
 
   bool is_valid_ = false;
 };
@@ -6970,8 +6972,8 @@ inline void ClientImpl::set_follow_location(bool on) { follow_location_ = on; }
 
 inline void ClientImpl::set_url_encode(bool on) { url_encode_ = on; }
 
-inline void ClientImpl::set_hostname_addr_map(
-    std::map<std::string, std::string> addr_map) {
+inline void
+ClientImpl::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
   addr_map_ = std::move(addr_map);
 }
 
@@ -8096,8 +8098,8 @@ inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
 
 inline void Client::stop() { cli_->stop(); }
 
-inline void Client::set_hostname_addr_map(
-    std::map<std::string, std::string> addr_map) {
+inline void
+Client::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
   cli_->set_hostname_addr_map(std::move(addr_map));
 }
 
