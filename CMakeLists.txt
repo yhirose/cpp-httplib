@@ -60,10 +60,10 @@
 ]]
 cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
 
-# Get the user agent and use it as a version
-# This gets the string with the user agent from the header.
+# Get the CPPHTTPLIB_VERSION value and use it as a version
+# This gets the string with the CPPHTTPLIB_VERSION value from the header.
 # This is so the maintainer doesn't actually need to update this manually.
-file(STRINGS httplib.h _raw_version_string REGEX "User\-Agent.*cpp\-httplib/([0-9]+\.?)+")
+file(STRINGS httplib.h _raw_version_string REGEX "CPPHTTPLIB_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"")
 
 # Needed since git tags have "v" prefixing them.
 # Also used if the fallback to user agent string is being used.
