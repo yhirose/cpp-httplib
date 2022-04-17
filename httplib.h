@@ -1,20 +1,20 @@
 //
 //  httplib.h
 //
-//  Copyright (c) 2021 Yuji Hirose. All rights reserved.
+//  Copyright (c) 2022 Yuji Hirose. All rights reserved.
 //  MIT License
 //
 
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
+#define CPPHTTPLIB_VERSION_MAJOR 0
+#define CPPHTTPLIB_VERSION_MINOR 10
+#define CPPHTTPLIB_VERSION_PATCH 5
+
 /*
  * Configuration
  */
-
-#define CPPHTTPLIB_VERSION_MAJOR 0
-#define CPPHTTPLIB_VERSION_MINOR 10
-#define CPPHTTPLIB_VERSION_PATCH 4
 
 #ifndef CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
@@ -6198,10 +6198,9 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
 
 #ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
   if (!req.has_header("User-Agent")) {
-    auto agent = "cpp-httplib/" +
-                        std::to_string(CPPHTTPLIB_VERSION_MAJOR) + "." +
-                        std::to_string(CPPHTTPLIB_VERSION_MINOR) + "." +
-                        std::to_string(CPPHTTPLIB_VERSION_PATCH);
+    auto agent = "cpp-httplib/" + std::to_string(CPPHTTPLIB_VERSION_MAJOR) +
+                 "." + std::to_string(CPPHTTPLIB_VERSION_MINOR) + "." +
+                 std::to_string(CPPHTTPLIB_VERSION_PATCH);
     req.headers.emplace("User-Agent", agent);
   }
 #endif
