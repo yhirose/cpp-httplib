@@ -48,11 +48,6 @@ res->status;
 res->body;
 ```
 
-### Try out the examples on Repl.it!
-
-1. Run server at https://repl.it/@yhirose/cpp-httplib-server
-2. Run client at https://repl.it/@yhirose/cpp-httplib-client
-
 SSL Support
 -----------
 
