@@ -21,12 +21,11 @@ project(
 version = meson.project_version()
 python3 = find_program('python3')
 if version == 'undefined'
-  # Meson doesn't have regular expressions, but since it is implemented
-  # in python we can be sure we can use it to parse the file manually
-  version = run_command(
-      python3, '-c', 'import re; raw_version = re.search("User\-Agent.*cpp\-httplib/([0-9]+\.?)+", open("httplib.h").read()).group(0); print(re.search("([0-9]+\\.?)+", raw_version).group(0))',
-      check: true
-  ).stdout().strip()
+  cxx = meson.get_compiler('cpp')
+  version = cxx.get_define('CPPHTTPLIB_VERSION',
+    prefix: '#include <httplib.h>',
+    include_directories: include_directories('.')).strip('"')
+  assert(version != '', 'failed to get version from httplib.h')
 endif
 
 message('cpp-httplib version ' + version)
