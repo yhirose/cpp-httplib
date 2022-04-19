@@ -144,8 +144,6 @@ using ssize_t = int;
 
 #include <io.h>
 #include <winsock2.h>
-
-#include <wincrypt.h>
 #include <ws2tcpip.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
@@ -154,8 +152,6 @@ using ssize_t = int;
 
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "crypt32.lib")
-#pragma comment(lib, "cryptui.lib")
 #endif
 
 #ifndef strcasecmp
@@ -220,14 +216,20 @@ using socket_t = int;
 #include <thread>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-// these are defined in wincrypt.h and it breaks compilation if BoringSSL is
-// used
 #ifdef _WIN32
+#include <wincrypt.h>
+
+// these are defined in wincrypt.h and it breaks compilation if BoringSSL is used
 #undef X509_NAME
 #undef X509_CERT_PAIR
 #undef X509_EXTENSIONS
 #undef PKCS7_SIGNER_INFO
+
+#ifdef _MSC_VER
+#pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "cryptui.lib")
 #endif
+#endif //_WIN32
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
