@@ -23,8 +23,8 @@ python3 = find_program('python3')
 if version == 'undefined'
   # Meson doesn't have regular expressions, but since it is implemented
   # in python we can be sure we can use it to parse the file manually
-  version = run_command(
-      python3, '-c', 'import re; raw_version = re.search("User\-Agent.*cpp\-httplib/([0-9]+\.?)+", open("httplib.h").read()).group(0); print(re.search("([0-9]+\\.?)+", raw_version).group(0))',
+  version3 = run_command(
+      python3, '-c', 'import re, sys; raw_version = re.search("#define CPPHTTPLIB_VERSION \"([0-9]+\.?)+\"", open(sys.argv[1]).read()).group(0); print(re.search("([0-9]+\\.?)+", raw_version).group(0))', files('httplib.h'),
       check: true
   ).stdout().strip()
 endif
