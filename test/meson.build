@@ -100,6 +100,8 @@ test(
     key_pem,
     cert_pem,
     cert2_pem,
+    key_encrypted_pem,
+    cert_encrypted_pem,
     rootca_key_pem,
     rootca_cert_pem,
     client_key_pem,
