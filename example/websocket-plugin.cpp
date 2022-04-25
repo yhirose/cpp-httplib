@@ -155,6 +155,10 @@ void receiveThread(httplib::Stream &strm) {
         static size_t header_size = 2;
         ssize_t readsize;
 
+        if(!httplib::detail::is_socket_alive(strm.socket())) {
+            std::cerr << "disconnected" << std::endl;
+            break;
+        }
         if(!strm.is_readable()) {
             std::this_thread::yield();
             if(!waiting) {
