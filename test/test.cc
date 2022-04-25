@@ -4660,6 +4660,48 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
 
   t.join();
 }
+
+TEST(SSLClientServerTest, LargeDataTransfer) {
+
+  // prepare large data
+  std::random_device seed_gen;
+  std::mt19937 random(seed_gen());
+  constexpr auto large_size_byte = 2147483648UL + 1048576UL; // 2GiB + 1MiB
+  std::vector<std::uint32_t> binary(large_size_byte / sizeof(std::uint32_t));
+  std::generate(binary.begin(), binary.end(), [&random]() { return random(); });
+
+  // server
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Post("/binary", [&](const Request &req, Response &res) {
+    EXPECT_EQ(large_size_byte, req.body.size());
+    EXPECT_TRUE(std::memcmp(binary.data(), req.body.data(), large_size_byte) ==
+                0);
+    res.set_content(req.body, "application/octet-stream");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  SSLClient cli("localhost", PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_read_timeout(std::chrono::seconds(100));
+  cli.set_write_timeout(std::chrono::seconds(100));
+  auto res = cli.Post("/binary", reinterpret_cast<char *>(binary.data()),
+                      large_size_byte, "application/octet-stream");
+
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(large_size_byte, res->body.size());
+  EXPECT_TRUE(std::memcmp(binary.data(), res->body.data(), large_size_byte) ==
+              0);
+
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
 #endif
 
 #ifdef _WIN32
@@ -4897,4 +4939,3 @@ TEST(MultipartFormDataTest, LargeData) {
   t.join();
 }
 #endif
-
