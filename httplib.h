@@ -6422,7 +6422,12 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     }
 
     if(res.status == 101 && res.has_header("Upgrade")) {
-      std::stringstream parse_upgrade_header(res.get_header_value("Upgrade"));
+      std::string server_protocol_list(res.get_header_value("Upgrade"));
+      server_protocol_list = detail::to_lower(
+        server_protocol_list.c_str(),
+        server_protocol_list.c_str() + server_protocol_list.length()
+      );
+      std::stringstream parse_upgrade_header(std::move(server_protocol_list));
       bool protocol_negotiated = false;
       while(parse_upgrade_header.good()) {
         std::string protocol_name;
