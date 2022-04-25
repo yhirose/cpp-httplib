@@ -7,8 +7,7 @@ namespace WSSPec {
         uint8_t RSV_FLAGS = 0;
         uint8_t opcode;
         bool masked;
-        uint8_t payload_len;
-        uint64_t payload_len_ext;
+        uint64_t payload_len;
         uint32_t masking_key = 0;
         std::string payload = "";
     };
@@ -39,9 +38,13 @@ namespace WSSPec {
         EXT_64_BIT = 127
     };
     enum STATE {
-        WAIT,
-        READ_HEADER,
-        READ_BODY,
-        FRAME_OK
+        IDLE,
+        READ_BYTE_0,
+        READ_BYTE_1,
+        READ_U16_LEN,
+        READ_U64_LEN,
+        READ_MASK,
+        READ_PAYLOAD,
+        PRINT_MESSAGE
     };
 }

@@ -150,9 +150,10 @@ void receiveThread(httplib::Stream &strm) {
     struct WSSPec::WSFRAME frame {};
     do {
         static bool waiting = false;
-        static size_t read_count = 0;
-        static size_t payload_len = 0;
-        static size_t header_size = 2;
+        static enum WSSPec::STATE state = WSSPec::IDLE;
+        static size_t length_bytes_read = 0;
+        static size_t mask_bytes_read = 0;
+        static size_t payload_bytes_read = 0;
         ssize_t readsize;
 
         if(!httplib::detail::is_socket_alive(strm.socket())) {
@@ -174,72 +175,67 @@ void receiveThread(httplib::Stream &strm) {
             readsize = strm.read(buffer, bufsize);
         }
 
-        // function to check if a frame has been completed and process it
-        auto get_frame = [&](){
-            if (read_count > 1 && read_count - header_size >= payload_len) { // frame completely received
-                read_count = 0;
-                header_size = 2;
-                payload_len = 0;
-                switch(frame.opcode) {
-                    using namespace WSSPec::BYTE0_FLAGS;
-                    case PING:
-                        std::cerr << "received ping with payload "
-                            << frame.payload << ", will echo"
-                            << std::endl;
-                        sendTask(strm, PONG, frame.payload);
-                        break;
-                    case PONG:
-                        std::cerr << "received pong with payload "
-                            << frame.payload
-                            << std::endl;
-                        break;
-                    case TEXT:
-                        std::cout << frame.payload << std::endl;
-                        break;
-                }
-                frame.payload.clear();
-            }
-        };
-
-        for (size_t i = 0; i < readsize; i++, get_frame(), read_count++)
+        for (size_t i = 0; i < readsize; i++)
         {
-            if(read_count == 0) {
+            switch (state)
+            {
+                using namespace WSSPec;
+                case IDLE:
+                    state = READ_BYTE_0;
+                case READ_BYTE_0: {
                 using namespace WSSPec::BYTE0_FLAGS;
                 frame.FIN = buffer[i] & FIN;
                 frame.RSV_FLAGS = buffer[i] & RSV;
                 frame.opcode = buffer[i] & OPCODE;
-            } else if (read_count == 1) {
+                    state = READ_BYTE_1;
+                    break;
+                }
+                case READ_BYTE_1: {
                 using namespace WSSPec::BYTE1_FLAGS;
                 frame.masked = buffer[i] & IS_MASKED;
                 frame.payload_len = buffer[i] & PAYLOAD_LEN;
-                if (frame.masked)
-                    header_size += sizeof(frame.masking_key);
-                if (frame.payload_len == WSSPec::EXT_16_BIT)
-                    header_size += sizeof(uint16_t);
-                else if (frame.payload_len == WSSPec::EXT_64_BIT)
-                    header_size += sizeof(uint64_t);
-            } else {
-                if (read_count < 4 && frame.payload_len == WSSPec::EXT_16_BIT) {
-                    frame.payload_len_ext = 
-                        read_count == 2
-                        ? static_cast<uint8_t>(buffer[i])
-                        : static_cast<uint8_t>(buffer[i]) + frame.payload_len_ext << 8;
-                } else if (read_count < 10 && frame.payload_len == WSSPec::EXT_64_BIT) {
-                    frame.payload_len_ext = 
-                        read_count == 2
-                        ? static_cast<uint8_t>(buffer[i])
-                        : static_cast<uint8_t>(buffer[i]) + frame.payload_len_ext << 8;
-                } else {
-                    if (frame.payload_len != 0 && frame.payload.empty()) {
-                        if (frame.payload_len < 126) {
-                            payload_len = frame.payload_len;
-                        } else {
-                            payload_len = frame.payload_len_ext;
+                    if (frame.payload_len == WSSPec::EXT_16_BIT) {
+                        frame.payload_len = 0;
+                        state = READ_U16_LEN;
+                    }
+                    else if (frame.payload_len == WSSPec::EXT_64_BIT) {
+                        frame.payload_len = 0;
+                        state = READ_U64_LEN;
+                    }
+                    else
+                        state = frame.masked ? READ_MASK : READ_PAYLOAD;
+                    break;
+                }
+                case READ_U16_LEN:
+                    frame.payload_len = static_cast<uint8_t>(buffer[i]) + frame.payload_len << 8;
+                    if (++length_bytes_read >= sizeof(uint16_t)) {
+                        length_bytes_read = 0;
+                        state = frame.masked ? READ_MASK : READ_PAYLOAD;
+                    }
+                    break;
+                case READ_U64_LEN:
+                    frame.payload_len = static_cast<uint8_t>(buffer[i]) + frame.payload_len << 8;
+                    if (++length_bytes_read >= sizeof(uint64_t)) {
+                        length_bytes_read = 0;
+                        state = frame.masked ? READ_MASK : READ_PAYLOAD;
+                    }
+                    break;
+                case READ_MASK:
+                    if (mask_bytes_read == 0)
+                        frame.masking_key = 0;
+                    frame.masking_key = static_cast<uint8_t>(buffer[i]) + (frame.masking_key << 8);
+                    if (++mask_bytes_read >= sizeof(frame.masking_key)) {
+                        mask_bytes_read = 0;
+                        state = READ_PAYLOAD;
                         }
+                    break;
+                case READ_PAYLOAD:
+                    if (payload_bytes_read == 0) {
                         std::cerr << "interpreted length: "
-                            << payload_len << std::endl;
+                            << frame.payload_len << std::endl;
 
-                        frame.payload.reserve(payload_len);
+                        frame.payload.reserve(frame.payload_len);
+
                         std::cerr << "Received frame of type ";
                         switch(frame.opcode) {
                             using namespace WSSPec::BYTE0_FLAGS;
@@ -261,27 +257,54 @@ void receiveThread(httplib::Stream &strm) {
                             case CLOSE:
                                 std::cerr << "CLOSE";
                                 break;
+                            default:
+                                std::cerr << std::hex << (int) frame.opcode << std::dec;
+                                break;
                         }
                         std::cerr << std::endl;
                     }
 
-                    if(frame.masked) {
-                        if (read_count < header_size) {
-                            frame.masking_key = header_size - read_count == sizeof(frame.masking_key)
-                                ? static_cast<uint8_t>(buffer[i])
-                                : static_cast<uint8_t>(buffer[i]) + (frame.masking_key << 8);
-                        } else {
+                    if (frame.masked) {
                             uint8_t *mask = reinterpret_cast<uint8_t *>(&frame.masked);
                             buffer[i] = buffer[i] ^ mask[i % 4];
                         }
+                    frame.payload.push_back(buffer[i]);
+                    
+                    if (++payload_bytes_read >= frame.payload_len) {
+                        payload_bytes_read = 0;
+                        if (frame.FIN) {
+                            state = PRINT_MESSAGE;
+                        } else {
+                            state = IDLE;
+                            // break;
                     }
-                    if (read_count >= header_size
-                            && read_count - header_size < payload_len)
-                        frame.payload.push_back(buffer[i]);
+                    }
+                    else break;
+                case PRINT_MESSAGE:
+                    switch(frame.opcode) {
+                        using namespace WSSPec::BYTE0_FLAGS;
+                        case PING:
+                            std::cerr << "received ping with payload "
+                                << frame.payload << ", will echo"
+                                << std::endl;
+                            sendTask(strm, PONG, frame.payload);
+                            break;
+                        case PONG:
+                            std::cerr << "received pong with payload "
+                                << frame.payload
+                                << std::endl;
+                            break;
+                        case TEXT:
+                            std::cout << frame.payload << std::endl;
+                            break;
                 }
+                    frame.payload.clear();
+                    state = IDLE;
+                    break;
+                default:
+                    break;
             }
         }
-        get_frame();
     } while (frame.opcode != WSSPec::BYTE0_FLAGS::CLOSE);
     std::cerr << "Quit" << std::endl;
 }
