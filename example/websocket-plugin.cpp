@@ -1,3 +1,4 @@
+#define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <httplib.h>
 #include "WSdefs.h"
 #include <thread>
@@ -26,7 +27,7 @@ int main(int argc, char const *argv[])
                 std::cerr << "entered WebSocket handler" << std::endl;
                 bool stop = false;
                 auto terminal = [&strm, &stop]() {
-                    for(std::string command = "test56"; command != "q"; std::cin >> command) {
+                    for(std::string command = "p"; command != "q"; std::cin >> command) {
                         if(command == "p")
                             sendTask(strm, WSSPec::BYTE0_FLAGS::PING, "pingu");
                         else
@@ -53,22 +54,31 @@ int main(int argc, char const *argv[])
         }
     };
     httplib::Headers headers {
+        { "Accept", "*/*" },
         { "Connection", "upgrade" },
         { "Upgrade", "websocket" },
+        { "Sec-Fetch-Dest", "websocket" },
+        { "Sec-Fetch-Mode", "websocket" },
+        { "Sec-Fetch-Site", "same-origin" },
         { "Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==" },
         { "Sec-WebSocket-Version", "13" },
         // { "Origin", "http://localhost:9090"}
-        { "Origin", "https://www.piesocket.com"}
+        // { "Origin", "https://www.piesocket.com"}
+        { "Origin", "https://websocketstest.com"}
     };
     // httplib::Client c("localhost", 9090);
+    // httplib::Client c("demo.piesocket.com", 80);
+    httplib::SSLClient c("websocketstest.com", 443);
     httplib::Client c("demo.piesocket.com", 80);
+    std::cerr << "websocketstest.com accepts commands 'version,' 'echo,<message>' and 'timer,'" << std::endl;
 
     std::cerr << "type a message, then hit enter to send" << std::endl;
     std::cerr << "enter p to send ping and q to negotiate a disconnect" << std::endl;
 
     auto res = c.Get(
         // "/",
-        "/v3/channel_1?api_key=oCdCMcMPQpbvNjUIzqtvF1d2X2okWpDQj4AwARJuAgtjhzKxVEjQU6IdCjwm&notify_self",
+        // "/v3/channel_1?api_key=oCdCMcMPQpbvNjUIzqtvF1d2X2okWpDQj4AwARJuAgtjhzKxVEjQU6IdCjwm&notify_self",
+        "/service",
         headers,
         protc_handlers
     );
@@ -76,11 +86,13 @@ int main(int argc, char const *argv[])
         std::cerr << std::endl;
         std::cerr << res->status << std::endl;
         std::cerr << res->body << std::endl;
+    } else {
+        std::cerr << res.error() << std::endl;
     }
     return 0;
 }
 
-void sendTask(httplib::Stream &strm, const WSSPec::BYTE0_FLAGS::OPCODES frame_type, const std::string& payload = std::string(), bool is_mask = true) {
+void sendTask(httplib::Stream &strm, const WSSPec::BYTE0_FLAGS::OPCODES frame_type, const std::string& payload, bool is_mask) {
     std::lock_guard<std::mutex> stream_send_lock(stream_send_mutex);
     uint64_t ext_payload_len = 0;
     WSSPec::PAYLOAD_LEN_MODE payload_len_mode = WSSPec::NORMAL;
