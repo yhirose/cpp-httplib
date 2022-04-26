@@ -421,6 +421,7 @@ struct Request {
   ContentReceiverWithProgress content_receiver;
   Progress progress;
   CustomProtocolHandlers alt_protocol_handlers;
+  std::string forced_alt_protocol;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   const SSL *ssl = nullptr;
 #endif
@@ -861,7 +862,7 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers);
+  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -1199,7 +1200,7 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers);
+  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers, const char *force_protocol);
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -6421,7 +6422,15 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    if(res.status == 101 && res.has_header("Upgrade")) {
+    if(!req.forced_alt_protocol.empty()
+        && !redirect
+        && req.alt_protocol_handlers.find(req.forced_alt_protocol) != req.alt_protocol_handlers.end()) {
+      if(!req.alt_protocol_handlers.find(req.forced_alt_protocol)->second(strm)) {
+        error = Error::Canceled;
+        return false;
+      }
+    }
+    else if(res.status == 101 && res.has_header("Upgrade")) {
       std::stringstream parse_upgrade_header(res.get_header_value("Upgrade"));
       bool protocol_negotiated = false;
       while(parse_upgrade_header.good()) {
@@ -6522,12 +6531,15 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers) {
   return Get(path, headers, Progress());
 }
 
-inline Result ClientImpl::Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers) {
+inline Result ClientImpl::Get(const char *path, const Headers &headers,
+                              CustomProtocolHandlers &protocol_handlers,
+                              const char *force_protocol) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
   req.alt_protocol_handlers = protocol_handlers;
+  req.forced_alt_protocol = force_protocol;
 
   return send_(std::move(req));
 };
@@ -7879,8 +7891,10 @@ inline Result Client::Get(const char *path) { return cli_->Get(path); }
 inline Result Client::Get(const char *path, const Headers &headers) {
   return cli_->Get(path, headers);
 }
-inline Result Client::Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers) {
-  return cli_->Get(path, headers, protocol_handlers);
+inline Result Client::Get(const char *path, const Headers &headers,
+                          CustomProtocolHandlers &protocol_handlers,
+                          const char *force_protocol) {
+  return cli_->Get(path, headers, protocol_handlers, force_protocol);
 }
 inline Result Client::Get(const char *path, Progress progress) {
   return cli_->Get(path, std::move(progress));
