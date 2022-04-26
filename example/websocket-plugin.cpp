@@ -164,7 +164,7 @@ void receiveThread(httplib::Stream &strm) {
             std::this_thread::yield();
             if(!waiting) {
                 waiting = true;
-                std::cerr << "cannot read" << std::endl;
+                std::cerr << "websocket idle" << std::endl;
                 // sendTask(strm, WSSPec::BYTE0_FLAGS::PING, "pingu");
             }
             continue;
