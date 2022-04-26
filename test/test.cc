@@ -4676,8 +4676,7 @@ TEST(SSLClientServerTest, LargeDataTransfer) {
 
   svr.Post("/binary", [&](const Request &req, Response &res) {
     EXPECT_EQ(large_size_byte, req.body.size());
-    EXPECT_TRUE(std::memcmp(binary.data(), req.body.data(), large_size_byte) ==
-                0);
+    EXPECT_EQ(0, std::memcmp(binary.data(), req.body.data(), large_size_byte));
     res.set_content(req.body, "application/octet-stream");
   });
 
@@ -4697,8 +4696,7 @@ TEST(SSLClientServerTest, LargeDataTransfer) {
   // compare
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(large_size_byte, res->body.size());
-  EXPECT_TRUE(std::memcmp(binary.data(), res->body.data(), large_size_byte) ==
-              0);
+  EXPECT_EQ(0, std::memcmp(binary.data(), res->body.data(), large_size_byte));
 
   // cleanup
   svr.stop();
