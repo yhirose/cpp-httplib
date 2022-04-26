@@ -234,7 +234,10 @@ void receiveThread(httplib::Stream &strm) {
                         std::cerr << "interpreted length: "
                             << frame.payload_len << std::endl;
 
-                        frame.payload.reserve(frame.payload_len);
+                        size_t capacity = frame.payload_len;
+                        if (!frame.payload.empty())
+                            capacity += frame.payload.capacity();
+                        frame.payload.reserve(capacity);
 
                         std::cerr << "Received frame of type ";
                         switch(frame.opcode) {
