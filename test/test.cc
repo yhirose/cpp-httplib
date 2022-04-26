@@ -4686,6 +4686,7 @@ TEST(SSLClientServerTest, LargeDataTransfer) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
+  // client POST
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
   cli.set_read_timeout(std::chrono::seconds(100));
@@ -4693,11 +4694,13 @@ TEST(SSLClientServerTest, LargeDataTransfer) {
   auto res = cli.Post("/binary", reinterpret_cast<char *>(binary.data()),
                       large_size_byte, "application/octet-stream");
 
+  // compare
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(large_size_byte, res->body.size());
   EXPECT_TRUE(std::memcmp(binary.data(), res->body.data(), large_size_byte) ==
               0);
 
+  // cleanup
   svr.stop();
   listen_thread.join();
   ASSERT_FALSE(svr.is_running());
@@ -4939,3 +4942,4 @@ TEST(MultipartFormDataTest, LargeData) {
   t.join();
 }
 #endif
+
