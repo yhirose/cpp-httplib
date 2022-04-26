@@ -372,7 +372,7 @@ using MultipartContentHeader =
 // forward declaration required to make typedefs work
 class Stream;
 using CustomProtocolHandlers =
-    std::multimap<std::string, std::function<bool(Stream &strm)>>;
+    std::multimap<std::string, std::function<bool(Stream &strm)>, detail::ci>;
 class ContentReader {
 public:
   using Reader = std::function<bool(ContentReceiver receiver)>;
@@ -6422,12 +6422,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     }
 
     if(res.status == 101 && res.has_header("Upgrade")) {
-      std::string server_protocol_list(res.get_header_value("Upgrade"));
-      server_protocol_list = detail::to_lower(
-        server_protocol_list.c_str(),
-        server_protocol_list.c_str() + server_protocol_list.length()
-      );
-      std::stringstream parse_upgrade_header(std::move(server_protocol_list));
+      std::stringstream parse_upgrade_header(res.get_header_value("Upgrade"));
       bool protocol_negotiated = false;
       while(parse_upgrade_header.good()) {
         std::string protocol_name;
