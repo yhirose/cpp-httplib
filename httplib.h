@@ -1200,7 +1200,7 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers, const char *force_protocol);
+  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
