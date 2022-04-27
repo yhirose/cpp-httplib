@@ -7224,7 +7224,9 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
   size_t readbytes = 0;
   if (SSL_pending(ssl_) > 0) {
     auto ret = SSL_read_ex(ssl_, ptr, size, &readbytes);
-    return (ret == 1 ? static_cast<ssize_t>(readbytes) : -1);
+    if (ret == 1) { return static_cast<ssize_t>(readbytes); }
+    if (SSL_get_error(ssl_, ret) == SSL_ERROR_ZERO_RETURN) { return 0; }
+    return -1;
   }
   if (!is_readable()) { return -1; }
 
@@ -7241,7 +7243,9 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
 #endif
     if (SSL_pending(ssl_) > 0) {
       ret = SSL_read_ex(ssl_, ptr, size, &readbytes);
-      return (ret == 1 ? static_cast<ssize_t>(readbytes) : -1);
+      if (ret == 1) { return static_cast<ssize_t>(readbytes); }
+      if (SSL_get_error(ssl_, ret) == SSL_ERROR_ZERO_RETURN) { return 0; }
+      return -1;
     }
     if (!is_readable()) { return -1; }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -7249,6 +7253,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     if (ret == 1) { return static_cast<ssize_t>(readbytes); }
     err = SSL_get_error(ssl_, ret);
   }
+  if (err == SSL_ERROR_ZERO_RETURN) { return 0; }
   return -1;
 }
 
@@ -7272,6 +7277,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
     if (ret == 1) { return static_cast<ssize_t>(written); }
     err = SSL_get_error(ssl_, ret);
   }
+  if (err == SSL_ERROR_ZERO_RETURN) { return 0; }
   return -1;
 }
 
