@@ -371,8 +371,9 @@ using MultipartContentHeader =
 
 // forward declaration required to make typedefs work
 class Stream;
+using StreamManager = std::function<bool(Stream &strm)>;
 using CustomProtocolHandlers =
-    std::multimap<std::string, std::function<bool(Stream &strm)>, detail::ci>;
+    std::multimap<std::string, StreamManager, detail::ci>;
 class ContentReader {
 public:
   using Reader = std::function<bool(ContentReceiver receiver)>;
@@ -1172,7 +1173,7 @@ private:
   std::string adjust_host_string(const std::string &host) const;
 
   virtual bool process_socket(const Socket &socket,
-                              std::function<bool(Stream &strm)> callback);
+                              StreamManager callback);
   virtual bool is_ssl() const;
 };
 
@@ -1444,7 +1445,7 @@ private:
   void shutdown_ssl_impl(Socket &socket, bool shutdown_socket);
 
   bool process_socket(const Socket &socket,
-                      std::function<bool(Stream &strm)> callback) override;
+                      StreamManager callback) override;
   bool is_ssl() const override;
 
   bool connect_with_proxy(Socket &sock, Response &res, bool &success,
@@ -6511,7 +6512,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
 inline bool
 ClientImpl::process_socket(const Socket &socket,
-                           std::function<bool(Stream &strm)> callback) {
+                           StreamManager callback) {
   return detail::process_client_socket(
       socket.sock, read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_, std::move(callback));
@@ -7687,7 +7688,7 @@ inline void SSLClient::shutdown_ssl_impl(Socket &socket,
 
 inline bool
 SSLClient::process_socket(const Socket &socket,
-                          std::function<bool(Stream &strm)> callback) {
+                          StreamManager callback) {
   assert(socket.ssl);
   return detail::process_client_socket_ssl(
       socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
