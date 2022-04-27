@@ -4661,7 +4661,8 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   t.join();
 }
 
-TEST(SSLClientServerTest, LargeDataTransfer) {
+// Disabled due to the out-of-memory problem on GitHub Actions Workflows
+TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
 
   // prepare large data
   std::random_device seed_gen;
