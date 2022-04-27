@@ -485,6 +485,9 @@ struct Response {
       const char *content_type, ContentProviderWithoutLength provider,
       ContentProviderResourceReleaser resource_releaser = nullptr);
 
+  void use_custom_protocol(
+      const char *protocol_name, StreamManager custom_protocol_handler);
+
   Response() = default;
   Response(const Response &) = default;
   Response &operator=(const Response &) = default;
@@ -500,6 +503,7 @@ struct Response {
   size_t content_length_ = 0;
   ContentProvider content_provider_;
   ContentProviderResourceReleaser content_provider_resource_releaser_;
+  StreamManager custom_protocol_handler_;
   bool is_chunked_content_provider_ = false;
   bool content_provider_success_ = false;
 };
@@ -4594,6 +4598,24 @@ inline void Response::set_chunked_content_provider(
   is_chunked_content_provider_ = true;
 }
 
+inline void Response::use_custom_protocol(
+    const char *protocol_name, StreamManager custom_protocol_handler) {
+  std::string connection_header = "Upgrade";
+  if (has_header("Connection")) {
+    std::string header_value = get_header_value("Connection");
+    if (header_value.find(connection_header) == std::string::npos) {
+      connection_header.append(", " + header_value);
+    } else {
+      connection_header = std::move(header_value);
+    }
+  }
+  if (status == -1) { status = 101; }
+  set_header("Connection", std::move(connection_header));
+  set_header("Upgrade", protocol_name);
+  custom_protocol_handler_ = custom_protocol_handler;
+}
+
+
 // Result implementation
 inline bool Result::has_request_header(const char *key) const {
   return request_headers_.find(key) != request_headers_.end();
@@ -5109,6 +5131,8 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
         res.content_provider_success_ = false;
         ret = false;
       }
+    } else if (res.custom_protocol_handler_) {
+      ret = res.custom_protocol_handler_(strm);
     }
   }
 
