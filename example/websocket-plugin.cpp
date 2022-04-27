@@ -63,13 +63,12 @@ int main(int argc, char const *argv[])
         { "Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==" },
         { "Sec-WebSocket-Version", "13" },
         // { "Origin", "http://localhost:9090"}
-        // { "Origin", "https://www.piesocket.com"}
         { "Origin", "https://websocketstest.com"}
+        // { "Origin", "https://echo.websocket.events" }
     };
     // httplib::Client c("localhost", 9090);
-    // httplib::Client c("demo.piesocket.com", 80);
     httplib::SSLClient c("websocketstest.com", 443);
-    httplib::Client c("demo.piesocket.com", 80);
+    // httplib::Client c("echo.websocket.events", 80);
     std::cerr << "websocketstest.com accepts commands 'version,' 'echo,<message>' and 'timer,'" << std::endl;
 
     std::cerr << "type a message, then hit enter to send" << std::endl;
@@ -77,7 +76,6 @@ int main(int argc, char const *argv[])
 
     auto res = c.Get(
         // "/",
-        // "/v3/channel_1?api_key=oCdCMcMPQpbvNjUIzqtvF1d2X2okWpDQj4AwARJuAgtjhzKxVEjQU6IdCjwm&notify_self",
         "/service",
         headers,
         protc_handlers
