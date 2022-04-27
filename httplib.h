@@ -867,7 +867,11 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
+  Result Get(const char *path, const Headers &headers,
+             CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
+  Result Get(const char *path, const Headers &headers,
+             ResponseHandler response_handler,
+             CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -1205,7 +1209,11 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, const Headers &headers, CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
+  Result Get(const char *path, const Headers &headers,
+             CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
+  Result Get(const char *path, const Headers &headers,
+             ResponseHandler response_handler,
+             CustomProtocolHandlers &protocol_handlers, const char *force_protocol = "");
   Result Get(const char *path, Progress progress);
   Result Get(const char *path, const Headers &headers, Progress progress);
   Result Get(const char *path, ContentReceiver content_receiver);
@@ -6559,15 +6567,23 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers) {
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
                               CustomProtocolHandlers &protocol_handlers,
                               const char *force_protocol) {
+  return Get(path, headers, nullptr, protocol_handlers, force_protocol);
+};
+
+inline Result ClientImpl::Get(const char *path, const Headers &headers,
+                              ResponseHandler response_handler,
+                              CustomProtocolHandlers &protocol_handlers,
+                              const char *force_protocol) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
   req.alt_protocol_handlers = protocol_handlers;
   req.forced_alt_protocol = force_protocol;
+  req.response_handler = std::move(response_handler);
 
   return send_(std::move(req));
-};
+}
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
                               Progress progress) {
@@ -7920,6 +7936,12 @@ inline Result Client::Get(const char *path, const Headers &headers,
                           CustomProtocolHandlers &protocol_handlers,
                           const char *force_protocol) {
   return cli_->Get(path, headers, protocol_handlers, force_protocol);
+}
+inline Result Client::Get(const char *path, const Headers &headers,
+                          ResponseHandler response_handler,
+                          CustomProtocolHandlers &protocol_handlers,
+                          const char *force_protocol) {
+  return cli_->Get(path, headers, std::move(response_handler), protocol_handlers, force_protocol);
 }
 inline Result Client::Get(const char *path, Progress progress) {
   return cli_->Get(path, std::move(progress));
