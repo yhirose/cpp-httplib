@@ -8,7 +8,7 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.10.6"
+#define CPPHTTPLIB_VERSION "0.10.7"
 
 /*
  * Configuration
@@ -219,7 +219,8 @@ using socket_t = int;
 #ifdef _WIN32
 #include <wincrypt.h>
 
-// these are defined in wincrypt.h and it breaks compilation if BoringSSL is used
+// these are defined in wincrypt.h and it breaks compilation if BoringSSL is
+// used
 #undef X509_NAME
 #undef X509_CERT_PAIR
 #undef X509_EXTENSIONS
