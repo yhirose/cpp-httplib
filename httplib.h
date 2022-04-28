@@ -7221,62 +7221,63 @@ inline bool SSLSocketStream::is_writable() const {
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
+  size_t readbytes = 0;
   if (SSL_pending(ssl_) > 0) {
-    return SSL_read(ssl_, ptr, static_cast<int>(size));
-  } else if (is_readable()) {
-    auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
-    if (ret < 0) {
-      auto err = SSL_get_error(ssl_, ret);
-      int n = 1000;
-#ifdef _WIN32
-      while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
-                          (err == SSL_ERROR_SYSCALL &&
-                           WSAGetLastError() == WSAETIMEDOUT))) {
-#else
-      while (--n >= 0 && err == SSL_ERROR_WANT_READ) {
-#endif
-        if (SSL_pending(ssl_) > 0) {
-          return SSL_read(ssl_, ptr, static_cast<int>(size));
-        } else if (is_readable()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
-          ret = SSL_read(ssl_, ptr, static_cast<int>(size));
-          if (ret >= 0) { return ret; }
-          err = SSL_get_error(ssl_, ret);
-        } else {
-          return -1;
-        }
-      }
-    }
-    return ret;
+    auto ret = SSL_read_ex(ssl_, ptr, size, &readbytes);
+    if (ret == 1) { return static_cast<ssize_t>(readbytes); }
+    if (SSL_get_error(ssl_, ret) == SSL_ERROR_ZERO_RETURN) { return 0; }
+    return -1;
   }
+  if (!is_readable()) { return -1; }
+
+  auto ret = SSL_read_ex(ssl_, ptr, size, &readbytes);
+  if (ret == 1) { return static_cast<ssize_t>(readbytes); }
+  auto err = SSL_get_error(ssl_, ret);
+  int n = 1000;
+#ifdef _WIN32
+  while (--n >= 0 &&
+         (err == SSL_ERROR_WANT_READ ||
+          (err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT))) {
+#else
+  while (--n >= 0 && err == SSL_ERROR_WANT_READ) {
+#endif
+    if (SSL_pending(ssl_) > 0) {
+      ret = SSL_read_ex(ssl_, ptr, size, &readbytes);
+      if (ret == 1) { return static_cast<ssize_t>(readbytes); }
+      if (SSL_get_error(ssl_, ret) == SSL_ERROR_ZERO_RETURN) { return 0; }
+      return -1;
+    }
+    if (!is_readable()) { return -1; }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ret = SSL_read_ex(ssl_, ptr, size, &readbytes);
+    if (ret == 1) { return static_cast<ssize_t>(readbytes); }
+    err = SSL_get_error(ssl_, ret);
+  }
+  if (err == SSL_ERROR_ZERO_RETURN) { return 0; }
   return -1;
 }
 
 inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
-  if (is_writable()) {
-    auto ret = SSL_write(ssl_, ptr, static_cast<int>(size));
-    if (ret < 0) {
-      auto err = SSL_get_error(ssl_, ret);
-      int n = 1000;
+  if (!is_writable()) { return -1; }
+  size_t written = 0;
+  auto ret = SSL_write_ex(ssl_, ptr, size, &written);
+  if (ret == 1) { return static_cast<ssize_t>(written); }
+  auto err = SSL_get_error(ssl_, ret);
+  int n = 1000;
 #ifdef _WIN32
-      while (--n >= 0 && (err == SSL_ERROR_WANT_WRITE ||
-                          (err == SSL_ERROR_SYSCALL &&
-                           WSAGetLastError() == WSAETIMEDOUT))) {
+  while (--n >= 0 &&
+         (err == SSL_ERROR_WANT_WRITE ||
+          (err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT))) {
 #else
-      while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
+  while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
 #endif
-        if (is_writable()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
-          ret = SSL_write(ssl_, ptr, static_cast<int>(size));
-          if (ret >= 0) { return ret; }
-          err = SSL_get_error(ssl_, ret);
-        } else {
-          return -1;
-        }
-      }
-    }
-    return ret;
+    if (!is_writable()) { return -1; }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ret = SSL_write_ex(ssl_, ptr, size, &written);
+    if (ret == 1) { return static_cast<ssize_t>(written); }
+    err = SSL_get_error(ssl_, ret);
   }
+  if (err == SSL_ERROR_ZERO_RETURN) { return 0; }
   return -1;
 }
 
