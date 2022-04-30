@@ -19,7 +19,6 @@ project(
 # Check just in case downstream decides to edit the source
 # and add a project version
 version = meson.project_version()
-python3 = find_program('python3')
 if version == 'undefined'
   cxx = meson.get_compiler('cpp')
   version = cxx.get_define('CPPHTTPLIB_VERSION',
@@ -27,8 +26,6 @@ if version == 'undefined'
     include_directories: include_directories('.')).strip('"')
   assert(version != '', 'failed to get version from httplib.h')
 endif
-
-message('cpp-httplib version ' + version)
 
 deps = [dependency('threads')]
 args = []
@@ -64,6 +61,8 @@ endif
 cpp_httplib_dep = dependency('', required: false)
 
 if get_option('cpp-httplib_compile')
+  python3 = find_program('python3')
+
   httplib_ch = custom_target(
     'split',
     input: 'httplib.h',
