@@ -187,20 +187,35 @@ endif()
 # Only useful if building in-tree, versus using it from an installation.
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-# Might be missing some, but this list is somewhat comprehensive
-target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-	cxx_std_11
-	cxx_nullptr
-	cxx_lambdas
-	cxx_override
-	cxx_defaulted_functions
-	cxx_attribute_deprecated
-	cxx_auto_type
-	cxx_decltype
-	cxx_deleted_functions
-	cxx_range_for
-	cxx_sizeof_member
-)
+# Determines the C++ compiler executable name
+macro (DETERMINE_CXX_COMPILER_EXECUTABLE_NAME out_Name)
+	set(_outStr )
+	string(REGEX MATCH "[^/\\]*$" _outStr ${CMAKE_CXX_COMPILER})
+	string(REGEX MATCH "[^\.]+" _outStr ${_outStr})
+	set(${out_Name} ${_outStr})
+endmacro()
+
+# Determine the name of the C++ compiler executable
+set(_CXX_EXECUTABLE_NAME )
+DETERMINE_CXX_COMPILER_EXECUTABLE_NAME(_CXX_EXECUTABLE_NAME)
+
+# Do not define the target compile features if using clang as clang doesn't provide them.
+if (NOT _CXX_EXECUTABLE_NAME MATCHES "clang")
+	# Might be missing some, but this list is somewhat comprehensive
+	target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+		cxx_std_11
+		cxx_nullptr
+		cxx_lambdas
+		cxx_override
+		cxx_defaulted_functions
+		cxx_attribute_deprecated
+		cxx_auto_type
+		cxx_decltype
+		cxx_deleted_functions
+		cxx_range_for
+		cxx_sizeof_member
+	)
+endif()
 
 target_include_directories(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
     $<BUILD_INTERFACE:${_httplib_build_includedir}>
