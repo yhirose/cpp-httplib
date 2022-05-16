@@ -100,6 +100,7 @@ if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
 endif()
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
+set(THREADS_PREFER_PTHREAD_FLAG true)
 find_package(Threads REQUIRED)
 # Since Cmake v3.11, Crypto & SSL became optional when not specified as COMPONENTS.
 if(HTTPLIB_REQUIRE_OPENSSL)
@@ -160,7 +161,7 @@ if(HTTPLIB_COMPILE)
 		ERROR_VARIABLE _httplib_split_error
 	)
 	if(_httplib_split_error)
-		message(FATAL_ERROR "Failed when trying to split Cpp-httplib with the Python script.\n${_httplib_split_error}")
+		message(FATAL_ERROR "Failed when trying to split cpp-httplib with the Python script.\n${_httplib_split_error}")
 	endif()
 
 	# split.py puts output in "out"
@@ -187,19 +188,9 @@ endif()
 # Only useful if building in-tree, versus using it from an installation.
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-# Might be missing some, but this list is somewhat comprehensive
+# Require C++11
 target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	cxx_std_11
-	cxx_nullptr
-	cxx_lambdas
-	cxx_override
-	cxx_defaulted_functions
-	cxx_attribute_deprecated
-	cxx_auto_type
-	cxx_decltype
-	cxx_deleted_functions
-	cxx_range_for
-	cxx_sizeof_member
 )
 
 target_include_directories(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
@@ -274,11 +265,9 @@ endif()
 # and linkage information (doesn't find deps though).
 install(TARGETS ${PROJECT_NAME}
 	EXPORT httplibTargets
-	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-install(FILES "${_httplib_build_includedir}/httplib.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
 install(FILES
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
