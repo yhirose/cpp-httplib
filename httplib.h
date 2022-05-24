@@ -166,7 +166,6 @@ using socket_t = SOCKET;
 #else // not _WIN32
 
 #include <arpa/inet.h>
-#include <cstring>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netdb.h>
@@ -190,6 +189,7 @@ using socket_t = int;
 #endif
 #endif //_WIN32
 
+#include <cstring>
 #include <algorithm>
 #include <array>
 #include <atomic>
