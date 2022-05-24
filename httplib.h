@@ -244,6 +244,11 @@ using socket_t = int;
 #include <iostream>
 #include <sstream>
 
+#ifdef LIBWOLFSSL_VERSION_HEX
+#if LIBWOLFSSL_VERSION_HEX < 0x05003000
+#error Sorry, wolfSSL versions prior to 5.3.0 are not supported
+#endif
+#else
 #if OPENSSL_VERSION_NUMBER < 0x1010100fL
 #error Sorry, OpenSSL versions prior to 1.1.1 are not supported
 #endif
@@ -253,6 +258,7 @@ using socket_t = int;
 inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
   return M_ASN1_STRING_data(asn1);
 }
+#endif
 #endif
 #endif
 
@@ -7146,7 +7152,7 @@ process_client_socket_ssl(SSL *ssl, socket_t sock, time_t read_timeout_sec,
   return callback(strm);
 }
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if OPENSSL_VERSION_NUMBER < 0x10100000L && !defined(LIBWOLFSSL_VERSION_HEX)
 static std::shared_ptr<std::vector<std::mutex>> openSSL_locks_;
 
 class SSLThreadLocks {
@@ -7176,7 +7182,7 @@ private:
 class SSLInit {
 public:
   SSLInit() {
-#if OPENSSL_VERSION_NUMBER < 0x1010001fL
+#if OPENSSL_VERSION_NUMBER < 0x1010001fL && !defined(LIBWOLFSSL_VERSION_HEX)
     SSL_load_error_strings();
     SSL_library_init();
 #else
@@ -7186,13 +7192,13 @@ public:
   }
 
   ~SSLInit() {
-#if OPENSSL_VERSION_NUMBER < 0x1010001fL
+#if OPENSSL_VERSION_NUMBER < 0x1010001fL && !defined(LIBWOLFSSL_VERSION_HEX)
     ERR_free_strings();
 #endif
   }
 
 private:
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if OPENSSL_VERSION_NUMBER < 0x10100000L && !defined(LIBWOLFSSL_VERSION_HEX)
   SSLThreadLocks thread_init_;
 #endif
 };
@@ -7207,7 +7213,9 @@ inline SSLSocketStream::SSLSocketStream(socket_t sock, SSL *ssl,
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec) {
+#ifndef LIBWOLFSSL_VERSION_HEX
   SSL_clear_mode(ssl, SSL_MODE_AUTO_RETRY);
+#endif
 }
 
 inline SSLSocketStream::~SSLSocketStream() {}
@@ -7221,6 +7229,67 @@ inline bool SSLSocketStream::is_writable() const {
          0;
 }
 
+#ifdef LIBWOLFSSL_VERSION_HEX
+inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
+  if (SSL_pending(ssl_) > 0) {
+    return SSL_read(ssl_, ptr, static_cast<int>(size));
+  } else if (is_readable()) {
+    auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
+    if (ret < 0) {
+      auto err = SSL_get_error(ssl_, ret);
+      int n = 1000;
+#ifdef _WIN32
+      while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
+                          (err == SSL_ERROR_SYSCALL &&
+                           WSAGetLastError() == WSAETIMEDOUT))) {
+#else
+      while (--n >= 0 && err == SSL_ERROR_WANT_READ) {
+#endif
+        if (SSL_pending(ssl_) > 0) {
+          return SSL_read(ssl_, ptr, static_cast<int>(size));
+        } else if (is_readable()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          ret = SSL_read(ssl_, ptr, static_cast<int>(size));
+          if (ret >= 0) { return ret; }
+          err = SSL_get_error(ssl_, ret);
+        } else {
+          return -1;
+        }
+      }
+    }
+    return ret;
+  }
+  return -1;
+}
+
+inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
+  if (is_writable()) {
+    auto ret = SSL_write(ssl_, ptr, static_cast<int>(size));
+    if (ret < 0) {
+      auto err = SSL_get_error(ssl_, ret);
+      int n = 1000;
+#ifdef _WIN32
+      while (--n >= 0 && (err == SSL_ERROR_WANT_WRITE ||
+                          (err == SSL_ERROR_SYSCALL &&
+                           WSAGetLastError() == WSAETIMEDOUT))) {
+#else
+      while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
+#endif
+        if (is_writable()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          ret = SSL_write(ssl_, ptr, static_cast<int>(size));
+          if (ret >= 0) { return ret; }
+          err = SSL_get_error(ssl_, ret);
+        } else {
+          return -1;
+        }
+      }
+    }
+    return ret;
+  }
+  return -1;
+}
+#else
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
   size_t readbytes = 0;
   if (SSL_pending(ssl_) > 0) {
@@ -7281,6 +7350,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
   if (err == SSL_ERROR_ZERO_RETURN) { return 0; }
   return -1;
 }
+#endif
 
 inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
                                                     int &port) const {
@@ -7702,8 +7772,14 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
   }
 #endif
 
+
+  #ifdef LIBWOLFSSL_VERSION_HEX
+  auto alt_names = static_cast<struct WOLFSSL_STACK *>(
+      X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr));
+  #else
   auto alt_names = static_cast<const struct stack_st_GENERAL_NAME *>(
       X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr));
+  #endif
 
   if (alt_names) {
     auto dsn_matched = false;
