@@ -74,6 +74,10 @@
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH ((std::numeric_limits<size_t>::max)())
 #endif
 
+#ifndef CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH
+#define CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH 8192
+#endif
+
 #ifndef CPPHTTPLIB_TCP_NODELAY
 #define CPPHTTPLIB_TCP_NODELAY false
 #endif
@@ -5189,7 +5193,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
     if (!content_type.find("application/x-www-form-urlencoded")) {
-      if (req.body.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+      if (req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
         res.status = 413; // NOTE: should be 414?
         return false;
       }
