@@ -109,6 +109,10 @@
 #define CPPHTTPLIB_LISTEN_BACKLOG 5
 #endif
 
+#ifndef CPPHTTPLIB_WRITE_CHUNK_SIZE
+#define CPPHTTPLIB_WRITE_CHUNK_SIZE 0x4000
+#endif
+
 /*
  * Headers
  */
@@ -3485,9 +3489,14 @@ inline ssize_t write_headers(Stream &strm, const Headers &headers) {
 inline bool write_data(Stream &strm, const char *d, size_t l) {
   size_t offset = 0;
   while (offset < l) {
-    auto length = strm.write(d + offset, l - offset);
-    if (length < 0) { return false; }
-    offset += static_cast<size_t>(length);
+    size_t chunk_size =
+        std::min(l - offset, static_cast<size_t>(CPPHTTPLIB_WRITE_CHUNK_SIZE));
+    size_t chunk_end = offset + chunk_size;
+    while (offset < chunk_end) {
+      auto length = strm.write(d + offset, chunk_end - offset);
+      if (length < 0) { return false; }
+      offset += static_cast<size_t>(length);
+    }
   }
   return true;
 }
