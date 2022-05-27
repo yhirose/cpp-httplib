@@ -4742,8 +4742,9 @@ TEST(SendAPI, SimpleInterface_Online) {
   EXPECT_EQ(301, res->status);
 }
 
+// Disabled due to out-of-memory problem on GitHub Actions
 #ifdef _WIN64
-TEST(ServerLargeContentTest, SendLargeContent) {
+TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
   // allocate content size larger than 2GB in memory
   const size_t content_size = 2LL * 1024LL * 1024LL * 1024LL + 1LL;
   char *content = (char *)malloc(content_size);
