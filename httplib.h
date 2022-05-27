@@ -2708,9 +2708,9 @@ inline socket_t create_client_socket(
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
-          auto ip = if2ip(address_family, intf);
-          if (ip.empty()) { ip = intf; }
-          if (!bind_ip_address(sock2, ip.c_str())) {
+          auto ip_from_if = if2ip(address_family, intf);
+          if (ip_from_if.empty()) { ip_from_if = intf; }
+          if (!bind_ip_address(sock2, ip_from_if.c_str())) {
             error = Error::BindIPAddress;
             return false;
           }
@@ -6320,8 +6320,8 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
           auto last = offset + data_len == content_length;
 
           auto ret = compressor.compress(
-              data, data_len, last, [&](const char *data, size_t data_len) {
-                req.body.append(data, data_len);
+              data, data_len, last, [&](const char *compressed_data, size_t compressed_data_len) {
+                req.body.append(compressed_data, compressed_data_len);
                 return true;
               });
 
@@ -7378,11 +7378,11 @@ inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
   auto ssl = detail::ssl_new(
       sock, ctx_, ctx_mutex_,
-      [&](SSL *ssl) {
+      [&](SSL *ssl2) {
         return detail::ssl_connect_or_accept_nonblocking(
-            sock, ssl, SSL_accept, read_timeout_sec_, read_timeout_usec_);
+            sock, ssl2, SSL_accept, read_timeout_sec_, read_timeout_usec_);
       },
-      [](SSL * /*ssl*/) { return true; });
+      [](SSL * /*ssl2*/) { return true; });
 
   bool ret = false;
   if (ssl) {
@@ -7576,31 +7576,31 @@ inline bool SSLClient::load_certs() {
 inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   auto ssl = detail::ssl_new(
       socket.sock, ctx_, ctx_mutex_,
-      [&](SSL *ssl) {
+      [&](SSL *ssl2) {
         if (server_certificate_verification_) {
           if (!load_certs()) {
             error = Error::SSLLoadingCerts;
             return false;
           }
-          SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
+          SSL_set_verify(ssl2, SSL_VERIFY_NONE, nullptr);
         }
 
         if (!detail::ssl_connect_or_accept_nonblocking(
-                socket.sock, ssl, SSL_connect, connection_timeout_sec_,
+                socket.sock, ssl2, SSL_connect, connection_timeout_sec_,
                 connection_timeout_usec_)) {
           error = Error::SSLConnection;
           return false;
         }
 
         if (server_certificate_verification_) {
-          verify_result_ = SSL_get_verify_result(ssl);
+          verify_result_ = SSL_get_verify_result(ssl2);
 
           if (verify_result_ != X509_V_OK) {
             error = Error::SSLServerVerification;
             return false;
           }
 
-          auto server_cert = SSL_get_peer_certificate(ssl);
+          auto server_cert = SSL_get_peer_certificate(ssl2);
 
           if (server_cert == nullptr) {
             error = Error::SSLServerVerification;
@@ -7617,8 +7617,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 
         return true;
       },
-      [&](SSL *ssl) {
-        SSL_set_tlsext_host_name(ssl, host_.c_str());
+      [&](SSL *ssl2) {
+        SSL_set_tlsext_host_name(ssl2, host_.c_str());
         return true;
       });
 

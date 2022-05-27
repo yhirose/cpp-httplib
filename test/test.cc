@@ -109,11 +109,11 @@ TEST(SplitTest, ParseQueryString) {
   detail::split(s.c_str(), s.c_str() + s.size(), '&',
                 [&](const char *b, const char *e) {
                   string key, val;
-                  detail::split(b, e, '=', [&](const char *b, const char *e) {
+                  detail::split(b, e, '=', [&](const char *b2, const char *e2) {
                     if (key.empty()) {
-                      key.assign(b, e);
+                      key.assign(b2, e2);
                     } else {
-                      val.assign(b, e);
+                      val.assign(b2, e2);
                     }
                   });
                   dic.emplace(key, val);
@@ -3015,8 +3015,8 @@ TEST(GzipDecompressor, ChunkedDecompression) {
     httplib::detail::gzip_compressor compressor;
     bool result = compressor.compress(
         data.data(), data.size(),
-        /*last=*/true, [&](const char *data, size_t size) {
-          compressed_data.insert(compressed_data.size(), data, size);
+        /*last=*/true, [&](const char *compressed_data_chunk, size_t compressed_data_size) {
+          compressed_data.insert(compressed_data.size(), compressed_data_chunk, compressed_data_size);
           return true;
         });
     ASSERT_TRUE(result);
@@ -3035,8 +3035,8 @@ TEST(GzipDecompressor, ChunkedDecompression) {
           std::min(compressed_data.size() - chunk_begin, chunk_size);
       bool result = decompressor.decompress(
           compressed_data.data() + chunk_begin, current_chunk_size,
-          [&](const char *data, size_t size) {
-            decompressed_data.insert(decompressed_data.size(), data, size);
+          [&](const char *decompressed_data_chunk, size_t decompressed_data_chunk_size) {
+            decompressed_data.insert(decompressed_data.size(), decompressed_data_chunk, decompressed_data_chunk_size);
             return true;
           });
       ASSERT_TRUE(result);

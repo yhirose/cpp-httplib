@@ -1,5 +1,5 @@
 CXX = clang++
-CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
+CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
 
 PREFIX = /usr/local
 #PREFIX = $(shell brew --prefix)
