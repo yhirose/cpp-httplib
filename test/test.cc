@@ -4742,6 +4742,40 @@ TEST(SendAPI, SimpleInterface_Online) {
   EXPECT_EQ(301, res->status);
 }
 
+// Disabled due to out-of-memory problem on GitHub Actions
+#ifdef _WIN64
+TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
+  // allocate content size larger than 2GB in memory
+  const size_t content_size = 2LL * 1024LL * 1024LL * 1024LL + 1LL;
+  char *content = (char *)malloc(content_size);
+  ASSERT_TRUE(content);
+
+  Server svr;
+  svr.Get("/foo", [=](const httplib::Request &req, httplib::Response &resp) {
+    resp.set_content(content, content_size, "application/octet-stream");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/foo");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(content_size, res->body.length());
+
+  free(content);
+  svr.stop();
+  listen_thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+#endif
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest2, SimpleInterface_Online) {
   Client cli("http://yahoo.com");
