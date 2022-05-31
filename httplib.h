@@ -1872,7 +1872,7 @@ private:
 namespace detail {
 
 inline bool is_hex(char c, int &v) {
-  if (0x20 <= c && (isdigit(c) != 0)) {
+  if (0x20 <= c && std::isdigit(c)) {
     v = c - '0';
     return true;
   } else if ('A' <= c && c <= 'F') {
@@ -2031,7 +2031,7 @@ inline std::string encode_query_param(const std::string &value) {
   escaped << std::hex;
 
   for (auto c : value) {
-    if ((std::isalnum(static_cast<uint8_t>(c)) != 0) || c == '-' || c == '_' ||
+    if (std::isalnum(c) || c == '-' || c == '_' ||
         c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
         c == ')') {
       escaped << c;
@@ -3375,7 +3375,7 @@ inline bool read_content_chunked(Stream &strm,
 
     if (!line_reader.getline()) { return false; }
 
-    if (static_cast<int>(strcmp(line_reader.ptr(), "\r\n") != 0) != 0) {
+    if (std::strcmp(line_reader.ptr(), "\r\n")) {
       break;
     }
 
@@ -3385,7 +3385,7 @@ inline bool read_content_chunked(Stream &strm,
   if (chunk_len == 0) {
     // Reader terminator after chunks
     if (!line_reader.getline() ||
-        (static_cast<int>(strcmp(line_reader.ptr(), "\r\n") != 0) != 0)) {
+        (std::strcmp(line_reader.ptr(), "\r\n"))) {
       return false;
     }
   }
@@ -6710,7 +6710,7 @@ inline Result ClientImpl::Post(const char *path, const Headers &headers,
                                const MultipartFormDataItems &items,
                                const std::string &boundary) {
   for (char c : boundary) {
-    if ((std::isalnum(c) == 0) && c != '-' && c != '_') {
+    if (!std::isalnum(c) && c != '-' && c != '_') {
       return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
     }
   }
