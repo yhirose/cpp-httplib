@@ -5967,7 +5967,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       // TODO: refactoring
       if (is_ssl()) {
-        auto &scli = dynamic_cast<SSLClient &>(*this);
+        auto &scli = static_cast<SSLClient &>(*this);
         if (!proxy_host_.empty() && proxy_port_ != -1) {
           bool success = false;
           if (!scli.connect_with_proxy(socket_, res, success, error)) {
@@ -8214,7 +8214,7 @@ inline void Client::set_ca_cert_path(const char *ca_cert_file_path,
 
 inline void Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (is_ssl_) {
-    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+    static_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
   } else {
     cli_->set_ca_cert_store(ca_cert_store);
   }
@@ -8222,13 +8222,13 @@ inline void Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
 
 inline long Client::get_openssl_verify_result() const {
   if (is_ssl_) {
-    return dynamic_cast<SSLClient &>(*cli_).get_openssl_verify_result();
+    return static_cast<SSLClient &>(*cli_).get_openssl_verify_result();
   }
   return -1; // NOTE: -1 doesn't match any of X509_V_ERR_???
 }
 
 inline SSL_CTX *Client::ssl_context() const {
-  if (is_ssl_) { return dynamic_cast<SSLClient &>(*cli_).ssl_context(); }
+  if (is_ssl_) { return static_cast<SSLClient &>(*cli_).ssl_context(); }
   return nullptr;
 }
 #endif
