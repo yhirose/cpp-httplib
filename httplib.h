@@ -1497,10 +1497,9 @@ inline T get_header_value(const Headers & /*headers*/, const char * /*key*/,
                           size_t /*id*/ = 0, uint64_t /*def*/ = 0) {}
 
 template <>
-inline uint64_t get_header_value<uint64_t>(const Headers & /*unused*/ headers,
-                                           const char * /*unused*/ key,
-                                           size_t /*unused*/ id,
-                                           uint64_t /*unused*/ def) {
+inline uint64_t get_header_value<uint64_t>(const Headers &headers,
+                                           const char *key, size_t id,
+                                           uint64_t def) {
   auto rng = headers.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
@@ -2031,9 +2030,8 @@ inline std::string encode_query_param(const std::string &value) {
   escaped << std::hex;
 
   for (auto c : value) {
-    if (std::isalnum(c) || c == '-' || c == '_' ||
-        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-        c == ')') {
+    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '!' ||
+        c == '~' || c == '*' || c == '\'' || c == '(' || c == ')') {
       escaped << c;
     } else {
       escaped << std::uppercase;
@@ -3375,17 +3373,14 @@ inline bool read_content_chunked(Stream &strm,
 
     if (!line_reader.getline()) { return false; }
 
-    if (std::strcmp(line_reader.ptr(), "\r\n")) {
-      break;
-    }
+    if (std::strcmp(line_reader.ptr(), "\r\n")) { break; }
 
     if (!line_reader.getline()) { return false; }
   }
 
   if (chunk_len == 0) {
     // Reader terminator after chunks
-    if (!line_reader.getline() ||
-        (std::strcmp(line_reader.ptr(), "\r\n"))) {
+    if (!line_reader.getline() || (std::strcmp(line_reader.ptr(), "\r\n"))) {
       return false;
     }
   }
