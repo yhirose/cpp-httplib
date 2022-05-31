@@ -2529,7 +2529,6 @@ socket_t create_socket(const char *host, const char *ip, int port,
   struct addrinfo hints {};
   struct addrinfo *result = nullptr;
 
-  memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
 
@@ -2635,7 +2634,6 @@ inline bool bind_ip_address(socket_t sock, const char *host) {
   struct addrinfo hints {};
   struct addrinfo *result = nullptr;
 
-  memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
@@ -4399,7 +4397,6 @@ inline void hosted_at(const char *hostname, std::vector<std::string> &addrs) {
   struct addrinfo hints {};
   struct addrinfo *result = nullptr;
 
-  memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
