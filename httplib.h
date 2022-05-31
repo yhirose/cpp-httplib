@@ -7726,8 +7726,8 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
         case GEN_DNS: dsn_matched = check_host_name(name, name_len); break;
 
         case GEN_IPADD:
-          if ((memcmp(&addr6, name, addr_len) == 0) ||
-              (memcmp(&addr, name, addr_len) == 0)) {
+          if ((!memcmp(&addr6, name, addr_len)) ||
+              (!memcmp(&addr, name, addr_len))) {
             ip_mached = true;
           }
           break;
@@ -7777,7 +7777,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
     auto &p = *itr;
     if (p != h && p != "*") {
       auto partial_match = (!p.empty() && p[p.size() - 1] == '*' &&
-                            (p.compare(0, p.size() - 1, h) == 0));
+                            (!p.compare(0, p.size() - 1, h)));
       if (!partial_match) { return false; }
     }
     ++itr;
