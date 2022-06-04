@@ -193,15 +193,15 @@ using socket_t = int;
 #endif
 #endif //_WIN32
 
-#include <cstring>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
 #include <cctype>
+#include <cerrno>
 #include <climits>
 #include <condition_variable>
-#include <errno.h>
+#include <cstring>
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
@@ -218,6 +218,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <utility>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -658,7 +659,7 @@ public:
   Server &set_file_request_handler(Handler handler);
 
   Server &set_error_handler(HandlerWithResponse handler);
-  Server &set_error_handler(Handler handler);
+  Server &set_error_handler(const Handler &handler);
   Server &set_exception_handler(ExceptionHandler handler);
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
@@ -722,7 +723,7 @@ private:
       std::vector<std::pair<std::regex, HandlerWithContentReader>>;
 
   socket_t create_server_socket(const char *host, int port, int socket_flags,
-                                SocketOptions socket_options) const;
+                                const SocketOptions &socket_options) const;
   int bind_internal(const char *host, int port, int socket_flags);
   bool listen_internal();
 
@@ -732,7 +733,7 @@ private:
   bool dispatch_request(Request &req, Response &res, const Handlers &handlers);
   bool
   dispatch_request_for_content_reader(Request &req, Response &res,
-                                      ContentReader content_reader,
+                                      const ContentReader &content_reader,
                                       const HandlersForContentReader &handlers);
 
   bool parse_request_line(const char *s, Request &req);
@@ -749,15 +750,15 @@ private:
                                    Response &res, const std::string &boundary,
                                    const std::string &content_type);
   bool read_content(Stream &strm, Request &req, Response &res);
-  bool
-  read_content_with_content_receiver(Stream &strm, Request &req, Response &res,
-                                     ContentReceiver receiver,
-                                     MultipartContentHeader multipart_header,
-                                     ContentReceiver multipart_receiver);
+  bool read_content_with_content_receiver(
+      Stream &strm, Request &req, Response &res,
+      const ContentReceiver &receiver,
+      const MultipartContentHeader &multipart_header,
+      const ContentReceiver &multipart_receiver);
   bool read_content_core(Stream &strm, Request &req, Response &res,
-                         ContentReceiver receiver,
-                         MultipartContentHeader mulitpart_header,
-                         ContentReceiver multipart_receiver);
+                         const ContentReceiver &receiver,
+                         const MultipartContentHeader &mulitpart_header,
+                         const ContentReceiver &multipart_receiver);
 
   virtual bool process_and_close_socket(socket_t sock);
 
@@ -851,13 +852,12 @@ private:
 
 class ClientImpl {
 public:
-  explicit ClientImpl(const std::string &host);
+  explicit ClientImpl(std::string host);
 
-  explicit ClientImpl(const std::string &host, int port);
+  explicit ClientImpl(std::string host, int port);
 
-  explicit ClientImpl(const std::string &host, int port,
-                      const std::string &client_cert_path,
-                      const std::string &client_key_path);
+  explicit ClientImpl(std::string host, int port, std::string client_cert_path,
+                      std::string client_key_path);
 
   virtual ~ClientImpl();
 
@@ -865,33 +865,36 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, Progress progress);
-  Result Get(const char *path, const Headers &headers, Progress progress);
-  Result Get(const char *path, ContentReceiver content_receiver);
+  Result Get(const char *path, const Progress &progress);
   Result Get(const char *path, const Headers &headers,
-             ContentReceiver content_receiver);
-  Result Get(const char *path, ContentReceiver content_receiver,
-             Progress progress);
+             const Progress &progress);
+  Result Get(const char *path, const ContentReceiver &content_receiver);
   Result Get(const char *path, const Headers &headers,
-             ContentReceiver content_receiver, Progress progress);
-  Result Get(const char *path, ResponseHandler response_handler,
-             ContentReceiver content_receiver);
+             const ContentReceiver &content_receiver);
+  Result Get(const char *path, const ContentReceiver &content_receiver,
+             const Progress &progress);
   Result Get(const char *path, const Headers &headers,
-             ResponseHandler response_handler,
-             ContentReceiver content_receiver);
-  Result Get(const char *path, ResponseHandler response_handler,
-             ContentReceiver content_receiver, Progress progress);
+             const ContentReceiver &content_receiver, const Progress &progress);
+  Result Get(const char *path, const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver);
   Result Get(const char *path, const Headers &headers,
-             ResponseHandler response_handler, ContentReceiver content_receiver,
-             Progress progress);
+             const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver);
+  Result Get(const char *path, const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver, const Progress &progress);
+  Result Get(const char *path, const Headers &headers,
+             const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver, const Progress &progress);
 
   Result Get(const char *path, const Params &params, const Headers &headers,
-             Progress progress = nullptr);
+             const Progress &progress = nullptr);
   Result Get(const char *path, const Params &params, const Headers &headers,
-             ContentReceiver content_receiver, Progress progress = nullptr);
+             const ContentReceiver &content_receiver,
+             const Progress &progress = nullptr);
   Result Get(const char *path, const Params &params, const Headers &headers,
-             ResponseHandler response_handler, ContentReceiver content_receiver,
-             Progress progress = nullptr);
+             const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver,
+             const Progress &progress = nullptr);
 
   Result Head(const char *path);
   Result Head(const char *path, const Headers &headers);
@@ -1202,33 +1205,36 @@ public:
 
   Result Get(const char *path);
   Result Get(const char *path, const Headers &headers);
-  Result Get(const char *path, Progress progress);
-  Result Get(const char *path, const Headers &headers, Progress progress);
-  Result Get(const char *path, ContentReceiver content_receiver);
+  Result Get(const char *path, const Progress &progress);
   Result Get(const char *path, const Headers &headers,
-             ContentReceiver content_receiver);
-  Result Get(const char *path, ContentReceiver content_receiver,
-             Progress progress);
+             const Progress &progress);
+  Result Get(const char *path, const ContentReceiver &content_receiver);
   Result Get(const char *path, const Headers &headers,
-             ContentReceiver content_receiver, Progress progress);
-  Result Get(const char *path, ResponseHandler response_handler,
-             ContentReceiver content_receiver);
+             const ContentReceiver &content_receiver);
+  Result Get(const char *path, const ContentReceiver &content_receiver,
+             const Progress &progress);
   Result Get(const char *path, const Headers &headers,
-             ResponseHandler response_handler,
-             ContentReceiver content_receiver);
+             const ContentReceiver &content_receiver, const Progress &progress);
+  Result Get(const char *path, const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver);
   Result Get(const char *path, const Headers &headers,
-             ResponseHandler response_handler, ContentReceiver content_receiver,
-             Progress progress);
-  Result Get(const char *path, ResponseHandler response_handler,
-             ContentReceiver content_receiver, Progress progress);
+             const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver);
+  Result Get(const char *path, const Headers &headers,
+             const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver, const Progress &progress);
+  Result Get(const char *path, const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver, const Progress &progress);
 
   Result Get(const char *path, const Params &params, const Headers &headers,
-             Progress progress = nullptr);
+             const Progress &progress = nullptr);
   Result Get(const char *path, const Params &params, const Headers &headers,
-             ContentReceiver content_receiver, Progress progress = nullptr);
+             const ContentReceiver &content_receiver,
+             const Progress &progress = nullptr);
   Result Get(const char *path, const Params &params, const Headers &headers,
-             ResponseHandler response_handler, ContentReceiver content_receiver,
-             Progress progress = nullptr);
+             const ResponseHandler &response_handler,
+             const ContentReceiver &content_receiver,
+             const Progress &progress = nullptr);
 
   Result Head(const char *path);
   Result Head(const char *path, const Headers &headers);
@@ -1418,15 +1424,14 @@ private:
 
 class SSLClient : public ClientImpl {
 public:
-  explicit SSLClient(const std::string &host);
+  explicit SSLClient(std::string host);
 
-  explicit SSLClient(const std::string &host, int port);
+  explicit SSLClients(std::string host, int port);
 
-  explicit SSLClient(const std::string &host, int port,
-                     const std::string &client_cert_path,
-                     const std::string &client_key_path);
+  explicit SSLClient(std::string host, int port, std::string client_cert_path,
+                     std::string client_key_path);
 
-  explicit SSLClient(const std::string &host, int port, X509 *client_cert,
+  explicit SSLClient(std::string host, int port, X509 *client_cert,
                      EVP_PKEY *client_key);
 
   ~SSLClient() override;
@@ -1676,7 +1681,7 @@ void hosted_at(const char *hostname, std::vector<std::string> &addrs);
 
 std::string append_query_params(const char *path, const Params &params);
 
-std::pair<std::string, std::string> make_range_header(Ranges ranges);
+std::pair<std::string, std::string> make_range_header(const Ranges &ranges);
 
 std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
@@ -1694,16 +1699,16 @@ void read_file(const std::string &path, std::string &out);
 std::string trim_copy(const std::string &s);
 
 void split(const char *b, const char *e, char d,
-           std::function<void(const char *, const char *)> fn);
+           const std::function<void(const char *, const char *)> &fn);
 
 bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t read_timeout_usec, time_t write_timeout_sec,
                            time_t write_timeout_usec,
-                           std::function<bool(Stream &)> callback);
+                           const std::function<bool(Stream &)> &callback);
 
 socket_t create_client_socket(
     const char *host, const char *ip, int port, int address_family,
-    bool tcp_nodelay, SocketOptions socket_options,
+    bool tcp_nodelay, const SocketOptions &socket_options,
     time_t connection_timeout_sec, time_t connection_timeout_usec,
     time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, const std::string &intf, Error &error);
@@ -2143,7 +2148,7 @@ inline std::string trim_copy(const std::string &s) {
 }
 
 inline void split(const char *b, const char *e, char d,
-                  std::function<void(const char *, const char *)> fn) {
+                  const std::function<void(const char *, const char *)> &fn) {
   size_t i = 0;
   size_t beg = 0;
 
@@ -2500,11 +2505,11 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
       });
 }
 
-inline bool process_client_socket(socket_t sock, time_t read_timeout_sec,
-                                  time_t read_timeout_usec,
-                                  time_t write_timeout_sec,
-                                  time_t write_timeout_usec,
-                                  std::function<bool(Stream &)> callback) {
+inline bool
+process_client_socket(socket_t sock, time_t read_timeout_sec,
+                      time_t read_timeout_usec, time_t write_timeout_sec,
+                      time_t write_timeout_usec,
+                      const std::function<bool(Stream &)> &callback) {
   SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                     write_timeout_sec, write_timeout_usec);
   return callback(strm);
@@ -2521,7 +2526,7 @@ inline int shutdown_socket(socket_t sock) {
 template <typename BindOrConnect>
 socket_t create_socket(const char *host, const char *ip, int port,
                        int address_family, int socket_flags, bool tcp_nodelay,
-                       SocketOptions socket_options,
+                       const SocketOptions &socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
   const char *node = nullptr;
@@ -2699,12 +2704,12 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
 
 inline socket_t create_client_socket(
     const char *host, const char *ip, int port, int address_family,
-    bool tcp_nodelay, SocketOptions socket_options,
+    bool tcp_nodelay, const SocketOptions &socket_options,
     time_t connection_timeout_sec, time_t connection_timeout_usec,
     time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, const std::string &intf, Error &error) {
   auto sock = create_socket(
-      host, ip, port, address_family, 0, tcp_nodelay, std::move(socket_options),
+      host, ip, port, address_family, 0, tcp_nodelay, socket_options,
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
@@ -3294,8 +3299,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 }
 
 inline bool read_content_with_length(Stream &strm, uint64_t len,
-                                     Progress progress,
-                                     ContentReceiverWithProgress out) {
+                                     const Progress &progress,
+                                     const ContentReceiverWithProgress &out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
   uint64_t r = 0;
@@ -3326,8 +3331,9 @@ inline void skip_content_with_length(Stream &strm, uint64_t len) {
   }
 }
 
-inline bool read_content_without_length(Stream &strm,
-                                        ContentReceiverWithProgress out) {
+inline bool
+read_content_without_length(Stream &strm,
+                            const ContentReceiverWithProgress &out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   uint64_t r = 0;
   for (;;) {
@@ -3346,7 +3352,7 @@ inline bool read_content_without_length(Stream &strm,
 }
 
 inline bool read_content_chunked(Stream &strm,
-                                 ContentReceiverWithProgress out) {
+                                 const ContentReceiverWithProgress &out) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -4422,7 +4428,8 @@ inline std::string append_query_params(const char *path, const Params &params) {
 }
 
 // Header utilities
-inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
+inline std::pair<std::string, std::string>
+make_range_header(const Ranges &ranges) {
   std::string field = "bytes=";
   auto i = 0;
   for (auto r : ranges) {
@@ -4572,7 +4579,7 @@ inline void Response::set_content_provider(
   set_header("Content-Type", content_type);
   content_length_ = in_length;
   content_provider_ = std::move(provider);
-  content_provider_resource_releaser_ = resource_releaser;
+  content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
 }
 
@@ -4582,7 +4589,7 @@ inline void Response::set_content_provider(
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
-  content_provider_resource_releaser_ = resource_releaser;
+  content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
 }
 
@@ -4592,7 +4599,7 @@ inline void Response::set_chunked_content_provider(
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
-  content_provider_resource_releaser_ = resource_releaser;
+  content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = true;
 }
 
@@ -4855,7 +4862,7 @@ inline Server &Server::set_error_handler(HandlerWithResponse handler) {
   return *this;
 }
 
-inline Server &Server::set_error_handler(Handler handler) {
+inline Server &Server::set_error_handler(const Handler &handler) {
   error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
     return HandlerResponse::Handled;
@@ -5205,18 +5212,18 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
 }
 
 inline bool Server::read_content_with_content_receiver(
-    Stream &strm, Request &req, Response &res, ContentReceiver receiver,
-    MultipartContentHeader multipart_header,
-    ContentReceiver multipart_receiver) {
-  return read_content_core(strm, req, res, std::move(receiver),
-                           std::move(multipart_header),
-                           std::move(multipart_receiver));
+    Stream &strm, Request &req, Response &res, const ContentReceiver &receiver,
+    const MultipartContentHeader &multipart_header,
+    const ContentReceiver &multipart_receiver) {
+  return read_content_core(strm, req, res, receiver, multipart_header,
+                           multipart_receiver);
 }
 
-inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
-                                      ContentReceiver receiver,
-                                      MultipartContentHeader mulitpart_header,
-                                      ContentReceiver multipart_receiver) {
+inline bool
+Server::read_content_core(Stream &strm, Request &req, Response &res,
+                          const ContentReceiver &receiver,
+                          const MultipartContentHeader &mulitpart_header,
+                          const ContentReceiver &multipart_receiver) {
   detail::MultipartFormDataParser multipart_form_data_parser;
   ContentReceiverWithProgress out;
 
@@ -5300,11 +5307,10 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
 
 inline socket_t
 Server::create_server_socket(const char *host, int port, int socket_flags,
-                             SocketOptions socket_options) const {
+                             const SocketOptions &socket_options) const {
   return detail::create_socket(
       host, "", port, address_family_, socket_flags, tcp_nodelay_,
-      std::move(socket_options),
-      [](socket_t sock, struct addrinfo &ai) -> bool {
+      socket_options, [](socket_t sock, struct addrinfo &ai) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
         }
@@ -5435,14 +5441,14 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
     // Content reader handler
     {
       ContentReader reader(
-          [&](ContentReceiver receiver) {
-            return read_content_with_content_receiver(
-                strm, req, res, std::move(receiver), nullptr, nullptr);
+          [&](const ContentReceiver &receiver) {
+            return read_content_with_content_receiver(strm, req, res, receiver,
+                                                      nullptr, nullptr);
           },
-          [&](MultipartContentHeader header, ContentReceiver receiver) {
+          [&](const MultipartContentHeader &header,
+              const ContentReceiver &receiver) {
             return read_content_with_content_receiver(strm, req, res, nullptr,
-                                                      std::move(header),
-                                                      std::move(receiver));
+                                                      header, receiver);
           });
 
       if (req.method == "POST") {
@@ -5620,7 +5626,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
 }
 
 inline bool Server::dispatch_request_for_content_reader(
-    Request &req, Response &res, ContentReader content_reader,
+    Request &req, Response &res, const ContentReader &content_reader,
     const HandlersForContentReader &handlers) {
   for (const auto &x : handlers) {
     const auto &pattern = x.first;
@@ -5771,18 +5777,19 @@ inline bool Server::process_and_close_socket(socket_t sock) {
 }
 
 // HTTP client implementation
-inline ClientImpl::ClientImpl(const std::string &host)
-    : ClientImpl(host, 80, std::string(), std::string()) {}
+inline ClientImpl::ClientImpl(std::string host)
+    : ClientImpl(std::move(host), 80, std::string(), std::string()) {}
 
-inline ClientImpl::ClientImpl(const std::string &host, int port)
-    : ClientImpl(host, port, std::string(), std::string()) {}
+inline ClientImpl::ClientImpl(std::string host, int port)
+    : ClientImpl(std::move(host), port, std::string(), std::string()) {}
 
-inline ClientImpl::ClientImpl(const std::string &host, int port,
-                              const std::string &client_cert_path,
-                              const std::string &client_key_path)
-    : host_(host), port_(port),
+inline ClientImpl::ClientImpl(std::string host, int port,
+                              std::string client_cert_path,
+                              std::string client_key_path)
+    : host_(std::move(host)), port_(port),
       host_and_port_(adjust_host_string(host) + ":" + std::to_string(port)),
-      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
+      client_cert_path_(std::move(client_cert_path)),
+      client_key_path_(std::move(client_key_path)) {}
 
 inline ClientImpl::~ClientImpl() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
@@ -6320,7 +6327,8 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
           auto last = offset + data_len == content_length;
 
           auto ret = compressor.compress(
-              data, data_len, last, [&](const char *compressed_data, size_t compressed_data_len) {
+              data, data_len, last,
+              [&](const char *compressed_data, size_t compressed_data_len) {
                 req.body.append(compressed_data, compressed_data_len);
                 return true;
               });
@@ -6334,7 +6342,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
         return ok;
       };
 
-      data_sink.is_writable = [&](void) { return ok && true; };
+      data_sink.is_writable = [&](void) { return ok; };
 
       while (ok && offset < content_length) {
         if (!content_provider(offset, content_length - offset, data_sink)) {
@@ -6499,8 +6507,8 @@ inline Result ClientImpl::Get(const char *path) {
   return Get(path, Headers(), Progress());
 }
 
-inline Result ClientImpl::Get(const char *path, Progress progress) {
-  return Get(path, Headers(), std::move(progress));
+inline Result ClientImpl::Get(const char *path, const Progress &progress) {
+  return Get(path, Headers(), progress);
 }
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers) {
@@ -6508,83 +6516,79 @@ inline Result ClientImpl::Get(const char *path, const Headers &headers) {
 }
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
-                              Progress progress) {
+                              const Progress &progress) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
-  req.progress = std::move(progress);
+  req.progress = progress;
 
   return send_(std::move(req));
 }
 
 inline Result ClientImpl::Get(const char *path,
-                              ContentReceiver content_receiver) {
-  return Get(path, Headers(), nullptr, std::move(content_receiver), nullptr);
+                              const ContentReceiver &content_receiver) {
+  return Get(path, Headers(), nullptr, content_receiver, nullptr);
 }
 
 inline Result ClientImpl::Get(const char *path,
-                              ContentReceiver content_receiver,
-                              Progress progress) {
-  return Get(path, Headers(), nullptr, std::move(content_receiver),
-             std::move(progress));
+                              const ContentReceiver &content_receiver,
+                              const Progress &progress) {
+  return Get(path, Headers(), nullptr, content_receiver, progress);
 }
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
-                              ContentReceiver content_receiver) {
-  return Get(path, headers, nullptr, std::move(content_receiver), nullptr);
+                              const ContentReceiver &content_receiver) {
+  return Get(path, headers, nullptr, content_receiver, nullptr);
 }
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
-                              ContentReceiver content_receiver,
-                              Progress progress) {
-  return Get(path, headers, nullptr, std::move(content_receiver),
-             std::move(progress));
+                              const ContentReceiver &content_receiver,
+                              const Progress &progress) {
+  return Get(path, headers, nullptr, content_receiver, progress);
 }
 
 inline Result ClientImpl::Get(const char *path,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver) {
-  return Get(path, Headers(), std::move(response_handler),
-             std::move(content_receiver), nullptr);
+                              const ResponseHandler &response_handler,
+                              const ContentReceiver &content_receiver) {
+  return Get(path, Headers(), response_handler, content_receiver, nullptr);
 }
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver) {
-  return Get(path, headers, std::move(response_handler),
-             std::move(content_receiver), nullptr);
+                              const ResponseHandler &response_handler,
+                              const ContentReceiver &content_receiver) {
+  return Get(path, headers, response_handler, content_receiver, nullptr);
 }
 
 inline Result ClientImpl::Get(const char *path,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver,
-                              Progress progress) {
-  return Get(path, Headers(), std::move(response_handler),
-             std::move(content_receiver), std::move(progress));
+                              const ResponseHandler &response_handler,
+                              const ContentReceiver &content_receiver,
+                              const Progress &progress) {
+  return Get(path, Headers(), response_handler, content_receiver, progress);
 }
 
 inline Result ClientImpl::Get(const char *path, const Headers &headers,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver,
-                              Progress progress) {
+                              const ResponseHandler &response_handler,
+                              const ContentReceiver &content_receiver,
+                              const Progress &progress) {
   Request req;
   req.method = "GET";
   req.path = path;
   req.headers = headers;
-  req.response_handler = std::move(response_handler);
+  req.response_handler = response_handler;
   req.content_receiver =
       [content_receiver](const char *data, size_t data_length,
                          uint64_t /*offset*/, uint64_t /*total_length*/) {
         return content_receiver(data, data_length);
       };
-  req.progress = std::move(progress);
+  req.progress = progress;
 
   return send_(std::move(req));
 }
 
 inline Result ClientImpl::Get(const char *path, const Params &params,
-                              const Headers &headers, Progress progress) {
+                              const Headers &headers,
+                              const Progress &progress) {
   if (params.empty()) { return Get(path, headers); }
 
   std::string path_with_query = append_query_params(path, params);
@@ -6593,16 +6597,16 @@ inline Result ClientImpl::Get(const char *path, const Params &params,
 
 inline Result ClientImpl::Get(const char *path, const Params &params,
                               const Headers &headers,
-                              ContentReceiver content_receiver,
-                              Progress progress) {
+                              const ContentReceiver &content_receiver,
+                              const Progress &progress) {
   return Get(path, params, headers, nullptr, content_receiver, progress);
 }
 
 inline Result ClientImpl::Get(const char *path, const Params &params,
                               const Headers &headers,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver,
-                              Progress progress) {
+                              const ResponseHandler &response_handler,
+                              const ContentReceiver &content_receiver,
+                              const Progress &progress) {
   if (params.empty()) {
     return Get(path, headers, response_handler, content_receiver, progress);
   }
@@ -7408,16 +7412,17 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 }
 
 // SSL HTTP client implementation
-inline SSLClient::SSLClient(const std::string &host)
-    : SSLClient(host, 443, std::string(), std::string()) {}
+inline SSLClient::SSLClient(std::string host)
+    : SSLClient(std::move(host), 443, std::string(), std::string()) {}
 
-inline SSLClient::SSLClient(const std::string &host, int port)
-    : SSLClient(host, port, std::string(), std::string()) {}
+inline SSLClient::SSLClient(std::string host, int port)
+    : SSLClient(std::move(host), port, std::string(), std::string()) {}
 
-inline SSLClient::SSLClient(const std::string &host, int port,
-                            const std::string &client_cert_path,
-                            const std::string &client_key_path)
-    : ClientImpl(host, port, client_cert_path, client_key_path) {
+inline SSLClient::SSLClient(std::string host, int port,
+                            std::string client_cert_path,
+                            std::string client_key_path)
+    : ClientImpl(std::move(host), port, std::move(client_cert_path),
+                 std::move(client_key_path)) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
@@ -7436,9 +7441,9 @@ inline SSLClient::SSLClient(const std::string &host, int port,
   }
 }
 
-inline SSLClient::SSLClient(const std::string &host, int port,
-                            X509 *client_cert, EVP_PKEY *client_key)
-    : ClientImpl(host, port) {
+inline SSLClient::SSLClient(std::string host, int port, X509 *client_cert,
+                            EVP_PKEY *client_key)
+    : ClientImpl(std::move(host), port) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
@@ -7855,64 +7860,68 @@ inline Result Client::Get(const char *path) { return cli_->Get(path); }
 inline Result Client::Get(const char *path, const Headers &headers) {
   return cli_->Get(path, headers);
 }
-inline Result Client::Get(const char *path, Progress progress) {
-  return cli_->Get(path, std::move(progress));
+inline Result Client::Get(const char *path, const Progress &progress) {
+  return cli_->Get(path, progress);
 }
 inline Result Client::Get(const char *path, const Headers &headers,
-                          Progress progress) {
-  return cli_->Get(path, headers, std::move(progress));
+                          const Progress &progress) {
+  return cli_->Get(path, headers, progress);
 }
-inline Result Client::Get(const char *path, ContentReceiver content_receiver) {
-  return cli_->Get(path, std::move(content_receiver));
-}
-inline Result Client::Get(const char *path, const Headers &headers,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, headers, std::move(content_receiver));
-}
-inline Result Client::Get(const char *path, ContentReceiver content_receiver,
-                          Progress progress) {
-  return cli_->Get(path, std::move(content_receiver), std::move(progress));
+inline Result Client::Get(const char *path,
+                          const ContentReceiver &content_receiver) {
+  return cli_->Get(path, content_receiver);
 }
 inline Result Client::Get(const char *path, const Headers &headers,
-                          ContentReceiver content_receiver, Progress progress) {
-  return cli_->Get(path, headers, std::move(content_receiver),
-                   std::move(progress));
+                          const ContentReceiver &content_receiver) {
+  return cli_->Get(path, headers, content_receiver);
 }
-inline Result Client::Get(const char *path, ResponseHandler response_handler,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, std::move(response_handler),
-                   std::move(content_receiver));
-}
-inline Result Client::Get(const char *path, const Headers &headers,
-                          ResponseHandler response_handler,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, headers, std::move(response_handler),
-                   std::move(content_receiver));
-}
-inline Result Client::Get(const char *path, ResponseHandler response_handler,
-                          ContentReceiver content_receiver, Progress progress) {
-  return cli_->Get(path, std::move(response_handler),
-                   std::move(content_receiver), std::move(progress));
+inline Result Client::Get(const char *path,
+                          const ContentReceiver &content_receiver,
+                          const Progress &progress) {
+  return cli_->Get(path, content_receiver, progress);
 }
 inline Result Client::Get(const char *path, const Headers &headers,
-                          ResponseHandler response_handler,
-                          ContentReceiver content_receiver, Progress progress) {
-  return cli_->Get(path, headers, std::move(response_handler),
-                   std::move(content_receiver), std::move(progress));
+                          const ContentReceiver &content_receiver,
+                          const Progress &progress) {
+  return cli_->Get(path, headers, content_receiver, progress);
+}
+inline Result Client::Get(const char *path,
+                          const ResponseHandler &response_handler,
+                          const ContentReceiver &content_receiver) {
+  return cli_->Get(path, response_handler, content_receiver);
+}
+inline Result Client::Get(const char *path, const Headers &headers,
+                          const ResponseHandler &response_handler,
+                          const ContentReceiver &content_receiver) {
+  return cli_->Get(path, headers, response_handler, content_receiver);
+}
+inline Result Client::Get(const char *path,
+                          const ResponseHandler &response_handler,
+                          const ContentReceiver &content_receiver,
+                          const Progress &progress) {
+  return cli_->Get(path, response_handler, content_receiver, progress);
+}
+inline Result Client::Get(const char *path, const Headers &headers,
+                          const ResponseHandler &response_handler,
+                          const ContentReceiver &content_receiver,
+                          const Progress &progress) {
+  return cli_->Get(path, headers, response_handler, content_receiver, progress);
 }
 inline Result Client::Get(const char *path, const Params &params,
-                          const Headers &headers, Progress progress) {
+                          const Headers &headers, const Progress &progress) {
   return cli_->Get(path, params, headers, progress);
 }
 inline Result Client::Get(const char *path, const Params &params,
                           const Headers &headers,
-                          ContentReceiver content_receiver, Progress progress) {
+                          const ContentReceiver &content_receiver,
+                          const Progress &progress) {
   return cli_->Get(path, params, headers, content_receiver, progress);
 }
 inline Result Client::Get(const char *path, const Params &params,
                           const Headers &headers,
-                          ResponseHandler response_handler,
-                          ContentReceiver content_receiver, Progress progress) {
+                          const ResponseHandler &response_handler,
+                          const ContentReceiver &content_receiver,
+                          const Progress &progress) {
   return cli_->Get(path, params, headers, response_handler, content_receiver,
                    progress);
 }
@@ -8191,7 +8200,9 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
 }
 #endif
 
-inline void Client::set_logger(Logger logger) { cli_->set_logger(logger); }
+inline void Client::set_logger(Logger logger) {
+  cli_->set_logger(std::move(logger));
+}
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_ca_cert_path(const char *ca_cert_file_path,
