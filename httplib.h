@@ -4411,6 +4411,8 @@ inline void hosted_at(const char *hostname, std::vector<std::string> &addrs) {
       addrs.push_back(ip);
     }
   }
+
+  freeaddrinfo(result);
 }
 
 inline std::string append_query_params(const char *path, const Params &params) {
