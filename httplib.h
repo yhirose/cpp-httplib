@@ -1426,7 +1426,7 @@ class SSLClient : public ClientImpl {
 public:
   explicit SSLClient(std::string host);
 
-  explicit SSLClients(std::string host, int port);
+  explicit SSLClient(std::string host, int port);
 
   explicit SSLClient(std::string host, int port, std::string client_cert_path,
                      std::string client_key_path);
