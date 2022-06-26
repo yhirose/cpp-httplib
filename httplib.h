@@ -193,7 +193,6 @@ using socket_t = int;
 #endif
 #endif //_WIN32
 
-#include <cstring>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -201,12 +200,14 @@ using socket_t = int;
 #include <cctype>
 #include <climits>
 #include <condition_variable>
+#include <cstring>
 #include <errno.h>
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <map>
 #include <memory>
@@ -6322,7 +6323,8 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
           auto last = offset + data_len == content_length;
 
           auto ret = compressor.compress(
-              data, data_len, last, [&](const char *compressed_data, size_t compressed_data_len) {
+              data, data_len, last,
+              [&](const char *compressed_data, size_t compressed_data_len) {
                 req.body.append(compressed_data, compressed_data_len);
                 return true;
               });
@@ -7259,32 +7261,34 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
   return -1;
 }
 
-inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
-  if (is_writable()) {
-    auto ret = SSL_write(ssl_, ptr, static_cast<int>(size));
-    if (ret < 0) {
+inline ssize_t SSLSocketStream::write(const char *ptr, const size_t size) {
+  if (!is_writable()) { return -1; }
+  size_t written = 0;
+  size_t retried = 0;
+  while (size != written) {
+    const int ret =
+        SSL_write(ssl_, ptr + written,
+                  static_cast<int>(std::min<size_t>(
+                      size - written, std::numeric_limits<int>::max())));
+    if (ret > 0) {
+      written += static_cast<size_t>(ret);
+    } else {
       auto err = SSL_get_error(ssl_, ret);
-      int n = 1000;
 #ifdef _WIN32
-      while (--n >= 0 && (err == SSL_ERROR_WANT_WRITE ||
-                          (err == SSL_ERROR_SYSCALL &&
-                           WSAGetLastError() == WSAETIMEDOUT))) {
+      if (retried++ < 1000 &&
+          (err == SSL_ERROR_WANT_WRITE ||
+           (err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT))) {
 #else
-      while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
+      if (retried++ < 1000 && err == SSL_ERROR_WANT_WRITE) {
 #endif
-        if (is_writable()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
-          ret = SSL_write(ssl_, ptr, static_cast<int>(size));
-          if (ret >= 0) { return ret; }
-          err = SSL_get_error(ssl_, ret);
-        } else {
-          return -1;
-        }
+        if (!is_writable()) { return -1; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } else {
+        return -1;
       }
     }
-    return ret;
   }
-  return -1;
+  return static_cast<ssize_t>(size);
 }
 
 inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
