@@ -193,7 +193,6 @@ using socket_t = int;
 #endif
 #endif //_WIN32
 
-#include <cstring>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -201,6 +200,7 @@ using socket_t = int;
 #include <cctype>
 #include <climits>
 #include <condition_variable>
+#include <cstring>
 #include <errno.h>
 #include <fcntl.h>
 #include <fstream>
@@ -5098,14 +5098,16 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
     // Flush buffer
     auto &data = bstrm.get_buffer();
-    strm.write(data.data(), data.size());
+    detail::write_data(strm, data.data(), data.size());
   }
 
   // Body
   auto ret = true;
   if (req.method != "HEAD") {
     if (!res.body.empty()) {
-      if (!strm.write(res.body)) { ret = false; }
+      if (!detail::write_data(strm, res.body.data(), res.body.size())) {
+        ret = false;
+      }
     } else if (res.content_provider_) {
       if (write_content_with_provider(strm, req, res, boundary, content_type)) {
         res.content_provider_success_ = true;
@@ -6322,7 +6324,8 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
           auto last = offset + data_len == content_length;
 
           auto ret = compressor.compress(
-              data, data_len, last, [&](const char *compressed_data, size_t compressed_data_len) {
+              data, data_len, last,
+              [&](const char *compressed_data, size_t compressed_data_len) {
                 req.body.append(compressed_data, compressed_data_len);
                 return true;
               });
@@ -7261,7 +7264,10 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
 
 inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
   if (is_writable()) {
-    auto ret = SSL_write(ssl_, ptr, static_cast<int>(size));
+    auto handle_size = static_cast<int>(
+        std::min<size_t>(size, std::numeric_limits<int>::max()));
+
+    auto ret = SSL_write(ssl_, ptr, static_cast<int>(handle_size));
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
       int n = 1000;
@@ -7274,7 +7280,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
 #endif
         if (is_writable()) {
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
-          ret = SSL_write(ssl_, ptr, static_cast<int>(size));
+          ret = SSL_write(ssl_, ptr, static_cast<int>(handle_size));
           if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
         } else {
