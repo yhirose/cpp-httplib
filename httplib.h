@@ -3794,6 +3794,7 @@ public:
       switch (state_) {
       case 0: { // Initial boundary
         auto pattern = dash_ + boundary_ + crlf_;
+        buf_erase(buf_find(pattern));
         if (pattern.size() > buf_size()) { return true; }
         if (!buf_start_with(pattern)) { return false; }
         buf_erase(pattern.size());
