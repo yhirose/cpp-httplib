@@ -3794,6 +3794,7 @@ public:
       switch (state_) {
       case 0: { // Initial boundary
         auto pattern = dash_ + boundary_ + crlf_;
+        buf_erase(buf_find(pattern));
         if (pattern.size() > buf_size()) { return true; }
         if (!buf_start_with(pattern)) { return false; }
         buf_erase(pattern.size());
@@ -3887,16 +3888,12 @@ public:
           if (buf_start_with(pattern)) {
             buf_erase(pattern.size());
             is_valid_ = true;
-            state_ = 5;
+            buf_erase(buf_size()); // Remove epilogue
           } else {
             return true;
           }
         }
         break;
-      }
-      case 5: { // Done
-        is_valid_ = false;
-        return false;
       }
       }
     }
