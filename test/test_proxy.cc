@@ -82,7 +82,7 @@ TEST(RedirectTest, YouTubeNoSSLBasic) {
   RedirectProxyText(cli, "/", true);
 }
 
-TEST(RedirectTest, YouTubeNoSSLDigest) {
+TEST(RedirectTest, DISABLED_YouTubeNoSSLDigest) {
   Client cli("youtube.com");
   RedirectProxyText(cli, "/", false);
 }
