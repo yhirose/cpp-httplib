@@ -616,7 +616,7 @@ public:
   using Handler = std::function<void(const Request &, Response &)>;
 
   using ExceptionHandler =
-      std::function<void(const Request &, Response &, std::exception_ptr &ep)>;
+      std::function<void(const Request &, Response &, std::exception_ptr ep)>;
 
   enum class HandlerResponse {
     Handled,
@@ -5741,8 +5741,14 @@ Server::process_request(Stream &strm, bool close_connection,
       res.set_header("EXCEPTION_WHAT", e.what());
     }
   } catch (...) {
-    res.status = 500;
-    res.set_header("EXCEPTION_WHAT", "UNKNOWN");
+    if (exception_handler_) {
+      auto ep = std::current_exception();
+      exception_handler_(req, res, ep);
+      routed = true;
+    } else {
+      res.status = 500;
+      res.set_header("EXCEPTION_WHAT", "UNKNOWN");
+    }
   }
 #endif
 
