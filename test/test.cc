@@ -4982,7 +4982,7 @@ TEST(MultipartFormDataTest, LargeData) {
 
 TEST(MultipartFormDataTest, WithPreamble) {
   Server svr;
-  svr.Post("/post", [&](const Request &req, Response &res) {
+  svr.Post("/post", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
