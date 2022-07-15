@@ -123,14 +123,16 @@
 #endif //_CRT_NONSTDC_NO_DEPRECATE
 
 #if defined(_MSC_VER)
+#if _MSC_VER < 1900
+#error Sorry, Visual Studio versions prior to 2015 are not supported
+#endif
+
+#pragma comment(lib, "ws2_32.lib")
+
 #ifdef _WIN64
 using ssize_t = __int64;
 #else
 using ssize_t = int;
-#endif
-
-#if _MSC_VER < 1900
-#define snprintf _snprintf_s
 #endif
 #endif // _MSC_VER
 
@@ -152,10 +154,6 @@ using ssize_t = int;
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
-#endif
-
-#ifdef _MSC_VER
-#pragma comment(lib, "ws2_32.lib")
 #endif
 
 #ifndef strcasecmp
@@ -1520,11 +1518,7 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
   const auto bufsiz = 2048;
   std::array<char, bufsiz> buf{};
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
-  auto sn = _snprintf_s(buf.data(), bufsiz, _TRUNCATE, fmt, args...);
-#else
   auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
-#endif
   if (sn <= 0) { return sn; }
 
   auto n = static_cast<size_t>(sn);
@@ -1534,14 +1528,8 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
 
     while (n >= glowable_buf.size() - 1) {
       glowable_buf.resize(glowable_buf.size() * 2);
-#if defined(_MSC_VER) && _MSC_VER < 1900
-      n = static_cast<size_t>(_snprintf_s(&glowable_buf[0], glowable_buf.size(),
-                                          glowable_buf.size() - 1, fmt,
-                                          args...));
-#else
       n = static_cast<size_t>(
           snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
-#endif
     }
     return write(&glowable_buf[0], n);
   } else {
@@ -4711,7 +4699,7 @@ inline bool BufferStream::is_readable() const { return true; }
 inline bool BufferStream::is_writable() const { return true; }
 
 inline ssize_t BufferStream::read(char *ptr, size_t size) {
-#if defined(_MSC_VER) && _MSC_VER <= 1900
+#if defined(_MSC_VER) && _MSC_VER < 1910
   auto len_read = buffer._Copy_s(ptr, size, size, position);
 #else
   auto len_read = buffer.copy(ptr, size, position);
