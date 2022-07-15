@@ -212,14 +212,22 @@ svr.set_error_handler([](const auto& req, auto& res) {
 The exception handler gets called if a user routing handler throws an error.
 
 ```cpp
-svr.set_exception_handler([](const auto& req, auto& res, std::exception &e) {
-  res.status = 500;
+svr.set_exception_handler([](const auto& req, auto& res, std::exception_ptr ep) {
   auto fmt = "<h1>Error 500</h1><p>%s</p>";
   char buf[BUFSIZ];
-  snprintf(buf, sizeof(buf), fmt, e.what());
+  try {
+    std::rethrow_exception(ep);
+  } catch (std::exception &e) {
+    snprintf(buf, sizeof(buf), fmt, e.what());
+  } catch (...) { // See the following NOTE
+    snprintf(buf, sizeof(buf), fmt, "Unknown Exception");
+  }
   res.set_content(buf, "text/html");
+  res.status = 500;
 });
 ```
+
+NOTE: if you don't provide the `catch (...)` block for a rethrown exception pointer, an uncaught exception will end up causing the server crash. Be careful!
 
 ### Pre routing handler
 
