@@ -1251,11 +1251,9 @@ TEST(ExceptionHandlerTest, ContentLength) {
   svr.set_exception_handler([](const Request & /*req*/, Response &res,
                                std::exception_ptr ep) {
     EXPECT_FALSE(ep == nullptr);
-    try{
+    try {
       std::rethrow_exception(ep);
-    }catch(std::exception& e){
-      EXPECT_EQ("abc", std::string(e.what()));
-    }
+    } catch (std::exception &e) { EXPECT_EQ("abc", std::string(e.what())); }
     res.status = 500;
     res.set_content("abcdefghijklmnopqrstuvwxyz",
                     "text/html"); // <= Content-Length still 13 at this point
