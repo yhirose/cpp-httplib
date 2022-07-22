@@ -4180,7 +4180,7 @@ protected:
       res.set_content("Hello World!", "text/plain");
     });
 
-    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(nullptr, PORT, AI_PASSIVE)); });
+    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(std::string(), PORT, AI_PASSIVE)); });
 
     while (!svr_.is_running()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
