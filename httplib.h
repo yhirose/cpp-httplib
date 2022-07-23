@@ -1179,8 +1179,9 @@ private:
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type, Error &error);
   Result send_with_content_provider(
-      const std::string &method, const std::string &path, const Headers &headers,
-      const char *body, size_t content_length, ContentProvider content_provider,
+      const std::string &method, const std::string &path,
+      const Headers &headers, const char *body, size_t content_length,
+      ContentProvider content_provider,
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type);
 
@@ -2546,7 +2547,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
-  std::string node;
+  const char *node = nullptr;
   struct addrinfo hints;
   struct addrinfo *result;
 
@@ -2554,20 +2555,20 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
 
-  if (ip[0] != '\0') {
-    node = ip;
+  if (!ip.empty()) {
+    node = ip.c_str();
     // Ask getaddrinfo to convert IP in c-string to address
     hints.ai_family = AF_UNSPEC;
     hints.ai_flags = AI_NUMERICHOST;
   } else {
-    node = host;
+    if (!host.empty()) { node = host.c_str(); }
     hints.ai_family = address_family;
     hints.ai_flags = socket_flags;
   }
 
   auto service = std::to_string(port);
 
-  if (getaddrinfo(node.c_str(), service.c_str(), &hints, &result)) {
+  if (getaddrinfo(node, service.c_str(), &hints, &result)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
@@ -5320,7 +5321,7 @@ Server::create_server_socket(const std::string &host, int port,
                              int socket_flags,
                              SocketOptions socket_options) const {
   return detail::create_socket(
-      host, "", port, address_family_, socket_flags, tcp_nodelay_,
+      host, std::string(), port, address_family_, socket_flags, tcp_nodelay_,
       std::move(socket_options),
       [](socket_t sock, struct addrinfo &ai) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
@@ -5865,7 +5866,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
-        proxy_host_.c_str(), "", proxy_port_, address_family_, tcp_nodelay_,
+        proxy_host_, std::string(), proxy_port_, address_family_, tcp_nodelay_,
         socket_options_, connection_timeout_sec_, connection_timeout_usec_,
         read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
         write_timeout_usec_, interface_, error);
@@ -5877,10 +5878,10 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (it != addr_map_.end()) ip = it->second;
 
   return detail::create_client_socket(
-      host_.c_str(), ip.c_str(), port_, address_family_, tcp_nodelay_,
-      socket_options_, connection_timeout_sec_, connection_timeout_usec_,
-      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_, interface_, error);
+      host_, ip, port_, address_family_, tcp_nodelay_, socket_options_,
+      connection_timeout_sec_, connection_timeout_usec_, read_timeout_sec_,
+      read_timeout_usec_, write_timeout_sec_, write_timeout_usec_, interface_,
+      error);
 }
 
 inline bool ClientImpl::create_and_connect_socket(Socket &socket,
@@ -6319,8 +6320,8 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
 }
 
 inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
-    Request &req,
-    const char *body, size_t content_length, ContentProvider content_provider,
+    Request &req, const char *body, size_t content_length,
+    ContentProvider content_provider,
     ContentProviderWithoutLength content_provider_without_length,
     const std::string &content_type, Error &error) {
   if (!content_type.empty()) {
@@ -6415,8 +6416,7 @@ inline Result ClientImpl::send_with_content_provider(
   auto error = Error::Success;
 
   auto res = send_with_content_provider(
-      req,
-      body, content_length, std::move(content_provider),
+      req, body, content_length, std::move(content_provider),
       std::move(content_provider_without_length), content_type, error);
 
   return Result{std::move(res), error, std::move(req.headers)};
