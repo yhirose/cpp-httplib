@@ -443,7 +443,7 @@ int main(void)
     }
   } else {
     auto err = res.error();
-    ...
+    std::cout << "HTTP error: " << httplib::to_string(err) << std::endl;
   }
 }
 ```
@@ -476,7 +476,9 @@ enum Error {
   SSLConnection,
   SSLLoadingCerts,
   SSLServerVerification,
-  UnsupportedMultipartBoundaryChars
+  UnsupportedMultipartBoundaryChars,
+  Compression,
+  ConnectionTimeout,
 };
 ```
 
