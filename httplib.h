@@ -7230,6 +7230,8 @@ public:
   ~SSLInit() {
 #if OPENSSL_VERSION_NUMBER < 0x1010001fL
     ERR_free_strings();
+#else
+    OPENSSL_cleanup();
 #endif
   }
 
