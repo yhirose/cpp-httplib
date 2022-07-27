@@ -7298,7 +7298,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
 inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
   if (is_writable()) {
     auto handle_size = static_cast<int>(
-        std::min<size_t>(size, std::numeric_limits<int>::max()));
+        std::min<size_t>(size, (std::numeric_limits<int>::max)()));
 
     auto ret = SSL_write(ssl_, ptr, static_cast<int>(handle_size));
     if (ret < 0) {
