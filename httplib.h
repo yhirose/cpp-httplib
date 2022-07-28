@@ -130,9 +130,9 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #ifdef _WIN64
-using ssize_t = __int64;
+using ssize_t = long long;
 #else
-using ssize_t = int;
+using ssize_t = long;
 #endif
 #endif // _MSC_VER
 
