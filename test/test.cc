@@ -5064,3 +5064,41 @@ TEST(MultipartFormDataTest, WithPreamble) {
 
 #endif
 
+class UnixSocketTest : public ::testing::Test {
+protected:
+  void TearDown() override {
+    std::remove(pathname_.c_str());
+  }
+
+  const std::string pathname_ {"./httplib-server.sock"};
+  const std::string pattern_ {"/hi"};
+  const std::string content_ {"Hello World!"};
+};
+
+TEST_F(UnixSocketTest, pathname) {
+  httplib::Server svr;
+  svr.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
+    res.set_content(content_, "text/plain");
+  });
+
+  std::thread t {[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80)); }};
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_TRUE(svr.is_running());
+
+  httplib::Client cli{pathname_};
+  cli.set_address_family(AF_UNIX);
+  ASSERT_TRUE(cli.is_valid());
+
+  const auto &result = cli.Get(pattern_);
+  ASSERT_TRUE(result) << "error: " << result.error();
+
+  const auto &resp = result.value();
+  EXPECT_EQ(resp.status, 200);
+  EXPECT_EQ(resp.body, content_);
+
+  svr.stop();
+  t.join();
+}
