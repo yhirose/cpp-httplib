@@ -183,6 +183,7 @@ using socket_t = SOCKET;
 #include <pthread.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 using socket_t = int;
@@ -2569,6 +2570,29 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     hints.ai_family = address_family;
     hints.ai_flags = socket_flags;
   }
+
+#ifndef _WIN32
+  if (hints.ai_family == AF_UNIX) {
+    const auto addrlen = host.length();
+    if (addrlen > sizeof(sockaddr_un::sun_path)) return INVALID_SOCKET;
+
+    auto sock = socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
+    if (sock != INVALID_SOCKET) {
+      sockaddr_un addr {AF_UNIX, ""};
+      std::copy(host.begin(), host.end(), addr.sun_path);
+
+      hints.ai_addr = reinterpret_cast<sockaddr*>(&addr);
+      hints.ai_addrlen = static_cast<socklen_t>(
+          sizeof(addr) - sizeof(addr.sun_path) + addrlen);
+
+      if (!bind_or_connect(sock, hints)) {
+        close_socket(sock);
+        sock = INVALID_SOCKET;
+      }
+    }
+    return sock;
+  }
+#endif
 
   auto service = std::to_string(port);
 
