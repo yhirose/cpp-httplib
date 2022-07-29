@@ -130,7 +130,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #ifdef _WIN64
-using ssize_t = long long;
+using ssize_t = __int64;
 #else
 using ssize_t = long;
 #endif
