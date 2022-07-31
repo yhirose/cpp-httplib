@@ -4750,6 +4750,43 @@ TEST(SendAPI, SimpleInterface_Online) {
   EXPECT_EQ(301, res->status);
 }
 
+TEST(ClientImplMethods, GetSocketTest) {
+  httplib::Server svr;
+  svr.Get( "/", [&](const httplib::Request& req, httplib::Response& res) {
+    res.status = 200;
+  });
+
+  auto thread = std::thread([&]() { svr.listen("127.0.0.1", 3333); });
+
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  {
+    httplib::Client cli("http://127.0.0.1:3333");
+    cli.set_keep_alive(true);
+
+    // Use the behavior of cpp-httplib of opening the connection
+    // only when the first request happens. If that changes,
+    // this test would be obsolete.
+
+    EXPECT_EQ(cli.socket(), INVALID_SOCKET);
+
+    // This also implicitly tests the server. But other tests would fail much
+    // earlier than this one to be considered.
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+
+    EXPECT_EQ(200, res->status);
+    ASSERT_TRUE(cli.socket() != INVALID_SOCKET);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
 // Disabled due to out-of-memory problem on GitHub Actions
 #ifdef _WIN64
 TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
