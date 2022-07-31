@@ -992,7 +992,7 @@ public:
 
   size_t is_socket_open() const;
 
-  socket_t get_socket_fd() const;
+  socket_t get_socket() const;
 
   void stop();
 
@@ -1346,7 +1346,7 @@ public:
 
   size_t is_socket_open() const;
 
-  socket_t get_socket_fd() const;
+  socket_t get_socket() const;
 
   void stop();
 
@@ -6948,7 +6948,7 @@ inline size_t ClientImpl::is_socket_open() const {
   return socket_.is_open();
 }
 
-inline socket_t ClientImpl::get_socket_fd() const {
+inline socket_t ClientImpl::get_socket() const {
   return socket_.sock;
 }
 
@@ -8159,7 +8159,7 @@ inline Result Client::send(const Request &req) { return cli_->send(req); }
 
 inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
 
-inline socket_t Client::get_socket_fd() const { return cli_->get_socket_fd(); }
+inline socket_t Client::get_socket() const { return cli_->get_socket(); }
 
 inline void Client::stop() { cli_->stop(); }
 
