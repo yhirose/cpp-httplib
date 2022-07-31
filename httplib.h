@@ -3797,7 +3797,11 @@ class MultipartFormDataParser {
 public:
   MultipartFormDataParser() = default;
 
-  void set_boundary(std::string &&boundary) { boundary_ = boundary; }
+  void set_boundary(std::string &&boundary) {
+    boundary_ = boundary;
+    dash_boundary_crlf_ = dash_ + boundary_ + crlf_;
+    crlf_dash_boundary_ = crlf_ + dash_ + boundary_;
+  }
 
   bool is_valid() const { return is_valid_; }
 
@@ -3809,19 +3813,15 @@ public:
         R"~(^Content-Disposition:\s*form-data;\s*name="(.*?)"(?:;\s*filename="(.*?)")?(?:;\s*filename\*=\S+)?\s*$)~",
         std::regex_constants::icase);
 
-    static const std::string dash_ = "--";
-    static const std::string crlf_ = "\r\n";
-
     buf_append(buf, n);
 
     while (buf_size() > 0) {
       switch (state_) {
       case 0: { // Initial boundary
-        auto pattern = dash_ + boundary_ + crlf_;
-        buf_erase(buf_find(pattern));
-        if (pattern.size() > buf_size()) { return true; }
-        if (!buf_start_with(pattern)) { return false; }
-        buf_erase(pattern.size());
+        buf_erase(buf_find(dash_boundary_crlf_));
+        if (dash_boundary_crlf_.size() > buf_size()) { return true; }
+        if (!buf_start_with(dash_boundary_crlf_)) { return false; }
+        buf_erase(dash_boundary_crlf_.size());
         state_ = 1;
         break;
       }
@@ -3856,7 +3856,6 @@ public:
               file_.filename = m[2];
             }
           }
-
           buf_erase(pos + crlf_.size());
           pos = buf_find(crlf_);
         }
@@ -3864,40 +3863,25 @@ public:
         break;
       }
       case 3: { // Body
-        {
-          auto pattern = crlf_ + dash_;
-          if (pattern.size() > buf_size()) { return true; }
-
-          auto pos = buf_find(pattern);
-
+        if (crlf_dash_boundary_.size() > buf_size()) { return true; }
+        auto pos = buf_find(crlf_dash_boundary_);
+        if (pos < buf_size()) {
           if (!content_callback(buf_data(), pos)) {
             is_valid_ = false;
             return false;
           }
-
-          buf_erase(pos);
-        }
-        {
-          auto pattern = crlf_ + dash_ + boundary_;
-          if (pattern.size() > buf_size()) { return true; }
-
-          auto pos = buf_find(pattern);
-          if (pos < buf_size()) {
-            if (!content_callback(buf_data(), pos)) {
+          buf_erase(pos + crlf_dash_boundary_.size());
+          state_ = 4;
+        } else {
+          auto len = buf_size() - crlf_dash_boundary_.size();
+          if (len > 0) {
+            if (!content_callback(buf_data(), len)) {
               is_valid_ = false;
               return false;
             }
-
-            buf_erase(pos + pattern.size());
-            state_ = 4;
-          } else {
-            if (!content_callback(buf_data(), pattern.size())) {
-              is_valid_ = false;
-              return false;
-            }
-
-            buf_erase(pattern.size());
+            buf_erase(len);
           }
+          return true;
         }
         break;
       }
@@ -3907,10 +3891,9 @@ public:
           buf_erase(crlf_.size());
           state_ = 1;
         } else {
-          auto pattern = dash_ + crlf_;
-          if (pattern.size() > buf_size()) { return true; }
-          if (buf_start_with(pattern)) {
-            buf_erase(pattern.size());
+          if (dash_crlf_.size() > buf_size()) { return true; }
+          if (buf_start_with(dash_crlf_)) {
+            buf_erase(dash_crlf_.size());
             is_valid_ = true;
             buf_erase(buf_size()); // Remove epilogue
           } else {
@@ -3941,7 +3924,12 @@ private:
     return true;
   }
 
+  const std::string dash_ = "--";
+  const std::string crlf_ = "\r\n";
+  const std::string dash_crlf_ = "--\r\n";
   std::string boundary_;
+  std::string dash_boundary_crlf_;
+  std::string crlf_dash_boundary_;
 
   size_t state_ = 0;
   bool is_valid_ = false;
