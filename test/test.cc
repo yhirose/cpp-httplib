@@ -4752,7 +4752,7 @@ TEST(SendAPI, SimpleInterface_Online) {
 
 TEST(ClientImplMethods, GetSocketTest) {
   httplib::Server svr;
-  svr.Get( "/", [&](const httplib::Request& req, httplib::Response& res) {
+  svr.Get( "/", [&](const httplib::Request& /*req*/, httplib::Response& res) {
     res.status = 200;
   });
 
