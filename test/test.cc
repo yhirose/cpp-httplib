@@ -4770,7 +4770,7 @@ TEST(ClientImplMethods, GetSocketTest) {
     // only when the first request happens. If that changes,
     // this test would be obsolete.
 
-    EXPECT_EQ(cli.get_socket(), INVALID_SOCKET);
+    EXPECT_EQ(cli.socket(), INVALID_SOCKET);
 
     // This also implicitly tests the server. But other tests would fail much
     // earlier than this one to be considered.
@@ -4779,7 +4779,7 @@ TEST(ClientImplMethods, GetSocketTest) {
     ASSERT_TRUE(res);
 
     EXPECT_EQ(200, res->status);
-    ASSERT_TRUE(cli.get_socket() != INVALID_SOCKET);
+    ASSERT_TRUE(cli.socket() != INVALID_SOCKET);
   }
 
   svr.stop();
