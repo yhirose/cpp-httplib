@@ -992,6 +992,8 @@ public:
 
   size_t is_socket_open() const;
 
+  socket_t get_socket_fd() const;
+
   void stop();
 
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
@@ -1343,6 +1345,8 @@ public:
   Result send(const Request &req);
 
   size_t is_socket_open() const;
+
+  socket_t get_socket_fd() const;
 
   void stop();
 
@@ -6944,6 +6948,10 @@ inline size_t ClientImpl::is_socket_open() const {
   return socket_.is_open();
 }
 
+inline socket_t ClientImpl::get_socket_fd() const {
+  return socket_.sock;
+}
+
 inline void ClientImpl::stop() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
 
@@ -8150,6 +8158,8 @@ inline bool Client::send(Request &req, Response &res, Error &error) {
 inline Result Client::send(const Request &req) { return cli_->send(req); }
 
 inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
+
+inline socket_t Client::get_socket_fd() const { return cli_->get_socket_fd(); }
 
 inline void Client::stop() { cli_->stop(); }
 
