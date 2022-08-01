@@ -7883,12 +7883,12 @@ inline Client::Client(const std::string &scheme_host_port,
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      cli_ = detail::make_unique<SSLClient>(host.c_str(), port,
+      cli_ = detail::make_unique<SSLClient>(host, port,
                                             client_cert_path, client_key_path);
       is_ssl_ = is_ssl;
 #endif
     } else {
-      cli_ = detail::make_unique<ClientImpl>(host.c_str(), port,
+      cli_ = detail::make_unique<ClientImpl>(host, port,
                                              client_cert_path, client_key_path);
     }
   } else {
