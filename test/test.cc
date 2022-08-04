@@ -5062,6 +5062,241 @@ TEST(MultipartFormDataTest, WithPreamble) {
   t.join();
 }
 
+TEST(MultipartFormDataTest, PostCustomBoundary) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Post("/post_customboundary", [&](const Request &req, Response & /*res*/,
+                        const ContentReader &content_reader) {
+    if (req.is_multipart_form_data()) {
+      MultipartFormDataItems files;
+      content_reader(
+          [&](const MultipartFormData &file) {
+            files.push_back(file);
+            return true;
+          },
+          [&](const char *data, size_t data_length) {
+            files.back().content.append(data, data_length);
+            return true;
+          });
+
+      EXPECT_TRUE(std::string(files[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+      EXPECT_TRUE(files[0].filename == "2MB_data");
+      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+
+      EXPECT_TRUE(files[1].name == "hello");
+      EXPECT_TRUE(files[1].content == "world");
+      EXPECT_TRUE(files[1].filename == "");
+      EXPECT_TRUE(files[1].content_type == "");
+    } else {
+      std::string body;
+      content_reader([&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+    }
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    std::string data(1024 * 1024 * 2, '.');
+    std::stringstream buffer;
+    buffer << data;
+
+    Client cli("https://localhost:8080");
+    cli.enable_server_certificate_verification(false);
+
+    MultipartFormDataItems items{
+        {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+        {"hello", "world", "", ""},
+    };
+
+    auto res = cli.Post("/post_customboundary", {}, items, "abc-abc");
+    ASSERT_TRUE(res);
+    ASSERT_EQ(200, res->status);
+  }
+
+  svr.stop();
+  t.join();
+}
+
+TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
+  
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  std::string data(1024 * 1024 * 2, '&');
+  std::stringstream buffer;
+  buffer << data;
+
+  Client cli("https://localhost:8080");
+
+  MultipartFormDataItems items{
+      {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+      {"hello", "world", "", ""},
+  };
+
+  for (const char& c: " \t\r\n") {
+    auto res = cli.Post("/invalid_boundary", {}, items, string("abc123").append(1, c));
+    ASSERT_EQ(Error::UnsupportedMultipartBoundaryChars, res.error());
+    ASSERT_FALSE(res);
+  }
+
+}
+
+TEST(MultipartFormDataTest, PutFormData) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Put("/put", [&](const Request &req, const Response & /*res*/,
+                      const ContentReader &content_reader) {
+    if (req.is_multipart_form_data()) {
+      MultipartFormDataItems files;
+      content_reader(
+          [&](const MultipartFormData &file) {
+            files.push_back(file);
+            return true;
+          },
+          [&](const char *data, size_t data_length) {
+            files.back().content.append(data, data_length);
+            return true;
+          });
+
+      EXPECT_TRUE(std::string(files[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+      EXPECT_TRUE(files[0].filename == "2MB_data");
+      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+
+      EXPECT_TRUE(files[1].name == "hello");
+      EXPECT_TRUE(files[1].content == "world");
+      EXPECT_TRUE(files[1].filename == "");
+      EXPECT_TRUE(files[1].content_type == "");
+    } else {
+      std::string body;
+      content_reader([&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+    }
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    std::string data(1024 * 1024 * 2, '&');
+    std::stringstream buffer;
+    buffer << data;
+
+    Client cli("https://localhost:8080");
+    cli.enable_server_certificate_verification(false);
+
+    MultipartFormDataItems items{
+        {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+        {"hello", "world", "", ""},
+    };
+
+    auto res = cli.Put("/put", items);
+    ASSERT_TRUE(res);
+    ASSERT_EQ(200, res->status);
+  }
+
+  svr.stop();
+  t.join();
+}
+
+TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Put("/put_customboundary", [&](const Request &req, const Response & /*res*/,
+                      const ContentReader &content_reader) {
+    if (req.is_multipart_form_data()) {
+      MultipartFormDataItems files;
+      content_reader(
+          [&](const MultipartFormData &file) {
+            files.push_back(file);
+            return true;
+          },
+          [&](const char *data, size_t data_length) {
+            files.back().content.append(data, data_length);
+            return true;
+          });
+
+      EXPECT_TRUE(std::string(files[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+      EXPECT_TRUE(files[0].filename == "2MB_data");
+      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+
+      EXPECT_TRUE(files[1].name == "hello");
+      EXPECT_TRUE(files[1].content == "world");
+      EXPECT_TRUE(files[1].filename == "");
+      EXPECT_TRUE(files[1].content_type == "");
+    } else {
+      std::string body;
+      content_reader([&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+    }
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    std::string data(1024 * 1024 * 2, '&');
+    std::stringstream buffer;
+    buffer << data;
+
+    Client cli("https://localhost:8080");
+    cli.enable_server_certificate_verification(false);
+
+    MultipartFormDataItems items{
+        {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+        {"hello", "world", "", ""},
+    };
+
+    auto res = cli.Put("/put_customboundary", {}, items, "abc-abc_");
+    ASSERT_TRUE(res);
+    ASSERT_EQ(200, res->status);
+  }
+
+  svr.stop();
+  t.join();
+}
+
+TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  std::string data(1024 * 1024 * 2, '&');
+  std::stringstream buffer;
+  buffer << data;
+
+  Client cli("https://localhost:8080");
+  cli.enable_server_certificate_verification(false);
+
+  MultipartFormDataItems items{
+      {"document", buffer.str(), "2MB_data", "application/octet-stream"},
+      {"hello", "world", "", ""},
+  };
+
+  for (const char& c: " \t\r\n") {
+    auto res = cli.Put("/put", {}, items, string("abc123").append(1, c));
+    ASSERT_EQ(Error::UnsupportedMultipartBoundaryChars, res.error());
+    ASSERT_FALSE(res);
+  }
+}
+
 #endif
 
 #ifndef _WIN32
