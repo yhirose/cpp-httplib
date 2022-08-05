@@ -949,6 +949,11 @@ public:
   Result Put(const std::string &path, const Params &params);
   Result Put(const std::string &path, const Headers &headers,
              const Params &params);
+  Result Put(const std::string &path, const MultipartFormDataItems &items);
+  Result Put(const std::string &path, const Headers &headers,
+              const MultipartFormDataItems &items);
+  Result Put(const std::string &path, const Headers &headers,
+              const MultipartFormDataItems &items, const std::string &boundary);
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
@@ -1304,6 +1309,11 @@ public:
   Result Put(const std::string &path, const Params &params);
   Result Put(const std::string &path, const Headers &headers,
              const Params &params);
+  Result Put(const std::string &path, const MultipartFormDataItems &items);
+  Result Put(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items);
+  Result Put(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items, const std::string &boundary);
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
                const std::string &content_type);
@@ -4064,6 +4074,46 @@ inline std::string make_multipart_data_boundary() {
   return result;
 }
 
+inline bool is_multipart_boundary_chars_valid(const std::string& boundary)
+{
+  bool valid = true;
+  for (size_t i = 0; i < boundary.size(); i++) {
+    char c = boundary[i];
+    if (!std::isalnum(c) && c != '-' && c != '_') {
+      valid = false;
+      break;
+    }
+  }
+  return valid;
+}
+
+
+inline std::string serialize_multipart_formdata(const MultipartFormDataItems& items, std::string& content_type, const std::string& boundary_str)
+{
+  const std::string& boundary = boundary_str.empty() ? make_multipart_data_boundary() : boundary_str;
+
+  std::string body;
+
+  for (const auto &item : items) {
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+    if (!item.filename.empty()) {
+      body += "; filename=\"" + item.filename + "\"";
+    }
+    body += "\r\n";
+    if (!item.content_type.empty()) {
+      body += "Content-Type: " + item.content_type + "\r\n";
+    }
+    body += "\r\n";
+    body += item.content + "\r\n";
+  }
+
+  body += "--" + boundary + "--\r\n";
+
+  content_type = "multipart/form-data; boundary=" + boundary;
+  return body;
+}
+
 inline std::pair<size_t, size_t>
 get_range_offset_and_length(const Request &req, size_t content_length,
                             size_t index) {
@@ -6745,37 +6795,21 @@ inline Result ClientImpl::Post(const std::string &path,
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items) {
-  return Post(path, headers, items, detail::make_multipart_data_boundary());
+  std::string content_type;
+  const std::string& body = detail::serialize_multipart_formdata(items, content_type, std::string());
+  return Post(path, headers, body, content_type.c_str());
 }
+
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items,
-                               const std::string &boundary) {
-  for (size_t i = 0; i < boundary.size(); i++) {
-    char c = boundary[i];
-    if (!std::isalnum(c) && c != '-' && c != '_') {
+                               const std::string &boundary)
+{
+  if (!detail::is_multipart_boundary_chars_valid(boundary)) {
       return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
-    }
   }
 
-  std::string body;
-
-  for (const auto &item : items) {
-    body += "--" + boundary + "\r\n";
-    body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
-    if (!item.filename.empty()) {
-      body += "; filename=\"" + item.filename + "\"";
-    }
-    body += "\r\n";
-    if (!item.content_type.empty()) {
-      body += "Content-Type: " + item.content_type + "\r\n";
-    }
-    body += "\r\n";
-    body += item.content + "\r\n";
-  }
-
-  body += "--" + boundary + "--\r\n";
-
-  std::string content_type = "multipart/form-data; boundary=" + boundary;
+  std::string content_type;
+  const std::string& body = detail::serialize_multipart_formdata(items, content_type, boundary);
   return Post(path, headers, body, content_type.c_str());
 }
 
@@ -6846,6 +6880,31 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
                               const Params &params) {
   auto query = detail::params_to_query_str(params);
   return Put(path, headers, query, "application/x-www-form-urlencoded");
+}
+
+inline Result ClientImpl::Put(const std::string &path, const MultipartFormDataItems &items)
+{
+  return Put(path, Headers(), items);
+}
+
+inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
+                              const MultipartFormDataItems &items)
+{
+  std::string content_type;
+  const std::string& body = detail::serialize_multipart_formdata(items, content_type, std::string());
+  return Put(path, headers, body, content_type);
+}
+
+inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
+                              const MultipartFormDataItems &items,
+                              const std::string &boundary)
+{
+  if (!detail::is_multipart_boundary_chars_valid(boundary)) {
+      return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
+  }
+  std::string content_type;
+  const std::string& body = detail::serialize_multipart_formdata(items, content_type, boundary);
+  return Put(path, headers, body, content_type);
 }
 
 inline Result ClientImpl::Patch(const std::string &path) {
@@ -8098,6 +8157,20 @@ inline Result Client::Put(const std::string &path, const Params &params) {
 inline Result Client::Put(const std::string &path, const Headers &headers,
                           const Params &params) {
   return cli_->Put(path, headers, params);
+}
+inline Result Client::Put(const std::string &path, const MultipartFormDataItems &items)
+{
+  return cli_->Put(path, items);
+}
+inline Result Client::Put(const std::string &path, const Headers &headers,
+                         const MultipartFormDataItems &items)
+{
+  return cli_->Put(path, headers, items);
+} 
+inline Result Client::Put(const std::string &path, const Headers &headers,
+                         const MultipartFormDataItems &items, const std::string &boundary)
+{
+  return cli_->Put(path, headers, items, boundary);
 }
 inline Result Client::Patch(const std::string &path) {
   return cli_->Patch(path);
