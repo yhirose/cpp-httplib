@@ -951,9 +951,9 @@ public:
              const Params &params);
   Result Put(const std::string &path, const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items);
+             const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items, const std::string &boundary);
+             const MultipartFormDataItems &items, const std::string &boundary);
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
@@ -2592,7 +2592,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
       addr.sun_family = AF_UNIX;
       std::copy(host.begin(), host.end(), addr.sun_path);
 
-      hints.ai_addr = reinterpret_cast<sockaddr*>(&addr);
+      hints.ai_addr = reinterpret_cast<sockaddr *>(&addr);
       hints.ai_addrlen = static_cast<socklen_t>(
           sizeof(addr) - sizeof(addr.sun_path) + addrlen);
 
@@ -4074,11 +4074,10 @@ inline std::string make_multipart_data_boundary() {
   return result;
 }
 
-inline bool is_multipart_boundary_chars_valid(const std::string& boundary)
-{
-  bool valid = true;
+inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
+  auto valid = true;
   for (size_t i = 0; i < boundary.size(); i++) {
-    char c = boundary[i];
+    auto c = boundary[i];
     if (!std::isalnum(c) && c != '-' && c != '_') {
       valid = false;
       break;
@@ -4087,11 +4086,10 @@ inline bool is_multipart_boundary_chars_valid(const std::string& boundary)
   return valid;
 }
 
-
-inline std::string serialize_multipart_formdata(const MultipartFormDataItems& items, std::string& content_type, const std::string& boundary_str)
-{
-  const std::string& boundary = boundary_str.empty() ? make_multipart_data_boundary() : boundary_str;
-
+inline std::string
+serialize_multipart_formdata(const MultipartFormDataItems &items,
+                             const std::string &boundary,
+                             std::string &content_type) {
   std::string body;
 
   for (const auto &item : items) {
@@ -6796,20 +6794,21 @@ inline Result ClientImpl::Post(const std::string &path,
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items) {
   std::string content_type;
-  const std::string& body = detail::serialize_multipart_formdata(items, content_type, std::string());
+  const auto &body = detail::serialize_multipart_formdata(
+      items, detail::make_multipart_data_boundary(), content_type);
   return Post(path, headers, body, content_type.c_str());
 }
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items,
-                               const std::string &boundary)
-{
+                               const std::string &boundary) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
-      return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
+    return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
 
   std::string content_type;
-  const std::string& body = detail::serialize_multipart_formdata(items, content_type, boundary);
+  const auto &body =
+      detail::serialize_multipart_formdata(items, boundary, content_type);
   return Post(path, headers, body, content_type.c_str());
 }
 
@@ -6882,28 +6881,29 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
   return Put(path, headers, query, "application/x-www-form-urlencoded");
 }
 
-inline Result ClientImpl::Put(const std::string &path, const MultipartFormDataItems &items)
-{
+inline Result ClientImpl::Put(const std::string &path,
+                              const MultipartFormDataItems &items) {
   return Put(path, Headers(), items);
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const MultipartFormDataItems &items)
-{
+                              const MultipartFormDataItems &items) {
   std::string content_type;
-  const std::string& body = detail::serialize_multipart_formdata(items, content_type, std::string());
+  const auto &body = detail::serialize_multipart_formdata(
+      items, detail::make_multipart_data_boundary(), content_type);
   return Put(path, headers, body, content_type);
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
                               const MultipartFormDataItems &items,
-                              const std::string &boundary)
-{
+                              const std::string &boundary) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
-      return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
+    return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
+
   std::string content_type;
-  const std::string& body = detail::serialize_multipart_formdata(items, content_type, boundary);
+  const auto &body =
+      detail::serialize_multipart_formdata(items, boundary, content_type);
   return Put(path, headers, body, content_type);
 }
 
@@ -7032,9 +7032,7 @@ inline size_t ClientImpl::is_socket_open() const {
   return socket_.is_open();
 }
 
-inline socket_t ClientImpl::socket() const {
-  return socket_.sock;
-}
+inline socket_t ClientImpl::socket() const { return socket_.sock; }
 
 inline void ClientImpl::stop() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
@@ -7942,13 +7940,13 @@ inline Client::Client(const std::string &scheme_host_port,
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      cli_ = detail::make_unique<SSLClient>(host, port,
-                                            client_cert_path, client_key_path);
+      cli_ = detail::make_unique<SSLClient>(host, port, client_cert_path,
+                                            client_key_path);
       is_ssl_ = is_ssl;
 #endif
     } else {
-      cli_ = detail::make_unique<ClientImpl>(host, port,
-                                             client_cert_path, client_key_path);
+      cli_ = detail::make_unique<ClientImpl>(host, port, client_cert_path,
+                                             client_key_path);
     }
   } else {
     cli_ = detail::make_unique<ClientImpl>(scheme_host_port, 80,
@@ -8158,18 +8156,17 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
                           const Params &params) {
   return cli_->Put(path, headers, params);
 }
-inline Result Client::Put(const std::string &path, const MultipartFormDataItems &items)
-{
+inline Result Client::Put(const std::string &path,
+                          const MultipartFormDataItems &items) {
   return cli_->Put(path, items);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                         const MultipartFormDataItems &items)
-{
+                          const MultipartFormDataItems &items) {
   return cli_->Put(path, headers, items);
-} 
+}
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                         const MultipartFormDataItems &items, const std::string &boundary)
-{
+                          const MultipartFormDataItems &items,
+                          const std::string &boundary) {
   return cli_->Put(path, headers, items, boundary);
 }
 inline Result Client::Patch(const std::string &path) {
