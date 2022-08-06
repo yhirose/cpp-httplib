@@ -70,6 +70,10 @@
 #define CPPHTTPLIB_REDIRECT_MAX_COUNT 20
 #endif
 
+#ifndef CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT
+#define CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT 1024
+#endif
+
 #ifndef CPPHTTPLIB_PAYLOAD_MAX_LENGTH
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH ((std::numeric_limits<size_t>::max)())
 #endif
@@ -5255,6 +5259,7 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
 
 inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
   MultipartFormDataMap::iterator cur;
+  auto file_count = 0;
   if (read_content_core(
           strm, req, res,
           // Regular
@@ -5265,6 +5270,9 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           },
           // Multipart
           [&](const MultipartFormData &file) {
+            if (file_count++ == CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT) {
+              return false;
+            }
             cur = req.files.emplace(file.name, file);
             return true;
           },
