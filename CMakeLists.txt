@@ -176,7 +176,7 @@ if(HTTPLIB_COMPILE)
 	set_target_properties(${PROJECT_NAME}
 		PROPERTIES
 			VERSION ${${PROJECT_NAME}_VERSION}
-			SOVERSION ${${PROJECT_NAME}_VERSION_MAJOR}
+			SOVERSION "${${PROJECT_NAME}_VERSION_MAJOR}.${${PROJECT_NAME}_VERSION_MINOR}"
 	)
 else()
 	# This is for header-only.
@@ -247,13 +247,13 @@ if(HTTPLIB_COMPILE)
 	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
 		# Example: if you find_package(httplib 0.5.4)
 		# then anything >= 0.5 and <= 1.0 is accepted
-		COMPATIBILITY SameMajorVersion
+		COMPATIBILITY SameMinorVersion
 	)
 else()
 	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
 		# Example: if you find_package(httplib 0.5.4)
 		# then anything >= 0.5 and <= 1.0 is accepted
-		COMPATIBILITY SameMajorVersion
+		COMPATIBILITY SameMinorVersion
 		# Tells Cmake that it's a header-only lib
 		# Mildly useful for end-users :)
 		ARCH_INDEPENDENT
