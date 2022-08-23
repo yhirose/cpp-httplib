@@ -3383,8 +3383,8 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
 #define USE_IF2IP
 #endif
 
-#ifdef USE_IF2IP
 inline std::string if2ip(int address_family, const std::string &ifn) {
+#ifdef USE_IF2IP
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
   std::string addr_candidate;
@@ -3419,8 +3419,10 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
   }
   freeifaddrs(ifap);
   return addr_candidate;
-}
+#else
+	return std::string();
 #endif
+}
 
 inline socket_t create_client_socket(
     const std::string &host, const std::string &ip, int port,
@@ -3432,14 +3434,12 @@ inline socket_t create_client_socket(
       host, ip, port, address_family, 0, tcp_nodelay, std::move(socket_options),
       [&](socket_t sock2, struct addrinfo &ai) -> bool {
         if (!intf.empty()) {
-#ifdef USE_IF2IP
           auto ip_from_if = if2ip(address_family, intf);
           if (ip_from_if.empty()) { ip_from_if = intf; }
           if (!bind_ip_address(sock2, ip_from_if)) {
             error = Error::BindIPAddress;
             return false;
           }
-#endif
         }
 
         set_nonblocking(sock2, true);
