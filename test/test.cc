@@ -4376,6 +4376,18 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(200, res->status);
 }
 
+TEST(SSLClientTest, SetInterfaceWithINET) {
+  auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
+  ASSERT_TRUE(cli != nullptr);
+
+  cli->set_address_family(AF_INET);
+  cli->set_interface("en0");
+
+  auto res = cli->Get("/get");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+}
+
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");

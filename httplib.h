@@ -2777,8 +2777,18 @@ inline socket_t create_client_socket(
           auto ip_from_if = if2ip(address_family, intf);
           if (ip_from_if.empty()) { ip_from_if = intf; }
           if (!bind_ip_address(sock2, ip_from_if.c_str())) {
-            error = Error::BindIPAddress;
-            return false;
+            int optname = 0;
+#if defined(SO_BINDTODEVICE)
+            optname = SO_BINDTODEVICE;
+#elif defined(IP_BOUND_IF)
+            optname = IP_BOUND_IF;
+#endif
+            if (optname == 0 ||
+                setsockopt(sock2, SOL_SOCKET, optname, intf.c_str(),
+                           static_cast<socklen_t>(intf.length())) == -1) {
+              error = Error::BindIPAddress;
+              return false;
+            }
           }
 #endif
         }
