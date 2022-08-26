@@ -4376,7 +4376,7 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(200, res->status);
 }
 
-TEST(SSLClientTest, SetInterfaceWithINET) {
+TEST(SSLClientTest, DISABLED_SetInterfaceWithINET) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
   ASSERT_TRUE(cli != nullptr);
 
@@ -4388,8 +4388,7 @@ TEST(SSLClientTest, SetInterfaceWithINET) {
   ASSERT_EQ(200, res->status);
 }
 
-#if 0
-TEST(SSLClientTest, SetInterfaceWithINET6) {
+TEST(SSLClientTest, DISABLED_SetInterfaceWithINET6) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
   ASSERT_TRUE(cli != nullptr);
 
@@ -4400,7 +4399,6 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
-#endif
 
 TEST(SSLClientServerTest, ClientCertPresent) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
