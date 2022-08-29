@@ -1643,7 +1643,8 @@ protected:
                res.set_content_provider(
                    size_t(-1), "text/plain",
                    [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-                     EXPECT_TRUE(sink.is_writable());
+                     if (!sink.is_writable()) return false;
+
                      sink.os << "data_chunk";
                      return true;
                    });
