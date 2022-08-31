@@ -4722,7 +4722,8 @@ inline bool SocketStream::is_readable() const {
 }
 
 inline bool SocketStream::is_writable() const {
-  return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0;
+  return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0 &&
+    is_socket_alive(sock_);
 }
 
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
@@ -7345,8 +7346,8 @@ inline bool SSLSocketStream::is_readable() const {
 }
 
 inline bool SSLSocketStream::is_writable() const {
-  return detail::select_write(sock_, write_timeout_sec_, write_timeout_usec_) >
-         0;
+  return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0 &&
+    is_socket_alive(sock_);
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
