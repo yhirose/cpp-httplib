@@ -172,7 +172,9 @@ using socket_t = SOCKET;
 #else // not _WIN32
 
 #include <arpa/inet.h>
+#ifndef _AIX
 #include <ifaddrs.h>
+#endif
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -2720,7 +2722,7 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   return ret;
 }
 
-#if !defined _WIN32 && !defined ANDROID
+#if !defined _WIN32 && !defined ANDROID && !defined _AIX
 #define USE_IF2IP
 #endif
 
