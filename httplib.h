@@ -718,6 +718,13 @@ protected:
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
 
+  struct MountPointEntry {
+    std::string mount_point;
+    std::string base_dir;
+    Headers headers;
+  };
+  std::vector<MountPointEntry> base_dirs_;
+
 private:
   using Handlers = std::vector<std::pair<std::regex, Handler>>;
   using HandlersForContentReader =
@@ -763,13 +770,6 @@ private:
                          ContentReceiver multipart_receiver);
 
   virtual bool process_and_close_socket(socket_t sock);
-
-  struct MountPointEntry {
-    std::string mount_point;
-    std::string base_dir;
-    Headers headers;
-  };
-  std::vector<MountPointEntry> base_dirs_;
 
   std::atomic<bool> is_running_;
   std::map<std::string, std::string> file_extension_and_mimetype_map_;
