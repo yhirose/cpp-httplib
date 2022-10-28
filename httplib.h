@@ -633,6 +633,8 @@ public:
   using Expect100ContinueHandler =
       std::function<int(const Request &, Response &)>;
 
+  using FileHandler = std::function<bool(const Request &, Response &, bool)>;
+
   Server();
 
   virtual ~Server();
@@ -664,6 +666,8 @@ public:
   Server &set_exception_handler(ExceptionHandler handler);
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
+
+  Server &set_custom_file_handler(FileHandler handler);
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
   Server &set_logger(Logger logger);
@@ -788,6 +792,7 @@ private:
   ExceptionHandler exception_handler_;
   HandlerWithResponse pre_routing_handler_;
   Handler post_routing_handler_;
+  FileHandler custom_file_handler_;
   Logger logger_;
   Expect100ContinueHandler expect_100_continue_handler_;
 
@@ -4964,6 +4969,11 @@ inline Server &Server::set_post_routing_handler(Handler handler) {
   return *this;
 }
 
+inline Server &Server::set_custom_file_handler(FileHandler handler) {
+  custom_file_handler_ = std::move(handler);
+  return *this;
+}
+
 inline Server &Server::set_logger(Logger logger) {
   logger_ = std::move(logger);
   return *this;
@@ -5364,6 +5374,10 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
 
 inline bool Server::handle_file_request(const Request &req, Response &res,
                                         bool head) {
+  // Support custom handle_file_request
+  if (custom_file_handler_) {
+    return custom_file_handler_(req, res, head);
+  }
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
