@@ -2602,6 +2602,9 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
       hints.ai_addrlen = static_cast<socklen_t>(
           sizeof(addr) - sizeof(addr.sun_path) + addrlen);
 
+      fcntl(sock, F_SETFD, FD_CLOEXEC);
+      if (socket_options) { socket_options(sock); }
+
       if (!bind_or_connect(sock, hints)) {
         close_socket(sock);
         sock = INVALID_SOCKET;
