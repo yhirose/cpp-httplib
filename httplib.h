@@ -2875,6 +2875,18 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
 
   if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr),
                    &addr_len)) {
+#ifndef _WIN32
+    if (addr.ss_family == AF_UNIX) {
+#ifdef __linux__
+        struct ucred ucred;
+        socklen_t len = sizeof(ucred);
+        if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, &ucred, &len) == 0) {
+            port = ucred.pid;
+        }
+#endif
+        return;
+    }
+#endif
     get_remote_ip_and_port(addr, addr_len, ip, port);
   }
 }

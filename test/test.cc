@@ -5345,6 +5345,30 @@ TEST_F(UnixSocketTest, pathname) {
 }
 
 #ifdef __linux__
+TEST_F(UnixSocketTest, PeerPid) {
+  httplib::Server svr;
+  std::string remote_port_val;
+  svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
+    res.set_content(content_, "text/plain");
+    remote_port_val = req.get_header_value("REMOTE_PORT");
+  });
+
+  std::thread t {[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80)); }};
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_TRUE(svr.is_running());
+
+  client_GET(pathname_);
+  EXPECT_EQ(std::to_string(getpid()), remote_port_val);
+
+  svr.stop();
+  t.join();
+}
+#endif
+
+#ifdef __linux__
 TEST_F(UnixSocketTest, abstract) {
   constexpr char svr_path[] {"\x00httplib-server.sock"};
   const std::string abstract_addr {svr_path, sizeof(svr_path) - 1};
