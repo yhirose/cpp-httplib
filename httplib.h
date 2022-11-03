@@ -2601,6 +2601,9 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
       hints.ai_addrlen = static_cast<socklen_t>(
           sizeof(addr) - sizeof(addr.sun_path) + addrlen);
 
+      fcntl(sock, F_SETFD, FD_CLOEXEC);
+      if (socket_options) { socket_options(sock); }
+
       if (!bind_or_connect(sock, hints)) {
         close_socket(sock);
         sock = INVALID_SOCKET;
@@ -2871,6 +2874,24 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
 
   if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr),
                    &addr_len)) {
+#ifndef _WIN32
+    if (addr.ss_family == AF_UNIX) {
+#if defined(__linux__)
+        struct ucred ucred;
+        socklen_t len = sizeof(ucred);
+        if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, &ucred, &len) == 0) {
+            port = ucred.pid;
+        }
+#elif defined(SOL_LOCAL) && defined(SO_PEERPID)  // __APPLE__
+        pid_t pid;
+        socklen_t len = sizeof(pid);
+        if (getsockopt(sock, SOL_LOCAL, SO_PEERPID, &pid, &len) == 0) {
+            port = pid;
+        }
+#endif
+        return;
+    }
+#endif
     get_remote_ip_and_port(addr, addr_len, ip, port);
   }
 }
