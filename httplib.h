@@ -2877,11 +2877,17 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
                    &addr_len)) {
 #ifndef _WIN32
     if (addr.ss_family == AF_UNIX) {
-#ifdef __linux__
+#if defined(__linux__)
         struct ucred ucred;
         socklen_t len = sizeof(ucred);
         if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, &ucred, &len) == 0) {
             port = ucred.pid;
+        }
+#elif defined(SOL_LOCAL) && defined(SO_PEERPID)  // __APPLE__
+        pid_t pid;
+        socklen_t len = sizeof(pid);
+        if (getsockopt(sock, SOL_LOCAL, SO_PEERPID, &pid, &len) == 0) {
+            port = pid;
         }
 #endif
         return;

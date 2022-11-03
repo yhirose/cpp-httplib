@@ -5344,7 +5344,8 @@ TEST_F(UnixSocketTest, pathname) {
   t.join();
 }
 
-#ifdef __linux__
+#if defined(__linux__) \
+  || /* __APPLE__ */ (defined(SOL_LOCAL) && defined(SO_PEERPID))
 TEST_F(UnixSocketTest, PeerPid) {
   httplib::Server svr;
   std::string remote_port_val;
