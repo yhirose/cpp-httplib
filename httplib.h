@@ -560,9 +560,8 @@ public:
     {
       std::unique_lock<std::mutex> lock(mutex_);
       shutdown_ = true;
+      cond_.notify_all();
     }
-
-    cond_.notify_all();
 
     // Join...
     for (auto &t : threads_) {
