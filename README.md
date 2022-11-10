@@ -65,6 +65,7 @@ httplib::SSLServer svr("./cert.pem", "./key.pem");
 // Client
 httplib::Client cli("https://localhost:1234"); // scheme + host
 httplib::SSLClient cli("localhost:1234"); // host
+httplib::SSLClient cli("localhost", 1234); // host, port
 
 // Use your CA bundle
 cli.set_ca_cert_path("./ca-bundle.crt");
