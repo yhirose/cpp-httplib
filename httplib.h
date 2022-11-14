@@ -8405,4 +8405,8 @@ inline SSL_CTX *Client::ssl_context() const {
 
 } // namespace httplib
 
+#if defined(_WIN32) && defined(CPPHTTPLIB_USE_POLL)
+#undef poll
+#endif
+
 #endif // CPPHTTPLIB_HTTPLIB_H
