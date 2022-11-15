@@ -1715,6 +1715,22 @@ protected:
                 EXPECT_EQ("0", req.get_header_value("Content-Length"));
                 res.set_content("empty-no-content-type", "text/plain");
               })
+        .Post("/path-only",
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, "");
+                EXPECT_EQ("", req.get_header_value("Content-Type"));
+                EXPECT_EQ("0", req.get_header_value("Content-Length"));
+                res.set_content("path-only", "text/plain");
+              })
+        .Post("/path-headers-only",
+              [&](const Request &req, Response &res) {
+                EXPECT_EQ(req.body, "");
+                EXPECT_EQ("", req.get_header_value("Content-Type"));
+                EXPECT_EQ("0", req.get_header_value("Content-Length"));
+                EXPECT_EQ("world", req.get_header_value("hello"));
+                EXPECT_EQ("world2", req.get_header_value("hello2"));
+                res.set_content("path-headers-only", "text/plain");
+              })
         .Post("/post-large",
               [&](const Request &req, Response &res) {
                 EXPECT_EQ(req.body, LARGE_DATA);
@@ -2123,6 +2139,21 @@ TEST_F(ServerTest, PostEmptyContentWithNoContentType) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty-no-content-type", res->body);
+}
+
+TEST_F(ServerTest, PostPathOnly) {
+  auto res = cli_.Post("/path-only");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("path-only", res->body);
+}
+
+TEST_F(ServerTest, PostPathAndHeadersOnly) {
+  auto res = cli_.Post("/path-headers-only",
+                       Headers({{"hello", "world"}, {"hello2", "world2"}}));
+  ASSERT_TRUE(res);
+  ASSERT_EQ(200, res->status);
+  ASSERT_EQ("path-headers-only", res->body);
 }
 
 TEST_F(ServerTest, PostLarge) {
@@ -4181,7 +4212,8 @@ protected:
       res.set_content("Hello World!", "text/plain");
     });
 
-    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(std::string(), PORT, AI_PASSIVE)); });
+    t_ = thread(
+        [&]() { ASSERT_TRUE(svr_.listen(std::string(), PORT, AI_PASSIVE)); });
 
     while (!svr_.is_running()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -4753,7 +4785,7 @@ TEST(SendAPI, SimpleInterface_Online) {
 
 TEST(ClientImplMethods, GetSocketTest) {
   httplib::Server svr;
-  svr.Get( "/", [&](const httplib::Request& /*req*/, httplib::Response& res) {
+  svr.Get("/", [&](const httplib::Request & /*req*/, httplib::Response &res) {
     res.status = 200;
   });
 
@@ -5067,7 +5099,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 
   svr.Post("/post_customboundary", [&](const Request &req, Response & /*res*/,
-                        const ContentReader &content_reader) {
+                                       const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
       MultipartFormDataItems files;
       content_reader(
@@ -5127,7 +5159,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
 }
 
 TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
-  
+
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   std::string data(1024 * 1024 * 2, '&');
@@ -5141,12 +5173,12 @@ TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
       {"hello", "world", "", ""},
   };
 
-  for (const char& c: " \t\r\n") {
-    auto res = cli.Post("/invalid_boundary", {}, items, string("abc123").append(1, c));
+  for (const char &c : " \t\r\n") {
+    auto res =
+        cli.Post("/invalid_boundary", {}, items, string("abc123").append(1, c));
     ASSERT_EQ(Error::UnsupportedMultipartBoundaryChars, res.error());
     ASSERT_FALSE(res);
   }
-
 }
 
 TEST(MultipartFormDataTest, PutFormData) {
@@ -5215,37 +5247,38 @@ TEST(MultipartFormDataTest, PutFormData) {
 TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 
-  svr.Put("/put_customboundary", [&](const Request &req, const Response & /*res*/,
-                      const ContentReader &content_reader) {
-    if (req.is_multipart_form_data()) {
-      MultipartFormDataItems files;
-      content_reader(
-          [&](const MultipartFormData &file) {
-            files.push_back(file);
-            return true;
-          },
-          [&](const char *data, size_t data_length) {
-            files.back().content.append(data, data_length);
-            return true;
+  svr.Put("/put_customboundary",
+          [&](const Request &req, const Response & /*res*/,
+              const ContentReader &content_reader) {
+            if (req.is_multipart_form_data()) {
+              MultipartFormDataItems files;
+              content_reader(
+                  [&](const MultipartFormData &file) {
+                    files.push_back(file);
+                    return true;
+                  },
+                  [&](const char *data, size_t data_length) {
+                    files.back().content.append(data, data_length);
+                    return true;
+                  });
+
+              EXPECT_TRUE(std::string(files[0].name) == "document");
+              EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
+              EXPECT_TRUE(files[0].filename == "2MB_data");
+              EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+
+              EXPECT_TRUE(files[1].name == "hello");
+              EXPECT_TRUE(files[1].content == "world");
+              EXPECT_TRUE(files[1].filename == "");
+              EXPECT_TRUE(files[1].content_type == "");
+            } else {
+              std::string body;
+              content_reader([&](const char *data, size_t data_length) {
+                body.append(data, data_length);
+                return true;
+              });
+            }
           });
-
-      EXPECT_TRUE(std::string(files[0].name) == "document");
-      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
-      EXPECT_TRUE(files[0].filename == "2MB_data");
-      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
-
-      EXPECT_TRUE(files[1].name == "hello");
-      EXPECT_TRUE(files[1].content == "world");
-      EXPECT_TRUE(files[1].filename == "");
-      EXPECT_TRUE(files[1].content_type == "");
-    } else {
-      std::string body;
-      content_reader([&](const char *data, size_t data_length) {
-        body.append(data, data_length);
-        return true;
-      });
-    }
-  });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
@@ -5291,7 +5324,7 @@ TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
       {"hello", "world", "", ""},
   };
 
-  for (const char& c: " \t\r\n") {
+  for (const char &c : " \t\r\n") {
     auto res = cli.Put("/put", {}, items, string("abc123").append(1, c));
     ASSERT_EQ(Error::UnsupportedMultipartBoundaryChars, res.error());
     ASSERT_FALSE(res);
@@ -5303,9 +5336,7 @@ TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
 #ifndef _WIN32
 class UnixSocketTest : public ::testing::Test {
 protected:
-  void TearDown() override {
-    std::remove(pathname_.c_str());
-  }
+  void TearDown() override { std::remove(pathname_.c_str()); }
 
   void client_GET(const std::string &addr) {
     httplib::Client cli{addr};
@@ -5320,9 +5351,9 @@ protected:
     EXPECT_EQ(resp.body, content_);
   }
 
-  const std::string pathname_ {"./httplib-server.sock"};
-  const std::string pattern_ {"/hi"};
-  const std::string content_ {"Hello World!"};
+  const std::string pathname_{"./httplib-server.sock"};
+  const std::string pattern_{"/hi"};
+  const std::string content_{"Hello World!"};
 };
 
 TEST_F(UnixSocketTest, pathname) {
@@ -5331,8 +5362,9 @@ TEST_F(UnixSocketTest, pathname) {
     res.set_content(content_, "text/plain");
   });
 
-  std::thread t {[&] {
-    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80)); }};
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
+  }};
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5344,8 +5376,8 @@ TEST_F(UnixSocketTest, pathname) {
   t.join();
 }
 
-#if defined(__linux__) \
-  || /* __APPLE__ */ (defined(SOL_LOCAL) && defined(SO_PEERPID))
+#if defined(__linux__) ||                                                      \
+    /* __APPLE__ */ (defined(SOL_LOCAL) && defined(SO_PEERPID))
 TEST_F(UnixSocketTest, PeerPid) {
   httplib::Server svr;
   std::string remote_port_val;
@@ -5354,8 +5386,9 @@ TEST_F(UnixSocketTest, PeerPid) {
     remote_port_val = req.get_header_value("REMOTE_PORT");
   });
 
-  std::thread t {[&] {
-    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80)); }};
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
+  }};
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5371,16 +5404,17 @@ TEST_F(UnixSocketTest, PeerPid) {
 
 #ifdef __linux__
 TEST_F(UnixSocketTest, abstract) {
-  constexpr char svr_path[] {"\x00httplib-server.sock"};
-  const std::string abstract_addr {svr_path, sizeof(svr_path) - 1};
+  constexpr char svr_path[]{"\x00httplib-server.sock"};
+  const std::string abstract_addr{svr_path, sizeof(svr_path) - 1};
 
   httplib::Server svr;
   svr.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
     res.set_content(content_, "text/plain");
   });
 
-  std::thread t {[&] {
-    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(abstract_addr, 80)); }};
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(abstract_addr, 80));
+  }};
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5394,58 +5428,58 @@ TEST_F(UnixSocketTest, abstract) {
 #endif
 
 TEST(SocketStream, is_writable_UNIX) {
-  int fd[2];
-  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fd));
+  int fds[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
 
-  const auto asSocketStream =
-    [&] (socket_t fd, std::function<bool(Stream &)> func) {
-      return detail::process_client_socket(fd, 0, 0, 0, 0, func);
-    };
-  asSocketStream(fd[0], [&] (Stream &s0) {
-    EXPECT_EQ(s0.socket(), fd[0]);
+  const auto asSocketStream = [&](socket_t fd,
+                                  std::function<bool(Stream &)> func) {
+    return detail::process_client_socket(fd, 0, 0, 0, 0, func);
+  };
+  asSocketStream(fds[0], [&](Stream &s0) {
+    EXPECT_EQ(s0.socket(), fds[0]);
     EXPECT_TRUE(s0.is_writable());
 
-    EXPECT_EQ(0, close(fd[1]));
+    EXPECT_EQ(0, close(fds[1]));
     EXPECT_FALSE(s0.is_writable());
 
     return true;
   });
-  EXPECT_EQ(0, close(fd[0]));
+  EXPECT_EQ(0, close(fds[0]));
 }
 
 TEST(SocketStream, is_writable_INET) {
   sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(PORT+1);
+  addr.sin_port = htons(PORT + 1);
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
   int disconnected_svr_sock = -1;
-  std::thread svr {[&] {
+  std::thread svr{[&] {
     const int s = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_LE(0, s);
-    ASSERT_EQ(0, ::bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)));
+    ASSERT_EQ(0, ::bind(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
     ASSERT_EQ(0, listen(s, 1));
     ASSERT_LE(0, disconnected_svr_sock = accept(s, nullptr, nullptr));
     ASSERT_EQ(0, close(s));
   }};
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  std::thread cli {[&] {
+  std::thread cli{[&] {
     const int s = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_LE(0, s);
-    ASSERT_EQ(0, connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)));
+    ASSERT_EQ(0, connect(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
     ASSERT_EQ(0, close(s));
   }};
   cli.join();
   svr.join();
   ASSERT_NE(disconnected_svr_sock, -1);
 
-  const auto asSocketStream =
-    [&] (socket_t fd, std::function<bool(Stream &)> func) {
-      return detail::process_client_socket(fd, 0, 0, 0, 0, func);
-    };
-  asSocketStream(disconnected_svr_sock, [&] (Stream &ss) {
+  const auto asSocketStream = [&](socket_t fd,
+                                  std::function<bool(Stream &)> func) {
+    return detail::process_client_socket(fd, 0, 0, 0, 0, func);
+  };
+  asSocketStream(disconnected_svr_sock, [&](Stream &ss) {
     EXPECT_EQ(ss.socket(), disconnected_svr_sock);
     EXPECT_FALSE(ss.is_writable());
 
@@ -5454,4 +5488,4 @@ TEST(SocketStream, is_writable_INET) {
 
   ASSERT_EQ(0, close(disconnected_svr_sock));
 }
-#endif  // #ifndef _WIN32
+#endif // #ifndef _WIN32
