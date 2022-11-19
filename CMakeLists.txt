@@ -224,7 +224,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 # Cmake's find_package search path is different based on the system
 # See https://cmake.org/cmake/help/latest/command/find_package.html for the list
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_PREFIX}/cmake/${PROJECT_NAME}")
+	set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_PREFIX}/cmake")
 else()
 	# On Non-Windows, it should be /usr/lib/cmake/<name>/<name>Config.cmake
 	# NOTE: This may or may not work for macOS...
