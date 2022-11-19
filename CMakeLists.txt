@@ -221,15 +221,8 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
 )
 
-# Cmake's find_package search path is different based on the system
-# See https://cmake.org/cmake/help/latest/command/find_package.html for the list
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_PREFIX}/cmake")
-else()
-	# On Non-Windows, it should be /usr/lib/cmake/<name>/<name>Config.cmake
-	# NOTE: This may or may not work for macOS...
-	set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
-endif()
+# CMake configuration files installation directory
+set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 
 include(CMakePackageConfigHelpers)
 
