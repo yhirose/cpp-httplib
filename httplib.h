@@ -5484,6 +5484,8 @@ inline bool Server::listen_internal() {
           // Try to accept new connections after a short sleep.
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
           continue;
+        } else if (errno == EINTR || errno == EAGAIN) {
+          continue;
         }
         if (svr_sock_ != INVALID_SOCKET) {
           detail::close_socket(svr_sock_);
