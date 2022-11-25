@@ -193,7 +193,7 @@ target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	cxx_std_11
 )
 
-target_include_directories(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+target_include_directories(${PROJECT_NAME} SYSTEM ${_INTERFACE_OR_PUBLIC}
     $<BUILD_INTERFACE:${_httplib_build_includedir}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
