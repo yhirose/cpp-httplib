@@ -5855,7 +5855,16 @@ Server::process_request(Stream &strm, bool close_connection,
       routed = true;
     } else {
       res.status = 500;
-      res.set_header("EXCEPTION_WHAT", e.what());
+      std::string val;
+      auto s = e.what();
+      for (size_t i = 0; s[i]; i++) {
+        switch (s[i]) {
+        case '\r': val += "\\r"; break;
+        case '\n': val += "\\n"; break;
+        default: val += s[i]; break;
+        }
+      }
+      res.set_header("EXCEPTION_WHAT", val);
     }
   } catch (...) {
     if (exception_handler_) {

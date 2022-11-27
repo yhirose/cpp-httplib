@@ -3839,9 +3839,12 @@ TEST(MountTest, Unmount) {
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
 
-  svr.Get("/hi", [&](const Request & /*req*/, Response & /*res*/) {
+  svr.Get("/exception", [&](const Request & /*req*/, Response & /*res*/) {
     throw std::runtime_error("exception...");
-    // res.set_content("Hello World!", "text/plain");
+  });
+
+  svr.Get("/unknown", [&](const Request & /*req*/, Response & /*res*/) {
+    throw std::runtime_error("exception\r\n...");
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
@@ -3854,11 +3857,21 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
 
   Client cli("localhost", PORT);
 
-  auto res = cli.Get("/hi");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(500, res->status);
-  ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
-  EXPECT_EQ("exception...", res->get_header_value("EXCEPTION_WHAT"));
+  {
+    auto res = cli.Get("/exception");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(500, res->status);
+    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
+    EXPECT_EQ("exception...", res->get_header_value("EXCEPTION_WHAT"));
+  }
+
+  {
+    auto res = cli.Get("/unknown");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(500, res->status);
+    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
+    EXPECT_EQ("exception\\r\\n...", res->get_header_value("EXCEPTION_WHAT"));
+  }
 
   svr.stop();
   listen_thread.join();
