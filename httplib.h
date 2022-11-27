@@ -1536,7 +1536,7 @@ inline void duration_to_sec_and_usec(const T &duration, U callback) {
   auto usec = std::chrono::duration_cast<std::chrono::microseconds>(
                   duration - std::chrono::seconds(sec))
                   .count();
-  callback(sec, usec);
+  callback(static_cast<time_t>(sec), static_cast<time_t>(usec));
 }
 
 template <typename T>
