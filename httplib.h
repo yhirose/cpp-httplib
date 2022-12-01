@@ -257,12 +257,6 @@ using socket_t = int;
 #error Sorry, OpenSSL versions prior to 1.1.1 are not supported
 #endif
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-#include <openssl/crypto.h>
-inline const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *asn1) {
-  return M_ASN1_STRING_data(asn1);
-}
-#endif
 #endif
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -7313,55 +7307,12 @@ process_client_socket_ssl(SSL *ssl, socket_t sock, time_t read_timeout_sec,
   return callback(strm);
 }
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-static std::shared_ptr<std::vector<std::mutex>> openSSL_locks_;
-
-class SSLThreadLocks {
-public:
-  SSLThreadLocks() {
-    openSSL_locks_ =
-        std::make_shared<std::vector<std::mutex>>(CRYPTO_num_locks());
-    CRYPTO_set_locking_callback(locking_callback);
-  }
-
-  ~SSLThreadLocks() { CRYPTO_set_locking_callback(nullptr); }
-
-private:
-  static void locking_callback(int mode, int type, const char * /*file*/,
-                               int /*line*/) {
-    auto &lk = (*openSSL_locks_)[static_cast<size_t>(type)];
-    if (mode & CRYPTO_LOCK) {
-      lk.lock();
-    } else {
-      lk.unlock();
-    }
-  }
-};
-
-#endif
-
 class SSLInit {
 public:
   SSLInit() {
-#if OPENSSL_VERSION_NUMBER < 0x1010001fL
-    SSL_load_error_strings();
-    SSL_library_init();
-#else
     OPENSSL_init_ssl(
         OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
-#endif
   }
-
-  ~SSLInit() {
-#if OPENSSL_VERSION_NUMBER < 0x1010001fL
-    ERR_free_strings();
-#endif
-  }
-
-private:
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  SSLThreadLocks thread_init_;
-#endif
 };
 
 // SSL socket stream implementation
