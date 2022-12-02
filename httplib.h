@@ -580,7 +580,7 @@ private:
 
           if (pool_.shutdown_ && pool_.jobs_.empty()) { break; }
 
-          fn = pool_.jobs_.front();
+          fn = std::move(pool_.jobs_.front());
           pool_.jobs_.pop_front();
         }
 
