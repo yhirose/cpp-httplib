@@ -5507,8 +5507,8 @@ TEST(SocketStream, is_writable_INET) {
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
   static constexpr unsigned int number_of_task{1000000};
   std::atomic_uint count{0};
-  std::unique_ptr<TaskQueue> task_queue =
-      std::make_unique<ThreadPool>(CPPHTTPLIB_THREAD_POOL_COUNT);
+  std::unique_ptr<TaskQueue> task_queue{
+      new ThreadPool{CPPHTTPLIB_THREAD_POOL_COUNT}};
 
   for (unsigned int i = 0; i < number_of_task; ++i) {
     task_queue->enqueue(
