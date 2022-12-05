@@ -413,6 +413,8 @@ struct Request {
 
   std::string remote_addr;
   int remote_port = -1;
+  std::string local_addr;
+  int local_port = -1;
 
   // for server
   std::string version;
@@ -514,6 +516,7 @@ public:
   virtual ssize_t read(char *ptr, size_t size) = 0;
   virtual ssize_t write(const char *ptr, size_t size) = 0;
   virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
+  virtual void get_local_ip_and_port(std::string &ip, int &port) const = 0;
   virtual socket_t socket() const = 0;
 
   template <typename... Args>
@@ -1778,6 +1781,7 @@ public:
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  void get_local_ip_and_port(std::string &ip, int &port) const override;
   socket_t socket() const override;
 
   const std::string &get_buffer() const;
@@ -2446,6 +2450,7 @@ public:
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  void get_local_ip_and_port(std::string &ip, int &port) const override;
   socket_t socket() const override;
 
 private:
@@ -2475,6 +2480,7 @@ public:
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  void get_local_ip_and_port(std::string &ip, int &port) const override;
   socket_t socket() const override;
 
 private:
@@ -2843,9 +2849,9 @@ inline socket_t create_client_socket(
   return sock;
 }
 
-inline bool get_remote_ip_and_port(const struct sockaddr_storage &addr,
-                                   socklen_t addr_len, std::string &ip,
-                                   int &port) {
+inline bool get_ip_and_port(const struct sockaddr_storage &addr,
+                            socklen_t addr_len, std::string &ip,
+                            int &port) {
   if (addr.ss_family == AF_INET) {
     port = ntohs(reinterpret_cast<const struct sockaddr_in *>(&addr)->sin_port);
   } else if (addr.ss_family == AF_INET6) {
@@ -2864,6 +2870,15 @@ inline bool get_remote_ip_and_port(const struct sockaddr_storage &addr,
 
   ip = ipstr.data();
   return true;
+}
+
+inline void get_local_ip_and_port(socket_t sock, std::string &ip, int &port) {
+  struct sockaddr_storage addr;
+  socklen_t addr_len = sizeof(addr);
+  if (!getsockname(sock, reinterpret_cast<struct sockaddr *>(&addr),
+                   &addr_len)) {
+    get_ip_and_port(addr, addr_len, ip, port);
+  }
 }
 
 inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
@@ -2890,7 +2905,7 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
       return;
     }
 #endif
-    get_remote_ip_and_port(addr, addr_len, ip, port);
+    get_ip_and_port(addr, addr_len, ip, port);
   }
 }
 
@@ -4517,8 +4532,8 @@ inline void hosted_at(const std::string &hostname,
         *reinterpret_cast<struct sockaddr_storage *>(rp->ai_addr);
     std::string ip;
     int dummy = -1;
-    if (detail::get_remote_ip_and_port(addr, sizeof(struct sockaddr_storage),
-                                       ip, dummy)) {
+    if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage),
+                                ip, dummy)) {
       addrs.push_back(ip);
     }
   }
@@ -4808,6 +4823,11 @@ inline void SocketStream::get_remote_ip_and_port(std::string &ip,
   return detail::get_remote_ip_and_port(sock_, ip, port);
 }
 
+inline void SocketStream::get_local_ip_and_port(std::string &ip,
+                                                int &port) const {
+  return detail::get_local_ip_and_port(sock_, ip, port);
+}
+
 inline socket_t SocketStream::socket() const { return sock_; }
 
 // Buffer stream implementation
@@ -4832,6 +4852,9 @@ inline ssize_t BufferStream::write(const char *ptr, size_t size) {
 
 inline void BufferStream::get_remote_ip_and_port(std::string & /*ip*/,
                                                  int & /*port*/) const {}
+
+inline void BufferStream::get_local_ip_and_port(std::string & /*ip*/,
+                                                int & /*port*/) const {}
 
 inline socket_t BufferStream::socket() const { return 0; }
 
@@ -5811,6 +5834,10 @@ Server::process_request(Stream &strm, bool close_connection,
   strm.get_remote_ip_and_port(req.remote_addr, req.remote_port);
   req.set_header("REMOTE_ADDR", req.remote_addr);
   req.set_header("REMOTE_PORT", std::to_string(req.remote_port));
+
+  strm.get_local_ip_and_port(req.local_addr, req.local_port);
+  req.set_header("LOCAL_ADDR", req.local_addr);
+  req.set_header("LOCAL_PORT", std::to_string(req.local_port));
 
   if (req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
@@ -7407,6 +7434,11 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
 inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
                                                     int &port) const {
   detail::get_remote_ip_and_port(sock_, ip, port);
+}
+
+inline void SSLSocketStream::get_local_ip_and_port(std::string &ip,
+                                                    int &port) const {
+  detail::get_local_ip_and_port(sock_, ip, port);
 }
 
 inline socket_t SSLSocketStream::socket() const { return sock_; }
