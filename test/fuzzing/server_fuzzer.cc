@@ -22,13 +22,16 @@ public:
 
   ssize_t write(const std::string &s) { return write(s.data(), s.size()); }
 
-  std::string get_remote_addr() const { return ""; }
-
   bool is_readable() const override { return true; }
 
   bool is_writable() const override { return true; }
 
   void get_remote_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 8080;
+  }
+
+  void get_local_ip_and_port(std::string &ip, int &port) const override {
     ip = "127.0.0.1";
     port = 8080;
   }

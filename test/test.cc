@@ -1521,6 +1521,17 @@ protected:
                          std::stoi(req.get_header_value("REMOTE_PORT")));
                res.set_content(remote_addr.c_str(), "text/plain");
              })
+        .Get("/local_addr",
+             [&](const Request &req, Response &res) {
+               EXPECT_TRUE(req.has_header("LOCAL_PORT"));
+               EXPECT_TRUE(req.has_header("LOCAL_ADDR"));
+               auto local_addr = req.get_header_value("LOCAL_ADDR");
+               auto local_port = req.get_header_value("LOCAL_PORT");
+               EXPECT_EQ(req.local_addr, local_addr);
+               EXPECT_EQ(req.local_port, std::stoi(local_port));
+               res.set_content(local_addr.append(":").append(local_port),
+                               "text/plain");
+             })
         .Get("/endwith%",
              [&](const Request & /*req*/, Response &res) {
                res.set_content("Hello World!", "text/plain");
@@ -2808,6 +2819,15 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
+}
+
+TEST_F(ServerTest, GetMethodLocalAddr) {
+  auto res = cli_.Get("/local_addr");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_TRUE(res->body == std::string("::1:").append(to_string(PORT)) ||
+              res->body == std::string("127.0.0.1:").append(to_string(PORT)));
 }
 
 TEST_F(ServerTest, HTTPResponseSplitting) {
