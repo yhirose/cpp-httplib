@@ -3761,31 +3761,6 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
   return true;
 }
 
-inline bool
-write_content_chunked(std::ostream &strm, const ContentProviderWithoutLength &provider) {
-  size_t curOffset = 0;
-  bool data_available = true;
-  DataSink data_sink;
-  
-  data_sink.write = [&](const char* d, size_t l) {
-    strm.write(d,l);
-    data_available = l > 0;
-    curOffset += l;
-    return true;
-  };
-  
-  data_sink.done = [&]() { data_available = false; };
-  data_sink.is_writable = [&]() { return true; };
-
-  while (data_available) {
-    if (!provider(curOffset, data_sink)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 template <typename T, typename U>
 inline bool write_content_chunked(Stream &strm,
                                   const ContentProvider &content_provider,
@@ -6948,21 +6923,31 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   std::string boundary = detail::make_multipart_data_boundary();
   std::string content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
 
-  size_t curItem = 0;
+  size_t curItem = 0, curStart = 0;
   ContentProviderWithoutLength content_provider = [&](size_t offset, DataSink& sink) {
     if (!offset) {
       sink.os << detail::serialize_multipart_formdata(items, boundary, false);
       return true;
     }
     else if (curItem < pItems.size()) {
+      if (!curStart) {
+        curStart = offset;
+        sink.os << detail::serialize_multipart_formdata_item_begin(pItems[curItem], boundary);
+      }
 
-      sink.os << detail::serialize_multipart_formdata_item_begin(pItems[curItem], boundary);
+      DataSink curSink;
+      bool hasData = true;
+      curSink.write = sink.write;
+      curSink.done = [&](){ hasData = false; };
+      curSink.is_writable = sink.is_writable;
 
-      if (!detail::write_content_chunked(sink.os, pItems[curItem].provider))
+      if (!pItems[curItem].provider(offset-curStart, curSink))
         return false;
 
-      sink.os << detail::serialize_multipart_formdata_item_end();
-      curItem++;
+      if (!hasData) {
+        sink.os << detail::serialize_multipart_formdata_item_end();
+        curItem++; curStart = 0;
+      }
       return true;
     }
     else {
