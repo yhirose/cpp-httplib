@@ -549,8 +549,11 @@ public:
   ~ThreadPool() override = default;
 
   void enqueue(std::function<void()> fn) override {
-    std::unique_lock<std::mutex> lock(mutex_);
-    jobs_.push_back(std::move(fn));
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      jobs_.push_back(std::move(fn));
+    }
+
     cond_.notify_one();
   }
 
@@ -559,8 +562,9 @@ public:
     {
       std::unique_lock<std::mutex> lock(mutex_);
       shutdown_ = true;
-      cond_.notify_all();
     }
+
+    cond_.notify_all();
 
     // Join...
     for (auto &t : threads_) {
@@ -583,7 +587,7 @@ private:
 
           if (pool_.shutdown_ && pool_.jobs_.empty()) { break; }
 
-          fn = pool_.jobs_.front();
+          fn = std::move(pool_.jobs_.front());
           pool_.jobs_.pop_front();
         }
 
