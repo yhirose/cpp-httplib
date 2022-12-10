@@ -1325,7 +1325,12 @@ TEST(NoContentTest, ContentLength) {
 }
 
 TEST(RoutingHandlerTest, PreRoutingHandler) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+#else
   Server svr;
+#endif
 
   svr.set_pre_routing_handler([](const Request &req, Response &res) {
     if (req.path == "/routing_handler") {
@@ -1356,7 +1361,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+#else
     Client cli(HOST, PORT);
+#endif
 
     auto res = cli.Get("/routing_handler");
     ASSERT_TRUE(res);
@@ -1369,7 +1379,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   }
 
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+#else
     Client cli(HOST, PORT);
+#endif
 
     auto res = cli.Get("/hi");
     ASSERT_TRUE(res);
@@ -1380,7 +1395,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   }
 
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+#else
     Client cli(HOST, PORT);
+#endif
 
     auto res = cli.Get("/aaa");
     ASSERT_TRUE(res);
