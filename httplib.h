@@ -6925,7 +6925,7 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
 
   size_t curItem = 0, curStart = 0;
   ContentProviderWithoutLength content_provider = [&](size_t offset, DataSink& sink) {
-    if (!offset) {
+    if (!offset && items.size()) {
       sink.os << detail::serialize_multipart_formdata(items, boundary, false);
       return true;
     }
