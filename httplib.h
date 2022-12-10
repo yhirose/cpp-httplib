@@ -6899,8 +6899,8 @@ inline Result ClientImpl::Post(const std::string &path,
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items) {
-  std::string boundary = detail::make_multipart_data_boundary();
-  std::string content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
   const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Post(path, headers, body, content_type.c_str());
 }
@@ -6912,7 +6912,7 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
 
-  std::string content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
   const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Post(path, headers, body, content_type.c_str());
 }
@@ -6920,8 +6920,8 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items,
                                const MultipartFormDataProviderItems &pItems) { 
-  std::string boundary = detail::make_multipart_data_boundary();
-  std::string content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
 
   size_t curItem = 0, curStart = 0;
   ContentProviderWithoutLength content_provider = [&](size_t offset, DataSink& sink) {
@@ -6931,8 +6931,10 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
     }
     else if (curItem < pItems.size()) {
       if (!curStart) {
+        const auto& begin = detail::serialize_multipart_formdata_item_begin(pItems[curItem], boundary);
+        offset += begin.size(); 
         curStart = offset;
-        sink.os << detail::serialize_multipart_formdata_item_begin(pItems[curItem], boundary);
+        sink.os << begin; 
       }
 
       DataSink curSink;
@@ -7037,8 +7039,8 @@ inline Result ClientImpl::Put(const std::string &path,
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
                               const MultipartFormDataItems &items) {
-  std::string boundary = detail::make_multipart_data_boundary();
-  std::string content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
   const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Put(path, headers, body, content_type);
 }
@@ -7050,7 +7052,7 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
 
-  std::string content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &content_type = detail::serialize_multipart_formdata_get_content_type(boundary);
   const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Put(path, headers, body, content_type);
 }
