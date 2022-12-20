@@ -943,6 +943,7 @@ TEST(UrlWithSpace, Redirect_Online) {
 
 #endif
 
+#if !defined(_WIN32) && !defined(_WIN64)
 TEST(ReceiveSignals, Signal) {
   auto setupSignalHandlers = []() {
     struct sigaction act;
@@ -978,6 +979,7 @@ TEST(ReceiveSignals, Signal) {
   thread.join();
   ASSERT_FALSE(svr.is_running());
 }
+#endif
 
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr1;
