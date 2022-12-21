@@ -1,4 +1,5 @@
 #include <httplib.h>
+#include <signal.h>
 
 #include <gtest/gtest.h>
 
@@ -941,6 +942,44 @@ TEST(UrlWithSpace, Redirect_Online) {
   EXPECT_EQ(18527U, res->get_header_value<uint64_t>("Content-Length"));
 }
 
+#endif
+
+#if !defined(_WIN32) && !defined(_WIN64)
+TEST(ReceiveSignals, Signal) {
+  auto setupSignalHandlers = []() {
+    struct sigaction act;
+
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = SA_SIGINFO;
+    act.sa_sigaction = [](int sig, siginfo_t *, void *) {
+      switch (sig) {
+      case SIGINT:
+      default: break;
+      }
+    };
+    ::sigaction(SIGINT, &act, nullptr);
+  };
+
+  Server svr;
+  int port = 0;
+  auto thread = std::thread([&]() {
+    setupSignalHandlers();
+    port = svr.bind_to_any_port("localhost");
+    svr.listen_after_bind();
+  });
+
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ASSERT_TRUE(svr.is_running());
+  pthread_kill(thread.native_handle(), SIGINT);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  ASSERT_TRUE(svr.is_running());
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
 #endif
 
 TEST(RedirectToDifferentPort, Redirect) {
