@@ -3353,7 +3353,10 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
   }
 
   if (p < end) {
-    fn(std::string(beg, key_end), decode_url(std::string(p, end), false));
+    std::string key(beg, key_end);
+    std::string rawValue(p, end);
+    std::string value = key=="Location"?std::move(rawValue):decode_url(rawValue, false);
+    fn(std::move(key), std::move(value));
     return true;
   }
 
