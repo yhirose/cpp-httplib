@@ -5146,6 +5146,204 @@ TEST(MultipartFormDataTest, LargeData) {
   t.join();
 }
 
+TEST(MultipartFormDataTest, DataProviderItems) {
+
+  std::random_device seed_gen;
+  std::mt19937 random(seed_gen());
+
+  std::string rand1;
+  rand1.resize(1000);
+  std::generate(rand1.begin(), rand1.end(), [&]() { return random(); });
+
+  std::string rand2;
+  rand2.resize(3000);
+  std::generate(rand2.begin(), rand2.end(), [&]() { return random(); });
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Post("/post-none", [&](const Request &req, Response & /*res*/,
+                             const ContentReader &content_reader) {
+    ASSERT_FALSE(req.is_multipart_form_data());
+
+    std::string body;
+    content_reader([&](const char *data, size_t data_length) {
+      body.append(data, data_length);
+      return true;
+    });
+
+    EXPECT_EQ(body, "");
+  });
+
+  svr.Post("/post-items", [&](const Request &req, Response & /*res*/,
+                              const ContentReader &content_reader) {
+    ASSERT_TRUE(req.is_multipart_form_data());
+    MultipartFormDataItems files;
+    content_reader(
+        [&](const MultipartFormData &file) {
+          files.push_back(file);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          files.back().content.append(data, data_length);
+          return true;
+        });
+
+    ASSERT_TRUE(files.size() == 2);
+
+    EXPECT_EQ(std::string(files[0].name), "name1");
+    EXPECT_EQ(files[0].content, "Testing123");
+    EXPECT_EQ(files[0].filename, "filename1");
+    EXPECT_EQ(files[0].content_type, "application/octet-stream");
+
+    EXPECT_EQ(files[1].name, "name2");
+    EXPECT_EQ(files[1].content, "Testing456");
+    EXPECT_EQ(files[1].filename, "");
+    EXPECT_EQ(files[1].content_type, "");
+  });
+
+  svr.Post("/post-providers", [&](const Request &req, Response & /*res*/,
+                                  const ContentReader &content_reader) {
+    ASSERT_TRUE(req.is_multipart_form_data());
+    MultipartFormDataItems files;
+    content_reader(
+        [&](const MultipartFormData &file) {
+          files.push_back(file);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          files.back().content.append(data, data_length);
+          return true;
+        });
+
+    ASSERT_TRUE(files.size() == 2);
+
+    EXPECT_EQ(files[0].name, "name3");
+    EXPECT_EQ(files[0].content, rand1);
+    EXPECT_EQ(files[0].filename, "filename3");
+    EXPECT_EQ(files[0].content_type, "");
+
+    EXPECT_EQ(files[1].name, "name4");
+    EXPECT_EQ(files[1].content, rand2);
+    EXPECT_EQ(files[1].filename, "filename4");
+    EXPECT_EQ(files[1].content_type, "");
+  });
+
+  svr.Post("/post-both", [&](const Request &req, Response & /*res*/,
+                             const ContentReader &content_reader) {
+    ASSERT_TRUE(req.is_multipart_form_data());
+    MultipartFormDataItems files;
+    content_reader(
+        [&](const MultipartFormData &file) {
+          files.push_back(file);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          files.back().content.append(data, data_length);
+          return true;
+        });
+
+    ASSERT_TRUE(files.size() == 4);
+
+    EXPECT_EQ(std::string(files[0].name), "name1");
+    EXPECT_EQ(files[0].content, "Testing123");
+    EXPECT_EQ(files[0].filename, "filename1");
+    EXPECT_EQ(files[0].content_type, "application/octet-stream");
+
+    EXPECT_EQ(files[1].name, "name2");
+    EXPECT_EQ(files[1].content, "Testing456");
+    EXPECT_EQ(files[1].filename, "");
+    EXPECT_EQ(files[1].content_type, "");
+
+    EXPECT_EQ(files[2].name, "name3");
+    EXPECT_EQ(files[2].content, rand1);
+    EXPECT_EQ(files[2].filename, "filename3");
+    EXPECT_EQ(files[2].content_type, "");
+
+    EXPECT_EQ(files[3].name, "name4");
+    EXPECT_EQ(files[3].content, rand2);
+    EXPECT_EQ(files[3].filename, "filename4");
+    EXPECT_EQ(files[3].content_type, "");
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli("https://localhost:8080");
+    cli.enable_server_certificate_verification(false);
+
+    MultipartFormDataItems items{
+        {"name1", "Testing123", "filename1", "application/octet-stream"},
+        {"name2", "Testing456", "", ""}, // not a file
+    };
+
+    {
+      auto res = cli.Post("/post-none", {}, {}, {});
+      ASSERT_TRUE(res);
+      ASSERT_EQ(200, res->status);
+    }
+
+    MultipartFormDataProviderItems providers;
+
+    {
+      auto res =
+          cli.Post("/post-items", {}, items, providers); // empty providers
+      ASSERT_TRUE(res);
+      ASSERT_EQ(200, res->status);
+    }
+
+    providers.push_back({"name3",
+                         [&](size_t offset, httplib::DataSink &sink) -> bool {
+                           // test the offset is given correctly at each step
+                           if (!offset)
+                             sink.os.write(rand1.data(), 30);
+                           else if (offset == 30)
+                             sink.os.write(rand1.data() + 30, 300);
+                           else if (offset == 330)
+                             sink.os.write(rand1.data() + 330, 670);
+                           else if (offset == rand1.size())
+                             sink.done();
+                           return true;
+                         },
+                         "filename3",
+                         {}});
+
+    providers.push_back({"name4",
+                         [&](size_t offset, httplib::DataSink &sink) -> bool {
+                           // test the offset is given correctly at each step
+                           if (!offset)
+                             sink.os.write(rand2.data(), 2000);
+                           else if (offset == 2000)
+                             sink.os.write(rand2.data() + 2000, 1);
+                           else if (offset == 2001)
+                             sink.os.write(rand2.data() + 2001, 999);
+                           else if (offset == rand2.size())
+                             sink.done();
+                           return true;
+                         },
+                         "filename4",
+                         {}});
+
+    {
+      auto res = cli.Post("/post-providers", {}, {}, providers);
+      ASSERT_TRUE(res);
+      ASSERT_EQ(200, res->status);
+    }
+
+    {
+      auto res = cli.Post("/post-both", {}, items, providers);
+      ASSERT_TRUE(res);
+      ASSERT_EQ(200, res->status);
+    }
+  }
+
+  svr.stop();
+  t.join();
+}
+
 TEST(MultipartFormDataTest, WithPreamble) {
   Server svr;
   svr.Post("/post", [&](const Request & /*req*/, Response &res) {
