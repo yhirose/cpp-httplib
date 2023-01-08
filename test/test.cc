@@ -1,10 +1,12 @@
 #include <httplib.h>
+#include <signal.h>
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -942,6 +944,44 @@ TEST(UrlWithSpace, Redirect_Online) {
 
 #endif
 
+#if !defined(_WIN32) && !defined(_WIN64)
+TEST(ReceiveSignals, Signal) {
+  auto setupSignalHandlers = []() {
+    struct sigaction act;
+
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = SA_SIGINFO;
+    act.sa_sigaction = [](int sig, siginfo_t *, void *) {
+      switch (sig) {
+      case SIGINT:
+      default: break;
+      }
+    };
+    ::sigaction(SIGINT, &act, nullptr);
+  };
+
+  Server svr;
+  int port = 0;
+  auto thread = std::thread([&]() {
+    setupSignalHandlers();
+    port = svr.bind_to_any_port("localhost");
+    svr.listen_after_bind();
+  });
+
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ASSERT_TRUE(svr.is_running());
+  pthread_kill(thread.native_handle(), SIGINT);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  ASSERT_TRUE(svr.is_running());
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+#endif
+
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr1;
   svr1.Get("/1", [&](const Request & /*req*/, Response &res) {
@@ -1324,7 +1364,12 @@ TEST(NoContentTest, ContentLength) {
 }
 
 TEST(RoutingHandlerTest, PreRoutingHandler) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+#else
   Server svr;
+#endif
 
   svr.set_pre_routing_handler([](const Request &req, Response &res) {
     if (req.path == "/routing_handler") {
@@ -1355,7 +1400,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+#else
     Client cli(HOST, PORT);
+#endif
 
     auto res = cli.Get("/routing_handler");
     ASSERT_TRUE(res);
@@ -1368,7 +1418,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   }
 
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+#else
     Client cli(HOST, PORT);
+#endif
 
     auto res = cli.Get("/hi");
     ASSERT_TRUE(res);
@@ -1379,7 +1434,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   }
 
   {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+#else
     Client cli(HOST, PORT);
+#endif
 
     auto res = cli.Get("/aaa");
     ASSERT_TRUE(res);
@@ -5522,3 +5582,18 @@ TEST(SocketStream, is_writable_INET) {
   ASSERT_EQ(0, close(disconnected_svr_sock));
 }
 #endif // #ifndef _WIN32
+
+TEST(TaskQueueTest, IncreaseAtomicInteger) {
+  static constexpr unsigned int number_of_task{1000000};
+  std::atomic_uint count{0};
+  std::unique_ptr<TaskQueue> task_queue{
+      new ThreadPool{CPPHTTPLIB_THREAD_POOL_COUNT}};
+
+  for (unsigned int i = 0; i < number_of_task; ++i) {
+    task_queue->enqueue(
+        [&count] { count.fetch_add(1, std::memory_order_relaxed); });
+  }
+
+  EXPECT_NO_THROW(task_queue->shutdown());
+  EXPECT_EQ(number_of_task, count.load());
+}
