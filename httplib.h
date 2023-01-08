@@ -974,6 +974,9 @@ public:
              const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
              const MultipartFormDataItems &items, const std::string &boundary);
+  Result Put(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items,
+             const MultipartFormDataProviderItems &provider_items);
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
@@ -1212,6 +1215,9 @@ private:
       ContentProvider content_provider,
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type);
+  ContentProviderWithoutLength get_multipart_content_provider(
+      const std::string &boundary, const MultipartFormDataItems &items,
+      const MultipartFormDataProviderItems &provider_items);
 
   std::string adjust_host_string(const std::string &host) const;
 
@@ -1339,6 +1345,10 @@ public:
              const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
              const MultipartFormDataItems &items, const std::string &boundary);
+  Result Put(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items,
+             const MultipartFormDataProviderItems &provider_items);
+
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
                const std::string &content_type);
@@ -6680,6 +6690,49 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   return true;
 }
 
+ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
+    const std::string &boundary, const MultipartFormDataItems &items,
+    const MultipartFormDataProviderItems &provider_items) {
+  size_t cur_item = 0, cur_start = 0;
+  // cur_item and cur_start are copied to within the std::function and maintain
+  // state between successive calls
+  return [&, cur_item, cur_start](size_t offset,
+                                  DataSink &sink) mutable -> bool {
+    if (!offset && items.size()) {
+      sink.os << detail::serialize_multipart_formdata(items, boundary, false);
+      return true;
+    } else if (cur_item < provider_items.size()) {
+      if (!cur_start) {
+        const auto &begin = detail::serialize_multipart_formdata_item_begin(
+            provider_items[cur_item], boundary);
+        offset += begin.size();
+        cur_start = offset;
+        sink.os << begin;
+      }
+
+      DataSink cur_sink;
+      bool has_data = true;
+      cur_sink.write = sink.write;
+      cur_sink.done = [&]() { has_data = false; };
+      cur_sink.is_writable = sink.is_writable;
+
+      if (!provider_items[cur_item].provider(offset - cur_start, cur_sink))
+        return false;
+
+      if (!has_data) {
+        sink.os << detail::serialize_multipart_formdata_item_end();
+        cur_item++;
+        cur_start = 0;
+      }
+      return true;
+    } else {
+      sink.os << detail::serialize_multipart_formdata_finish(boundary);
+      sink.done();
+      return true;
+    }
+  };
+}
+
 inline bool
 ClientImpl::process_socket(const Socket &socket,
                            std::function<bool(Stream &strm)> callback) {
@@ -6929,46 +6982,10 @@ ClientImpl::Post(const std::string &path, const Headers &headers,
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-
-  size_t cur_item = 0, cur_start = 0;
-  ContentProviderWithoutLength content_provider = [&](size_t offset,
-                                                      DataSink &sink) {
-    if (!offset && items.size()) {
-      sink.os << detail::serialize_multipart_formdata(items, boundary, false);
-      return true;
-    } else if (cur_item < provider_items.size()) {
-      if (!cur_start) {
-        const auto &begin = detail::serialize_multipart_formdata_item_begin(
-            provider_items[cur_item], boundary);
-        offset += begin.size();
-        cur_start = offset;
-        sink.os << begin;
-      }
-
-      DataSink cur_sink;
-      bool has_data = true;
-      cur_sink.write = sink.write;
-      cur_sink.done = [&]() { has_data = false; };
-      cur_sink.is_writable = sink.is_writable;
-
-      if (!provider_items[cur_item].provider(offset - cur_start, cur_sink))
-        return false;
-
-      if (!has_data) {
-        sink.os << detail::serialize_multipart_formdata_item_end();
-        cur_item++;
-        cur_start = 0;
-      }
-      return true;
-    } else {
-      sink.os << detail::serialize_multipart_formdata_finish(boundary);
-      sink.done();
-      return true;
-    }
-  };
-
-  return send_with_content_provider("POST", path, headers, nullptr, 0, nullptr,
-                                    std::move(content_provider), content_type);
+  return send_with_content_provider(
+      "POST", path, headers, nullptr, 0, nullptr,
+      get_multipart_content_provider(boundary, items, provider_items),
+      content_type);
 }
 
 inline Result ClientImpl::Put(const std::string &path) {
@@ -7067,6 +7084,18 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
   return Put(path, headers, body, content_type);
 }
 
+inline Result
+ClientImpl::Put(const std::string &path, const Headers &headers,
+                const MultipartFormDataItems &items,
+                const MultipartFormDataProviderItems &provider_items) {
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  return send_with_content_provider(
+      "PUT", path, headers, nullptr, 0, nullptr,
+      get_multipart_content_provider(boundary, items, provider_items),
+      content_type);
+}
 inline Result ClientImpl::Patch(const std::string &path) {
   return Patch(path, std::string(), std::string());
 }
@@ -8299,6 +8328,12 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
                           const MultipartFormDataItems &items,
                           const std::string &boundary) {
   return cli_->Put(path, headers, items, boundary);
+}
+inline Result
+Client::Put(const std::string &path, const Headers &headers,
+            const MultipartFormDataItems &items,
+            const MultipartFormDataProviderItems &provider_items) {
+  return cli_->Put(path, headers, items, provider_items);
 }
 inline Result Client::Patch(const std::string &path) {
   return cli_->Patch(path);
