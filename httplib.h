@@ -369,6 +369,14 @@ using ContentProviderWithoutLength =
 
 using ContentProviderResourceReleaser = std::function<void(bool success)>;
 
+struct MultipartFormDataProvider {
+  std::string name;
+  ContentProviderWithoutLength provider;
+  std::string filename;
+  std::string content_type;
+};
+using MultipartFormDataProviderItems = std::vector<MultipartFormDataProvider>;
+
 using ContentReceiverWithProgress =
     std::function<bool(const char *data, size_t data_length, uint64_t offset,
                        uint64_t total_length)>;
@@ -934,6 +942,9 @@ public:
               const MultipartFormDataItems &items);
   Result Post(const std::string &path, const Headers &headers,
               const MultipartFormDataItems &items, const std::string &boundary);
+  Result Post(const std::string &path, const Headers &headers,
+              const MultipartFormDataItems &items,
+              const MultipartFormDataProviderItems &provider_items);
 
   Result Put(const std::string &path);
   Result Put(const std::string &path, const char *body, size_t content_length,
@@ -963,6 +974,9 @@ public:
              const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
              const MultipartFormDataItems &items, const std::string &boundary);
+  Result Put(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items,
+             const MultipartFormDataProviderItems &provider_items);
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
@@ -1201,6 +1215,9 @@ private:
       ContentProvider content_provider,
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type);
+  ContentProviderWithoutLength get_multipart_content_provider(
+      const std::string &boundary, const MultipartFormDataItems &items,
+      const MultipartFormDataProviderItems &provider_items);
 
   std::string adjust_host_string(const std::string &host) const;
 
@@ -1296,6 +1313,10 @@ public:
               const MultipartFormDataItems &items);
   Result Post(const std::string &path, const Headers &headers,
               const MultipartFormDataItems &items, const std::string &boundary);
+  Result Post(const std::string &path, const Headers &headers,
+              const MultipartFormDataItems &items,
+              const MultipartFormDataProviderItems &provider_items);
+
   Result Put(const std::string &path);
   Result Put(const std::string &path, const char *body, size_t content_length,
              const std::string &content_type);
@@ -1324,6 +1345,10 @@ public:
              const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
              const MultipartFormDataItems &items, const std::string &boundary);
+  Result Put(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items,
+             const MultipartFormDataProviderItems &provider_items);
+
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
                const std::string &content_type);
@@ -2854,8 +2879,7 @@ inline socket_t create_client_socket(
 }
 
 inline bool get_ip_and_port(const struct sockaddr_storage &addr,
-                            socklen_t addr_len, std::string &ip,
-                            int &port) {
+                            socklen_t addr_len, std::string &ip, int &port) {
   if (addr.ss_family == AF_INET) {
     port = ntohs(reinterpret_cast<const struct sockaddr_in *>(&addr)->sin_port);
   } else if (addr.ss_family == AF_INET6) {
@@ -4129,29 +4153,48 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
   return valid;
 }
 
+template <typename T>
+inline std::string
+serialize_multipart_formdata_item_begin(const T &item,
+                                        const std::string &boundary) {
+  std::string body = "--" + boundary + "\r\n";
+  body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+  if (!item.filename.empty()) {
+    body += "; filename=\"" + item.filename + "\"";
+  }
+  body += "\r\n";
+  if (!item.content_type.empty()) {
+    body += "Content-Type: " + item.content_type + "\r\n";
+  }
+  body += "\r\n";
+
+  return body;
+}
+
+inline std::string serialize_multipart_formdata_item_end() { return "\r\n"; }
+
+inline std::string
+serialize_multipart_formdata_finish(const std::string &boundary) {
+  return "--" + boundary + "--\r\n";
+}
+
+inline std::string
+serialize_multipart_formdata_get_content_type(const std::string &boundary) {
+  return "multipart/form-data; boundary=" + boundary;
+}
+
 inline std::string
 serialize_multipart_formdata(const MultipartFormDataItems &items,
-                             const std::string &boundary,
-                             std::string &content_type) {
+                             const std::string &boundary, bool finish = true) {
   std::string body;
 
   for (const auto &item : items) {
-    body += "--" + boundary + "\r\n";
-    body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
-    if (!item.filename.empty()) {
-      body += "; filename=\"" + item.filename + "\"";
-    }
-    body += "\r\n";
-    if (!item.content_type.empty()) {
-      body += "Content-Type: " + item.content_type + "\r\n";
-    }
-    body += "\r\n";
-    body += item.content + "\r\n";
+    body += serialize_multipart_formdata_item_begin(item, boundary);
+    body += item.content + serialize_multipart_formdata_item_end();
   }
 
-  body += "--" + boundary + "--\r\n";
+  if (finish) body += serialize_multipart_formdata_finish(boundary);
 
-  content_type = "multipart/form-data; boundary=" + boundary;
   return body;
 }
 
@@ -4536,8 +4579,8 @@ inline void hosted_at(const std::string &hostname,
         *reinterpret_cast<struct sockaddr_storage *>(rp->ai_addr);
     std::string ip;
     int dummy = -1;
-    if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage),
-                                ip, dummy)) {
+    if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage), ip,
+                                dummy)) {
       addrs.push_back(ip);
     }
   }
@@ -6647,6 +6690,49 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   return true;
 }
 
+inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
+    const std::string &boundary, const MultipartFormDataItems &items,
+    const MultipartFormDataProviderItems &provider_items) {
+  size_t cur_item = 0, cur_start = 0;
+  // cur_item and cur_start are copied to within the std::function and maintain
+  // state between successive calls
+  return [&, cur_item, cur_start](size_t offset,
+                                  DataSink &sink) mutable -> bool {
+    if (!offset && items.size()) {
+      sink.os << detail::serialize_multipart_formdata(items, boundary, false);
+      return true;
+    } else if (cur_item < provider_items.size()) {
+      if (!cur_start) {
+        const auto &begin = detail::serialize_multipart_formdata_item_begin(
+            provider_items[cur_item], boundary);
+        offset += begin.size();
+        cur_start = offset;
+        sink.os << begin;
+      }
+
+      DataSink cur_sink;
+      bool has_data = true;
+      cur_sink.write = sink.write;
+      cur_sink.done = [&]() { has_data = false; };
+      cur_sink.is_writable = sink.is_writable;
+
+      if (!provider_items[cur_item].provider(offset - cur_start, cur_sink))
+        return false;
+
+      if (!has_data) {
+        sink.os << detail::serialize_multipart_formdata_item_end();
+        cur_item++;
+        cur_start = 0;
+      }
+      return true;
+    } else {
+      sink.os << detail::serialize_multipart_formdata_finish(boundary);
+      sink.done();
+      return true;
+    }
+  };
+}
+
 inline bool
 ClientImpl::process_socket(const Socket &socket,
                            std::function<bool(Stream &strm)> callback) {
@@ -6869,9 +6955,10 @@ inline Result ClientImpl::Post(const std::string &path,
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const MultipartFormDataItems &items) {
-  std::string content_type;
-  const auto &body = detail::serialize_multipart_formdata(
-      items, detail::make_multipart_data_boundary(), content_type);
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Post(path, headers, body, content_type.c_str());
 }
 
@@ -6882,10 +6969,23 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
 
-  std::string content_type;
-  const auto &body =
-      detail::serialize_multipart_formdata(items, boundary, content_type);
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Post(path, headers, body, content_type.c_str());
+}
+
+inline Result
+ClientImpl::Post(const std::string &path, const Headers &headers,
+                 const MultipartFormDataItems &items,
+                 const MultipartFormDataProviderItems &provider_items) {
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  return send_with_content_provider(
+      "POST", path, headers, nullptr, 0, nullptr,
+      get_multipart_content_provider(boundary, items, provider_items),
+      content_type);
 }
 
 inline Result ClientImpl::Put(const std::string &path) {
@@ -6964,9 +7064,10 @@ inline Result ClientImpl::Put(const std::string &path,
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
                               const MultipartFormDataItems &items) {
-  std::string content_type;
-  const auto &body = detail::serialize_multipart_formdata(
-      items, detail::make_multipart_data_boundary(), content_type);
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Put(path, headers, body, content_type);
 }
 
@@ -6977,12 +7078,24 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
 
-  std::string content_type;
-  const auto &body =
-      detail::serialize_multipart_formdata(items, boundary, content_type);
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  const auto &body = detail::serialize_multipart_formdata(items, boundary);
   return Put(path, headers, body, content_type);
 }
 
+inline Result
+ClientImpl::Put(const std::string &path, const Headers &headers,
+                const MultipartFormDataItems &items,
+                const MultipartFormDataProviderItems &provider_items) {
+  const auto &boundary = detail::make_multipart_data_boundary();
+  const auto &content_type =
+      detail::serialize_multipart_formdata_get_content_type(boundary);
+  return send_with_content_provider(
+      "PUT", path, headers, nullptr, 0, nullptr,
+      get_multipart_content_provider(boundary, items, provider_items),
+      content_type);
+}
 inline Result ClientImpl::Patch(const std::string &path) {
   return Patch(path, std::string(), std::string());
 }
@@ -7443,7 +7556,7 @@ inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
 }
 
 inline void SSLSocketStream::get_local_ip_and_port(std::string &ip,
-                                                    int &port) const {
+                                                   int &port) const {
   detail::get_local_ip_and_port(sock_, ip, port);
 }
 
@@ -8147,6 +8260,12 @@ inline Result Client::Post(const std::string &path, const Headers &headers,
                            const std::string &boundary) {
   return cli_->Post(path, headers, items, boundary);
 }
+inline Result
+Client::Post(const std::string &path, const Headers &headers,
+             const MultipartFormDataItems &items,
+             const MultipartFormDataProviderItems &provider_items) {
+  return cli_->Post(path, headers, items, provider_items);
+}
 inline Result Client::Put(const std::string &path) { return cli_->Put(path); }
 inline Result Client::Put(const std::string &path, const char *body,
                           size_t content_length,
@@ -8209,6 +8328,12 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
                           const MultipartFormDataItems &items,
                           const std::string &boundary) {
   return cli_->Put(path, headers, items, boundary);
+}
+inline Result
+Client::Put(const std::string &path, const Headers &headers,
+            const MultipartFormDataItems &items,
+            const MultipartFormDataProviderItems &provider_items) {
+  return cli_->Put(path, headers, items, provider_items);
 }
 inline Result Client::Patch(const std::string &path) {
   return cli_->Patch(path);
