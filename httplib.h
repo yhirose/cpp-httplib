@@ -6690,7 +6690,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   return true;
 }
 
-ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
+inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
     const std::string &boundary, const MultipartFormDataItems &items,
     const MultipartFormDataProviderItems &provider_items) {
   size_t cur_item = 0, cur_start = 0;
