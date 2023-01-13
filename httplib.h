@@ -826,6 +826,7 @@ enum class Error {
 };
 
 std::string to_string(const Error error);
+std::string to_human_string(const Error error);
 
 std::ostream &operator<<(std::ostream &os, const Error &obj);
 
@@ -1679,6 +1680,29 @@ inline std::string to_string(const Error error) {
     return "UnsupportedMultipartBoundaryChars";
   case Error::Compression: return "Compression";
   case Error::ConnectionTimeout: return "ConnectionTimeout";
+  case Error::Unknown: return "Unknown";
+  default: break;
+  }
+
+  return "Invalid";
+}
+
+inline std::string to_human_string(const Error error) {
+  switch (error) {
+  case Error::Success: return "Success (no error)";
+  case Error::Connection: return "Could not establish connection";
+  case Error::BindIPAddress: return "Failed to bind IP address";
+  case Error::Read: return "Failed to read connection";
+  case Error::Write: return "Failed to write connection";
+  case Error::ExceedRedirectCount: return "Maximum redirect count exceeded";
+  case Error::Canceled: return "Connection handling canceled";
+  case Error::SSLConnection: return "SSL connection failed";
+  case Error::SSLLoadingCerts: return "SSL certificate loading failed";
+  case Error::SSLServerVerification: return "SSL server verification failed";
+  case Error::UnsupportedMultipartBoundaryChars:
+    return "Unsupported HTTP multipart boundary characters";
+  case Error::Compression: return "Compression failed";
+  case Error::ConnectionTimeout: return "Connection timed out";
   case Error::Unknown: return "Unknown";
   default: break;
   }
