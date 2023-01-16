@@ -49,7 +49,7 @@ if(HTTPLIB_IS_USING_OPENSSL)
         COMMAND_ERROR_IS_FATAL ANY
     )
     execute_process(
-        COMMAND ${OPENSSL_COMMAND} req -x509 -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key key.pem -sha256 -days 3650 -nodes -out cert2.pem -extensions SAN
+        COMMAND ${OPENSSL_COMMAND} req -x509 -new -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key key.pem -sha256 -days 3650 -nodes -out cert2.pem -extensions SAN
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
