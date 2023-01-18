@@ -826,7 +826,6 @@ enum class Error {
 };
 
 std::string to_string(const Error error);
-std::string to_human_string(const Error error);
 
 std::ostream &operator<<(std::ostream &os, const Error &obj);
 
@@ -1665,29 +1664,6 @@ Server::set_idle_interval(const std::chrono::duration<Rep, Period> &duration) {
 }
 
 inline std::string to_string(const Error error) {
-  switch (error) {
-  case Error::Success: return "Success";
-  case Error::Connection: return "Connection";
-  case Error::BindIPAddress: return "BindIPAddress";
-  case Error::Read: return "Read";
-  case Error::Write: return "Write";
-  case Error::ExceedRedirectCount: return "ExceedRedirectCount";
-  case Error::Canceled: return "Canceled";
-  case Error::SSLConnection: return "SSLConnection";
-  case Error::SSLLoadingCerts: return "SSLLoadingCerts";
-  case Error::SSLServerVerification: return "SSLServerVerification";
-  case Error::UnsupportedMultipartBoundaryChars:
-    return "UnsupportedMultipartBoundaryChars";
-  case Error::Compression: return "Compression";
-  case Error::ConnectionTimeout: return "ConnectionTimeout";
-  case Error::Unknown: return "Unknown";
-  default: break;
-  }
-
-  return "Invalid";
-}
-
-inline std::string to_human_string(const Error error) {
   switch (error) {
   case Error::Success: return "Success (no error)";
   case Error::Connection: return "Could not establish connection";
