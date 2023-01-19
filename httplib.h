@@ -1665,20 +1665,20 @@ Server::set_idle_interval(const std::chrono::duration<Rep, Period> &duration) {
 
 inline std::string to_string(const Error error) {
   switch (error) {
-  case Error::Success: return "Success";
-  case Error::Connection: return "Connection";
-  case Error::BindIPAddress: return "BindIPAddress";
-  case Error::Read: return "Read";
-  case Error::Write: return "Write";
-  case Error::ExceedRedirectCount: return "ExceedRedirectCount";
-  case Error::Canceled: return "Canceled";
-  case Error::SSLConnection: return "SSLConnection";
-  case Error::SSLLoadingCerts: return "SSLLoadingCerts";
-  case Error::SSLServerVerification: return "SSLServerVerification";
+  case Error::Success: return "Success (no error)";
+  case Error::Connection: return "Could not establish connection";
+  case Error::BindIPAddress: return "Failed to bind IP address";
+  case Error::Read: return "Failed to read connection";
+  case Error::Write: return "Failed to write connection";
+  case Error::ExceedRedirectCount: return "Maximum redirect count exceeded";
+  case Error::Canceled: return "Connection handling canceled";
+  case Error::SSLConnection: return "SSL connection failed";
+  case Error::SSLLoadingCerts: return "SSL certificate loading failed";
+  case Error::SSLServerVerification: return "SSL server verification failed";
   case Error::UnsupportedMultipartBoundaryChars:
-    return "UnsupportedMultipartBoundaryChars";
-  case Error::Compression: return "Compression";
-  case Error::ConnectionTimeout: return "ConnectionTimeout";
+    return "Unsupported HTTP multipart boundary characters";
+  case Error::Compression: return "Compression failed";
+  case Error::ConnectionTimeout: return "Connection timed out";
   case Error::Unknown: return "Unknown";
   default: break;
   }
