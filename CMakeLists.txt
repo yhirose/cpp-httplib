@@ -8,6 +8,7 @@
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_COMPILE (default off)
+	* HTTPLIB_TEST (default off)
 	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
 	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
 
@@ -88,7 +89,7 @@ option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a c
 if(HTTPLIB_COMPILE)
 	set(HTTPLIB_IS_COMPILED TRUE)
 endif()
-
+option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
 # Defaults to static library
@@ -278,3 +279,8 @@ install(EXPORT httplibTargets
 	NAMESPACE ${PROJECT_NAME}::
 	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 )
+
+if(HTTPLIB_TEST)
+    include(CTest)
+    add_subdirectory(test)
+endif()
