@@ -3960,6 +3960,9 @@ public:
             if (std::regex_match(header, m, re_content_disposition)) {
               file_.name = m[1];
               file_.filename = m[2];
+            } else {
+              is_valid_ = false;
+              return false;
             }
           }
           buf_erase(pos + crlf_.size());

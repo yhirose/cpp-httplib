@@ -5344,6 +5344,49 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   t.join();
 }
 
+TEST(MultipartFormDataTest, BadHeader) {
+  Server svr;
+  svr.Post("/post", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  const std::string body =
+      "This is the preamble.  It is to be ignored, though it\r\n"
+      "is a handy place for composition agents to include an\r\n"
+      "explanatory note to non-MIME conformant readers.\r\n"
+      "\r\n"
+      "\r\n"
+      "--simple boundary\r\n"
+      "Content-Disposition: form-data; name=\"field1\"\r\n"
+      ": BAD...\r\n"
+      "\r\n"
+      "value1\r\n"
+      "--simple boundary\r\n"
+      "Content-Disposition: form-data; name=\"field2\"; "
+      "filename=\"example.txt\"\r\n"
+      "\r\n"
+      "value2\r\n"
+      "--simple boundary--\r\n"
+      "This is the epilogue.  It is also to be ignored.\r\n";
+
+  std::string content_type =
+      R"(multipart/form-data; boundary="simple boundary")";
+
+  Client cli(HOST, PORT);
+  auto res = cli.Post("/post", body, content_type.c_str());
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(400, res->status);
+
+  svr.stop();
+  t.join();
+}
+
 TEST(MultipartFormDataTest, WithPreamble) {
   Server svr;
   svr.Post("/post", [&](const Request & /*req*/, Response &res) {
