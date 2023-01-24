@@ -241,6 +241,11 @@ using socket_t = int;
 #endif
 #endif //_WIN32
 
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/Security.h>
+#endif
+
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/ssl.h>
@@ -4382,8 +4387,8 @@ inline std::string SHA_512(const std::string &s) {
 }
 #endif
 
-#ifdef _WIN32
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef _WIN32
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
 inline bool load_system_certs_on_windows(X509_STORE *store) {
@@ -4410,7 +4415,69 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
   return true;
 }
 #endif
+#ifdef __APPLE__
+using CFObjectDeleter = std::function<void(CFTypeRef)>;
+template <typename T> using CFObjectPtr = std::unique_ptr<T, CFObjectDeleter>;
 
+inline bool load_system_certs_on_apple(X509_STORE *store) {
+  CFStringRef keys[] = {kSecClass, kSecMatchLimit, kSecReturnRef};
+  CFTypeRef values[] = {kSecClassCertificate, kSecMatchLimitAll,
+                        kCFBooleanTrue};
+
+  auto deleter = [](CFTypeRef p) {
+    if (p) CFRelease(p);
+  };
+
+  CFObjectPtr<const __CFDictionary> query(
+      CFDictionaryCreate(nullptr, reinterpret_cast<const void **>(keys), values,
+                         sizeof(keys) / sizeof(keys[0]),
+                         &kCFTypeDictionaryKeyCallBacks,
+                         &kCFTypeDictionaryValueCallBacks),
+      deleter);
+
+  if (!query) { return false; }
+
+  CFTypeRef security_items = nullptr;
+  OSStatus err = SecItemCopyMatching(query.get(), &security_items);
+  CFObjectPtr<const __CFArray> security_items_ptr(
+      reinterpret_cast<CFArrayRef>(security_items), deleter);
+
+  if (err != errSecSuccess) { return false; }
+
+  if (CFArrayGetTypeID() != CFGetTypeID(security_items_ptr.get())) {
+    return false;
+  }
+
+  for (int i = 0; i < CFArrayGetCount(security_items_ptr.get()); ++i) {
+    const auto cert = reinterpret_cast<const __SecCertificate *>(
+        CFArrayGetValueAtIndex(security_items_ptr.get(), i));
+
+    if (SecCertificateGetTypeID() != CFGetTypeID(cert)) { continue; }
+
+    CFDataRef cert_data = nullptr;
+    err = SecItemExport(cert, kSecFormatX509Cert, 0, nullptr, &cert_data);
+    CFObjectPtr<const __CFData> cert_data_ptr(cert_data, deleter);
+
+    if (err != errSecSuccess) { continue; }
+
+    auto encoded_cert = static_cast<const unsigned char *>(
+        CFDataGetBytePtr(cert_data_ptr.get()));
+
+    auto x509 =
+        d2i_X509(NULL, &encoded_cert, CFDataGetLength(cert_data_ptr.get()));
+
+    if (x509) {
+      X509_STORE_add_cert(store, x509);
+      X509_free(x509);
+    }
+  }
+
+  return true;
+}
+#endif
+#endif
+
+#ifdef _WIN32
 class WSInit {
 public:
   WSInit() {
@@ -7834,10 +7901,12 @@ inline bool SSLClient::load_certs() {
         ret = false;
       }
     } else {
+      SSL_CTX_set_default_verify_paths(ctx_);
 #ifdef _WIN32
       detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
-#else
-      SSL_CTX_set_default_verify_paths(ctx_);
+#endif
+#ifdef __APPLE__
+      detail::load_system_certs_on_apple(SSL_CTX_get_cert_store(ctx_));
 #endif
     }
   });
