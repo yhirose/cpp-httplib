@@ -3761,7 +3761,7 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
 
   data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
-  while (data_available && !is_shutting_down()) {
+  while (data_available && !is_shutting_down() && strm.is_writable()) {
     if (!content_provider(offset, 0, data_sink)) {
       error = Error::Canceled;
       return false;
