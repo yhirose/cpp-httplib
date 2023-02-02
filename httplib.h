@@ -5596,7 +5596,7 @@ inline bool Server::listen_internal() {
 #if __cplusplus > 201703L
       task_queue->enqueue([=, this]() { process_and_close_socket(sock); });
 #else
-      task_queue->enqueue([=]() { process_and_close_socket(sock); });
+      task_queue->enqueue([this, sock]() { process_and_close_socket(sock); });
 #endif
     }
 
