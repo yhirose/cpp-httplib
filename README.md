@@ -493,6 +493,10 @@ auto res = cli.Get("/hi", headers);
 ```
 or
 ```c++
+auto res = cli.Get("/hi", {{"Accept-Encoding", "gzip, deflate"}});
+```
+or
+```c++
 cli.set_default_headers({
   { "Accept-Encoding", "gzip, deflate" }
 });
