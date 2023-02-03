@@ -3643,7 +3643,7 @@ inline bool write_content(Stream &strm, const ContentProvider &content_provider,
 
   data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
-  while (offset < end_offset && !is_shutting_down()) {
+  while (offset < end_offset && !is_shutting_down() && strm.is_writable()) {
     if (!content_provider(offset, end_offset - offset, data_sink)) {
       error = Error::Canceled;
       return false;
@@ -3689,7 +3689,7 @@ write_content_without_length(Stream &strm,
 
   data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
 
-  while (data_available && !is_shutting_down()) {
+  while (data_available && !is_shutting_down() && strm.is_writable()) {
     if (!content_provider(offset, 0, data_sink)) { return false; }
     if (!ok) { return false; }
   }
