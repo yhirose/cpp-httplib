@@ -340,7 +340,6 @@ public:
 
   std::function<bool(const char *data, size_t data_len)> write;
   std::function<void()> done;
-  std::function<bool()> is_writable;
   std::ostream os;
 
 private:
@@ -3632,7 +3631,7 @@ inline bool write_content(Stream &strm, const ContentProvider &content_provider,
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
     if (ok) {
-      if (write_data(strm, d, l)) {
+      if (strm.is_writable() && write_data(strm, d, l)) {
         offset += l;
       } else {
         ok = false;
@@ -3641,14 +3640,14 @@ inline bool write_content(Stream &strm, const ContentProvider &content_provider,
     return ok;
   };
 
-  data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
-
   while (offset < end_offset && !is_shutting_down()) {
-    if (!content_provider(offset, end_offset - offset, data_sink)) {
+    if (!strm.is_writable()) {
+      error = Error::Write;
+      return false;
+    } else if (!content_provider(offset, end_offset - offset, data_sink)) {
       error = Error::Canceled;
       return false;
-    }
-    if (!ok) {
+    } else if (!ok) {
       error = Error::Write;
       return false;
     }
@@ -3680,18 +3679,21 @@ write_content_without_length(Stream &strm,
   data_sink.write = [&](const char *d, size_t l) -> bool {
     if (ok) {
       offset += l;
-      if (!write_data(strm, d, l)) { ok = false; }
+      if (!strm.is_writable() || !write_data(strm, d, l)) { ok = false; }
     }
     return ok;
   };
 
   data_sink.done = [&](void) { data_available = false; };
 
-  data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
-
   while (data_available && !is_shutting_down()) {
-    if (!content_provider(offset, 0, data_sink)) { return false; }
-    if (!ok) { return false; }
+    if (!strm.is_writable()) {
+      return false;
+    } else if (!content_provider(offset, 0, data_sink)) {
+      return false;
+    } else if (!ok) {
+      return false;
+    }
   }
   return true;
 }
@@ -3720,7 +3722,10 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
           // Emit chunked response header and footer for each chunk
           auto chunk =
               from_i_to_hex(payload.size()) + "\r\n" + payload + "\r\n";
-          if (!write_data(strm, chunk.data(), chunk.size())) { ok = false; }
+          if (!strm.is_writable() ||
+              !write_data(strm, chunk.data(), chunk.size())) {
+            ok = false;
+          }
         }
       } else {
         ok = false;
@@ -3759,14 +3764,14 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
     }
   };
 
-  data_sink.is_writable = [&](void) { return ok && strm.is_writable(); };
-
   while (data_available && !is_shutting_down()) {
-    if (!content_provider(offset, 0, data_sink)) {
+    if (!strm.is_writable()) {
+      error = Error::Write;
+      return false;
+    } else if (!content_provider(offset, 0, data_sink)) {
       error = Error::Canceled;
       return false;
-    }
-    if (!ok) {
+    } else if (!ok) {
       error = Error::Write;
       return false;
     }
@@ -6544,8 +6549,6 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
         return ok;
       };
 
-      data_sink.is_writable = [&](void) { return ok && true; };
-
       while (ok && offset < content_length) {
         if (!content_provider(offset, content_length - offset, data_sink)) {
           error = Error::Canceled;
@@ -6717,7 +6720,6 @@ inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
       bool has_data = true;
       cur_sink.write = sink.write;
       cur_sink.done = [&]() { has_data = false; };
-      cur_sink.is_writable = sink.is_writable;
 
       if (!provider_items[cur_item].provider(offset - cur_start, cur_sink))
         return false;

@@ -19,7 +19,7 @@ public:
     unique_lock<mutex> lk(m_);
     int id = id_;
     cv_.wait(lk, [&] { return cid_ == id; });
-    if (sink->is_writable()) { sink->write(message_.data(), message_.size()); }
+    sink->write(message_.data(), message_.size());
   }
 
   void send_event(const string &message) {

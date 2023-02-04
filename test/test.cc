@@ -1650,7 +1650,6 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_chunked_content_provider(
                    "text/plain", [](size_t /*offset*/, DataSink &sink) {
-                     EXPECT_TRUE(sink.is_writable());
                      sink.os << "123";
                      sink.os << "456";
                      sink.os << "789";
@@ -1664,7 +1663,6 @@ protected:
                res.set_chunked_content_provider(
                    "text/plain",
                    [i](size_t /*offset*/, DataSink &sink) {
-                     EXPECT_TRUE(sink.is_writable());
                      switch (*i) {
                      case 0: sink.os << "123"; break;
                      case 1: sink.os << "456"; break;
@@ -1694,7 +1692,6 @@ protected:
                res.set_content_provider(
                    data->size(), "text/plain",
                    [data](size_t offset, size_t length, DataSink &sink) {
-                     EXPECT_TRUE(sink.is_writable());
                      size_t DATA_CHUNK_SIZE = 4;
                      const auto &d = *data;
                      auto out_len =
@@ -1714,8 +1711,6 @@ protected:
                res.set_content_provider(
                    size_t(-1), "text/plain",
                    [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-                     if (!sink.is_writable()) return false;
-
                      sink.os << "data_chunk";
                      return true;
                    });
@@ -2952,7 +2947,6 @@ TEST_F(ServerTest, PutWithContentProvider) {
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
         sink.os << "PUT";
         return true;
       },
@@ -2979,7 +2973,6 @@ TEST_F(ServerTest, PutWithContentProviderWithoutLength) {
   auto res = cli_.Put(
       "/put",
       [](size_t /*offset*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
         sink.os << "PUT";
         sink.done();
         return true;
@@ -3006,7 +2999,6 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
   auto res = cli_.Put(
       "/put", 3,
       [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
         sink.os << "PUT";
         return true;
       },
@@ -3035,7 +3027,6 @@ TEST_F(ServerTest, PutWithContentProviderWithoutLengthWithGzip) {
   auto res = cli_.Put(
       "/put",
       [](size_t /*offset*/, DataSink &sink) {
-        EXPECT_TRUE(sink.is_writable());
         sink.os << "PUT";
         sink.done();
         return true;
