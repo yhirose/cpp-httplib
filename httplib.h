@@ -4414,8 +4414,7 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
 
   return true;
 }
-#endif
-#ifdef __APPLE__
+#elif defined(__APPLE__)
 using CFObjectDeleter = std::function<void(CFTypeRef)>;
 template <typename T> using CFObjectPtr = std::unique_ptr<T, CFObjectDeleter>;
 
@@ -7904,8 +7903,7 @@ inline bool SSLClient::load_certs() {
       SSL_CTX_set_default_verify_paths(ctx_);
 #ifdef _WIN32
       detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
-#endif
-#ifdef __APPLE__
+#elif defined(__APPLE__)
       detail::load_system_certs_on_apple(SSL_CTX_get_cert_store(ctx_));
 #endif
     }

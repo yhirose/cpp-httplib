@@ -58,6 +58,10 @@ if brotli_found_all
   args += '-DCPPHTTPLIB_BROTLI_SUPPORT'
 endif
 
+if host_machine.system() == 'darwin'
+  deps += dependency('appleframeworks', modules: ['CoreFoundation', 'Security'])
+endif
+
 cpp_httplib_dep = dependency('', required: false)
 
 if get_option('cpp-httplib_compile')

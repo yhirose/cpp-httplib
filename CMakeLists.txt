@@ -207,7 +207,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<PLATFORM_ID:Windows>:crypt32>
 		$<$<PLATFORM_ID:Windows>:cryptui>
 		# Needed for API from MacOS Security framework
-		$<$<PLATFORM_ID:Darwin>:"-framework CoreFoundation -framework Security">
+		$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>>:"-framework CoreFoundation -framework Security">
 		# Can't put multiple targets in a single generator expression or it bugs out.
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::common>
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::encoder>
