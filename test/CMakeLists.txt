@@ -7,11 +7,14 @@ set(BUILD_GMOCK OFF)
 set(INSTALL_GTEST OFF)
 set(gtest_force_shared_crt ON)
 
-FetchContent_Declare(
-    gtest
-    URL https://github.com/google/googletest/archive/main.tar.gz
-)
-FetchContent_MakeAvailable(gtest)
+find_package(GTest)
+if (NOT GTest_FOUND)
+    FetchContent_Declare(
+        gtest
+        URL https://github.com/google/googletest/archive/main.tar.gz
+    )
+    FetchContent_MakeAvailable(gtest)
+endif()
 
 add_executable(httplib-test test.cc)
 target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
