@@ -1,14 +1,16 @@
-cmake_policy(SET CMP0135 NEW)
-
-include(FetchContent)
-include(GoogleTest)
-
-set(BUILD_GMOCK OFF)
-set(INSTALL_GTEST OFF)
-set(gtest_force_shared_crt ON)
-
 find_package(GTest)
-if (NOT GTest_FOUND)
+
+if(NOT GTest_FOUND)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+
+    include(FetchContent)
+
+    set(BUILD_GMOCK OFF)
+    set(INSTALL_GTEST OFF)
+    set(gtest_force_shared_crt ON)
+
     FetchContent_Declare(
         gtest
         URL https://github.com/google/googletest/archive/main.tar.gz
