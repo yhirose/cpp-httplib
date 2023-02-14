@@ -239,12 +239,10 @@ using socket_t = int;
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "cryptui.lib")
 #endif
-#endif //_WIN32
-
-#ifdef __APPLE__
+#elif defined(__APPLE__) // _WIN32
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
-#endif
+#endif // __APPLE__
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -4415,8 +4413,8 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
   return true;
 }
 #elif defined(__APPLE__)
-using CFObjectDeleter = std::function<void(CFTypeRef)>;
-template <typename T> using CFObjectPtr = std::unique_ptr<T, CFObjectDeleter>;
+template <typename T>
+using CFObjectPtr = std::unique_ptr<T, void (*)(CFTypeRef)>;
 
 inline bool load_system_certs_on_apple(X509_STORE *store) {
   CFStringRef keys[] = {kSecClass, kSecMatchLimit, kSecReturnRef};
