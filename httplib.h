@@ -7898,12 +7898,14 @@ inline bool SSLClient::load_certs() {
         ret = false;
       }
     } else {
-      SSL_CTX_set_default_verify_paths(ctx_);
+      bool loaded = false;
 #ifdef _WIN32
-      detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
+      loaded =
+          detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
 #elif defined(__APPLE__)
-      detail::load_system_certs_on_apple(SSL_CTX_get_cert_store(ctx_));
+      loaded = detail::load_system_certs_on_apple(SSL_CTX_get_cert_store(ctx_));
 #endif
+      if (!loaded) { SSL_CTX_set_default_verify_paths(ctx_); }
     }
   });
 
