@@ -4414,30 +4414,31 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
 }
 #elif defined(__APPLE__)
 template <typename T>
-using CFObjectPtr = std::unique_ptr<T, void (*)(CFTypeRef)>;
+using CFObjectPtr =
+    std::unique_ptr<typename std::remove_pointer<T>::type, void (*)(CFTypeRef)>;
 
-inline bool load_system_certs_on_apple(X509_STORE *store) {
+inline void cf_object_ptr_deleter(CFTypeRef obj) {
+  if (obj) { CFRelease(obj); }
+}
+
+inline bool retrieve_certs_from_keychain(CFObjectPtr<CFArrayRef> &certs) {
   CFStringRef keys[] = {kSecClass, kSecMatchLimit, kSecReturnRef};
   CFTypeRef values[] = {kSecClassCertificate, kSecMatchLimitAll,
                         kCFBooleanTrue};
-
-  auto deleter = [](CFTypeRef p) {
-    if (p) CFRelease(p);
-  };
 
   CFObjectPtr<const __CFDictionary> query(
       CFDictionaryCreate(nullptr, reinterpret_cast<const void **>(keys), values,
                          sizeof(keys) / sizeof(keys[0]),
                          &kCFTypeDictionaryKeyCallBacks,
                          &kCFTypeDictionaryValueCallBacks),
-      deleter);
+      cf_object_ptr_deleter);
 
   if (!query) { return false; }
 
   CFTypeRef security_items = nullptr;
   OSStatus err = SecItemCopyMatching(query.get(), &security_items);
-  CFObjectPtr<const __CFArray> security_items_ptr(
-      reinterpret_cast<CFArrayRef>(security_items), deleter);
+  CFObjectPtr<CFArrayRef> security_items_ptr(
+      reinterpret_cast<CFArrayRef>(security_items), cf_object_ptr_deleter);
 
   if (err != errSecSuccess) { return false; }
 
@@ -4445,15 +4446,33 @@ inline bool load_system_certs_on_apple(X509_STORE *store) {
     return false;
   }
 
-  for (int i = 0; i < CFArrayGetCount(security_items_ptr.get()); ++i) {
+  certs = std::move(security_items_ptr);
+  return true;
+}
+
+inline bool retrieve_root_certs_from_keychain(CFObjectPtr<CFArrayRef> &certs) {
+  CFArrayRef root_security_items = nullptr;
+  OSStatus err = SecTrustCopyAnchorCertificates(&root_security_items);
+  CFObjectPtr<CFArrayRef> root_security_items_ptr(root_security_items,
+                                                  cf_object_ptr_deleter);
+
+  if (err != errSecSuccess) { return false; }
+
+  certs = std::move(root_security_items_ptr);
+  return true;
+}
+
+inline void add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
+  OSStatus err = errSecSuccess;
+  for (int i = 0; i < CFArrayGetCount(certs); ++i) {
     const auto cert = reinterpret_cast<const __SecCertificate *>(
-        CFArrayGetValueAtIndex(security_items_ptr.get(), i));
+        CFArrayGetValueAtIndex(certs, i));
 
     if (SecCertificateGetTypeID() != CFGetTypeID(cert)) { continue; }
 
     CFDataRef cert_data = nullptr;
     err = SecItemExport(cert, kSecFormatX509Cert, 0, nullptr, &cert_data);
-    CFObjectPtr<const __CFData> cert_data_ptr(cert_data, deleter);
+    CFObjectPtr<CFDataRef> cert_data_ptr(cert_data, cf_object_ptr_deleter);
 
     if (err != errSecSuccess) { continue; }
 
@@ -4468,6 +4487,16 @@ inline bool load_system_certs_on_apple(X509_STORE *store) {
       X509_free(x509);
     }
   }
+}
+
+inline bool load_system_certs_on_apple(X509_STORE *store) {
+  CFObjectPtr<CFArrayRef> certs(nullptr, cf_object_ptr_deleter);
+  if (!retrieve_certs_from_keychain(certs) || !certs) { return false; }
+  add_certs_to_x509_store(certs.get(), store);
+
+  certs.reset();
+  if (!retrieve_root_certs_from_keychain(certs) || !certs) { return false; }
+  add_certs_to_x509_store(certs.get(), store);
 
   return true;
 }
