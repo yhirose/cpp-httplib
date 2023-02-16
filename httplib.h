@@ -4426,7 +4426,7 @@ inline bool retrieve_certs_from_keychain(CFObjectPtr<CFArrayRef> &certs) {
   CFTypeRef values[] = {kSecClassCertificate, kSecMatchLimitAll,
                         kCFBooleanTrue};
 
-  CFObjectPtr<const __CFDictionary> query(
+  CFObjectPtr<CFDictionaryRef> query(
       CFDictionaryCreate(nullptr, reinterpret_cast<const void **>(keys), values,
                          sizeof(keys) / sizeof(keys[0]),
                          &kCFTypeDictionaryKeyCallBacks,
