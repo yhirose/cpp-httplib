@@ -34,6 +34,9 @@ openssl_dep = dependency('openssl', version: '>=1.1.1', required: get_option('cp
 if openssl_dep.found()
   deps += openssl_dep
   args += '-DCPPHTTPLIB_OPENSSL_SUPPORT'
+  if host_machine.system() == 'darwin'
+    deps += dependency('appleframeworks', modules: ['CoreFoundation', 'Security'])
+  endif
 endif
 
 zlib_dep = dependency('zlib', required: get_option('cpp-httplib_zlib'))
