@@ -1767,6 +1767,40 @@ protected:
                   EXPECT_EQ("application/json  tmp-string", file.content_type);
                 }
               })
+        .Post("/multipart/multi_file_values",
+          [&](const Request &req, Response & /*res*/) {
+              EXPECT_EQ(5u, req.files.size());
+              ASSERT_TRUE(!req.has_file("???"));
+              ASSERT_TRUE(req.body.empty());
+
+              {
+                  const auto &text_value = req.get_file_values("text");
+                  EXPECT_EQ(text_value.size(), 1);
+                  auto &text = text_value[0];
+                  EXPECT_TRUE(text.filename.empty());
+                  EXPECT_EQ("defalut text", text.content);
+              }
+              {
+                const auto &text1_values = req.get_file_values("multi_text1");
+                EXPECT_EQ(text1_values.size(), 2);
+                EXPECT_EQ("aaaaa", text1_values[0].content);
+                EXPECT_EQ("bbbbb", text1_values[1].content);
+              }
+
+              {
+                const auto &file1_values = req.get_file_values("multi_file1");
+                EXPECT_EQ(file1_values.size(), 2);
+                auto file1 = file1_values[0];
+                EXPECT_EQ(file1.filename, "hello.txt");
+                EXPECT_EQ(file1.content_type, "text/plain");
+                EXPECT_EQ("h\ne\n\nl\nl\no\n", file1.content);
+
+                auto file2 = file1_values[1];
+                EXPECT_EQ(file2.filename, "world.json");
+                EXPECT_EQ(file2.content_type, "application/json");
+                EXPECT_EQ("{\n  \"world\", true\n}\n", file2.content);
+              }
+          })
         .Post("/empty",
               [&](const Request &req, Response &res) {
                 EXPECT_EQ(req.body, "");
@@ -2606,6 +2640,23 @@ TEST_F(ServerTest, MultipartFormData) {
       {"file4", "", "", "   application/json  tmp-string    "}};
 
   auto res = cli_.Post("/multipart", items);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, MultipartFormDataMultiFileValues) {
+  MultipartFormDataItems items = {
+    {"text", "defalut text", "", ""},
+
+    {"multi_text1", "aaaaa", "", ""},
+    {"multi_text1", "bbbbb", "", ""},
+
+    {"multi_file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+    {"multi_file1", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+  };
+
+  auto res = cli_.Post("/multipart/multi_file_values", items);
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);

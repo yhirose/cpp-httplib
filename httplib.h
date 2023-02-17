@@ -454,6 +454,7 @@ struct Request {
 
   bool has_file(const std::string &key) const;
   MultipartFormData get_file_value(const std::string &key) const;
+  std::vector<MultipartFormData> get_file_values(const std::string &key) const;
 
   // private members...
   size_t redirect_count_ = CPPHTTPLIB_REDIRECT_MAX_COUNT;
@@ -4688,6 +4689,15 @@ inline MultipartFormData Request::get_file_value(const std::string &key) const {
   auto it = files.find(key);
   if (it != files.end()) { return it->second; }
   return MultipartFormData();
+}
+
+inline std::vector<MultipartFormData> Request::get_file_values(const std::string &key) const {
+   std::vector<MultipartFormData> values;
+   auto rng = files.equal_range(key);
+   for (auto it = rng.first; it != rng.second; it++) {
+       values.push_back(it->second);
+   }
+   return values;
 }
 
 // Response implementation
