@@ -7928,7 +7928,7 @@ inline bool SSLClient::load_certs() {
         ret = false;
       }
     } else {
-      bool loaded = false;
+      auto loaded = false;
 #ifdef _WIN32
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
