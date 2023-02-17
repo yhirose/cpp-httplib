@@ -4391,9 +4391,9 @@ inline std::string SHA_512(const std::string &s) {
 // https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
 inline bool load_system_certs_on_windows(X509_STORE *store) {
   auto hStore = CertOpenSystemStoreW((HCRYPTPROV_LEGACY)NULL, L"ROOT");
-
   if (!hStore) { return false; }
 
+  auto result = false;
   PCCERT_CONTEXT pContext = NULL;
   while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
          nullptr) {
@@ -4404,13 +4404,14 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
     if (x509) {
       X509_STORE_add_cert(store, x509);
       X509_free(x509);
+      result = true;
     }
   }
 
   CertFreeCertificateContext(pContext);
   CertCloseStore(hStore, 0);
 
-  return true;
+  return result;
 }
 #elif defined(__APPLE__)
 template <typename T>
@@ -4436,34 +4437,27 @@ inline bool retrieve_certs_from_keychain(CFObjectPtr<CFArrayRef> &certs) {
   if (!query) { return false; }
 
   CFTypeRef security_items = nullptr;
-  OSStatus err = SecItemCopyMatching(query.get(), &security_items);
-  CFObjectPtr<CFArrayRef> security_items_ptr(
-      reinterpret_cast<CFArrayRef>(security_items), cf_object_ptr_deleter);
-
-  if (err != errSecSuccess) { return false; }
-
-  if (CFArrayGetTypeID() != CFGetTypeID(security_items_ptr.get())) {
+  if (SecItemCopyMatching(query.get(), &security_items) != errSecSuccess ||
+      CFArrayGetTypeID() != CFGetTypeID(security_items)) {
     return false;
   }
 
-  certs = std::move(security_items_ptr);
+  certs.reset(reinterpret_cast<CFArrayRef>(security_items));
   return true;
 }
 
 inline bool retrieve_root_certs_from_keychain(CFObjectPtr<CFArrayRef> &certs) {
   CFArrayRef root_security_items = nullptr;
-  OSStatus err = SecTrustCopyAnchorCertificates(&root_security_items);
-  CFObjectPtr<CFArrayRef> root_security_items_ptr(root_security_items,
-                                                  cf_object_ptr_deleter);
+  if (SecTrustCopyAnchorCertificates(&root_security_items) != errSecSuccess) {
+    return false;
+  }
 
-  if (err != errSecSuccess) { return false; }
-
-  certs = std::move(root_security_items_ptr);
+  certs.reset(root_security_items);
   return true;
 }
 
-inline void add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
-  OSStatus err = errSecSuccess;
+inline bool add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
+  auto result = false;
   for (int i = 0; i < CFArrayGetCount(certs); ++i) {
     const auto cert = reinterpret_cast<const __SecCertificate *>(
         CFArrayGetValueAtIndex(certs, i));
@@ -4471,10 +4465,12 @@ inline void add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
     if (SecCertificateGetTypeID() != CFGetTypeID(cert)) { continue; }
 
     CFDataRef cert_data = nullptr;
-    err = SecItemExport(cert, kSecFormatX509Cert, 0, nullptr, &cert_data);
-    CFObjectPtr<CFDataRef> cert_data_ptr(cert_data, cf_object_ptr_deleter);
+    if (SecItemExport(cert, kSecFormatX509Cert, 0, nullptr, &cert_data) !=
+        errSecSuccess) {
+      continue;
+    }
 
-    if (err != errSecSuccess) { continue; }
+    CFObjectPtr<CFDataRef> cert_data_ptr(cert_data, cf_object_ptr_deleter);
 
     auto encoded_cert = static_cast<const unsigned char *>(
         CFDataGetBytePtr(cert_data_ptr.get()));
@@ -4485,20 +4481,25 @@ inline void add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
     if (x509) {
       X509_STORE_add_cert(store, x509);
       X509_free(x509);
+      result = true;
     }
   }
+
+  return result;
 }
 
 inline bool load_system_certs_on_apple(X509_STORE *store) {
+  auto result = false;
   CFObjectPtr<CFArrayRef> certs(nullptr, cf_object_ptr_deleter);
-  if (!retrieve_certs_from_keychain(certs) || !certs) { return false; }
-  add_certs_to_x509_store(certs.get(), store);
+  if (retrieve_certs_from_keychain(certs) && certs) {
+    result = add_certs_to_x509_store(certs.get(), store);
+  }
 
-  certs.reset();
-  if (!retrieve_root_certs_from_keychain(certs) || !certs) { return false; }
-  add_certs_to_x509_store(certs.get(), store);
+  if (retrieve_root_certs_from_keychain(certs) && certs) {
+    result = add_certs_to_x509_store(certs.get(), store) || result;
+  }
 
-  return true;
+  return result;
 }
 #endif
 #endif
