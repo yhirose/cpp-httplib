@@ -559,6 +559,10 @@ public:
   void enqueue(std::function<void()> fn) override {
     {
       std::unique_lock<std::mutex> lock(mutex_);
+
+      // Don't allow enqueueing after shutdown
+      if (shutdown_) { return; }
+
       jobs_.push_back(std::move(fn));
     }
 
