@@ -5880,3 +5880,19 @@ TEST(TaskQueueTest, IncreaseAtomicInteger) {
   EXPECT_NO_THROW(task_queue->shutdown());
   EXPECT_EQ(number_of_task, count.load());
 }
+
+TEST(TaskQueueTest, NoEnqueueingAfterShutdown) {
+  std::unique_ptr<TaskQueue> task_queue{ new ThreadPool{CPPHTTPLIB_THREAD_POOL_COUNT} };
+  std::atomic_uint count{0};
+
+  for (unsigned int i = 0; i < 10000; i++) {
+    if (i != 0) {
+      task_queue->enqueue(
+        [&count] { count.fetch_add(1, std::memory_order_relaxed); });
+    } else {
+      task_queue->shutdown();
+    }
+  }
+
+  EXPECT_EQ(0, count.load());
+}
