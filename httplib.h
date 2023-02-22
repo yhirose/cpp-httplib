@@ -311,6 +311,34 @@ struct ci {
   }
 };
 
+// This is based on
+// "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4189".
+
+template <typename EF> struct scope_exit {
+  explicit scope_exit(EF &&f)
+      : exit_function(std::move(f)), execute_on_destruction{true} {}
+
+  scope_exit(scope_exit &&rhs)
+      : exit_function(std::move(rhs.exit_function)),
+        execute_on_destruction{rhs.execute_on_destruction} {
+    rhs.release();
+  }
+
+  ~scope_exit() {
+    if (execute_on_destruction) { this->exit_function(); }
+  }
+
+  void release() { this->execute_on_destruction = false; }
+
+private:
+  scope_exit(const scope_exit &) = delete;
+  void operator=(const scope_exit &) = delete;
+  scope_exit &operator=(scope_exit &&) = delete;
+
+  EF exit_function;
+  bool execute_on_destruction;
+};
+
 } // namespace detail
 
 using Headers = std::multimap<std::string, std::string, detail::ci>;
@@ -4785,13 +4813,14 @@ inline MultipartFormData Request::get_file_value(const std::string &key) const {
   return MultipartFormData();
 }
 
-inline std::vector<MultipartFormData> Request::get_file_values(const std::string &key) const {
-   std::vector<MultipartFormData> values;
-   auto rng = files.equal_range(key);
-   for (auto it = rng.first; it != rng.second; it++) {
-       values.push_back(it->second);
-   }
-   return values;
+inline std::vector<MultipartFormData>
+Request::get_file_values(const std::string &key) const {
+  std::vector<MultipartFormData> values;
+  auto rng = files.equal_range(key);
+  for (auto it = rng.first; it != rng.second; it++) {
+    values.push_back(it->second);
+  }
+  return values;
 }
 
 // Response implementation
@@ -6307,13 +6336,11 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
     }
   }
 
+  auto ret = false;
   auto close_connection = !keep_alive_;
-  auto ret = process_socket(socket_, [&](Stream &strm) {
-    return handle_request(strm, req, res, close_connection, error);
-  });
 
-  // Briefly lock mutex in order to mark that a request is no longer ongoing
-  {
+  auto se = detail::scope_exit<std::function<void (void)>>([&]() {
+    // Briefly lock mutex in order to mark that a request is no longer ongoing
     std::lock_guard<std::mutex> guard(socket_mutex_);
     socket_requests_in_flight_ -= 1;
     if (socket_requests_in_flight_ <= 0) {
@@ -6327,7 +6354,11 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
       shutdown_socket(socket_);
       close_socket(socket_);
     }
-  }
+  });
+
+  ret = process_socket(socket_, [&](Stream &strm) {
+    return handle_request(strm, req, res, close_connection, error);
+  });
 
   if (!ret) {
     if (error == Error::Success) { error = Error::Unknown; }
