@@ -6339,7 +6339,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   auto ret = false;
   auto close_connection = !keep_alive_;
 
-  auto se = detail::scope_exit([&]() {
+  auto se = detail::scope_exit<std::function<void (void)>>([&]() {
     // Briefly lock mutex in order to mark that a request is no longer ongoing
     std::lock_guard<std::mutex> guard(socket_mutex_);
     socket_requests_in_flight_ -= 1;
