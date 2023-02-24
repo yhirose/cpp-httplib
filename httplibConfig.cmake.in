@@ -42,8 +42,17 @@ set_and_check(HTTPLIB_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@")
 # This is helpful if you're using Cmake's pre-compiled header feature
 set_and_check(HTTPLIB_HEADER_PATH "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@/httplib.h")
 
-# Brings in the target library
-include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+# Consider each library support as a "component"
+set(httplib_OpenSSL_FOUND @HTTPLIB_IS_USING_OPENSSL@)
+set(httplib_ZLIB_FOUND @HTTPLIB_IS_USING_ZLIB@)
+set(httplib_Brotli_FOUND @HTTPLIB_IS_USING_BROTLI@)
+
+check_required_components(httplib)
+
+# Brings in the target library, but only if all required components are found
+if(NOT DEFINED httplib_FOUND OR httplib_FOUND)
+	include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
+endif()
 
 # Ouputs a "found httplib /usr/include/httplib.h" message when using find_package(httplib)
 include(FindPackageMessage)
