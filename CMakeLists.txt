@@ -14,8 +14,8 @@
 
 	-------------------------------------------------------------------------------
 
-	After installation with Cmake, a find_package(httplib) is available.
-	This creates a httplib::httplib target (if found).
+	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL ZLIB Brotli) is available.
+	This creates a httplib::httplib target (if found and if listed components are supported).
 	It can be linked like so:
 
 	target_link_libraries(your_exe httplib::httplib)
@@ -235,8 +235,6 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
 	INSTALL_DESTINATION "${_TARGET_INSTALL_CMAKEDIR}"
 	# Passes the includedir install path
 	PATH_VARS CMAKE_INSTALL_FULL_INCLUDEDIR
-	# There aren't any components, so don't use the macro
-	NO_CHECK_REQUIRED_COMPONENTS_MACRO
 )
 
 if(HTTPLIB_COMPILE)
