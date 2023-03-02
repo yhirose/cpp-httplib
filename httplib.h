@@ -5365,6 +5365,8 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
                                         bool need_apply_ranges) {
   assert(res.status != -1);
 
+  if (post_routing_handler_) { post_routing_handler_(req, res); }
+
   if (400 <= res.status && error_handler_ &&
       error_handler_(req, res) == HandlerResponse::Handled) {
     need_apply_ranges = true;
@@ -5397,8 +5399,6 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   if (!res.has_header("Accept-Ranges") && req.method == "HEAD") {
     res.set_header("Accept-Ranges", "bytes");
   }
-
-  if (post_routing_handler_) { post_routing_handler_(req, res); }
 
   // Response line and headers
   {
