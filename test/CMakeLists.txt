@@ -1,6 +1,12 @@
 find_package(GTest)
 
-if(NOT GTest_FOUND)
+if(GTest_FOUND OR GTEST_FOUND)
+    if(NOT TARGET GTest::gtest_main AND TARGET GTest::Main)
+	# CMake <3.20
+        add_library(GTest::gtest_main INTERFACE IMPORTED)
+        target_link_libraries(GTest::gtest_main INTERFACE GTest::Main)
+    endif()
+else()
     if(POLICY CMP0135)
         cmake_policy(SET CMP0135 NEW)
     endif()
