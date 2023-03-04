@@ -854,6 +854,9 @@ enum class Error {
   UnsupportedMultipartBoundaryChars,
   Compression,
   ConnectionTimeout,
+
+  // For internal use only
+  SSLPeerCouldBeClosed_,
 };
 
 std::string to_string(const Error error);
@@ -1126,8 +1129,6 @@ protected:
     bool is_open() const { return sock != INVALID_SOCKET; }
   };
 
-  Result send_(Request &&req);
-
   virtual bool create_and_connect_socket(Socket &socket, Error &error);
 
   // All of:
@@ -1228,6 +1229,9 @@ protected:
   Logger logger_;
 
 private:
+  bool send_(Request &req, Response &res, Error &error);
+  Result send_(Request &&req);
+
   socket_t create_client_socket(Error &error) const;
   bool read_response_line(Stream &strm, const Request &req, Response &res);
   bool write_request(Stream &strm, Request &req, bool close_connection,
@@ -6278,7 +6282,15 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
 inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+  auto ret = send_(req, res, error);
+  if (error == Error::SSLPeerCouldBeClosed_) {
+    assert(!ret);
+    ret = send_(req, res, error);
+  }
+  return ret;
+}
 
+inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
 
@@ -6289,13 +6301,6 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
     auto is_alive = false;
     if (socket_.is_open()) {
       is_alive = detail::is_socket_alive(socket_.sock);
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      if (is_ssl() && is_alive) {
-        char buf[1];
-        auto n = SSL_peek(socket_.ssl, buf, 1);
-        if (n <= 0) { is_alive = false; }
-      }
-#endif
       if (!is_alive) {
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there
@@ -6756,6 +6761,16 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                         Error &error) {
   // Send request
   if (!write_request(strm, req, close_connection, error)) { return false; }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  if (is_ssl()) {
+    char buf[1];
+    if (SSL_peek(socket_.ssl, buf, 1) == 0) {
+      error = Error::SSLPeerCouldBeClosed_;
+      return false;
+    }
+  }
+#endif
 
   // Receive response and headers
   if (!read_response_line(strm, req, res) ||

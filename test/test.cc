@@ -4114,15 +4114,23 @@ TEST(KeepAliveTest, SSLClientReconnection) {
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
 
+  result = cli.Get("/hi");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
   std::this_thread::sleep_for(std::chrono::seconds(2));
 
+  // Recoonect
   result = cli.Get("/hi");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  result = cli.Get("/hi");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
 
   svr.stop();
   f.wait();
-
-  ASSERT_TRUE(result);
-  EXPECT_EQ(200, result->status);
 }
 #endif
 
