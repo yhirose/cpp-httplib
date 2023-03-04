@@ -6289,6 +6289,13 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
     auto is_alive = false;
     if (socket_.is_open()) {
       is_alive = detail::is_socket_alive(socket_.sock);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+      if (is_ssl() && is_alive) {
+        char buf[1];
+        auto n = SSL_peek(socket_.ssl, buf, 1);
+        if (n <= 0) { is_alive = false; }
+      }
+#endif
       if (!is_alive) {
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there
@@ -6339,7 +6346,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   auto ret = false;
   auto close_connection = !keep_alive_;
 
-  auto se = detail::scope_exit<std::function<void (void)>>([&]() {
+  auto se = detail::scope_exit<std::function<void(void)>>([&]() {
     // Briefly lock mutex in order to mark that a request is no longer ongoing
     std::lock_guard<std::mutex> guard(socket_mutex_);
     socket_requests_in_flight_ -= 1;

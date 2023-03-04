@@ -3871,6 +3871,32 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   ASSERT_FALSE(svr.is_running());
 }
 
+TEST(ServerStopTest, ClientAccessAfterServerDown) {
+  httplib::Server svr;
+  svr.Post("/hi", [&](const httplib::Request & /*req*/, httplib::Response &res) {
+    res.status = 200;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  Client cli(HOST, PORT);
+
+  auto res = cli.Post("/hi", "data", "text/plain");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+
+  res = cli.Post("/hi", "data", "text/plain");
+  ASSERT_FALSE(res);
+}
+
 TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
 
@@ -4066,6 +4092,39 @@ TEST(KeepAliveTest, Issue1041) {
   svr.stop();
   f.wait();
 }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(KeepAliveTest, SSLClientReconnection) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(1);
+
+  svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+
+  auto result = cli.Get("/hi");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
+  result = cli.Get("/hi");
+
+  svr.stop();
+  f.wait();
+
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+}
+#endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
   Server svr;
