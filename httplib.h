@@ -6309,7 +6309,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
       if (is_ssl()) {
         auto &scli = static_cast<SSLClient &>(*this);
         if (!proxy_host_.empty() && proxy_port_ != -1) {
-          bool success = false;
+          auto success = false;
           if (!scli.connect_with_proxy(socket_, res, success, error)) {
             return success;
           }
@@ -7789,7 +7789,7 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
       },
       [](SSL * /*ssl2*/) { return true; });
 
-  bool ret = false;
+  auto ret = false;
   if (ssl) {
     ret = detail::process_server_socket_ssl(
         svr_sock_, ssl, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
