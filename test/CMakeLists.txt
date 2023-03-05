@@ -1,6 +1,6 @@
 find_package(GTest)
 
-if(GTest_FOUND OR GTEST_FOUND)
+if(GTest_FOUND)
     if(NOT TARGET GTest::gtest_main AND TARGET GTest::Main)
 	# CMake <3.20
         add_library(GTest::gtest_main INTERFACE IMPORTED)
