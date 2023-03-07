@@ -1903,6 +1903,8 @@ void read_file(const std::string &path, std::string &out);
 
 std::string trim_copy(const std::string &s);
 
+std::string trim_double_quotes(const std::string &s);
+
 void split(const char *b, const char *e, char d,
            std::function<void(const char *, const char *)> fn);
 
@@ -1925,10 +1927,11 @@ std::string params_to_query_str(const Params &params);
 
 void parse_query_text(const std::string &s, Params &params);
 
-bool parse_multipart_boundary(const std::string &content_type,
-                              std::string &boundary);
+bool parse_multipart_boundary(const std::string &content_type, std::string &boundary);
 
 bool parse_range_header(const std::string &s, Ranges &ranges);
+
+std::string to_lower(const std::string &s);
 
 int close_socket(socket_t sock);
 
@@ -2354,6 +2357,13 @@ inline std::pair<size_t, size_t> trim(const char *b, const char *e, size_t left,
 inline std::string trim_copy(const std::string &s) {
   auto r = trim(s.data(), s.data() + s.size(), 0, s.size());
   return s.substr(r.first, r.second - r.first);
+}
+
+inline std::string trim_double_quotes(const std::string &s) {
+  if (s.length() >= 2 && s.front() == '"' && s.back() == '"') {
+    return s.substr(1, s.size() - 2);
+  }
+  return s;
 }
 
 inline void split(const char *b, const char *e, char d,
@@ -4062,11 +4072,7 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   if (pos == std::string::npos) { return false; }
   auto end = content_type.find(';', pos);
   auto beg = pos + strlen(boundary_keyword);
-  boundary = content_type.substr(beg, end - beg);
-  if (boundary.length() >= 2 && boundary.front() == '"' &&
-      boundary.back() == '"') {
-    boundary = boundary.substr(1, boundary.size() - 2);
-  }
+  boundary = trim_double_quotes(content_type.substr(beg, end - beg));
   return !boundary.empty();
 }
 
@@ -4116,8 +4122,8 @@ class MultipartFormDataParser {
 public:
   MultipartFormDataParser() = default;
 
-  void set_boundary(std::string &&boundary) {
-    boundary_ = boundary;
+  void set_boundary(std::string boundary) {
+    boundary_ = std::move(boundary);
     dash_boundary_crlf_ = dash_ + boundary_ + crlf_;
     crlf_dash_boundary_ = crlf_ + dash_ + boundary_;
   }
@@ -4126,11 +4132,6 @@ public:
 
   bool parse(const char *buf, size_t n, const ContentReceiver &content_callback,
              const MultipartContentHeader &header_callback) {
-
-    // TODO: support 'filename*'
-    static const std::regex re_content_disposition(
-        R"~(^Content-Disposition:\s*form-data;\s*name="(.*?)"(?:;\s*filename="(.*?)")?(?:;\s*filename\*=\S+)?\s*$)~",
-        std::regex_constants::icase);
 
     buf_append(buf, n);
 
@@ -4164,20 +4165,56 @@ public:
             break;
           }
 
-          static const std::string header_name = "content-type:";
-          const auto header = buf_head(pos);
-          if (start_with_case_ignore(header, header_name)) {
-            file_.content_type = trim_copy(header.substr(header_name.size()));
-          } else {
-            std::smatch m;
-            if (std::regex_match(header, m, re_content_disposition)) {
-              file_.name = m[1];
-              file_.filename = m[2];
-            } else {
+          static const std::string header_name_type = "content-type:";
+          static const std::string header_name_disposition = "content-disposition:";
+          auto header = buf_head(pos);
+          if (start_with_case_ignore(header, header_name_type)) {
+            file_.content_type = trim_copy(header.substr(header_name_type.size()));
+          } else if (start_with_case_ignore(header, header_name_disposition)) {
+            // Ignore the content disposition
+            auto attr_start = header.find(';');
+            if (attr_start == std::string::npos) {
               is_valid_ = false;
               return false;
             }
+            header.erase(0, attr_start + 1);
+            // Read attributes (name, filename, filename*) in any order
+            while (!header.empty()) {
+              auto attr_end = header.find(';');
+              const auto attr = header.substr(0, attr_end);
+              // Split the attribute at the equal sign
+              const auto attr_name_end = attr.find('=');
+              if (attr_name_end == std::string::npos) {
+                // An attribute without value is not well formatted
+                is_valid_ = false;
+                return false;
+              }
+              // The attribute's name is before the equal sign
+              auto attr_name = to_lower(trim_copy(attr.substr(0, attr_name_end)));
+              // The attribute's value is in double quotes after the equal sign
+              auto attr_value = trim_double_quotes(attr.substr(attr_name_end + 1));
+
+              if (attr_name == "name") {
+                file_.name = std::move(attr_value);
+              } else if (attr_name == "filename" && file_.filename.empty()) {
+                // filename has lower priority than filename* attribute
+                // therefore its value is stored only if file_.filename is empty
+                // and it could be overriden by filename* later
+                file_.filename = std::move(attr_value);
+              } else if (attr_name == "filename*") {
+                // If both filename* and filename are present,
+                // filename* overrides filename
+                file_.filename = std::move(attr_value);
+              }
+
+              // Erase the current attribute including the ';' if there is one
+              if (attr_end != std::string::npos) {
+                attr_end++;
+              }
+              header.erase(0, attr_end);
+            }
           }
+
           buf_erase(pos + crlf_.size());
           pos = buf_find(crlf_);
         }
@@ -4324,6 +4361,12 @@ private:
   size_t buf_spos_ = 0;
   size_t buf_epos_ = 0;
 };
+
+inline std::string to_lower(const std::string& s) {
+  std::string out = s;
+  std::transform(out.begin(), out.end(), out.begin(), ::tolower);
+  return out;
+}
 
 inline std::string to_lower(const char *beg, const char *end) {
   std::string out;
