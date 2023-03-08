@@ -11,7 +11,7 @@
 #include <vector>
 
 // Forward declare the "fuzz target" interface.
-// We deliberately keep this inteface simple and header-free.
+// We deliberately keep this interface simple and header-free.
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
 // It reads all files passed as parameters and feeds their contents

@@ -54,7 +54,7 @@ if(NOT DEFINED httplib_FOUND OR httplib_FOUND)
 	include("${CMAKE_CURRENT_LIST_DIR}/httplibTargets.cmake")
 endif()
 
-# Ouputs a "found httplib /usr/include/httplib.h" message when using find_package(httplib)
+# Outputs a "found httplib /usr/include/httplib.h" message when using find_package(httplib)
 include(FindPackageMessage)
 if(TARGET httplib::httplib)
 	set(HTTPLIB_FOUND TRUE)
