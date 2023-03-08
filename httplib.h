@@ -3888,10 +3888,12 @@ inline void parse_query_text(const std::string &s, Params &params) {
 
 inline bool parse_multipart_boundary(const std::string &content_type,
                                      std::string &boundary) {
-  auto pos = content_type.find("boundary=");
+  auto boundary_keyword = "boundary=";
+  auto pos = content_type.find(boundary_keyword);
   if (pos == std::string::npos) { return false; }
   auto end = content_type.find(';', pos);
-  boundary = content_type.substr(pos + 9, end - pos - 9);
+  auto beg = pos + strlen(boundary_keyword);
+  boundary = content_type.substr(beg, end - beg);
   if (boundary.length() >= 2 && boundary.front() == '"' &&
       boundary.back() == '"') {
     boundary = boundary.substr(1, boundary.size() - 2);
