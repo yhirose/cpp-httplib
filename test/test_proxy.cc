@@ -193,7 +193,7 @@ void DigestAuthTestFromHTTPWatch(T& cli) {
     }
 
     // NOTE: Until httpbin.org fixes issue #46, the following test is commented
-    // out. Plese see https://httpbin.org/digest-auth/auth/hello/world
+    // out. Please see https://httpbin.org/digest-auth/auth/hello/world
     // cli.set_digest_auth("bad", "world");
     // for (auto path : paths) {
     //   auto res = cli.Get(path.c_str());

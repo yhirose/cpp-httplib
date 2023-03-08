@@ -46,7 +46,7 @@ MultipartFormData &get_file_value(MultipartFormDataItems &files,
   return *it;
 #else
   if (it != files.end()) { return *it; }
-  throw std::runtime_error("invalid mulitpart form data name error");
+  throw std::runtime_error("invalid multipart form data name error");
 #endif
 }
 
@@ -779,7 +779,7 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
     }
 
     // NOTE: Until httpbin.org fixes issue #46, the following test is commented
-    // out. Plese see https://httpbin.org/digest-auth/auth/hello/world
+    // out. Please see https://httpbin.org/digest-auth/auth/hello/world
     // cli.set_digest_auth("bad", "world");
     // for (auto path : paths) {
     //   auto res = cli.Get(path.c_str());
@@ -1778,7 +1778,7 @@ protected:
                   EXPECT_EQ(text_value.size(), 1);
                   auto &text = text_value[0];
                   EXPECT_TRUE(text.filename.empty());
-                  EXPECT_EQ("defalut text", text.content);
+                  EXPECT_EQ("default text", text.content);
               }
               {
                 const auto &text1_values = req.get_file_values("multi_text1");
@@ -2647,7 +2647,7 @@ TEST_F(ServerTest, MultipartFormData) {
 
 TEST_F(ServerTest, MultipartFormDataMultiFileValues) {
   MultipartFormDataItems items = {
-    {"text", "defalut text", "", ""},
+    {"text", "default text", "", ""},
 
     {"multi_text1", "aaaaa", "", ""},
     {"multi_text1", "bbbbb", "", ""},
@@ -3185,7 +3185,7 @@ TEST(GzipDecompressor, ChunkedDecompression) {
   {
     httplib::detail::gzip_decompressor decompressor;
 
-    // Chunk size is chosen specificaly to have a decompressed chunk size equal
+    // Chunk size is chosen specifically to have a decompressed chunk size equal
     // to 16384 bytes 16384 bytes is the size of decompressor output buffer
     size_t chunk_size = 130;
     for (size_t chunk_begin = 0; chunk_begin < compressed_data.size();
@@ -3334,7 +3334,7 @@ TEST_F(ServerTest, PostContentReceiver) {
   ASSERT_EQ("content", res->body);
 }
 
-TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
+TEST_F(ServerTest, PostMultipartFileContentReceiver) {
   MultipartFormDataItems items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
@@ -3349,7 +3349,7 @@ TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
   EXPECT_EQ(200, res->status);
 }
 
-TEST_F(ServerTest, PostMulitpartPlusBoundary) {
+TEST_F(ServerTest, PostMultipartPlusBoundary) {
   MultipartFormDataItems items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
@@ -3765,10 +3765,10 @@ TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity2) {
       "&&&%%%");
 }
 
-TEST(ServerRequestParsingTest, ExcessiveWhitespaceInUnparseableHeaderLine) {
+TEST(ServerRequestParsingTest, ExcessiveWhitespaceInUnparsableHeaderLine) {
   // Make sure this doesn't crash the server.
   // In a previous version of the header line regex, the "\r" rendered the line
-  // unparseable and the regex engine repeatedly backtracked, trying to look for
+  // unparsable and the regex engine repeatedly backtracked, trying to look for
   // a new position where the leading white space ended and the field value
   // began.
   // The crash occurs with libc++ but not libstdc++.
