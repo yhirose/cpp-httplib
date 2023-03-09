@@ -169,6 +169,39 @@ TEST(ParamsToQueryTest, ConvertParamsToQuery) {
   EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1&key2=val2&key3=val3");
 }
 
+TEST(ParseMultipartBoundaryTest, DefaultValue) {
+  string content_type = "multipart/form-data; boundary=something";
+  string boundary;
+  auto ret = detail::parse_multipart_boundary(content_type, boundary);
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(boundary, "something");
+}
+
+TEST(ParseMultipartBoundaryTest, ValueWithQuote) {
+  string content_type = "multipart/form-data; boundary=\"gc0pJq0M:08jU534c0p\"";
+  string boundary;
+  auto ret = detail::parse_multipart_boundary(content_type, boundary);
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(boundary, "gc0pJq0M:08jU534c0p");
+}
+
+TEST(ParseMultipartBoundaryTest, ValueWithCharset) {
+  string content_type = "multipart/mixed; boundary=THIS_STRING_SEPARATES;charset=UTF-8";
+  string boundary;
+  auto ret = detail::parse_multipart_boundary(content_type, boundary);
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(boundary, "THIS_STRING_SEPARATES");
+}
+
+TEST(ParseMultipartBoundaryTest, ValueWithQuotesAndCharset) {
+  string content_type =
+      "multipart/mixed; boundary=\"cpp-httplib-multipart-data\"; charset=UTF-8";
+  string boundary;
+  auto ret = detail::parse_multipart_boundary(content_type, boundary);
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(boundary, "cpp-httplib-multipart-data");
+}
+
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
   auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
