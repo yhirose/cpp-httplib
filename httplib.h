@@ -1823,6 +1823,8 @@ std::string params_to_query_str(const Params &params);
 
 void parse_query_text(const std::string &s, Params &params);
 
+bool parse_multipart_boundary(const std::string &content_type, std::string &boundary);
+
 bool parse_range_header(const std::string &s, Ranges &ranges);
 
 int close_socket(socket_t sock);
