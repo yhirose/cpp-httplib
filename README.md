@@ -54,6 +54,7 @@ SSL Support
 SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
 
 NOTE: cpp-httplib currently supports only version 1.1.1 and 3.0.
+NOTE for macOS: cpp-httplib now uses system certs. `CoreFoundation` and `Security` should be linked with `-framework`.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
