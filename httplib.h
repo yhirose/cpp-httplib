@@ -2854,8 +2854,7 @@ inline socket_t create_client_socket(
 }
 
 inline bool get_ip_and_port(const struct sockaddr_storage &addr,
-                            socklen_t addr_len, std::string &ip,
-                            int &port) {
+                            socklen_t addr_len, std::string &ip, int &port) {
   if (addr.ss_family == AF_INET) {
     port = ntohs(reinterpret_cast<const struct sockaddr_in *>(&addr)->sin_port);
   } else if (addr.ss_family == AF_INET6) {
@@ -3355,7 +3354,8 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
   if (p < end) {
     std::string key(beg, key_end);
     std::string rawValue(p, end);
-    std::string value = key=="Location"?std::move(rawValue):decode_url(rawValue, false);
+    std::string value =
+        key == "Location" ? std::move(rawValue) : decode_url(rawValue, false);
     fn(std::move(key), std::move(value));
     return true;
   }
@@ -4539,8 +4539,8 @@ inline void hosted_at(const std::string &hostname,
         *reinterpret_cast<struct sockaddr_storage *>(rp->ai_addr);
     std::string ip;
     int dummy = -1;
-    if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage),
-                                ip, dummy)) {
+    if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage), ip,
+                                dummy)) {
       addrs.push_back(ip);
     }
   }
@@ -7446,7 +7446,7 @@ inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
 }
 
 inline void SSLSocketStream::get_local_ip_and_port(std::string &ip,
-                                                    int &port) const {
+                                                   int &port) const {
   detail::get_local_ip_and_port(sock_, ip, port);
 }
 
