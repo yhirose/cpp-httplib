@@ -5978,3 +5978,34 @@ TEST(TaskQueueTest, IncreaseAtomicInteger) {
   EXPECT_NO_THROW(task_queue->shutdown());
   EXPECT_EQ(number_of_task, count.load());
 }
+
+TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_redirect(R"(/hello?key=val%26key2%3Dval2)");
+  });
+
+  svr.Get("/hello", [](const Request &req, Response &res) {
+    res.set_content(req.get_param_value("key"), "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+    EXPECT_EQ("val&key2=val2", res->body);
+  }
+
+  svr.stop();
+  thread.join();
+  ASSERT_FALSE(svr.is_running());
+}
+
