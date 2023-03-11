@@ -186,7 +186,8 @@ TEST(ParseMultipartBoundaryTest, ValueWithQuote) {
 }
 
 TEST(ParseMultipartBoundaryTest, ValueWithCharset) {
-  string content_type = "multipart/mixed; boundary=THIS_STRING_SEPARATES;charset=UTF-8";
+  string content_type =
+      "multipart/mixed; boundary=THIS_STRING_SEPARATES;charset=UTF-8";
   string boundary;
   auto ret = detail::parse_multipart_boundary(content_type, boundary);
   EXPECT_TRUE(ret);
@@ -1710,6 +1711,30 @@ protected:
                      delete i;
                    });
              })
+        .Get("/streamed-chunked-with-trailer",
+             [&](const Request & /*req*/, Response &res) {
+               auto i = new int(0);
+               res.set_header("Trailer", "Dummy1, Dummy2");
+               res.set_chunked_content_provider(
+                   "text/plain",
+                   [i](size_t /*offset*/, DataSink &sink) {
+                     switch (*i) {
+                     case 0: sink.os << "123"; break;
+                     case 1: sink.os << "456"; break;
+                     case 2: sink.os << "789"; break;
+                     case 3: {
+                       sink.done_with_trailer(
+                           {{"Dummy1", "DummyVal1"}, {"Dummy2", "DummyVal2"}});
+                     } break;
+                     }
+                     (*i)++;
+                     return true;
+                   },
+                   [i](bool success) {
+                     EXPECT_TRUE(success);
+                     delete i;
+                   });
+             })
         .Get("/streamed",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
@@ -1801,39 +1826,39 @@ protected:
                 }
               })
         .Post("/multipart/multi_file_values",
-          [&](const Request &req, Response & /*res*/) {
-              EXPECT_EQ(5u, req.files.size());
-              ASSERT_TRUE(!req.has_file("???"));
-              ASSERT_TRUE(req.body.empty());
+              [&](const Request &req, Response & /*res*/) {
+                EXPECT_EQ(5u, req.files.size());
+                ASSERT_TRUE(!req.has_file("???"));
+                ASSERT_TRUE(req.body.empty());
 
-              {
+                {
                   const auto &text_value = req.get_file_values("text");
                   EXPECT_EQ(text_value.size(), 1);
                   auto &text = text_value[0];
                   EXPECT_TRUE(text.filename.empty());
                   EXPECT_EQ("default text", text.content);
-              }
-              {
-                const auto &text1_values = req.get_file_values("multi_text1");
-                EXPECT_EQ(text1_values.size(), 2);
-                EXPECT_EQ("aaaaa", text1_values[0].content);
-                EXPECT_EQ("bbbbb", text1_values[1].content);
-              }
+                }
+                {
+                  const auto &text1_values = req.get_file_values("multi_text1");
+                  EXPECT_EQ(text1_values.size(), 2);
+                  EXPECT_EQ("aaaaa", text1_values[0].content);
+                  EXPECT_EQ("bbbbb", text1_values[1].content);
+                }
 
-              {
-                const auto &file1_values = req.get_file_values("multi_file1");
-                EXPECT_EQ(file1_values.size(), 2);
-                auto file1 = file1_values[0];
-                EXPECT_EQ(file1.filename, "hello.txt");
-                EXPECT_EQ(file1.content_type, "text/plain");
-                EXPECT_EQ("h\ne\n\nl\nl\no\n", file1.content);
+                {
+                  const auto &file1_values = req.get_file_values("multi_file1");
+                  EXPECT_EQ(file1_values.size(), 2);
+                  auto file1 = file1_values[0];
+                  EXPECT_EQ(file1.filename, "hello.txt");
+                  EXPECT_EQ(file1.content_type, "text/plain");
+                  EXPECT_EQ("h\ne\n\nl\nl\no\n", file1.content);
 
-                auto file2 = file1_values[1];
-                EXPECT_EQ(file2.filename, "world.json");
-                EXPECT_EQ(file2.content_type, "application/json");
-                EXPECT_EQ("{\n  \"world\", true\n}\n", file2.content);
-              }
-          })
+                  auto file2 = file1_values[1];
+                  EXPECT_EQ(file2.filename, "world.json");
+                  EXPECT_EQ(file2.content_type, "application/json");
+                  EXPECT_EQ("{\n  \"world\", true\n}\n", file2.content);
+                }
+              })
         .Post("/empty",
               [&](const Request &req, Response &res) {
                 EXPECT_EQ(req.body, "");
@@ -2680,13 +2705,14 @@ TEST_F(ServerTest, MultipartFormData) {
 
 TEST_F(ServerTest, MultipartFormDataMultiFileValues) {
   MultipartFormDataItems items = {
-    {"text", "default text", "", ""},
+      {"text", "default text", "", ""},
 
-    {"multi_text1", "aaaaa", "", ""},
-    {"multi_text1", "bbbbb", "", ""},
+      {"multi_text1", "aaaaa", "", ""},
+      {"multi_text1", "bbbbb", "", ""},
 
-    {"multi_file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
-    {"multi_file1", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"multi_file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+      {"multi_file1", "{\n  \"world\", true\n}\n", "world.json",
+       "application/json"},
   };
 
   auto res = cli_.Post("/multipart/multi_file_values", items);
@@ -2918,6 +2944,15 @@ TEST_F(ServerTest, GetStreamedChunked2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedChunkedWithTrailer) {
+  auto res = cli_.Get("/streamed-chunked-with-trailer");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+  EXPECT_EQ(std::string("DummyVal1"), res->get_header_value("Dummy1"));
+  EXPECT_EQ(std::string("DummyVal2"), res->get_header_value("Dummy2"));
 }
 
 TEST_F(ServerTest, LargeChunkedPost) {
@@ -3906,9 +3941,8 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
 
 TEST(ServerStopTest, ClientAccessAfterServerDown) {
   httplib::Server svr;
-  svr.Post("/hi", [&](const httplib::Request & /*req*/, httplib::Response &res) {
-    res.status = 200;
-  });
+  svr.Post("/hi", [&](const httplib::Request & /*req*/,
+                      httplib::Response &res) { res.status = 200; });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
 

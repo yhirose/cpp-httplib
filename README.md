@@ -347,6 +347,27 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 });
 ```
 
+With trailer:
+
+```cpp
+svr.Get("/chunked", [&](const Request& req, Response& res) {
+  res.set_header("Trailer", "Dummy1, Dummy2");
+  res.set_chunked_content_provider(
+    "text/plain",
+    [](size_t offset, DataSink &sink) {
+      sink.write("123", 3);
+      sink.write("345", 3);
+      sink.write("789", 3);
+      sink.done_with_trailer({
+        {"Dummy1", "DummyVal1"},
+        {"Dummy2", "DummyVal2"}
+      });
+      return true;
+    }
+  );
+});
+```
+
 ### 'Expect: 100-continue' handler
 
 By default, the server sends a `100 Continue` response for an `Expect: 100-continue` header.

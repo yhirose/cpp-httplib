@@ -371,6 +371,7 @@ public:
 
   std::function<bool(const char *data, size_t data_len)> write;
   std::function<void()> done;
+  std::function<void(const Headers &trailer)> done_with_trailer;
   std::ostream os;
 
 private:
@@ -3525,7 +3526,8 @@ inline bool read_content_without_length(Stream &strm,
   return true;
 }
 
-inline bool read_content_chunked(Stream &strm,
+template <typename T>
+inline bool read_content_chunked(Stream &strm, T &x,
                                  ContentReceiverWithProgress out) {
   const auto bufsiz = 16;
   char buf[bufsiz];
@@ -3551,15 +3553,29 @@ inline bool read_content_chunked(Stream &strm,
 
     if (!line_reader.getline()) { return false; }
 
-    if (strcmp(line_reader.ptr(), "\r\n")) { break; }
+    if (strcmp(line_reader.ptr(), "\r\n")) { return false; }
 
     if (!line_reader.getline()) { return false; }
   }
 
-  if (chunk_len == 0) {
-    // Reader terminator after chunks
-    if (!line_reader.getline() || strcmp(line_reader.ptr(), "\r\n"))
-      return false;
+  assert(chunk_len == 0);
+
+  // Trailer
+  if (!line_reader.getline()) { return false; }
+
+  while (strcmp(line_reader.ptr(), "\r\n")) {
+    if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
+
+    // Exclude line terminator
+    constexpr auto line_terminator_len = 2;
+    auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
+
+    parse_header(line_reader.ptr(), end,
+                 [&](std::string &&key, std::string &&val) {
+                   x.headers.emplace(std::move(key), std::move(val));
+                 });
+
+    if (!line_reader.getline()) { return false; }
   }
 
   return true;
@@ -3629,7 +3645,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
         auto exceed_payload_max_length = false;
 
         if (is_chunked_transfer_encoding(x.headers)) {
-          ret = read_content_chunked(strm, out);
+          ret = read_content_chunked(strm, x, out);
         } else if (!has_header(x.headers, "Content-Length")) {
           ret = read_content_without_length(strm, out);
         } else {
@@ -3785,7 +3801,7 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
     return ok;
   };
 
-  data_sink.done = [&](void) {
+  auto done_with_trailer = [&](const Headers *trailer) {
     if (!ok) { return; }
 
     data_available = false;
@@ -3803,16 +3819,36 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
     if (!payload.empty()) {
       // Emit chunked response header and footer for each chunk
       auto chunk = from_i_to_hex(payload.size()) + "\r\n" + payload + "\r\n";
-      if (!write_data(strm, chunk.data(), chunk.size())) {
+      if (!strm.is_writable() ||
+          !write_data(strm, chunk.data(), chunk.size())) {
         ok = false;
         return;
       }
     }
 
-    static const std::string done_marker("0\r\n\r\n");
+    static const std::string done_marker("0\r\n");
     if (!write_data(strm, done_marker.data(), done_marker.size())) {
       ok = false;
     }
+
+    // Trailer
+    if (trailer) {
+      for (const auto &kv : *trailer) {
+        std::string field_line = kv.first + ": " + kv.second + "\r\n";
+        if (!write_data(strm, field_line.data(), field_line.size())) {
+          ok = false;
+        }
+      }
+    }
+
+    static const std::string crlf("\r\n");
+    if (!write_data(strm, crlf.data(), crlf.size())) { ok = false; }
+  };
+
+  data_sink.done = [&](void) { done_with_trailer(nullptr); };
+
+  data_sink.done_with_trailer = [&](const Headers &trailer) {
+    done_with_trailer(&trailer);
   };
 
   while (data_available && !is_shutting_down()) {
