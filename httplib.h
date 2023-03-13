@@ -7269,8 +7269,8 @@ inline Result ClientImpl::Put(const std::string &path, const Params &params) {
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
                               const Params &params) {
-  auto query = detail::params_to_query_str(params);
-  return Put(path, headers, query, "application/x-www-form-urlencoded");
+  std::string path_with_query = append_query_params(path, params);
+  return Put(path_with_query, headers, std::string(), "application/x-www-form-urlencoded");
 }
 
 inline Result ClientImpl::Put(const std::string &path,
