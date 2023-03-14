@@ -8547,7 +8547,20 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl,
   // the remote has closed the network connection
   // Note that it is not always possible to avoid SIGPIPE, this is merely a
   // best-efforts.
-  if (shutdown_gracefully) { SSL_shutdown(ssl); }
+  if (shutdown_gracefully) {
+    auto is_peer_could_be_closed = false;
+    {
+      char buf[1];
+      if (SSL_peek(ssl, buf, 1) == 0 &&
+          SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN) {
+        is_peer_could_be_closed = true;
+      }
+    }
+
+    if (!is_peer_could_be_closed) {
+      SSL_shutdown(ssl);
+    }
+  }
 
   std::lock_guard<std::mutex> guard(ctx_mutex);
   SSL_free(ssl);

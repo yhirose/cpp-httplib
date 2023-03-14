@@ -4996,6 +4996,60 @@ TEST(KeepAliveTest, SSLClientReconnection) {
   ASSERT_TRUE(result);
   EXPECT_EQ(StatusCode::OK_200, result->status);
 }
+
+TEST(KeepAliveTest, SSLClientReconnectionPost) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(1);
+  std::string content = "reconnect";
+
+  svr.Post("/hi", [](const httplib::Request &, httplib::Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+
+  auto result = cli.Post(
+      "/hi", content.size(),
+      [&content](size_t offset, size_t length, DataSink &sink) {
+        sink.write(content.c_str(), content.size());
+        return true;
+      },
+      "text/plain");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
+  // Recoonect
+  result = cli.Post(
+      "/hi", content.size(),
+      [&content](size_t offset, size_t length, DataSink &sink) {
+        sink.write(content.c_str(), content.size());
+        return true;
+      },
+      "text/plain");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  result = cli.Post(
+      "/hi", content.size(),
+      [&content](size_t offset, size_t length, DataSink &sink) {
+        sink.write(content.c_str(), content.size());
+        return true;
+      },
+      "text/plain");
+  ASSERT_TRUE(result);
+  EXPECT_EQ(200, result->status);
+
+  svr.stop();
+  f.wait();
+}
 #endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
