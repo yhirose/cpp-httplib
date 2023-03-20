@@ -4616,7 +4616,7 @@ TEST(SSLClientTest, ServerNameIndication_Online) {
 }
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {
-  SSLClient cli("google.com");
+  Client cli("https://google.com");
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
