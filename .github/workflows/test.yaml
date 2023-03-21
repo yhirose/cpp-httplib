@@ -17,7 +17,7 @@ jobs:
         git config --global core.autocrlf false
         git config --global core.eol lf
     - name: checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
     - name: install brotli library on ubuntu
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt update && sudo apt-get install -y libbrotli-dev
