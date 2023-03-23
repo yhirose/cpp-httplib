@@ -32,7 +32,7 @@ jobs:
       run: cd test && make fuzz_test
     - name: setup msbuild on windows
       if: matrix.os == 'windows-latest'
-      uses: microsoft/setup-msbuild@v1.0.2
+      uses: microsoft/setup-msbuild@v1.1
     - name: make-windows
       if: matrix.os == 'windows-latest'
       run: |
