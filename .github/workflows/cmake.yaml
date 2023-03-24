@@ -1,0 +1,121 @@
+name: CMake
+
+on:
+  push:
+    paths: ["**/CMakeLists.txt"]
+  pull_request:
+    paths: ["**/CMakeLists.txt"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [linux-clang, linux-gcc, macos, windows]
+        config: [Debug, Release]
+        openssl: [ON, OFF]
+        brotli: [ON, OFF]
+        zlib: [ON, OFF]
+        include:
+          - preset: linux-clang
+            os: ubuntu-latest
+            generator: Ninja Multi-Config
+            cc: clang
+            cxx: clang++
+          - preset: linux-gcc
+            os: ubuntu-latest
+            generator: Ninja Multi-Config
+            cc: gcc
+            cxx: g++
+          - preset: macos
+            os: macos-latest
+            generator: Xcode
+          - preset: windows
+            os: windows-latest
+            generator: Visual Studio 17 2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Prepare git for checkout on Windows
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout cpp-httplib
+        uses: actions/checkout@v3
+      - name: Checkout brotli on Windows
+        if: runner.os == 'Windows' && matrix.brotli == 'ON'
+        uses: actions/checkout@v3
+        with:
+          repository: google/brotli
+          path: brotli
+      - name: Checkout zlib on Windows
+        if: runner.os == 'Windows' && matrix.zlib == 'ON'
+        uses: actions/checkout@v3
+        with:
+          repository: madler/zlib
+          path: zlib
+
+      - name: Install dependencies on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+      - name: Install dependencies on macOS
+        if: runner.os == 'macOS'
+        run: |
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
+          echo "ZLIB_ROOT=$(brew --prefix zlib)" >> $GITHUB_ENV
+      - name: Install dependencies on Windows (OpenSSL)
+        if: runner.os == 'Windows'
+        run: choco install -y openssl
+      - name: Install dependencies on Windows (brotli)
+        if: runner.os == 'Windows' && matrix.brotli == 'ON'
+        run: |
+          cmake -E rm -f brotli/build
+          cmake -S brotli -B brotli/build -G "${{ matrix.generator }}" -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install"
+          cmake --build brotli/build --target install --config ${{ matrix.config }}
+          cmake -E rename "${{ github.workspace }}/install/lib/brotlicommon.lib" "${{ github.workspace }}/install/lib/brotlicommon-static.lib"
+          cmake -E rename "${{ github.workspace }}/install/lib/brotlidec.lib" "${{ github.workspace }}/install/lib/brotlidec-static.lib"
+          cmake -E rename "${{ github.workspace }}/install/lib/brotlienc.lib" "${{ github.workspace }}/install/lib/brotlienc-static.lib"
+      - name: Install dependencies on Windows (zlib)
+        if: runner.os == 'Windows' && matrix.zlib == 'ON'
+        run: |
+          cmake -S zlib -B zlib/build -G "${{ matrix.generator }}" -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install"
+          cmake --build zlib/build --target install --config ${{ matrix.config }}
+          echo "ZLIB_ROOT=${{ github.workspace }}/install" >> $ENV:GITHUB_ENV
+
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build -G "${{ matrix.generator }}"
+          -DCMAKE_C_COMPILER="${{ matrix.cc }}"
+          -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}"
+          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install"
+          -DHTTPLIB_TEST=ON
+          -DHTTPLIB_USE_OPENSSL_IF_AVAILABLE=${{ matrix.openssl }}
+          -DHTTPLIB_USE_BROTLI_IF_AVAILABLE=${{ matrix.brotli }}
+          -DHTTPLIB_USE_ZLIB_IF_AVAILABLE=${{ matrix.zlib }}
+          -DHTTPLIB_REQUIRE_OPENSSL=${{ matrix.openssl }}
+          -DHTTPLIB_REQUIRE_BROTLI=${{ matrix.brotli }}
+          -DHTTPLIB_REQUIRE_ZLIB=${{ matrix.zlib }}
+          -DOPENSSL_USE_STATIC_LIBS=${{ runner.os == 'Windows' }}
+          -DBROTLI_USE_STATIC_LIBS=${{ runner.os == 'Windows' }}
+          -DZLIB_USE_STATIC_LIBS=${{ runner.os == 'Windows' }}
+          -DBROTLI_ROOT_DIR="${{ github.workspace }}/install"
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }}
+
+      - name: Test
+        id: test
+        working-directory: build
+        continue-on-error: true
+        run: ctest -C ${{ matrix.config }} --timeout 100 -E GzipDecompressor.LargeRandomData
+
+      - name: Rerun failed tests
+        if: steps.test.outcome == 'failure'
+        working-directory: build
+        run: ctest -C ${{ matrix.config }} --timeout 100 --rerun-failed --output-on-failure
+
+      - name: Install
+        run: cmake --install build --config ${{ matrix.config }}
