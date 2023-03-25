@@ -1022,7 +1022,7 @@ TEST(ReceiveSignals, Signal) {
 
   Server svr;
   int port = 0;
-  auto thread = std::thread([&]() {
+  auto thread = JoiningThread([&]() {
     setupSignalHandlers();
     port = svr.bind_to_any_port("localhost");
     svr.listen_after_bind();
@@ -1049,7 +1049,7 @@ TEST(RedirectToDifferentPort, Redirect) {
   });
 
   int svr1_port = 0;
-  auto thread1 = std::thread([&]() {
+  auto thread1 = JoiningThread([&]() {
     svr1_port = svr1.bind_to_any_port("localhost");
     svr1.listen_after_bind();
   });
@@ -1060,7 +1060,7 @@ TEST(RedirectToDifferentPort, Redirect) {
   });
 
   int svr2_port = 0;
-  auto thread2 = std::thread([&]() {
+  auto thread2 = JoiningThread([&]() {
     svr2_port = svr2.bind_to_any_port("localhost");
     svr2.listen_after_bind();
   });
@@ -1100,7 +1100,7 @@ TEST(RedirectFromPageWithContent, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = std::thread([&]() { svr.listen("localhost", PORT); });
+  auto th = JoiningThread([&]() { svr.listen("localhost", PORT); });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1160,7 +1160,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = std::thread([&]() { svr.listen("::1", 1234); });
+  auto th = JoiningThread([&]() { svr.listen("::1", 1234); });
 
   // When IPV6 support isn't available svr.listen("::1", 1234) never
   // actually starts anything, so the condition !svr.is_running() will
@@ -1223,7 +1223,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
     }
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1253,7 +1253,7 @@ TEST(BindServerTest, BindDualStack) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto thread = std::thread([&]() { svr.listen("::", PORT); });
+  auto thread = JoiningThread([&]() { svr.listen("::", PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1323,7 +1323,7 @@ TEST(ErrorHandlerTest, ContentLength) {
     res.status = 524;
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1364,7 +1364,7 @@ TEST(ExceptionHandlerTest, ContentLength) {
     throw std::runtime_error("abc");
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1404,7 +1404,7 @@ TEST(NoContentTest, ContentLength) {
 
   svr.Get("/hi",
           [](const Request & /*req*/, Response &res) { res.status = 204; });
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1454,7 +1454,7 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     res.set_content("Hello World!\n", "text/plain");
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1522,7 +1522,7 @@ TEST(InvalidFormatTest, StatusCode) {
     res.status = 9999; // Status should be a three-digit code...
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1546,7 +1546,7 @@ TEST(URLFragmentTest, WithFragment) {
     EXPECT_TRUE(req.target == "/hi");
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -2165,7 +2165,7 @@ protected:
   Server svr_;
 #endif
   thread t_;
-  std::vector<thread> request_threads_;
+  std::vector<JoiningThread> request_threads_;
 };
 
 TEST_F(ServerTest, GetMethod200) {
@@ -2879,15 +2879,15 @@ TEST_F(ServerTest, GetStreamedEndless) {
 }
 
 TEST_F(ServerTest, ClientStop) {
-  std::vector<std::thread> threads;
+  std::vector<JoiningThread> threads;
   for (auto i = 0; i < 3; i++) {
-    threads.emplace_back(thread([&]() {
+    threads.emplace_back([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
       ASSERT_TRUE(!res);
       EXPECT_TRUE(res.error() == Error::Canceled ||
                   res.error() == Error::Read || res.error() == Error::Write);
-    }));
+    });
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -3037,12 +3037,9 @@ TEST_F(ServerTest, HTTPResponseSplitting) {
 }
 
 TEST_F(ServerTest, SlowRequest) {
-  request_threads_.push_back(
-      std::thread([=]() { auto res = cli_.Get("/slow"); }));
-  request_threads_.push_back(
-      std::thread([=]() { auto res = cli_.Get("/slow"); }));
-  request_threads_.push_back(
-      std::thread([=]() { auto res = cli_.Get("/slow"); }));
+  request_threads_.emplace_back([=]() { auto res = cli_.Get("/slow"); });
+  request_threads_.emplace_back([=]() { auto res = cli_.Get("/slow"); });
+  request_threads_.emplace_back([=]() { auto res = cli_.Get("/slow"); });
 }
 
 #if 0
@@ -3940,7 +3937,8 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
     });
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -3948,7 +3946,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Client client(HOST, PORT);
   const Headers headers = {{"Accept", "text/event-stream"}};
 
-  auto get_thread = std::thread([&client, &headers]() {
+  auto get_thread = JoiningThread([&client, &headers]() {
     auto res = client.Get(
         "/events", headers,
         [](const char * /*data*/, size_t /*len*/) -> bool { return true; });
@@ -3970,7 +3968,7 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
   svr.Post("/hi", [&](const httplib::Request & /*req*/,
                       httplib::Response &res) { res.status = 200; });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -4004,14 +4002,15 @@ TEST(StreamingTest, NoContentLengthStreaming) {
     });
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   Client client(HOST, PORT);
 
-  auto get_thread = std::thread([&client]() {
+  auto get_thread = JoiningThread([&client]() {
     std::string s;
     auto res =
         client.Get("/stream", [&s](const char *data, size_t len) -> bool {
@@ -4035,7 +4034,8 @@ TEST(StreamingTest, NoContentLengthStreaming) {
 TEST(MountTest, Unmount) {
   Server svr;
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4088,7 +4088,8 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
     throw std::runtime_error("exception\r\n...");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4132,7 +4133,8 @@ TEST(KeepAliveTest, ReadTimeout) {
     res.set_content("b", "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4166,7 +4168,7 @@ TEST(KeepAliveTest, Issue1041) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  auto jt = JoiningThread([&svr] { svr.listen(HOST, PORT); });
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   Client cli(HOST, PORT);
@@ -4183,7 +4185,6 @@ TEST(KeepAliveTest, Issue1041) {
   EXPECT_EQ(200, result->status);
 
   svr.stop();
-  f.wait();
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4196,7 +4197,7 @@ TEST(KeepAliveTest, SSLClientReconnection) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  auto jt = JoiningThread([&svr] { svr.listen(HOST, PORT); });
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SSLClient cli(HOST, PORT);
@@ -4223,7 +4224,6 @@ TEST(KeepAliveTest, SSLClientReconnection) {
   EXPECT_EQ(200, result->status);
 
   svr.stop();
-  f.wait();
 }
 #endif
 
@@ -4244,7 +4244,8 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
         [](bool success) { ASSERT_FALSE(success); });
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4278,7 +4279,8 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
         });
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4319,7 +4321,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
     EXPECT_EQ("bar", req.get_param_value("param2"));
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  auto listen_thread = JoiningThread([&svr]() { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4369,7 +4371,8 @@ TEST(GetWithParametersTest, GetWithParameters2) {
     res.set_content(text, "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4424,7 +4427,8 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
     res.set_content("ok", "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4458,7 +4462,8 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
     res.set_content("b", "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5015,7 +5020,8 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
     res.set_content(req.body, "application/octet-stream");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread =
+      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5082,7 +5088,7 @@ TEST(ClientImplMethods, GetSocketTest) {
     res.status = 200;
   });
 
-  auto thread = std::thread([&]() { svr.listen("127.0.0.1", 3333); });
+  auto thread = JoiningThread([&]() { svr.listen("127.0.0.1", 3333); });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -5126,7 +5132,7 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
     resp.set_content(content, content_size, "application/octet-stream");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  auto listen_thread = JoiningThread([&svr]() { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5318,7 +5324,7 @@ TEST(MultipartFormDataTest, LargeData) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5465,7 +5471,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
     EXPECT_EQ(files[3].content_type, "");
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5664,7 +5670,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5750,7 +5756,7 @@ TEST(MultipartFormDataTest, PutFormData) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5814,7 +5820,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
             }
           });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5896,7 +5902,7 @@ TEST_F(UnixSocketTest, pathname) {
     res.set_content(content_, "text/plain");
   });
 
-  std::thread t{[&] {
+  JoiningThread t{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
   }};
   while (!svr.is_running()) {
@@ -5920,7 +5926,7 @@ TEST_F(UnixSocketTest, PeerPid) {
     remote_port_val = req.get_header_value("REMOTE_PORT");
   });
 
-  std::thread t{[&] {
+  JoiningThread t{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
   }};
   while (!svr.is_running()) {
@@ -5946,7 +5952,7 @@ TEST_F(UnixSocketTest, abstract) {
     res.set_content(content_, "text/plain");
   });
 
-  std::thread t{[&] {
+  JoiningThread t{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(abstract_addr, 80));
   }};
   while (!svr.is_running()) {
@@ -5989,7 +5995,7 @@ TEST(SocketStream, is_writable_INET) {
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
   int disconnected_svr_sock = -1;
-  std::thread svr{[&] {
+  JoiningThread svr{[&] {
     const int s = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_LE(0, s);
     ASSERT_EQ(0, ::bind(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
@@ -5999,7 +6005,7 @@ TEST(SocketStream, is_writable_INET) {
   }};
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  std::thread cli{[&] {
+  JoiningThread cli{[&] {
     const int s = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_LE(0, s);
     ASSERT_EQ(0, connect(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
@@ -6050,7 +6056,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     res.set_content(req.get_param_value("key"), "text/plain");
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -6068,4 +6074,3 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   thread.join();
   ASSERT_FALSE(svr.is_running());
 }
-
