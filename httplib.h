@@ -6824,7 +6824,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   if (!write_request(strm, req, close_connection, error)) { return false; }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  if (is_ssl()) {
+  if (is_ssl() && socket_.is_open()) {
     char buf[1];
     if (SSL_peek(socket_.ssl, buf, 1) == 0 &&
         SSL_get_error(socket_.ssl, 0) == SSL_ERROR_ZERO_RETURN) {
