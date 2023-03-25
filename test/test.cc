@@ -37,6 +37,32 @@ const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
 
+class JoiningThread {
+public:
+  JoiningThread() noexcept = default;
+  JoiningThread(const JoiningThread &) = delete;
+  JoiningThread(JoiningThread &&) noexcept = default;
+  JoiningThread &operator=(const JoiningThread &) = delete;
+  JoiningThread &operator=(JoiningThread &&) noexcept = default;
+
+  template <class Function, class... Args>
+  explicit JoiningThread(Function &&f, Args &&...args)
+      : thread_{std::forward<Function>(f), std::forward<Args>(args)...} {}
+
+  ~JoiningThread() {
+    if (thread_.joinable()) thread_.join();
+  }
+
+  bool joinable() const noexcept { return thread_.joinable(); }
+  void join() { thread_.join(); }
+  std::thread::native_handle_type native_handle() {
+    return thread_.native_handle();
+  }
+
+private:
+  std::thread thread_;
+};
+
 MultipartFormData &get_file_value(MultipartFormDataItems &files,
                                   const char *key) {
   auto it = std::find_if(
