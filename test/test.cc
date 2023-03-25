@@ -1030,8 +1030,10 @@ TEST(ReceiveSignals, Signal) {
   };
 
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
   int port = 0;
-  auto thread = JoiningThread([&]() {
+  listen_thread = JoiningThread([&]() {
     setupSignalHandlers();
     port = svr.bind_to_any_port("localhost");
     svr.listen_after_bind();
@@ -1042,34 +1044,39 @@ TEST(ReceiveSignals, Signal) {
   }
 
   ASSERT_TRUE(svr.is_running());
-  pthread_kill(thread.native_handle(), SIGINT);
+  pthread_kill(listen_thread.native_handle(), SIGINT);
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_TRUE(svr.is_running());
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 #endif
 
 TEST(RedirectToDifferentPort, Redirect) {
   Server svr1;
+  JoiningThread listen_thread1;
+  RAIIWrapper<Server> svr_wrapper1{svr1};
+
   svr1.Get("/1", [&](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!", "text/plain");
   });
 
   int svr1_port = 0;
-  auto thread1 = JoiningThread([&]() {
+  listen_thread1 = JoiningThread([&]() {
     svr1_port = svr1.bind_to_any_port("localhost");
     svr1.listen_after_bind();
   });
 
   Server svr2;
+  JoiningThread listen_thread2;
+  RAIIWrapper<Server> svr_wrapper2{svr2};
   svr2.Get("/2", [&](const Request & /*req*/, Response &res) {
     res.set_redirect("http://localhost:" + std::to_string(svr1_port) + "/1");
   });
 
   int svr2_port = 0;
-  auto thread2 = JoiningThread([&]() {
+  listen_thread2 = JoiningThread([&]() {
     svr2_port = svr2.bind_to_any_port("localhost");
     svr2.listen_after_bind();
   });
@@ -1091,14 +1098,16 @@ TEST(RedirectToDifferentPort, Redirect) {
 
   svr1.stop();
   svr2.stop();
-  thread1.join();
-  thread2.join();
+  listen_thread1.join();
+  listen_thread2.join();
   ASSERT_FALSE(svr1.is_running());
   ASSERT_FALSE(svr2.is_running());
 }
 
 TEST(RedirectFromPageWithContent, Redirect) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
     res.set_content("___", "text/plain");
@@ -1109,7 +1118,7 @@ TEST(RedirectFromPageWithContent, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = JoiningThread([&]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen("localhost", PORT); });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1148,12 +1157,14 @@ TEST(RedirectFromPageWithContent, Redirect) {
   }
 
   svr.stop();
-  th.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
 TEST(RedirectFromPageWithContentIP6, Redirect) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
     res.set_content("___", "text/plain");
@@ -1169,7 +1180,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = JoiningThread([&]() { svr.listen("::1", 1234); });
+  listen_thread = JoiningThread([&]() { svr.listen("::1", 1234); });
 
   // When IPV6 support isn't available svr.listen("::1", 1234) never
   // actually starts anything, so the condition !svr.is_running() will
@@ -1215,12 +1226,14 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
   }
 
   svr.stop();
-  th.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
 TEST(PathUrlEncodeTest, PathUrlEncode) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/foo", [](const Request &req, Response &res) {
     auto a = req.params.find("a");
@@ -1232,7 +1245,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
     }
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1251,18 +1264,20 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
 TEST(BindServerTest, BindDualStack) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto thread = JoiningThread([&]() { svr.listen("::", PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen("::", PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1284,7 +1299,7 @@ TEST(BindServerTest, BindDualStack) {
     EXPECT_EQ("Hello World!", res->body);
   }
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
@@ -1320,6 +1335,8 @@ TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
 
 TEST(ErrorHandlerTest, ContentLength) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.set_error_handler([](const Request & /*req*/, Response &res) {
     res.status = 200;
@@ -1332,7 +1349,7 @@ TEST(ErrorHandlerTest, ContentLength) {
     res.status = 524;
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1349,13 +1366,15 @@ TEST(ErrorHandlerTest, ContentLength) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionHandlerTest, ContentLength) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.set_exception_handler([](const Request & /*req*/, Response &res,
                                std::exception_ptr ep) {
@@ -1373,7 +1392,7 @@ TEST(ExceptionHandlerTest, ContentLength) {
     throw std::runtime_error("abc");
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1403,17 +1422,19 @@ TEST(ExceptionHandlerTest, ContentLength) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 #endif
 
 TEST(NoContentTest, ContentLength) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/hi",
           [](const Request & /*req*/, Response &res) { res.status = 204; });
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1428,7 +1449,7 @@ TEST(NoContentTest, ContentLength) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
@@ -1436,8 +1457,12 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
 #else
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 #endif
 
   svr.set_pre_routing_handler([](const Request &req, Response &res) {
@@ -1463,7 +1488,7 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     res.set_content("Hello World!\n", "text/plain");
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1519,19 +1544,21 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
 TEST(InvalidFormatTest, StatusCode) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!\n", "text/plain");
     res.status = 9999; // Status should be a three-digit code...
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1544,18 +1571,20 @@ TEST(InvalidFormatTest, StatusCode) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
 TEST(URLFragmentTest, WithFragment) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/hi", [](const Request &req, Response & /*res*/) {
     EXPECT_TRUE(req.target == "/hi");
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -1572,7 +1601,7 @@ TEST(URLFragmentTest, WithFragment) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
@@ -2147,7 +2176,8 @@ protected:
 
     persons_["john"] = "programmer";
 
-    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
+    listen_thread_ =
+        JoiningThread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
 
     while (!svr_.is_running()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -2159,10 +2189,11 @@ protected:
     if (!request_threads_.empty()) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
       for (auto &t : request_threads_) {
-        t.join();
+        if (t.joinable()) t.join();
       }
     }
-    t_.join();
+
+    if (listen_thread_.joinable()) listen_thread_.join();
   }
 
   map<string, string> persons_;
@@ -2173,7 +2204,7 @@ protected:
   Client cli_;
   Server svr_;
 #endif
-  thread t_;
+  JoiningThread listen_thread_;
   std::vector<JoiningThread> request_threads_;
 };
 
@@ -2903,9 +2934,6 @@ TEST_F(ServerTest, ClientStop) {
   while (cli_.is_socket_open()) {
     cli_.stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  for (auto &t : threads) {
-    t.join();
   }
 }
 
@@ -3765,13 +3793,16 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
 
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
   std::string header_value;
+
   svr.Get("/validate-ws-in-headers", [&](const Request &req, Response &res) {
     header_value = req.get_header_value("foo");
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&] { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -3785,7 +3816,7 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 
   ASSERT_TRUE(send_request(5, req));
   svr.stop();
-  t.join();
+  listen_thread.join();
   EXPECT_EQ(header_value, "\v bar \x1B");
 }
 
@@ -3793,6 +3824,9 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
 static void test_raw_request(const std::string &req,
                              std::string *out = nullptr) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Get("/hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
@@ -3806,14 +3840,15 @@ static void test_raw_request(const std::string &req,
   const time_t client_read_timeout_sec = 1;
   svr.set_read_timeout(std::chrono::seconds(client_read_timeout_sec + 1));
   bool listen_thread_ok = false;
-  thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
+  listen_thread =
+      JoiningThread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   ASSERT_TRUE(send_request(client_read_timeout_sec, req, out));
   svr.stop();
-  t.join();
+  listen_thread.join();
   EXPECT_TRUE(listen_thread_ok);
 }
 
@@ -3932,6 +3967,8 @@ TEST(ServerRequestParsingTest, InvalidSpaceInURL) {
 
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
+  JoiningThread get_thread, listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/events", [](const Request & /*req*/, Response &res) {
     res.set_header("Cache-Control", "no-cache");
@@ -3946,8 +3983,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
     });
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -3955,7 +3991,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Client client(HOST, PORT);
   const Headers headers = {{"Accept", "text/event-stream"}};
 
-  auto get_thread = JoiningThread([&client, &headers]() {
+  get_thread = JoiningThread([&client, &headers]() {
     auto res = client.Get(
         "/events", headers,
         [](const char * /*data*/, size_t /*len*/) -> bool { return true; });
@@ -3973,11 +4009,14 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
 }
 
 TEST(ServerStopTest, ClientAccessAfterServerDown) {
-  httplib::Server svr;
+  Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Post("/hi", [&](const httplib::Request & /*req*/,
                       httplib::Response &res) { res.status = 200; });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -3990,7 +4029,7 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
   EXPECT_EQ(200, res->status);
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 
   res = cli.Post("/hi", "data", "text/plain");
@@ -3999,6 +4038,8 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
 
 TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
+  JoiningThread get_thread, listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/stream", [](const Request & /*req*/, Response &res) {
     res.set_content_provider("text/plain", [](size_t offset, DataSink &sink) {
@@ -4011,15 +4052,14 @@ TEST(StreamingTest, NoContentLengthStreaming) {
     });
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   Client client(HOST, PORT);
 
-  auto get_thread = JoiningThread([&client]() {
+  get_thread = JoiningThread([&client]() {
     std::string s;
     auto res =
         client.Get("/stream", [&s](const char *data, size_t len) -> bool {
@@ -4042,9 +4082,10 @@ TEST(StreamingTest, NoContentLengthStreaming) {
 
 TEST(MountTest, Unmount) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4088,6 +4129,8 @@ TEST(MountTest, Unmount) {
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/exception", [&](const Request & /*req*/, Response & /*res*/) {
     throw std::runtime_error("exception...");
@@ -4097,8 +4140,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
     throw std::runtime_error("exception\r\n...");
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4132,6 +4174,8 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
 
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/a", [&](const Request & /*req*/, Response &res) {
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -4142,8 +4186,7 @@ TEST(KeepAliveTest, ReadTimeout) {
     res.set_content("b", "text/plain");
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4171,13 +4214,16 @@ TEST(KeepAliveTest, ReadTimeout) {
 
 TEST(KeepAliveTest, Issue1041) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.set_keep_alive_timeout(3);
 
   svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto jt = JoiningThread([&svr] { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&svr] { svr.listen(HOST, PORT); });
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   Client cli(HOST, PORT);
@@ -4194,11 +4240,15 @@ TEST(KeepAliveTest, Issue1041) {
   EXPECT_EQ(200, result->status);
 
   svr.stop();
+  listen_thread.join();
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, SSLClientReconnection) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
   svr.set_keep_alive_timeout(1);
 
@@ -4206,7 +4256,7 @@ TEST(KeepAliveTest, SSLClientReconnection) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto jt = JoiningThread([&svr] { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&svr] { svr.listen(HOST, PORT); });
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SSLClient cli(HOST, PORT);
@@ -4223,7 +4273,7 @@ TEST(KeepAliveTest, SSLClientReconnection) {
 
   std::this_thread::sleep_for(std::chrono::seconds(2));
 
-  // Recoonect
+  // Reconnect
   result = cli.Get("/hi");
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
@@ -4233,11 +4283,14 @@ TEST(KeepAliveTest, SSLClientReconnection) {
   EXPECT_EQ(200, result->status);
 
   svr.stop();
+  listen_thread.join();
 }
 #endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   size_t content_length = 1024 * 1024;
 
@@ -4253,8 +4306,7 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
         [](bool success) { ASSERT_FALSE(success); });
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4277,6 +4329,8 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
 
 TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.set_error_handler([](Request const &, Response &res) -> void {
     res.set_chunked_content_provider(
@@ -4288,8 +4342,7 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
         });
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4311,6 +4364,8 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
 
 TEST(GetWithParametersTest, GetWithParameters) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/", [&](const Request &req, Response &) {
     EXPECT_EQ("world", req.get_param_value("hello"));
@@ -4330,7 +4385,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
     EXPECT_EQ("bar", req.get_param_value("param2"));
   });
 
-  auto listen_thread = JoiningThread([&svr]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4374,14 +4429,15 @@ TEST(GetWithParametersTest, GetWithParameters) {
 
 TEST(GetWithParametersTest, GetWithParameters2) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/", [&](const Request &req, Response &res) {
     auto text = req.get_param_value("hello");
     res.set_content(text, "text/plain");
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4430,14 +4486,16 @@ TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
 
 TEST(ServerDefaultHeadersTest, DefaultHeaders) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.set_default_headers({{"Hello", "World"}});
 
   svr.Get("/", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4460,6 +4518,9 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, ReadTimeoutSSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/a", [&](const Request & /*req*/, Response &res) {
@@ -4471,8 +4532,7 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
     res.set_content("b", "text/plain");
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4681,6 +4741,9 @@ TEST(SSLClientTest, ServerCertificateVerification3_Online) {
 
 TEST(SSLClientTest, ServerCertificateVerification4) {
   SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &, Response &res) {
@@ -4689,7 +4752,8 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
     ASSERT_TRUE(true);
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  listen_thread =
+      JoiningThread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli("127.0.0.1", PORT);
@@ -4701,7 +4765,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
-  t.join();
+  listen_thread.join();
 }
 
 TEST(SSLClientTest, WildcardHostNameMatch_Online) {
@@ -4733,6 +4797,9 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
 TEST(SSLClientServerTest, ClientCertPresent) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
@@ -4759,7 +4826,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
     X509_free(peer_cert);
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  listen_thread = JoiningThread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4770,7 +4837,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
-  t.join();
+  listen_thread.join();
 }
 
 #if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
@@ -4805,6 +4872,9 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   fclose(f);
 
   SSLServer svr(server_cert, server_private_key, client_ca_cert_store);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
@@ -4831,7 +4901,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
     X509_free(peer_cert);
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  listen_thread = JoiningThread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, client_cert, client_private_key);
@@ -4847,18 +4917,21 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   X509_free(client_cert);
   EVP_PKEY_free(client_private_key);
 
-  t.join();
+  listen_thread.join();
 }
 #endif
 
 TEST(SSLClientServerTest, ClientCertMissing) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  listen_thread = JoiningThread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT);
@@ -4868,12 +4941,14 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   EXPECT_EQ(Error::SSLServerVerification, res.error());
 
   svr.stop();
-
-  t.join();
+  listen_thread.join();
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &, Response &res) {
@@ -4881,7 +4956,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
     svr.stop();
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  listen_thread = JoiningThread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4892,7 +4967,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
-  t.join();
+  listen_thread.join();
 }
 
 TEST(SSLClientServerTest, SSLConnectTimeout) {
@@ -4918,13 +4993,16 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   };
   NoListenSSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
                         CLIENT_CA_CERT_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<NoListenSSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  listen_thread = JoiningThread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4937,7 +5015,7 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
 
   svr.stop_ = true;
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
@@ -4968,7 +5046,11 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
         nullptr);
     return true;
   };
+
   SSLServer svr(setup_ssl_ctx_callback);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
@@ -4995,7 +5077,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
     X509_free(peer_cert);
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  listen_thread = JoiningThread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -5006,7 +5088,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
-  t.join();
+  listen_thread.join();
 }
 
 // Disabled due to the out-of-memory problem on GitHub Actions Workflows
@@ -5021,6 +5103,9 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
 
   // server
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
 
   svr.Post("/binary", [&](const Request &req, Response &res) {
@@ -5029,8 +5114,7 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
     res.set_content(req.body, "application/octet-stream");
   });
 
-  auto listen_thread =
-      JoiningThread([&svr]() { svr.listen("localhost", PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen("localhost", PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5092,12 +5176,15 @@ TEST(SendAPI, SimpleInterface_Online) {
 }
 
 TEST(ClientImplMethods, GetSocketTest) {
-  httplib::Server svr;
+  Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Get("/", [&](const httplib::Request & /*req*/, httplib::Response &res) {
     res.status = 200;
   });
 
-  auto thread = JoiningThread([&]() { svr.listen("127.0.0.1", 3333); });
+  listen_thread = JoiningThread([&]() { svr.listen("127.0.0.1", 3333); });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -5124,7 +5211,7 @@ TEST(ClientImplMethods, GetSocketTest) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
 
@@ -5137,11 +5224,14 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
   ASSERT_TRUE(content);
 
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Get("/foo", [=](const httplib::Request &req, httplib::Response &resp) {
     resp.set_content(content, content_size, "application/octet-stream");
   });
 
-  auto listen_thread = JoiningThread([&svr]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&svr]() { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5267,6 +5357,9 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface_Online) {
 
 TEST(HttpToHttpsRedirectTest, CertFile) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   ASSERT_TRUE(svr.is_valid());
   svr.Get("/index", [&](const Request &, Response &res) {
     res.set_redirect("https://127.0.0.1:1235/index");
@@ -5274,14 +5367,19 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   });
 
   SSLServer ssl_svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread ssl_listen_thread;
+  RAIIWrapper<SSLServer> ssl_svr_wrapper{ssl_svr};
+
   ASSERT_TRUE(ssl_svr.is_valid());
   ssl_svr.Get("/index", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
     ssl_svr.stop();
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
-  thread t2 = thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
+  listen_thread =
+      JoiningThread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  ssl_listen_thread =
+      JoiningThread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   Client cli("127.0.0.1", PORT);
@@ -5294,12 +5392,14 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
-  t.join();
-  t2.join();
+  ssl_listen_thread.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, LargeData) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
 
   svr.Post("/post", [&](const Request &req, Response & /*res*/,
                         const ContentReader &content_reader) {
@@ -5333,7 +5433,7 @@ TEST(MultipartFormDataTest, LargeData) {
     }
   });
 
-  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
+  listen_thread = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5358,7 +5458,7 @@ TEST(MultipartFormDataTest, LargeData) {
   }
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, DataProviderItems) {
@@ -5375,6 +5475,8 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   std::generate(rand2.begin(), rand2.end(), [&]() { return random(); });
 
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
 
   svr.Post("/post-none", [&](const Request &req, Response & /*res*/,
                              const ContentReader &content_reader) {
@@ -5480,7 +5582,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
     EXPECT_EQ(files[3].content_type, "");
   });
 
-  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
+  listen_thread = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5556,16 +5658,19 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   }
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, BadHeader) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Post("/post", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&] { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5599,16 +5704,19 @@ TEST(MultipartFormDataTest, BadHeader) {
   EXPECT_EQ(400, res->status);
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, WithPreamble) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Post("/post", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&] { svr.listen(HOST, PORT); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5641,11 +5749,13 @@ TEST(MultipartFormDataTest, WithPreamble) {
   EXPECT_EQ(200, res->status);
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, PostCustomBoundary) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
 
   svr.Post("/post_customboundary", [&](const Request &req, Response & /*res*/,
                                        const ContentReader &content_reader) {
@@ -5679,7 +5789,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     }
   });
 
-  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
+  listen_thread = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5704,7 +5814,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   }
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
@@ -5732,6 +5842,8 @@ TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
 
 TEST(MultipartFormDataTest, PutFormData) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
 
   svr.Put("/put", [&](const Request &req, const Response & /*res*/,
                       const ContentReader &content_reader) {
@@ -5765,7 +5877,7 @@ TEST(MultipartFormDataTest, PutFormData) {
     }
   });
 
-  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
+  listen_thread = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5790,11 +5902,13 @@ TEST(MultipartFormDataTest, PutFormData) {
   }
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  JoiningThread listen_thread;
+  RAIIWrapper<SSLServer> svr_wrapper{svr};
 
   svr.Put("/put_customboundary",
           [&](const Request &req, const Response & /*res*/,
@@ -5829,7 +5943,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
             }
           });
 
-  auto t = JoiningThread([&]() { svr.listen("localhost", 8080); });
+  listen_thread = JoiningThread([&]() { svr.listen("localhost", 8080); });
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5854,7 +5968,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
   }
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
@@ -5906,12 +6020,15 @@ protected:
 };
 
 TEST_F(UnixSocketTest, pathname) {
-  httplib::Server svr;
+  Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
     res.set_content(content_, "text/plain");
   });
 
-  JoiningThread t{[&] {
+  listen_thread = JoiningThread{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
   }};
   while (!svr.is_running()) {
@@ -5922,20 +6039,23 @@ TEST_F(UnixSocketTest, pathname) {
   client_GET(pathname_);
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 
 #if defined(__linux__) ||                                                      \
     /* __APPLE__ */ (defined(SOL_LOCAL) && defined(SO_PEERPID))
 TEST_F(UnixSocketTest, PeerPid) {
-  httplib::Server svr;
+  Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
   std::string remote_port_val;
+
   svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
     res.set_content(content_, "text/plain");
     remote_port_val = req.get_header_value("REMOTE_PORT");
   });
 
-  JoiningThread t{[&] {
+  listen_thread = JoiningThread{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
   }};
   while (!svr.is_running()) {
@@ -5947,7 +6067,7 @@ TEST_F(UnixSocketTest, PeerPid) {
   EXPECT_EQ(std::to_string(getpid()), remote_port_val);
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 #endif
 
@@ -5956,12 +6076,15 @@ TEST_F(UnixSocketTest, abstract) {
   constexpr char svr_path[]{"\x00httplib-server.sock"};
   const std::string abstract_addr{svr_path, sizeof(svr_path) - 1};
 
-  httplib::Server svr;
+  Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
+
   svr.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
     res.set_content(content_, "text/plain");
   });
 
-  JoiningThread t{[&] {
+  listen_thread = JoiningThread{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(abstract_addr, 80));
   }};
   while (!svr.is_running()) {
@@ -5972,7 +6095,7 @@ TEST_F(UnixSocketTest, abstract) {
   client_GET(abstract_addr);
 
   svr.stop();
-  t.join();
+  listen_thread.join();
 }
 #endif
 
@@ -6056,6 +6179,8 @@ TEST(TaskQueueTest, IncreaseAtomicInteger) {
 
 TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   Server svr;
+  JoiningThread listen_thread;
+  RAIIWrapper<Server> svr_wrapper{svr};
 
   svr.Get("/", [](const Request & /*req*/, Response &res) {
     res.set_redirect(R"(/hello?key=val%26key2%3Dval2)");
@@ -6065,7 +6190,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     res.set_content(req.get_param_value("key"), "text/plain");
   });
 
-  auto thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
+  listen_thread = JoiningThread([&]() { svr.listen(HOST, PORT); });
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -6080,6 +6205,6 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   }
 
   svr.stop();
-  thread.join();
+  listen_thread.join();
   ASSERT_FALSE(svr.is_running());
 }
