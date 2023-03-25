@@ -63,6 +63,15 @@ private:
   std::thread thread_;
 };
 
+template <typename Server> class RAIIWrapper {
+public:
+  RAIIWrapper(Server &server) : server_{server} {}
+  ~RAIIWrapper() { server_.stop(); }
+
+private:
+  Server &server_;
+};
+
 MultipartFormData &get_file_value(MultipartFormDataItems &files,
                                   const char *key) {
   auto it = std::find_if(
