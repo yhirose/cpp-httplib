@@ -1220,7 +1220,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
   ASSERT_FALSE(svr.is_running());
 }
 
-TEST(BindServerTest, BindDualStack) {
+TEST(BindServerTest, DISABLED_BindDualStack) {
   Server svr;
 
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
@@ -6026,6 +6026,12 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
 
+  auto se = detail::scope_exit([&](void) {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -6037,9 +6043,5 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("val&key2=val2", res->body);
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 

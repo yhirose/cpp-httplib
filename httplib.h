@@ -314,8 +314,8 @@ struct ci {
 // This is based on
 // "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4189".
 
-template <typename EF> struct scope_exit {
-  explicit scope_exit(EF &&f)
+struct scope_exit {
+  explicit scope_exit(std::function<void(void)> &&f)
       : exit_function(std::move(f)), execute_on_destruction{true} {}
 
   scope_exit(scope_exit &&rhs)
@@ -335,7 +335,7 @@ private:
   void operator=(const scope_exit &) = delete;
   scope_exit &operator=(scope_exit &&) = delete;
 
-  EF exit_function;
+  std::function<void(void)> exit_function;
   bool execute_on_destruction;
 };
 
@@ -6410,7 +6410,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   auto ret = false;
   auto close_connection = !keep_alive_;
 
-  auto se = detail::scope_exit<std::function<void(void)>>([&]() {
+  auto se = detail::scope_exit([&]() {
     // Briefly lock mutex in order to mark that a request is no longer ongoing
     std::lock_guard<std::mutex> guard(socket_mutex_);
     socket_requests_in_flight_ -= 1;
