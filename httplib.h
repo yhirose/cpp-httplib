@@ -2982,8 +2982,9 @@ inline constexpr unsigned int str2tag_core(const char *s, size_t l,
              ? h
              : str2tag_core(
                    s + 1, l - 1,
-                   //unsets the 6 high bits of h, therefore no overflow happens
-                   (((std::numeric_limits<unsigned int>::max)() >> 6) & h * 33) ^
+                   // Unsets the 6 high bits of h, therefore no overflow happens
+                   (((std::numeric_limits<unsigned int>::max)() >> 6) &
+                    h * 33) ^
                        static_cast<unsigned char>(*s));
 }
 
