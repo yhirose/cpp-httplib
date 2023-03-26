@@ -6826,11 +6826,14 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if (is_ssl()) {
-    char buf[1];
-    if (SSL_peek(socket_.ssl, buf, 1) == 0 &&
-        SSL_get_error(socket_.ssl, 0) == SSL_ERROR_ZERO_RETURN) {
-      error = Error::SSLPeerCouldBeClosed_;
-      return false;
+    auto is_proxy_enabled = !proxy_host_.empty() && proxy_port_ != -1;
+    if (!is_proxy_enabled) {
+      char buf[1];
+      if (SSL_peek(socket_.ssl, buf, 1) == 0 &&
+          SSL_get_error(socket_.ssl, 0) == SSL_ERROR_ZERO_RETURN) {
+        error = Error::SSLPeerCouldBeClosed_;
+        return false;
+      }
     }
   }
 #endif
