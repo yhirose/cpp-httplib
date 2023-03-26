@@ -841,7 +841,7 @@ Note: Windows 8 or lower, Visual Studio 2013 or lower, and Cygwin on Windows are
 License
 -------
 
-MIT license (© 2022 Yuji Hirose)
+MIT license (© 2023 Yuji Hirose)
 
 Special Thanks To
 -----------------
