@@ -280,7 +280,7 @@ install(EXPORT httplibTargets
 	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 )
 
-if(HTTPLIB_TEST)
+if(HTTPLIB_TEST OR "$ENV{HTTPLIB_TEST}")
     include(CTest)
     add_subdirectory(test)
 endif()
