@@ -110,7 +110,7 @@ jobs:
         id: test
         working-directory: build
         continue-on-error: true
-        run: ctest -C ${{ matrix.config }} --timeout 100 -E GzipDecompressor.LargeRandomData
+        run: ctest -C ${{ matrix.config }} --timeout 100
 
       - name: Rerun failed tests
         if: steps.test.outcome == 'failure'
