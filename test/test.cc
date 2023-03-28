@@ -1001,6 +1001,11 @@ TEST(ReceiveSignals, Signal) {
     port = svr.bind_to_any_port("localhost");
     svr.listen_after_bind();
   });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1010,9 +1015,6 @@ TEST(ReceiveSignals, Signal) {
   pthread_kill(thread.native_handle(), SIGINT);
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_TRUE(svr.is_running());
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 #endif
 
@@ -1038,6 +1040,14 @@ TEST(RedirectToDifferentPort, Redirect) {
     svr2_port = svr2.bind_to_any_port("localhost");
     svr2.listen_after_bind();
   });
+  auto se = detail::scope_exit([&] {
+    svr2.stop();
+    thread2.join();
+    svr1.stop();
+    thread1.join();
+    ASSERT_FALSE(svr2.is_running());
+    ASSERT_FALSE(svr1.is_running());
+  });
 
   while (!svr1.is_running() || !svr2.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1053,13 +1063,6 @@ TEST(RedirectToDifferentPort, Redirect) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("Hello World!", res->body);
-
-  svr1.stop();
-  svr2.stop();
-  thread1.join();
-  thread2.join();
-  ASSERT_FALSE(svr1.is_running());
-  ASSERT_FALSE(svr2.is_running());
 }
 
 TEST(RedirectFromPageWithContent, Redirect) {
@@ -1075,6 +1078,11 @@ TEST(RedirectFromPageWithContent, Redirect) {
   });
 
   auto th = std::thread([&]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    th.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1111,10 +1119,6 @@ TEST(RedirectFromPageWithContent, Redirect) {
     EXPECT_EQ(302, res->status);
     EXPECT_EQ("___", body);
   }
-
-  svr.stop();
-  th.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(RedirectFromPageWithContentIP6, Redirect) {
@@ -1135,6 +1139,11 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
   });
 
   auto th = std::thread([&]() { svr.listen("::1", 1234); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    th.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // When IPV6 support isn't available svr.listen("::1", 1234) never
   // actually starts anything, so the condition !svr.is_running() will
@@ -1178,10 +1187,6 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     EXPECT_EQ(302, res->status);
     EXPECT_EQ("___", body);
   }
-
-  svr.stop();
-  th.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(PathUrlEncodeTest, PathUrlEncode) {
@@ -1198,6 +1203,11 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1214,10 +1224,6 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
     // into spaces.
     EXPECT_EQ("explicitly encoded", res->body);
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(BindServerTest, DISABLED_BindDualStack) {
@@ -1228,6 +1234,11 @@ TEST(BindServerTest, DISABLED_BindDualStack) {
   });
 
   auto thread = std::thread([&]() { svr.listen("::", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1248,9 +1259,6 @@ TEST(BindServerTest, DISABLED_BindDualStack) {
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("Hello World!", res->body);
   }
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(BindServerTest, BindAndListenSeparately) {
@@ -1298,6 +1306,11 @@ TEST(ErrorHandlerTest, ContentLength) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1312,10 +1325,6 @@ TEST(ErrorHandlerTest, ContentLength) {
     EXPECT_EQ("26", res->get_header_value("Content-Length"));
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
@@ -1339,6 +1348,11 @@ TEST(ExceptionHandlerTest, ContentLength) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1366,10 +1380,6 @@ TEST(ExceptionHandlerTest, ContentLength) {
       EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
     }
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 #endif
 
@@ -1379,6 +1389,11 @@ TEST(NoContentTest, ContentLength) {
   svr.Get("/hi",
           [](const Request & /*req*/, Response &res) { res.status = 204; });
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1391,10 +1406,6 @@ TEST(NoContentTest, ContentLength) {
     EXPECT_EQ(204, res->status);
     EXPECT_EQ("0", res->get_header_value("Content-Length"));
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(RoutingHandlerTest, PreRoutingHandler) {
@@ -1429,6 +1440,11 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1482,10 +1498,6 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     EXPECT_EQ(0U, res->get_header_value_count("PRE_ROUTING"));
     EXPECT_EQ(0U, res->get_header_value_count("POST_ROUTING"));
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(InvalidFormatTest, StatusCode) {
@@ -1497,6 +1509,11 @@ TEST(InvalidFormatTest, StatusCode) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1507,10 +1524,6 @@ TEST(InvalidFormatTest, StatusCode) {
     auto res = cli.Get("/hi");
     ASSERT_FALSE(res);
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(URLFragmentTest, WithFragment) {
@@ -1521,6 +1534,11 @@ TEST(URLFragmentTest, WithFragment) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -1535,10 +1553,6 @@ TEST(URLFragmentTest, WithFragment) {
     EXPECT_TRUE(res);
     EXPECT_EQ(404, res->status);
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 class ServerTest : public ::testing::Test {
@@ -2855,13 +2869,13 @@ TEST_F(ServerTest, GetStreamedEndless) {
 TEST_F(ServerTest, ClientStop) {
   std::vector<std::thread> threads;
   for (auto i = 0; i < 3; i++) {
-    threads.emplace_back(thread([&]() {
+    threads.emplace_back([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
       ASSERT_TRUE(!res);
       EXPECT_TRUE(res.error() == Error::Canceled ||
                   res.error() == Error::Read || res.error() == Error::Write);
-    }));
+    });
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -3011,12 +3025,9 @@ TEST_F(ServerTest, HTTPResponseSplitting) {
 }
 
 TEST_F(ServerTest, SlowRequest) {
-  request_threads_.push_back(
-      std::thread([=]() { auto res = cli_.Get("/slow"); }));
-  request_threads_.push_back(
-      std::thread([=]() { auto res = cli_.Get("/slow"); }));
-  request_threads_.push_back(
-      std::thread([=]() { auto res = cli_.Get("/slow"); }));
+  request_threads_.emplace_back([this]() { auto res = cli_.Get("/slow"); });
+  request_threads_.emplace_back([this]() { auto res = cli_.Get("/slow"); });
+  request_threads_.emplace_back([this]() { auto res = cli_.Get("/slow"); });
 }
 
 #if 0
@@ -3740,6 +3751,12 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   });
 
   thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -3752,8 +3769,6 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
                           "\r\n";
 
   ASSERT_TRUE(send_request(5, req));
-  svr.stop();
-  t.join();
   EXPECT_EQ(header_value, "\v bar \x1B");
 }
 
@@ -3775,14 +3790,18 @@ static void test_raw_request(const std::string &req,
   svr.set_read_timeout(std::chrono::seconds(client_read_timeout_sec + 1));
   bool listen_thread_ok = false;
   thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    EXPECT_TRUE(listen_thread_ok);
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   ASSERT_TRUE(send_request(client_read_timeout_sec, req, out));
-  svr.stop();
-  t.join();
-  EXPECT_TRUE(listen_thread_ok);
 }
 
 TEST(ServerRequestParsingTest, ReadHeadersRegexComplexity) {
@@ -3927,16 +3946,15 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
         "/events", headers,
         [](const char * /*data*/, size_t /*len*/) -> bool { return true; });
   });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    get_thread.join();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(2));
-
-  svr.stop();
-
-  listen_thread.join();
-  get_thread.join();
-
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(ServerStopTest, ClientAccessAfterServerDown) {
@@ -3945,7 +3963,6 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
                       httplib::Response &res) { res.status = 200; });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
-
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
@@ -3953,6 +3970,7 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
   Client cli(HOST, PORT);
 
   auto res = cli.Post("/hi", "data", "text/plain");
+
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 
@@ -3979,6 +3997,12 @@ TEST(StreamingTest, NoContentLengthStreaming) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -3994,22 +4018,22 @@ TEST(StreamingTest, NoContentLengthStreaming) {
         });
     EXPECT_EQ("aaabbb", s);
   });
+  auto get_se = detail::scope_exit([&] { get_thread.join(); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-  svr.stop();
-
-  listen_thread.join();
-  get_thread.join();
-
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(MountTest, Unmount) {
   Server svr;
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4044,10 +4068,6 @@ TEST(MountTest, Unmount) {
   res = cli.Get("/mount2/dir/test.html");
   ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
@@ -4063,6 +4083,12 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4087,10 +4113,6 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
     ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
     EXPECT_EQ("exception\\r\\n...", res->get_header_value("EXCEPTION_WHAT"));
   }
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 #endif
 
@@ -4107,6 +4129,12 @@ TEST(KeepAliveTest, ReadTimeout) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4126,10 +4154,6 @@ TEST(KeepAliveTest, ReadTimeout) {
   ASSERT_TRUE(resb);
   EXPECT_EQ(200, resb->status);
   EXPECT_EQ("b", resb->body);
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(KeepAliveTest, Issue1041) {
@@ -4140,7 +4164,13 @@ TEST(KeepAliveTest, Issue1041) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   Client cli(HOST, PORT);
@@ -4155,9 +4185,6 @@ TEST(KeepAliveTest, Issue1041) {
   result = cli.Get("/hi");
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
-
-  svr.stop();
-  f.wait();
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4170,7 +4197,13 @@ TEST(KeepAliveTest, SSLClientReconnection) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
+  auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SSLClient cli(HOST, PORT);
@@ -4195,9 +4228,6 @@ TEST(KeepAliveTest, SSLClientReconnection) {
   result = cli.Get("/hi");
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
-
-  svr.stop();
-  f.wait();
 }
 #endif
 
@@ -4219,6 +4249,12 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4233,10 +4269,6 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
   });
 
   ASSERT_FALSE(res);
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
@@ -4253,6 +4285,12 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4266,10 +4304,6 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
   EXPECT_EQ("helloworld", res->body);
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(GetWithParametersTest, GetWithParameters) {
@@ -4294,6 +4328,12 @@ TEST(GetWithParametersTest, GetWithParameters) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4329,10 +4369,6 @@ TEST(GetWithParametersTest, GetWithParameters) {
     ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
   }
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(GetWithParametersTest, GetWithParameters2) {
@@ -4344,6 +4380,12 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4364,10 +4406,6 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("world", body);
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
@@ -4399,6 +4437,12 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4412,10 +4456,6 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("ok", res->body);
   EXPECT_EQ("World", res->get_header_value("Hello"));
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4433,6 +4473,12 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4453,10 +4499,6 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   ASSERT_TRUE(resb);
   EXPECT_EQ(200, resb->status);
   EXPECT_EQ("b", resb->body);
-
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 #endif
 
@@ -4650,6 +4692,11 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli("127.0.0.1", PORT);
@@ -4660,8 +4707,6 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-
-  t.join();
 }
 
 TEST(SSLClientTest, WildcardHostNameMatch_Online) {
@@ -4720,6 +4765,11 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4729,8 +4779,6 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-
-  t.join();
 }
 
 #if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
@@ -4792,6 +4840,11 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, client_cert, client_private_key);
@@ -4806,8 +4859,6 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   EVP_PKEY_free(server_private_key);
   X509_free(client_cert);
   EVP_PKEY_free(client_private_key);
-
-  t.join();
 }
 #endif
 
@@ -4819,6 +4870,12 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT);
@@ -4826,10 +4883,6 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   cli.set_connection_timeout(30);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLServerVerification, res.error());
-
-  svr.stop();
-
-  t.join();
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
@@ -4842,6 +4895,11 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4851,8 +4909,6 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-
-  t.join();
 }
 
 TEST(SSLClientServerTest, SSLConnectTimeout) {
@@ -4885,6 +4941,13 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop_ = true;
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4894,10 +4957,6 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLConnection, res.error());
-
-  svr.stop_ = true;
-  svr.stop();
-  t.join();
 }
 
 TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
@@ -4956,6 +5015,11 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
@@ -4965,8 +5029,6 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-
-  t.join();
 }
 
 // Disabled due to the out-of-memory problem on GitHub Actions Workflows
@@ -4990,6 +5052,12 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5006,11 +5074,6 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(large_size_byte, res->body.size());
   EXPECT_EQ(0, std::memcmp(binary.data(), res->body.data(), large_size_byte));
-
-  // cleanup
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 #endif
 
@@ -5057,6 +5120,11 @@ TEST(ClientImplMethods, GetSocketTest) {
   });
 
   auto thread = std::thread([&]() { svr.listen("127.0.0.1", 3333); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
 
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -5081,10 +5149,6 @@ TEST(ClientImplMethods, GetSocketTest) {
     EXPECT_EQ(200, res->status);
     ASSERT_TRUE(cli.socket() != INVALID_SOCKET);
   }
-
-  svr.stop();
-  thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 
 // Disabled due to out-of-memory problem on GitHub Actions
@@ -5101,6 +5165,13 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    if (content) free(content);
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5113,11 +5184,6 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(content_size, res->body.length());
-
-  free(content);
-  svr.stop();
-  listen_thread.join();
-  ASSERT_FALSE(svr.is_running());
 }
 #endif
 
@@ -5241,6 +5307,12 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
   thread t2 = thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
+  auto se = detail::scope_exit([&] {
+    t2.join();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   Client cli("127.0.0.1", PORT);
@@ -5252,9 +5324,6 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   auto res = cli.Get("/index");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
-
-  t.join();
-  t2.join();
 }
 
 TEST(MultipartFormDataTest, LargeData) {
@@ -5293,6 +5362,12 @@ TEST(MultipartFormDataTest, LargeData) {
   });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5315,9 +5390,6 @@ TEST(MultipartFormDataTest, LargeData) {
     ASSERT_TRUE(res);
     ASSERT_EQ(200, res->status);
   }
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, DataProviderItems) {
@@ -5440,6 +5512,12 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5513,9 +5591,6 @@ TEST(MultipartFormDataTest, DataProviderItems) {
       ASSERT_EQ(200, res->status);
     }
   }
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, BadHeader) {
@@ -5525,6 +5600,12 @@ TEST(MultipartFormDataTest, BadHeader) {
   });
 
   thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5556,9 +5637,6 @@ TEST(MultipartFormDataTest, BadHeader) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(400, res->status);
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, WithPreamble) {
@@ -5568,6 +5646,12 @@ TEST(MultipartFormDataTest, WithPreamble) {
   });
 
   thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5598,9 +5682,6 @@ TEST(MultipartFormDataTest, WithPreamble) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, PostCustomBoundary) {
@@ -5639,6 +5720,12 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5661,9 +5748,6 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     ASSERT_TRUE(res);
     ASSERT_EQ(200, res->status);
   }
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
@@ -5725,6 +5809,12 @@ TEST(MultipartFormDataTest, PutFormData) {
   });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5747,9 +5837,6 @@ TEST(MultipartFormDataTest, PutFormData) {
     ASSERT_TRUE(res);
     ASSERT_EQ(200, res->status);
   }
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
@@ -5789,6 +5876,12 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
           });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5811,9 +5904,6 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
     ASSERT_TRUE(res);
     ASSERT_EQ(200, res->status);
   }
-
-  svr.stop();
-  t.join();
 }
 
 TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
@@ -5873,15 +5963,18 @@ TEST_F(UnixSocketTest, pathname) {
   std::thread t{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
   }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   ASSERT_TRUE(svr.is_running());
 
   client_GET(pathname_);
-
-  svr.stop();
-  t.join();
 }
 
 #if defined(__linux__) ||                                                      \
@@ -5897,6 +5990,12 @@ TEST_F(UnixSocketTest, PeerPid) {
   std::thread t{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
   }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -5904,9 +6003,6 @@ TEST_F(UnixSocketTest, PeerPid) {
 
   client_GET(pathname_);
   EXPECT_EQ(std::to_string(getpid()), remote_port_val);
-
-  svr.stop();
-  t.join();
 }
 #endif
 
@@ -5923,15 +6019,18 @@ TEST_F(UnixSocketTest, abstract) {
   std::thread t{[&] {
     ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(abstract_addr, 80));
   }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   ASSERT_TRUE(svr.is_running());
 
   client_GET(abstract_addr);
-
-  svr.stop();
-  t.join();
 }
 #endif
 
@@ -6025,8 +6124,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
-
-  auto se = detail::scope_exit([&](void) {
+  auto se = detail::scope_exit([&] {
     svr.stop();
     thread.join();
     ASSERT_FALSE(svr.is_running());
@@ -6044,4 +6142,3 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     EXPECT_EQ("val&key2=val2", res->body);
   }
 }
-
