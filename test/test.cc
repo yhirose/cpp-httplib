@@ -1003,7 +1003,7 @@ TEST(ReceiveSignals, Signal) {
   });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1042,9 +1042,9 @@ TEST(RedirectToDifferentPort, Redirect) {
   });
   auto se = detail::scope_exit([&] {
     svr2.stop();
-    if (thread2.joinable()) thread2.join();
+    thread2.join();
     svr1.stop();
-    if (thread1.joinable()) thread1.join();
+    thread1.join();
     ASSERT_FALSE(svr2.is_running());
     ASSERT_FALSE(svr1.is_running());
   });
@@ -1080,7 +1080,7 @@ TEST(RedirectFromPageWithContent, Redirect) {
   auto th = std::thread([&]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (th.joinable()) th.join();
+    th.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1141,7 +1141,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
   auto th = std::thread([&]() { svr.listen("::1", 1234); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (th.joinable()) th.join();
+    th.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1205,7 +1205,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1236,7 +1236,7 @@ TEST(BindServerTest, DISABLED_BindDualStack) {
   auto thread = std::thread([&]() { svr.listen("::", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1308,7 +1308,7 @@ TEST(ErrorHandlerTest, ContentLength) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1350,7 +1350,7 @@ TEST(ExceptionHandlerTest, ContentLength) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1391,7 +1391,7 @@ TEST(NoContentTest, ContentLength) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1442,7 +1442,7 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1511,7 +1511,7 @@ TEST(InvalidFormatTest, StatusCode) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -1536,7 +1536,7 @@ TEST(URLFragmentTest, WithFragment) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -2138,10 +2138,10 @@ protected:
     if (!request_threads_.empty()) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
       for (auto &t : request_threads_) {
-        if (t.joinable()) t.join();
+        t.join();
       }
     }
-    if (t_.joinable()) t_.join();
+    t_.join();
   }
 
   map<string, string> persons_;
@@ -2884,7 +2884,7 @@ TEST_F(ServerTest, ClientStop) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   for (auto &t : threads) {
-    if (t.joinable()) t.join();
+    t.join();
   }
 }
 
@@ -3753,7 +3753,7 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   thread t = thread([&] { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -3792,7 +3792,7 @@ static void test_raw_request(const std::string &req,
   thread t = thread([&] { listen_thread_ok = svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
     EXPECT_TRUE(listen_thread_ok);
   });
@@ -3948,8 +3948,8 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (get_thread.joinable()) get_thread.join();
-    if (listen_thread.joinable()) listen_thread.join();
+    get_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -3963,11 +3963,6 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
                       httplib::Response &res) { res.status = 200; });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
-  auto se = detail::scope_exit([&] {
-    if (thread.joinable()) thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
   while (!svr.is_running()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
@@ -3975,12 +3970,12 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
   Client cli(HOST, PORT);
 
   auto res = cli.Post("/hi", "data", "text/plain");
-  svr.stop();
 
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 
-  if (thread.joinable()) thread.join();
+  svr.stop();
+  thread.join();
   ASSERT_FALSE(svr.is_running());
 
   res = cli.Post("/hi", "data", "text/plain");
@@ -4004,7 +3999,7 @@ TEST(StreamingTest, NoContentLengthStreaming) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto listen_se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4023,9 +4018,7 @@ TEST(StreamingTest, NoContentLengthStreaming) {
         });
     EXPECT_EQ("aaabbb", s);
   });
-  auto get_se = detail::scope_exit([&] {
-    if (get_thread.joinable()) get_thread.join();
-  });
+  auto get_se = detail::scope_exit([&] { get_thread.join(); });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -4037,7 +4030,7 @@ TEST(MountTest, Unmount) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4092,7 +4085,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4138,7 +4131,7 @@ TEST(KeepAliveTest, ReadTimeout) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4174,7 +4167,7 @@ TEST(KeepAliveTest, Issue1041) {
   auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4207,7 +4200,7 @@ TEST(KeepAliveTest, SSLClientReconnection) {
   auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4258,7 +4251,7 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4294,7 +4287,7 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4337,7 +4330,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
   auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4389,7 +4382,7 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4446,7 +4439,7 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4482,7 +4475,7 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4538,7 +4531,7 @@ protected:
 
   virtual void TearDown() {
     svr_.stop();
-    if (t_.joinable()) t_.join();
+    t_.join();
   }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4577,7 +4570,7 @@ protected:
 
   virtual void TearDown() {
     svr_.stop();
-    if (t_.joinable()) t_.join();
+    t_.join();
   }
 
   Client cli_;
@@ -4620,7 +4613,7 @@ protected:
 
   virtual void TearDown() {
     svr_.stop();
-    if (t_.joinable()) t_.join();
+    t_.join();
   }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4700,7 +4693,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
   auto se = detail::scope_exit([&] {
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4773,7 +4766,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4848,7 +4841,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4879,7 +4872,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4903,7 +4896,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -4951,7 +4944,7 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   auto se = detail::scope_exit([&] {
     svr.stop_ = true;
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5023,7 +5016,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5061,7 +5054,7 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5129,7 +5122,7 @@ TEST(ClientImplMethods, GetSocketTest) {
   auto thread = std::thread([&]() { svr.listen("127.0.0.1", 3333); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5174,7 +5167,7 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
   auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (listen_thread.joinable()) listen_thread.join();
+    listen_thread.join();
     if (content) free(content);
     ASSERT_FALSE(svr.is_running());
   });
@@ -5315,8 +5308,8 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
   thread t2 = thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
   auto se = detail::scope_exit([&] {
-    if (t2.joinable()) t2.join();
-    if (t.joinable()) t.join();
+    t2.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5371,7 +5364,7 @@ TEST(MultipartFormDataTest, LargeData) {
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5521,7 +5514,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5609,7 +5602,7 @@ TEST(MultipartFormDataTest, BadHeader) {
   thread t = thread([&] { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5655,7 +5648,7 @@ TEST(MultipartFormDataTest, WithPreamble) {
   thread t = thread([&] { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5729,7 +5722,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5818,7 +5811,7 @@ TEST(MultipartFormDataTest, PutFormData) {
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5885,7 +5878,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5972,7 +5965,7 @@ TEST_F(UnixSocketTest, pathname) {
   }};
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -5999,7 +5992,7 @@ TEST_F(UnixSocketTest, PeerPid) {
   }};
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -6028,7 +6021,7 @@ TEST_F(UnixSocketTest, abstract) {
   }};
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (t.joinable()) t.join();
+    t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
@@ -6133,7 +6126,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
-    if (thread.joinable()) thread.join();
+    thread.join();
     ASSERT_FALSE(svr.is_running());
   });
 
