@@ -2867,11 +2867,16 @@ TEST_F(ServerTest, GetStreamedEndless) {
 }
 
 TEST_F(ServerTest, ClientStop) {
+  std::atomic_size_t count{4};
   std::vector<std::thread> threads;
-  for (auto i = 0; i < 3; i++) {
+
+  for (auto i = count.load(); i != 0; --i) {
     threads.emplace_back([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
+
+      --count;
+
       ASSERT_TRUE(!res);
       EXPECT_TRUE(res.error() == Error::Canceled ||
                   res.error() == Error::Read || res.error() == Error::Write);
@@ -2879,7 +2884,7 @@ TEST_F(ServerTest, ClientStop) {
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(2));
-  while (cli_.is_socket_open()) {
+  while (count != 0) {
     cli_.stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
