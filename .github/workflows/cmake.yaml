@@ -121,3 +121,52 @@ jobs:
 
       - name: Install
         run: cmake --install build --config ${{ matrix.config }}
+
+  build-mobile:
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [android, ios]
+        config: [Debug, Release]
+        include:
+          - preset: android
+            os: ubuntu-latest
+            generator: '"Ninja Multi-Config"'
+          - preset: ios
+            os: macos-latest
+            generator: Xcode
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install dependencies on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Find android.toolchain.cmake
+        if: matrix.preset == 'android'
+        run: echo "set(CMAKE_TOOLCHAIN_FILE ${ANDROID_NDK}/build/cmake/android.toolchain.cmake CACHE STRING \"\")" >> cache.cmake
+
+      - name: Generate ios.toolchain.cmake
+        if: matrix.preset == 'ios'
+        run: |
+          echo 'set(CMAKE_SYSTEM_NAME       iOS)'       >> ios.toolchain.cmake
+          echo 'set(CMAKE_SYSTEM_PROCESSOR  aarch64)'   >> ios.toolchain.cmake
+          echo 'set(CMAKE_OSX_ARCHITECTURES arm64)'     >> ios.toolchain.cmake
+          echo 'set(CMAKE_OSX_SYSROOT       iphoneos)'  >> ios.toolchain.cmake
+          echo 'set(CMAKE_TOOLCHAIN_FILE    ios.toolchain.cmake CACHE STRING "")' >> cache.cmake
+
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build -G ${{ matrix.generator }} -C cache.cmake
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+          -DHTTPLIB_COMPILE=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }}
+
+      - name: Install
+        run: cmake --install build --config ${{ matrix.config }}
