@@ -239,10 +239,13 @@ using socket_t = int;
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "cryptui.lib")
 #endif
-#elif defined(__APPLE__) // _WIN32
+#elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
-#endif // __APPLE__
+#endif // TARGET_OS_OSX
+#endif // _WIN32
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -4511,6 +4514,7 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
   return result;
 }
 #elif defined(__APPLE__)
+#if TARGET_OS_OSX
 template <typename T>
 using CFObjectPtr =
     std::unique_ptr<typename std::remove_pointer<T>::type, void (*)(CFTypeRef)>;
@@ -4585,7 +4589,7 @@ inline bool add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
   return result;
 }
 
-inline bool load_system_certs_on_apple(X509_STORE *store) {
+inline bool load_system_certs_on_macos(X509_STORE *store) {
   auto result = false;
   CFObjectPtr<CFArrayRef> certs(nullptr, cf_object_ptr_deleter);
   if (retrieve_certs_from_keychain(certs) && certs) {
@@ -4598,8 +4602,9 @@ inline bool load_system_certs_on_apple(X509_STORE *store) {
 
   return result;
 }
-#endif
-#endif
+#endif // TARGET_OS_OSX
+#endif // _WIN32
+#endif // CPPHTTPLIB_OPENSSL_SUPPORT
 
 #ifdef _WIN32
 class WSInit {
@@ -8060,8 +8065,10 @@ inline bool SSLClient::load_certs() {
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
 #elif defined(__APPLE__)
-      loaded = detail::load_system_certs_on_apple(SSL_CTX_get_cert_store(ctx_));
-#endif
+#if TARGET_OS_OSX
+        loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
+#endif // TARGET_OS_OSX
+#endif // _WIN32
       if (!loaded) { SSL_CTX_set_default_verify_paths(ctx_); }
     }
   });
