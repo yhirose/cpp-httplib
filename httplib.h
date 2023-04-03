@@ -2668,7 +2668,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
     auto sock = socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
     if (sock != INVALID_SOCKET) {
-      sockaddr_un addr;
+      sockaddr_un addr {};
       addr.sun_family = AF_UNIX;
       std::copy(host.begin(), host.end(), addr.sun_path);
 
