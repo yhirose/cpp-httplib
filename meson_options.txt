@@ -5,5 +5,6 @@
 option('cpp-httplib_openssl', type: 'feature', value: 'auto', description: 'Enable OpenSSL support')
 option('cpp-httplib_zlib',    type: 'feature', value: 'auto', description: 'Enable zlib support')
 option('cpp-httplib_brotli',  type: 'feature', value: 'auto', description: 'Enable Brotli support')
+option('cpp-httplib_macosx_keychain', type: 'feature', value: 'auto', description: 'Enable loading certs from the Keychain on Apple devices')
 option('cpp-httplib_compile', type: 'boolean', value: false,  description: 'Split the header into a compilable header & source file (requires python3)')
 option('cpp-httplib_test',    type: 'boolean', value: false,  description: 'Build tests')
