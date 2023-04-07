@@ -214,7 +214,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<PLATFORM_ID:Windows>:crypt32>
 		$<$<PLATFORM_ID:Windows>:cryptui>
 		# Needed for API from MacOS Security framework
-		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>, $<BOOL:${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN}>>:-framework CoreFoundation -framework Security>"
+		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN}>>:-framework CoreFoundation -framework Security>"
 		# Can't put multiple targets in a single generator expression or it bugs out.
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::common>
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::encoder>
@@ -229,7 +229,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:CPPHTTPLIB_BROTLI_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:CPPHTTPLIB_ZLIB_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
-	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>, $<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
+	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
 )
 
 # CMake configuration files installation directory
