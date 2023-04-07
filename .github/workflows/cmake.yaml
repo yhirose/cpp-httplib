@@ -71,9 +71,6 @@ jobs:
         run: |
           echo "set(OPENSSL_ROOT_DIR $(brew --prefix openssl) CACHE STRING \"\")" >> cache.cmake
           echo "set(ZLIB_ROOT        $(brew --prefix zlib)    CACHE STRING \"\")" >> cache.cmake
-      - name: Install dependencies on Windows (OpenSSL)
-        if: runner.os == 'Windows'
-        run: choco install -y openssl
       - name: Install dependencies on Windows (Brotli)
         if: runner.os == 'Windows' && matrix.brotli == 'ON'
         run: |
