@@ -4941,10 +4941,9 @@ inline void Response::set_content(const std::string &s,
 inline void Response::set_content_provider(
     size_t in_length, const std::string &content_type, ContentProvider provider,
     ContentProviderResourceReleaser resource_releaser) {
-  assert(in_length > 0);
   set_header("Content-Type", content_type);
   content_length_ = in_length;
-  content_provider_ = std::move(provider);
+  if (in_length > 0) { content_provider_ = std::move(provider); }
   content_provider_resource_releaser_ = resource_releaser;
   is_chunked_content_provider_ = false;
 }

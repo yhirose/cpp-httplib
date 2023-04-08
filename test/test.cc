@@ -4253,6 +4253,16 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
         [](bool success) { ASSERT_FALSE(success); });
   });
 
+  svr.Get("/empty", [&](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        0, "text/plain",
+        [&](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) -> bool {
+          EXPECT_TRUE(false);
+          return true;
+        },
+        [](bool success) { ASSERT_FALSE(success); });
+  });
+
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
@@ -4269,11 +4279,17 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
 
   Client cli("localhost", PORT);
 
-  auto res = cli.Get("/hi", [&](const char * /*data*/, size_t /*data_length*/) {
-    return false;
-  });
+  {
+    auto res = cli.Get("/hi", [&](const char * /*data*/,
+                                  size_t /*data_length*/) { return false; });
+    ASSERT_FALSE(res);
+  }
 
-  ASSERT_FALSE(res);
+  {
+    auto res = cli.Get("/empty", [&](const char * /*data*/,
+                                     size_t /*data_length*/) { return false; });
+    ASSERT_TRUE(res);
+  }
 }
 
 TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
