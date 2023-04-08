@@ -743,6 +743,7 @@ public:
   bool listen(const std::string &host, int port, int socket_flags = 0);
 
   bool is_running() const;
+  void wait_until_ready() const;
   void stop();
 
   std::function<TaskQueue *(void)> new_task_queue;
@@ -752,7 +753,7 @@ protected:
                        bool &connection_closed,
                        const std::function<void(Request &)> &setup_request);
 
-  std::atomic<socket_t> svr_sock_;
+  std::atomic<socket_t> svr_sock_{INVALID_SOCKET};
   size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
   time_t keep_alive_timeout_sec_ = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
   time_t read_timeout_sec_ = CPPHTTPLIB_READ_TIMEOUT_SECOND;
@@ -816,7 +817,8 @@ private:
   };
   std::vector<MountPointEntry> base_dirs_;
 
-  std::atomic<bool> is_running_;
+  std::atomic<bool> is_running_{false};
+  std::atomic<bool> done_{false};
   std::map<std::string, std::string> file_extension_and_mimetype_map_;
   Handler file_request_handler_;
   Handlers get_handlers_;
@@ -5120,8 +5122,7 @@ inline const std::string &BufferStream::get_buffer() const { return buffer; }
 // HTTP server implementation
 inline Server::Server()
     : new_task_queue(
-          [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); }),
-      svr_sock_(INVALID_SOCKET), is_running_(false) {
+          [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); }) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
@@ -5334,14 +5335,24 @@ inline int Server::bind_to_any_port(const std::string &host, int socket_flags) {
   return bind_internal(host, 0, socket_flags);
 }
 
-inline bool Server::listen_after_bind() { return listen_internal(); }
+inline bool Server::listen_after_bind() {
+  auto se = detail::scope_exit([&]() { done_ = true; });
+  return listen_internal();
+}
 
 inline bool Server::listen(const std::string &host, int port,
                            int socket_flags) {
+  auto se = detail::scope_exit([&]() { done_ = true; });
   return bind_to_port(host, port, socket_flags) && listen_internal();
 }
 
 inline bool Server::is_running() const { return is_running_; }
+
+inline void Server::wait_until_ready() const {
+  while (!is_running() && !done_) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+}
 
 inline void Server::stop() {
   if (is_running_) {
@@ -5733,6 +5744,7 @@ inline int Server::bind_internal(const std::string &host, int port,
 inline bool Server::listen_internal() {
   auto ret = true;
   is_running_ = true;
+  auto se = detail::scope_exit([&]() { is_running_ = false; });
 
   {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());
@@ -5804,7 +5816,6 @@ inline bool Server::listen_internal() {
     task_queue->shutdown();
   }
 
-  is_running_ = false;
   return ret;
 }
 

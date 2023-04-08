@@ -1007,9 +1007,7 @@ TEST(ReceiveSignals, Signal) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   ASSERT_TRUE(svr.is_running());
   pthread_kill(thread.native_handle(), SIGINT);
@@ -1084,9 +1082,7 @@ TEST(RedirectFromPageWithContent, Redirect) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -3762,9 +3758,7 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Only space and horizontal tab are whitespace. Make sure other whitespace-
   // like characters are not treated the same - use vertical tab and escape.
@@ -3802,9 +3796,7 @@ static void test_raw_request(const std::string &req,
     EXPECT_TRUE(listen_thread_ok);
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   ASSERT_TRUE(send_request(client_read_timeout_sec, req, out));
 }
@@ -3939,9 +3931,7 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   });
 
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   Client client(HOST, PORT);
   const Headers headers = {{"Accept", "text/event-stream"}};
@@ -3968,9 +3958,7 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
                       httplib::Response &res) { res.status = 200; });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
+  svr.wait_until_ready();
 
   Client cli(HOST, PORT);
 
@@ -3985,6 +3973,17 @@ TEST(ServerStopTest, ClientAccessAfterServerDown) {
 
   res = cli.Post("/hi", "data", "text/plain");
   ASSERT_FALSE(res);
+}
+
+TEST(ServerStopTest, ListenFailure) {
+  Server svr;
+  auto t = thread([&]() {
+    auto ret = svr.listen("????", PORT);
+    EXPECT_FALSE(ret);
+  });
+  svr.wait_until_ready();
+  svr.stop();
+  t.join();
 }
 
 TEST(StreamingTest, NoContentLengthStreaming) {
@@ -4008,9 +4007,7 @@ TEST(StreamingTest, NoContentLengthStreaming) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   Client client(HOST, PORT);
 
@@ -4039,9 +4036,7 @@ TEST(MountTest, Unmount) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -4094,9 +4089,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -4140,9 +4133,7 @@ TEST(KeepAliveTest, ReadTimeout) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -4270,9 +4261,7 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -4312,9 +4301,7 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -4355,9 +4342,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -4407,9 +4392,7 @@ TEST(GetWithParametersTest, GetWithParameters2) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   Client cli("localhost", PORT);
@@ -4464,9 +4447,7 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   Client cli("localhost", PORT);
@@ -4500,9 +4481,7 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -5079,9 +5058,7 @@ TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // client POST
   SSLClient cli("localhost", PORT);
@@ -5147,9 +5124,7 @@ TEST(ClientImplMethods, GetSocketTest) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
+  svr.wait_until_ready();
 
   {
     httplib::Client cli("http://127.0.0.1:3333");
@@ -5193,9 +5168,7 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -5389,9 +5362,7 @@ TEST(MultipartFormDataTest, LargeData) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -5539,9 +5510,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -5627,9 +5596,7 @@ TEST(MultipartFormDataTest, BadHeader) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   const std::string body =
       "This is the preamble.  It is to be ignored, though it\r\n"
@@ -5673,9 +5640,7 @@ TEST(MultipartFormDataTest, WithPreamble) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
 
   const std::string body =
       "This is the preamble.  It is to be ignored, though it\r\n"
@@ -5747,9 +5712,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -5836,9 +5799,7 @@ TEST(MultipartFormDataTest, PutFormData) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -5903,9 +5864,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
@@ -5990,9 +5949,7 @@ TEST_F(UnixSocketTest, pathname) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   ASSERT_TRUE(svr.is_running());
 
   client_GET(pathname_);
@@ -6017,9 +5974,7 @@ TEST_F(UnixSocketTest, PeerPid) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   ASSERT_TRUE(svr.is_running());
 
   client_GET(pathname_);
@@ -6046,9 +6001,7 @@ TEST_F(UnixSocketTest, abstract) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  while (!svr.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  svr.wait_until_ready();
   ASSERT_TRUE(svr.is_running());
 
   client_GET(abstract_addr);
