@@ -2728,7 +2728,10 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     if (sock == INVALID_SOCKET) { continue; }
 
 #ifndef _WIN32
-    if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) { continue; }
+    if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
+      close_socket(sock);
+      continue;
+    }
 #endif
 
     if (tcp_nodelay) {
