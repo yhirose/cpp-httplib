@@ -547,6 +547,7 @@ struct Response {
   ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
   bool content_provider_success_ = false;
+  bool is_file_delivery_ = false;
 };
 
 class Stream {
@@ -3008,18 +3009,19 @@ inline constexpr unsigned int operator"" _t(const char *s, size_t l) {
 
 } // namespace udl
 
-inline const char *
-find_content_type(const std::string &path,
+inline const std::string find_content_type(const std::string &path,
                   const std::map<std::string, std::string> &user_data) {
   auto ext = file_extension(path);
 
   auto it = user_data.find(ext);
-  if (it != user_data.end()) { return it->second.c_str(); }
+  if (it != user_data.end()) { 
+      return it->second.c_str(); 
+  }
 
   using udl::operator""_t;
 
   switch (str2tag(ext)) {
-  default: return nullptr;
+  default: return "application/octet-stream";//was  nullptr;, but octet-stream is good default value
   case "css"_t: return "text/css";
   case "csv"_t: return "text/csv";
   case "htm"_t:
@@ -3069,6 +3071,15 @@ find_content_type(const std::string &path,
   case "gz"_t: return "application/gzip";
   case "zip"_t: return "application/zip";
   case "wasm"_t: return "application/wasm";
+
+  case "cmft"_t:
+  case "m4v"_t:
+  case "init"_t:
+  case "cmfv"_t: return "video/mp4";
+  case "m4a"_t:
+  case "cmfa"_t: return "audio/mp4";
+  case "m4s"_t: return "video/iso.segment";
+  case "eot"_t: return "application/vnd.ms-fontobject";	
   }
 }
 
@@ -5478,6 +5489,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   if (!res.has_header("Accept-Ranges") && req.method == "HEAD") {
     res.set_header("Accept-Ranges", "bytes");
   }
+  if ((res.is_file_delivery_) && (file_request_handler_))
+  {
+		file_request_handler_(req, res);
+  } 
 
   if (post_routing_handler_) { post_routing_handler_(req, res); }
 
@@ -5672,35 +5687,59 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
   return true;
 }
 
-inline bool Server::handle_file_request(const Request &req, Response &res,
-                                        bool head) {
-  for (const auto &entry : base_dirs_) {
-    // Prefix match
-    if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
-      std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
-      if (detail::is_valid_path(sub_path)) {
-        auto path = entry.base_dir + sub_path;
-        if (path.back() == '/') { path += "index.html"; }
+	inline bool Server::handle_file_request(const Request& req, Response& res,
+		bool head) {
+		for (const auto& entry : base_dirs_) {
+			// Prefix match
+			if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
+				std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
+				if (detail::is_valid_path(sub_path)) {
+					auto path = entry.base_dir + sub_path;
+					if (path.back() == '/') { path += "index.html"; }
 
-        if (detail::is_file(path)) {
-          detail::read_file(path, res.body);
-          auto type =
-              detail::find_content_type(path, file_extension_and_mimetype_map_);
-          if (type) { res.set_header("Content-Type", type); }
-          for (const auto &kv : entry.headers) {
-            res.set_header(kv.first.c_str(), kv.second);
-          }
-          res.status = req.has_header("Range") ? 206 : 200;
-          if (!head && file_request_handler_) {
-            file_request_handler_(req, res);
-          }
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
+					if (detail::is_file(path)) {
+						res.is_file_delivery_ = true;
+						auto the_file = std::make_shared<std::ifstream>(path, std::ios_base::binary);
+
+						the_file->unsetf(std::ios::skipws);
+
+						if (!the_file->is_open()) {
+							res.status = 422; //"Unprocessable Entity"
+							return true;
+						}
+						the_file->seekg(0, std::ios_base::end);
+						
+                        const auto type = detail::find_content_type(
+                                                        path,
+                                                        file_extension_and_mimetype_map_);
+                       res.set_content_provider(
+                           the_file->tellg(),
+                           type,
+                           [the_file](size_t offset, size_t length,
+                                      DataSink &sink) -> bool
+						{
+							if (length == 0) return true;
+
+							std::vector<uint8_t> buffer(length);
+							//the_file is copied here
+							the_file->seekg(offset, std::ios_base::beg);							
+							the_file->read(reinterpret_cast<char*>(buffer.data()), length);
+							uint64_t res = the_file->tellg();
+							res -= offset;
+
+							sink.write(reinterpret_cast<char*>(buffer.data()), static_cast<size_t>(res));
+							return res > 0;
+						});
+
+
+						res.status = -1; //this will be calculated outside
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
 
 inline socket_t
 Server::create_server_socket(const std::string &host, int port,
