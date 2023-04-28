@@ -237,13 +237,6 @@ set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 
 include(CMakePackageConfigHelpers)
 
-# Configures the meta-file httplibConfig.cmake.in to replace variables with paths/values/etc.
-configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-	INSTALL_DESTINATION "${_TARGET_INSTALL_CMAKEDIR}"
-	# Passes the includedir install path
-	PATH_VARS CMAKE_INSTALL_FULL_INCLUDEDIR
-)
 
 if(HTTPLIB_COMPILE)
 	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
@@ -271,14 +264,12 @@ install(TARGETS ${PROJECT_NAME}
 
 install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
-install(FILES
+configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-		# Install it so it can be used later by the httplibConfig.cmake file.
-		# Put it in the same dir as our config file instead of a global path so we don't potentially stomp on other packages.
-		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
-	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
-)
+		INSTALL_DESTINATION "${_TARGET_INSTALL_CMAKEDIR}"
+		# Passes the includedir install path
+		PATH_VARS CMAKE_INSTALL_FULL_INCLUDEDIR
+		)
 
 # NOTE: This path changes depending on if it's on Windows or Linux
 install(EXPORT httplibTargets
@@ -286,7 +277,18 @@ install(EXPORT httplibTargets
 	# So this makes httplib::httplib linkable after doing find_package(httplib)
 	NAMESPACE ${PROJECT_NAME}::
 	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
+    FILE ${PROJECT_NAME}Targets.cmake
 )
+
+export(EXPORT httplibTargets
+	NAMESPACE ${PROJECT_NAME}::
+	FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Targets.cmake")
+
+install(FILES
+		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
+		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake"
+		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
+		)
 
 if(HTTPLIB_TEST)
     include(CTest)
