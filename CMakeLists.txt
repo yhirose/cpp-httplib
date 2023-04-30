@@ -286,7 +286,7 @@ export(EXPORT httplibTargets
 
 install(FILES
 		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
-		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake"
+		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
 		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 		)
 
