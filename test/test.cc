@@ -6116,3 +6116,49 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     EXPECT_EQ("val&key2=val2", res->body);
   }
 }
+
+TEST(VulnerabilityTest, CRLFInjection) {
+  Server svr;
+
+  svr.Post("/test1", [](const Request &/*req*/, Response &res) {
+    res.set_content("Hello 1", "text/plain");
+  });
+
+  svr.Delete("/test2", [](const Request &/*req*/, Response &res) {
+    res.set_content("Hello 2", "text/plain");
+  });
+
+  svr.Put("/test3", [](const Request &/*req*/, Response &res) {
+    res.set_content("Hello 3", "text/plain");
+  });
+
+  svr.Patch("/test4", [](const Request &/*req*/, Response &res) {
+    res.set_content("Hello 4", "text/plain");
+  });
+
+  svr.set_logger([](const Request &req, const Response & /*res*/) {
+    for (const auto &x : req.headers) {
+      auto key = x.first;
+      EXPECT_STRNE("evil", key.c_str());
+    }
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+
+    cli.Post("/test1", "A=B",
+             "application/x-www-form-urlencoded\r\nevil: hello1");
+    cli.Delete("/test2", "A=B", "text/plain\r\nevil: hello2");
+    cli.Put("/test3", "text", "text/plain\r\nevil: hello3");
+    cli.Patch("/test4", "content", "text/plain\r\nevil: hello4");
+  }
+}

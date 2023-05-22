@@ -5925,8 +5925,8 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       res.headers.erase(it);
     }
 
-    res.headers.emplace("Content-Type",
-                        "multipart/byteranges; boundary=" + boundary);
+    res.set_header("Content-Type",
+                   "multipart/byteranges; boundary=" + boundary);
   }
 
   auto type = detail::encoding_type(req, res);
@@ -6616,32 +6616,32 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   // Prepare additional headers
   if (close_connection) {
     if (!req.has_header("Connection")) {
-      req.headers.emplace("Connection", "close");
+      req.set_header("Connection", "close");
     }
   }
 
   if (!req.has_header("Host")) {
     if (is_ssl()) {
       if (port_ == 443) {
-        req.headers.emplace("Host", host_);
+        req.set_header("Host", host_);
       } else {
-        req.headers.emplace("Host", host_and_port_);
+        req.set_header("Host", host_and_port_);
       }
     } else {
       if (port_ == 80) {
-        req.headers.emplace("Host", host_);
+        req.set_header("Host", host_);
       } else {
-        req.headers.emplace("Host", host_and_port_);
+        req.set_header("Host", host_and_port_);
       }
     }
   }
 
-  if (!req.has_header("Accept")) { req.headers.emplace("Accept", "*/*"); }
+  if (!req.has_header("Accept")) { req.set_header("Accept", "*/*"); }
 
 #ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
   if (!req.has_header("User-Agent")) {
     auto agent = std::string("cpp-httplib/") + CPPHTTPLIB_VERSION;
-    req.headers.emplace("User-Agent", agent);
+    req.set_header("User-Agent", agent);
   }
 #endif
 
@@ -6650,23 +6650,23 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       if (!req.is_chunked_content_provider_) {
         if (!req.has_header("Content-Length")) {
           auto length = std::to_string(req.content_length_);
-          req.headers.emplace("Content-Length", length);
+          req.set_header("Content-Length", length);
         }
       }
     } else {
       if (req.method == "POST" || req.method == "PUT" ||
           req.method == "PATCH") {
-        req.headers.emplace("Content-Length", "0");
+        req.set_header("Content-Length", "0");
       }
     }
   } else {
     if (!req.has_header("Content-Type")) {
-      req.headers.emplace("Content-Type", "text/plain");
+      req.set_header("Content-Type", "text/plain");
     }
 
     if (!req.has_header("Content-Length")) {
       auto length = std::to_string(req.body.size());
-      req.headers.emplace("Content-Length", length);
+      req.set_header("Content-Length", length);
     }
   }
 
@@ -6734,12 +6734,10 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
     ContentProvider content_provider,
     ContentProviderWithoutLength content_provider_without_length,
     const std::string &content_type, Error &error) {
-  if (!content_type.empty()) {
-    req.headers.emplace("Content-Type", content_type);
-  }
+  if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  if (compress_) { req.headers.emplace("Content-Encoding", "gzip"); }
+  if (compress_) { req.set_header("Content-Encoding", "gzip"); }
 #endif
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -6800,7 +6798,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
       req.content_provider_ = detail::ContentProviderAdapter(
           std::move(content_provider_without_length));
       req.is_chunked_content_provider_ = true;
-      req.headers.emplace("Transfer-Encoding", "chunked");
+      req.set_header("Transfer-Encoding", "chunked");
     } else {
       req.body.assign(body, content_length);
       ;
@@ -7423,9 +7421,7 @@ inline Result ClientImpl::Delete(const std::string &path,
   req.headers = headers;
   req.path = path;
 
-  if (!content_type.empty()) {
-    req.headers.emplace("Content-Type", content_type);
-  }
+  if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
   req.body.assign(body, content_length);
 
   return send_(std::move(req));
