@@ -1843,21 +1843,21 @@ protected:
 
                 {
                   const auto &text_value = req.get_file_values("text");
-                  EXPECT_EQ(text_value.size(), 1);
+                  EXPECT_EQ(1u, text_value.size());
                   auto &text = text_value[0];
                   EXPECT_TRUE(text.filename.empty());
                   EXPECT_EQ("default text", text.content);
                 }
                 {
                   const auto &text1_values = req.get_file_values("multi_text1");
-                  EXPECT_EQ(text1_values.size(), 2);
+                  EXPECT_EQ(2u, text1_values.size());
                   EXPECT_EQ("aaaaa", text1_values[0].content);
                   EXPECT_EQ("bbbbb", text1_values[1].content);
                 }
 
                 {
                   const auto &file1_values = req.get_file_values("multi_file1");
-                  EXPECT_EQ(file1_values.size(), 2);
+                  EXPECT_EQ(2u, file1_values.size());
                   auto file1 = file1_values[0];
                   EXPECT_EQ(file1.filename, "hello.txt");
                   EXPECT_EQ(file1.content_type, "text/plain");
@@ -3921,9 +3921,10 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
     res.set_header("Cache-Control", "no-cache");
     res.set_chunked_content_provider("text/event-stream", [](size_t offset,
                                                              DataSink &sink) {
-      char buffer[27];
-      auto size = static_cast<size_t>(sprintf(buffer, "data:%zd\n\n", offset));
-      auto ret = sink.write(buffer, size);
+      std::string s = "data:";
+      s += std::to_string(offset);
+      s += "\n\n";
+      auto ret = sink.write(s.data(), s.size());
       EXPECT_TRUE(ret);
       std::this_thread::sleep_for(std::chrono::seconds(1));
       return true;
