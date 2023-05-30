@@ -9,6 +9,7 @@
 	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_COMPILE (default off)
+	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_TEST (default off)
 	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
 	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
@@ -87,6 +88,8 @@ option(HTTPLIB_USE_OPENSSL_IF_AVAILABLE "Uses OpenSSL (if available) to enable H
 option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib compression support." ON)
 # Lets you compile the program as a regular library instead of header-only
 option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
+# Lets you disable the installation (useful when fetched from another CMake project)
+option(HTTPLIB_INSTALL "Enables the installation target" ON)
 # Just setting this variable here for people building in-tree
 if(HTTPLIB_COMPILE)
 	set(HTTPLIB_IS_COMPILED TRUE)
@@ -262,31 +265,33 @@ else()
 	)
 endif()
 
-# Creates the export httplibTargets.cmake
-# This is strictly what holds compilation requirements
-# and linkage information (doesn't find deps though).
-install(TARGETS ${PROJECT_NAME}
-	EXPORT httplibTargets
-)
+if(HTTPLIB_INSTALL)
+	# Creates the export httplibTargets.cmake
+	# This is strictly what holds compilation requirements
+	# and linkage information (doesn't find deps though).
+	install(TARGETS ${PROJECT_NAME}
+		EXPORT httplibTargets
+	)
 
-install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
+	install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
-install(FILES
+	install(FILES
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
 		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
 		# Install it so it can be used later by the httplibConfig.cmake file.
 		# Put it in the same dir as our config file instead of a global path so we don't potentially stomp on other packages.
 		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
-	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
-)
+		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
+	)
 
-# NOTE: This path changes depending on if it's on Windows or Linux
-install(EXPORT httplibTargets
-	# Puts the targets into the httplib namespace
-	# So this makes httplib::httplib linkable after doing find_package(httplib)
-	NAMESPACE ${PROJECT_NAME}::
-	DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
-)
+	# NOTE: This path changes depending on if it's on Windows or Linux
+	install(EXPORT httplibTargets
+		# Puts the targets into the httplib namespace
+		# So this makes httplib::httplib linkable after doing find_package(httplib)
+		NAMESPACE ${PROJECT_NAME}::
+		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
+	)
+endif()
 
 if(HTTPLIB_TEST)
     include(CTest)
