@@ -265,33 +265,33 @@ else()
 	)
 endif()
 
-if (HTTPLIB_INSTALL)
+if(HTTPLIB_INSTALL)
 	# Creates the export httplibTargets.cmake
 	# This is strictly what holds compilation requirements
 	# and linkage information (doesn't find deps though).
 	install(TARGETS ${PROJECT_NAME}
-			EXPORT httplibTargets
-			)
+		EXPORT httplibTargets
+	)
 
 	install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
 	install(FILES
-			"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-			"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-			# Install it so it can be used later by the httplibConfig.cmake file.
-			# Put it in the same dir as our config file instead of a global path so we don't potentially stomp on other packages.
-			"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
-			DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
-			)
+		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+		"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+		# Install it so it can be used later by the httplibConfig.cmake file.
+		# Put it in the same dir as our config file instead of a global path so we don't potentially stomp on other packages.
+		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
+		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
+	)
 
 	# NOTE: This path changes depending on if it's on Windows or Linux
 	install(EXPORT httplibTargets
-			# Puts the targets into the httplib namespace
-			# So this makes httplib::httplib linkable after doing find_package(httplib)
-			NAMESPACE ${PROJECT_NAME}::
-			DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
-			)
-endif ()
+		# Puts the targets into the httplib namespace
+		# So this makes httplib::httplib linkable after doing find_package(httplib)
+		NAMESPACE ${PROJECT_NAME}::
+		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
+	)
+endif()
 
 if(HTTPLIB_TEST)
     include(CTest)
