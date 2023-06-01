@@ -6801,7 +6801,6 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
       req.set_header("Transfer-Encoding", "chunked");
     } else {
       req.body.assign(body, content_length);
-      ;
     }
   }
 
