@@ -223,6 +223,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <utility>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
