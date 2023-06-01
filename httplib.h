@@ -8751,7 +8751,9 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
 }
 #endif
 
-inline void Client::set_logger(Logger logger) { cli_->set_logger(logger); }
+inline void Client::set_logger(Logger logger) {
+  cli_->set_logger(std::move(logger));
+}
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_ca_cert_path(const std::string &ca_cert_file_path,
