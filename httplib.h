@@ -5243,7 +5243,7 @@ inline Server &Server::set_error_handler(HandlerWithResponse handler) {
 }
 
 inline Server &Server::set_error_handler(Handler handler) {
-  error_handler_ = [handler](const Request &req, Response &res) {
+  error_handler_ = [handler = std::move(handler)](const Request &req, Response &res) {
     handler(req, res);
     return HandlerResponse::Handled;
   };
@@ -5273,7 +5273,6 @@ inline Server &Server::set_logger(Logger logger) {
 inline Server &
 Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   expect_100_continue_handler_ = std::move(handler);
-
   return *this;
 }
 
