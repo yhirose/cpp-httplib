@@ -223,6 +223,7 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <utility>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -5242,7 +5243,7 @@ inline Server &Server::set_error_handler(HandlerWithResponse handler) {
 }
 
 inline Server &Server::set_error_handler(Handler handler) {
-  error_handler_ = [handler](const Request &req, Response &res) {
+  error_handler_ = [handler = std::move(handler)](const Request &req, Response &res) {
     handler(req, res);
     return HandlerResponse::Handled;
   };
@@ -5272,7 +5273,6 @@ inline Server &Server::set_logger(Logger logger) {
 inline Server &
 Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   expect_100_continue_handler_ = std::move(handler);
-
   return *this;
 }
 
@@ -6801,7 +6801,6 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
       req.set_header("Transfer-Encoding", "chunked");
     } else {
       req.body.assign(body, content_length);
-      ;
     }
   }
 
@@ -8750,7 +8749,9 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
 }
 #endif
 
-inline void Client::set_logger(Logger logger) { cli_->set_logger(logger); }
+inline void Client::set_logger(Logger logger) {
+  cli_->set_logger(std::move(logger));
+}
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::set_ca_cert_path(const std::string &ca_cert_file_path,
