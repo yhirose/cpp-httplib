@@ -1118,6 +1118,7 @@ public:
   void set_ca_cert_path(const std::string &ca_cert_file_path,
                         const std::string &ca_cert_dir_path = std::string());
   void set_ca_cert_store(X509_STORE *ca_cert_store);
+  X509_STORE *create_ca_cert_store(const char *ca_cert, std::size_t size);
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1498,6 +1499,7 @@ public:
                         const std::string &ca_cert_dir_path = std::string());
 
   void set_ca_cert_store(X509_STORE *ca_cert_store);
+  void load_ca_cert_store(const char *ca_cert, std::size_t size);
 
   long get_openssl_verify_result() const;
 
@@ -1557,6 +1559,7 @@ public:
   bool is_valid() const override;
 
   void set_ca_cert_store(X509_STORE *ca_cert_store);
+  void load_ca_cert_store(const char *ca_cert, std::size_t size);
 
   long get_openssl_verify_result() const;
 
@@ -7584,6 +7587,39 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
     ca_cert_store_ = ca_cert_store;
   }
 }
+
+inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
+                                                    std::size_t size) {
+  BIO *mem = nullptr;
+  STACK_OF(X509_INFO) *inf = nullptr;
+  X509_STORE *cts = nullptr;
+
+  [&] {
+    mem = BIO_new_mem_buf(ca_cert, size);
+    if (!mem) return;
+
+    inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
+    if (!inf) return;
+
+    cts = X509_STORE_new();
+    if (!cts) return;
+
+    for (int first = 0, last = sk_X509_INFO_num(inf); first < last; ++first) {
+      auto *itmp = sk_X509_INFO_value(inf, first);
+      if (!itmp) continue;
+
+      if (itmp->x509) X509_STORE_add_cert(cts, itmp->x509);
+
+      if (itmp->crl) X509_STORE_add_crl(cts, itmp->crl);
+    }
+  }();
+
+  if (inf) sk_X509_INFO_pop_free(inf, X509_INFO_free);
+
+  if (mem) BIO_free_all(mem);
+
+  return cts;
+}
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -7982,6 +8018,11 @@ inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
       X509_STORE_free(ca_cert_store);
     }
   }
+}
+
+inline void SSLClient::load_ca_cert_store(const char *ca_cert,
+                                          std::size_t size) {
+  set_ca_cert_store(ClientImpl::create_ca_cert_store(ca_cert, size));
 }
 
 inline long SSLClient::get_openssl_verify_result() const {
@@ -8765,6 +8806,10 @@ inline void Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
   } else {
     cli_->set_ca_cert_store(ca_cert_store);
   }
+}
+
+inline void Client::load_ca_cert_store(const char *ca_cert, std::size_t size) {
+  set_ca_cert_store(cli_->create_ca_cert_store(ca_cert, size));
 }
 
 inline long Client::get_openssl_verify_result() const {
