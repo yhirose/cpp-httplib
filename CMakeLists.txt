@@ -75,6 +75,10 @@ string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_raw_version_string}")
 
 project(httplib VERSION ${_httplib_version} LANGUAGES CXX)
 
+# Lets you disable C++ exception during CMake configure time.
+# The value is used in the install CMake config file.
+option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
+
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.
 set(_HTTPLIB_OPENSSL_MIN_VER "1.1.1")
@@ -229,6 +233,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 
 # Set the definitions to enable optional features
 target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
+	$<$<BOOL:${HTTPLIB_NO_EXCEPTIONS}>:CPPHTTPLIB_NO_EXCEPTIONS>
 	$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:CPPHTTPLIB_BROTLI_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:CPPHTTPLIB_ZLIB_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
