@@ -7590,33 +7590,29 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
 
 inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
                                                     std::size_t size) {
-  BIO *mem = nullptr;
-  STACK_OF(X509_INFO) *inf = nullptr;
-  X509_STORE *cts = nullptr;
+  auto mem = BIO_new_mem_buf(ca_cert, size);
+  if (!mem) return nullptr;
 
-  [&] {
-    mem = BIO_new_mem_buf(ca_cert, size);
-    if (!mem) return;
+  auto inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
+  if (!inf) {
+    BIO_free_all(mem);
+    return nullptr;
+  }
 
-    inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
-    if (!inf) return;
-
-    cts = X509_STORE_new();
-    if (!cts) return;
-
+  auto cts = X509_STORE_new();
+  if (cts) {
     for (int first = 0, last = sk_X509_INFO_num(inf); first < last; ++first) {
-      auto *itmp = sk_X509_INFO_value(inf, first);
+      auto itmp = sk_X509_INFO_value(inf, first);
       if (!itmp) continue;
 
       if (itmp->x509) X509_STORE_add_cert(cts, itmp->x509);
 
       if (itmp->crl) X509_STORE_add_crl(cts, itmp->crl);
     }
-  }();
+  }
 
-  if (inf) sk_X509_INFO_pop_free(inf, X509_INFO_free);
-
-  if (mem) BIO_free_all(mem);
+  sk_X509_INFO_pop_free(inf, X509_INFO_free);
+  BIO_free_all(mem);
 
   return cts;
 }
