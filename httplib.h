@@ -5252,7 +5252,7 @@ inline Server &Server::set_error_handler(HandlerWithResponse handler) {
 }
 
 inline Server &Server::set_error_handler(Handler handler) {
-  error_handler_ = [handler = std::move(handler)](const Request &req, Response &res) {
+  error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
     return HandlerResponse::Handled;
   };
@@ -7579,9 +7579,7 @@ inline void ClientImpl::set_proxy_digest_auth(const std::string &username,
   proxy_digest_auth_username_ = username;
   proxy_digest_auth_password_ = password;
 }
-#endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void ClientImpl::set_ca_cert_path(const std::string &ca_cert_file_path,
                                          const std::string &ca_cert_dir_path) {
   ca_cert_file_path_ = ca_cert_file_path;
@@ -7596,7 +7594,7 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
 
 inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
                                                     std::size_t size) {
-  auto mem = BIO_new_mem_buf(ca_cert, size);
+  auto mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
   if (!mem) return nullptr;
 
   auto inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
@@ -7607,24 +7605,20 @@ inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
 
   auto cts = X509_STORE_new();
   if (cts) {
-    for (int first = 0, last = sk_X509_INFO_num(inf); first < last; ++first) {
+    for (auto first = 0, last = sk_X509_INFO_num(inf); first < last; ++first) {
       auto itmp = sk_X509_INFO_value(inf, first);
-      if (!itmp) continue;
+      if (!itmp) { continue; }
 
-      if (itmp->x509) X509_STORE_add_cert(cts, itmp->x509);
-
-      if (itmp->crl) X509_STORE_add_crl(cts, itmp->crl);
+      if (itmp->x509) { X509_STORE_add_cert(cts, itmp->x509); }
+      if (itmp->crl) { X509_STORE_add_crl(cts, itmp->crl); }
     }
   }
 
   sk_X509_INFO_pop_free(inf, X509_INFO_free);
   BIO_free_all(mem);
-
   return cts;
 }
-#endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
   server_certificate_verification_ = enabled;
 }
