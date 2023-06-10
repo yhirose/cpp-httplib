@@ -526,7 +526,8 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver_Online) {
 }
 
 TEST(RangeTest, FromHTTPBin_Online) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
+  auto path = std::string{"/httpbin/range/32"};
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
@@ -538,7 +539,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   cli.set_connection_timeout(5);
 
   {
-    auto res = cli.Get("/range/32");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
@@ -546,7 +547,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{1, -1}})};
-    auto res = cli.Get("/range/32", headers);
+    auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(206, res->status);
@@ -554,7 +555,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{1, 10}})};
-    auto res = cli.Get("/range/32", headers);
+    auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(206, res->status);
@@ -562,7 +563,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{0, 31}})};
-    auto res = cli.Get("/range/32", headers);
+    auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
@@ -570,7 +571,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{0, -1}})};
-    auto res = cli.Get("/range/32", headers);
+    auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
@@ -578,7 +579,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{0, 32}})};
-    auto res = cli.Get("/range/32", headers);
+    auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ(416, res->status);
   }
@@ -673,7 +674,7 @@ TEST(ConnectionErrorTest, Timeout_Online) {
 }
 
 TEST(CancelTest, NoCancel_Online) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
@@ -684,14 +685,15 @@ TEST(CancelTest, NoCancel_Online) {
 #endif
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
+  auto res =
+      cli.Get("/httpbin/range/32", [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res);
   EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
   EXPECT_EQ(200, res->status);
 }
 
 TEST(CancelTest, WithCancelSmallPayload_Online) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
@@ -701,14 +703,15 @@ TEST(CancelTest, WithCancelSmallPayload_Online) {
   Client cli(host, port);
 #endif
 
-  auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
+  auto res =
+      cli.Get("/httpbin/range/32", [](uint64_t, uint64_t) { return false; });
   cli.set_connection_timeout(std::chrono::seconds(5));
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST(CancelTest, WithCancelLargePayload_Online) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
@@ -720,14 +723,15 @@ TEST(CancelTest, WithCancelLargePayload_Online) {
   cli.set_connection_timeout(std::chrono::seconds(5));
 
   uint32_t count = 0;
-  auto res = cli.Get("/range/65536",
+  auto res = cli.Get("/httpbin/range/65536",
                      [&count](uint64_t, uint64_t) { return (count++ == 0); });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST(BaseAuthTest, FromHTTPWatch_Online) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
+  auto path = std::string{"/httpbin/basic-auth/hello/world"};
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
@@ -738,14 +742,14 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 #endif
 
   {
-    auto res = cli.Get("/basic-auth/hello/world");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 
   {
-    auto res = cli.Get("/basic-auth/hello/world",
-                       {make_basic_authentication_header("hello", "world")});
+    auto res =
+        cli.Get(path, {make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
               res->body);
@@ -754,7 +758,7 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
   {
     cli.set_basic_auth("hello", "world");
-    auto res = cli.Get("/basic-auth/hello/world");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
               res->body);
@@ -763,14 +767,14 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
   {
     cli.set_basic_auth("hello", "bad");
-    auto res = cli.Get("/basic-auth/hello/world");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 
   {
     cli.set_basic_auth("bad", "world");
-    auto res = cli.Get("/basic-auth/hello/world");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
@@ -778,22 +782,22 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(DigestAuthTest, FromHTTPWatch_Online) {
-  auto host = "httpbin.org";
+  auto host = "nghttp2.org";
   auto port = 443;
   SSLClient cli(host, port);
 
   {
-    auto res = cli.Get("/digest-auth/auth/hello/world");
+    auto res = cli.Get("/httpbin/digest-auth/auth/hello/world");
     ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 
   {
     std::vector<std::string> paths = {
-        "/digest-auth/auth/hello/world/MD5",
-        "/digest-auth/auth/hello/world/SHA-256",
-        "/digest-auth/auth/hello/world/SHA-512",
-        "/digest-auth/auth-int/hello/world/MD5",
+        "/httpbin/digest-auth/auth/hello/world/MD5",
+        "/httpbin/digest-auth/auth/hello/world/SHA-256",
+        "/httpbin/digest-auth/auth/hello/world/SHA-512",
+        "/httpbin/digest-auth/auth-int/hello/world/MD5",
     };
 
     cli.set_digest_auth("hello", "world");
@@ -4414,19 +4418,27 @@ TEST(GetWithParametersTest, GetWithParameters2) {
 }
 
 TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
-  Client cli("httpbin.org");
+  auto host = "nghttp2.org";
+  auto path = std::string{"/httpbin/range/32"};
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli(host);
+#else
+  Client cli(host);
+#endif
+
   cli.set_default_headers({make_range_header({{1, 10}})});
   cli.set_connection_timeout(5);
 
   {
-    auto res = cli.Get("/range/32");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(206, res->status);
   }
 
   {
-    auto res = cli.Get("/range/32");
+    auto res = cli.Get(path);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(206, res->status);
@@ -4652,8 +4664,8 @@ TEST(SSLClientTest, UpdateCAStore) {
 }
 
 TEST(SSLClientTest, ServerNameIndication_Online) {
-  SSLClient cli("httpbin.org", 443);
-  auto res = cli.Get("/get");
+  SSLClient cli("nghttp2.org", 443);
+  auto res = cli.Get("/httpbin/get");
   ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
