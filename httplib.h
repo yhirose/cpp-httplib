@@ -2024,7 +2024,7 @@ inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
 }
 
 inline std::string from_i_to_hex(size_t n) {
-  const char *charset = "0123456789abcdef";
+  static const auto charset = "0123456789abcdef";
   std::string ret;
   do {
     ret = charset[n & 15] + ret;
@@ -2364,7 +2364,7 @@ inline int close_socket(socket_t sock) {
 }
 
 template <typename T> inline ssize_t handle_EINTR(T fn) {
-  ssize_t res = false;
+  ssize_t res = 0;
   while (true) {
     res = fn();
     if (res < 0 && errno == EINTR) { continue; }
@@ -3389,7 +3389,7 @@ inline bool brotli_decompressor::decompress(const char *data,
     return 0;
   }
 
-  const uint8_t *next_in = reinterpret_cast<const uint8_t *>(data);
+  auto next_in = reinterpret_cast<const uint8_t *>(data);
   size_t avail_in = data_length;
   size_t total_out;
 
