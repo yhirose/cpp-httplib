@@ -10,6 +10,7 @@
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
+	* HTTPLIB_EXAMPLE (default off)
 	* HTTPLIB_TEST (default off)
 	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
 	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
@@ -98,6 +99,7 @@ option(HTTPLIB_INSTALL "Enables the installation target" ON)
 if(HTTPLIB_COMPILE)
 	set(HTTPLIB_IS_COMPILED TRUE)
 endif()
+option(HTTPLIB_EXAMPLE "Builds examples" OFF)
 option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
@@ -296,6 +298,10 @@ if(HTTPLIB_INSTALL)
 		NAMESPACE ${PROJECT_NAME}::
 		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 	)
+endif()
+
+if(HTTPLIB_EXAMPLE)
+    add_subdirectory(example)
 endif()
 
 if(HTTPLIB_TEST)
