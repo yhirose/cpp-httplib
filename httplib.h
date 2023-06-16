@@ -1675,17 +1675,17 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
 inline void default_socket_options(socket_t sock) {
   int yes = 1;
 #ifdef _WIN32
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&yes),
-             sizeof(yes));
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+             reinterpret_cast<const char *>(&yes), sizeof(yes));
   setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-             reinterpret_cast<char *>(&yes), sizeof(yes));
+             reinterpret_cast<const char *>(&yes), sizeof(yes));
 #else
 #ifdef SO_REUSEPORT
-  setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<void *>(&yes),
-             sizeof(yes));
+  setsockopt(sock, SOL_SOCKET, SO_REUSEPORT,
+             reinterpret_cast<const void *>(&yes), sizeof(yes));
 #else
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<void *>(&yes),
-             sizeof(yes));
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+             reinterpret_cast<const void *>(&yes), sizeof(yes));
 #endif
 #endif
 }
@@ -2746,16 +2746,26 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
     if (tcp_nodelay) {
       int yes = 1;
-      setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&yes),
-                 sizeof(yes));
+#ifdef _WIN32
+      setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+                 reinterpret_cast<const char *>(&yes), sizeof(yes));
+#else
+      setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+                 reinterpret_cast<const void *>(&yes), sizeof(yes));
+#endif
     }
 
     if (socket_options) { socket_options(sock); }
 
     if (rp->ai_family == AF_INET6) {
       int no = 0;
-      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char *>(&no),
-                 sizeof(no));
+#ifdef _WIN32
+      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
+                 reinterpret_cast<const char *>(&no), sizeof(no));
+#else
+      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
+                 reinterpret_cast<const void *>(&no), sizeof(no));
+#endif
     }
 
     // bind or connect
@@ -2898,13 +2908,14 @@ inline socket_t create_client_socket(
 #ifdef _WIN32
           auto timeout = static_cast<uint32_t>(read_timeout_sec * 1000 +
                                                read_timeout_usec / 1000);
-          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
-                     sizeof(timeout));
+          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
+                     reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
           tv.tv_sec = static_cast<long>(read_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
+                     reinterpret_cast<const void *>(&tv), sizeof(tv));
 #endif
         }
         {
@@ -2912,13 +2923,14 @@ inline socket_t create_client_socket(
 #ifdef _WIN32
           auto timeout = static_cast<uint32_t>(write_timeout_sec * 1000 +
                                                write_timeout_usec / 1000);
-          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-                     sizeof(timeout));
+          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
+                     reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
           tv.tv_sec = static_cast<long>(write_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
-          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
+                     reinterpret_cast<const void *>(&tv), sizeof(tv));
 #endif
         }
 
@@ -3377,7 +3389,7 @@ inline bool brotli_decompressor::decompress(const char *data,
     return 0;
   }
 
-  const uint8_t *next_in = (const uint8_t *)data;
+  const uint8_t *next_in = reinterpret_cast<const uint8_t *>(data);
   size_t avail_in = data_length;
   size_t total_out;
 
@@ -4482,7 +4494,7 @@ inline std::string message_digest(const std::string &s, const EVP_MD *algo) {
   std::stringstream ss;
   for (auto i = 0u; i < hash_length; ++i) {
     ss << std::hex << std::setw(2) << std::setfill('0')
-       << (unsigned int)hash[i];
+       << static_cast<unsigned int>(hash[i]);
   }
 
   return ss.str();
@@ -5799,13 +5811,14 @@ inline bool Server::listen_internal() {
 #ifdef _WIN32
         auto timeout = static_cast<uint32_t>(read_timeout_sec_ * 1000 +
                                              read_timeout_usec_ / 1000);
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
-                   sizeof(timeout));
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+                   reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
         timeval tv;
         tv.tv_sec = static_cast<long>(read_timeout_sec_);
         tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+                   reinterpret_cast<const void *>(&tv), sizeof(tv));
 #endif
       }
       {
@@ -5813,13 +5826,14 @@ inline bool Server::listen_internal() {
 #ifdef _WIN32
         auto timeout = static_cast<uint32_t>(write_timeout_sec_ * 1000 +
                                              write_timeout_usec_ / 1000);
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-                   sizeof(timeout));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+                   reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
         timeval tv;
         tv.tv_sec = static_cast<long>(write_timeout_sec_);
         tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec_);
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+                   reinterpret_cast<const void *>(&tv), sizeof(tv));
 #endif
       }
 
@@ -7852,8 +7866,9 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
 
     // add default password callback before opening encrypted private key
     if (private_key_password != nullptr && (private_key_password[0] != '\0')) {
-      SSL_CTX_set_default_passwd_cb_userdata(ctx_,
-                                             (char *)private_key_password);
+      SSL_CTX_set_default_passwd_cb_userdata(
+          ctx_,
+          reinterpret_cast<void *>(const_cast<char *>(private_key_password)));
     }
 
     if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
@@ -8167,6 +8182,10 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         return true;
       },
       [&](SSL *ssl2) {
+        // NOTE: With -Wold-style-cast, this can produce a warning, since
+        //  SSL_set_tlsext_host_name is a macro (in OpenSSL), which contains
+        //  an old style cast. Short of doing compiler specific pragma's
+        //  here, we can't get rid of this warning. :'(
         SSL_set_tlsext_host_name(ssl2, host_.c_str());
         return true;
       });
@@ -8267,8 +8286,9 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
     for (decltype(count) i = 0; i < count && !dsn_matched; i++) {
       auto val = sk_GENERAL_NAME_value(alt_names, i);
       if (val->type == type) {
-        auto name = (const char *)ASN1_STRING_get0_data(val->d.ia5);
-        auto name_len = (size_t)ASN1_STRING_length(val->d.ia5);
+        auto name =
+            reinterpret_cast<const char *>(ASN1_STRING_get0_data(val->d.ia5));
+        auto name_len = static_cast<size_t>(ASN1_STRING_length(val->d.ia5));
 
         switch (type) {
         case GEN_DNS: dsn_matched = check_host_name(name, name_len); break;
@@ -8286,7 +8306,8 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
     if (dsn_matched || ip_matched) { ret = true; }
   }
 
-  GENERAL_NAMES_free((STACK_OF(GENERAL_NAME) *)alt_names);
+  GENERAL_NAMES_free(const_cast<STACK_OF(GENERAL_NAME) *>(
+      reinterpret_cast<const STACK_OF(GENERAL_NAME) *>(alt_names)));
   return ret;
 }
 
