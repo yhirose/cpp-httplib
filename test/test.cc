@@ -972,7 +972,7 @@ TEST(YahooRedirectTest, Redirect_Online) {
   res = cli.Get("/");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ("https://yahoo.com/", res->location);
+  EXPECT_EQ("https://www.yahoo.com/", res->location);
 }
 
 TEST(HttpsToHttpRedirectTest, Redirect_Online) {
@@ -5301,7 +5301,7 @@ TEST(YahooRedirectTest2, SimpleInterface_Online) {
   res = cli.Get("/");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ("https://yahoo.com/", res->location);
+  EXPECT_EQ("https://www.yahoo.com/", res->location);
 }
 
 TEST(YahooRedirectTest3, SimpleInterface_Online) {

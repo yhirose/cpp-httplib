@@ -3920,7 +3920,8 @@ inline bool redirect(T &cli, Request &req, Response &res,
   if (ret) {
     req = new_req;
     res = new_res;
-    res.location = location;
+
+    if (res.location.empty()) res.location = location;
   }
   return ret;
 }
