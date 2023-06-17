@@ -2013,7 +2013,7 @@ inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
   val = 0;
   for (; cnt; i++, cnt--) {
     if (!s[i]) { return false; }
-    int v = 0;
+    auto v = 0;
     if (is_hex(s[i], v)) {
       val = val * 16 + v;
     } else {
@@ -2074,8 +2074,8 @@ inline std::string base64_encode(const std::string &in) {
   std::string out;
   out.reserve(in.size());
 
-  int val = 0;
-  int valb = -6;
+  auto val = 0;
+  auto valb = -6;
 
   for (auto c : in) {
     val = (val << 8) + static_cast<uint8_t>(c);
@@ -2206,7 +2206,7 @@ inline std::string decode_url(const std::string &s,
   for (size_t i = 0; i < s.size(); i++) {
     if (s[i] == '%' && i + 1 < s.size()) {
       if (s[i + 1] == 'u') {
-        int val = 0;
+        auto val = 0;
         if (from_hex_to_i(s, i + 2, 4, val)) {
           // 4 digits Unicode codes
           char buff[4];
@@ -2217,7 +2217,7 @@ inline std::string decode_url(const std::string &s,
           result += s[i];
         }
       } else {
-        int val = 0;
+        auto val = 0;
         if (from_hex_to_i(s, i + 1, 2, val)) {
           // 2 digits hex codes
           result += static_cast<char>(val);
@@ -2468,7 +2468,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
   if (poll_res == 0) { return Error::ConnectionTimeout; }
 
   if (poll_res > 0 && pfd_read.revents & (POLLIN | POLLOUT)) {
-    int error = 0;
+    auto error = 0;
     socklen_t len = sizeof(error);
     auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
                           reinterpret_cast<char *>(&error), &len);
@@ -2500,7 +2500,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
   if (ret == 0) { return Error::ConnectionTimeout; }
 
   if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
-    int error = 0;
+    auto error = 0;
     socklen_t len = sizeof(error);
     auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
                           reinterpret_cast<char *>(&error), &len);
@@ -2745,7 +2745,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #endif
 
     if (tcp_nodelay) {
-      int yes = 1;
+      auto yes = 1;
 #ifdef _WIN32
       setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
                  reinterpret_cast<const char *>(&yes), sizeof(yes));
@@ -2758,7 +2758,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     if (socket_options) { socket_options(sock); }
 
     if (rp->ai_family == AF_INET6) {
-      int no = 0;
+      auto no = 0;
 #ifdef _WIN32
       setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
                  reinterpret_cast<const char *>(&no), sizeof(no));
@@ -3240,7 +3240,7 @@ inline bool gzip_compressor::compress(const char *data, size_t data_length,
     data += strm_.avail_in;
 
     auto flush = (last && data_length == 0) ? Z_FINISH : Z_NO_FLUSH;
-    int ret = Z_OK;
+    auto ret = Z_OK;
 
     std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
     do {
@@ -3284,7 +3284,7 @@ inline bool gzip_decompressor::decompress(const char *data, size_t data_length,
                                           Callback callback) {
   assert(is_valid_);
 
-  int ret = Z_OK;
+  auto ret = Z_OK;
 
   do {
     constexpr size_t max_avail_in =
@@ -4587,7 +4587,7 @@ inline bool retrieve_root_certs_from_keychain(CFObjectPtr<CFArrayRef> &certs) {
 
 inline bool add_certs_to_x509_store(CFArrayRef certs, X509_STORE *store) {
   auto result = false;
-  for (int i = 0; i < CFArrayGetCount(certs); ++i) {
+  for (auto i = 0; i < CFArrayGetCount(certs); ++i) {
     const auto cert = reinterpret_cast<const __SecCertificate *>(
         CFArrayGetValueAtIndex(certs, i));
 
@@ -4805,7 +4805,7 @@ inline void hosted_at(const std::string &hostname,
     const auto &addr =
         *reinterpret_cast<struct sockaddr_storage *>(rp->ai_addr);
     std::string ip;
-    int dummy = -1;
+    auto dummy = -1;
     if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage), ip,
                                 dummy)) {
       addrs.push_back(ip);
@@ -7697,7 +7697,7 @@ bool ssl_connect_or_accept_nonblocking(socket_t sock, SSL *ssl,
                                        U ssl_connect_or_accept,
                                        time_t timeout_sec,
                                        time_t timeout_usec) {
-  int res = 0;
+  auto res = 0;
   while ((res = ssl_connect_or_accept(ssl)) != 1) {
     auto err = SSL_get_error(ssl, res);
     switch (err) {
@@ -7778,7 +7778,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
-      int n = 1000;
+      auto n = 1000;
 #ifdef _WIN32
       while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
                           (err == SSL_ERROR_SYSCALL &&
@@ -7811,7 +7811,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
     auto ret = SSL_write(ssl_, ptr, static_cast<int>(handle_size));
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
-      int n = 1000;
+      auto n = 1000;
 #ifdef _WIN32
       while (--n >= 0 && (err == SSL_ERROR_WANT_WRITE ||
                           (err == SSL_ERROR_SYSCALL &&
