@@ -7620,7 +7620,8 @@ inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
 
   auto cts = X509_STORE_new();
   if (cts) {
-    for (size_t first = 0, last = sk_X509_INFO_num(inf); first < last; ++first) {
+    for (size_t first = 0, last = sk_X509_INFO_num(inf); first < last;
+         ++first) {
       auto itmp = sk_X509_INFO_value(inf, first);
       if (!itmp) { continue; }
 
