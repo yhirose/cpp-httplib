@@ -120,7 +120,7 @@ elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL QUIET)
 endif()
 # Just setting this variable here for people building in-tree
-if(OPENSSL_FOUND)
+if(OPENSSL_FOUND AND NOT DEFINED HTTPLIB_IS_USING_OPENSSL)
 	set(HTTPLIB_IS_USING_OPENSSL TRUE)
 endif()
 
