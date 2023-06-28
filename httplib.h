@@ -5853,7 +5853,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
   }
 
   // File handler
-  bool is_head_request = req.method == "HEAD";
+  auto is_head_request = req.method == "HEAD";
   if ((req.method == "GET" || is_head_request) &&
       handle_file_request(req, res, is_head_request)) {
     return true;
@@ -7620,8 +7620,8 @@ inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
 
   auto cts = X509_STORE_new();
   if (cts) {
-    for (auto first = 0, last = sk_X509_INFO_num(inf); first < last; ++first) {
-      auto itmp = sk_X509_INFO_value(inf, first);
+    for (auto i = 0; i < static_cast<int>(sk_X509_INFO_num(inf)); i++) {
+      auto itmp = sk_X509_INFO_value(inf, i);
       if (!itmp) { continue; }
 
       if (itmp->x509) { X509_STORE_add_cert(cts, itmp->x509); }
