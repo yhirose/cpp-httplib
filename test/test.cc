@@ -4379,6 +4379,12 @@ TEST(GetWithParametersTest, GetWithParameters) {
     EXPECT_EQ("bar", req.get_param_value("param2"));
   });
 
+  svr.GetSimple("/users/:id", [&](const Request &req, Response &) {
+    EXPECT_EQ("user-id", req.path_params.at("id"));
+    EXPECT_EQ("foo", req.get_param_value("param1"));
+    EXPECT_EQ("bar", req.get_param_value("param2"));
+  });
+
   auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
@@ -4415,6 +4421,15 @@ TEST(GetWithParametersTest, GetWithParameters) {
     Client cli(HOST, PORT);
 
     auto res = cli.Get("/resources/resource-id?param1=foo&param2=bar");
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+  }
+
+  {
+    Client cli(HOST, PORT);
+
+    auto res = cli.Get("/users/user-id?param1=foo&param2=bar");
 
     ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
@@ -6269,4 +6284,141 @@ TEST(VulnerabilityTest, CRLFInjection) {
     cli.Put("/test3", "text", "text/plain\r\nevil: hello3");
     cli.Patch("/test4", "content", "text/plain\r\nevil: hello4");
   }
+}
+
+TEST(PathParamsTest, StaticMatch) {
+  const auto pattern = "/users/all";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/all";
+  ASSERT_TRUE(matcher.match(request));
+
+  std::unordered_map<std::string, std::string> expected_params = {};
+
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(PathParamsTest, StaticMismatch) {
+  const auto pattern = "/users/all";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/1";
+  ASSERT_FALSE(matcher.match(request));
+}
+
+TEST(PathParamsTest, SingleParamInTheMiddle) {
+  const auto pattern = "/users/:id/subscriptions";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/42/subscriptions";
+  ASSERT_TRUE(matcher.match(request));
+
+  std::unordered_map<std::string, std::string> expected_params = {{"id", "42"}};
+
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(PathParamsTest, SingleParamInTheEnd) {
+  const auto pattern = "/users/:id";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/24";
+  ASSERT_TRUE(matcher.match(request));
+
+  std::unordered_map<std::string, std::string> expected_params = {{"id", "24"}};
+
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(PathParamsTest, SingleParamInTheEndTrailingSlash) {
+  const auto pattern = "/users/:id/";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/42/";
+  ASSERT_TRUE(matcher.match(request));
+  std::unordered_map<std::string, std::string> expected_params = {{"id", "42"}};
+
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(PathParamsTest, EmptyParam) {
+  const auto pattern = "/users/:id/";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users//";
+  ASSERT_TRUE(matcher.match(request));
+
+  std::unordered_map<std::string, std::string> expected_params = {{"id", ""}};
+
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(PathParamsTest, FragmentMismatch) {
+  const auto pattern = "/users/:id/";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/admins/24/";
+  ASSERT_FALSE(matcher.match(request));
+}
+
+TEST(PathParamsTest, ExtraFragments) {
+  const auto pattern = "/users/:id";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/42/subscriptions";
+  ASSERT_FALSE(matcher.match(request));
+}
+
+TEST(PathParamsTest, MissingTrailingParam) {
+  const auto pattern = "/users/:id";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users";
+  ASSERT_FALSE(matcher.match(request));
+}
+
+TEST(PathParamsTest, MissingParamInTheMiddle) {
+  const auto pattern = "/users/:id/subscriptions";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/subscriptions";
+  ASSERT_FALSE(matcher.match(request));
+}
+
+TEST(PathParamsTest, MultipleParams) {
+  const auto pattern = "/users/:userid/subscriptions/:subid";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/42/subscriptions/2";
+  ASSERT_TRUE(matcher.match(request));
+
+  std::unordered_map<std::string, std::string> expected_params = {
+      {"userid", "42"}, {"subid", "2"}};
+
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(PathParamsTest, SequenceOfParams) {
+  const auto pattern = "/values/:x/:y/:z";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/values/1/2/3";
+  ASSERT_TRUE(matcher.match(request));
+
+  std::unordered_map<std::string, std::string> expected_params = {
+      {"x", "1"}, {"y", "2"}, {"z", "3"}};
+
+  EXPECT_EQ(request.path_params, expected_params);
 }

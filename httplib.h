@@ -229,6 +229,8 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -472,6 +474,7 @@ struct Request {
   MultipartFormDataMap files;
   Ranges ranges;
   Match matches;
+  std::unordered_map<std::string, std::string> path_params;
 
   // for client
   ResponseHandler response_handler;
@@ -665,6 +668,50 @@ using SocketOptions = std::function<void(socket_t sock)>;
 
 void default_socket_options(socket_t sock);
 
+namespace detail {
+
+class MatcherBase {
+public:
+  virtual ~MatcherBase() = default;
+
+  // Match request path and populate its matches and
+  virtual bool match(Request &request) const = 0;
+};
+
+class PathParamsMatcher : public MatcherBase {
+public:
+  PathParamsMatcher(const std::string &pattern);
+
+  bool match(Request &request) const override;
+
+private:
+  static constexpr char marker = ':';
+  // Treat segment separators as the end of path parameter capture
+  // Does not need to handle query parameters as they are parsed before path
+  // matching
+  static constexpr char separator = '/';
+
+  // Contains static path fragments to match against, excluding the '/' after
+  // path params
+  // Fragments are separated by path params
+  std::vector<std::string> static_fragments_;
+  // Stores the names of the path parameters to be used as keys in the
+  // Request::path_params map
+  std::vector<std::string> param_names_;
+};
+
+class RegexMatcher : public MatcherBase {
+public:
+  RegexMatcher(const std::string &pattern) : regex_(pattern) {}
+
+  bool match(Request &request) const override;
+
+private:
+  std::regex regex_;
+};
+
+} // namespace detail
+
 class Server {
 public:
   using Handler = std::function<void(const Request &, Response &)>;
@@ -701,6 +748,21 @@ public:
   Server &Delete(const std::string &pattern, Handler handler);
   Server &Delete(const std::string &pattern, HandlerWithContentReader handler);
   Server &Options(const std::string &pattern, Handler handler);
+
+  Server &GetSimple(const std::string &pattern, Handler handler);
+  Server &PostSimple(const std::string &pattern, Handler handler);
+  Server &PostSimple(const std::string &pattern,
+                     HandlerWithContentReader handler);
+  Server &PutSimple(const std::string &pattern, Handler handler);
+  Server &PutSimple(const std::string &pattern,
+                    HandlerWithContentReader handler);
+  Server &PatchSimple(const std::string &pattern, Handler handler);
+  Server &PatchSimple(const std::string &pattern,
+                      HandlerWithContentReader handler);
+  Server &DeleteSimple(const std::string &pattern, Handler handler);
+  Server &DeleteSimple(const std::string &pattern,
+                       HandlerWithContentReader handler);
+  Server &OptionsSimple(const std::string &pattern, Handler handler);
 
   bool set_base_dir(const std::string &dir,
                     const std::string &mount_point = std::string());
@@ -772,9 +834,11 @@ protected:
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
 
 private:
-  using Handlers = std::vector<std::pair<std::regex, Handler>>;
+  using Handlers =
+      std::vector<std::pair<std::unique_ptr<detail::MatcherBase>, Handler>>;
   using HandlersForContentReader =
-      std::vector<std::pair<std::regex, HandlerWithContentReader>>;
+      std::vector<std::pair<std::unique_ptr<detail::MatcherBase>,
+                            HandlerWithContentReader>>;
 
   socket_t create_server_socket(const std::string &host, int port,
                                 int socket_flags,
@@ -5143,6 +5207,99 @@ inline socket_t BufferStream::socket() const { return 0; }
 
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
+inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
+  // One past the last ending position of a path param substring
+  std::size_t last_param_end = 0;
+
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+  // Needed to ensure that parameter names are unique during matcher
+  // construction
+  // If exceptions are disabled, only last duplicate path
+  // parameter will be set
+  std::unordered_set<std::string> param_name_set;
+#endif
+
+  while (true) {
+    const auto marker_pos = pattern.find(marker, last_param_end);
+    if (marker_pos == std::string::npos) { break; }
+
+    static_fragments_.push_back(
+        pattern.substr(last_param_end, marker_pos - last_param_end));
+
+    const auto param_name_start = marker_pos + 1;
+
+    auto sep_pos = pattern.find(separator, param_name_start);
+    if (sep_pos == std::string::npos) { sep_pos = pattern.length(); }
+
+    auto param_name =
+        pattern.substr(param_name_start, sep_pos - param_name_start);
+
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+    if (param_name_set.find(param_name) != param_name_set.cend()) {
+      std::string msg = "Encountered path parameter '" + param_name +
+                        "' multiple times in route pattern '" + pattern + "'.";
+      throw std::invalid_argument(msg);
+    }
+#endif
+
+    param_names_.push_back(std::move(param_name));
+
+    last_param_end = sep_pos + 1;
+  }
+
+  if (last_param_end < pattern.length()) {
+    static_fragments_.push_back(pattern.substr(last_param_end));
+  }
+}
+
+inline bool PathParamsMatcher::match(Request &request) const {
+  request.matches = {};
+  request.path_params.clear();
+  request.path_params.reserve(param_names_.size());
+
+  // One past the position at which the path matched the pattern last time
+  std::size_t starting_pos = 0;
+  for (size_t i = 0; i < static_fragments_.size(); ++i) {
+    const auto &fragment = static_fragments_[i];
+
+    if (starting_pos + fragment.length() > request.path.length()) {
+      return false;
+    }
+
+    // Avoid unnecessary allocation by using strncmp instead of substr +
+    // comparison
+    if (std::strncmp(request.path.c_str() + starting_pos, fragment.c_str(),
+                     fragment.length()) != 0) {
+      return false;
+    }
+
+    starting_pos += fragment.length();
+
+    // Should only happen when we have a static fragment after a param
+    // Example: '/users/:id/subscriptions'
+    // The 'subscriptions' fragment here does not have a corresponding param
+    if (i >= param_names_.size()) { continue; }
+
+    auto sep_pos = request.path.find(separator, starting_pos);
+    if (sep_pos == std::string::npos) { sep_pos = request.path.length(); }
+
+    const auto &param_name = param_names_[i];
+
+    request.path_params.emplace(
+        param_name, request.path.substr(starting_pos, sep_pos - starting_pos));
+
+    // Mark everythin up to '/' as matched
+    starting_pos = sep_pos + 1;
+  }
+  // Returns false if the path is longer than the pattern
+  return starting_pos >= request.path.length();
+}
+
+inline bool RegexMatcher::match(Request &request) const {
+  request.path_params.clear();
+  return std::regex_match(request.path, request.matches, regex_);
+}
+
 } // namespace detail
 
 // HTTP server implementation
@@ -5157,66 +5314,143 @@ inline Server::Server()
 inline Server::~Server() {}
 
 inline Server &Server::Get(const std::string &pattern, Handler handler) {
-  get_handlers_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  get_handlers_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Post(const std::string &pattern, Handler handler) {
-  post_handlers_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  post_handlers_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Post(const std::string &pattern,
                             HandlerWithContentReader handler) {
-  post_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  post_handlers_for_content_reader_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Put(const std::string &pattern, Handler handler) {
-  put_handlers_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  put_handlers_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Put(const std::string &pattern,
                            HandlerWithContentReader handler) {
-  put_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  put_handlers_for_content_reader_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Patch(const std::string &pattern, Handler handler) {
-  patch_handlers_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  patch_handlers_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Patch(const std::string &pattern,
                              HandlerWithContentReader handler) {
-  patch_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  patch_handlers_for_content_reader_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Delete(const std::string &pattern, Handler handler) {
-  delete_handlers_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  delete_handlers_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Delete(const std::string &pattern,
                               HandlerWithContentReader handler) {
-  delete_handlers_for_content_reader_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+  delete_handlers_for_content_reader_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Options(const std::string &pattern, Handler handler) {
+  options_handlers_.push_back(std::make_pair(
+      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::GetSimple(const std::string &pattern, Handler handler) {
+  get_handlers_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::PostSimple(const std::string &pattern, Handler handler) {
+  post_handlers_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::PostSimple(const std::string &pattern,
+                                  HandlerWithContentReader handler) {
+  post_handlers_for_content_reader_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::PutSimple(const std::string &pattern, Handler handler) {
+  put_handlers_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::PutSimple(const std::string &pattern,
+                                 HandlerWithContentReader handler) {
+  put_handlers_for_content_reader_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::PatchSimple(const std::string &pattern,
+                                   Handler handler) {
+  patch_handlers_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::PatchSimple(const std::string &pattern,
+                                   HandlerWithContentReader handler) {
+  patch_handlers_for_content_reader_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::DeleteSimple(const std::string &pattern,
+                                    Handler handler) {
+  delete_handlers_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::DeleteSimple(const std::string &pattern,
+                                    HandlerWithContentReader handler) {
+  delete_handlers_for_content_reader_.push_back(
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
+  return *this;
+}
+
+inline Server &Server::OptionsSimple(const std::string &pattern,
+                                     Handler handler) {
   options_handlers_.push_back(
-      std::make_pair(std::regex(pattern), std::move(handler)));
+      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
+                     std::move(handler)));
   return *this;
 }
 
@@ -5926,10 +6160,10 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 inline bool Server::dispatch_request(Request &req, Response &res,
                                      const Handlers &handlers) {
   for (const auto &x : handlers) {
-    const auto &pattern = x.first;
+    const auto &matcher = x.first;
     const auto &handler = x.second;
 
-    if (std::regex_match(req.path, req.matches, pattern)) {
+    if (matcher->match(req)) {
       handler(req, res);
       return true;
     }
@@ -6051,10 +6285,10 @@ inline bool Server::dispatch_request_for_content_reader(
     Request &req, Response &res, ContentReader content_reader,
     const HandlersForContentReader &handlers) {
   for (const auto &x : handlers) {
-    const auto &pattern = x.first;
+    const auto &matcher = x.first;
     const auto &handler = x.second;
 
-    if (std::regex_match(req.path, req.matches, pattern)) {
+    if (matcher->match(req)) {
       handler(req, res, content_reader);
       return true;
     }
