@@ -678,6 +678,24 @@ public:
   virtual bool match(Request &request) const = 0;
 };
 
+/**
+ * Captures parameters in request path and stores them in Request::path_params
+ *
+ * Capture name is a substring of a pattern from : to /.
+ * The rest of the pattern is matched agains the request path directly
+ * Parameters are captured starting from the next character after
+ * the end of the last matched static pattern fragment until the next /.
+ *
+ * Example pattern:
+ * "/path/fragments/:capture/more/fragments/:second_capture"
+ * Static fragments:
+ * "/path/fragments/", "more/fragments/"
+ *
+ * Given the following request path:
+ * "/path/fragments/:1/more/fragments/:2"
+ * the resulting capture will be
+ * {{"capture", "1"}, {"second_capture", "2"}}
+ */
 class PathParamsMatcher : public MatcherBase {
 public:
   PathParamsMatcher(const std::string &pattern);
@@ -700,6 +718,14 @@ private:
   std::vector<std::string> param_names_;
 };
 
+/**
+ * Performs std::regex_match on request path
+ * and stores the result in Request::matches
+ *
+ * Note that regex match is performed directly on the whole request.
+ * This means that wildcard patterns may match multiple path segments with /:
+ * "/begin/(.*)/end" will match both "/begin/middle/end" and "/begin/1/2/end".
+ */
 class RegexMatcher : public MatcherBase {
 public:
   RegexMatcher(const std::string &pattern) : regex_(pattern) {}
