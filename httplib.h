@@ -1066,11 +1066,13 @@ public:
   bool send(Request &req, Response &res, Error &error);
   Result send(const Request &req);
 
-  size_t is_socket_open() const;
-
-  socket_t socket() const;
-
   void stop();
+
+  std::string host() const;
+  int port() const;
+
+  size_t is_socket_open() const;
+  socket_t socket() const;
 
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
@@ -1439,11 +1441,13 @@ public:
   bool send(Request &req, Response &res, Error &error);
   Result send(const Request &req);
 
-  size_t is_socket_open() const;
-
-  socket_t socket() const;
-
   void stop();
+
+  std::string host() const;
+  int port() const;
+
+  size_t is_socket_open() const;
+  socket_t socket() const;
 
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
@@ -7477,13 +7481,6 @@ inline Result ClientImpl::Options(const std::string &path,
   return send_(std::move(req));
 }
 
-inline size_t ClientImpl::is_socket_open() const {
-  std::lock_guard<std::mutex> guard(socket_mutex_);
-  return socket_.is_open();
-}
-
-inline socket_t ClientImpl::socket() const { return socket_.sock; }
-
 inline void ClientImpl::stop() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
 
@@ -7506,6 +7503,17 @@ inline void ClientImpl::stop() {
   shutdown_socket(socket_);
   close_socket(socket_);
 }
+
+inline std::string ClientImpl::host() const { return host_; }
+
+inline int ClientImpl::port() const { return port_; }
+
+inline size_t ClientImpl::is_socket_open() const {
+  std::lock_guard<std::mutex> guard(socket_mutex_);
+  return socket_.is_open();
+}
+
+inline socket_t ClientImpl::socket() const { return socket_.sock; }
 
 inline void ClientImpl::set_connection_timeout(time_t sec, time_t usec) {
   connection_timeout_sec_ = sec;
@@ -8719,11 +8727,15 @@ inline bool Client::send(Request &req, Response &res, Error &error) {
 
 inline Result Client::send(const Request &req) { return cli_->send(req); }
 
+inline void Client::stop() { cli_->stop(); }
+
+inline std::string Client::host() const { return cli_->host(); }
+
+inline int Client::port() const { return cli_->port(); }
+
 inline size_t Client::is_socket_open() const { return cli_->is_socket_open(); }
 
 inline socket_t Client::socket() const { return cli_->socket(); }
-
-inline void Client::stop() { cli_->stop(); }
 
 inline void
 Client::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {

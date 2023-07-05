@@ -4693,6 +4693,26 @@ TEST_F(PayloadMaxLengthTest, ExceedLimit) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST(HostAndPortPropertiesTest, NoSSL) {
+  httplib::Client cli("www.google.com", 1234);
+  ASSERT_EQ("www.google.com", cli.host());
+  ASSERT_EQ(1234, cli.port());
+}
+
+TEST(HostAndPortPropertiesTest, NoSSLWithSimpleAPI) {
+  httplib::Client cli("www.google.com:1234");
+  ASSERT_EQ("www.google.com", cli.host());
+  ASSERT_EQ(1234, cli.port());
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(HostAndPortPropertiesTest, SSL) {
+  httplib::SSLClient cli("www.google.com");
+  ASSERT_EQ("www.google.com", cli.host());
+  ASSERT_EQ(443, cli.port());
+}
+#endif
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(SSLClientTest, UpdateCAStore) {
   httplib::SSLClient httplib_client("www.google.com");
