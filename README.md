@@ -190,6 +190,8 @@ The followings are built-in mappings:
 | webm       | video/webm                  | zip        | application/zip             |
 | mp3        | audio/mp3                   | wasm       | application/wasm            |
 
+NOTE: These static file server methods are not thread-safe.
+
 ### File request handler
 
 ```cpp
@@ -198,8 +200,6 @@ svr.set_file_request_handler([](const Request &req, Response &res) {
   ...
 });
 ```
-
-NOTE: These static file server methods are not thread-safe.
 
 ### Logging
 
