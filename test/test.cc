@@ -4379,7 +4379,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
     EXPECT_EQ("bar", req.get_param_value("param2"));
   });
 
-  svr.GetSimple("/users/:id", [&](const Request &req, Response &) {
+  svr.Get("/users/:id", [&](const Request &req, Response &) {
     EXPECT_EQ("user-id", req.path_params.at("id"));
     EXPECT_EQ("foo", req.get_param_value("param1"));
     EXPECT_EQ("bar", req.get_param_value("param2"));

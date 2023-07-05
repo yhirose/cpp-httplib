@@ -749,21 +749,6 @@ public:
   Server &Delete(const std::string &pattern, HandlerWithContentReader handler);
   Server &Options(const std::string &pattern, Handler handler);
 
-  Server &GetSimple(const std::string &pattern, Handler handler);
-  Server &PostSimple(const std::string &pattern, Handler handler);
-  Server &PostSimple(const std::string &pattern,
-                     HandlerWithContentReader handler);
-  Server &PutSimple(const std::string &pattern, Handler handler);
-  Server &PutSimple(const std::string &pattern,
-                    HandlerWithContentReader handler);
-  Server &PatchSimple(const std::string &pattern, Handler handler);
-  Server &PatchSimple(const std::string &pattern,
-                      HandlerWithContentReader handler);
-  Server &DeleteSimple(const std::string &pattern, Handler handler);
-  Server &DeleteSimple(const std::string &pattern,
-                       HandlerWithContentReader handler);
-  Server &OptionsSimple(const std::string &pattern, Handler handler);
-
   bool set_base_dir(const std::string &dir,
                     const std::string &mount_point = std::string());
   bool set_mount_point(const std::string &mount_point, const std::string &dir,
@@ -839,6 +824,9 @@ private:
   using HandlersForContentReader =
       std::vector<std::pair<std::unique_ptr<detail::MatcherBase>,
                             HandlerWithContentReader>>;
+
+  static std::unique_ptr<detail::MatcherBase>
+  make_matcher(const std::string &pattern);
 
   socket_t create_server_socket(const std::string &host, int port,
                                 int socket_flags,
@@ -5313,144 +5301,76 @@ inline Server::Server()
 
 inline Server::~Server() {}
 
+inline std::unique_ptr<detail::MatcherBase>
+Server::make_matcher(const std::string &pattern) {
+  if (pattern.find("/:") != std::string::npos) {
+    return detail::make_unique<detail::PathParamsMatcher>(pattern);
+  } else {
+    return detail::make_unique<detail::RegexMatcher>(pattern);
+  }
+}
+
 inline Server &Server::Get(const std::string &pattern, Handler handler) {
-  get_handlers_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  get_handlers_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Post(const std::string &pattern, Handler handler) {
-  post_handlers_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  post_handlers_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Post(const std::string &pattern,
                             HandlerWithContentReader handler) {
-  post_handlers_for_content_reader_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  post_handlers_for_content_reader_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Put(const std::string &pattern, Handler handler) {
-  put_handlers_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  put_handlers_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Put(const std::string &pattern,
                            HandlerWithContentReader handler) {
-  put_handlers_for_content_reader_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  put_handlers_for_content_reader_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Patch(const std::string &pattern, Handler handler) {
-  patch_handlers_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  patch_handlers_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Patch(const std::string &pattern,
                              HandlerWithContentReader handler) {
-  patch_handlers_for_content_reader_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  patch_handlers_for_content_reader_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Delete(const std::string &pattern, Handler handler) {
-  delete_handlers_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  delete_handlers_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Delete(const std::string &pattern,
                               HandlerWithContentReader handler) {
-  delete_handlers_for_content_reader_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
+  delete_handlers_for_content_reader_.push_back(
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
 inline Server &Server::Options(const std::string &pattern, Handler handler) {
-  options_handlers_.push_back(std::make_pair(
-      detail::make_unique<detail::RegexMatcher>(pattern), std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::GetSimple(const std::string &pattern, Handler handler) {
-  get_handlers_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::PostSimple(const std::string &pattern, Handler handler) {
-  post_handlers_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::PostSimple(const std::string &pattern,
-                                  HandlerWithContentReader handler) {
-  post_handlers_for_content_reader_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::PutSimple(const std::string &pattern, Handler handler) {
-  put_handlers_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::PutSimple(const std::string &pattern,
-                                 HandlerWithContentReader handler) {
-  put_handlers_for_content_reader_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::PatchSimple(const std::string &pattern,
-                                   Handler handler) {
-  patch_handlers_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::PatchSimple(const std::string &pattern,
-                                   HandlerWithContentReader handler) {
-  patch_handlers_for_content_reader_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::DeleteSimple(const std::string &pattern,
-                                    Handler handler) {
-  delete_handlers_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::DeleteSimple(const std::string &pattern,
-                                    HandlerWithContentReader handler) {
-  delete_handlers_for_content_reader_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
-  return *this;
-}
-
-inline Server &Server::OptionsSimple(const std::string &pattern,
-                                     Handler handler) {
   options_handlers_.push_back(
-      std::make_pair(detail::make_unique<detail::PathParamsMatcher>(pattern),
-                     std::move(handler)));
+      std::make_pair(make_matcher(pattern), std::move(handler)));
   return *this;
 }
 
