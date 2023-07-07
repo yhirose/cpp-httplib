@@ -5275,7 +5275,7 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
 }
 
 inline bool PathParamsMatcher::match(Request &request) const {
-  request.matches = {};
+  request.matches = std::smatch();
   request.path_params.clear();
   request.path_params.reserve(param_names_.size());
 
