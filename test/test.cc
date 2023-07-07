@@ -3330,6 +3330,59 @@ TEST(GzipDecompressor, ChunkedDecompression) {
   ASSERT_EQ(data, decompressed_data);
 }
 
+TEST(GzipDecompressor, DeflateDecompression) {
+  std::string original_text = "Raw deflate without gzip";
+  unsigned char data[32] = {0x78, 0x9C, 0x0B, 0x4A, 0x2C, 0x57, 0x48, 0x49,
+                            0x4D, 0xCB, 0x49, 0x2C, 0x49, 0x55, 0x28, 0xCF,
+                            0x2C, 0xC9, 0xC8, 0x2F, 0x2D, 0x51, 0x48, 0xAF,
+                            0xCA, 0x2C, 0x00, 0x00, 0x6F, 0x98, 0x09, 0x2E};
+  std::string compressed_data(data, data + sizeof(data) / sizeof(data[0]));
+
+  std::string decompressed_data;
+  {
+    httplib::detail::gzip_decompressor decompressor;
+
+    bool result = decompressor.decompress(
+        compressed_data.data(), compressed_data.size(),
+        [&](const char *decompressed_data_chunk,
+            size_t decompressed_data_chunk_size) {
+          decompressed_data.insert(decompressed_data.size(),
+                                   decompressed_data_chunk,
+                                   decompressed_data_chunk_size);
+          return true;
+        });
+    ASSERT_TRUE(result);
+  }
+  ASSERT_EQ(original_text, decompressed_data);
+}
+
+TEST(GzipDecompressor, DeflateDecompressionTrailingBytes) {
+  std::string original_text = "Raw deflate without gzip";
+  unsigned char data[40] = {0x78, 0x9C, 0x0B, 0x4A, 0x2C, 0x57, 0x48, 0x49,
+                            0x4D, 0xCB, 0x49, 0x2C, 0x49, 0x55, 0x28, 0xCF,
+                            0x2C, 0xC9, 0xC8, 0x2F, 0x2D, 0x51, 0x48, 0xAF,
+                            0xCA, 0x2C, 0x00, 0x00, 0x6F, 0x98, 0x09, 0x2E,
+                            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  std::string compressed_data(data, data + sizeof(data) / sizeof(data[0]));
+
+  std::string decompressed_data;
+  {
+    httplib::detail::gzip_decompressor decompressor;
+
+    bool result = decompressor.decompress(
+        compressed_data.data(), compressed_data.size(),
+        [&](const char *decompressed_data_chunk,
+            size_t decompressed_data_chunk_size) {
+          decompressed_data.insert(decompressed_data.size(),
+                                   decompressed_data_chunk,
+                                   decompressed_data_chunk_size);
+          return true;
+        });
+    ASSERT_TRUE(result);
+  }
+  ASSERT_EQ(original_text, decompressed_data);
+}
+
 #ifdef _WIN32
 TEST(GzipDecompressor, LargeRandomData) {
 
