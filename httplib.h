@@ -5641,6 +5641,14 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
 
 inline bool Server::write_response(Stream &strm, bool close_connection,
                                    const Request &req, Response &res) {
+#ifdef CPPHTTPLIB_DEFAULT_HEADERS_AFTER_HANDLING
+  for (const auto &header : default_headers_) {
+    if (res.headers.find(header.first) == res.headers.end()) {
+      res.headers.insert(header);
+    }
+  }
+#endif
+
   return write_response_core(strm, close_connection, req, res, false);
 }
 
@@ -6265,7 +6273,9 @@ Server::process_request(Stream &strm, bool close_connection,
 
   Response res;
   res.version = "HTTP/1.1";
+#ifndef CPPHTTPLIB_DEFAULT_HEADERS_AFTER_HANDLING
   res.headers = default_headers_;
+#endif
 
 #ifdef _WIN32
   // TODO: Increase FD_SETSIZE statically (libzmq), dynamically (MySQL).
