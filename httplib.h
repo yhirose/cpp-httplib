@@ -5641,14 +5641,6 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
 
 inline bool Server::write_response(Stream &strm, bool close_connection,
                                    const Request &req, Response &res) {
-#ifdef CPPHTTPLIB_DEFAULT_HEADERS_AFTER_HANDLING
-  for (const auto &header : default_headers_) {
-    if (res.headers.find(header.first) == res.headers.end()) {
-      res.headers.insert(header);
-    }
-  }
-#endif
-
   return write_response_core(strm, close_connection, req, res, false);
 }
 
@@ -5663,6 +5655,14 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
                                         const Request &req, Response &res,
                                         bool need_apply_ranges) {
   assert(res.status != -1);
+
+#ifdef CPPHTTPLIB_DEFAULT_HEADERS_AFTER_HANDLING
+  for (const auto &header : default_headers_) {
+    if (res.headers.find(header.first) == res.headers.end()) {
+      res.headers.insert(header);
+    }
+  }
+#endif
 
   if (400 <= res.status && error_handler_ &&
       error_handler_(req, res) == HandlerResponse::Handled) {
