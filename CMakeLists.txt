@@ -256,13 +256,13 @@ configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
 if(HTTPLIB_COMPILE)
 	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
 		# Example: if you find_package(httplib 0.5.4)
-		# then anything >= 0.5 and <= 1.0 is accepted
+		# then anything >= 0.5.4 and < 0.6 is accepted
 		COMPATIBILITY SameMinorVersion
 	)
 else()
 	write_basic_package_version_file("${PROJECT_NAME}ConfigVersion.cmake"
 		# Example: if you find_package(httplib 0.5.4)
-		# then anything >= 0.5 and <= 1.0 is accepted
+		# then anything >= 0.5.4 and < 0.6 is accepted
 		COMPATIBILITY SameMinorVersion
 		# Tells Cmake that it's a header-only lib
 		# Mildly useful for end-users :)
