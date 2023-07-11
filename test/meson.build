@@ -86,6 +86,12 @@ subdir(join_paths('www', 'dir'))
 subdir(join_paths('www2', 'dir'))
 subdir(join_paths('www3', 'dir'))
 
+# GoogleTest 1.13.0 requires C++14
+test_options = []
+if gtest_dep.version().version_compare('>=1.13.0')
+  test_options += 'cpp_std=c++14'
+endif
+
 test(
   'main',
   executable(
@@ -94,7 +100,8 @@ test(
     dependencies: [
       cpp_httplib_dep,
       gtest_dep
-    ]
+    ],
+    override_options: test_options
   ),
   depends: [
     key_pem,
