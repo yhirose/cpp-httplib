@@ -3384,15 +3384,11 @@ inline bool gzip_decompressor::decompress(const char *data, size_t data_length,
     data += strm_.avail_in;
 
     std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
-    while (strm_.avail_in > 0) {
+    while (strm_.avail_in > 0 && ret == Z_OK) {
       strm_.avail_out = static_cast<uInt>(buff.size());
       strm_.next_out = reinterpret_cast<Bytef *>(buff.data());
 
-      auto prev_avail_in = strm_.avail_in;
-
       ret = inflate(&strm_, Z_NO_FLUSH);
-
-      if (prev_avail_in - strm_.avail_in == 0) { return false; }
 
       assert(ret != Z_STREAM_ERROR);
       switch (ret) {
