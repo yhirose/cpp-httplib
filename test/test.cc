@@ -203,7 +203,7 @@ TEST(ParseMultipartBoundaryTest, ValueWithQuotesAndCharset) {
   EXPECT_EQ(boundary, "cpp-httplib-multipart-data");
 }
 
-TEST(MultipartFormDataParser, ContentDispositionNameOnly) {
+TEST(ParseMultipartResponseTest, ContentDispositionNameOnly) {
   Response res;
 
   const string boundary = "cpp-httplib-multipart-data";
@@ -220,14 +220,14 @@ TEST(MultipartFormDataParser, ContentDispositionNameOnly) {
   MultipartFormDataItems files;
   EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
-  ASSERT_TRUE(files.size() == 1);
+  ASSERT_TRUE(files.size() == 1u);
   EXPECT_EQ(files[0].name, "data");
   EXPECT_EQ(files[0].content_type, "application/json");
   EXPECT_EQ(files[0].filename, "");
   EXPECT_EQ(files[0].content, json_content);
 }
 
-TEST(MultipartFormDataParser, ContentDispositionMultipleFiles) {
+TEST(ParseMultipartResponseTest, ContentDispositionMultipleFiles) {
   Response res;
 
   const string boundary = "cpp-httplib-multipart-data";
@@ -247,8 +247,9 @@ TEST(MultipartFormDataParser, ContentDispositionMultipleFiles) {
              "--" + boundary + "--\r\n";
 
   MultipartFormDataItems files;
+  EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
-  ASSERT_EQ(files.size(), 2);
+  ASSERT_EQ(files.size(), 2u);
   EXPECT_EQ(files[0].name, "json_data");
   EXPECT_EQ(files[0].filename, "data.json");
   EXPECT_EQ(files[0].content_type, "application/json");
@@ -259,7 +260,7 @@ TEST(MultipartFormDataParser, ContentDispositionMultipleFiles) {
   EXPECT_EQ(files[1].content, text_content);
 }
 
-TEST(MultipartFormDataParser, ContentDispositionNameFilename) {
+TEST(ParseMultipartResponseTest, ContentDispositionNameFilename) {
   Response res;
 
   const string boundary = "cpp-httplib-multipart-data";
@@ -282,7 +283,7 @@ TEST(MultipartFormDataParser, ContentDispositionNameFilename) {
   MultipartFormDataItems files;
   EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
-  ASSERT_EQ(files.size(), 2);
+  ASSERT_EQ(files.size(), 2u);
   EXPECT_EQ(files[0].name, "data_1");
   EXPECT_EQ(files[0].filename, "data_1.txt");
   EXPECT_EQ(files[0].content_type, "application/text");
@@ -293,7 +294,7 @@ TEST(MultipartFormDataParser, ContentDispositionNameFilename) {
   EXPECT_EQ(files[1].content, text_content);
 }
 
-TEST(MultipartFormDataParser, ContentDispositionFilenameStar) {
+TEST(ParseMultipartResponseTest, ContentDispositionFilenameStar) {
   Response res;
 
   const string boundary = "cpp-httplib-multipart-data";
@@ -316,7 +317,7 @@ TEST(MultipartFormDataParser, ContentDispositionFilenameStar) {
   MultipartFormDataItems files;
   EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
-  ASSERT_EQ(files.size(), 2);
+  ASSERT_EQ(files.size(), 2u);
   EXPECT_EQ(files[0].name, "");
   EXPECT_EQ(files[0].filename, "中国語.txt");
   EXPECT_EQ(files[0].content_type, "application/text");
