@@ -4366,7 +4366,7 @@ private:
   size_t buf_epos_ = 0;
 };
 
-bool parse_multipart_response(const Response &res, MultipartFormDataItems& files)
+inline bool parse_multipart_response(const Response &res, MultipartFormDataItems& files)
 {
   if (!res.is_multipart_form_data()) {
     return false;
