@@ -4217,6 +4217,10 @@ public:
               }
               header.erase(0, attr_end);
             }
+          } else {
+            // If any other header type is found, the request is not well formatted
+            is_valid_ = false;
+            return false;
           }
 
           buf_erase(pos + crlf_.size());
