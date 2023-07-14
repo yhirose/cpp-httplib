@@ -204,72 +204,49 @@ TEST(ParseMultipartBoundaryTest, ValueWithQuotesAndCharset) {
 }
 
 TEST(MultipartFormDataParser, ContentDispositionNameOnly) {
+  Response res;
+
   const string boundary = "cpp-httplib-multipart-data";
-  detail::MultipartFormDataParser parser;
-  parser.set_boundary(boundary);
+  const string content_type = "multipart/form-data; boundary=" + boundary;
+  res.set_header("Content-Type", content_type);
 
-  string json_content = R"({"this_is": "some_example_json"})";
-  string content = "--" + boundary + "\r\n"
-                   "Content-Type: application/json\r\n"
-                   "Content-Disposition: form-data; name=\"data\"\r\n\r\n"
-                   + json_content + "\r\n"
-                   "--" + boundary + "--\r\n";
+  const string json_content = R"({"this_is": "some_example_json"})";
+  res.body = "--" + boundary + "\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Disposition: form-data; name=\"data\"\r\n\r\n"
+             + json_content + "\r\n"
+             "--" + boundary + "--\r\n";
 
-  EXPECT_FALSE(parser.is_valid());
-  parser.parse(content.data(),
-               content.size(),
-               [&json_content](const char *buf, size_t n) -> bool {
-                 string buf_string(buf, n);
-                 EXPECT_EQ(buf_string, json_content);
-                 return true;
-               },
-               [](const MultipartFormData &file) -> bool {
-                 EXPECT_EQ(file.name, "data");
-                 EXPECT_EQ(file.content_type, "application/json");
-                 // filename argument is not provided
-                 EXPECT_EQ(file.filename, "");
-                 // The content is not parsed yet
-                 EXPECT_EQ(file.content, "");
-                 return true;
-               });
+  MultipartFormDataItems files;
+  EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
-  EXPECT_TRUE(parser.is_valid());
+  ASSERT_TRUE(files.size() == 1);
+  EXPECT_EQ(files[0].name, "data");
+  EXPECT_EQ(files[0].content_type, "application/json");
+  EXPECT_EQ(files[0].filename, "");
+  EXPECT_EQ(files[0].content, json_content);
 }
 
 TEST(MultipartFormDataParser, ContentDispositionMultipleFiles) {
-  const string boundary = "cpp-httplib-multipart-data";
-  detail::MultipartFormDataParser parser;
-  parser.set_boundary(boundary);
+  Response res;
 
-  string json_content = R"({"this_is": "some_example_json"})";
-  string text_content = R"(this_is_some_example_text)";
-  string content = "--" + boundary + "\r\n"
-                   "Content-Type: application/json\r\n"
-                   "Content-Disposition: form-data; name=\"json_data\"; filename=\"data.json\"\r\n\r\n"
-                   + json_content + "\r\n"
-                   "--" + boundary + "\r\n"
-                   "Content-Type: application/text\r\n"
-                   "Content-Disposition: form-data; name=\"text_data\"\r\n\r\n" +
-                   text_content + "\r\n"
-                   "--" + boundary + "--\r\n";
+  const string boundary = "cpp-httplib-multipart-data";
+  const string content_type = "multipart/form-data; boundary=" + boundary;
+  res.set_header("Content-Type", content_type);
+
+  const string json_content = R"({"this_is": "some_example_json"})";
+  const string text_content = R"(this_is_some_example_text)";
+  res.body = "--" + boundary + "\r\n"
+             "Content-Type: application/json\r\n"
+             "Content-Disposition: form-data; name=\"json_data\"; filename=\"data.json\"\r\n\r\n"
+             + json_content + "\r\n"
+             "--" + boundary + "\r\n"
+             "Content-Type: application/text\r\n"
+             "Content-Disposition: form-data; name=\"text_data\"\r\n\r\n" +
+             text_content + "\r\n"
+             "--" + boundary + "--\r\n";
 
   MultipartFormDataItems files;
-
-  EXPECT_FALSE(parser.is_valid());
-  parser.parse(
-      content.data(), content.size(),
-      [&files](const char *buf, size_t n) -> bool {
-        if (!files.empty()) {
-          files.back().content.append(buf, n);
-        }
-        return true;
-      },
-      [&files](const MultipartFormData &file) -> bool {
-        files.push_back(file);
-        return true;
-      });
-
-  EXPECT_TRUE(parser.is_valid());
 
   ASSERT_EQ(files.size(), 2);
   EXPECT_EQ(files[0].name, "json_data");
@@ -283,38 +260,27 @@ TEST(MultipartFormDataParser, ContentDispositionMultipleFiles) {
 }
 
 TEST(MultipartFormDataParser, ContentDispositionNameFilename) {
+  Response res;
+
   const string boundary = "cpp-httplib-multipart-data";
-  detail::MultipartFormDataParser parser;
-  parser.set_boundary(boundary);
+  const string content_type = "multipart/form-data; boundary=" + boundary;
+  res.set_header("Content-Type", content_type);
 
   // Name + filename attributes
   // Filename + name attributes
-  string text_content = R"(this_is_some_example_text)";
-  string content = "--" + boundary + "\r\n"
-                   "Content-Type: application/text\r\n"
-                   "Content-Disposition: form-data; filename=\"data_1.txt\"; name=\"data_1\"\r\n\r\n"
-                   + text_content + "\r\n"
-                   "--" + boundary + "\r\n"
-                   "Content-Type: application/text\r\n"
-                   "Content-Disposition: form-data; name=\"data_2\"; filename=\"data_2.txt\"\r\n\r\n"
-                   + text_content + "\r\n"
-                   "--" + boundary + "--\r\n";
+  const string text_content = R"(this_is_some_example_text)";
+  res.body = "--" + boundary + "\r\n"
+             "Content-Type: application/text\r\n"
+             "Content-Disposition: form-data; filename=\"data_1.txt\"; name=\"data_1\"\r\n\r\n"
+             + text_content + "\r\n"
+             "--" + boundary + "\r\n"
+             "Content-Type: application/text\r\n"
+             "Content-Disposition: form-data; name=\"data_2\"; filename=\"data_2.txt\"\r\n\r\n"
+             + text_content + "\r\n"
+             "--" + boundary + "--\r\n";
 
   MultipartFormDataItems files;
-
-  EXPECT_FALSE(parser.is_valid());
-  parser.parse(
-      content.data(), content.size(),
-      [&files](const char *buf, size_t n) -> bool {
-        if (!files.empty()) { files.back().content.append(buf, n); }
-        return true;
-      },
-      [&files](const MultipartFormData &file) -> bool {
-        files.push_back(file);
-        return true;
-      });
-
-  EXPECT_TRUE(parser.is_valid());
+  EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
   ASSERT_EQ(files.size(), 2);
   EXPECT_EQ(files[0].name, "data_1");
@@ -328,38 +294,27 @@ TEST(MultipartFormDataParser, ContentDispositionNameFilename) {
 }
 
 TEST(MultipartFormDataParser, ContentDispositionFilenameStar) {
+  Response res;
+
   const string boundary = "cpp-httplib-multipart-data";
-  detail::MultipartFormDataParser parser;
-  parser.set_boundary(boundary);
+  const string content_type = "multipart/form-data; boundary=" + boundary;
+  res.set_header("Content-Type", content_type);
 
   // Filename* can have extended characters
   // Filename* has priority over filename
-  string text_content = R"(this_is_some_example_text)";
-  string content = "--" + boundary + "\r\n"
-                   "Content-Type: application/text\r\n"
-                   "Content-Disposition: form-data; filename=\"data.txt\"; filename*=\"中国語.txt\"\r\n\r\n"
-                   + text_content + "\r\n"
-                   "--" + boundary + "\r\n"
-                   "Content-Type: application/text\r\n"
-                   "Content-Disposition: form-data; filename*=\"дом.txt\"; filename=\"data.txt\"\r\n\r\n"
-                   + text_content + "\r\n"
-                   "--" + boundary + "--\r\n";
+  const string text_content = R"(this_is_some_example_text)";
+  res.body = "--" + boundary + "\r\n"
+             "Content-Type: application/text\r\n"
+             "Content-Disposition: form-data; filename=\"data.txt\"; filename*=\"中国語.txt\"\r\n\r\n"
+             + text_content + "\r\n"
+             "--" + boundary + "\r\n"
+             "Content-Type: application/text\r\n"
+             "Content-Disposition: form-data; filename*=\"дом.txt\"; filename=\"data.txt\"\r\n\r\n"
+             + text_content + "\r\n"
+             "--" + boundary + "--\r\n";
 
   MultipartFormDataItems files;
-
-  EXPECT_FALSE(parser.is_valid());
-  parser.parse(
-      content.data(), content.size(),
-      [&files](const char *buf, size_t n) -> bool {
-        if (!files.empty()) { files.back().content.append(buf, n); }
-        return true;
-      },
-      [&files](const MultipartFormData &file) -> bool {
-        files.push_back(file);
-        return true;
-      });
-
-  EXPECT_TRUE(parser.is_valid());
+  EXPECT_TRUE(detail::parse_multipart_response(res, files));
 
   ASSERT_EQ(files.size(), 2);
   EXPECT_EQ(files[0].name, "");

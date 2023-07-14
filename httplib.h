@@ -524,6 +524,8 @@ struct Response {
   size_t get_header_value_count(const std::string &key) const;
   void set_header(const std::string &key, const std::string &val);
 
+  bool is_multipart_form_data() const;
+
   void set_redirect(const std::string &url, int status = 302);
   void set_content(const char *s, size_t n, const std::string &content_type);
   void set_content(const std::string &s, const std::string &content_type);
@@ -1928,6 +1930,8 @@ std::string params_to_query_str(const Params &params);
 void parse_query_text(const std::string &s, Params &params);
 
 bool parse_multipart_boundary(const std::string &content_type, std::string &boundary);
+
+bool parse_multipart_response(const Response &res, MultipartFormDataItems& files);
 
 bool parse_range_header(const std::string &s, Ranges &ranges);
 
@@ -4362,6 +4366,48 @@ private:
   size_t buf_epos_ = 0;
 };
 
+bool parse_multipart_response(const Response &res, MultipartFormDataItems& files)
+{
+  if (!res.is_multipart_form_data()) {
+    return false;
+  }
+
+  const auto &content_type = res.get_header_value("Content-Type");
+  std::string boundary;
+  if (!parse_multipart_boundary(content_type, boundary)) { return false; }
+
+  MultipartFormDataParser parser;
+  parser.set_boundary(std::move(boundary));
+
+  parser.parse(
+      res.body.c_str(),
+      res.body.size(),
+      [&files](const char* buf, size_t n) {
+          // File content is added to the latest file header
+          if (files.empty()) {
+              // If content is received, before the header, do nothing (error).
+              return false;
+          }
+
+          // Add content without overflow
+          auto& content = files.back().content;
+          if (content.size() + n > content.max_size()) {
+              return false;
+          }
+          content.append(buf, n);
+
+          return true;
+      },
+      [&files](const MultipartFormData& file) {
+          // Received header for the next file
+          // Content will be received later
+          files.emplace_back(file);
+          return true;
+      });
+
+  return parser.is_valid();
+}
+
 inline std::string to_lower(const std::string& s) {
   std::string out = s;
   std::transform(out.begin(), out.end(), out.begin(), ::tolower);
@@ -5064,6 +5110,11 @@ inline void Response::set_header(const std::string &key,
   if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
     headers.emplace(key, val);
   }
+}
+
+inline bool Response::is_multipart_form_data() const {
+  const auto &content_type = get_header_value("Content-Type");
+  return !content_type.rfind("multipart/form-data", 0);
 }
 
 inline void Response::set_redirect(const std::string &url, int stat) {
