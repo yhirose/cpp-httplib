@@ -1,5 +1,6 @@
 tags
 
+bazel-*
 example/server
 example/client
 example/hello

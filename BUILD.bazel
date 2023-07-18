@@ -1,0 +1,8 @@
+cc_library (
+  name = "cpp-httplib",
+  hdrs = [
+    "httplib.h",
+  ],
+  visibility = ["//visibility:public"],
+)
+
