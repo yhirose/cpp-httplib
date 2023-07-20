@@ -1722,6 +1722,8 @@ inline uint64_t get_header_value<uint64_t>(const Headers &headers,
   return def;
 }
 
+const char *status_message(int status);
+
 } // namespace detail
 
 template <typename T>
