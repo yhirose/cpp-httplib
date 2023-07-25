@@ -6643,7 +6643,8 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     }
 
     if (socket_should_be_closed_when_request_is_done_ || close_connection ||
-        !ret) {
+        !ret || res.get_header_value("Connection") == "close" ||
+        (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
       shutdown_ssl(socket_, true);
       shutdown_socket(socket_);
       close_socket(socket_);
@@ -7109,24 +7110,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       if (error != Error::Canceled) { error = Error::Read; }
       return false;
     }
-  }
-
-  if (res.get_header_value("Connection") == "close" ||
-      (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
-    // TODO this requires a not-entirely-obvious chain of calls to be correct
-    // for this to be safe. Maybe a code refactor (such as moving this out to
-    // the send function and getting rid of the recursiveness of the mutex)
-    // could make this more obvious.
-
-    // This is safe to call because process_request is only called by
-    // handle_request which is only called by send, which locks the request
-    // mutex during the process. It would be a bug to call it from a different
-    // thread since it's a thread-safety issue to do these things to the socket
-    // if another thread is using the socket.
-    std::lock_guard<std::mutex> guard(socket_mutex_);
-    shutdown_ssl(socket_, true);
-    shutdown_socket(socket_);
-    close_socket(socket_);
   }
 
   // Log
@@ -8283,6 +8266,14 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
       }
     } else {
       res = res2;
+      if (res.get_header_value("Connection") == "close" ||
+          (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
+        // Thread-safe to close everything because we are assuming there are
+        // no requests in flight
+        shutdown_ssl(socket_, true);
+        shutdown_socket(socket_);
+        close_socket(socket_);
+      }
       return false;
     }
   }
