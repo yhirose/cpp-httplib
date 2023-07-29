@@ -4267,9 +4267,9 @@ public:
           buf_erase(crlf_.size());
           state_ = 1;
         } else {
-          if (dash_crlf_.size() > buf_size()) { return true; }
-          if (buf_start_with(dash_crlf_)) {
-            buf_erase(dash_crlf_.size());
+          if (dash_.size() > buf_size()) { return true; }
+          if (buf_start_with(dash_)) {
+            buf_erase(dash_.size());
             is_valid_ = true;
             buf_erase(buf_size()); // Remove epilogue
           } else {
@@ -4302,7 +4302,6 @@ private:
 
   const std::string dash_ = "--";
   const std::string crlf_ = "\r\n";
-  const std::string dash_crlf_ = "--\r\n";
   std::string boundary_;
   std::string dash_boundary_crlf_;
   std::string crlf_dash_boundary_;

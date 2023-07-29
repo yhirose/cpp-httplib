@@ -6106,6 +6106,8 @@ TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
 }
 
 TEST(MultipartFormDataTest, AlternateFilename) {
+  auto handled = false;
+
   Server svr;
   svr.Post("/test", [&](const Request &req, Response &res) {
     ASSERT_EQ(3u, req.files.size());
@@ -6130,6 +6132,8 @@ TEST(MultipartFormDataTest, AlternateFilename) {
     ASSERT_EQ("text default", it->second.content);
 
     res.set_content("ok", "text/plain");
+
+    handled = true;
   });
 
   thread t = thread([&] { svr.listen(HOST, PORT); });
@@ -6137,6 +6141,7 @@ TEST(MultipartFormDataTest, AlternateFilename) {
     svr.stop();
     t.join();
     ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
   });
 
   svr.wait_until_ready();
@@ -6166,6 +6171,52 @@ TEST(MultipartFormDataTest, AlternateFilename) {
              "------------\r\n";
 
   ASSERT_TRUE(send_request(1, req));
+}
+
+TEST(MultipartFormDataTest, CloseDelimiterWithoutCRLF) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &req, Response &) {
+    ASSERT_EQ(2u, req.files.size());
+
+    auto it = req.files.begin();
+    ASSERT_EQ("text1", it->second.name);
+    ASSERT_EQ("text1", it->second.content);
+
+    ++it;
+    ASSERT_EQ("text2", it->second.name);
+    ASSERT_EQ("text2", it->second.content);
+
+    handled = true;
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Type: multipart/form-data;boundary=--------\r\n"
+             "Content-Length: 146\r\n"
+             "\r\n----------\r\n"
+             "Content-Disposition: form-data; name=\"text1\"\r\n"
+             "\r\n"
+             "text1"
+             "\r\n----------\r\n"
+             "Content-Disposition: form-data; name=\"text2\"\r\n"
+             "\r\n"
+             "text2"
+             "\r\n------------";
+
+  std::string resonse;
+  ASSERT_TRUE(send_request(1, req, &resonse));
+  ASSERT_EQ("200", resonse.substr(9, 3));
 }
 
 #endif
