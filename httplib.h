@@ -2428,6 +2428,13 @@ inline std::string trim_copy(const std::string &s) {
   return s.substr(r.first, r.second - r.first);
 }
 
+inline std::string trim_double_quotes_copy(const std::string &s) {
+  if (s.length() >= 2 && s.front() == '"' && s.back() == '"') {
+    return s.substr(1, s.size() - 2);
+  }
+  return s;
+}
+
 inline void split(const char *b, const char *e, char d,
                   std::function<void(const char *, const char *)> fn) {
   size_t i = 0;
@@ -4064,12 +4071,32 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   if (pos == std::string::npos) { return false; }
   auto end = content_type.find(';', pos);
   auto beg = pos + strlen(boundary_keyword);
-  boundary = content_type.substr(beg, end - beg);
-  if (boundary.length() >= 2 && boundary.front() == '"' &&
-      boundary.back() == '"') {
-    boundary = boundary.substr(1, boundary.size() - 2);
-  }
+  boundary = trim_double_quotes_copy(content_type.substr(beg, end - beg));
   return !boundary.empty();
+}
+
+inline void parse_disposition_params(const std::string &s, Params &params) {
+  std::set<std::string> cache;
+  split(s.data(), s.data() + s.size(), ';', [&](const char *b, const char *e) {
+    std::string kv(b, e);
+    if (cache.find(kv) != cache.end()) { return; }
+    cache.insert(kv);
+
+    std::string key;
+    std::string val;
+    split(b, e, '=', [&](const char *b2, const char *e2) {
+      if (key.empty()) {
+        key.assign(b2, e2);
+      } else {
+        val.assign(b2, e2);
+      }
+    });
+
+    if (!key.empty()) {
+      params.emplace(trim_double_quotes_copy((key)),
+                     trim_double_quotes_copy((val)));
+    }
+  });
 }
 
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
@@ -4129,11 +4156,6 @@ public:
   bool parse(const char *buf, size_t n, const ContentReceiver &content_callback,
              const MultipartContentHeader &header_callback) {
 
-    // TODO: support 'filename*'
-    static const std::regex re_content_disposition(
-        R"~(^Content-Disposition:\s*form-data;\s*name="(.*?)"(?:;\s*filename="(.*?)")?(?:;\s*filename\*=\S+)?\s*$)~",
-        std::regex_constants::icase);
-
     buf_append(buf, n);
 
     while (buf_size() > 0) {
@@ -4171,10 +4193,40 @@ public:
           if (start_with_case_ignore(header, header_name)) {
             file_.content_type = trim_copy(header.substr(header_name.size()));
           } else {
+            static const std::regex re_content_disposition(
+                R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
+                std::regex_constants::icase);
+
             std::smatch m;
             if (std::regex_match(header, m, re_content_disposition)) {
-              file_.name = m[1];
-              file_.filename = m[2];
+              Params params;
+              parse_disposition_params(m[1], params);
+
+              auto it = params.find("name");
+              if (it != params.end()) {
+                file_.name = it->second;
+              } else {
+                is_valid_ = false;
+                return false;
+              }
+
+              it = params.find("filename");
+              if (it != params.end()) { file_.filename = it->second; }
+
+              it = params.find("filename*");
+              if (it != params.end()) {
+                // Only allow UTF-8 enconnding...
+                static const std::regex re_rfc5987_encoding(
+                    R"~(^UTF-8''(.+?)$)~", std::regex_constants::icase);
+
+                std::smatch m2;
+                if (std::regex_match(it->second, m2, re_rfc5987_encoding)) {
+                  file_.filename = decode_url(m2[1], false); // override...
+                } else {
+                  is_valid_ = false;
+                  return false;
+                }
+              }
             } else {
               is_valid_ = false;
               return false;

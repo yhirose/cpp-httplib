@@ -6105,6 +6105,69 @@ TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
   }
 }
 
+TEST(MultipartFormDataTest, AlternateFilename) {
+  Server svr;
+  svr.Post("/test", [&](const Request &req, Response &res) {
+    ASSERT_EQ(3u, req.files.size());
+
+    auto it = req.files.begin();
+    ASSERT_EQ("file1", it->second.name);
+    ASSERT_EQ("A.txt", it->second.filename);
+    ASSERT_EQ("text/plain", it->second.content_type);
+    ASSERT_EQ("Content of a.txt.\r\n", it->second.content);
+
+    ++it;
+    ASSERT_EQ("file2", it->second.name);
+    ASSERT_EQ("a.html", it->second.filename);
+    ASSERT_EQ("text/html", it->second.content_type);
+    ASSERT_EQ("<!DOCTYPE html><title>Content of a.html.</title>\r\n",
+              it->second.content);
+
+    ++it;
+    ASSERT_EQ("text", it->second.name);
+    ASSERT_EQ("", it->second.filename);
+    ASSERT_EQ("", it->second.content_type);
+    ASSERT_EQ("text default", it->second.content);
+
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Type: multipart/form-data;boundary=--------\r\n"
+             "Content-Length: 399\r\n"
+             "\r\n"
+             "----------\r\n"
+             "Content-Disposition: form-data; name=\"text\"\r\n"
+             "\r\n"
+             "text default\r\n"
+             "----------\r\n"
+             "Content-Disposition: form-data; filename*=\"UTF-8''\%41.txt\"; "
+             "filename=\"a.txt\"; name=\"file1\"\r\n"
+             "Content-Type: text/plain\r\n"
+             "\r\n"
+             "Content of a.txt.\r\n"
+             "\r\n"
+             "----------\r\n"
+             "Content-Disposition: form-data;  name=\"file2\" ;filename = "
+             "\"a.html\"\r\n"
+             "Content-Type: text/html\r\n"
+             "\r\n"
+             "<!DOCTYPE html><title>Content of a.html.</title>\r\n"
+             "\r\n"
+             "------------\r\n";
+
+  ASSERT_TRUE(send_request(1, req));
+}
+
 #endif
 
 #ifndef _WIN32
