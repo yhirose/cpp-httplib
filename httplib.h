@@ -4111,7 +4111,7 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
   if (std::regex_match(s, m, re_first_range)) {
     auto pos = static_cast<size_t>(m.position(1));
     auto len = static_cast<size_t>(m.length(1));
-    bool all_valid_ranges = true;
+    auto all_valid_ranges = true;
     split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
       if (!all_valid_ranges) return;
       static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
@@ -6390,7 +6390,7 @@ Server::process_request(Stream &strm, bool close_connection,
   }
 
   // Rounting
-  bool routed = false;
+  auto routed = false;
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
   routed = routing(req, res, strm);
 #else
@@ -7206,7 +7206,7 @@ inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
       }
 
       DataSink cur_sink;
-      bool has_data = true;
+      auto has_data = true;
       cur_sink.write = sink.write;
       cur_sink.done = [&]() { has_data = false; };
 
@@ -8335,10 +8335,9 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
   }
 
   // If status code is not 200, proxy request is failed.
-  // Set error to ProxyConnection and return proxy response 
+  // Set error to ProxyConnection and return proxy response
   // as the response of the request
-  if (proxy_res.status != 200)
-  {
+  if (proxy_res.status != 200) {
     error = Error::ProxyConnection;
     res = std::move(proxy_res);
     // Thread-safe to close everything because we are assuming there are
@@ -8353,7 +8352,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
 }
 
 inline bool SSLClient::load_certs() {
-  bool ret = true;
+  auto ret = true;
 
   std::call_once(initialize_cert_, [&]() {
     std::lock_guard<std::mutex> guard(ctx_mutex_);
