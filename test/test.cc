@@ -2886,9 +2886,9 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ("267", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
-  EXPECT_EQ(269U, res->body.size());
+  EXPECT_EQ(267U, res->body.size());
 }
 
 TEST_F(ServerTest, GetStreamedEndless) {
@@ -2978,9 +2978,9 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
   auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
-  EXPECT_EQ("269", res->get_header_value("Content-Length"));
+  EXPECT_EQ("267", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
-  EXPECT_EQ(269U, res->body.size());
+  EXPECT_EQ(267U, res->body.size());
 }
 
 TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {

@@ -4530,7 +4530,7 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
 
   ctoken("--");
   stoken(boundary);
-  ctoken("--\r\n");
+  ctoken("--");
 
   return true;
 }
