@@ -2501,6 +2501,19 @@ TEST_F(ServerTest, StaticFileRange) {
   EXPECT_EQ(std::string("cd"), res->body);
 }
 
+TEST_F(ServerTest, StaticFileRanges) {
+  auto res =
+      cli_.Get("/dir/test.abcde", {{make_range_header({{1, 2}, {4, -1}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_TRUE(
+      res->get_header_value("Content-Type")
+          .find(
+              "multipart/byteranges; boundary=--cpp-httplib-multipart-data-") ==
+      0);
+  EXPECT_EQ("266", res->get_header_value("Content-Length"));
+}
+
 TEST_F(ServerTest, InvalidBaseDirMount) {
   EXPECT_EQ(false, svr_.set_mount_point("invalid_mount_point", "./www3"));
 }
