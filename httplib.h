@@ -90,10 +90,6 @@
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 #endif
 
-#ifndef CPPHTTPLIB_SEND_BUFSIZ
-#define CPPHTTPLIB_SEND_BUFSIZ size_t(4096u)
-#endif
-
 #ifndef CPPHTTPLIB_COMPRESSION_BUFSIZ
 #define CPPHTTPLIB_COMPRESSION_BUFSIZ size_t(16384u)
 #endif
@@ -2148,6 +2144,29 @@ private:
   std::string glowable_buffer_;
 };
 
+class mmap {
+public:
+  mmap(const char *path);
+  ~mmap();
+
+  bool open(const char *path);
+  void close();
+
+  bool is_open() const;
+  size_t size() const;
+  const char *data() const;
+
+private:
+#if defined(_WIN32)
+  HANDLE hFile_;
+  HANDLE hMapping_;
+#else
+  int fd_;
+#endif
+  size_t size_;
+  void *addr_;
+};
+
 } // namespace detail
 
 // ----------------------------------------------------------------------------
@@ -2528,6 +2547,95 @@ inline void stream_line_reader::append(char c) {
   }
 }
 
+inline mmap::mmap(const char *path)
+#if defined(_WIN32)
+    : hFile_(NULL), hMapping_(NULL)
+#else
+    : fd_(-1)
+#endif
+      ,
+      size_(0), addr_(nullptr) {
+  if (!open(path)) { std::runtime_error(""); }
+}
+
+inline mmap::~mmap() { close(); }
+
+inline bool mmap::open(const char *path) {
+  close();
+
+#if defined(_WIN32)
+  hFile_ = ::CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+  if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
+
+  size_ = ::GetFileSize(hFile_, NULL);
+
+  hMapping_ = ::CreateFileMapping(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
+
+  if (hMapping_ == NULL) {
+    close();
+    return false;
+  }
+
+  addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
+#else
+  fd_ = ::open(path, O_RDONLY);
+  if (fd_ == -1) { return false; }
+
+  struct stat sb;
+  if (fstat(fd_, &sb) == -1) {
+    close();
+    return false;
+  }
+  size_ = static_cast<size_t>(sb.st_size);
+
+  addr_ = ::mmap(NULL, size_, PROT_READ, MAP_PRIVATE, fd_, 0);
+#endif
+
+  if (addr_ == nullptr) {
+    close();
+    return false;
+  }
+
+  return true;
+}
+
+inline bool mmap::is_open() const { return addr_ != nullptr; }
+
+inline size_t mmap::size() const { return size_; }
+
+inline const char *mmap::data() const { return (const char *)addr_; }
+
+inline void mmap::close() {
+#if defined(_WIN32)
+  if (addr_) {
+    ::UnmapViewOfFile(addr_);
+    addr_ = nullptr;
+  }
+
+  if (hMapping_) {
+    ::CloseHandle(hMapping_);
+    hMapping_ = NULL;
+  }
+
+  if (hFile_ != INVALID_HANDLE_VALUE) {
+    ::CloseHandle(hFile_);
+    hFile_ = INVALID_HANDLE_VALUE;
+  }
+#else
+  if (addr_ != nullptr) {
+    munmap(addr_, size_);
+    addr_ = nullptr;
+  }
+
+  if (fd_ != -1) {
+    ::close(fd_);
+    fd_ = -1;
+  }
+#endif
+  size_ = 0;
+}
 inline int close_socket(socket_t sock) {
 #ifdef _WIN32
   return closesocket(sock);
@@ -5963,24 +6071,15 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
             res.set_header(kv.first.c_str(), kv.second);
           }
 
-          auto fs =
-              std::make_shared<std::ifstream>(path, std::ios_base::binary);
-
-          fs->seekg(0, std::ios_base::end);
-          auto size = static_cast<size_t>(fs->tellg());
-          fs->seekg(0);
+          auto mm = std::make_shared<detail::mmap>(path.c_str());
+          if (!mm->is_open()) { return false; }
 
           res.set_content_provider(
-              size,
+              mm->size(),
               detail::find_content_type(path, file_extension_and_mimetype_map_,
                                         default_file_mimetype_),
-              [fs](size_t offset, size_t length, DataSink &sink) -> bool {
-                std::array<char, CPPHTTPLIB_SEND_BUFSIZ> buf{};
-                length = std::min(length, CPPHTTPLIB_SEND_BUFSIZ);
-
-                fs->seekg(static_cast<std::streamsize>(offset), std::ios_base::beg);
-                fs->read(buf.data(), static_cast<std::streamsize>(length));
-                sink.write(buf.data(), length);
+              [mm](size_t offset, size_t length, DataSink &sink) -> bool {
+                sink.write(mm->data() + offset, length);
                 return true;
               });
 
