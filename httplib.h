@@ -90,6 +90,10 @@
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(4096u)
 #endif
 
+#ifndef CPPHTTPLIB_SEND_BUFSIZ
+#define CPPHTTPLIB_SEND_BUFSIZ size_t(4096u)
+#endif
+
 #ifndef CPPHTTPLIB_COMPRESSION_BUFSIZ
 #define CPPHTTPLIB_COMPRESSION_BUFSIZ size_t(16384u)
 #endif
@@ -784,6 +788,7 @@ public:
   bool remove_mount_point(const std::string &mount_point);
   Server &set_file_extension_and_mimetype_mapping(const std::string &ext,
                                                   const std::string &mime);
+  Server &set_default_file_mimetype(const std::string &mime);
   Server &set_file_request_handler(Handler handler);
 
   Server &set_error_handler(HandlerWithResponse handler);
@@ -907,6 +912,7 @@ private:
   };
   std::vector<MountPointEntry> base_dirs_;
   std::map<std::string, std::string> file_extension_and_mimetype_map_;
+  std::string default_file_mimetype_ = "application/octet-stream";
   Handler file_request_handler_;
 
   Handlers get_handlers_;
@@ -3197,9 +3203,10 @@ inline constexpr unsigned int operator"" _t(const char *s, size_t l) {
 
 } // namespace udl
 
-inline const char *
+inline std::string
 find_content_type(const std::string &path,
-                  const std::map<std::string, std::string> &user_data) {
+                  const std::map<std::string, std::string> &user_data,
+                  const std::string &default_content_type) {
   auto ext = file_extension(path);
 
   auto it = user_data.find(ext);
@@ -3208,7 +3215,8 @@ find_content_type(const std::string &path,
   using udl::operator""_t;
 
   switch (str2tag(ext)) {
-  default: return nullptr;
+  default: return default_content_type;
+
   case "css"_t: return "text/css";
   case "csv"_t: return "text/csv";
   case "htm"_t:
@@ -4489,12 +4497,13 @@ get_range_offset_and_length(const Request &req, size_t content_length,
   return std::make_pair(r.first, static_cast<size_t>(r.second - r.first) + 1);
 }
 
-inline std::string make_content_range_header_field(size_t offset, size_t length,
-                                                   size_t content_length) {
+inline std::string
+make_content_range_header_field(const std::pair<ssize_t, ssize_t> &range,
+                                size_t content_length) {
   std::string field = "bytes ";
-  field += std::to_string(offset);
+  if (range.first != -1) { field += std::to_string(range.first); }
   field += "-";
-  field += std::to_string(offset + length - 1);
+  if (range.second != -1) { field += std::to_string(range.second); }
   field += "/";
   field += std::to_string(content_length);
   return field;
@@ -4516,14 +4525,15 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
       ctoken("\r\n");
     }
 
-    auto offsets = get_range_offset_and_length(req, res.body.size(), i);
+    ctoken("Content-Range: ");
+    const auto &range = req.ranges[i];
+    stoken(make_content_range_header_field(range, res.content_length_));
+    ctoken("\r\n");
+    ctoken("\r\n");
+
+    auto offsets = get_range_offset_and_length(req, res.content_length_, i);
     auto offset = offsets.first;
     auto length = offsets.second;
-
-    ctoken("Content-Range: ");
-    stoken(make_content_range_header_field(offset, length, res.body.size()));
-    ctoken("\r\n");
-    ctoken("\r\n");
     if (!content(offset, length)) { return false; }
     ctoken("\r\n");
   }
@@ -5493,6 +5503,11 @@ Server::set_file_extension_and_mimetype_mapping(const std::string &ext,
   return *this;
 }
 
+inline Server &Server::set_default_file_mimetype(const std::string &mime) {
+  default_file_mimetype_ = mime;
+  return *this;
+}
+
 inline Server &Server::set_file_request_handler(Handler handler) {
   file_request_handler_ = std::move(handler);
   return *this;
@@ -5944,17 +5959,35 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
         if (path.back() == '/') { path += "index.html"; }
 
         if (detail::is_file(path)) {
-          detail::read_file(path, res.body);
-          auto type =
-              detail::find_content_type(path, file_extension_and_mimetype_map_);
-          if (type) { res.set_header("Content-Type", type); }
           for (const auto &kv : entry.headers) {
             res.set_header(kv.first.c_str(), kv.second);
           }
-          res.status = req.has_header("Range") ? 206 : 200;
+
+          auto fs =
+              std::make_shared<std::ifstream>(path, std::ios_base::binary);
+
+          fs->seekg(0, std::ios_base::end);
+          auto size = static_cast<size_t>(fs->tellg());
+          fs->seekg(0);
+
+          res.set_content_provider(
+              size,
+              detail::find_content_type(path, file_extension_and_mimetype_map_,
+                                        default_file_mimetype_),
+              [fs](size_t offset, size_t length, DataSink &sink) -> bool {
+                std::array<char, CPPHTTPLIB_SEND_BUFSIZ> buf{};
+                length = std::min(length, CPPHTTPLIB_SEND_BUFSIZ);
+
+                fs->seekg(static_cast<std::streamsize>(offset), std::ios_base::beg);
+                fs->read(buf.data(), static_cast<std::streamsize>(length));
+                sink.write(buf.data(), length);
+                return true;
+              });
+
           if (!head && file_request_handler_) {
             file_request_handler_(req, res);
           }
+
           return true;
         }
       }
@@ -6202,10 +6235,10 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       } else if (req.ranges.size() == 1) {
         auto offsets =
             detail::get_range_offset_and_length(req, res.content_length_, 0);
-        auto offset = offsets.first;
         length = offsets.second;
+
         auto content_range = detail::make_content_range_header_field(
-            offset, length, res.content_length_);
+            req.ranges[0], res.content_length_);
         res.set_header("Content-Range", content_range);
       } else {
         length = detail::get_multipart_ranges_data_length(req, res, boundary,
@@ -6228,13 +6261,15 @@ inline void Server::apply_ranges(const Request &req, Response &res,
     if (req.ranges.empty()) {
       ;
     } else if (req.ranges.size() == 1) {
+      auto content_range = detail::make_content_range_header_field(
+          req.ranges[0], res.body.size());
+      res.set_header("Content-Range", content_range);
+
       auto offsets =
           detail::get_range_offset_and_length(req, res.body.size(), 0);
       auto offset = offsets.first;
       auto length = offsets.second;
-      auto content_range = detail::make_content_range_header_field(
-          offset, length, res.body.size());
-      res.set_header("Content-Range", content_range);
+
       if (offset < res.body.size()) {
         res.body = res.body.substr(offset, length);
       } else {

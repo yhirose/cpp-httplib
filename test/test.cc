@@ -2511,7 +2511,43 @@ TEST_F(ServerTest, StaticFileRanges) {
           .find(
               "multipart/byteranges; boundary=--cpp-httplib-multipart-data-") ==
       0);
-  EXPECT_EQ("266", res->get_header_value("Content-Length"));
+  EXPECT_EQ("265", res->get_header_value("Content-Length"));
+}
+
+TEST_F(ServerTest, StaticFileRangeHead) {
+  auto res = cli_.Head("/dir/test.abcde", {{make_range_header({{2, 3}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+}
+
+TEST_F(ServerTest, StaticFileRangeBigFile) {
+  auto res = cli_.Get("/dir/1MB.txt", {{make_range_header({{-1, 5}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("5", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("LAST\n", res->body);
+}
+
+TEST_F(ServerTest, StaticFileRangeBigFile2) {
+  auto res = cli_.Get("/dir/1MB.txt", {{make_range_header({{1, 4097}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(206, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("4097", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+}
+
+TEST_F(ServerTest, StaticFileBigFile) {
+  auto res = cli_.Get("/dir/1MB.txt");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("1048576", res->get_header_value("Content-Length"));
 }
 
 TEST_F(ServerTest, InvalidBaseDirMount) {
