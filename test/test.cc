@@ -3538,6 +3538,12 @@ TEST_F(ServerTest, URL) {
   EXPECT_EQ(200, res->status);
 }
 
+TEST_F(ServerTest, AbsoluteURL) {
+  auto res = cli_.Get("http://localhost:1234/request-target?aaa=bbb&ccc=ddd");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
 TEST_F(ServerTest, ArrayParam) {
   auto res = cli_.Get("/array-param?array=value1&array=value2&array=value3");
   ASSERT_TRUE(res);
