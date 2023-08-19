@@ -5781,6 +5781,27 @@ inline bool Server::parse_request_line(const char *s, Request &req) {
   if (req.version != "HTTP/1.1" && req.version != "HTTP/1.0") { return false; }
 
   {
+    // Find path in URL
+    bool path_found = false;
+    for (size_t i = 0; i < req.target.size(); i++) {
+      if (req.target[i] == '/') {
+        if (i + 1 < req.target.size() && req.target[i + 1] == '/') {
+          // Skip scheme
+          i++;
+          continue;
+        }
+        req.target.erase(0, i);
+        path_found = true;
+        break;
+      }
+    }
+    if (!path_found) {
+      // An empty abs_path is equivalent to an abs_path of "/".
+      if (req.target != "*") {
+        req.target = "/";
+      }
+    }
+
     // Skip URL fragment
     for (size_t i = 0; i < req.target.size(); i++) {
       if (req.target[i] == '#') {
