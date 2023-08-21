@@ -827,8 +827,14 @@ public:
   bool listen(const std::string &host, int port, int socket_flags = 0);
 
   bool is_running() const;
+
+  // True when the server should never start again.
+  bool is_decommissioned() const;
   void wait_until_ready() const;
   void stop();
+
+  // Call when you want the server to stop and never start.
+  void decommission();
 
   std::function<TaskQueue *(void)> new_task_queue;
 
@@ -900,6 +906,7 @@ private:
   virtual bool process_and_close_socket(socket_t sock);
 
   std::atomic<bool> is_running_{false};
+  std::atomic<bool> is_decommissioned_{false};
   std::atomic<bool> done_{false};
 
   struct MountPointEntry {
@@ -5736,6 +5743,8 @@ inline bool Server::listen(const std::string &host, int port,
 
 inline bool Server::is_running() const { return is_running_; }
 
+inline bool Server::is_decommissioned() const { return is_decommissioned_; }
+
 inline void Server::wait_until_ready() const {
   while (!is_running() && !done_) {
     std::this_thread::sleep_for(std::chrono::milliseconds{1});
@@ -5749,6 +5758,11 @@ inline void Server::stop() {
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
+}
+
+inline void Server::decommission() {
+  is_decommissioned_ = true;
+  stop();
 }
 
 inline bool Server::parse_request_line(const char *s, Request &req) {
@@ -6142,6 +6156,11 @@ inline bool Server::listen_internal() {
   auto ret = true;
   is_running_ = true;
   auto se = detail::scope_exit([&]() { is_running_ = false; });
+
+  // Do not start if we have been decommissioned.
+  // Note: it is vital we check this after we have set is_running to true,
+  // because that guarantees that a later call to stop will stop us.
+  if( is_decommissioned() ) { return false; }
 
   {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());
