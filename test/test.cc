@@ -211,8 +211,7 @@ TEST(GetHeaderValueTest, DefaultValue) {
 
 TEST(GetHeaderValueTest, DefaultValueInt) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val =
-      detail::get_header_value<uint64_t>(headers, "Content-Length", 0, 100);
+  auto val = detail::get_header_value_u64(headers, "Content-Length", 0, 100);
   EXPECT_EQ(100ull, val);
 }
 
@@ -241,8 +240,7 @@ TEST(GetHeaderValueTest, SetContent) {
 
 TEST(GetHeaderValueTest, RegularValueInt) {
   Headers headers = {{"Content-Length", "100"}, {"Dummy", "Dummy"}};
-  auto val =
-      detail::get_header_value<uint64_t>(headers, "Content-Length", 0, 0);
+  auto val = detail::get_header_value_u64(headers, "Content-Length", 0, 0);
   EXPECT_EQ(100ull, val);
 }
 
@@ -1016,7 +1014,7 @@ TEST(UrlWithSpace, Redirect_Online) {
   auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
-  EXPECT_EQ(18527U, res->get_header_value<uint64_t>("Content-Length"));
+  EXPECT_EQ(18527U, res->get_header_value_u64("Content-Length"));
 }
 
 #endif
@@ -3296,7 +3294,7 @@ TEST_F(ServerTest, PutLargeFileWithGzip2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(LARGE_DATA, res->body);
-  EXPECT_EQ(101942u, res.get_request_header_value<uint64_t>("Content-Length"));
+  EXPECT_EQ(101942u, res.get_request_header_value_u64("Content-Length"));
   EXPECT_EQ("gzip", res.get_request_header_value("Content-Encoding"));
 }
 
