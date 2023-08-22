@@ -4132,6 +4132,34 @@ TEST(ServerStopTest, ListenFailure) {
   t.join();
 }
 
+TEST(ServerStopTest, DecommissionBeforeStart) {
+  // This mutex is used to force the sequencing that may occur randomly
+  // in the real world: the server thread won't start until after the main thread
+  // wants it dead.
+  std::mutex threadStopper;
+  threadStopper.lock();
+
+  Server svr;
+  int port = 0;
+  auto thread = std::thread([&]() {
+    // Block until the main thread has requested a shutdown.
+    threadStopper.lock();
+    threadStopper.unlock();
+    port = svr.bind_to_any_port("localhost");
+    svr.listen_after_bind();
+  });
+
+  // Decommission the server before it has finished starting.
+  // Unlike stop, this isn't ignored.
+  svr.decommission();
+
+  // Allow the server thread to try starting.
+  threadStopper.unlock();
+
+  // This won't hang forever.
+  thread.join();
+}
+
 TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
 
