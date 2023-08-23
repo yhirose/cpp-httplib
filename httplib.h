@@ -8,7 +8,7 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.13.3"
+#define CPPHTTPLIB_VERSION "0.14.0"
 
 /*
  * Configuration
