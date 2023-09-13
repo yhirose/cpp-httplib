@@ -442,7 +442,7 @@ TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
   auto host = "www.httpwatch.com";
 
   auto ip = hosted_at(host);
-  EXPECT_EQ("191.236.16.12", ip);
+  EXPECT_EQ("23.96.13.243", ip);
 
   std::vector<std::string> addrs;
   hosted_at(host, addrs);
