@@ -3310,7 +3310,7 @@ find_content_type(const std::string &path,
   auto ext = file_extension(path);
 
   auto it = user_data.find(ext);
-  if (it != user_data.end()) { return it->second.c_str(); }
+  if (it != user_data.end()) { return it->second; }
 
   using udl::operator""_t;
 
@@ -4601,9 +4601,17 @@ inline std::string
 make_content_range_header_field(const std::pair<ssize_t, ssize_t> &range,
                                 size_t content_length) {
   std::string field = "bytes ";
-  if (range.first != -1) { field += std::to_string(range.first); }
+  if (range.first != -1) { 
+    field += std::to_string(range.first);
+  } else {
+    field += "0";
+  }
   field += "-";
-  if (range.second != -1) { field += std::to_string(range.second); }
+  if (range.second != -1) {
+    field += std::to_string(range.second);
+  } else {
+    field += std::to_string(content_length - 1);
+  }
   field += "/";
   field += std::to_string(content_length);
   return field;
@@ -6060,7 +6068,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
 
         if (detail::is_file(path)) {
           for (const auto &kv : entry.headers) {
-            res.set_header(kv.first.c_str(), kv.second);
+            res.set_header(kv.first, kv.second);
           }
 
           auto mm = std::make_shared<detail::mmap>(path.c_str());
@@ -6970,7 +6978,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   } else {
     if (next_scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      SSLClient cli(next_host.c_str(), next_port);
+      SSLClient cli(next_host, next_port);
       cli.copy_settings(*this);
       if (ca_cert_store_) { cli.set_ca_cert_store(ca_cert_store_); }
       return detail::redirect(cli, req, res, path, location, error);
@@ -6978,7 +6986,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
       return false;
 #endif
     } else {
-      ClientImpl cli(next_host.c_str(), next_port);
+      ClientImpl cli(next_host, next_port);
       cli.copy_settings(*this);
       return detail::redirect(cli, req, res, path, location, error);
     }
@@ -7456,7 +7464,7 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
   if (params.empty()) { return Get(path, headers); }
 
   std::string path_with_query = append_query_params(path, params);
-  return Get(path_with_query.c_str(), headers, progress);
+  return Get(path_with_query, headers, progress);
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
@@ -7476,7 +7484,7 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
   }
 
   std::string path_with_query = append_query_params(path, params);
-  return Get(path_with_query.c_str(), headers, response_handler,
+  return Get(path_with_query, headers, response_handler,
              content_receiver, progress);
 }
 
@@ -7579,7 +7587,7 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
   const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Post(path, headers, body, content_type.c_str());
+  return Post(path, headers, body, content_type);
 }
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
@@ -7592,7 +7600,7 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
   const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Post(path, headers, body, content_type.c_str());
+  return Post(path, headers, body, content_type);
 }
 
 inline Result
