@@ -737,6 +737,8 @@ private:
   std::regex regex_;
 };
 
+ssize_t write_headers(Stream &strm, const Headers &headers);
+
 } // namespace detail
 
 class Server {
@@ -801,7 +803,7 @@ public:
 
   Server &set_default_headers(Headers headers);
   Server &
-  set_header_writer(std::function<ssize_t(Stream &, Headers &)> &writer);
+  set_header_writer(std::function<ssize_t(Stream &, Headers &)> const &writer);
 
   Server &set_keep_alive_max_count(size_t count);
   Server &set_keep_alive_timeout(time_t sec);
@@ -1168,7 +1170,8 @@ public:
 
   void set_default_headers(Headers headers);
 
-  void set_header_writer(std::function<ssize_t(Stream &, Headers &)> &writer);
+  void
+  set_header_writer(std::function<ssize_t(Stream &, Headers &)> const &writer);
 
   void set_address_family(int family);
   void set_tcp_nodelay(bool on);
@@ -1548,6 +1551,9 @@ public:
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
   void set_default_headers(Headers headers);
+
+  void
+  set_header_writer(std::function<ssize_t(Stream &, Headers &)> const &writer);
 
   void set_address_family(int family);
   void set_tcp_nodelay(bool on);
@@ -5682,8 +5688,8 @@ inline Server &Server::set_default_headers(Headers headers) {
   return *this;
 }
 
-inline Server &
-Server::set_header_writer(std::function<ssize_t(Stream &, Headers &)> &writer) {
+inline Server &Server::set_header_writer(
+    std::function<ssize_t(Stream &, Headers &)> const &writer) {
   header_writer_ = writer;
   return *this;
 }
@@ -7933,7 +7939,7 @@ inline void ClientImpl::set_default_headers(Headers headers) {
 }
 
 inline void ClientImpl::set_header_writer(
-    std::function<ssize_t(Stream &, Headers &)> &writer) {
+    std::function<ssize_t(Stream &, Headers &)> const &writer) {
   header_writer_ = writer;
 }
 
@@ -9129,6 +9135,11 @@ Client::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
 
 inline void Client::set_default_headers(Headers headers) {
   cli_->set_default_headers(std::move(headers));
+}
+
+inline void Client::set_header_writer(
+    std::function<ssize_t(Stream &, Headers &)> const &writer) {
+  cli_->set_header_writer(writer);
 }
 
 inline void Client::set_address_family(int family) {
