@@ -800,6 +800,8 @@ public:
   Server &set_socket_options(SocketOptions socket_options);
 
   Server &set_default_headers(Headers headers);
+  Server &
+  set_header_writer(std::function<ssize_t(Stream &, Headers &)> &writer);
 
   Server &set_keep_alive_max_count(size_t count);
   Server &set_keep_alive_timeout(time_t sec);
@@ -934,6 +936,8 @@ private:
   SocketOptions socket_options_ = default_socket_options;
 
   Headers default_headers_;
+  std::function<ssize_t(Stream &, Headers &)> header_writer_ =
+      detail::write_headers;
 };
 
 enum class Error {
@@ -1164,6 +1168,8 @@ public:
 
   void set_default_headers(Headers headers);
 
+  void set_header_writer(std::function<ssize_t(Stream &, Headers &)> &writer);
+
   void set_address_family(int family);
   void set_tcp_nodelay(bool on);
   void set_socket_options(SocketOptions socket_options);
@@ -1272,6 +1278,10 @@ protected:
 
   // Default headers
   Headers default_headers_;
+
+  // Header writer
+  std::function<ssize_t(Stream &, Headers &)> header_writer_ =
+      detail::write_headers;
 
   // Settings
   std::string client_cert_path_;
@@ -5672,6 +5682,12 @@ inline Server &Server::set_default_headers(Headers headers) {
   return *this;
 }
 
+inline Server &
+Server::set_header_writer(std::function<ssize_t(Stream &, Headers &)> &writer) {
+  header_writer_ = writer;
+  return *this;
+}
+
 inline Server &Server::set_keep_alive_max_count(size_t count) {
   keep_alive_max_count_ = count;
   return *this;
@@ -5866,7 +5882,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
       return false;
     }
 
-    if (!detail::write_headers(bstrm, res.headers)) { return false; }
+    if (!header_writer_(bstrm, res.headers)) { return false; }
 
     // Flush buffer
     auto &data = bstrm.get_buffer();
@@ -7105,7 +7121,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     const auto &path = url_encode_ ? detail::encode_url(req.path) : req.path;
     bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
 
-    detail::write_headers(bstrm, req.headers);
+    header_writer_(bstrm, req.headers);
 
     // Flush buffer
     auto &data = bstrm.get_buffer();
@@ -7914,6 +7930,11 @@ ClientImpl::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
 
 inline void ClientImpl::set_default_headers(Headers headers) {
   default_headers_ = std::move(headers);
+}
+
+inline void ClientImpl::set_header_writer(
+    std::function<ssize_t(Stream &, Headers &)> &writer) {
+  header_writer_ = writer;
 }
 
 inline void ClientImpl::set_address_family(int family) {
