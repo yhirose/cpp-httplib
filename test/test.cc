@@ -1592,6 +1592,46 @@ TEST(URLFragmentTest, WithFragment) {
   }
 }
 
+TEST(HeaderWriter, SetHeaderWriter) {
+  Server svr;
+
+  svr.set_header_writer([](Stream &strm, Headers &hdrs) {
+    hdrs.emplace("CustomServerHeader", "CustomServerValue");
+    return detail::write_headers(strm, hdrs);
+  });
+  svr.Get("/hi", [](const Request &req, Response &res) {
+    auto it = req.headers.find("CustomClientHeader");
+    EXPECT_TRUE(it != req.headers.end());
+    EXPECT_EQ(it->second, "CustomClientValue");
+    res.set_content("Hello World!\n", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_header_writer([](Stream &strm, Headers &hdrs) {
+      hdrs.emplace("CustomClientHeader", "CustomClientValue");
+      return detail::write_headers(strm, hdrs);
+    });
+
+    auto res = cli.Get("/hi");
+    EXPECT_TRUE(res);
+    EXPECT_EQ(200, res->status);
+
+    auto it = res->headers.find("CustomServerHeader");
+    EXPECT_TRUE(it != res->headers.end());
+    EXPECT_EQ(it->second, "CustomServerValue");
+  }
+}
+
 class ServerTest : public ::testing::Test {
 protected:
   ServerTest()
