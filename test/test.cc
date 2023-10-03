@@ -5439,9 +5439,10 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
   ASSERT_TRUE(content);
 
   Server svr;
-  svr.Get("/foo", [=](const httplib::Request &req, httplib::Response &resp) {
-    resp.set_content(content, content_size, "application/octet-stream");
-  });
+  svr.Get("/foo",
+          [=](const httplib::Request & /*req*/, httplib::Response &res) {
+            res.set_content(content, content_size, "application/octet-stream");
+          });
 
   auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
@@ -6242,7 +6243,7 @@ TEST(MultipartFormDataTest, AlternateFilename) {
              "\r\n"
              "text default\r\n"
              "----------\r\n"
-             "Content-Disposition: form-data; filename*=\"UTF-8''\%41.txt\"; "
+             "Content-Disposition: form-data; filename*=\"UTF-8''%41.txt\"; "
              "filename=\"a.txt\"; name=\"file1\"\r\n"
              "Content-Type: text/plain\r\n"
              "\r\n"
