@@ -1378,6 +1378,8 @@ private:
 
 class Client {
 public:
+  Client() = default;
+
   // Universal interface
   explicit Client(const std::string &scheme_host_port);
 
