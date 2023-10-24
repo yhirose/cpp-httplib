@@ -556,6 +556,7 @@ struct Response {
   ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
   bool content_provider_success_ = false;
+  std::vector<std::pair<size_t, size_t>> ranges_offset_length_;
 };
 
 class Stream {
@@ -876,7 +877,7 @@ private:
                                       const HandlersForContentReader &handlers);
 
   bool parse_request_line(const char *s, Request &req);
-  void apply_ranges(const Request &req, Response &res,
+  bool apply_ranges(const Request &req, Response &res,
                     std::string &content_type, std::string &boundary);
   bool write_response(Stream &strm, bool close_connection, const Request &req,
                       Response &res);
@@ -4593,45 +4594,25 @@ serialize_multipart_formdata(const MultipartFormDataItems &items,
   return body;
 }
 
-inline std::pair<size_t, size_t>
-get_range_offset_and_length(const Request &req, size_t content_length,
-                            size_t index) {
-  auto r = req.ranges[index];
-
-  if (r.first == -1 && r.second == -1) {
-    return std::make_pair(0, content_length);
-  }
-
-  auto slen = static_cast<ssize_t>(content_length);
-
-  if (r.first == -1) {
-    r.first = (std::max)(static_cast<ssize_t>(0), slen - r.second);
-    r.second = slen - 1;
-  }
-
-  if (r.second == -1) { r.second = slen - 1; }
-  return std::make_pair(r.first, static_cast<size_t>(r.second - r.first) + 1);
-}
-
 inline std::string
-make_content_range_header_field(const std::pair<ssize_t, ssize_t> &range,
+make_content_range_header_field(const std::pair<size_t, size_t> &offset_length,
                                 size_t content_length) {
   std::string field = "bytes ";
-  if (range.first != -1) { field += std::to_string(range.first); }
+  field += std::to_string(offset_length.first);
   field += "-";
-  if (range.second != -1) { field += std::to_string(range.second); }
+  field += std::to_string(offset_length.first + offset_length.second - 1);
   field += "/";
   field += std::to_string(content_length);
   return field;
 }
 
 template <typename SToken, typename CToken, typename Content>
-bool process_multipart_ranges_data(const Request &req, Response &res,
+bool process_multipart_ranges_data(const Request &/*req*/, Response &res,
                                    const std::string &boundary,
                                    const std::string &content_type,
                                    SToken stoken, CToken ctoken,
                                    Content content) {
-  for (size_t i = 0; i < req.ranges.size(); i++) {
+  for (size_t i = 0; i < res.ranges_offset_length_.size(); i++) {
     ctoken("--");
     stoken(boundary);
     ctoken("\r\n");
@@ -4642,15 +4623,12 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
     }
 
     ctoken("Content-Range: ");
-    const auto &range = req.ranges[i];
-    stoken(make_content_range_header_field(range, res.content_length_));
+    const auto &offset_length = res.ranges_offset_length_[i];
+    stoken(make_content_range_header_field(offset_length, res.content_length_));
     ctoken("\r\n");
     ctoken("\r\n");
 
-    auto offsets = get_range_offset_and_length(req, res.content_length_, i);
-    auto offset = offsets.first;
-    auto length = offsets.second;
-    if (!content(offset, length)) { return false; }
+    if (!content(offset_length.first, offset_length.second)) { return false; }
     ctoken("\r\n");
   }
 
@@ -4670,11 +4648,9 @@ inline bool make_multipart_ranges_data(const Request &req, Response &res,
       [&](const std::string &token) { data += token; },
       [&](const std::string &token) { data += token; },
       [&](size_t offset, size_t length) {
-        if (offset < res.body.size()) {
-          data += res.body.substr(offset, length);
-          return true;
-        }
-        return false;
+        //already checked offset and length.
+        data += res.body.substr(offset, length);
+        return true;
       });
 }
 
@@ -4710,18 +4686,6 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
         return write_content(strm, res.content_provider_, offset, length,
                              is_shutting_down);
       });
-}
-
-inline std::pair<size_t, size_t>
-get_range_offset_and_length(const Request &req, const Response &res,
-                            size_t index) {
-  auto r = req.ranges[index];
-
-  if (r.second == -1) {
-    r.second = static_cast<ssize_t>(res.content_length_) - 1;
-  }
-
-  return std::make_pair(r.first, r.second - r.first + 1);
 }
 
 inline bool expect_content(const Request &req) {
@@ -5851,7 +5815,14 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   std::string content_type;
   std::string boundary;
-  if (need_apply_ranges) { apply_ranges(req, res, content_type, boundary); }
+  if (need_apply_ranges) {
+    if (!apply_ranges(req, res, content_type, boundary)) {
+      //range error.
+      res.status = 416;
+      res.body.clear();
+      res.content_length_ = 0;
+    }
+  }
 
   // Prepare additional headers
   if (close_connection || req.get_header_value("Connection") == "close") {
@@ -5931,12 +5902,8 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
       return detail::write_content(strm, res.content_provider_, 0,
                                    res.content_length_, is_shutting_down);
     } else if (req.ranges.size() == 1) {
-      auto offsets =
-          detail::get_range_offset_and_length(req, res.content_length_, 0);
-      auto offset = offsets.first;
-      auto length = offsets.second;
-      return detail::write_content(strm, res.content_provider_, offset, length,
-                                   is_shutting_down);
+      return detail::write_content(strm, res.content_provider_, res.ranges_offset_length_[0].first, 
+                                   res.ranges_offset_length_[0].second, is_shutting_down);
     } else {
       return detail::write_multipart_ranges_data(
           strm, req, res, boundary, content_type, is_shutting_down);
@@ -6322,9 +6289,41 @@ inline bool Server::dispatch_request(Request &req, Response &res,
   return false;
 }
 
-inline void Server::apply_ranges(const Request &req, Response &res,
+inline bool Server::apply_ranges(const Request &req, Response &res,
                                  std::string &content_type,
                                  std::string &boundary) {
+  //check and format ranges to ranges_offset_length.
+  if (!req.ranges.empty()) {
+    size_t length_ = res.body.size();
+    if (length_ == 0) { length_ = res.content_length_; }
+    if (length_ > 0) {
+      res.ranges_offset_length_.resize(req.ranges.size());
+      for (size_t i = 0; i < req.ranges.size(); i++) {
+          auto r = req.ranges[i];
+          
+          if (r.first == -1 && r.second == -1) {
+            res.ranges_offset_length_[i] = std::make_pair(0, length_);
+            continue;
+          }
+
+          auto slen = static_cast<ssize_t>(length_);
+          if (r.first == -1) {
+            r.first = (std::max)(static_cast<ssize_t>(0), slen - r.second);
+            r.second = slen - 1;
+          }
+          auto range_offset_ = static_cast<size_t>(r.first);
+          if (range_offset_ >= length_) { return false; }
+
+          if (r.second == -1 || r.second >= slen) {
+             r.second = slen - 1;
+          }
+          auto range_length_ = static_cast<size_t>(r.second - r.first) + 1;
+
+          res.ranges_offset_length_[i] = std::make_pair(range_offset_, range_length_);
+      }
+    }
+  }
+
   if (req.ranges.size() > 1) {
     boundary = detail::make_multipart_data_boundary();
 
@@ -6338,20 +6337,15 @@ inline void Server::apply_ranges(const Request &req, Response &res,
                    "multipart/byteranges; boundary=" + boundary);
   }
 
-  auto type = detail::encoding_type(req, res);
-
   if (res.body.empty()) {
     if (res.content_length_ > 0) {
       size_t length = 0;
       if (req.ranges.empty()) {
         length = res.content_length_;
       } else if (req.ranges.size() == 1) {
-        auto offsets =
-            detail::get_range_offset_and_length(req, res.content_length_, 0);
-        length = offsets.second;
-
+        length = res.ranges_offset_length_[0].second;
         auto content_range = detail::make_content_range_header_field(
-            req.ranges[0], res.content_length_);
+            res.ranges_offset_length_[0], res.content_length_);
         res.set_header("Content-Range", content_range);
       } else {
         length = detail::get_multipart_ranges_data_length(req, res, boundary,
@@ -6362,6 +6356,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       if (res.content_provider_) {
         if (res.is_chunked_content_provider_) {
           res.set_header("Transfer-Encoding", "chunked");
+          auto type = detail::encoding_type(req, res);
           if (type == detail::EncodingType::Gzip) {
             res.set_header("Content-Encoding", "gzip");
           } else if (type == detail::EncodingType::Brotli) {
@@ -6375,31 +6370,19 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       ;
     } else if (req.ranges.size() == 1) {
       auto content_range = detail::make_content_range_header_field(
-          req.ranges[0], res.body.size());
+          res.ranges_offset_length_[0], res.body.size());
       res.set_header("Content-Range", content_range);
 
-      auto offsets =
-          detail::get_range_offset_and_length(req, res.body.size(), 0);
-      auto offset = offsets.first;
-      auto length = offsets.second;
-
-      if (offset < res.body.size()) {
-        res.body = res.body.substr(offset, length);
-      } else {
-        res.body.clear();
-        res.status = 416;
-      }
+      res.body = res.body.substr(res.ranges_offset_length_[0].first,
+                                 res.ranges_offset_length_[0].second);
     } else {
       std::string data;
-      if (detail::make_multipart_ranges_data(req, res, boundary, content_type,
-                                             data)) {
-        res.body.swap(data);
-      } else {
-        res.body.clear();
-        res.status = 416;
-      }
+      detail::make_multipart_ranges_data(req, res, boundary, content_type,
+                                         data);
+      res.body.swap(data);
     }
 
+    auto type = detail::encoding_type(req, res);
     if (type != detail::EncodingType::None) {
       std::unique_ptr<detail::compressor> compressor;
       std::string content_encoding;
@@ -6429,9 +6412,10 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       }
     }
 
-    auto length = std::to_string(res.body.size());
-    res.set_header("Content-Length", length);
+    res.set_header("Content-Length", std::to_string(res.body.size()));
   }
+
+  return true;
 }
 
 inline bool Server::dispatch_request_for_content_reader(
