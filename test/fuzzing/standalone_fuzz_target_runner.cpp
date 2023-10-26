@@ -5,14 +5,14 @@
 // on the test corpus or on a single file,
 // e.g. the one that comes from a bug report.
 
-#include <cassert>
+#include <cstdint>
 #include <iostream>
 #include <fstream>
 #include <vector>
 
 // Forward declare the "fuzz target" interface.
 // We deliberately keep this interface simple and header-free.
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
+extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, size_t size);
 
 // It reads all files passed as parameters and feeds their contents
 // one by one into the fuzz target (LLVMFuzzerTestOneInput).
@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     // Allocate exactly length bytes so that we reliably catch buffer overflows.
     std::vector<char> bytes(length);
     in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    LLVMFuzzerTestOneInput(reinterpret_cast<const uint8_t *>(bytes.data()),
+    LLVMFuzzerTestOneInput(reinterpret_cast<const std::uint8_t *>(bytes.data()),
                            bytes.size());
     std::cout << "Execution successful" << std::endl;
   }
