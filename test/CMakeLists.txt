@@ -102,3 +102,5 @@ if(HTTPLIB_IS_USING_OPENSSL)
         COMMAND_ERROR_IS_FATAL ANY
     )
 endif()
+
+add_subdirectory(fuzzing)
