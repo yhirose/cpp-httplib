@@ -4,7 +4,7 @@
 
 class FuzzedStream : public httplib::Stream {
 public:
-  FuzzedStream(const std::uint8_t *data, size_t size)
+  FuzzedStream(const uint8_t *data, size_t size)
       : data_(data), size_(size), read_pos_(0) {}
 
   ssize_t read(char *ptr, size_t size) override {
@@ -40,7 +40,7 @@ public:
   socket_t socket() const override { return 0; }
 
 private:
-  const std::uint8_t *data_;
+  const uint8_t *data_;
   size_t size_;
   size_t read_pos_;
   std::string response_;
@@ -85,7 +85,7 @@ extern "C" int LLVMFuzzerInitialize(int * /*argc*/, char *** /*argv*/) {
   return 0;
 }
 
-extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, size_t size) {
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   FuzzedStream stream{data, size};
   g_server.ProcessFuzzedRequest(stream);
   return 0;
