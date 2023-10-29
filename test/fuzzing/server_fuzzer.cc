@@ -1,5 +1,6 @@
+#include <cstdint>
+
 #include <httplib.h>
-#include <memory>
 
 class FuzzedStream : public httplib::Stream {
 public:
