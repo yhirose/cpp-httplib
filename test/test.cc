@@ -5204,12 +5204,12 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
                     client_ca_cert_dir_path),
           stop_(false) {}
 
-    bool stop_;
+    std::atomic_bool stop_;
 
   private:
     bool process_and_close_socket(socket_t /*sock*/) override {
       // Don't create SSL context
-      while (!stop_) {
+      while (!stop_.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
       return true;
