@@ -1088,12 +1088,8 @@ TEST(RedirectToDifferentPort, Redirect) {
     ASSERT_FALSE(svr1.is_running());
   });
 
-  while (!svr1.is_running() || !svr2.is_running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr1.wait_until_ready();
+  svr2.wait_until_ready();
 
   Client cli("localhost", svr2_port);
   cli.set_follow_location(true);
@@ -1124,9 +1120,6 @@ TEST(RedirectFromPageWithContent, Redirect) {
   });
 
   svr.wait_until_ready();
-
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     Client cli("localhost", PORT);
@@ -1193,9 +1186,6 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     ASSERT_LT(milliseconds, 5000U);
   }
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   {
     Client cli("http://[::1]:1234");
     cli.set_follow_location(true);
@@ -1246,8 +1236,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -1277,8 +1266,7 @@ TEST(BindServerTest, DISABLED_BindDualStack) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli("127.0.0.1", PORT);
@@ -1349,8 +1337,7 @@ TEST(ErrorHandlerTest, ContentLength) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -1391,8 +1378,7 @@ TEST(ExceptionHandlerTest, ContentLength) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   for (size_t i = 0; i < 10; i++) {
     Client cli(HOST, PORT);
@@ -1432,8 +1418,7 @@ TEST(NoContentTest, ContentLength) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -1483,8 +1468,7 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1552,8 +1536,7 @@ TEST(InvalidFormatTest, StatusCode) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -1577,7 +1560,7 @@ TEST(URLFragmentTest, WithFragment) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -1613,7 +1596,7 @@ TEST(HeaderWriter, SetHeaderWriter) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -2205,9 +2188,7 @@ protected:
 
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
 
-    while (!svr_.is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    svr_.wait_until_ready();
   }
 
   virtual void TearDown() {
@@ -4222,9 +4203,6 @@ TEST(MountTest, Unmount) {
 
   svr.wait_until_ready();
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   Client cli("localhost", PORT);
 
   svr.set_mount_point("/mount2", "./www2");
@@ -4275,9 +4253,6 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
 
   svr.wait_until_ready();
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   Client cli("localhost", PORT);
 
   {
@@ -4319,9 +4294,6 @@ TEST(KeepAliveTest, ReadTimeout) {
 
   svr.wait_until_ready();
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   Client cli("localhost", PORT);
   cli.set_keep_alive(true);
   cli.set_read_timeout(std::chrono::seconds(1));
@@ -4351,7 +4323,7 @@ TEST(KeepAliveTest, Issue1041) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  svr.wait_until_ready();
 
   Client cli(HOST, PORT);
   cli.set_keep_alive(true);
@@ -4384,7 +4356,7 @@ TEST(KeepAliveTest, SSLClientReconnection) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT);
   cli.enable_server_certificate_verification(false);
@@ -4447,9 +4419,6 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
 
   svr.wait_until_ready();
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   Client cli("localhost", PORT);
 
   {
@@ -4486,9 +4455,6 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   });
 
   svr.wait_until_ready();
-
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   Client cli("localhost", PORT);
 
@@ -4533,7 +4499,6 @@ TEST(GetWithParametersTest, GetWithParameters) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     Client cli(HOST, PORT);
@@ -4592,7 +4557,6 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   Client cli("localhost", PORT);
 
@@ -4660,7 +4624,6 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   Client cli("localhost", PORT);
 
@@ -4694,9 +4657,6 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   });
 
   svr.wait_until_ready();
-
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
@@ -4736,9 +4696,7 @@ protected:
     t_ = thread(
         [&]() { ASSERT_TRUE(svr_.listen(std::string(), PORT, AI_PASSIVE)); });
 
-    while (!svr_.is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    svr_.wait_until_ready();
   }
 
   virtual void TearDown() {
@@ -4775,9 +4733,7 @@ protected:
       ASSERT_TRUE(svr_.listen_after_bind());
     });
 
-    while (!svr_.is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    svr_.wait_until_ready();
   }
 
   virtual void TearDown() {
@@ -4818,9 +4774,7 @@ protected:
 
     t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
 
-    while (!svr_.is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    svr_.wait_until_ready();
   }
 
   virtual void TearDown() {
@@ -4937,7 +4891,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli("127.0.0.1", PORT);
   cli.set_ca_cert_path(SERVER_CERT2_FILE);
@@ -5053,7 +5007,7 @@ TEST(SSLClientServerTest, ClientCertPresent) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
@@ -5128,7 +5082,7 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT, client_cert, client_private_key);
   cli.enable_server_certificate_verification(false);
@@ -5159,7 +5113,7 @@ TEST(SSLClientServerTest, ClientCertMissing) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
@@ -5183,7 +5137,7 @@ TEST(SSLClientServerTest, TrustDirOptional) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
@@ -5204,12 +5158,12 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
                     client_ca_cert_dir_path),
           stop_(false) {}
 
-    bool stop_;
+    std::atomic_bool stop_;
 
   private:
     bool process_and_close_socket(socket_t /*sock*/) override {
       // Don't create SSL context
-      while (!stop_) {
+      while (!stop_.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
       return true;
@@ -5231,7 +5185,7 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
@@ -5303,7 +5257,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
@@ -5454,9 +5408,6 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
 
   svr.wait_until_ready();
 
-  // Give GET time to get a few messages.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   Client cli(HOST, PORT);
   auto res = cli.Get("/foo");
   ASSERT_TRUE(res);
@@ -5591,7 +5542,8 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  svr.wait_until_ready();
+  ssl_svr.wait_until_ready();
 
   Client cli("127.0.0.1", PORT);
   cli.set_ca_cert_path(SERVER_CERT2_FILE);
@@ -5647,7 +5599,6 @@ TEST(MultipartFormDataTest, LargeData) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     std::string data(1024 * 1024 * 2, '.');
@@ -5795,7 +5746,6 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     Client cli("https://localhost:8080");
@@ -5997,7 +5947,6 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     std::string data(1024 * 1024 * 2, '.');
@@ -6019,9 +5968,6 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
 }
 
 TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   std::string data(1024 * 1024 * 2, '&');
   std::stringstream buffer;
   buffer << data;
@@ -6084,7 +6030,6 @@ TEST(MultipartFormDataTest, PutFormData) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     std::string data(1024 * 1024 * 2, '&');
@@ -6149,7 +6094,6 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
   });
 
   svr.wait_until_ready();
-  std::this_thread::sleep_for(std::chrono::seconds(1));
 
   {
     std::string data(1024 * 1024 * 2, '&');
@@ -6171,9 +6115,6 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
 }
 
 TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-
   std::string data(1024 * 1024 * 2, '&');
   std::stringstream buffer;
   buffer << data;
@@ -6502,7 +6443,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
@@ -6548,7 +6489,7 @@ TEST(VulnerabilityTest, CRLFInjection) {
     ASSERT_FALSE(svr.is_running());
   });
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  svr.wait_until_ready();
 
   {
     Client cli(HOST, PORT);
