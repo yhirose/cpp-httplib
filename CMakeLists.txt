@@ -219,7 +219,6 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		# Needed for Windows libs on Mingw, as the pragma comment(lib, "xyz") aren't triggered.
 		$<$<PLATFORM_ID:Windows>:ws2_32>
 		$<$<PLATFORM_ID:Windows>:crypt32>
-		$<$<PLATFORM_ID:Windows>:cryptui>
 		# Needed for API from MacOS Security framework
 		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN}>>:-framework CoreFoundation -framework Security>"
 		# Can't put multiple targets in a single generator expression or it bugs out.

@@ -247,7 +247,6 @@ using socket_t = int;
 
 #ifdef _MSC_VER
 #pragma comment(lib, "crypt32.lib")
-#pragma comment(lib, "cryptui.lib")
 #endif
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
 #include <TargetConditionals.h>
