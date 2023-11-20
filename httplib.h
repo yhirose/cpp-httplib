@@ -5434,8 +5434,15 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
     if (param_name_set.find(param_name) != param_name_set.cend()) {
-      std::string msg = "Encountered path parameter '" + param_name +
-                        "' multiple times in route pattern '" + pattern + "'.";
+      std::string msg;
+      msg.reserve(sizeof("Encountered path parameter '' multiple times in "
+                         "route pattern ''.") +
+                  param_name.size() + pattern.size());
+      msg.append("Encountered path parameter '")
+          .append(param_name)
+          .append("' multiple times in route pattern '")
+          .append(pattern)
+          .append("'.");
       throw std::invalid_argument(msg);
     }
 #endif
@@ -7497,8 +7504,8 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
   }
 
   std::string path_with_query = append_query_params(path, params);
-  return Get(path_with_query, headers, response_handler,
-             content_receiver, progress);
+  return Get(path_with_query, headers, response_handler, content_receiver,
+             progress);
 }
 
 inline Result ClientImpl::Head(const std::string &path) {
