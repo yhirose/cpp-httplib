@@ -330,7 +330,7 @@ struct scope_exit {
   explicit scope_exit(std::function<void(void)> &&f)
       : exit_function(std::move(f)), execute_on_destruction{true} {}
 
-  scope_exit(scope_exit &&rhs)
+  scope_exit(scope_exit &&rhs) noexcept
       : exit_function(std::move(rhs.exit_function)),
         execute_on_destruction{rhs.execute_on_destruction} {
     rhs.release();
@@ -7497,8 +7497,8 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
   }
 
   std::string path_with_query = append_query_params(path, params);
-  return Get(path_with_query, headers, response_handler,
-             content_receiver, progress);
+  return Get(path_with_query, headers, response_handler, content_receiver,
+             progress);
 }
 
 inline Result ClientImpl::Head(const std::string &path) {
