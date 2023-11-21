@@ -4727,10 +4727,12 @@ get_range_offset_and_length(const Request &req, const Response &res,
 }
 
 inline bool expect_content(const Request &req) {
+  if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
+      req.method == "PRI" || req.method == "DELETE") {
+    return true;
+  }
   // TODO: check if Content-Length is set
-  return (req.method == "POST" || req.method == "PUT" ||
-          req.method == "PATCH" || req.method == "PRI" ||
-          req.method == "DELETE");
+  return false;
 }
 
 inline bool has_crlf(const std::string &s) {
@@ -8357,7 +8359,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
     : ClientImpl(host, port, client_cert_path, client_key_path) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
-  detail::split(host_.data(), &host_[host_.size()], '.',
+  detail::split(&host_[0], &host_[host_.size()], '.',
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(b, e);
                 });
