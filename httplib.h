@@ -1686,8 +1686,9 @@ private:
   void shutdown_ssl(Socket &socket, bool shutdown_gracefully) override;
   void shutdown_ssl_impl(Socket &socket, bool shutdown_gracefully);
 
-  bool process_socket(const Socket &socket,
-                      std::function<bool(Stream &strm)> callback) override;
+  bool
+  process_socket(const Socket &socket,
+                 const std::function<bool(Stream &strm)> &callback) override;
   bool is_ssl() const override;
 
   bool connect_with_proxy(Socket &sock, Response &res, bool &success,
@@ -8638,11 +8639,11 @@ inline void SSLClient::shutdown_ssl_impl(Socket &socket,
 
 inline bool
 SSLClient::process_socket(const Socket &socket,
-                          std::function<bool(Stream &strm)> callback) {
+                          const std::function<bool(Stream &strm)> &callback) {
   assert(socket.ssl);
   return detail::process_client_socket_ssl(
       socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
-      write_timeout_sec_, write_timeout_usec_, std::move(callback));
+      write_timeout_sec_, write_timeout_usec_, callback);
 }
 
 inline bool SSLClient::is_ssl() const { return true; }
