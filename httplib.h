@@ -789,7 +789,7 @@ public:
   Server &set_file_request_handler(Handler handler);
 
   Server &set_error_handler(HandlerWithResponse handler);
-  Server &set_error_handler(const Handler &handler);
+  Server &set_error_handler(Handler handler);
   Server &set_exception_handler(ExceptionHandler handler);
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
@@ -5660,8 +5660,13 @@ inline Server &Server::set_error_handler(HandlerWithResponse handler) {
   return *this;
 }
 
-inline Server &Server::set_error_handler(const Handler &handler) {
+inline Server &Server::set_error_handler(Handler handler) {
+#ifdef __cpp_init_captures
+  error_handler_ = [handler = std::move(handler)](const Request &req,
+                                                  Response &res) {
+#else
   error_handler_ = [handler](const Request &req, Response &res) {
+#endif
     handler(req, res);
     return HandlerResponse::Handled;
   };
