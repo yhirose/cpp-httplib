@@ -2227,7 +2227,7 @@ inline std::string from_i_to_hex(size_t n) {
 
 inline size_t to_utf8(int code, char *buff) {
   if (code < 0x0080) {
-    buff[0] = (code & 0x7F);
+    buff[0] = static_cast<char>(code & 0x7F);
     return 1;
   } else if (code < 0x0800) {
     buff[0] = static_cast<char>(0xC0 | ((code >> 6) & 0x1F));
@@ -2835,7 +2835,7 @@ private:
   size_t read_buff_off_ = 0;
   size_t read_buff_content_size_ = 0;
 
-  static const size_t read_buff_size_ = 1024 * 4;
+  static const size_t read_buff_size_ = 1024l * 4;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -3804,7 +3804,7 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
     if (!line_reader.getline()) { return false; }
 
-    if (strcmp(line_reader.ptr(), "\r\n")) { return false; }
+    if (strcmp(line_reader.ptr(), "\r\n") != 0) { return false; }
 
     if (!line_reader.getline()) { return false; }
   }
@@ -3814,7 +3814,7 @@ inline bool read_content_chunked(Stream &strm, T &x,
   // Trailer
   if (!line_reader.getline()) { return false; }
 
-  while (strcmp(line_reader.ptr(), "\r\n")) {
+  while (strcmp(line_reader.ptr(), "\r\n") != 0) {
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
 
     // Exclude line terminator
