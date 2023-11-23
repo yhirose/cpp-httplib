@@ -2216,7 +2216,7 @@ inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
 }
 
 inline std::string from_i_to_hex(size_t n) {
-  static const auto charset = "0123456789abcdef";
+  static const auto *const charset = "0123456789abcdef";
   std::string ret;
   do {
     ret = charset[n & 15] + ret;
@@ -2260,7 +2260,7 @@ inline size_t to_utf8(int code, char *buff) {
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/180947/base64-decode-snippet-in-c
 inline std::string base64_encode(const std::string &in) {
-  static const auto lookup =
+  static const auto *const lookup =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
   std::string out;
@@ -2511,7 +2511,7 @@ inline size_t stream_line_reader::size() const {
 }
 
 inline bool stream_line_reader::end_with_crlf() const {
-  auto end = ptr() + size();
+  const auto *end = ptr() + size();
   return size() >= 2 && end[-2] == '\r' && end[-1] == '\n';
 }
 
@@ -2997,7 +2997,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     return INVALID_SOCKET;
   }
 
-  for (auto rp = result; rp; rp = rp->ai_next) {
+  for (auto *rp = result; rp; rp = rp->ai_next) {
     // Create a socket
 #ifdef _WIN32
     auto sock =
@@ -3100,7 +3100,7 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   if (getaddrinfo(host.c_str(), "0", &hints, &result)) { return false; }
 
   auto ret = false;
-  for (auto rp = result; rp; rp = rp->ai_next) {
+  for (auto *rp = result; rp; rp = rp->ai_next) {
     const auto &ai = *rp;
     if (!::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
       ret = true;
@@ -3121,19 +3121,19 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
   std::string addr_candidate;
-  for (auto ifa = ifap; ifa; ifa = ifa->ifa_next) {
+  for (auto *ifa = ifap; ifa; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr && ifn == ifa->ifa_name &&
         (AF_UNSPEC == address_family ||
          ifa->ifa_addr->sa_family == address_family)) {
       if (ifa->ifa_addr->sa_family == AF_INET) {
-        auto sa = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
+        auto *sa = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
         char buf[INET_ADDRSTRLEN];
         if (inet_ntop(AF_INET, &sa->sin_addr, buf, INET_ADDRSTRLEN)) {
           freeifaddrs(ifap);
           return std::string(buf, INET_ADDRSTRLEN);
         }
       } else if (ifa->ifa_addr->sa_family == AF_INET6) {
-        auto sa = reinterpret_cast<struct sockaddr_in6 *>(ifa->ifa_addr);
+        auto *sa = reinterpret_cast<struct sockaddr_in6 *>(ifa->ifa_addr);
         if (!IN6_IS_ADDR_LINKLOCAL(&sa->sin6_addr)) {
           char buf[INET6_ADDRSTRLEN] = {};
           if (inet_ntop(AF_INET6, &sa->sin6_addr, buf, INET6_ADDRSTRLEN)) {
@@ -3659,14 +3659,14 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     end--;
   }
 
-  auto p = beg;
+  const auto *p = beg;
   while (p < end && *p != ':') {
     p++;
   }
 
   if (p == end) { return false; }
 
-  auto key_end = p;
+  const auto *key_end = p;
 
   if (*p++ != ':') { return false; }
 
@@ -3714,7 +3714,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
 
     // Exclude line terminator
-    auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
+    const auto *end =
+        line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     parse_header(line_reader.ptr(), end,
                  [&](std::string &&key, std::string &&val) {
@@ -3819,7 +3820,8 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
     // Exclude line terminator
     constexpr auto line_terminator_len = 2;
-    auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
+    const auto *end =
+        line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     parse_header(line_reader.ptr(), end,
                  [&](std::string &&key, std::string &&val) {
@@ -4191,7 +4193,7 @@ inline void parse_query_text(const std::string &s, Params &params) {
 
 inline bool parse_multipart_boundary(const std::string &content_type,
                                      std::string &boundary) {
-  auto boundary_keyword = "boundary=";
+  const auto *boundary_keyword = "boundary=";
   auto pos = content_type.find(boundary_keyword);
   if (pos == std::string::npos) { return false; }
   auto end = content_type.find(';', pos);
@@ -4505,7 +4507,7 @@ private:
 
 inline std::string to_lower(const char *beg, const char *end) {
   std::string out;
-  auto it = beg;
+  const auto *it = beg;
   while (it != end) {
     out += static_cast<char>(::tolower(*it));
     it++;
@@ -4733,7 +4735,7 @@ inline bool expect_content(const Request &req) {
 }
 
 inline bool has_crlf(const std::string &s) {
-  auto p = s.c_str();
+  const auto *p = s.c_str();
   while (*p) {
     if (*p == '\r' || *p == '\n') { return true; }
     p++;
@@ -4971,7 +4973,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
                response + "\"" +
                (opaque.empty() ? "" : ", opaque=\"" + opaque + "\"");
 
-  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
+  const auto *key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
 }
 #endif
@@ -4979,7 +4981,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 inline bool parse_www_authenticate(const Response &res,
                                    std::map<std::string, std::string> &auth,
                                    bool is_proxy) {
-  auto auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
+  const auto *auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
   if (res.has_header(auth_key)) {
     static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
     auto s = res.get_header_value(auth_key);
@@ -5063,7 +5065,7 @@ inline void hosted_at(const std::string &hostname,
     return;
   }
 
-  for (auto rp = result; rp; rp = rp->ai_next) {
+  for (auto *rp = result; rp; rp = rp->ai_next) {
     const auto &addr =
         *reinterpret_cast<struct sockaddr_storage *>(rp->ai_addr);
     std::string ip;
@@ -5104,7 +5106,7 @@ inline std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
                                  const std::string &password, bool is_proxy) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
-  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
+  const auto *key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, std::move(field));
 }
 
@@ -5112,7 +5114,7 @@ inline std::pair<std::string, std::string>
 make_bearer_token_authentication_header(const std::string &token,
                                         bool is_proxy = false) {
   auto field = "Bearer " + token;
-  auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
+  const auto *key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, std::move(field));
 }
 
@@ -5884,7 +5886,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     if (!header_writer_(bstrm, res.headers)) { return false; }
 
     // Flush buffer
-    auto &data = bstrm.get_buffer();
+    const auto &data = bstrm.get_buffer();
     detail::write_data(strm, data.data(), data.size());
   }
 
@@ -6545,7 +6547,7 @@ Server::process_request(Stream &strm, bool close_connection,
     } else {
       res.status = 500;
       std::string val;
-      auto s = e.what();
+      const auto *s = e.what();
       for (size_t i = 0; s[i]; i++) {
         switch (s[i]) {
         case '\r': val += "\\r"; break;
@@ -6958,7 +6960,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   std::smatch m;
   if (!std::regex_match(location, m, re)) { return false; }
 
-  auto scheme = is_ssl() ? "https" : "http";
+  const auto *scheme = is_ssl() ? "https" : "http";
 
   auto next_scheme = m[1].str();
   auto next_host = m[2].str();
@@ -7123,7 +7125,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     header_writer_(bstrm, req.headers);
 
     // Flush buffer
-    auto &data = bstrm.get_buffer();
+    const auto &data = bstrm.get_buffer();
     if (!detail::write_data(strm, data.data(), data.size())) {
       error = Error::Write;
       return false;
@@ -7990,19 +7992,19 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
 
 inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
                                                     std::size_t size) {
-  auto mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
+  auto *mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
   if (!mem) return nullptr;
 
-  auto inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
+  auto *inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
   if (!inf) {
     BIO_free_all(mem);
     return nullptr;
   }
 
-  auto cts = X509_STORE_new();
+  auto *cts = X509_STORE_new();
   if (cts) {
     for (auto i = 0; i < static_cast<int>(sk_X509_INFO_num(inf)); i++) {
-      auto itmp = sk_X509_INFO_value(inf, i);
+      auto *itmp = sk_X509_INFO_value(inf, i);
       if (!itmp) { continue; }
 
       if (itmp->x509) { X509_STORE_add_cert(cts, itmp->x509); }
@@ -8041,7 +8043,7 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
 
   if (ssl) {
     set_nonblocking(sock, true);
-    auto bio = BIO_new_socket(static_cast<int>(sock), BIO_NOCLOSE);
+    auto *bio = BIO_new_socket(static_cast<int>(sock), BIO_NOCLOSE);
     BIO_set_nbio(bio, 1);
     SSL_set_bio(ssl, bio, bio);
 
@@ -8311,7 +8313,7 @@ inline bool SSLServer::is_valid() const { return ctx_; }
 inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
-  auto ssl = detail::ssl_new(
+  auto *ssl = detail::ssl_new(
       sock, ctx_, ctx_mutex_,
       [&](SSL *ssl2) {
         return detail::ssl_connect_or_accept_nonblocking(
@@ -8530,7 +8532,7 @@ inline bool SSLClient::load_certs() {
 }
 
 inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
-  auto ssl = detail::ssl_new(
+  auto *ssl = detail::ssl_new(
       socket.sock, ctx_, ctx_mutex_,
       [&](SSL *ssl2) {
         if (server_certificate_verification_) {
@@ -8556,7 +8558,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             return false;
           }
 
-          auto server_cert = SSL_get1_peer_certificate(ssl2);
+          auto *server_cert = SSL_get1_peer_certificate(ssl2);
 
           if (server_cert == nullptr) {
             error = Error::SSLServerVerification;
@@ -8666,7 +8668,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
   }
 #endif
 
-  auto alt_names = static_cast<const struct stack_st_GENERAL_NAME *>(
+  const auto *alt_names = static_cast<const struct stack_st_GENERAL_NAME *>(
       X509_get_ext_d2i(server_cert, NID_subject_alt_name, nullptr, nullptr));
 
   if (alt_names) {
@@ -8676,9 +8678,9 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
     auto count = sk_GENERAL_NAME_num(alt_names);
 
     for (decltype(count) i = 0; i < count && !dsn_matched; i++) {
-      auto val = sk_GENERAL_NAME_value(alt_names, i);
+      auto *val = sk_GENERAL_NAME_value(alt_names, i);
       if (val->type == type) {
-        auto name =
+        const auto *name =
             reinterpret_cast<const char *>(ASN1_STRING_get0_data(val->d.ia5));
         auto name_len = static_cast<size_t>(ASN1_STRING_length(val->d.ia5));
 
@@ -8704,7 +8706,7 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
 }
 
 inline bool SSLClient::verify_host_with_common_name(X509 *server_cert) const {
-  const auto subject_name = X509_get_subject_name(server_cert);
+  auto *const subject_name = X509_get_subject_name(server_cert);
 
   if (subject_name != nullptr) {
     char name[BUFSIZ];
