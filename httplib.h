@@ -2216,7 +2216,7 @@ inline bool from_hex_to_i(const std::string &s, size_t i, size_t cnt,
 }
 
 inline std::string from_i_to_hex(size_t n) {
-  static const auto *const charset = "0123456789abcdef";
+  static const char charset[] = "0123456789abcdef";
   std::string ret;
   do {
     ret = charset[n & 15] + ret;
@@ -2260,7 +2260,7 @@ inline size_t to_utf8(int code, char *buff) {
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/180947/base64-decode-snippet-in-c
 inline std::string base64_encode(const std::string &in) {
-  static const auto *const lookup =
+  static const char lookup[] =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
   std::string out;
