@@ -868,16 +868,15 @@ private:
   bool routing(Request &req, Response &res, Stream &strm);
   bool handle_file_request(const Request &req, Response &res,
                            bool head = false);
-  static bool dispatch_request(Request &req, Response &res,
-                               const Handlers &handlers);
-  static bool
-  dispatch_request_for_content_reader(Request &req, Response &res,
-                                      ContentReader content_reader,
-                                      const HandlersForContentReader &handlers);
+  bool dispatch_request(Request &req, Response &res,
+                        const Handlers &handlers) const;
+  bool dispatch_request_for_content_reader(
+      Request &req, Response &res, ContentReader content_reader,
+      const HandlersForContentReader &handlers) const;
 
-  static bool parse_request_line(const char *s, Request &req);
-  static void apply_ranges(const Request &req, Response &res,
-                           std::string &content_type, std::string &boundary);
+  bool parse_request_line(const char *s, Request &req) const;
+  void apply_ranges(const Request &req, Response &res,
+                    std::string &content_type, std::string &boundary) const;
   bool write_response(Stream &strm, bool close_connection, const Request &req,
                       Response &res);
   bool write_response_with_content(Stream &strm, bool close_connection,
@@ -1221,8 +1220,7 @@ public:
   void set_ca_cert_path(const std::string &ca_cert_file_path,
                         const std::string &ca_cert_dir_path = std::string());
   void set_ca_cert_store(X509_STORE *ca_cert_store);
-  static X509_STORE *create_ca_cert_store(const char *ca_cert,
-                                          std::size_t size);
+  X509_STORE *create_ca_cert_store(const char *ca_cert, std::size_t size) const;
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1251,7 +1249,7 @@ protected:
   // Also, shutdown_ssl and close_socket should also NOT be called concurrently
   // with a DIFFERENT thread sending requests using that socket.
   virtual void shutdown_ssl(Socket &socket, bool shutdown_gracefully);
-  static void shutdown_socket(Socket &socket);
+  void shutdown_socket(Socket &socket) const;
   void close_socket(Socket &socket);
 
   bool process_request(Stream &strm, Request &req, Response &res,
@@ -1349,8 +1347,8 @@ private:
   Result send_(Request &&req);
 
   socket_t create_client_socket(Error &error) const;
-  static bool read_response_line(Stream &strm, const Request &req,
-                                 Response &res);
+  bool read_response_line(Stream &strm, const Request &req,
+                          Response &res) const;
   bool write_request(Stream &strm, Request &req, bool close_connection,
                      Error &error);
   bool redirect(Request &req, Response &res, Error &error);
@@ -1367,11 +1365,11 @@ private:
       ContentProvider content_provider,
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type);
-  static ContentProviderWithoutLength get_multipart_content_provider(
+  ContentProviderWithoutLength get_multipart_content_provider(
       const std::string &boundary, const MultipartFormDataItems &items,
-      const MultipartFormDataProviderItems &provider_items);
+      const MultipartFormDataProviderItems &provider_items) const;
 
-  static std::string adjust_host_string(const std::string &host);
+  std::string adjust_host_string(const std::string &host) const;
 
   virtual bool process_socket(const Socket &socket,
                               std::function<bool(Stream &strm)> callback);
@@ -1766,9 +1764,9 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
     while (n >= glowable_buf.size() - 1) {
       glowable_buf.resize(glowable_buf.size() * 2);
       n = static_cast<size_t>(
-          snprintf(glowable_buf.data(), glowable_buf.size() - 1, fmt, args...));
+          snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
     }
-    return write(glowable_buf.data(), n);
+    return write(&glowable_buf[0], n);
   } else {
     return write(buf.data(), n);
   }
@@ -4419,8 +4417,8 @@ private:
     file_.content_type.clear();
   }
 
-  static bool start_with_case_ignore(const std::string &a,
-                                     const std::string &b) {
+  bool start_with_case_ignore(const std::string &a,
+                              const std::string &b) const {
     if (a.size() < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
       if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
@@ -4439,8 +4437,8 @@ private:
   MultipartFormData file_;
 
   // Buffer
-  static bool start_with(const std::string &a, size_t spos, size_t epos,
-                         const std::string &b) {
+  bool start_with(const std::string &a, size_t spos, size_t epos,
+                  const std::string &b) const {
     if (epos - spos < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
       if (a[i + spos] != b[i]) { return false; }
@@ -5759,7 +5757,7 @@ inline void Server::stop() {
   }
 }
 
-inline bool Server::parse_request_line(const char *s, Request &req) {
+inline bool Server::parse_request_line(const char *s, Request &req) const {
   auto len = strlen(s);
   if (len < 2 || s[len - 2] != '\r' || s[len - 1] != '\n') { return false; }
   len -= 2;
@@ -6305,7 +6303,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 }
 
 inline bool Server::dispatch_request(Request &req, Response &res,
-                                     const Handlers &handlers) {
+                                     const Handlers &handlers) const {
   for (const auto &x : handlers) {
     const auto &matcher = x.first;
     const auto &handler = x.second;
@@ -6320,7 +6318,7 @@ inline bool Server::dispatch_request(Request &req, Response &res,
 
 inline void Server::apply_ranges(const Request &req, Response &res,
                                  std::string &content_type,
-                                 std::string &boundary) {
+                                 std::string &boundary) const {
   if (req.ranges.size() > 1) {
     boundary = detail::make_multipart_data_boundary();
 
@@ -6432,7 +6430,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
 
 inline bool Server::dispatch_request_for_content_reader(
     Request &req, Response &res, ContentReader content_reader,
-    const HandlersForContentReader &handlers) {
+    const HandlersForContentReader &handlers) const {
   for (const auto &x : handlers) {
     const auto &matcher = x.first;
     const auto &handler = x.second;
@@ -6699,7 +6697,7 @@ inline void ClientImpl::shutdown_ssl(Socket & /*socket*/,
          socket_requests_are_from_thread_ == std::this_thread::get_id());
 }
 
-inline void ClientImpl::shutdown_socket(Socket &socket) {
+inline void ClientImpl::shutdown_socket(Socket &socket) const {
   if (socket.sock == INVALID_SOCKET) { return; }
   detail::shutdown_socket(socket.sock);
 }
@@ -6724,7 +6722,7 @@ inline void ClientImpl::close_socket(Socket &socket) {
 }
 
 inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
-                                           Response &res) {
+                                           Response &res) const {
   std::array<char, 2048> buf{};
 
   detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
@@ -7244,7 +7242,8 @@ inline Result ClientImpl::send_with_content_provider(
   return Result{std::move(res), error, std::move(req.headers)};
 }
 
-inline std::string ClientImpl::adjust_host_string(const std::string &host) {
+inline std::string
+ClientImpl::adjust_host_string(const std::string &host) const {
   if (host.find(':') != std::string::npos) { return "[" + host + "]"; }
   return host;
 }
@@ -7330,7 +7329,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
 inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
     const std::string &boundary, const MultipartFormDataItems &items,
-    const MultipartFormDataProviderItems &provider_items) {
+    const MultipartFormDataProviderItems &provider_items) const {
   size_t cur_item = 0;
   size_t cur_start = 0;
   // cur_item and cur_start are copied to within the std::function and maintain
@@ -7993,7 +7992,7 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
 }
 
 inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
-                                                    std::size_t size) {
+                                                    std::size_t size) const {
   auto mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
   if (!mem) { return nullptr; }
 
@@ -8380,7 +8379,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
     : ClientImpl(host, port) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
-  detail::split(host_.data(), &host_[host_.size()], '.',
+  detail::split(&host_[0], &host_[host_.size()], '.',
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(b, e);
                 });
@@ -8741,7 +8740,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
   for (const auto &h : host_components_) {
     auto &p = *itr;
     if (p != h && p != "*") {
-      auto partial_match = (!p.empty() && p[p.size() - 1] == '*' &&
+      auto partial_match = (p.size() > 0 && p[p.size() - 1] == '*' &&
                             !p.compare(0, p.size() - 1, h));
       if (!partial_match) { return false; }
     }
