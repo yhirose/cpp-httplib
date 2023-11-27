@@ -113,6 +113,10 @@
 #define CPPHTTPLIB_LISTEN_BACKLOG 5
 #endif
 
+#if __cpp_lib_string_view >= 201606L
+#define CPPHTTPLIB_STRING_VIEW_SUPPORT
+#endif
+
 /*
  * Headers
  */
@@ -234,6 +238,10 @@ using socket_t = int;
 #include <unordered_set>
 #include <utility>
 
+#ifdef CPPHTTPLIB_STRING_VIEW_SUPPORT
+#include <string_view>
+#endif
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
 #include <wincrypt.h>
@@ -314,6 +322,18 @@ make_unique(std::size_t n) {
 }
 
 struct ci {
+#if CPPHTTPLIB_STRING_VIEW_SUPPORT
+  using is_transparent = void;
+
+  bool operator()(const std::string_view s1, const std::string_view s2) const {
+    return std::lexicographical_compare(s1.begin(), s1.end(), s2.begin(),
+                                        s2.end(),
+                                        [](unsigned char c1, unsigned char c2) {
+                                          return ::tolower(c1) < ::tolower(c2);
+                                        });
+  }
+
+#else
   bool operator()(const std::string &s1, const std::string &s2) const {
     return std::lexicographical_compare(s1.begin(), s1.end(), s2.begin(),
                                         s2.end(),
@@ -321,6 +341,7 @@ struct ci {
                                           return ::tolower(c1) < ::tolower(c2);
                                         });
   }
+#endif
 };
 
 // This is based on
