@@ -382,6 +382,7 @@ public:
   DataSink &operator=(DataSink &&) = delete;
 
   std::function<bool(const char *data, size_t data_len)> write;
+  std::function<bool()> is_writable;
   std::function<void()> done;
   std::function<void(const Headers &trailer)> done_with_trailer;
   std::ostream os;
@@ -3959,6 +3960,8 @@ inline bool write_content(Stream &strm, const ContentProvider &content_provider,
     return ok;
   };
 
+  data_sink.is_writable = [&]() -> bool { return strm.is_writable(); };
+
   while (offset < end_offset && !is_shutting_down()) {
     if (!strm.is_writable()) {
       error = Error::Write;
@@ -4002,6 +4005,8 @@ write_content_without_length(Stream &strm,
     }
     return ok;
   };
+
+  data_sink.is_writable = [&]() -> bool { return strm.is_writable(); };
 
   data_sink.done = [&](void) { data_available = false; };
 
@@ -4052,6 +4057,8 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
     }
     return ok;
   };
+
+  data_sink.is_writable = [&]() -> bool { return strm.is_writable(); };
 
   auto done_with_trailer = [&](const Headers *trailer) {
     if (!ok) { return; }

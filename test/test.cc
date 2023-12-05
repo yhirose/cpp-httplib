@@ -4464,6 +4464,43 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   EXPECT_EQ("helloworld", res->body);
 }
 
+TEST(LongPollingTest, ClientCloseDetection) {
+  Server svr;
+
+  svr.Get("/events", [&](const Request & /*req*/, Response &res) {
+    res.set_chunked_content_provider(
+        "text/plain", [](std::size_t const, DataSink &sink) -> bool {
+          EXPECT_TRUE(sink.is_writable()); // the socket is alive
+          sink.os << "hello";
+
+          auto count = 10;
+          while (count > 0 && sink.is_writable()) {
+            this_thread::sleep_for(chrono::milliseconds(10));
+          }
+          EXPECT_FALSE(sink.is_writable()); // the socket is closed
+          return true;
+        });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/events", [&](const char *data, size_t data_length) {
+    EXPECT_EQ("hello", string(data, data_length));
+    return false; // close the socket immediately.
+  });
+
+  ASSERT_FALSE(res);
+}
+
 TEST(GetWithParametersTest, GetWithParameters) {
   Server svr;
 
