@@ -1989,7 +1989,11 @@ void read_file(const std::string &path, std::string &out);
 std::string trim_copy(const std::string &s);
 
 void split(const char *b, const char *e, char d,
+  std::function<void(const char *, const char *)> fn);
+
+void split(const char *b, const char *e, char d, size_t m,
            std::function<void(const char *, const char *)> fn);
+
 
 bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t read_timeout_usec, time_t write_timeout_sec,
@@ -2473,14 +2477,21 @@ inline std::string trim_double_quotes_copy(const std::string &s) {
 
 inline void split(const char *b, const char *e, char d,
                   std::function<void(const char *, const char *)> fn) {
+  return split(b, e, d, std::numeric_limits<size_t>::max(), fn);
+}
+
+inline void split(const char *b, const char *e, char d, size_t m,
+                  std::function<void(const char *, const char *)> fn) {
   size_t i = 0;
   size_t beg = 0;
+  size_t count = 1;
 
   while (e ? (b + i < e) : (b[i] != '\0')) {
-    if (b[i] == d) {
+    if (b[i] == d && count < m) {
       auto r = trim(b, e, beg, i);
       if (r.first < r.second) { fn(&b[r.first], &b[r.second]); }
       beg = i + 1;
+      count++;
     }
     i++;
   }
@@ -5804,7 +5815,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
 
     size_t count = 0;
 
-    detail::split(req.target.data(), req.target.data() + req.target.size(), '?',
+    detail::split(req.target.data(), req.target.data() + req.target.size(), '?', 2,
                   [&](const char *b, const char *e) {
                     switch (count) {
                     case 0:
