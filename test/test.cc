@@ -108,10 +108,10 @@ TEST(SplitTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
   Params dic;
 
-  detail::split(s.c_str(), s.c_str() + s.size(), '&', -1,
+  detail::split(s.c_str(), s.c_str() + s.size(), '&',
                 [&](const char *b, const char *e) {
                   string key, val;
-                  detail::split(b, e, '=', -1, [&](const char *b2, const char *e2) {
+                  detail::split(b, e, '=', [&](const char *b2, const char *e2) {
                     if (key.empty()) {
                       key.assign(b2, e2);
                     } else {

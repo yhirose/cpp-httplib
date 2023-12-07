@@ -1988,7 +1988,8 @@ void read_file(const std::string &path, std::string &out);
 
 std::string trim_copy(const std::string &s);
 
-void split(const char *b, const char *e, char d, std::function<void(const char *, const char *)> fn);
+void split(const char *b, const char *e, char d,
+  std::function<void(const char *, const char *)> fn);
 
 void split(const char *b, const char *e, char d, size_t m,
            std::function<void(const char *, const char *)> fn);
