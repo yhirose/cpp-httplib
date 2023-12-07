@@ -108,10 +108,10 @@ TEST(SplitTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
   Params dic;
 
-  detail::split(s.c_str(), s.c_str() + s.size(), '&',
+  detail::split(s.c_str(), s.c_str() + s.size(), '&', -1,
                 [&](const char *b, const char *e) {
                   string key, val;
-                  detail::split(b, e, '=', [&](const char *b2, const char *e2) {
+                  detail::split(b, e, '=', -1, [&](const char *b2, const char *e2) {
                     if (key.empty()) {
                       key.assign(b2, e2);
                     } else {
@@ -1847,6 +1847,11 @@ protected:
                      return true;
                    });
              })
+        .Get("/regex-with-delimiter",
+             [&](const Request & req, Response &res) {
+                ASSERT_TRUE(req.has_param("key"));
+                EXPECT_EQ("^(?.*(value))", req.get_param_value("key"));
+             })
         .Get("/with-range",
              [&](const Request & /*req*/, Response &res) {
                res.set_content("abcdefg", "text/plain");
@@ -3351,6 +3356,14 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
 }
+
+
+TEST_F(ServerTest, SplitDelimiterInPathRegex) {
+  auto res = cli_.Get("/regex-with-delimiter?key=^(?.*(value))");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
 
 TEST(GzipDecompressor, ChunkedDecompression) {
   std::string data;

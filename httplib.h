@@ -1988,8 +1988,9 @@ void read_file(const std::string &path, std::string &out);
 
 std::string trim_copy(const std::string &s);
 
-void split(const char *b, const char *e, char d,
+void split(const char *b, const char *e, char d, int m,
            std::function<void(const char *, const char *)> fn);
+
 
 bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t read_timeout_usec, time_t write_timeout_sec,
@@ -2471,16 +2472,18 @@ inline std::string trim_double_quotes_copy(const std::string &s) {
   return s;
 }
 
-inline void split(const char *b, const char *e, char d,
+inline void split(const char *b, const char *e, char d, int m,
                   std::function<void(const char *, const char *)> fn) {
   size_t i = 0;
   size_t beg = 0;
+  int count = 1;
 
   while (e ? (b + i < e) : (b[i] != '\0')) {
-    if (b[i] == d) {
+    if (b[i] == d && (m < 0 || count < m)) {
       auto r = trim(b, e, beg, i);
       if (r.first < r.second) { fn(&b[r.first], &b[r.second]); }
       beg = i + 1;
+      count++;
     }
     i++;
   }
@@ -4176,14 +4179,14 @@ inline std::string params_to_query_str(const Params &params) {
 
 inline void parse_query_text(const std::string &s, Params &params) {
   std::set<std::string> cache;
-  split(s.data(), s.data() + s.size(), '&', [&](const char *b, const char *e) {
+  split(s.data(), s.data() + s.size(), '&', -1, [&](const char *b, const char *e) {
     std::string kv(b, e);
     if (cache.find(kv) != cache.end()) { return; }
     cache.insert(kv);
 
     std::string key;
     std::string val;
-    split(b, e, '=', [&](const char *b2, const char *e2) {
+    split(b, e, '=', -1, [&](const char *b2, const char *e2) {
       if (key.empty()) {
         key.assign(b2, e2);
       } else {
@@ -4210,14 +4213,14 @@ inline bool parse_multipart_boundary(const std::string &content_type,
 
 inline void parse_disposition_params(const std::string &s, Params &params) {
   std::set<std::string> cache;
-  split(s.data(), s.data() + s.size(), ';', [&](const char *b, const char *e) {
+  split(s.data(), s.data() + s.size(), ';', -1, [&](const char *b, const char *e) {
     std::string kv(b, e);
     if (cache.find(kv) != cache.end()) { return; }
     cache.insert(kv);
 
     std::string key;
     std::string val;
-    split(b, e, '=', [&](const char *b2, const char *e2) {
+    split(b, e, '=', -1, [&](const char *b2, const char *e2) {
       if (key.empty()) {
         key.assign(b2, e2);
       } else {
@@ -4243,7 +4246,7 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
     auto pos = static_cast<size_t>(m.position(1));
     auto len = static_cast<size_t>(m.length(1));
     auto all_valid_ranges = true;
-    split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
+    split(&s[pos], &s[pos + len], ',', -1, [&](const char *b, const char *e) {
       if (!all_valid_ranges) { return; }
       static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
       std::cmatch cm;
@@ -5772,7 +5775,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
   {
     size_t count = 0;
 
-    detail::split(s, s + len, ' ', [&](const char *b, const char *e) {
+    detail::split(s, s + len, ' ', -1, [&](const char *b, const char *e) {
       switch (count) {
       case 0: req.method = std::string(b, e); break;
       case 1: req.target = std::string(b, e); break;
@@ -5804,7 +5807,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
 
     size_t count = 0;
 
-    detail::split(req.target.data(), req.target.data() + req.target.size(), '?',
+    detail::split(req.target.data(), req.target.data() + req.target.size(), '?', 2,
                   [&](const char *b, const char *e) {
                     switch (count) {
                     case 0:
@@ -8365,7 +8368,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
     : ClientImpl(host, port, client_cert_path, client_key_path) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
-  detail::split(&host_[0], &host_[host_.size()], '.',
+  detail::split(&host_[0], &host_[host_.size()], '.', -1,
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(b, e);
                 });
@@ -8386,7 +8389,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
     : ClientImpl(host, port) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
-  detail::split(&host_[0], &host_[host_.size()], '.',
+  detail::split(&host_[0], &host_[host_.size()], '.', -1,
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(b, e);
                 });
@@ -8736,7 +8739,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
   // Wildcard match
   // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
   std::vector<std::string> pattern_components;
-  detail::split(&pattern[0], &pattern[pattern_len], '.',
+  detail::split(&pattern[0], &pattern[pattern_len], '.', -1,
                 [&](const char *b, const char *e) {
                   pattern_components.emplace_back(b, e);
                 });
