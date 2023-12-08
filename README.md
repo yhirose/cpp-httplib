@@ -662,7 +662,7 @@ auto res = cli.Post(
 ### With Progress Callback
 
 ```cpp
-httplib::Client client(url, port);
+httplib::Client cli(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
 auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
