@@ -4332,10 +4332,19 @@ public:
             break;
           }
 
-          static const std::string header_name = "content-type:";
+          static const std::string header_content_type = "Content-Type:";
+          static const std::string header_content_length = "Content-Length:";
+
           const auto header = buf_head(pos);
-          if (start_with_case_ignore(header, header_name)) {
-            file_.content_type = trim_copy(header.substr(header_name.size()));
+          if (start_with_case_ignore(header, header_content_type)) {
+            file_.content_type =
+                trim_copy(header.substr(header_content_type.size()));
+          } else if (start_with_case_ignore(header, header_content_length)) {
+            // NOTE: For now, we ignore the content length. In the future, the
+            // parser should check if the actual body length is same as this
+            // value.
+            // auto content_length = std::stoi(
+            //     trim_copy(header.substr(header_content_length.size())));
           } else {
             static const std::regex re_content_disposition(
                 R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
