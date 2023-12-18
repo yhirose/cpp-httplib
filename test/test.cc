@@ -1848,9 +1848,9 @@ protected:
                    });
              })
         .Get("/regex-with-delimiter",
-             [&](const Request & req, Response &res) {
-                ASSERT_TRUE(req.has_param("key"));
-                EXPECT_EQ("^(?.*(value))", req.get_param_value("key"));
+             [&](const Request &req, Response & /*res*/) {
+               ASSERT_TRUE(req.has_param("key"));
+               EXPECT_EQ("^(?.*(value))", req.get_param_value("key"));
              })
         .Get("/with-range",
              [&](const Request & /*req*/, Response &res) {
@@ -3357,13 +3357,11 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
   EXPECT_EQ(std::string("123456789"), res->body);
 }
 
-
 TEST_F(ServerTest, SplitDelimiterInPathRegex) {
   auto res = cli_.Get("/regex-with-delimiter?key=^(?.*(value))");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
-
 
 TEST(GzipDecompressor, ChunkedDecompression) {
   std::string data;

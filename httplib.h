@@ -141,11 +141,11 @@ using ssize_t = long;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -1989,11 +1989,10 @@ void read_file(const std::string &path, std::string &out);
 std::string trim_copy(const std::string &s);
 
 void split(const char *b, const char *e, char d,
-  std::function<void(const char *, const char *)> fn);
+           std::function<void(const char *, const char *)> fn);
 
 void split(const char *b, const char *e, char d, size_t m,
            std::function<void(const char *, const char *)> fn);
-
 
 bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t read_timeout_usec, time_t write_timeout_sec,
@@ -5824,8 +5823,8 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
 
     size_t count = 0;
 
-    detail::split(req.target.data(), req.target.data() + req.target.size(), '?', 2,
-                  [&](const char *b, const char *e) {
+    detail::split(req.target.data(), req.target.data() + req.target.size(), '?',
+                  2, [&](const char *b, const char *e) {
                     switch (count) {
                     case 0:
                       req.path = detail::decode_url(std::string(b, e), false);
