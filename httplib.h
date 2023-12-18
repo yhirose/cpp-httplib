@@ -3687,6 +3687,9 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
   }
 
   if (p < end) {
+    auto key_len = key_end - beg;
+    if (!key_len) { return false; }
+
     auto key = std::string(beg, key_end);
     auto val = compare_case_ignore(key, "Location")
                    ? std::string(p, end)
@@ -4331,19 +4334,19 @@ public:
             break;
           }
 
-          static const std::string header_content_type = "Content-Type:";
-          static const std::string header_content_length = "Content-Length:";
-
           const auto header = buf_head(pos);
+
+          if (!parse_header(header.data(), header.data() + header.size(),
+                            [&](std::string &&, std::string &&) {})) {
+            is_valid_ = false;
+            return false;
+          }
+
+          static const std::string header_content_type = "Content-Type:";
+
           if (start_with_case_ignore(header, header_content_type)) {
             file_.content_type =
                 trim_copy(header.substr(header_content_type.size()));
-          } else if (start_with_case_ignore(header, header_content_length)) {
-            // NOTE: For now, we ignore the content length. In the future, the
-            // parser should check if the actual body length is same as this
-            // value.
-            // auto content_length = std::stoi(
-            //     trim_copy(header.substr(header_content_length.size())));
           } else {
             static const std::regex re_content_disposition(
                 R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
@@ -4379,9 +4382,6 @@ public:
                   return false;
                 }
               }
-            } else {
-              is_valid_ = false;
-              return false;
             }
           }
           buf_erase(pos + crlf_.size());
