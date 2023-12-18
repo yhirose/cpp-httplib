@@ -417,6 +417,8 @@ svr.set_idle_interval(0, 100000); // 100 milliseconds
 svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 ```
 
+NOTE: When the request body content type is 'www-form-urlencoded', the actual payload length shouldn't exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH`.
+
 ### Server-Sent Events
 
 Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssesvr.cc) and [Client example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssecli.cc).
