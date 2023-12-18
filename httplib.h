@@ -1791,6 +1791,81 @@ inline void default_socket_options(socket_t sock) {
 #endif
 }
 
+enum StatusCode {
+  // Information responses
+  Continue = 100,                      ///< 100 Continue
+  SwitchingProtocol = 101,             ///< 101 Switching Protocols
+  Processing = 102,                    ///< 102 Processing
+  EarlyHints = 103,                    ///< 103 Early Hints
+
+  // Successful responses
+  OK = 200,                            ///< 200 OK
+  Created = 201,                       ///< 201 Created
+  Accepted = 202,                      ///< 202 Accepted
+  NonAuthoritativeInformation = 203,   ///< 203 Non-Authoritative Information
+  NoContent = 204,                     ///< 204 No Content
+  ResetContent = 205,                  ///< 205 Reset Content
+  PartialContent = 206,                ///< 206 Partial Content
+  MultiStatus = 207,                   ///< 207 Multi-Status
+  AlreadyReported = 208,               ///< 208 Already Reported
+  IMUsed = 226,                        ///< 226 IM Used
+
+  // Redirection messages
+  MultipleChoices = 300,               ///< 300 Multiple Choices
+  MovedPermanently = 301,              ///< 301 Moved Permanently
+  Found = 302,                         ///< 302 Found
+  SeeOther = 303,                      ///< 303 See Other
+  NotModified = 304,                   ///< 304 Not Modified
+  UseProxy = 305,                      ///< 305 Use Proxy
+  unused = 306,                        ///< 306 unused
+  TemporaryRedirect = 307,             ///< 307 Temporary Redirect
+  PermanentRedirect = 308,             ///< 308 Permanent Redirect
+
+  // Client error responses
+  BadRequest = 400,                    ///< 400 Bad Request
+  Unauthorized = 401,                  ///< 401 Unauthorized
+  PaymentRequired = 402,               ///< 402 Payment Required
+  Forbidden = 403,                     ///< 403 Forbidden
+  NotFound = 404,                      ///< 404 Not Found
+  MethodNotAllowed = 405,              ///< 405 Method Not Allowed
+  NotAcceptable = 406,                 ///< 406 Not Acceptable
+  ProxyAuthenticationRequired = 407,   ///< 407 Proxy Authentication Required
+  RequestTimeout = 408,                ///< 408 Request Timeout
+  Conflict = 409,                      ///< 409 Conflict
+  Gone = 410,                          ///< 410 Gone
+  LengthRequired = 411,                ///< 411 Length Required
+  PreconditionFailed = 412,            ///< 412 Precondition Failed
+  PayloadTooLarge = 413,               ///< 413 Payload Too Large
+  UriTooLong = 414,                    ///< 414 URI Too Long
+  UnsupportedMediaType = 415,          ///< 415 Unsupported Media Type
+  RangeNotSatisfiable = 416,           ///< 416 Range Not Satisfiable
+  ExpectationFailed = 417,             ///< 417 Expectation Failed
+  ImATeapot = 418,                     ///< 418 I'm a teapot
+  MisdirectedRequest = 421,            ///< 421 Misdirected Request
+  UnprocessableContent = 422,          ///< 422 Unprocessable Content
+  Locked = 423,                        ///< 423 Locked
+  FailedDependency = 424,              ///< 424 Failed Dependency
+  TooEarly = 425,                      ///< 425 Too Early
+  UpgradeRequired = 426,               ///< 426 Upgrade Required
+  PreconditionRequired = 428,          ///< 428 Precondition Required
+  TooManyRequests = 429,               ///< 429 Too Many Requests
+  RequestHeaderFieldsTooLarge = 431,   ///< 431 Request Header Fields Too Large
+  UnavailableForLegalReasons = 451,    ///< 451 Unavailable For Legal Reasons
+
+  // Server error responses
+  InternalServerError = 500,           ///< 500 Internal Server Error
+  NotImplemented = 501,                ///< 501 Not Implemented
+  BadGateway = 502,                    ///< 502 Bad Gateway
+  ServiceUnavailable = 503,            ///< 503 Service Unavailable
+  GatewayTimeout = 504,                ///< 504 Gateway Timeout
+  HttpVersionNotSupported = 505,       ///< 505 HTTP Version Not Supported
+  VariantAlsoNegotiates = 506,         ///< 506 Variant Also Negotiates
+  InsufficientStorage = 507,           ///< 507 Insufficient Storage
+  LoopDetected = 508,                  ///< 508 Loop Detected
+  NotExtended = 510,                   ///< 510 Not Extended
+  NetworkAuthenticationRequired = 511, ///< 511 Network Authentication Required
+};
+
 inline const char *status_message(int status) {
   switch (status) {
   case 100: return "Continue";
@@ -1807,7 +1882,7 @@ inline const char *status_message(int status) {
   case 207: return "Multi-Status";
   case 208: return "Already Reported";
   case 226: return "IM Used";
-  case 300: return "Multiple Choice";
+  case 300: return "Multiple Choices";
   case 301: return "Moved Permanently";
   case 302: return "Found";
   case 303: return "See Other";
@@ -1836,7 +1911,7 @@ inline const char *status_message(int status) {
   case 417: return "Expectation Failed";
   case 418: return "I'm a teapot";
   case 421: return "Misdirected Request";
-  case 422: return "Unprocessable Entity";
+  case 422: return "Unprocessable Content";
   case 423: return "Locked";
   case 424: return "Failed Dependency";
   case 425: return "Too Early";
