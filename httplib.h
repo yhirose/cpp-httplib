@@ -1882,7 +1882,7 @@ inline const char *status_message(int status) {
   case 207: return "Multi-Status";
   case 208: return "Already Reported";
   case 226: return "IM Used";
-  case 300: return "Multiple Choices";
+  case 300: return "Multiple Choice";
   case 301: return "Moved Permanently";
   case 302: return "Found";
   case 303: return "See Other";
@@ -1911,7 +1911,7 @@ inline const char *status_message(int status) {
   case 417: return "Expectation Failed";
   case 418: return "I'm a teapot";
   case 421: return "Misdirected Request";
-  case 422: return "Unprocessable Content";
+  case 422: return "Unprocessable Entity";
   case 423: return "Locked";
   case 424: return "Failed Dependency";
   case 425: return "Too Early";
