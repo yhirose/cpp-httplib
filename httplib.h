@@ -353,6 +353,81 @@ private:
 
 } // namespace detail
 
+enum StatusCode {
+  // Information responses
+  Continue_100 = 100,
+  SwitchingProtocol_101 = 101,
+  Processing_102 = 102,
+  EarlyHints_103 = 103,
+
+  // Successful responses
+  OK_200 = 200,
+  Created_201 = 201,
+  Accepted_202 = 202,
+  NonAuthoritativeInformation_203 = 203,
+  NoContent_204 = 204,
+  ResetContent_205 = 205,
+  PartialContent_206 = 206,
+  MultiStatus_207 = 207,
+  AlreadyReported_208 = 208,
+  IMUsed_226 = 226,
+
+  // Redirection messages
+  MultipleChoices_300 = 300,
+  MovedPermanently_301 = 301,
+  Found_302 = 302,
+  SeeOther_303 = 303,
+  NotModified_304 = 304,
+  UseProxy_305 = 305,
+  unused_306 = 306,
+  TemporaryRedirect_307 = 307,
+  PermanentRedirect_308 = 308,
+
+  // Client error responses
+  BadRequest_400 = 400,
+  Unauthorized_401 = 401,
+  PaymentRequired_402 = 402,
+  Forbidden_403 = 403,
+  NotFound_404 = 404,
+  MethodNotAllowed_405 = 405,
+  NotAcceptable_406 = 406,
+  ProxyAuthenticationRequired_407 = 407,
+  RequestTimeout_408 = 408,
+  Conflict_409 = 409,
+  Gone_410 = 410,
+  LengthRequired_411 = 411,
+  PreconditionFailed_412 = 412,
+  PayloadTooLarge_413 = 413,
+  UriTooLong_414 = 414,
+  UnsupportedMediaType_415 = 415,
+  RangeNotSatisfiable_416 = 416,
+  ExpectationFailed_417 = 417,
+  ImATeapot_418 = 418,
+  MisdirectedRequest_421 = 421,
+  UnprocessableContent_422 = 422,
+  Locked_423 = 423,
+  FailedDependency_424 = 424,
+  TooEarly_425 = 425,
+  UpgradeRequired_426 = 426,
+  PreconditionRequired_428 = 428,
+  TooManyRequests_429 = 429,
+  RequestHeaderFieldsTooLarge_431 = 431,
+  UnavailableForLegalReasons_451 = 451,
+
+  // Server error responses
+  InternalServerError_500 = 500,
+  NotImplemented_501 = 501,
+  BadGateway_502 = 502,
+  ServiceUnavailable_503 = 503,
+  GatewayTimeout_504 = 504,
+  HttpVersionNotSupported_505 = 505,
+  VariantAlsoNegotiates_506 = 506,
+  InsufficientStorage_507 = 507,
+  LoopDetected_508 = 508,
+  NotExtended_510 = 510,
+  NetworkAuthenticationRequired_511 = 511,
+};
+
 using Headers = std::multimap<std::string, std::string, detail::ci>;
 
 using Params = std::multimap<std::string, std::string>;
@@ -523,7 +598,7 @@ struct Response {
   size_t get_header_value_count(const std::string &key) const;
   void set_header(const std::string &key, const std::string &val);
 
-  void set_redirect(const std::string &url, int status = 302);
+  void set_redirect(const std::string &url, int status = StatusCode::Found_302);
   void set_content(const char *s, size_t n, const std::string &content_type);
   void set_content(const std::string &s, const std::string &content_type);
 
@@ -1791,148 +1866,79 @@ inline void default_socket_options(socket_t sock) {
 #endif
 }
 
-enum StatusCode {
-  // Information responses
-  Continue_100 = 100,
-  SwitchingProtocol_101 = 101,
-  Processing_102 = 102,
-  EarlyHints_103 = 103,
-
-  // Successful responses
-  OK_200 = 200,
-  Created_201 = 201,
-  Accepted_202 = 202,
-  NonAuthoritativeInformation_203 = 203,
-  NoContent_204 = 204,
-  ResetContent_205 = 205,
-  PartialContent_206 = 206,
-  MultiStatus_207 = 207,
-  AlreadyReported_208 = 208,
-  IMUsed_226 = 226,
-
-  // Redirection messages
-  MultipleChoices_300 = 300,
-  MovedPermanently_301 = 301,
-  Found_302 = 302,
-  SeeOther_303 = 303,
-  NotModified_304 = 304,
-  UseProxy_305 = 305,
-  unused_306 = 306,
-  TemporaryRedirect_307 = 307,
-  PermanentRedirect_308 = 308,
-
-  // Client error responses
-  BadRequest_400 = 400,
-  Unauthorized_401 = 401,
-  PaymentRequired_402 = 402,
-  Forbidden_403 = 403,
-  NotFound_404 = 404,
-  MethodNotAllowed_405 = 405,
-  NotAcceptable_406 = 406,
-  ProxyAuthenticationRequired_407 = 407,
-  RequestTimeout_408 = 408,
-  Conflict_409 = 409,
-  Gone_410 = 410,
-  LengthRequired_411 = 411,
-  PreconditionFailed_412 = 412,
-  PayloadTooLarge_413 = 413,
-  UriTooLong_414 = 414,
-  UnsupportedMediaType_415 = 415,
-  RangeNotSatisfiable_416 = 416,
-  ExpectationFailed_417 = 417,
-  ImATeapot_418 = 418,
-  MisdirectedRequest_421 = 421,
-  UnprocessableContent_422 = 422,
-  Locked_423 = 423,
-  FailedDependency_424 = 424,
-  TooEarly_425 = 425,
-  UpgradeRequired_426 = 426,
-  PreconditionRequired_428 = 428,
-  TooManyRequests_429 = 429,
-  RequestHeaderFieldsTooLarge_431 = 431,
-  UnavailableForLegalReasons_451 = 451,
-
-  // Server error responses
-  InternalServerError_500 = 500,
-  NotImplemented_501 = 501,
-  BadGateway_502 = 502,
-  ServiceUnavailable_503 = 503,
-  GatewayTimeout_504 = 504,
-  HttpVersionNotSupported_505 = 505,
-  VariantAlsoNegotiates_506 = 506,
-  InsufficientStorage_507 = 507,
-  LoopDetected_508 = 508,
-  NotExtended_510 = 510,
-  NetworkAuthenticationRequired_511 = 511,
-};
-
 inline const char *status_message(int status) {
   switch (status) {
-  case 100: return "Continue";
-  case 101: return "Switching Protocol";
-  case 102: return "Processing";
-  case 103: return "Early Hints";
-  case 200: return "OK";
-  case 201: return "Created";
-  case 202: return "Accepted";
-  case 203: return "Non-Authoritative Information";
-  case 204: return "No Content";
-  case 205: return "Reset Content";
-  case 206: return "Partial Content";
-  case 207: return "Multi-Status";
-  case 208: return "Already Reported";
-  case 226: return "IM Used";
-  case 300: return "Multiple Choices";
-  case 301: return "Moved Permanently";
-  case 302: return "Found";
-  case 303: return "See Other";
-  case 304: return "Not Modified";
-  case 305: return "Use Proxy";
-  case 306: return "unused";
-  case 307: return "Temporary Redirect";
-  case 308: return "Permanent Redirect";
-  case 400: return "Bad Request";
-  case 401: return "Unauthorized";
-  case 402: return "Payment Required";
-  case 403: return "Forbidden";
-  case 404: return "Not Found";
-  case 405: return "Method Not Allowed";
-  case 406: return "Not Acceptable";
-  case 407: return "Proxy Authentication Required";
-  case 408: return "Request Timeout";
-  case 409: return "Conflict";
-  case 410: return "Gone";
-  case 411: return "Length Required";
-  case 412: return "Precondition Failed";
-  case 413: return "Payload Too Large";
-  case 414: return "URI Too Long";
-  case 415: return "Unsupported Media Type";
-  case 416: return "Range Not Satisfiable";
-  case 417: return "Expectation Failed";
-  case 418: return "I'm a teapot";
-  case 421: return "Misdirected Request";
-  case 422: return "Unprocessable Content";
-  case 423: return "Locked";
-  case 424: return "Failed Dependency";
-  case 425: return "Too Early";
-  case 426: return "Upgrade Required";
-  case 428: return "Precondition Required";
-  case 429: return "Too Many Requests";
-  case 431: return "Request Header Fields Too Large";
-  case 451: return "Unavailable For Legal Reasons";
-  case 501: return "Not Implemented";
-  case 502: return "Bad Gateway";
-  case 503: return "Service Unavailable";
-  case 504: return "Gateway Timeout";
-  case 505: return "HTTP Version Not Supported";
-  case 506: return "Variant Also Negotiates";
-  case 507: return "Insufficient Storage";
-  case 508: return "Loop Detected";
-  case 510: return "Not Extended";
-  case 511: return "Network Authentication Required";
+  case StatusCode::Continue_100: return "Continue";
+  case StatusCode::SwitchingProtocol_101: return "Switching Protocol";
+  case StatusCode::Processing_102: return "Processing";
+  case StatusCode::EarlyHints_103: return "Early Hints";
+  case StatusCode::OK_200: return "OK";
+  case StatusCode::Created_201: return "Created";
+  case StatusCode::Accepted_202: return "Accepted";
+  case StatusCode::NonAuthoritativeInformation_203:
+    return "Non-Authoritative Information";
+  case StatusCode::NoContent_204: return "No Content";
+  case StatusCode::ResetContent_205: return "Reset Content";
+  case StatusCode::PartialContent_206: return "Partial Content";
+  case StatusCode::MultiStatus_207: return "Multi-Status";
+  case StatusCode::AlreadyReported_208: return "Already Reported";
+  case StatusCode::IMUsed_226: return "IM Used";
+  case StatusCode::MultipleChoices_300: return "Multiple Choices";
+  case StatusCode::MovedPermanently_301: return "Moved Permanently";
+  case StatusCode::Found_302: return "Found";
+  case StatusCode::SeeOther_303: return "See Other";
+  case StatusCode::NotModified_304: return "Not Modified";
+  case StatusCode::UseProxy_305: return "Use Proxy";
+  case StatusCode::unused_306: return "unused";
+  case StatusCode::TemporaryRedirect_307: return "Temporary Redirect";
+  case StatusCode::PermanentRedirect_308: return "Permanent Redirect";
+  case StatusCode::BadRequest_400: return "Bad Request";
+  case StatusCode::Unauthorized_401: return "Unauthorized";
+  case StatusCode::PaymentRequired_402: return "Payment Required";
+  case StatusCode::Forbidden_403: return "Forbidden";
+  case StatusCode::NotFound_404: return "Not Found";
+  case StatusCode::MethodNotAllowed_405: return "Method Not Allowed";
+  case StatusCode::NotAcceptable_406: return "Not Acceptable";
+  case StatusCode::ProxyAuthenticationRequired_407:
+    return "Proxy Authentication Required";
+  case StatusCode::RequestTimeout_408: return "Request Timeout";
+  case StatusCode::Conflict_409: return "Conflict";
+  case StatusCode::Gone_410: return "Gone";
+  case StatusCode::LengthRequired_411: return "Length Required";
+  case StatusCode::PreconditionFailed_412: return "Precondition Failed";
+  case StatusCode::PayloadTooLarge_413: return "Payload Too Large";
+  case StatusCode::UriTooLong_414: return "URI Too Long";
+  case StatusCode::UnsupportedMediaType_415: return "Unsupported Media Type";
+  case StatusCode::RangeNotSatisfiable_416: return "Range Not Satisfiable";
+  case StatusCode::ExpectationFailed_417: return "Expectation Failed";
+  case StatusCode::ImATeapot_418: return "I'm a teapot";
+  case StatusCode::MisdirectedRequest_421: return "Misdirected Request";
+  case StatusCode::UnprocessableContent_422: return "Unprocessable Content";
+  case StatusCode::Locked_423: return "Locked";
+  case StatusCode::FailedDependency_424: return "Failed Dependency";
+  case StatusCode::TooEarly_425: return "Too Early";
+  case StatusCode::UpgradeRequired_426: return "Upgrade Required";
+  case StatusCode::PreconditionRequired_428: return "Precondition Required";
+  case StatusCode::TooManyRequests_429: return "Too Many Requests";
+  case StatusCode::RequestHeaderFieldsTooLarge_431:
+    return "Request Header Fields Too Large";
+  case StatusCode::UnavailableForLegalReasons_451:
+    return "Unavailable For Legal Reasons";
+  case StatusCode::NotImplemented_501: return "Not Implemented";
+  case StatusCode::BadGateway_502: return "Bad Gateway";
+  case StatusCode::ServiceUnavailable_503: return "Service Unavailable";
+  case StatusCode::GatewayTimeout_504: return "Gateway Timeout";
+  case StatusCode::HttpVersionNotSupported_505:
+    return "HTTP Version Not Supported";
+  case StatusCode::VariantAlsoNegotiates_506: return "Variant Also Negotiates";
+  case StatusCode::InsufficientStorage_507: return "Insufficient Storage";
+  case StatusCode::LoopDetected_508: return "Loop Detected";
+  case StatusCode::NotExtended_510: return "Not Extended";
+  case StatusCode::NetworkAuthenticationRequired_511:
+    return "Network Authentication Required";
 
   default:
-  case 500: return "Internal Server Error";
+  case StatusCode::InternalServerError_500: return "Internal Server Error";
   }
 }
 
@@ -3939,14 +3945,14 @@ bool prepare_content_receiver(T &x, int &status,
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
       decompressor = detail::make_unique<gzip_decompressor>();
 #else
-      status = 415;
+      status = StatusCode::UnsupportedMediaType_415;
       return false;
 #endif
     } else if (encoding.find("br") != std::string::npos) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
       decompressor = detail::make_unique<brotli_decompressor>();
 #else
-      status = 415;
+      status = StatusCode::UnsupportedMediaType_415;
       return false;
 #endif
     }
@@ -3962,7 +3968,7 @@ bool prepare_content_receiver(T &x, int &status,
         };
         return callback(std::move(out));
       } else {
-        status = 500;
+        status = StatusCode::InternalServerError_500;
         return false;
       }
     }
@@ -4000,7 +4006,10 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
           }
         }
 
-        if (!ret) { status = exceed_payload_max_length ? 413 : 400; }
+        if (!ret) {
+          status = exceed_payload_max_length ? StatusCode::PayloadTooLarge_413
+                                             : StatusCode::BadRequest_400;
+        }
         return ret;
       });
 } // namespace detail
@@ -4232,7 +4241,8 @@ inline bool redirect(T &cli, Request &req, Response &res,
   new_req.path = path;
   new_req.redirect_count_ -= 1;
 
-  if (res.status == 303 && (req.method != "GET" && req.method != "HEAD")) {
+  if (res.status == StatusCode::SeeOther_303 &&
+      (req.method != "GET" && req.method != "HEAD")) {
     new_req.method = "GET";
     new_req.body.clear();
     new_req.headers.clear();
@@ -5311,7 +5321,7 @@ inline void Response::set_redirect(const std::string &url, int stat) {
     if (300 <= stat && stat < 400) {
       this->status = stat;
     } else {
-      this->status = 302;
+      this->status = StatusCode::Found_302;
     }
   }
 }
@@ -6090,7 +6100,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
     const auto &content_type = req.get_header_value("Content-Type");
     if (!content_type.find("application/x-www-form-urlencoded")) {
       if (req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
-        res.status = 413; // NOTE: should be 414?
+        res.status = StatusCode::PayloadTooLarge_413; // NOTE: should be 414?
         return false;
       }
       detail::parse_query_text(req.body, req.params);
@@ -6121,7 +6131,7 @@ Server::read_content_core(Stream &strm, Request &req, Response &res,
     const auto &content_type = req.get_header_value("Content-Type");
     std::string boundary;
     if (!detail::parse_multipart_boundary(content_type, boundary)) {
-      res.status = 400;
+      res.status = StatusCode::BadRequest_400;
       return false;
     }
 
@@ -6157,7 +6167,7 @@ Server::read_content_core(Stream &strm, Request &req, Response &res,
 
   if (req.is_multipart_form_data()) {
     if (!multipart_form_data_parser.is_valid()) {
-      res.status = 400;
+      res.status = StatusCode::BadRequest_400;
       return false;
     }
   }
@@ -6399,7 +6409,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
     return dispatch_request(req, res, patch_handlers_);
   }
 
-  res.status = 400;
+  res.status = StatusCode::BadRequest_400;
   return false;
 }
 
@@ -6482,7 +6492,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
         res.body = res.body.substr(offset, length);
       } else {
         res.body.clear();
-        res.status = 416;
+        res.status = StatusCode::RangeNotSatisfiable_416;
       }
     } else {
       std::string data;
@@ -6491,7 +6501,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
         res.body.swap(data);
       } else {
         res.body.clear();
-        res.status = 416;
+        res.status = StatusCode::RangeNotSatisfiable_416;
       }
     }
 
@@ -6569,7 +6579,7 @@ Server::process_request(Stream &strm, bool close_connection,
   if (strm.socket() >= FD_SETSIZE) {
     Headers dummy;
     detail::read_headers(strm, dummy);
-    res.status = 500;
+    res.status = StatusCode::InternalServerError_500;
     return write_response(strm, close_connection, req, res);
   }
 #endif
@@ -6579,14 +6589,14 @@ Server::process_request(Stream &strm, bool close_connection,
   if (line_reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
     Headers dummy;
     detail::read_headers(strm, dummy);
-    res.status = 414;
+    res.status = StatusCode::UriTooLong_414;
     return write_response(strm, close_connection, req, res);
   }
 
   // Request line and headers
   if (!parse_request_line(line_reader.ptr(), req) ||
       !detail::read_headers(strm, req.headers)) {
-    res.status = 400;
+    res.status = StatusCode::BadRequest_400;
     return write_response(strm, close_connection, req, res);
   }
 
@@ -6610,7 +6620,7 @@ Server::process_request(Stream &strm, bool close_connection,
   if (req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
     if (!detail::parse_range_header(range_header_value, req.ranges)) {
-      res.status = 416;
+      res.status = StatusCode::RangeNotSatisfiable_416;
       return write_response(strm, close_connection, req, res);
     }
   }
@@ -6618,13 +6628,13 @@ Server::process_request(Stream &strm, bool close_connection,
   if (setup_request) { setup_request(req); }
 
   if (req.get_header_value("Expect") == "100-continue") {
-    auto status = 100;
+    int status = StatusCode::Continue_100;
     if (expect_100_continue_handler_) {
       status = expect_100_continue_handler_(req, res);
     }
     switch (status) {
-    case 100:
-    case 417:
+    case StatusCode::Continue_100:
+    case StatusCode::ExpectationFailed_417:
       strm.write_format("HTTP/1.1 %d %s\r\n\r\n", status,
                         status_message(status));
       break;
@@ -6645,7 +6655,7 @@ Server::process_request(Stream &strm, bool close_connection,
       exception_handler_(req, res, ep);
       routed = true;
     } else {
-      res.status = 500;
+      res.status = StatusCode::InternalServerError_500;
       std::string val;
       auto s = e.what();
       for (size_t i = 0; s[i]; i++) {
@@ -6663,17 +6673,20 @@ Server::process_request(Stream &strm, bool close_connection,
       exception_handler_(req, res, ep);
       routed = true;
     } else {
-      res.status = 500;
+      res.status = StatusCode::InternalServerError_500;
       res.set_header("EXCEPTION_WHAT", "UNKNOWN");
     }
   }
 #endif
 
   if (routed) {
-    if (res.status == -1) { res.status = req.ranges.empty() ? 200 : 206; }
+    if (res.status == -1) {
+      res.status = req.ranges.empty() ? StatusCode::OK_200
+                                      : StatusCode::PartialContent_206;
+    }
     return write_response_with_content(strm, close_connection, req, res);
   } else {
-    if (res.status == -1) { res.status = 404; }
+    if (res.status == -1) { res.status = StatusCode::NotFound_404; }
     return write_response(strm, close_connection, req, res);
   }
 }
@@ -6845,7 +6858,7 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
   res.reason = std::string(m[3]);
 
   // Ignore '100 Continue'
-  while (res.status == 100) {
+  while (res.status == StatusCode::Continue_100) {
     if (!line_reader.getline()) { return false; } // CRLF
     if (!line_reader.getline()) { return false; } // next response line
 
@@ -7014,9 +7027,10 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
   }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  if ((res.status == 401 || res.status == 407) &&
+  if ((res.status == StatusCode::Unauthorized_401 ||
+       res.status == StatusCode::ProxyAuthenticationRequired_407) &&
       req.authorization_count_ < 5) {
-    auto is_proxy = res.status == 407;
+    auto is_proxy = res.status == StatusCode::ProxyAuthenticationRequired_407;
     const auto &username =
         is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;
     const auto &password =
@@ -7377,7 +7391,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   }
 
   // Body
-  if ((res.status != 204) && req.method != "HEAD" && req.method != "CONNECT") {
+  if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&
+      req.method != "CONNECT") {
     auto redirect = 300 < res.status && res.status < 400 && follow_location_;
 
     if (req.response_handler && !redirect) {
@@ -8554,7 +8569,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
     return false;
   }
 
-  if (proxy_res.status == 407) {
+  if (proxy_res.status == StatusCode::ProxyAuthenticationRequired_407) {
     if (!proxy_digest_auth_username_.empty() &&
         !proxy_digest_auth_password_.empty()) {
       std::map<std::string, std::string> auth;
@@ -8587,7 +8602,7 @@ inline bool SSLClient::connect_with_proxy(Socket &socket, Response &res,
   // If status code is not 200, proxy request is failed.
   // Set error to ProxyConnection and return proxy response
   // as the response of the request
-  if (proxy_res.status != 200) {
+  if (proxy_res.status != StatusCode::OK_200) {
     error = Error::ProxyConnection;
     res = std::move(proxy_res);
     // Thread-safe to close everything because we are assuming there are
