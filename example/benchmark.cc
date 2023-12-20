@@ -26,7 +26,7 @@ int main(void) {
   for (int i = 0; i < 3; i++) {
     StopWatch sw(to_string(i).c_str());
     auto res = cli.Post("/post", body, "application/octet-stream");
-    assert(res->status == 200);
+    assert(res->status == httplib::StatusCode::OK_200);
   }
 
   return 0;
