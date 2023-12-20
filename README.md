@@ -235,7 +235,7 @@ svr.set_exception_handler([](const auto& req, auto& res, std::exception_ptr ep) 
     snprintf(buf, sizeof(buf), fmt, "Unknown Exception");
   }
   res.set_content(buf, "text/html");
-  res.status = 500;
+  res.status = StatusCode::InternalServerError_500;
 });
 ```
 
@@ -385,14 +385,14 @@ By default, the server sends a `100 Continue` response for an `Expect: 100-conti
 ```cpp
 // Send a '417 Expectation Failed' response.
 svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
-  return 417;
+  return StatusCode::ExpectationFailed_417;
 });
 ```
 
 ```cpp
 // Send a final status without reading the message body.
 svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
-  return res.status = 401;
+  return res.status = StatusCode::Unauthorized_401;
 });
 ```
 
@@ -473,7 +473,7 @@ int main(void)
   httplib::Client cli("localhost", 1234);
 
   if (auto res = cli.Get("/hi")) {
-    if (res->status == 200) {
+    if (res->status == StatusCode::OK_200) {
       std::cout << res->body << std::endl;
     }
   } else {
@@ -623,7 +623,7 @@ std::string body;
 auto res = cli.Get(
   "/stream", Headers(),
   [&](const Response &response) {
-    EXPECT_EQ(200, response.status);
+    EXPECT_EQ(StatusCode::OK_200, response.status);
     return true; // return 'false' if you want to cancel the request.
   },
   [&](const char *data, size_t data_length) {

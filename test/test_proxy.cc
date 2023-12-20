@@ -10,7 +10,7 @@ void ProxyTest(T& cli, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
   auto res = cli.Get("/httpbin/get");
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(407, res->status);
+  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
 }
 
 TEST(ProxyTest, NoSSLBasic) {
@@ -51,7 +51,7 @@ void RedirectProxyText(T& cli, const char *path, bool basic) {
 
   auto res = cli.Get(path);
   ASSERT_TRUE(res != nullptr);
-  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(RedirectTest, HTTPBinNoSSLBasic) {
@@ -108,7 +108,7 @@ void BaseAuthTestFromHTTPWatch(T& cli) {
   {
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(401, res->status);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
 
   {
@@ -117,7 +117,7 @@ void BaseAuthTestFromHTTPWatch(T& cli) {
                 {make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res->body);
-    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
   {
@@ -125,21 +125,21 @@ void BaseAuthTestFromHTTPWatch(T& cli) {
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res->body);
-    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
   {
     cli.set_basic_auth("hello", "bad");
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(401, res->status);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
 
   {
     cli.set_basic_auth("bad", "world");
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(401, res->status);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
 }
 
@@ -166,7 +166,7 @@ void DigestAuthTestFromHTTPWatch(T& cli) {
   {
     auto res = cli.Get("/digest-auth/auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(401, res->status);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
 
   {
@@ -182,14 +182,14 @@ void DigestAuthTestFromHTTPWatch(T& cli) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
       EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res->body);
-      EXPECT_EQ(200, res->status);
+      EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
     cli.set_digest_auth("hello", "bad");
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ(401, res->status);
+      EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     }
 
     // NOTE: Until httpbin.org fixes issue #46, the following test is commented
@@ -198,7 +198,7 @@ void DigestAuthTestFromHTTPWatch(T& cli) {
     // for (auto path : paths) {
     //   auto res = cli.Get(path.c_str());
     //   ASSERT_TRUE(res != nullptr);
-    //   EXPECT_EQ(401, res->status);
+    //   EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     // }
   }
 }
@@ -234,11 +234,11 @@ void KeepAliveTest(T& cli, bool basic) {
 
   {
     auto res = cli.Get("/httpbin/get");
-    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
   }
   {
     auto res = cli.Get("/httpbin/redirect/2");
-    EXPECT_EQ(200, res->status);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
   {
@@ -252,7 +252,7 @@ void KeepAliveTest(T& cli, bool basic) {
     for (auto path: paths) {
       auto res = cli.Get(path.c_str());
       EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n", res->body);
-      EXPECT_EQ(200, res->status);
+      EXPECT_EQ(StatusCode::OK_200, res->status);
     }
   }
 
@@ -260,7 +260,7 @@ void KeepAliveTest(T& cli, bool basic) {
     int count = 10;
     while (count--) {
       auto res = cli.Get("/httpbin/get");
-      EXPECT_EQ(200, res->status);
+      EXPECT_EQ(StatusCode::OK_200, res->status);
     }
   }
 }
