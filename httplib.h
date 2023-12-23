@@ -160,10 +160,6 @@ using ssize_t = long;
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
 #endif
 
-#ifndef strcasecmp
-#define strcasecmp _stricmp
-#endif // strcasecmp
-
 using socket_t = SOCKET;
 #ifdef CPPHTTPLIB_USE_POLL
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
@@ -3925,8 +3921,8 @@ inline bool read_content_chunked(Stream &strm, T &x,
 }
 
 inline bool is_chunked_transfer_encoding(const Headers &headers) {
-  return !strcasecmp(get_header_value(headers, "Transfer-Encoding", 0, ""),
-                     "chunked");
+  return compare_case_ignore(
+      get_header_value(headers, "Transfer-Encoding", 0, ""), "chunked");
 }
 
 template <typename T, typename U>
