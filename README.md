@@ -433,6 +433,17 @@ If you want to set the thread count at runtime, there is no convenient way... Bu
 svr.new_task_queue = [] { return new ThreadPool(12); };
 ```
 
+You can also provide an optional parameter to limit the maximum number
+of pending requests, i.e. requests `accept()`ed by the listener but
+still waiting to be serviced by worker threads.
+
+```cpp
+svr.new_task_queue = [] { return new ThreadPool(/*num_threads=*/12, /*max_queued_requests=*/18); };
+```
+
+Default limit is 0 (unlimited). Once the limit is reached, the listener
+will shutdown the client connection.
+
 ### Override the default thread pool with yours
 
 You can supply your own thread pool implementation according to your need.
@@ -444,8 +455,10 @@ public:
     pool_.start_with_thread_count(n);
   }
 
-  virtual void enqueue(std::function<void()> fn) override {
-    pool_.enqueue(fn);
+  virtual bool enqueue(std::function<void()> fn) override {
+    /* Return true if the task was actually enqueued, or false
+     * if the caller must drop the corresponding connection. */
+    return pool_.enqueue(fn);
   }
 
   virtual void shutdown() override {
