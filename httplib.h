@@ -264,10 +264,8 @@ using socket_t = int;
 #include <iostream>
 #include <sstream>
 
-#if OPENSSL_VERSION_NUMBER < 0x1010100fL
-#error Sorry, OpenSSL versions prior to 1.1.1 are not supported
-#elif OPENSSL_VERSION_NUMBER < 0x30000000L
-#define SSL_get1_peer_certificate SSL_get_peer_certificate
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+#error Sorry, OpenSSL versions prior to 3.0.0 are not supported
 #endif
 
 #endif

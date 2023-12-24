@@ -81,7 +81,7 @@ option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
 
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.
-set(_HTTPLIB_OPENSSL_MIN_VER "1.1.1")
+set(_HTTPLIB_OPENSSL_MIN_VER "3.0.0")
 
 # Allow for a build to require OpenSSL to pass, instead of just being optional
 option(HTTPLIB_REQUIRE_OPENSSL "Requires OpenSSL to be found & linked, or fails build." OFF)

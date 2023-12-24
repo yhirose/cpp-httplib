@@ -30,7 +30,7 @@ endif
 deps = [dependency('threads')]
 args = []
 
-openssl_dep = dependency('openssl', version: '>=1.1.1', required: get_option('cpp-httplib_openssl'))
+openssl_dep = dependency('openssl', version: '>=3.0.0', required: get_option('cpp-httplib_openssl'))
 if openssl_dep.found()
   deps += openssl_dep
   args += '-DCPPHTTPLIB_OPENSSL_SUPPORT'
