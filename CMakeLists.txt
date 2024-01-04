@@ -114,35 +114,37 @@ find_package(Threads REQUIRED)
 # Since Cmake v3.11, Crypto & SSL became optional when not specified as COMPONENTS.
 if(HTTPLIB_REQUIRE_OPENSSL)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL REQUIRED)
+	set(HTTPLIB_IS_USING_OPENSSL TRUE)
 elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL QUIET)
-endif()
-# Just setting this variable here for people building in-tree
-if(OPENSSL_FOUND AND NOT DEFINED HTTPLIB_IS_USING_OPENSSL)
-	set(HTTPLIB_IS_USING_OPENSSL TRUE)
+	# Avoid a rare circumstance of not finding all components but the end-user did their
+	# own call for OpenSSL, which might trick us into thinking we'd otherwise have what we wanted
+	if (TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+		set(HTTPLIB_IS_USING_OPENSSL ${OPENSSL_FOUND})
+	else()
+		set(HTTPLIB_IS_USING_OPENSSL FALSE)
+	endif()
 endif()
 
 if(HTTPLIB_REQUIRE_ZLIB)
 	find_package(ZLIB REQUIRED)
+	set(HTTPLIB_IS_USING_ZLIB TRUE)
 elseif(HTTPLIB_USE_ZLIB_IF_AVAILABLE)
 	find_package(ZLIB QUIET)
-endif()
-# Just setting this variable here for people building in-tree
-# FindZLIB doesn't have a ZLIB_FOUND variable, so check the target.
-if(TARGET ZLIB::ZLIB)
-	set(HTTPLIB_IS_USING_ZLIB TRUE)
+	# FindZLIB doesn't have a ZLIB_FOUND variable, so check the target.
+	if(TARGET ZLIB::ZLIB)
+		set(HTTPLIB_IS_USING_ZLIB TRUE)
+	endif()
 endif()
 
 # Adds our cmake folder to the search path for find_package
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if(HTTPLIB_REQUIRE_BROTLI)
 	find_package(Brotli COMPONENTS encoder decoder common REQUIRED)
+	set(HTTPLIB_IS_USING_BROTLI TRUE)
 elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
 	find_package(Brotli COMPONENTS encoder decoder common QUIET)
-endif()
-# Just setting this variable here for people building in-tree
-if(Brotli_FOUND)
-	set(HTTPLIB_IS_USING_BROTLI TRUE)
+	set(HTTPLIB_IS_USING_BROTLI ${Brotli_FOUND})
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
