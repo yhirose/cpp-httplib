@@ -68,8 +68,8 @@ cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
 # This is so the maintainer doesn't actually need to update this manually.
 file(STRINGS httplib.h _raw_version_string REGEX "CPPHTTPLIB_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"")
 
-# Needed since git tags have "v" prefixing them.
-# Also used if the fallback to user agent string is being used.
+# Extracts just the version string itself from the whole string contained in _raw_version_string
+# since _raw_version_string would contain the entire line of code where it found the version string
 string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_raw_version_string}")
 
 project(httplib VERSION ${_httplib_version} LANGUAGES CXX)
