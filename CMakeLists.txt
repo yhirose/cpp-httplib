@@ -74,14 +74,13 @@ string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_raw_version_string}")
 
 project(httplib VERSION ${_httplib_version} LANGUAGES CXX)
 
-# Lets you disable C++ exception during CMake configure time.
-# The value is used in the install CMake config file.
-option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
-
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.
 set(_HTTPLIB_OPENSSL_MIN_VER "3.0.0")
 
+# Lets you disable C++ exception during CMake configure time.
+# The value is used in the install CMake config file.
+option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
 # Allow for a build to require OpenSSL to pass, instead of just being optional
 option(HTTPLIB_REQUIRE_OPENSSL "Requires OpenSSL to be found & linked, or fails build." OFF)
 option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build." OFF)
@@ -93,10 +92,6 @@ option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib co
 option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
 # Lets you disable the installation (useful when fetched from another CMake project)
 option(HTTPLIB_INSTALL "Enables the installation target" ON)
-# Just setting this variable here for people building in-tree
-if(HTTPLIB_COMPILE)
-	set(HTTPLIB_IS_COMPILED TRUE)
-endif()
 option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
@@ -108,6 +103,10 @@ if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
 	# See https://stackoverflow.com/a/40743080
 	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
+
+# Set some variables that are used in-tree and while building based on our options
+set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})
+set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN ${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN})
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
 set(THREADS_PREFER_PTHREAD_FLAG true)
@@ -144,10 +143,6 @@ endif()
 # Just setting this variable here for people building in-tree
 if(Brotli_FOUND)
 	set(HTTPLIB_IS_USING_BROTLI TRUE)
-endif()
-
-if(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-	set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN TRUE)
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
