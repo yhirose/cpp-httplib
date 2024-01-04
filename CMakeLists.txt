@@ -109,7 +109,7 @@ set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})
 set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN ${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN})
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
-set(THREADS_PREFER_PTHREAD_FLAG true)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED)
 # Since Cmake v3.11, Crypto & SSL became optional when not specified as COMPONENTS.
 if(HTTPLIB_REQUIRE_OPENSSL)
@@ -138,6 +138,7 @@ elseif(HTTPLIB_USE_ZLIB_IF_AVAILABLE)
 endif()
 
 # Adds our cmake folder to the search path for find_package
+# This is so we can use our custom FindBrotli.cmake
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if(HTTPLIB_REQUIRE_BROTLI)
 	find_package(Brotli COMPONENTS encoder decoder common REQUIRED)
@@ -200,9 +201,7 @@ endif()
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 # Require C++11
-target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-	cxx_std_11
-)
+target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_11)
 
 target_include_directories(${PROJECT_NAME} SYSTEM ${_INTERFACE_OR_PUBLIC}
     $<BUILD_INTERFACE:${_httplib_build_includedir}>
@@ -269,9 +268,7 @@ if(HTTPLIB_INSTALL)
 	# Creates the export httplibTargets.cmake
 	# This is strictly what holds compilation requirements
 	# and linkage information (doesn't find deps though).
-	install(TARGETS ${PROJECT_NAME}
-		EXPORT httplibTargets
-	)
+	install(TARGETS ${PROJECT_NAME} EXPORT httplibTargets)
 
 	install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
