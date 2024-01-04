@@ -3,11 +3,11 @@
 	* BUILD_SHARED_LIBS (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
+	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
-	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
-	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
+	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_TEST (default off)
@@ -59,7 +59,6 @@
 
 	-------------------------------------------------------------------------------
 
-	FindPython3 requires Cmake v3.12
 	ARCH_INDEPENDENT option of write_basic_package_version_file() requires Cmake v3.14
 ]]
 cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
@@ -69,20 +68,19 @@ cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
 # This is so the maintainer doesn't actually need to update this manually.
 file(STRINGS httplib.h _raw_version_string REGEX "CPPHTTPLIB_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"")
 
-# Needed since git tags have "v" prefixing them.
-# Also used if the fallback to user agent string is being used.
+# Extracts just the version string itself from the whole string contained in _raw_version_string
+# since _raw_version_string would contain the entire line of code where it found the version string
 string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_raw_version_string}")
 
 project(httplib VERSION ${_httplib_version} LANGUAGES CXX)
-
-# Lets you disable C++ exception during CMake configure time.
-# The value is used in the install CMake config file.
-option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
 
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.
 set(_HTTPLIB_OPENSSL_MIN_VER "3.0.0")
 
+# Lets you disable C++ exception during CMake configure time.
+# The value is used in the install CMake config file.
+option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
 # Allow for a build to require OpenSSL to pass, instead of just being optional
 option(HTTPLIB_REQUIRE_OPENSSL "Requires OpenSSL to be found & linked, or fails build." OFF)
 option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build." OFF)
@@ -94,10 +92,6 @@ option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib co
 option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
 # Lets you disable the installation (useful when fetched from another CMake project)
 option(HTTPLIB_INSTALL "Enables the installation target" ON)
-# Just setting this variable here for people building in-tree
-if(HTTPLIB_COMPILE)
-	set(HTTPLIB_IS_COMPILED TRUE)
-endif()
 option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
@@ -110,45 +104,48 @@ if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
 	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
+# Set some variables that are used in-tree and while building based on our options
+set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})
+set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN ${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN})
+
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
-set(THREADS_PREFER_PTHREAD_FLAG true)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED)
 # Since Cmake v3.11, Crypto & SSL became optional when not specified as COMPONENTS.
 if(HTTPLIB_REQUIRE_OPENSSL)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL REQUIRED)
+	set(HTTPLIB_IS_USING_OPENSSL TRUE)
 elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL QUIET)
-endif()
-# Just setting this variable here for people building in-tree
-if(OPENSSL_FOUND AND NOT DEFINED HTTPLIB_IS_USING_OPENSSL)
-	set(HTTPLIB_IS_USING_OPENSSL TRUE)
+	# Avoid a rare circumstance of not finding all components but the end-user did their
+	# own call for OpenSSL, which might trick us into thinking we'd otherwise have what we wanted
+	if (TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+		set(HTTPLIB_IS_USING_OPENSSL ${OPENSSL_FOUND})
+	else()
+		set(HTTPLIB_IS_USING_OPENSSL FALSE)
+	endif()
 endif()
 
 if(HTTPLIB_REQUIRE_ZLIB)
 	find_package(ZLIB REQUIRED)
+	set(HTTPLIB_IS_USING_ZLIB TRUE)
 elseif(HTTPLIB_USE_ZLIB_IF_AVAILABLE)
 	find_package(ZLIB QUIET)
-endif()
-# Just setting this variable here for people building in-tree
-# FindZLIB doesn't have a ZLIB_FOUND variable, so check the target.
-if(TARGET ZLIB::ZLIB)
-	set(HTTPLIB_IS_USING_ZLIB TRUE)
+	# FindZLIB doesn't have a ZLIB_FOUND variable, so check the target.
+	if(TARGET ZLIB::ZLIB)
+		set(HTTPLIB_IS_USING_ZLIB TRUE)
+	endif()
 endif()
 
 # Adds our cmake folder to the search path for find_package
+# This is so we can use our custom FindBrotli.cmake
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if(HTTPLIB_REQUIRE_BROTLI)
 	find_package(Brotli COMPONENTS encoder decoder common REQUIRED)
+	set(HTTPLIB_IS_USING_BROTLI TRUE)
 elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
 	find_package(Brotli COMPONENTS encoder decoder common QUIET)
-endif()
-# Just setting this variable here for people building in-tree
-if(Brotli_FOUND)
-	set(HTTPLIB_IS_USING_BROTLI TRUE)
-endif()
-
-if(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-	set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN TRUE)
+	set(HTTPLIB_IS_USING_BROTLI ${Brotli_FOUND})
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
@@ -204,9 +201,7 @@ endif()
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 # Require C++11
-target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
-	cxx_std_11
-)
+target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_11)
 
 target_include_directories(${PROJECT_NAME} SYSTEM ${_INTERFACE_OR_PUBLIC}
     $<BUILD_INTERFACE:${_httplib_build_includedir}>
@@ -273,9 +268,7 @@ if(HTTPLIB_INSTALL)
 	# Creates the export httplibTargets.cmake
 	# This is strictly what holds compilation requirements
 	# and linkage information (doesn't find deps though).
-	install(TARGETS ${PROJECT_NAME}
-		EXPORT httplibTargets
-	)
+	install(TARGETS ${PROJECT_NAME} EXPORT httplibTargets)
 
 	install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
