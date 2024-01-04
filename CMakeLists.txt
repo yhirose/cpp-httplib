@@ -3,11 +3,11 @@
 	* BUILD_SHARED_LIBS (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
+	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
-	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
-	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
+	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_TEST (default off)
@@ -59,7 +59,6 @@
 
 	-------------------------------------------------------------------------------
 
-	FindPython3 requires Cmake v3.12
 	ARCH_INDEPENDENT option of write_basic_package_version_file() requires Cmake v3.14
 ]]
 cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
