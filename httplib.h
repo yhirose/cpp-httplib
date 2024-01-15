@@ -745,6 +745,8 @@ void default_socket_options(socket_t sock);
 
 const char *status_message(int status);
 
+std::string get_bearer_token_auth(const Request &req);
+
 namespace detail {
 
 class MatcherBase {
@@ -1941,6 +1943,15 @@ inline const char *status_message(int status) {
   default:
   case StatusCode::InternalServerError_500: return "Internal Server Error";
   }
+}
+
+inline std::string get_bearer_token_auth(const Request &req) {
+  if (req.has_header("Authorization")) {
+    static std::string BearerHeaderPrefix = "Bearer ";
+    return req.get_header_value("Authorization")
+        .substr(BearerHeaderPrefix.length());
+  }
+  return "";
 }
 
 template <class Rep, class Period>
