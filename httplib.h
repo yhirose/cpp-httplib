@@ -2793,7 +2793,7 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
 #ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return 1; }
+  if (sock >= FD_SETSIZE) { return -1; }
 #endif
 
   fd_set fds;
@@ -2821,7 +2821,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
 #else
 #ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return 1; }
+  if (sock >= FD_SETSIZE) { return -1; }
 #endif
 
   fd_set fds;
