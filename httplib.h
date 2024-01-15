@@ -561,8 +561,6 @@ struct Request {
   size_t get_header_value_count(const std::string &key) const;
   void set_header(const std::string &key, const std::string &val);
 
-  std::string get_bearer_token_auth() const;
-
   bool has_param(const std::string &key) const;
   std::string get_param_value(const std::string &key, size_t id = 0) const;
   size_t get_param_value_count(const std::string &key) const;
@@ -746,6 +744,8 @@ using SocketOptions = std::function<void(socket_t sock)>;
 void default_socket_options(socket_t sock);
 
 const char *status_message(int status);
+
+std::string get_bearer_token_auth(const Request &req);
 
 namespace detail {
 
@@ -1943,6 +1943,15 @@ inline const char *status_message(int status) {
   default:
   case StatusCode::InternalServerError_500: return "Internal Server Error";
   }
+}
+
+inline std::string get_bearer_token_auth(const Request &req) {
+  if (req.has_header("Authorization")) {
+    static std::string BearerHeaderPrefix = "Bearer ";
+    return req.get_header_value("Authorization")
+        .substr(BearerHeaderPrefix.length());
+  }
+  return "";
 }
 
 template <class Rep, class Period>
@@ -5249,15 +5258,6 @@ inline void Request::set_header(const std::string &key,
   if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
     headers.emplace(key, val);
   }
-}
-
-inline std::string Request::get_bearer_token_auth() const {
-  if (has_header("Authorization")) {
-    static std::string BearerHeaderPrefix = "Bearer ";
-    return get_header_value("Authorization")
-        .substr(BearerHeaderPrefix.length());
-  }
-  return "";
 }
 
 inline bool Request::has_param(const std::string &key) const {
