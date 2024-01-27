@@ -71,6 +71,15 @@ TEST(DecodeURLTest, PercentCharacter) {
       R"(descrip=Gastos áéíóúñÑ 6)");
 }
 
+TEST(DecodeURLTest, PercentCharacterNUL) {
+  string expected;
+  expected.push_back('x');
+  expected.push_back('\0');
+  expected.push_back('x');
+
+  EXPECT_EQ(detail::decode_url("x%00x", false), expected);
+}
+
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 
@@ -2478,6 +2487,12 @@ TEST_F(ServerTest, GetMethodDirMountTestWithDoubleDots) {
 
 TEST_F(ServerTest, GetMethodInvalidMountPath) {
   auto res = cli_.Get("/mount/dir/../test.html");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST_F(ServerTest, GetMethodEmbeddedNUL) {
+  auto res = cli_.Get("/mount/dir/test.html%00.js");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
