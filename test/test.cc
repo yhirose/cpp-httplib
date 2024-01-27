@@ -2540,6 +2540,7 @@ TEST_F(ServerTest, StaticFileRange) {
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 2-3/5", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("cd"), res->body);
 }
 
@@ -2553,7 +2554,7 @@ TEST_F(ServerTest, StaticFileRanges) {
           .find(
               "multipart/byteranges; boundary=--cpp-httplib-multipart-data-") ==
       0);
-  EXPECT_EQ("265", res->get_header_value("Content-Length"));
+  EXPECT_EQ("266", res->get_header_value("Content-Length"));
 }
 
 TEST_F(ServerTest, StaticFileRangeHead) {
@@ -2563,6 +2564,7 @@ TEST_F(ServerTest, StaticFileRangeHead) {
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 2-3/5", res->get_header_value("Content-Range"));
 }
 
 TEST_F(ServerTest, StaticFileRangeBigFile) {
@@ -2572,6 +2574,8 @@ TEST_F(ServerTest, StaticFileRangeBigFile) {
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("5", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 1048571-1048575/1048576",
+            res->get_header_value("Content-Range"));
   EXPECT_EQ("LAST\n", res->body);
 }
 
@@ -2582,6 +2586,7 @@ TEST_F(ServerTest, StaticFileRangeBigFile2) {
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("4097", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 1-4097/1048576", res->get_header_value("Content-Range"));
 }
 
 TEST_F(ServerTest, StaticFileBigFile) {
@@ -2908,6 +2913,8 @@ TEST_F(ServerTest, GetStreamed2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 2-3/6", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("ab"), res->body);
 }
 
@@ -2925,6 +2932,7 @@ TEST_F(ServerTest, GetStreamedWithRange1) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 3-5/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("def"), res->body);
 }
 
@@ -2934,6 +2942,7 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 1-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
@@ -2943,6 +2952,7 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 4-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("efg"), res->body);
 }
 
@@ -2952,6 +2962,7 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("7", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("abcdefg"), res->body);
 }
 
@@ -2968,6 +2979,7 @@ TEST_F(ServerTest, GetRangeWithMaxLongLength) {
       cli_.Get("/with-range", {{"Range", "bytes=0-9223372036854775807"}});
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ(std::string("abcdefg"), res->body);
 }
@@ -3029,6 +3041,7 @@ TEST_F(ServerTest, GetWithRange1) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 3-5/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("def"), res->body);
 }
 
@@ -3038,6 +3051,7 @@ TEST_F(ServerTest, GetWithRange2) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 1-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("bcdefg"), res->body);
 }
 
@@ -3047,6 +3061,7 @@ TEST_F(ServerTest, GetWithRange3) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("1", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 0-0/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("a"), res->body);
 }
 
@@ -3056,6 +3071,7 @@ TEST_F(ServerTest, GetWithRange4) {
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 5-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("fg"), res->body);
 }
 

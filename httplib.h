@@ -8,7 +8,7 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.15.0"
+#define CPPHTTPLIB_VERSION "0.14.3"
 
 /*
  * Configuration
@@ -141,11 +141,11 @@ using ssize_t = long;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -4647,7 +4647,8 @@ inline std::string random_string(size_t length) {
   static std::random_device seed_gen;
 
   // Request 128 bits of entropy for initialization
-  static std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(), seed_gen()};
+  static std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(),
+                                     seed_gen()};
 
   static std::mt19937 engine(seed_sequence);
 
@@ -4720,32 +4721,41 @@ serialize_multipart_formdata(const MultipartFormDataItems &items,
 }
 
 inline std::pair<size_t, size_t>
-get_range_offset_and_length(const Request &req, size_t content_length,
-                            size_t index) {
-  auto r = req.ranges[index];
-
-  if (r.first == -1 && r.second == -1) {
+get_range_offset_and_length(Range range, size_t content_length) {
+  if (range.first == -1 && range.second == -1) {
     return std::make_pair(0, content_length);
   }
 
   auto slen = static_cast<ssize_t>(content_length);
 
-  if (r.first == -1) {
-    r.first = (std::max)(static_cast<ssize_t>(0), slen - r.second);
-    r.second = slen - 1;
+  if (range.first == -1) {
+    range.first = (std::max)(static_cast<ssize_t>(0), slen - range.second);
+    range.second = slen - 1;
   }
 
-  if (r.second == -1) { r.second = slen - 1; }
-  return std::make_pair(r.first, static_cast<size_t>(r.second - r.first) + 1);
+  if (range.second == -1) { range.second = slen - 1; }
+  return std::make_pair(range.first,
+                        static_cast<size_t>(range.second - range.first) + 1);
+}
+
+inline std::pair<size_t, size_t>
+get_range_offset_and_length(const Request &req, size_t content_length,
+                            size_t index) {
+  return get_range_offset_and_length(req.ranges[index], content_length);
 }
 
 inline std::string
 make_content_range_header_field(const std::pair<ssize_t, ssize_t> &range,
                                 size_t content_length) {
+
+  auto ret = get_range_offset_and_length(range, content_length);
+  auto st = ret.first;
+  auto ed = (std::min)(st + ret.second - 1, content_length - 1);
+
   std::string field = "bytes ";
-  if (range.first != -1) { field += std::to_string(range.first); }
+  field += std::to_string(st);
   field += "-";
-  if (range.second != -1) { field += std::to_string(range.second); }
+  field += std::to_string(ed);
   field += "/";
   field += std::to_string(content_length);
   return field;
@@ -4773,9 +4783,9 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
     ctoken("\r\n");
     ctoken("\r\n");
 
-    auto offsets = get_range_offset_and_length(req, res.content_length_, i);
-    auto offset = offsets.first;
-    auto length = offsets.second;
+    auto ret = get_range_offset_and_length(req, res.content_length_, i);
+    auto offset = ret.first;
+    auto length = ret.second;
     if (!content(offset, length)) { return false; }
     ctoken("\r\n");
   }
@@ -4836,18 +4846,6 @@ inline bool write_multipart_ranges_data(Stream &strm, const Request &req,
         return write_content(strm, res.content_provider_, offset, length,
                              is_shutting_down);
       });
-}
-
-inline std::pair<size_t, size_t>
-get_range_offset_and_length(const Request &req, const Response &res,
-                            size_t index) {
-  auto r = req.ranges[index];
-
-  if (r.second == -1) {
-    r.second = static_cast<ssize_t>(res.content_length_) - 1;
-  }
-
-  return std::make_pair(r.first, r.second - r.first + 1);
 }
 
 inline bool expect_content(const Request &req) {
@@ -6045,10 +6043,10 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
       return detail::write_content(strm, res.content_provider_, 0,
                                    res.content_length_, is_shutting_down);
     } else if (req.ranges.size() == 1) {
-      auto offsets =
+      auto ret =
           detail::get_range_offset_and_length(req, res.content_length_, 0);
-      auto offset = offsets.first;
-      auto length = offsets.second;
+      auto offset = ret.first;
+      auto length = ret.second;
       return detail::write_content(strm, res.content_provider_, offset, length,
                                    is_shutting_down);
     } else {
@@ -6465,9 +6463,9 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       if (req.ranges.empty()) {
         length = res.content_length_;
       } else if (req.ranges.size() == 1) {
-        auto offsets =
+        auto ret =
             detail::get_range_offset_and_length(req, res.content_length_, 0);
-        length = offsets.second;
+        length = ret.second;
 
         auto content_range = detail::make_content_range_header_field(
             req.ranges[0], res.content_length_);
@@ -6497,10 +6495,9 @@ inline void Server::apply_ranges(const Request &req, Response &res,
           req.ranges[0], res.body.size());
       res.set_header("Content-Range", content_range);
 
-      auto offsets =
-          detail::get_range_offset_and_length(req, res.body.size(), 0);
-      auto offset = offsets.first;
-      auto length = offsets.second;
+      auto ret = detail::get_range_offset_and_length(req, res.body.size(), 0);
+      auto offset = ret.first;
+      auto length = ret.second;
 
       if (offset < res.body.size()) {
         res.body = res.body.substr(offset, length);
