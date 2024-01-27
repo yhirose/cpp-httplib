@@ -596,6 +596,7 @@ struct Response {
   void set_redirect(const std::string &url, int status = StatusCode::Found_302);
   void set_content(const char *s, size_t n, const std::string &content_type);
   void set_content(const std::string &s, const std::string &content_type);
+  void set_content(std::string &&s, const std::string &content_type);
 
   void set_content_provider(
       size_t length, const std::string &content_type, ContentProvider provider,
@@ -5348,6 +5349,15 @@ inline void Response::set_content(const char *s, size_t n,
 inline void Response::set_content(const std::string &s,
                                   const std::string &content_type) {
   set_content(s.data(), s.size(), content_type);
+}
+
+inline void Response::set_content(std::string &&s,
+                                  const std::string &content_type) {
+  body = std::move(s);
+
+  auto rng = headers.equal_range("Content-Type");
+  headers.erase(rng.first, rng.second);
+  set_header("Content-Type", content_type);
 }
 
 inline void Response::set_content_provider(
