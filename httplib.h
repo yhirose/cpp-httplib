@@ -2412,6 +2412,7 @@ inline bool is_valid_path(const std::string &path) {
     // Read component
     auto beg = i;
     while (i < path.size() && path[i] != '/') {
+      if (path[i] == '\0') { return false; }
       i++;
     }
 
