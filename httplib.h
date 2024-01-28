@@ -2065,7 +2065,7 @@ void hosted_at(const std::string &hostname, std::vector<std::string> &addrs);
 
 std::string append_query_params(const std::string &path, const Params &params);
 
-std::pair<std::string, std::string> make_range_header(Ranges ranges);
+std::pair<std::string, std::string> make_range_header(const Ranges &ranges);
 
 std::pair<std::string, std::string>
 make_basic_authentication_header(const std::string &username,
@@ -2571,7 +2571,7 @@ inline std::string trim_double_quotes_copy(const std::string &s) {
 
 inline void split(const char *b, const char *e, char d,
                   std::function<void(const char *, const char *)> fn) {
-  return split(b, e, d, (std::numeric_limits<size_t>::max)(), fn);
+  return split(b, e, d, (std::numeric_limits<size_t>::max)(), std::move(fn));
 }
 
 inline void split(const char *b, const char *e, char d, size_t m,
@@ -5192,10 +5192,11 @@ inline std::string append_query_params(const std::string &path,
 }
 
 // Header utilities
-inline std::pair<std::string, std::string> make_range_header(Ranges ranges) {
+inline std::pair<std::string, std::string>
+make_range_header(const Ranges &ranges) {
   std::string field = "bytes=";
   auto i = 0;
-  for (auto r : ranges) {
+  for (const auto &r : ranges) {
     if (i != 0) { field += ", "; }
     if (r.first != -1) { field += std::to_string(r.first); }
     field += '-';
@@ -5348,7 +5349,7 @@ inline void Response::set_content_provider(
   set_header("Content-Type", content_type);
   content_length_ = in_length;
   if (in_length > 0) { content_provider_ = std::move(provider); }
-  content_provider_resource_releaser_ = resource_releaser;
+  content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
 }
 
@@ -5358,7 +5359,7 @@ inline void Response::set_content_provider(
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
-  content_provider_resource_releaser_ = resource_releaser;
+  content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
 }
 
@@ -5368,7 +5369,7 @@ inline void Response::set_chunked_content_provider(
   set_header("Content-Type", content_type);
   content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
-  content_provider_resource_releaser_ = resource_releaser;
+  content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = true;
 }
 
@@ -7597,14 +7598,15 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
   if (params.empty()) { return Get(path, headers); }
 
   std::string path_with_query = append_query_params(path, params);
-  return Get(path_with_query, headers, progress);
+  return Get(path_with_query, headers, std::move(progress));
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
                               const Headers &headers,
                               ContentReceiver content_receiver,
                               Progress progress) {
-  return Get(path, params, headers, nullptr, content_receiver, progress);
+  return Get(path, params, headers, nullptr, std::move(content_receiver),
+             std::move(progress));
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
@@ -7613,12 +7615,13 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
                               ContentReceiver content_receiver,
                               Progress progress) {
   if (params.empty()) {
-    return Get(path, headers, response_handler, content_receiver, progress);
+    return Get(path, headers, std::move(response_handler),
+               std::move(content_receiver), std::move(progress));
   }
 
   std::string path_with_query = append_query_params(path, params);
-  return Get(path_with_query, headers, response_handler, content_receiver,
-             progress);
+  return Get(path_with_query, headers, std::move(response_handler),
+             std::move(content_receiver), std::move(progress));
 }
 
 inline Result ClientImpl::Head(const std::string &path) {
@@ -8993,19 +8996,20 @@ inline Result Client::Get(const std::string &path, const Headers &headers,
 }
 inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers, Progress progress) {
-  return cli_->Get(path, params, headers, progress);
+  return cli_->Get(path, params, headers, std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers,
                           ContentReceiver content_receiver, Progress progress) {
-  return cli_->Get(path, params, headers, content_receiver, progress);
+  return cli_->Get(path, params, headers, std::move(content_receiver),
+                   std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers,
                           ResponseHandler response_handler,
                           ContentReceiver content_receiver, Progress progress) {
-  return cli_->Get(path, params, headers, response_handler, content_receiver,
-                   progress);
+  return cli_->Get(path, params, headers, std::move(response_handler),
+                   std::move(content_receiver), std::move(progress));
 }
 
 inline Result Client::Head(const std::string &path) { return cli_->Head(path); }
