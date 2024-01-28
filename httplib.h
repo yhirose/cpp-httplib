@@ -82,6 +82,10 @@
 #define CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH 8192
 #endif
 
+#ifndef CPPHTTPLIB_RANGE_MAX_COUNT
+#define CPPHTTPLIB_RANGE_MAX_COUNT 1024
+#endif
+
 #ifndef CPPHTTPLIB_TCP_NODELAY
 #define CPPHTTPLIB_TCP_NODELAY false
 #endif
@@ -4721,29 +4725,57 @@ serialize_multipart_formdata(const MultipartFormDataItems &items,
 }
 
 inline bool normalize_ranges(Request &req, Response &res) {
-  ssize_t len = static_cast<ssize_t>(res.content_length_ ? res.content_length_
-                                                         : res.body.size());
+  ssize_t contant_len = static_cast<ssize_t>(
+      res.content_length_ ? res.content_length_ : res.body.size());
+
+  ssize_t prev_first_pos = -1;
+  ssize_t prev_last_pos = -1;
+  size_t overwrapping_count = 0;
 
   if (!req.ranges.empty()) {
+    // NOTE: The following Range check is based on '14.2. Range' in RFC 9110
+    // 'HTTP Semantics' to avoid potential denial-of-service attacks.
+    // https://www.rfc-editor.org/rfc/rfc9110#section-14.2
+
+    // Too many ranges
+    if (req.ranges.size() > CPPHTTPLIB_RANGE_MAX_COUNT) { return false; }
+
     for (auto &r : req.ranges) {
-      auto &st = r.first;
-      auto &ed = r.second;
+      auto &first_pos = r.first;
+      auto &last_pos = r.second;
 
-      if (st == -1 && ed == -1) {
-        st = 0;
-        ed = len;
+      if (first_pos == -1 && last_pos == -1) {
+        first_pos = 0;
+        last_pos = contant_len;
       }
 
-      if (st == -1) {
-        st = len - ed;
-        ed = len - 1;
+      if (first_pos == -1) {
+        first_pos = contant_len - last_pos;
+        last_pos = contant_len - 1;
       }
 
-      if (ed == -1) { ed = len - 1; }
+      if (last_pos == -1) { last_pos = contant_len - 1; }
 
-      if (!(0 <= st && st <= ed && ed <= len - 1)) { return false; }
+      // Range must be within content length
+      if (!(0 <= first_pos && first_pos <= last_pos &&
+            last_pos <= contant_len - 1)) {
+        return false;
+      }
+
+      // Ranges must be in ascending order
+      if (first_pos <= prev_first_pos) { return false; }
+
+      // Request must not have more than two overlapping ranges
+      if (first_pos <= prev_last_pos) {
+        overwrapping_count++;
+        if (overwrapping_count > 2) { return false; }
+      }
+
+      prev_first_pos = (std::max)(prev_first_pos, first_pos);
+      prev_last_pos = (std::max)(prev_last_pos, last_pos);
     }
   }
+
   return true;
 }
 
