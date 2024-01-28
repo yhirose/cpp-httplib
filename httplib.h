@@ -4738,19 +4738,11 @@ get_range_offset_and_length(Range range, size_t content_length) {
                         static_cast<size_t>(range.second - range.first) + 1);
 }
 
-inline std::pair<size_t, size_t>
-get_range_offset_and_length(const Request &req, size_t content_length,
-                            size_t index) {
-  return get_range_offset_and_length(req.ranges[index], content_length);
-}
+inline std::string make_content_range_header_field(
+    const std::pair<size_t, size_t> &offset_and_length, size_t content_length) {
 
-inline std::string
-make_content_range_header_field(const std::pair<ssize_t, ssize_t> &range,
-                                size_t content_length) {
-
-  auto ret = get_range_offset_and_length(range, content_length);
-  auto st = ret.first;
-  auto ed = (std::min)(st + ret.second - 1, content_length - 1);
+  auto st = offset_and_length.first;
+  auto ed = (std::min)(st + offset_and_length.second - 1, content_length - 1);
 
   std::string field = "bytes ";
   field += std::to_string(st);
@@ -4777,16 +4769,18 @@ bool process_multipart_ranges_data(const Request &req, Response &res,
       ctoken("\r\n");
     }
 
+    auto offset_and_length =
+        get_range_offset_and_length(req.ranges[i], res.content_length_);
+
     ctoken("Content-Range: ");
-    const auto &range = req.ranges[i];
-    stoken(make_content_range_header_field(range, res.content_length_));
+    stoken(make_content_range_header_field(offset_and_length,
+                                           res.content_length_));
     ctoken("\r\n");
     ctoken("\r\n");
 
-    auto ret = get_range_offset_and_length(req, res.content_length_, i);
-    auto offset = ret.first;
-    auto length = ret.second;
-    if (!content(offset, length)) { return false; }
+    if (!content(offset_and_length.first, offset_and_length.second)) {
+      return false;
+    }
     ctoken("\r\n");
   }
 
@@ -6043,12 +6037,12 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
       return detail::write_content(strm, res.content_provider_, 0,
                                    res.content_length_, is_shutting_down);
     } else if (req.ranges.size() == 1) {
-      auto ret =
-          detail::get_range_offset_and_length(req, res.content_length_, 0);
-      auto offset = ret.first;
-      auto length = ret.second;
-      return detail::write_content(strm, res.content_provider_, offset, length,
-                                   is_shutting_down);
+      auto offset_and_length = detail::get_range_offset_and_length(
+          req.ranges[0], res.content_length_);
+
+      return detail::write_content(strm, res.content_provider_,
+                                   offset_and_length.first,
+                                   offset_and_length.second, is_shutting_down);
     } else {
       return detail::write_multipart_ranges_data(
           strm, req, res, boundary, content_type, is_shutting_down);
@@ -6463,12 +6457,13 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       if (req.ranges.empty()) {
         length = res.content_length_;
       } else if (req.ranges.size() == 1) {
-        auto ret =
-            detail::get_range_offset_and_length(req, res.content_length_, 0);
-        length = ret.second;
+        auto offset_and_length = detail::get_range_offset_and_length(
+            req.ranges[0], res.content_length_);
+
+        length = offset_and_length.second;
 
         auto content_range = detail::make_content_range_header_field(
-            req.ranges[0], res.content_length_);
+            offset_and_length, res.content_length_);
         res.set_header("Content-Range", content_range);
       } else {
         length = detail::get_multipart_ranges_data_length(req, res, boundary,
@@ -6491,13 +6486,14 @@ inline void Server::apply_ranges(const Request &req, Response &res,
     if (req.ranges.empty()) {
       ;
     } else if (req.ranges.size() == 1) {
-      auto content_range = detail::make_content_range_header_field(
-          req.ranges[0], res.body.size());
-      res.set_header("Content-Range", content_range);
+      auto offset_and_length =
+          detail::get_range_offset_and_length(req.ranges[0], res.body.size());
+      auto offset = offset_and_length.first;
+      auto length = offset_and_length.second;
 
-      auto ret = detail::get_range_offset_and_length(req, res.body.size(), 0);
-      auto offset = ret.first;
-      auto length = ret.second;
+      auto content_range = detail::make_content_range_header_field(
+          offset_and_length, res.body.size());
+      res.set_header("Content-Range", content_range);
 
       if (offset < res.body.size()) {
         res.body = res.body.substr(offset, length);
