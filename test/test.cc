@@ -1831,7 +1831,7 @@ protected:
                    });
              })
         .Get("/streamed-with-range",
-             [&](const Request & /*req*/, Response &res) {
+             [&](const Request &req, Response &res) {
                auto data = new std::string("abcdefg");
                res.set_content_provider(
                    data->size(), "text/plain",
@@ -1845,8 +1845,8 @@ protected:
                      EXPECT_TRUE(ret);
                      return true;
                    },
-                   [data](bool success) {
-                     EXPECT_TRUE(success);
+                   [data, &req](bool success) {
+                     EXPECT_EQ(success, !req.has_param("error"));
                      delete data;
                    });
              })
@@ -2957,13 +2957,12 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
-  auto res = cli_.Get("/streamed-with-range", {{"Range", "bytes=-9999"}});
+  auto res = cli_.Get("/streamed-with-range?error", {{"Range", "bytes=-9999"}});
   ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
-  EXPECT_EQ("7", res->get_header_value("Content-Length"));
-  EXPECT_EQ(true, res->has_header("Content-Range"));
-  EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range"));
-  EXPECT_EQ(std::string("abcdefg"), res->body);
+  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(0, res->body.size());
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeError) {
@@ -2972,16 +2971,18 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
                                  "92233720368547758079223372036854775807"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(0, res->body.size());
 }
 
 TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   auto res =
       cli_.Get("/with-range", {{"Range", "bytes=0-9223372036854775807"}});
-  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
-  EXPECT_EQ("7", res->get_header_value("Content-Length"));
-  EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range"));
-  EXPECT_EQ(true, res->has_header("Content-Range"));
-  EXPECT_EQ(std::string("abcdefg"), res->body);
+  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(0, res->body.size());
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
