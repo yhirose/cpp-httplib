@@ -866,7 +866,7 @@ NOTE: Windows 8 or lower, Visual Studio 2013 or lower, and Cygwin and MSYS2 incl
 License
 -------
 
-MIT license (© 2023 Yuji Hirose)
+MIT license (© 2024 Yuji Hirose)
 
 Special Thanks To
 -----------------
