@@ -2509,6 +2509,12 @@ TEST_F(ServerTest, GetMethodOutOfBaseDirMount2) {
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
+TEST_F(ServerTest, GetMethodOutOfBaseDirMountWithBackslash) {
+  auto res = cli_.Get("/mount/%2e%2e%5c/www2/dir/test.html");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
 TEST_F(ServerTest, PostMethod303) {
   auto res = cli_.Post("/1", "body", "text/plain");
   ASSERT_TRUE(res);
