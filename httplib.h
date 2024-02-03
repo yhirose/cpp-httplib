@@ -8,7 +8,7 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.15.1"
+#define CPPHTTPLIB_VERSION "0.15.2"
 
 /*
  * Configuration
@@ -2417,8 +2417,11 @@ inline bool is_valid_path(const std::string &path) {
     // Read component
     auto beg = i;
     while (i < path.size() && path[i] != '/') {
-      if (path[i] == '\0') { return false; }
-      else if (path[i] == '\\') { return false; }
+      if (path[i] == '\0') {
+        return false;
+      } else if (path[i] == '\\') {
+        return false;
+      }
       i++;
     }
 
