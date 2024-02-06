@@ -2166,6 +2166,11 @@ protected:
                   EXPECT_EQ("4", req.get_header_value("Content-Length"));
                   res.set_content(req.body, "application/octet-stream");
                 })
+        .Get("/issue1772",
+             [&](const Request & /*req*/, Response &res) {
+               res.status = 401;
+               res.set_header("WWW-Authenticate", "Basic realm=123456");
+             })
 #if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT)
         .Get("/compress",
              [&](const Request & /*req*/, Response &res) {
@@ -3137,6 +3142,12 @@ TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
       cli_.Get("/with-range", {{make_range_header({{-1, 2}, {10000, 30000}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+}
+
+TEST_F(ServerTest, Issue1772) {
+  auto res = cli_.Get("/issue1772", {{make_range_header({{1000, -1}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
 }
 
 TEST_F(ServerTest, GetStreamedChunked) {
