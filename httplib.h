@@ -1956,7 +1956,7 @@ inline std::string get_bearer_token_auth(const Request &req) {
     return req.get_header_value("Authorization")
         .substr(BearerHeaderPrefix.length());
   }
-  return "";
+  return {};
 }
 
 template <class Rep, class Period>
@@ -4272,8 +4272,8 @@ inline bool redirect(T &cli, Request &req, Response &res,
 
   auto ret = cli.send(new_req, new_res, error);
   if (ret) {
-    req = new_req;
-    res = new_res;
+    req = std::move(new_req);
+    res = std::move(new_res);
 
     if (res.location.empty()) { res.location = location; }
   }
@@ -4380,7 +4380,7 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
           all_valid_ranges = false;
           return;
         }
-        ranges.emplace_back(std::make_pair(first, last));
+        ranges.emplace_back(first, last);
       }
     });
     return all_valid_ranges;
@@ -4397,7 +4397,7 @@ public:
   MultipartFormDataParser() = default;
 
   void set_boundary(std::string &&boundary) {
-    boundary_ = boundary;
+    boundary_ = std::move(boundary);
     dash_boundary_crlf_ = dash_ + boundary_ + crlf_;
     crlf_dash_boundary_ = crlf_ + dash_ + boundary_;
   }
@@ -5131,7 +5131,8 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
     }
   }
 
-  auto opaque = (auth.find("opaque") != auth.end()) ? auth.at("opaque") : "";
+  const auto &opaque =
+      (auth.find("opaque") != auth.end()) ? auth.at("opaque") : std::string{};
 
   auto field = "Digest username=\"" + username + "\", realm=\"" +
                auth.at("realm") + "\", nonce=\"" + auth.at("nonce") +
@@ -5143,7 +5144,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
                (opaque.empty() ? "" : ", opaque=\"" + opaque + "\"");
 
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
-  return std::make_pair(key, field);
+  return {key, std::move(field)};
 }
 #endif
 
@@ -5171,7 +5172,7 @@ inline bool parse_www_authenticate(const Response &res,
                                     static_cast<size_t>(m.length(2)))
                          : s.substr(static_cast<size_t>(m.position(3)),
                                     static_cast<size_t>(m.length(3)));
-          auth[key] = val;
+          auth[key] = std::move(val);
         }
         return true;
       }
@@ -5184,7 +5185,7 @@ class ContentProviderAdapter {
 public:
   explicit ContentProviderAdapter(
       ContentProviderWithoutLength &&content_provider)
-      : content_provider_(content_provider) {}
+      : content_provider_(std::move(content_provider)) {}
 
   bool operator()(size_t offset, size_t, DataSink &sink) {
     return content_provider_(offset, sink);
@@ -5200,7 +5201,7 @@ inline std::string hosted_at(const std::string &hostname) {
   std::vector<std::string> addrs;
   hosted_at(hostname, addrs);
   if (addrs.empty()) { return std::string(); }
-  return addrs[0];
+  return std::move(addrs[0]);
 }
 
 inline void hosted_at(const std::string &hostname,
@@ -5227,7 +5228,7 @@ inline void hosted_at(const std::string &hostname,
     auto dummy = -1;
     if (detail::get_ip_and_port(addr, sizeof(struct sockaddr_storage), ip,
                                 dummy)) {
-      addrs.push_back(ip);
+      addrs.push_back(std::move(ip));
     }
   }
 
@@ -5255,7 +5256,7 @@ make_range_header(const Ranges &ranges) {
     if (r.second != -1) { field += std::to_string(r.second); }
     i++;
   }
-  return std::make_pair("Range", std::move(field));
+  return {"Range", std::move(field)};
 }
 
 inline std::pair<std::string, std::string>
@@ -5263,7 +5264,7 @@ make_basic_authentication_header(const std::string &username,
                                  const std::string &password, bool is_proxy) {
   auto field = "Basic " + detail::base64_encode(username + ":" + password);
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
-  return std::make_pair(key, std::move(field));
+  return {key, std::move(field)};
 }
 
 inline std::pair<std::string, std::string>
@@ -5271,7 +5272,7 @@ make_bearer_token_authentication_header(const std::string &token,
                                         bool is_proxy = false) {
   auto field = "Bearer " + token;
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
-  return std::make_pair(key, std::move(field));
+  return {key, std::move(field)};
 }
 
 // Request implementation
@@ -5601,8 +5602,12 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
     if (param_name_set.find(param_name) != param_name_set.cend()) {
-      std::string msg = "Encountered path parameter '" + param_name +
-                        "' multiple times in route pattern '" + pattern + "'.";
+      std::string msg;
+      msg.append("Encountered path parameter '")
+          .append(param_name)
+          .append("' multiple times in route pattern '")
+          .append(pattern)
+          .append("'.");
       throw std::invalid_argument(msg);
     }
 #endif
@@ -5755,7 +5760,7 @@ inline bool Server::set_mount_point(const std::string &mount_point,
   if (detail::is_dir(dir)) {
     std::string mnt = !mount_point.empty() ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
-      base_dirs_.push_back({mnt, dir, std::move(headers)});
+      base_dirs_.push_back({std::move(mnt), dir, std::move(headers)});
       return true;
     }
   }
@@ -7062,7 +7067,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     auto req2 = req;
     req2.path = "http://" + host_and_port_ + req.path;
     ret = process_request(strm, req2, res, close_connection, error);
-    req = req2;
+    req = std::move(req2);
     req.path = req_save.path;
   } else {
     ret = process_request(strm, req, res, close_connection, error);
@@ -7086,7 +7091,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
   }
 
   if (300 < res.status && res.status < 400 && follow_location_) {
-    req = req_save;
+    req = std::move(req_save);
     ret = redirect(req, res, error);
   }
 
@@ -7114,7 +7119,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
         Response new_res;
 
         ret = send(new_req, new_res, error);
-        if (ret) { res = new_res; }
+        if (ret) { res = std::move(new_res); }
       }
     }
   }
