@@ -2686,21 +2686,29 @@ inline bool mmap::open(const char *path) {
   close();
 
 #if defined(_WIN32)
-  hFile_ = ::CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
-                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  std::wstring wpath;
+  for (size_t i = 0; i < strlen(path); i++) {
+    wpath += path[i];
+  }
+
+  hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                         OPEN_EXISTING, NULL);
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
-  size_ = ::GetFileSize(hFile_, NULL);
+  LARGE_INTEGER size{};
+  if (!::GetFileSizeEx(hFile_, &size)) { return false; }
+  size_ = static_cast<size_t>(size.QuadPart);
 
-  hMapping_ = ::CreateFileMapping(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
+  hMapping_ = ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_,
+                                         NULL);
 
   if (hMapping_ == NULL) {
     close();
     return false;
   }
 
-  addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
+  addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
 #else
   fd_ = ::open(path, O_RDONLY);
   if (fd_ == -1) { return false; }
