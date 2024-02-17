@@ -462,7 +462,7 @@ public:
   std::ostream os;
 
 private:
-  class data_sink_streambuf : public std::streambuf {
+  class data_sink_streambuf final : public std::streambuf {
   public:
     explicit data_sink_streambuf(DataSink &sink) : sink_(sink) {}
 
@@ -663,7 +663,7 @@ public:
   virtual void on_idle() {}
 };
 
-class ThreadPool : public TaskQueue {
+class ThreadPool final : public TaskQueue {
 public:
   explicit ThreadPool(size_t n, size_t mqr = 0)
       : shutdown_(false), max_queued_requests_(mqr) {
@@ -780,7 +780,7 @@ public:
  * the resulting capture will be
  * {{"capture", "1"}, {"second_capture", "2"}}
  */
-class PathParamsMatcher : public MatcherBase {
+class PathParamsMatcher final : public MatcherBase {
 public:
   PathParamsMatcher(const std::string &pattern);
 
@@ -810,7 +810,7 @@ private:
  * This means that wildcard patterns may match multiple path segments with /:
  * "/begin/(.*)/end" will match both "/begin/middle/end" and "/begin/1/2/end".
  */
-class RegexMatcher : public MatcherBase {
+class RegexMatcher final : public MatcherBase {
 public:
   RegexMatcher(const std::string &pattern) : regex_(pattern) {}
 
@@ -1737,7 +1737,7 @@ private:
   std::mutex ctx_mutex_;
 };
 
-class SSLClient : public ClientImpl {
+class SSLClient final : public ClientImpl {
 public:
   explicit SSLClient(const std::string &host);
 
@@ -2126,7 +2126,7 @@ enum class EncodingType { None = 0, Gzip, Brotli };
 
 EncodingType encoding_type(const Request &req, const Response &res);
 
-class BufferStream : public Stream {
+class BufferStream final : public Stream {
 public:
   BufferStream() = default;
   ~BufferStream() override = default;
@@ -2166,7 +2166,7 @@ public:
                           Callback callback) = 0;
 };
 
-class nocompressor : public compressor {
+class nocompressor final : public compressor {
 public:
   ~nocompressor() override = default;
 
@@ -2175,7 +2175,7 @@ public:
 };
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-class gzip_compressor : public compressor {
+class gzip_compressor final : public compressor {
 public:
   gzip_compressor();
   ~gzip_compressor() override;
@@ -2188,7 +2188,7 @@ private:
   z_stream strm_;
 };
 
-class gzip_decompressor : public decompressor {
+class gzip_decompressor final : public decompressor {
 public:
   gzip_decompressor();
   ~gzip_decompressor() override;
@@ -2205,7 +2205,7 @@ private:
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-class brotli_compressor : public compressor {
+class brotli_compressor final : public compressor {
 public:
   brotli_compressor();
   ~brotli_compressor();
@@ -2217,7 +2217,7 @@ private:
   BrotliEncoderState *state_ = nullptr;
 };
 
-class brotli_decompressor : public decompressor {
+class brotli_decompressor final : public decompressor {
 public:
   brotli_decompressor();
   ~brotli_decompressor();
@@ -2935,7 +2935,7 @@ inline bool is_socket_alive(socket_t sock) {
   return detail::read_socket(sock, &buf[0], sizeof(buf), MSG_PEEK) > 0;
 }
 
-class SocketStream : public Stream {
+class SocketStream final : public Stream {
 public:
   SocketStream(socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
                time_t write_timeout_sec, time_t write_timeout_usec);
@@ -2964,7 +2964,7 @@ private:
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-class SSLSocketStream : public Stream {
+class SSLSocketStream final : public Stream {
 public:
   SSLSocketStream(socket_t sock, SSL *ssl, time_t read_timeout_sec,
                   time_t read_timeout_usec, time_t write_timeout_sec,
