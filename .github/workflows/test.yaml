@@ -17,7 +17,7 @@ jobs:
         git config --global core.autocrlf false
         git config --global core.eol lf
     - name: checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: install brotli library on ubuntu
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt update && sudo apt-get install -y libbrotli-dev
@@ -32,7 +32,7 @@ jobs:
       run: cd test && make fuzz_test
     - name: setup msbuild on windows
       if: matrix.os == 'windows-latest'
-      uses: microsoft/setup-msbuild@v1.1
+      uses: microsoft/setup-msbuild@v2
     - name: make-windows
       if: matrix.os == 'windows-latest'
       run: |
