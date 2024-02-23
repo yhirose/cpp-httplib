@@ -4030,6 +4030,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
             skip_content_with_length(strm, len);
             ret = false;
           } else if (len > 0) {
+            x.body.reserve(len);
             ret = read_content_with_length(strm, len, std::move(progress), out);
           }
         }
