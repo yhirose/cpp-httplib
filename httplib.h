@@ -6065,6 +6065,21 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     detail::write_data(strm, data.data(), data.size());
   }
 
+  // If we know the content length, reserve the expected size in the output
+  // buffer to avoid re-allocations and copies when appending received data
+  auto it = res.headers.find("Content-Length");
+  if (it != res.headers.end()) {
+    try {
+      int content_length = std::stoi(it->second);
+      // Check for unexpected values
+      if (content_length > 0 && content_length < 256*1024*1024 /* 256 MB */) {
+        res.body.reserve(content_length);
+      }
+    } catch(...) {
+      // Conversion error: ignore it. We will act like if no Content-Length header was provided
+    }
+  }
+
   // Body
   auto ret = true;
   if (req.method != "HEAD") {
