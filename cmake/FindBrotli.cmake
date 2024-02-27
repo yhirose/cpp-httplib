@@ -162,7 +162,7 @@ find_package_handle_standard_args(Brotli
 		Brotli_FOUND
 	REQUIRED_VARS
 		Brotli_INCLUDE_DIR
-		${_brotli_required_targets}
+		${_brotli_req_vars}
 	HANDLE_COMPONENTS
 )
 
