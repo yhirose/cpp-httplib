@@ -74,7 +74,10 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 	list(GET _listvar 0 _component_name)
 	list(GET _listvar 1 _libname)
 
-	if(PKG_CONFIG_FOUND)
+	# NOTE: We can't rely on PkgConf for static libs since the upstream static lib support is broken
+	# See https://github.com/google/brotli/issues/795
+	# TODO: whenever their issue is fixed upstream, remove this "AND NOT BROTLI_USE_STATIC_LIBS" check
+	if(PKG_CONFIG_FOUND AND NOT BROTLI_USE_STATIC_LIBS)
 		# These need to be GLOBAL for MinGW when making ALIAS libraries against them.
 		# Have to postfix _STATIC on the name to tell PkgConfig to find the static libs.
 		pkg_check_modules(Brotli_${_component_name}${_brotli_stat_str} QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
