@@ -110,16 +110,13 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 		list(APPEND _brotli_req_vars "Brotli_${_component_name}")
 	endif()
 
+	list(APPEND _brotli_lib_names
+		"brotli${_libname}"
+		"libbrotli${_libname}"
+	)
 	if(BROTLI_USE_STATIC_LIBS)
-		list(APPEND _brotli_lib_names
-			"brotli${_libname}-static"
-			"libbrotli${_libname}-static"
-		)
-	else()
-		list(APPEND _brotli_lib_names
-			"brotli${_libname}"
-			"libbrotli${_libname}"
-		)
+		# Postfix "-static" to the libnames since we're looking for static libs
+		list(TRANSFORM _brotli_lib_names APPEND "-static")
 	endif()
 
 	find_library(Brotli_${_component_name}
