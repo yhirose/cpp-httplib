@@ -76,17 +76,13 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 
 	if(PKG_CONFIG_FOUND)
 		# These need to be GLOBAL for MinGW when making ALIAS libraries against them.
-		if(BROTLI_USE_STATIC_LIBS)
-			# Have to use _STATIC to tell PkgConfig to find the static libs.
-			pkg_check_modules(Brotli_${_component_name}_STATIC QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
-		else()
-			pkg_check_modules(Brotli_${_component_name} QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
-		endif()
+		# Have to postfix _STATIC on the name to tell PkgConfig to find the static libs.
+		pkg_check_modules(Brotli_${_component_name}${_brotli_stat_str} QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
 	endif()
 
-	# Check if the target was already found by Pkgconf 
-	if(TARGET PkgConfig::Brotli_${_component_name} OR TARGET PkgConfig::Brotli_${_component_name}_STATIC)
-		# Can't use generators for ALIAS targets, so you get this jank
+	# Check if the target was already found by Pkgconf
+	if(TARGET PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
+		# ALIAS since we don't want the PkgConfig namespace on the Cmake library (for end-users)
 		add_library(Brotli::${_component_name} ALIAS PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
 
 		# Tells HANDLE_COMPONENTS we found the component
