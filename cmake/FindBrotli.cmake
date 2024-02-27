@@ -1,6 +1,6 @@
 # A simple FindBrotli package for Cmake's find_package function.
 # Note: This find package doesn't have version support, as the version file doesn't seem to be installed on most systems.
-# 
+#
 # If you want to find the static packages instead of shared (the default), define BROTLI_USE_STATIC_LIBS as TRUE.
 # The targets will have the same names, but it will use the static libs.
 #
@@ -14,7 +14,7 @@
 
 # If they asked for a specific version, warn/fail since we don't support it.
 # TODO: if they start distributing the version somewhere, implement finding it.
-# But currently there's a version header that doesn't seem to get installed.
+# See https://github.com/google/brotli/issues/773#issuecomment-579133187
 if(Brotli_FIND_VERSION)
 	set(_brotli_version_error_msg "FindBrotli.cmake doesn't have version support!")
 	# If the package is required, throw a fatal error
@@ -68,10 +68,6 @@ if(BROTLI_USE_STATIC_LIBS)
 	set(_brotli_stat_str "_STATIC")
 endif()
 
-# Lets us know we are using the PkgConfig libraries
-# Will be set false if any non-pkgconf vars are used
-set(_brotli_using_pkgconf TRUE)
-
 # Each string here is "ComponentName;LiteralName" (the semi-colon is a delimiter)
 foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 	# Split the component name and literal library name from the listvar
@@ -109,8 +105,6 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 		continue()
 	endif()
 
-	# Lets us know we aren't using the PkgConfig libraries
-	set(_brotli_using_pkgconf FALSE)
 	if(Brotli_FIND_REQUIRED_${_component_name})
 		# If it's required, we can set the name used in find_library as a required var for FindPackageHandleStandardArgs
 		list(APPEND _brotli_req_vars "Brotli_${_component_name}")
