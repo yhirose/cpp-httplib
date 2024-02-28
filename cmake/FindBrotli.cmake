@@ -1,6 +1,6 @@
 # A simple FindBrotli package for Cmake's find_package function.
 # Note: This find package doesn't have version support, as the version file doesn't seem to be installed on most systems.
-# 
+#
 # If you want to find the static packages instead of shared (the default), define BROTLI_USE_STATIC_LIBS as TRUE.
 # The targets will have the same names, but it will use the static libs.
 #
@@ -14,7 +14,7 @@
 
 # If they asked for a specific version, warn/fail since we don't support it.
 # TODO: if they start distributing the version somewhere, implement finding it.
-# But currently there's a version header that doesn't seem to get installed.
+# See https://github.com/google/brotli/issues/773#issuecomment-579133187
 if(Brotli_FIND_VERSION)
 	set(_brotli_version_error_msg "FindBrotli.cmake doesn't have version support!")
 	# If the package is required, throw a fatal error
@@ -68,29 +68,24 @@ if(BROTLI_USE_STATIC_LIBS)
 	set(_brotli_stat_str "_STATIC")
 endif()
 
-# Lets us know we are using the PkgConfig libraries
-# Will be set false if any non-pkgconf vars are used
-set(_brotli_using_pkgconf TRUE)
-
 # Each string here is "ComponentName;LiteralName" (the semi-colon is a delimiter)
 foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 	# Split the component name and literal library name from the listvar
 	list(GET _listvar 0 _component_name)
 	list(GET _listvar 1 _libname)
 
-	if(PKG_CONFIG_FOUND)
+	# NOTE: We can't rely on PkgConf for static libs since the upstream static lib support is broken
+	# See https://github.com/google/brotli/issues/795
+	# TODO: whenever their issue is fixed upstream, remove this "AND NOT BROTLI_USE_STATIC_LIBS" check
+	if(PKG_CONFIG_FOUND AND NOT BROTLI_USE_STATIC_LIBS)
 		# These need to be GLOBAL for MinGW when making ALIAS libraries against them.
-		if(BROTLI_USE_STATIC_LIBS)
-			# Have to use _STATIC to tell PkgConfig to find the static libs.
-			pkg_check_modules(Brotli_${_component_name}_STATIC QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
-		else()
-			pkg_check_modules(Brotli_${_component_name} QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
-		endif()
+		# Have to postfix _STATIC on the name to tell PkgConfig to find the static libs.
+		pkg_check_modules(Brotli_${_component_name}${_brotli_stat_str} QUIET GLOBAL IMPORTED_TARGET libbrotli${_libname})
 	endif()
 
-	# Check if the target was already found by Pkgconf 
-	if(TARGET PkgConfig::Brotli_${_component_name} OR TARGET PkgConfig::Brotli_${_component_name}_STATIC)
-		# Can't use generators for ALIAS targets, so you get this jank
+	# Check if the target was already found by Pkgconf
+	if(TARGET PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
+		# ALIAS since we don't want the PkgConfig namespace on the Cmake library (for end-users)
 		add_library(Brotli::${_component_name} ALIAS PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
 
 		# Tells HANDLE_COMPONENTS we found the component
@@ -109,23 +104,18 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 		continue()
 	endif()
 
-	# Lets us know we aren't using the PkgConfig libraries
-	set(_brotli_using_pkgconf FALSE)
 	if(Brotli_FIND_REQUIRED_${_component_name})
 		# If it's required, we can set the name used in find_library as a required var for FindPackageHandleStandardArgs
 		list(APPEND _brotli_req_vars "Brotli_${_component_name}")
 	endif()
 
+	list(APPEND _brotli_lib_names
+		"brotli${_libname}"
+		"libbrotli${_libname}"
+	)
 	if(BROTLI_USE_STATIC_LIBS)
-		list(APPEND _brotli_lib_names
-			"brotli${_libname}-static"
-			"libbrotli${_libname}-static"
-		)
-	else()
-		list(APPEND _brotli_lib_names
-			"brotli${_libname}"
-			"libbrotli${_libname}"
-		)
+		# Postfix "-static" to the libnames since we're looking for static libs
+		list(TRANSFORM _brotli_lib_names APPEND "-static")
 	endif()
 
 	find_library(Brotli_${_component_name}
@@ -168,7 +158,7 @@ find_package_handle_standard_args(Brotli
 		Brotli_FOUND
 	REQUIRED_VARS
 		Brotli_INCLUDE_DIR
-		${_brotli_required_targets}
+		${_brotli_req_vars}
 	HANDLE_COMPONENTS
 )
 
