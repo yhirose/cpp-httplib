@@ -72,7 +72,12 @@ file(STRINGS httplib.h _raw_version_string REGEX "CPPHTTPLIB_VERSION \"([0-9]+\\
 # since _raw_version_string would contain the entire line of code where it found the version string
 string(REGEX MATCH "([0-9]+\\.?)+" _httplib_version "${_raw_version_string}")
 
-project(httplib VERSION ${_httplib_version} LANGUAGES CXX)
+project(httplib
+	VERSION ${_httplib_version}
+	LANGUAGES CXX
+	DESCRIPTION "A C++ header-only HTTP/HTTPS server and client library."
+	HOMEPAGE_URL "https://github.com/yhirose/cpp-httplib"
+)
 
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.
