@@ -20,6 +20,9 @@
 #define CLIENT_CA_CERT_DIR "."
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
+#define CLIENT_ENCRYPTED_CERT_FILE "./client_encrypted.cert.pem"
+#define CLIENT_ENCRYPTED_PRIVATE_KEY_FILE "./client_encrypted.key.pem"
+#define CLIENT_ENCRYPTED_PRIVATE_KEY_PASS "test012!"
 #define SERVER_ENCRYPTED_CERT_FILE "./cert_encrypted.pem"
 #define SERVER_ENCRYPTED_PRIVATE_KEY_FILE "./key_encrypted.pem"
 #define SERVER_ENCRYPTED_PRIVATE_KEY_PASS "test123!"
@@ -5109,15 +5112,16 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
 }
 #endif
 
-TEST(SSLClientServerTest, ClientCertPresent) {
+void ClientCertPresent(
+    const std::string &client_cert_file,
+    const std::string &client_private_key_file,
+    const std::string &client_encrypted_private_key_pass = std::string()) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
-    svr.stop();
-    ASSERT_TRUE(true);
 
     auto peer_cert = SSL_get_peer_certificate(req.ssl);
     ASSERT_TRUE(peer_cert != nullptr);
@@ -5140,13 +5144,15 @@ TEST(SSLClientServerTest, ClientCertPresent) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
+    svr.stop();
     t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
   svr.wait_until_ready();
 
-  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  SSLClient cli(HOST, PORT, client_cert_file, client_private_key_file,
+                client_encrypted_private_key_pass);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
@@ -5155,35 +5161,43 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
-#if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
-TEST(SSLClientServerTest, MemoryClientCertPresent) {
-  X509 *server_cert;
-  EVP_PKEY *server_private_key;
-  X509_STORE *client_ca_cert_store;
-  X509 *client_cert;
-  EVP_PKEY *client_private_key;
+TEST(SSLClientServerTest, ClientCertPresent) {
+  ClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+}
 
-  FILE *f = fopen(SERVER_CERT_FILE, "r+");
-  server_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
+TEST(SSLClientServerTest, ClientEncryptedCertPresent) {
+  ClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
+                    CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
+                    CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
+}
+
+#if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
+void MemoryClientCertPresent(
+    const std::string &client_cert_file,
+    const std::string &client_private_key_file,
+    const std::string &client_encrypted_private_key_pass = std::string()) {
+  auto f = fopen(SERVER_CERT_FILE, "r+");
+  auto server_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
   fclose(f);
 
   f = fopen(SERVER_PRIVATE_KEY_FILE, "r+");
-  server_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
+  auto server_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
   fclose(f);
 
   f = fopen(CLIENT_CA_CERT_FILE, "r+");
-  client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
-  client_ca_cert_store = X509_STORE_new();
+  auto client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
+  auto client_ca_cert_store = X509_STORE_new();
   X509_STORE_add_cert(client_ca_cert_store, client_cert);
   X509_free(client_cert);
   fclose(f);
 
-  f = fopen(CLIENT_CERT_FILE, "r+");
+  f = fopen(client_cert_file.c_str(), "r+");
   client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
   fclose(f);
 
-  f = fopen(CLIENT_PRIVATE_KEY_FILE, "r+");
-  client_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
+  f = fopen(client_private_key_file.c_str(), "r+");
+  auto client_private_key = PEM_read_PrivateKey(
+      f, nullptr, nullptr, (void *)client_encrypted_private_key_pass.c_str());
   fclose(f);
 
   SSLServer svr(server_cert, server_private_key, client_ca_cert_store);
@@ -5191,8 +5205,6 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
-    svr.stop();
-    ASSERT_TRUE(true);
 
     auto peer_cert = SSL_get_peer_certificate(req.ssl);
     ASSERT_TRUE(peer_cert != nullptr);
@@ -5215,13 +5227,15 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
+    svr.stop();
     t.join();
     ASSERT_FALSE(svr.is_running());
   });
 
   svr.wait_until_ready();
 
-  SSLClient cli(HOST, PORT, client_cert, client_private_key);
+  SSLClient cli(HOST, PORT, client_cert, client_private_key,
+                client_encrypted_private_key_pass);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
@@ -5233,6 +5247,16 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   EVP_PKEY_free(server_private_key);
   X509_free(client_cert);
   EVP_PKEY_free(client_private_key);
+}
+
+TEST(SSLClientServerTest, MemoryClientCertPresent) {
+  MemoryClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+}
+
+TEST(SSLClientServerTest, MemoryClientEncryptedCertPresent) {
+  MemoryClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
+                          CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
+                          CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
 #endif
 
@@ -5265,11 +5289,11 @@ TEST(SSLClientServerTest, TrustDirOptional) {
 
   svr.Get("/test", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
-    svr.stop();
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
+    svr.stop();
     t.join();
     ASSERT_FALSE(svr.is_running());
   });
@@ -5361,13 +5385,12 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
         nullptr);
     return true;
   };
+
   SSLServer svr(setup_ssl_ctx_callback);
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
-    svr.stop();
-    ASSERT_TRUE(true);
 
     auto peer_cert = SSL_get_peer_certificate(req.ssl);
     ASSERT_TRUE(peer_cert != nullptr);
@@ -5390,6 +5413,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   auto se = detail::scope_exit([&] {
+    svr.stop();
     t.join();
     ASSERT_FALSE(svr.is_running());
   });
