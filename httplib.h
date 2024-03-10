@@ -145,11 +145,11 @@ using ssize_t = long;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -181,7 +181,6 @@ using socket_t = SOCKET;
 #define NI_MAXHOST 1025
 #endif
 #endif
-#include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #ifdef __linux__
@@ -192,7 +191,6 @@ using socket_t = SOCKET;
 #include <poll.h>
 #endif
 #include <csignal>
-#include <pthread.h>
 #include <sys/mman.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -207,19 +205,29 @@ using socket_t = int;
 
 #include <algorithm>
 #include <array>
+#include <asm-generic/socket.h>
 #include <atomic>
+#include <bits/signum-generic.h>
 #include <cassert>
 #include <cctype>
+#include <cerrno>
+#include <chrono>
 #include <climits>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <errno.h>
+#include <ctime>
 #include <exception>
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <limits>
 #include <list>
 #include <map>
 #include <memory>
@@ -228,12 +236,15 @@ using socket_t = int;
 #include <regex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -667,7 +678,7 @@ class ThreadPool final : public TaskQueue {
 public:
   explicit ThreadPool(size_t n, size_t mqr = 0)
       : shutdown_(false), max_queued_requests_(mqr) {
-    while (n) {
+    while (n > 0) {
       threads_.emplace_back(worker(*this));
       n--;
     }
@@ -678,7 +689,7 @@ public:
 
   bool enqueue(std::function<void()> fn) override {
     {
-      std::unique_lock<std::mutex> lock(mutex_);
+      const std::unique_lock<std::mutex> lock(mutex_);
       if (max_queued_requests_ > 0 && jobs_.size() >= max_queued_requests_) {
         return false;
       }
@@ -692,7 +703,7 @@ public:
   void shutdown() override {
     // Stop all worker threads...
     {
-      std::unique_lock<std::mutex> lock(mutex_);
+      const std::unique_lock<std::mutex> lock(mutex_);
       shutdown_ = true;
     }
 
@@ -782,7 +793,7 @@ public:
  */
 class PathParamsMatcher final : public MatcherBase {
 public:
-  PathParamsMatcher(const std::string &pattern);
+  explicit PathParamsMatcher(const std::string &pattern);
 
   bool match(Request &request) const override;
 
@@ -812,7 +823,7 @@ private:
  */
 class RegexMatcher final : public MatcherBase {
 public:
-  RegexMatcher(const std::string &pattern) : regex_(pattern) {}
+  explicit RegexMatcher(const std::string &pattern) : regex_(pattern) {}
 
   bool match(Request &request) const override;
 
@@ -952,15 +963,16 @@ private:
   bool routing(Request &req, Response &res, Stream &strm);
   bool handle_file_request(const Request &req, Response &res,
                            bool head = false);
-  bool dispatch_request(Request &req, Response &res,
-                        const Handlers &handlers) const;
-  bool dispatch_request_for_content_reader(
-      Request &req, Response &res, ContentReader content_reader,
-      const HandlersForContentReader &handlers) const;
+  static bool dispatch_request(Request &req, Response &res,
+                               const Handlers &handlers);
+  static bool
+  dispatch_request_for_content_reader(Request &req, Response &res,
+                                      const ContentReader &content_reader,
+                                      const HandlersForContentReader &handlers);
 
-  bool parse_request_line(const char *s, Request &req) const;
-  void apply_ranges(const Request &req, Response &res,
-                    std::string &content_type, std::string &boundary) const;
+  static bool parse_request_line(const char *s, Request &req);
+  static void apply_ranges(const Request &req, Response &res,
+                           std::string &content_type, std::string &boundary);
   bool write_response(Stream &strm, bool close_connection, Request &req,
                       Response &res);
   bool write_response_with_content(Stream &strm, bool close_connection,
@@ -978,7 +990,7 @@ private:
                                      MultipartContentHeader multipart_header,
                                      ContentReceiver multipart_receiver);
   bool read_content_core(Stream &strm, Request &req, Response &res,
-                         ContentReceiver receiver,
+                         const ContentReceiver &receiver,
                          MultipartContentHeader multipart_header,
                          ContentReceiver multipart_receiver) const;
 
@@ -1058,7 +1070,7 @@ public:
       : res_(std::move(res)), err_(err),
         request_headers_(std::move(request_headers)) {}
   // Response
-  operator bool() const { return res_ != nullptr; }
+  explicit operator bool() const { return res_ != nullptr; }
   bool operator==(std::nullptr_t) const { return res_ == nullptr; }
   bool operator!=(std::nullptr_t) const { return res_ != nullptr; }
   const Response &value() const { return *res_; }
@@ -1119,7 +1131,7 @@ public:
   Result Get(const std::string &path, ResponseHandler response_handler,
              ContentReceiver content_receiver, Progress progress);
   Result Get(const std::string &path, const Headers &headers,
-             ResponseHandler response_handler, ContentReceiver content_receiver,
+             ResponseHandler response_handler, const ContentReceiver &content_receiver,
              Progress progress);
 
   Result Get(const std::string &path, const Params &params,
@@ -1333,14 +1345,14 @@ protected:
   // Also, shutdown_ssl and close_socket should also NOT be called concurrently
   // with a DIFFERENT thread sending requests using that socket.
   virtual void shutdown_ssl(Socket &socket, bool shutdown_gracefully);
-  void shutdown_socket(Socket &socket) const;
+  static void shutdown_socket(Socket &socket);
   void close_socket(Socket &socket);
 
   bool process_request(Stream &strm, Request &req, Response &res,
                        bool close_connection, Error &error);
 
   bool write_content_with_provider(Stream &strm, const Request &req,
-                                   Error &error) const;
+                                   Error &error);
 
   void copy_settings(const ClientImpl &rhs);
 
@@ -1431,8 +1443,8 @@ private:
   Result send_(Request &&req);
 
   socket_t create_client_socket(Error &error) const;
-  bool read_response_line(Stream &strm, const Request &req,
-                          Response &res) const;
+  static bool read_response_line(Stream &strm, const Request &req,
+                                 Response &res);
   bool write_request(Stream &strm, Request &req, bool close_connection,
                      Error &error);
   bool redirect(Request &req, Response &res, Error &error);
@@ -1449,11 +1461,11 @@ private:
       ContentProvider content_provider,
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type);
-  ContentProviderWithoutLength get_multipart_content_provider(
+  static ContentProviderWithoutLength get_multipart_content_provider(
       const std::string &boundary, const MultipartFormDataItems &items,
-      const MultipartFormDataProviderItems &provider_items) const;
+      const MultipartFormDataProviderItems &provider_items);
 
-  std::string adjust_host_string(const std::string &host) const;
+  static std::string adjust_host_string(const std::string &host);
 
   virtual bool process_socket(const Socket &socket,
                               std::function<bool(Stream &strm)> callback);
@@ -1954,7 +1966,7 @@ inline const char *status_message(int status) {
 
 inline std::string get_bearer_token_auth(const Request &req) {
   if (req.has_header("Authorization")) {
-    static std::string BearerHeaderPrefix = "Bearer ";
+    const static std::string BearerHeaderPrefix = "Bearer ";
     return req.get_header_value("Authorization")
         .substr(BearerHeaderPrefix.length());
   }
@@ -2258,7 +2270,7 @@ private:
 
 class mmap {
 public:
-  mmap(const char *path);
+  explicit mmap(const char *path);
   ~mmap();
 
   bool open(const char *path);
@@ -2512,7 +2524,7 @@ inline std::string decode_url(const std::string &s,
         if (from_hex_to_i(s, i + 2, 4, val)) {
           // 4 digits Unicode codes
           char buff[4];
-          size_t len = to_utf8(val, buff);
+          const size_t len = to_utf8(val, buff);
           if (len > 0) { result.append(buff, len); }
           i += 5; // 'u0000'
         } else {
@@ -2962,7 +2974,7 @@ private:
   size_t read_buff_off_ = 0;
   size_t read_buff_content_size_ = 0;
 
-  static const size_t read_buff_size_ = 1024l * 4;
+  static const size_t read_buff_size_ = 1024L * 4;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -3045,11 +3057,11 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
       });
 }
 
-inline bool process_client_socket(socket_t sock, time_t read_timeout_sec,
-                                  time_t read_timeout_usec,
-                                  time_t write_timeout_sec,
-                                  time_t write_timeout_usec,
-                                  std::function<bool(Stream &)> callback) {
+inline bool
+process_client_socket(socket_t sock, time_t read_timeout_sec,
+                      time_t read_timeout_usec, time_t write_timeout_sec,
+                      time_t write_timeout_usec,
+                      std::function<bool(Stream &)> callback) {
   SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                     write_timeout_sec, write_timeout_usec);
   return callback(strm);
@@ -3066,7 +3078,7 @@ inline int shutdown_socket(socket_t sock) {
 template <typename BindOrConnect>
 socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        int address_family, int socket_flags, bool tcp_nodelay,
-                       SocketOptions socket_options,
+                       const SocketOptions &socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
   const char *node = nullptr;
@@ -3554,7 +3566,7 @@ inline EncodingType encoding_type(const Request &req, const Response &res) {
 
 inline bool nocompressor::compress(const char *data, size_t data_length,
                                    bool /*last*/, Callback callback) {
-  if (!data_length) { return true; }
+  if (data_length == 0) { return true; }
   return callback(data, data_length);
 }
 
@@ -3965,10 +3977,10 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
 
 template <typename T, typename U>
 bool prepare_content_receiver(T &x, int &status,
-                              ContentReceiverWithProgress receiver,
+                              const ContentReceiverWithProgress &receiver,
                               bool decompress, U callback) {
   if (decompress) {
-    std::string encoding = x.get_header_value("Content-Encoding");
+    const std::string encoding = x.get_header_value("Content-Encoding");
     std::unique_ptr<decompressor> decompressor;
 
     if (encoding == "gzip" || encoding == "deflate") {
@@ -3989,13 +4001,13 @@ bool prepare_content_receiver(T &x, int &status,
 
     if (decompressor) {
       if (decompressor->is_valid()) {
-        ContentReceiverWithProgress out = [&](const char *buf, size_t n,
-                                              uint64_t off, uint64_t len) {
-          return decompressor->decompress(buf, n,
-                                          [&](const char *buf2, size_t n2) {
-                                            return receiver(buf2, n2, off, len);
-                                          });
-        };
+        const ContentReceiverWithProgress out =
+            [&](const char *buf, size_t n, uint64_t off, uint64_t len) {
+              return decompressor->decompress(
+                  buf, n, [&](const char *buf2, size_t n2) {
+                    return receiver(buf2, n2, off, len);
+                  });
+            };
         return callback(std::move(out));
       } else {
         status = StatusCode::InternalServerError_500;
@@ -4004,8 +4016,8 @@ bool prepare_content_receiver(T &x, int &status,
     }
   }
 
-  ContentReceiverWithProgress out = [&](const char *buf, size_t n, uint64_t off,
-                                        uint64_t len) {
+  const ContentReceiverWithProgress out = [&](const char *buf, size_t n,
+                                              uint64_t off, uint64_t len) {
     return receiver(buf, n, off, len);
   };
   return callback(std::move(out));
@@ -4072,7 +4084,7 @@ template <typename T>
 inline bool write_content(Stream &strm, const ContentProvider &content_provider,
                           size_t offset, size_t length, T is_shutting_down,
                           Error &error) {
-  size_t end_offset = offset + length;
+  const size_t end_offset = offset + length;
   auto ok = true;
   DataSink data_sink;
 
@@ -4305,7 +4317,7 @@ inline std::string params_to_query_str(const Params &params) {
 inline void parse_query_text(const std::string &s, Params &params) {
   std::set<std::string> cache;
   split(s.data(), s.data() + s.size(), '&', [&](const char *b, const char *e) {
-    std::string kv(b, e);
+    const std::string kv(b, e);
     if (cache.find(kv) != cache.end()) { return; }
     cache.insert(kv);
 
@@ -4339,7 +4351,7 @@ inline bool parse_multipart_boundary(const std::string &content_type,
 inline void parse_disposition_params(const std::string &s, Params &params) {
   std::set<std::string> cache;
   split(s.data(), s.data() + s.size(), ';', [&](const char *b, const char *e) {
-    std::string kv(b, e);
+    const std::string kv(b, e);
     if (cache.find(kv) != cache.end()) { return; }
     cache.insert(kv);
 
@@ -4558,8 +4570,8 @@ private:
     file_.content_type.clear();
   }
 
-  bool start_with_case_ignore(const std::string &a,
-                              const std::string &b) const {
+  static bool start_with_case_ignore(const std::string &a,
+                                     const std::string &b) {
     if (a.size() < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
       if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
@@ -4578,8 +4590,8 @@ private:
   MultipartFormData file_;
 
   // Buffer
-  bool start_with(const std::string &a, size_t spos, size_t epos,
-                  const std::string &b) const {
+  static bool start_with(const std::string &a, size_t spos, size_t epos,
+                         const std::string &b) {
     if (epos - spos < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
       if (a[i + spos] != b[i]) { return false; }
@@ -4740,7 +4752,7 @@ serialize_multipart_formdata(const MultipartFormDataItems &items,
 
 inline bool range_error(Request &req, Response &res) {
   if (!req.ranges.empty() && 200 <= res.status && res.status < 300) {
-    ssize_t contant_len = static_cast<ssize_t>(
+    const ssize_t contant_len = static_cast<ssize_t>(
         res.content_length_ ? res.content_length_ : res.body.size());
 
     ssize_t prev_first_pos = -1;
@@ -5611,8 +5623,9 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
     if (param_name_set.find(param_name) != param_name_set.cend()) {
-      std::string msg = "Encountered path parameter '" + param_name +
-                        "' multiple times in route pattern '" + pattern + "'.";
+      const std::string msg = "Encountered path parameter '" + param_name +
+                              "' multiple times in route pattern '" + pattern +
+                              "'.";
       throw std::invalid_argument(msg);
     }
 #endif
@@ -5927,13 +5940,13 @@ inline void Server::wait_until_ready() const {
 inline void Server::stop() {
   if (is_running_) {
     assert(svr_sock_ != INVALID_SOCKET);
-    std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
+    const std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
 }
 
-inline bool Server::parse_request_line(const char *s, Request &req) const {
+inline bool Server::parse_request_line(const char *s, Request &req) {
   auto len = strlen(s);
   if (len < 2 || s[len - 2] != '\r' || s[len - 1] != '\n') { return false; }
   len -= 2;
@@ -6063,7 +6076,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     if (!header_writer_(bstrm, res.headers)) { return false; }
 
     // Flush buffer
-    auto &data = bstrm.get_buffer();
+    const auto &data = bstrm.get_buffer();
     detail::write_data(strm, data.data(), data.size());
   }
 
@@ -6189,7 +6202,7 @@ inline bool Server::read_content_with_content_receiver(
 
 inline bool
 Server::read_content_core(Stream &strm, Request &req, Response &res,
-                          ContentReceiver receiver,
+                          const ContentReceiver &receiver,
                           MultipartContentHeader multipart_header,
                           ContentReceiver multipart_receiver) const {
   detail::MultipartFormDataParser multipart_form_data_parser;
@@ -6248,7 +6261,8 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
-      std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
+      const std::string sub_path =
+          "/" + req.path.substr(entry.mount_point.size());
       if (detail::is_valid_path(sub_path)) {
         auto path = entry.base_dir + sub_path;
         if (path.back() == '/') { path += "index.html"; }
@@ -6486,7 +6500,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
 }
 
 inline bool Server::dispatch_request(Request &req, Response &res,
-                                     const Handlers &handlers) const {
+                                     const Handlers &handlers) {
   for (const auto &x : handlers) {
     const auto &matcher = x.first;
     const auto &handler = x.second;
@@ -6501,7 +6515,7 @@ inline bool Server::dispatch_request(Request &req, Response &res,
 
 inline void Server::apply_ranges(const Request &req, Response &res,
                                  std::string &content_type,
-                                 std::string &boundary) const {
+                                 std::string &boundary) {
   if (req.ranges.size() > 1) {
     auto it = res.headers.find("Content-Type");
     if (it != res.headers.end()) {
@@ -6605,8 +6619,8 @@ inline void Server::apply_ranges(const Request &req, Response &res,
 }
 
 inline bool Server::dispatch_request_for_content_reader(
-    Request &req, Response &res, ContentReader content_reader,
-    const HandlersForContentReader &handlers) const {
+    Request &req, Response &res, const ContentReader &content_reader,
+    const HandlersForContentReader &handlers) {
   for (const auto &x : handlers) {
     const auto &matcher = x.first;
     const auto &handler = x.second;
@@ -6797,7 +6811,7 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
-  std::lock_guard<std::mutex> guard(socket_mutex_);
+  const std::lock_guard<std::mutex> guard(socket_mutex_);
   shutdown_socket(socket_);
   close_socket(socket_);
 }
@@ -6885,7 +6899,7 @@ inline void ClientImpl::shutdown_ssl(Socket & /*socket*/,
          socket_requests_are_from_thread_ == std::this_thread::get_id());
 }
 
-inline void ClientImpl::shutdown_socket(Socket &socket) const {
+inline void ClientImpl::shutdown_socket(Socket &socket) {
   if (socket.sock == INVALID_SOCKET) { return; }
   detail::shutdown_socket(socket.sock);
 }
@@ -6910,7 +6924,7 @@ inline void ClientImpl::close_socket(Socket &socket) {
 }
 
 inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
-                                           Response &res) const {
+                                           Response &res) {
   std::array<char, 2048> buf{};
 
   detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
@@ -6946,7 +6960,8 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 }
 
 inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
-  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+  const std::lock_guard<std::recursive_mutex> request_mutex_guard(
+      request_mutex_);
   auto ret = send_(req, res, error);
   if (error == Error::SSLPeerCouldBeClosed_) {
     assert(!ret);
@@ -6957,7 +6972,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 
 inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   {
-    std::lock_guard<std::mutex> guard(socket_mutex_);
+    const std::lock_guard<std::mutex> guard(socket_mutex_);
 
     // Set this to false immediately - if it ever gets set to true by the end of
     // the request, we know another thread instructed us to close the socket.
@@ -7018,7 +7033,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 
   auto se = detail::scope_exit([&]() {
     // Briefly lock mutex in order to mark that a request is no longer ongoing
-    std::lock_guard<std::mutex> guard(socket_mutex_);
+    const std::lock_guard<std::mutex> guard(socket_mutex_);
     socket_requests_in_flight_ -= 1;
     if (socket_requests_in_flight_ <= 0) {
       assert(socket_requests_in_flight_ == 0);
@@ -7089,7 +7104,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     // which locks the request mutex during the process. It would be a bug
     // to call it from a different thread since it's a thread-safety issue
     // to do these things to the socket if another thread is using the socket.
-    std::lock_guard<std::mutex> guard(socket_mutex_);
+    const std::lock_guard<std::mutex> guard(socket_mutex_);
     shutdown_ssl(socket_, true);
     shutdown_socket(socket_);
     close_socket(socket_);
@@ -7192,7 +7207,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
 inline bool ClientImpl::write_content_with_provider(Stream &strm,
                                                     const Request &req,
-                                                    Error &error) const {
+                                                    Error &error) {
   auto is_shutting_down = []() { return false; };
 
   if (req.is_chunked_content_provider_) {
@@ -7313,7 +7328,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     header_writer_(bstrm, req.headers);
 
     // Flush buffer
-    auto &data = bstrm.get_buffer();
+    const auto &data = bstrm.get_buffer();
     if (!detail::write_data(strm, data.data(), data.size())) {
       error = Error::Write;
       return false;
@@ -7431,8 +7446,7 @@ inline Result ClientImpl::send_with_content_provider(
   return Result{std::move(res), error, std::move(req.headers)};
 }
 
-inline std::string
-ClientImpl::adjust_host_string(const std::string &host) const {
+inline std::string ClientImpl::adjust_host_string(const std::string &host) {
   if (host.find(':') != std::string::npos) { return "[" + host + "]"; }
   return host;
 }
@@ -7519,7 +7533,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
 inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
     const std::string &boundary, const MultipartFormDataItems &items,
-    const MultipartFormDataProviderItems &provider_items) const {
+    const MultipartFormDataProviderItems &provider_items) {
   size_t cur_item = 0;
   size_t cur_start = 0;
   // cur_item and cur_start are copied to within the std::function and maintain
@@ -7642,7 +7656,7 @@ inline Result ClientImpl::Get(const std::string &path,
 
 inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
                               ResponseHandler response_handler,
-                              ContentReceiver content_receiver,
+                              const ContentReceiver &content_receiver,
                               Progress progress) {
   Request req;
   req.method = "GET";
@@ -7663,7 +7677,7 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
                               const Headers &headers, Progress progress) {
   if (params.empty()) { return Get(path, headers); }
 
-  std::string path_with_query = append_query_params(path, params);
+  const std::string path_with_query = append_query_params(path, params);
   return Get(path_with_query, headers, std::move(progress));
 }
 
@@ -7685,7 +7699,7 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
                std::move(content_receiver), std::move(progress));
   }
 
-  std::string path_with_query = append_query_params(path, params);
+  const std::string path_with_query = append_query_params(path, params);
   return Get(path_with_query, headers, std::move(response_handler),
              std::move(content_receiver), std::move(progress));
 }
@@ -8045,7 +8059,7 @@ inline Result ClientImpl::Options(const std::string &path,
 }
 
 inline void ClientImpl::stop() {
-  std::lock_guard<std::mutex> guard(socket_mutex_);
+  const std::lock_guard<std::mutex> guard(socket_mutex_);
 
   // If there is anything ongoing right now, the ONLY thread-safe thing we can
   // do is to shutdown_socket, so that threads using this socket suddenly
@@ -8072,7 +8086,7 @@ inline std::string ClientImpl::host() const { return host_; }
 inline int ClientImpl::port() const { return port_; }
 
 inline size_t ClientImpl::is_socket_open() const {
-  std::lock_guard<std::mutex> guard(socket_mutex_);
+  const std::lock_guard<std::mutex> guard(socket_mutex_);
   return socket_.is_open();
 }
 
@@ -8976,7 +8990,7 @@ inline Client::Client(const std::string &scheme_host_port,
     if (!scheme.empty() && scheme != "http") {
 #endif
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
-      std::string msg = "'" + scheme + "' scheme is not supported.";
+      const std::string msg = "'" + scheme + "' scheme is not supported.";
       throw std::invalid_argument(msg);
 #endif
       return;
