@@ -2961,7 +2961,7 @@ inline bool is_socket_alive(socket_t sock) {
     return false;
   }
   char buf[1];
-  return detail::read_socket(sock, buf.data(), sizeof(buf), MSG_PEEK) > 0;
+  return detail::read_socket(sock, &buf[0], sizeof(buf), MSG_PEEK) > 0;
 }
 
 class SocketStream final : public Stream {
@@ -8964,7 +8964,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
   // Wildcard match
   // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
   std::vector<std::string> pattern_components;
-  detail::split(pattern.data(), &pattern[pattern_len], '.',
+  detail::split(&pattern[0], &pattern[pattern_len], '.',
                 [&](const char *b, const char *e) {
                   pattern_components.emplace_back(b, e);
                 });
