@@ -692,7 +692,7 @@ class ThreadPool final : public TaskQueue {
 public:
   explicit ThreadPool(size_t n, size_t mqr = 0)
       : shutdown_(false), max_queued_requests_(mqr) {
-    while (n > 0) {
+    while (n) {
       threads_.emplace_back(worker(*this));
       n--;
     }
@@ -3581,7 +3581,7 @@ inline EncodingType encoding_type(const Request &req, const Response &res) {
 
 inline bool nocompressor::compress(const char *data, size_t data_length,
                                    bool /*last*/, Callback callback) {
-  if (data_length == 0) { return true; }
+  if (!data_length) { return true; }
   return callback(data, data_length);
 }
 
