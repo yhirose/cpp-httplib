@@ -78,6 +78,7 @@ project(httplib
 	DESCRIPTION "A C++ header-only HTTP/HTTPS server and client library."
 	HOMEPAGE_URL "https://github.com/yhirose/cpp-httplib"
 )
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Change as needed to set an OpenSSL minimum version.
 # This is used in the installed Cmake config file.

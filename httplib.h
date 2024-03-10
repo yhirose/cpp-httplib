@@ -208,6 +208,7 @@ using socket_t = int;
 #include <asm-generic/socket.h>
 #include <atomic>
 #include <bits/signum-generic.h>
+#include <bits/types/struct_timeval.h>
 #include <cassert>
 #include <cctype>
 #include <cerrno>
@@ -241,10 +242,12 @@ using socket_t = int;
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <zconf.h>
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -268,9 +271,20 @@ using socket_t = int;
 #endif // TARGET_OS_OSX
 #endif // _WIN32
 
+#include <openssl/asn1.h>
+#include <openssl/bio.h>
+#include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/obj_mac.h>
+#include <openssl/opensslv.h>
+#include <openssl/pem.h>
+#include <openssl/prov_ssl.h>
+#include <openssl/safestack.h>
 #include <openssl/ssl.h>
+#include <openssl/tls1.h>
+#include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 #include <openssl/x509v3.h>
 
 #if defined(_WIN32) && defined(OPENSSL_USE_APPLINK)
@@ -1131,8 +1145,8 @@ public:
   Result Get(const std::string &path, ResponseHandler response_handler,
              ContentReceiver content_receiver, Progress progress);
   Result Get(const std::string &path, const Headers &headers,
-             ResponseHandler response_handler, const ContentReceiver &content_receiver,
-             Progress progress);
+             ResponseHandler response_handler,
+             const ContentReceiver &content_receiver, Progress progress);
 
   Result Get(const std::string &path, const Params &params,
              const Headers &headers, Progress progress = nullptr);
@@ -1316,7 +1330,8 @@ public:
   void set_ca_cert_path(const std::string &ca_cert_file_path,
                         const std::string &ca_cert_dir_path = std::string());
   void set_ca_cert_store(X509_STORE *ca_cert_store);
-  X509_STORE *create_ca_cert_store(const char *ca_cert, std::size_t size) const;
+  static X509_STORE *create_ca_cert_store(const char *ca_cert,
+                                          std::size_t size);
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -1709,7 +1724,7 @@ public:
   void set_ca_cert_store(X509_STORE *ca_cert_store);
   void load_ca_cert_store(const char *ca_cert, std::size_t size);
 
-  long get_openssl_verify_result() const;
+  int64_t get_openssl_verify_result() const;
 
   SSL_CTX *ssl_context() const;
 #endif
@@ -1733,7 +1748,7 @@ public:
   SSLServer(X509 *cert, EVP_PKEY *private_key,
             X509_STORE *client_ca_cert_store = nullptr);
 
-  SSLServer(
+  explicit SSLServer(
       const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback);
 
   ~SSLServer() override;
@@ -1771,7 +1786,7 @@ public:
   void set_ca_cert_store(X509_STORE *ca_cert_store);
   void load_ca_cert_store(const char *ca_cert, std::size_t size);
 
-  long get_openssl_verify_result() const;
+  int64_t get_openssl_verify_result() const;
 
   SSL_CTX *ssl_context() const;
 
@@ -1801,7 +1816,7 @@ private:
 
   std::vector<std::string> host_components_;
 
-  long verify_result_ = 0;
+  int64_t verify_result_ = 0;
 
   friend class ClientImpl;
 };
@@ -1862,9 +1877,9 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
     while (n >= glowable_buf.size() - 1) {
       glowable_buf.resize(glowable_buf.size() * 2);
       n = static_cast<size_t>(
-          snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
+          snprintf(glowable_buf.data(), glowable_buf.size() - 1, fmt, args...));
     }
-    return write(&glowable_buf[0], n);
+    return write(glowable_buf.data(), n);
   } else {
     return write(buf.data(), n);
   }
@@ -2109,7 +2124,7 @@ void split(const char *b, const char *e, char d, size_t m,
 bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t read_timeout_usec, time_t write_timeout_sec,
                            time_t write_timeout_usec,
-                           std::function<bool(Stream &)> callback);
+                           const std::function<bool(Stream &)> &callback);
 
 socket_t create_client_socket(
     const std::string &host, const std::string &ip, int port,
@@ -2222,7 +2237,7 @@ private:
 class brotli_compressor final : public compressor {
 public:
   brotli_compressor();
-  ~brotli_compressor();
+  ~brotli_compressor() override;
 
   bool compress(const char *data, size_t data_length, bool last,
                 Callback callback) override;
@@ -2234,7 +2249,7 @@ private:
 class brotli_decompressor final : public decompressor {
 public:
   brotli_decompressor();
-  ~brotli_decompressor();
+  ~brotli_decompressor() override;
 
   bool is_valid() const override;
 
@@ -2556,7 +2571,7 @@ inline void read_file(const std::string &path, std::string &out) {
   auto size = fs.tellg();
   fs.seekg(0);
   out.resize(static_cast<size_t>(size));
-  fs.read(&out[0], static_cast<std::streamsize>(size));
+  fs.read(out.data(), static_cast<std::streamsize>(size));
 }
 
 inline std::string file_extension(const std::string &path) {
@@ -2844,7 +2859,7 @@ inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
   FD_SET(sock, &fds);
 
   timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
+  tv.tv_sec = static_cast<int64_t>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   return handle_EINTR([&]() {
@@ -2872,7 +2887,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   FD_SET(sock, &fds);
 
   timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
+  tv.tv_sec = static_cast<int64_t>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   return handle_EINTR([&]() {
@@ -2917,7 +2932,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
   auto fdse = fdsr;
 
   timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
+  tv.tv_sec = static_cast<int64_t>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   auto ret = handle_EINTR([&]() {
@@ -2946,7 +2961,7 @@ inline bool is_socket_alive(socket_t sock) {
     return false;
   }
   char buf[1];
-  return detail::read_socket(sock, &buf[0], sizeof(buf), MSG_PEEK) > 0;
+  return detail::read_socket(sock, buf.data(), sizeof(buf), MSG_PEEK) > 0;
 }
 
 class SocketStream final : public Stream {
@@ -3061,7 +3076,7 @@ inline bool
 process_client_socket(socket_t sock, time_t read_timeout_sec,
                       time_t read_timeout_usec, time_t write_timeout_sec,
                       time_t write_timeout_usec,
-                      std::function<bool(Stream &)> callback) {
+                      const std::function<bool(Stream &)> &callback) {
   SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                     write_timeout_sec, write_timeout_usec);
   return callback(strm);
@@ -3339,7 +3354,7 @@ inline socket_t create_client_socket(
                      reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
-          tv.tv_sec = static_cast<long>(read_timeout_sec);
+          tv.tv_sec = static_cast<int64_t>(read_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
           setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
                      reinterpret_cast<const void *>(&tv), sizeof(tv));
@@ -3354,7 +3369,7 @@ inline socket_t create_client_socket(
                      reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
           timeval tv;
-          tv.tv_sec = static_cast<long>(write_timeout_sec);
+          tv.tv_sec = static_cast<int64_t>(write_timeout_sec);
           tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
           setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
                      reinterpret_cast<const void *>(&tv), sizeof(tv));
@@ -3869,7 +3884,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 
 inline bool read_content_with_length(Stream &strm, uint64_t len,
                                      Progress progress,
-                                     ContentReceiverWithProgress out) {
+                                     const ContentReceiverWithProgress &out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
   uint64_t r = 0;
@@ -3900,8 +3915,9 @@ inline void skip_content_with_length(Stream &strm, uint64_t len) {
   }
 }
 
-inline bool read_content_without_length(Stream &strm,
-                                        ContentReceiverWithProgress out) {
+inline bool
+read_content_without_length(Stream &strm,
+                            const ContentReceiverWithProgress &out) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   uint64_t r = 0;
   for (;;) {
@@ -3917,7 +3933,7 @@ inline bool read_content_without_length(Stream &strm,
 
 template <typename T>
 inline bool read_content_chunked(Stream &strm, T &x,
-                                 ContentReceiverWithProgress out) {
+                                 const ContentReceiverWithProgress &out) {
   const auto bufsiz = 16;
   char buf[bufsiz];
 
@@ -3925,7 +3941,7 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
   if (!line_reader.getline()) { return false; }
 
-  unsigned long chunk_len;
+  uint64_t chunk_len;
   while (true) {
     char *end_ptr;
 
@@ -4008,7 +4024,7 @@ bool prepare_content_receiver(T &x, int &status,
                     return receiver(buf2, n2, off, len);
                   });
             };
-        return callback(std::move(out));
+        return callback(out);
       } else {
         status = StatusCode::InternalServerError_500;
         return false;
@@ -4020,7 +4036,7 @@ bool prepare_content_receiver(T &x, int &status,
                                               uint64_t off, uint64_t len) {
     return receiver(buf, n, off, len);
   };
-  return callback(std::move(out));
+  return callback(out);
 }
 
 template <typename T>
@@ -4947,7 +4963,7 @@ inline std::string message_digest(const std::string &s, const EVP_MD *algo) {
   EVP_DigestFinal_ex(context.get(), hash, &hash_length);
 
   std::stringstream ss;
-  for (auto i = 0u; i < hash_length; ++i) {
+  for (auto i = 0U; i < hash_length; ++i) {
     ss << std::hex << std::setw(2) << std::setfill('0')
        << static_cast<unsigned int>(hash[i]);
   }
@@ -6387,7 +6403,7 @@ inline bool Server::listen_internal() {
                    reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
         timeval tv;
-        tv.tv_sec = static_cast<long>(read_timeout_sec_);
+        tv.tv_sec = static_cast<int64_t>(read_timeout_sec_);
         tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                    reinterpret_cast<const void *>(&tv), sizeof(tv));
@@ -6402,7 +6418,7 @@ inline bool Server::listen_internal() {
                    reinterpret_cast<const char *>(&timeout), sizeof(timeout));
 #else
         timeval tv;
-        tv.tv_sec = static_cast<long>(write_timeout_sec_);
+        tv.tv_sec = static_cast<int64_t>(write_timeout_sec_);
         tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec_);
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
                    reinterpret_cast<const void *>(&tv), sizeof(tv));
@@ -8198,7 +8214,7 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
 }
 
 inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
-                                                    std::size_t size) const {
+                                                    std::size_t size) {
   auto mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
   if (!mem) { return nullptr; }
 
@@ -8244,7 +8260,7 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
                     U SSL_connect_or_accept, V setup) {
   SSL *ssl = nullptr;
   {
-    std::lock_guard<std::mutex> guard(ctx_mutex);
+    const std::lock_guard<std::mutex> guard(ctx_mutex);
     ssl = SSL_new(ctx);
   }
 
@@ -8257,7 +8273,7 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
     if (!setup(ssl) || SSL_connect_or_accept(ssl) != 1) {
       SSL_shutdown(ssl);
       {
-        std::lock_guard<std::mutex> guard(ctx_mutex);
+        const std::lock_guard<std::mutex> guard(ctx_mutex);
         SSL_free(ssl);
       }
       set_nonblocking(sock, false);
@@ -8278,7 +8294,7 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl,
   // best-efforts.
   if (shutdown_gracefully) { SSL_shutdown(ssl); }
 
-  std::lock_guard<std::mutex> guard(ctx_mutex);
+  const std::lock_guard<std::mutex> guard(ctx_mutex);
   SSL_free(ssl);
 }
 
@@ -8564,7 +8580,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
     : ClientImpl(host, port, client_cert_path, client_key_path) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
-  detail::split(&host_[0], &host_[host_.size()], '.',
+  detail::split(host_.data(), &host_[host_.size()], '.',
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(b, e);
                 });
@@ -8592,7 +8608,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
     : ClientImpl(host, port) {
   ctx_ = SSL_CTX_new(TLS_client_method());
 
-  detail::split(&host_[0], &host_[host_.size()], '.',
+  detail::split(host_.data(), &host_[host_.size()], '.',
                 [&](const char *b, const char *e) {
                   host_components_.emplace_back(b, e);
                 });
@@ -8640,7 +8656,7 @@ inline void SSLClient::load_ca_cert_store(const char *ca_cert,
   set_ca_cert_store(ClientImpl::create_ca_cert_store(ca_cert, size));
 }
 
-inline long SSLClient::get_openssl_verify_result() const {
+inline int64_t SSLClient::get_openssl_verify_result() const {
   return verify_result_;
 }
 
@@ -8723,7 +8739,7 @@ inline bool SSLClient::load_certs() {
   auto ret = true;
 
   std::call_once(initialize_cert_, [&]() {
-    std::lock_guard<std::mutex> guard(ctx_mutex_);
+    const std::lock_guard<std::mutex> guard(ctx_mutex_);
     if (!ca_cert_file_path_.empty()) {
       if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
                                          nullptr)) {
@@ -8948,7 +8964,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
   // Wildcard match
   // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
   std::vector<std::string> pattern_components;
-  detail::split(&pattern[0], &pattern[pattern_len], '.',
+  detail::split(pattern.data(), &pattern[pattern_len], '.',
                 [&](const char *b, const char *e) {
                   pattern_components.emplace_back(b, e);
                 });
@@ -8959,7 +8975,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
   for (const auto &h : host_components_) {
     auto &p = *itr;
     if (p != h && p != "*") {
-      auto partial_match = (p.size() > 0 && p[p.size() - 1] == '*' &&
+      auto partial_match = (!p.empty() && p[p.size() - 1] == '*' &&
                             !p.compare(0, p.size() - 1, h));
       if (!partial_match) { return false; }
     }
@@ -9454,7 +9470,7 @@ inline void Client::load_ca_cert_store(const char *ca_cert, std::size_t size) {
   set_ca_cert_store(cli_->create_ca_cert_store(ca_cert, size));
 }
 
-inline long Client::get_openssl_verify_result() const {
+inline int64_t Client::get_openssl_verify_result() const {
   if (is_ssl_) {
     return static_cast<SSLClient &>(*cli_).get_openssl_verify_result();
   }
