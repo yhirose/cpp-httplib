@@ -6251,7 +6251,14 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
       std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
       if (detail::is_valid_path(sub_path)) {
         auto path = entry.base_dir + sub_path;
-        if (path.back() == '/') { path += "index.html"; }
+        if (path.back() == '/') {
+            std::string temp = entry.mount_point.substr(1) + ".html";
+            if(detail::is_file(path + temp)) {
+                path += temp;
+            } else {
+                path += "index.html";
+            }
+        }
 
         if (detail::is_file(path)) {
           for (const auto &kv : entry.headers) {
