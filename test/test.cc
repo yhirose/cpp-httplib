@@ -1873,7 +1873,6 @@ protected:
              })
         .Get("/with-range-customized-response",
              [&](const Request & /*req*/, Response &res) {
-              res.ignore_range = true;
               res.status = StatusCode::BadRequest_400;
               res.set_content(JSON_DATA,  "application/json");
              })
