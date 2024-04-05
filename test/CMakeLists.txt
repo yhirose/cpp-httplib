@@ -29,14 +29,9 @@ target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/b
 target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main)
 gtest_discover_tests(httplib-test)
 
-execute_process(
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/www www
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/www2 www2
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/www3 www3
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_LIST_DIR}/ca-bundle.crt ca-bundle.crt
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_LIST_DIR}/image.jpg image.jpg
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMAND_ERROR_IS_FATAL ANY
+file(
+    COPY www www2 www3 ca-bundle.crt image.jpg
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 if(HTTPLIB_IS_USING_OPENSSL)
