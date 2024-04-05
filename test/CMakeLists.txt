@@ -2,7 +2,7 @@ find_package(GTest)
 
 if(GTest_FOUND)
     if(NOT TARGET GTest::gtest_main AND TARGET GTest::Main)
-	# CMake <3.20
+        # CMake <3.20
         add_library(GTest::gtest_main INTERFACE IMPORTED)
         target_link_libraries(GTest::gtest_main INTERFACE GTest::Main)
     endif()
@@ -29,14 +29,9 @@ target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/b
 target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main)
 gtest_discover_tests(httplib-test)
 
-execute_process(
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/www www
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/www2 www2
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/www3 www3
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_LIST_DIR}/ca-bundle.crt ca-bundle.crt
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_LIST_DIR}/image.jpg image.jpg
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMAND_ERROR_IS_FATAL ANY
+file(
+    COPY www www2 www3 ca-bundle.crt image.jpg
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 if(HTTPLIB_IS_USING_OPENSSL)
@@ -98,6 +93,19 @@ if(HTTPLIB_IS_USING_OPENSSL)
         COMMAND ${OPENSSL_COMMAND} req -new -batch -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key key_encrypted.pem
         COMMAND ${OPENSSL_COMMAND} x509 -days 3650 -req -signkey key_encrypted.pem
         OUTPUT_FILE cert_encrypted.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} genrsa -aes256 -passout pass:test012! 2048
+        OUTPUT_FILE client_encrypted.key.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} req -new -batch -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key client_encrypted.key.pem -passin pass:test012!
+        COMMAND ${OPENSSL_COMMAND} x509 -days 370 -req -CA rootCA.cert.pem -CAkey rootCA.key.pem -CAcreateserial
+        OUTPUT_FILE client_encrypted.cert.pem
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
