@@ -4365,35 +4365,44 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
 #else
 inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
 #endif
-  static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
-  std::smatch m;
-  if (std::regex_match(s, m, re_first_range)) {
-    auto pos = static_cast<size_t>(m.position(1));
-    auto len = static_cast<size_t>(m.length(1));
+  auto is_valid = [](const std::string &str) {
+    return std::all_of(str.cbegin(), str.cend(),
+                       [](unsigned char c) { return std::isdigit(c); });
+  };
+
+  if (s.size() > 7 && s.compare(0, 6, "bytes=") == 0) {
+    const auto pos = static_cast<size_t>(6);
+    const auto len = static_cast<size_t>(s.size() - 6);
     auto all_valid_ranges = true;
     split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
       if (!all_valid_ranges) { return; }
-      static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
-      std::cmatch cm;
-      if (std::regex_match(b, e, cm, re_another_range)) {
-        ssize_t first = -1;
-        if (!cm.str(1).empty()) {
-          first = static_cast<ssize_t>(std::stoll(cm.str(1)));
-        }
 
-        ssize_t last = -1;
-        if (!cm.str(2).empty()) {
-          last = static_cast<ssize_t>(std::stoll(cm.str(2)));
-        }
-
-        if (first != -1 && last != -1 && first > last) {
-          all_valid_ranges = false;
-          return;
-        }
-        ranges.emplace_back(std::make_pair(first, last));
+      const auto it = std::find(b, e, '-');
+      if (it == e) {
+        all_valid_ranges = false;
+        return;
       }
+
+      const auto lhs = std::string(b, it);
+      const auto rhs = std::string(it + 1, e);
+      if (!is_valid(lhs) || !is_valid(rhs)) {
+        all_valid_ranges = false;
+        return;
+      }
+
+      const auto first =
+          static_cast<ssize_t>(lhs.empty() ? -1 : std::stoll(lhs));
+      const auto last =
+          static_cast<ssize_t>(rhs.empty() ? -1 : std::stoll(rhs));
+      if ((first == -1 && last == -1) ||
+          (first != -1 && last != -1 && first > last)) {
+        all_valid_ranges = false;
+        return;
+      }
+
+      ranges.emplace_back(first, last);
     });
-    return all_valid_ranges;
+    return all_valid_ranges && !ranges.empty();
   }
   return false;
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
