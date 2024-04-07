@@ -352,6 +352,25 @@ TEST(ParseHeaderValueTest, Range) {
     EXPECT_EQ(300u, ranges[2].first);
     EXPECT_EQ(400u, ranges[2].second);
   }
+
+  {
+    Ranges ranges;
+
+    EXPECT_FALSE(detail::parse_range_header("bytes", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=0", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=-", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes= ", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=,", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=,,", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=,,,", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=a-b", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=1-0", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=0--1", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=0- 1", ranges));
+    EXPECT_FALSE(detail::parse_range_header("bytes=0 -1", ranges));
+    EXPECT_TRUE(ranges.empty());
+  }
 }
 
 TEST(ParseAcceptEncoding1, AcceptEncoding) {
