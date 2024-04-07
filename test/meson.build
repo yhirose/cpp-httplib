@@ -79,6 +79,26 @@ client_cert_pem = custom_target(
   command: [openssl, 'x509', '-in', '@INPUT0@', '-days', '370', '-req', '-CA', '@INPUT1@', '-CAkey', '@INPUT2@', '-CAcreateserial', '-out', '@OUTPUT@']
 )
 
+client_encrypted_key_pem = custom_target(
+  'client_encrypted_key_pem',
+  output: 'client_encrypted.key.pem',
+  command: [openssl, 'genrsa', '-aes256', '-passout', 'pass:test012!', '-out', '@OUTPUT@', '2048']
+)
+
+client_encrypted_temp_req = custom_target(
+  'client_encrypted_temp_req',
+  input: client_encrypted_key_pem,
+  output: 'client_encrypted_temp_req',
+  command: [openssl, 'req', '-new', '-batch', '-config', test_conf, '-key', '@INPUT@', '-passin', 'pass:test012!', '-out', '@OUTPUT@']
+)
+
+client_encrypted_cert_pem = custom_target(
+  'client_encrypted_cert_pem',
+  input: [client_encrypted_temp_req, rootca_cert_pem, rootca_key_pem],
+  output: 'client_encrypted.cert.pem',
+  command: [openssl, 'x509', '-in', '@INPUT0@', '-days', '370', '-req', '-CA', '@INPUT1@', '-CAkey', '@INPUT2@', '-CAcreateserial', '-out', '@OUTPUT@']
+)
+
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
@@ -112,7 +132,9 @@ test(
     rootca_key_pem,
     rootca_cert_pem,
     client_key_pem,
-    client_cert_pem
+    client_cert_pem,
+    client_encrypted_key_pem,
+    client_encrypted_cert_pem
   ],
   workdir: meson.current_build_dir(),
   timeout: 300
