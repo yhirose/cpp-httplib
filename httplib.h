@@ -871,8 +871,13 @@ public:
   Server &set_default_file_mimetype(const std::string &mime);
   Server &set_file_request_handler(Handler handler);
 
-  Server &set_error_handler(HandlerWithResponse handler);
-  Server &set_error_handler(Handler handler);
+  template <class ErrorHandlerFunc>
+  Server &set_error_handler(ErrorHandlerFunc &&handler) {
+    return set_error_handler_core(
+        std::forward<ErrorHandlerFunc>(handler),
+        std::is_convertible<ErrorHandlerFunc, HandlerWithResponse>{});
+  }
+
   Server &set_exception_handler(ExceptionHandler handler);
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
@@ -942,6 +947,9 @@ private:
 
   static std::unique_ptr<detail::MatcherBase>
   make_matcher(const std::string &pattern);
+
+  Server &set_error_handler_core(HandlerWithResponse handler, std::true_type);
+  Server &set_error_handler_core(Handler handler, std::false_type);
 
   socket_t create_server_socket(const std::string &host, int port,
                                 int socket_flags,
@@ -5808,12 +5816,14 @@ inline Server &Server::set_file_request_handler(Handler handler) {
   return *this;
 }
 
-inline Server &Server::set_error_handler(HandlerWithResponse handler) {
+inline Server &Server::set_error_handler_core(HandlerWithResponse handler,
+                                              std::true_type) {
   error_handler_ = std::move(handler);
   return *this;
 }
 
-inline Server &Server::set_error_handler(Handler handler) {
+inline Server &Server::set_error_handler_core(Handler handler,
+                                              std::false_type) {
   error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
     return HandlerResponse::Handled;
