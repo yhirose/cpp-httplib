@@ -145,11 +145,11 @@ using ssize_t = long;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -719,7 +719,7 @@ private:
 
           if (pool_.shutdown_ && pool_.jobs_.empty()) { break; }
 
-          fn = std::move(pool_.jobs_.front());
+          fn = pool_.jobs_.front();
           pool_.jobs_.pop_front();
         }
 
@@ -3809,7 +3809,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     auto val = compare_case_ignore(key, "Location")
                    ? std::string(p, end)
                    : decode_url(std::string(p, end), false);
-    fn(std::move(key), std::move(val));
+    fn(key, val);
     return true;
   }
 
@@ -3847,8 +3847,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     parse_header(line_reader.ptr(), end,
-                 [&](std::string &&key, std::string &&val) {
-                   headers.emplace(std::move(key), std::move(val));
+                 [&](const std::string &key, const std::string &val) {
+                   headers.emplace(key, val);
                  });
   }
 
@@ -3948,8 +3948,8 @@ inline bool read_content_chunked(Stream &strm, T &x,
     auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     parse_header(line_reader.ptr(), end,
-                 [&](std::string &&key, std::string &&val) {
-                   x.headers.emplace(std::move(key), std::move(val));
+                 [&](const std::string &key, const std::string &val) {
+                   x.headers.emplace(key, val);
                  });
 
     if (!line_reader.getline()) { return false; }
@@ -4461,7 +4461,7 @@ public:
           const auto header = buf_head(pos);
 
           if (!parse_header(header.data(), header.data() + header.size(),
-                            [&](std::string &&, std::string &&) {})) {
+                            [&](const std::string &, const std::string &) {})) {
             is_valid_ = false;
             return false;
           }
