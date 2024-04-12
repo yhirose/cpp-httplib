@@ -231,7 +231,6 @@ using socket_t = int;
 #include <string>
 #include <sys/stat.h>
 #include <thread>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -874,7 +873,7 @@ public:
 
   template <class ErrorHandlerFunc>
   Server &set_error_handler(ErrorHandlerFunc &&handler) {
-    return set_error_handler_impl(
+    return set_error_handler_core(
         std::forward<ErrorHandlerFunc>(handler),
         std::is_convertible<ErrorHandlerFunc, HandlerWithResponse>{});
   }
@@ -940,9 +939,6 @@ protected:
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
 
 private:
-  Server &set_error_handler_impl(HandlerWithResponse handler, std::true_type);
-  Server &set_error_handler_impl(Handler handler, std::false_type);
-
   using Handlers =
       std::vector<std::pair<std::unique_ptr<detail::MatcherBase>, Handler>>;
   using HandlersForContentReader =
@@ -951,6 +947,9 @@ private:
 
   static std::unique_ptr<detail::MatcherBase>
   make_matcher(const std::string &pattern);
+
+  Server &set_error_handler_core(HandlerWithResponse handler, std::true_type);
+  Server &set_error_handler_core(Handler handler, std::false_type);
 
   socket_t create_server_socket(const std::string &host, int port,
                                 int socket_flags,
@@ -5817,13 +5816,13 @@ inline Server &Server::set_file_request_handler(Handler handler) {
   return *this;
 }
 
-inline Server &Server::set_error_handler_impl(HandlerWithResponse handler,
+inline Server &Server::set_error_handler_core(HandlerWithResponse handler,
                                               std::true_type) {
   error_handler_ = std::move(handler);
   return *this;
 }
 
-inline Server &Server::set_error_handler_impl(Handler handler,
+inline Server &Server::set_error_handler_core(Handler handler,
                                               std::false_type) {
   error_handler_ = [handler](const Request &req, Response &res) {
     handler(req, res);
