@@ -1890,6 +1890,11 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("abcdefg", "text/plain");
              })
+        .Get("/with-range-customized-response",
+             [&](const Request & /*req*/, Response &res) {
+              res.status = StatusCode::BadRequest_400;
+              res.set_content(JSON_DATA,  "application/json");
+             })
         .Post("/chunked",
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(req.body, "dechunked post body");
@@ -3164,6 +3169,24 @@ TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
       cli_.Get("/with-range", {{make_range_header({{-1, 2}, {10000, 30000}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+}
+
+TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
+  auto res = cli_.Get("/with-range-customized-response", {{make_range_header({{1, 2}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ(true, res->has_header("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(JSON_DATA, res->body);
+}
+
+TEST_F(ServerTest, GetWithRangeMultipartCustomizedResponseMultipleRange) {
+  auto res = cli_.Get("/with-range-customized-response", {{make_range_header({{1, 2}, {4, 5}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ(true, res->has_header("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(JSON_DATA, res->body);
 }
 
 TEST_F(ServerTest, Issue1772) {
