@@ -7,7 +7,8 @@ A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include the **httplib.h** file in your code!
 
-NOTE: This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
+> [!IMPORTANT]
+> This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
 
 Simple examples
 ---------------
@@ -53,9 +54,11 @@ SSL Support
 
 SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
 
-NOTE: cpp-httplib currently supports only version 3.0 or later. Please see [this page](https://www.openssl.org/policies/releasestrat.html) to get more information.
+> [!NOTE]
+> cpp-httplib currently supports only version 3.0 or later. Please see [this page](https://www.openssl.org/policies/releasestrat.html) to get more information.
 
-NOTE for macOS: cpp-httplib now can use system certs with `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`. `CoreFoundation` and `Security` should be linked with `-framework`.
+> [!TIP]
+> For macOS: cpp-httplib now can use system certs with `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`. `CoreFoundation` and `Security` should be linked with `-framework`.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -76,7 +79,8 @@ cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(false);
 ```
 
-NOTE: When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
+> [!NOTE]
+> When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
 Server
 ------
@@ -190,7 +194,8 @@ The followings are built-in mappings:
 | webm       | video/webm                  | zip        | application/zip             |
 | mp3        | audio/mp3                   | wasm       | application/wasm            |
 
-NOTE: These static file server methods are not thread-safe.
+> [!WARNING]
+> These static file server methods are not thread-safe.
 
 ### File request handler
 
@@ -239,7 +244,8 @@ svr.set_exception_handler([](const auto& req, auto& res, std::exception_ptr ep) 
 });
 ```
 
-NOTE: if you don't provide the `catch (...)` block for a rethrown exception pointer, an uncaught exception will end up causing the server crash. Be careful!
+> [!CAUTION]
+> if you don't provide the `catch (...)` block for a rethrown exception pointer, an uncaught exception will end up causing the server crash. Be careful!
 
 ### Pre routing handler
 
@@ -417,7 +423,8 @@ svr.set_idle_interval(0, 100000); // 100 milliseconds
 svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 ```
 
-NOTE: When the request body content type is 'www-form-urlencoded', the actual payload length shouldn't exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH`.
+> [!NOTE]
+> When the request body content type is 'www-form-urlencoded', the actual payload length shouldn't exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH`.
 
 ### Server-Sent Events
 
@@ -496,7 +503,8 @@ int main(void)
 }
 ```
 
-NOTE: Constructor with scheme-host-port string is now supported!
+> [!TIP]
+> Constructor with scheme-host-port string is now supported!
 
 ```c++
 httplib::Client cli("localhost");
@@ -704,7 +712,8 @@ cli.set_digest_auth("user", "pass");
 cli.set_bearer_token_auth("token");
 ```
 
-NOTE: OpenSSL is required for Digest Authentication.
+> [!NOTE]
+> OpenSSL is required for Digest Authentication.
 
 ### Proxy server support
 
@@ -721,7 +730,8 @@ cli.set_proxy_digest_auth("user", "pass");
 cli.set_proxy_bearer_token_auth("pass");
 ```
 
-NOTE: OpenSSL is required for Digest Authentication.
+> [!NOTE]
+> OpenSSL is required for Digest Authentication.
 
 ### Range
 
@@ -770,7 +780,8 @@ res->status; // 200
 
 ### Use a specific network interface
 
-NOTE: This feature is not available on Windows, yet.
+> [!NOTE]
+> This feature is not available on Windows, yet.
 
 ```cpp
 cli.set_interface("eth0"); // Interface name, IP address or host name
@@ -859,9 +870,11 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 #include <httplib.h>
 ```
 
-NOTE: cpp-httplib officially supports only the latest Visual Studio. It might work with former versions of Visual Studio, but I can no longer verify it. Pull requests are always welcome for the older versions of Visual Studio unless they break the C++11 conformance.
+> [!NOTE]
+> cpp-httplib officially supports only the latest Visual Studio. It might work with former versions of Visual Studio, but I can no longer verify it. Pull requests are always welcome for the older versions of Visual Studio unless they break the C++11 conformance.
 
-NOTE: Windows 8 or lower, Visual Studio 2013 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
+> [!NOTE]
+> Windows 8 or lower, Visual Studio 2013 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
 
 License
 -------
