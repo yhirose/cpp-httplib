@@ -8205,7 +8205,7 @@ inline Result ClientImpl::Delete(const std::string &path,
                                  const Headers &headers, const char *body,
                                  size_t content_length,
                                  const std::string &content_type) {
-  return Delete(path, headers, body, content_length, content_type);
+  return Delete(path, headers, body, content_length, content_type, nullptr);
 }
 
 inline Result ClientImpl::Delete(const std::string &path,
