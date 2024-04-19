@@ -156,14 +156,26 @@ TEST(SplitTest, ParseInvalidQueryTests) {
 }
 
 TEST(ParseQueryTest, ParseQueryString) {
-  string s = "key1=val1&key2=val2&key3=val3";
-  Params dic;
+  {
+    std::string s = "key1=val1&key2=val2&key3=val3";
+    Params dic;
 
-  detail::parse_query_text(s, dic);
+    detail::parse_query_text(s, dic);
 
-  EXPECT_EQ("val1", dic.find("key1")->second);
-  EXPECT_EQ("val2", dic.find("key2")->second);
-  EXPECT_EQ("val3", dic.find("key3")->second);
+    EXPECT_EQ("val1", dic.find("key1")->second);
+    EXPECT_EQ("val2", dic.find("key2")->second);
+    EXPECT_EQ("val3", dic.find("key3")->second);
+  }
+
+  {
+    std::string s = "key1&key2=val1&key3=val1=val2&key4=val1=val2=val3";
+    Params dic;
+    detail::parse_query_text(s, dic);
+    EXPECT_EQ("", dic.find("key1")->second);
+    EXPECT_EQ("val1", dic.find("key2")->second);
+    EXPECT_EQ("val1=val2", dic.find("key3")->second);
+    EXPECT_EQ("val1=val2=val3", dic.find("key4")->second);
+  }
 }
 
 TEST(ParamsToQueryTest, ConvertParamsToQuery) {
