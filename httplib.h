@@ -2604,11 +2604,11 @@ divide(const char *data, std::size_t size, char d,
        std::function<void(const char *, std::size_t, const char *, std::size_t)>
            fn) {
   const auto it = std::find(data, data + size, d);
-  const auto found = static_cast<int>(it != data + size);
+  const auto found = static_cast<std::size_t>(it != data + size);
   const auto lhs_data = data;
   const auto lhs_size = static_cast<std::size_t>(it - data);
   const auto rhs_data = it + found;
-  const auto rhs_size = static_cast<std::size_t>(size - lhs_size - found);
+  const auto rhs_size = size - lhs_size - found;
 
   fn(lhs_data, lhs_size, rhs_data, rhs_size);
 }
@@ -4353,7 +4353,7 @@ inline void parse_query_text(const char *data, std::size_t size,
 
     std::string key;
     std::string val;
-    divide(b, e - b, '=',
+    divide(b, static_cast<std::size_t>(e - b), '=',
            [&](const char *lhs_data, std::size_t lhs_size, const char *rhs_data,
                std::size_t rhs_size) {
              key.assign(lhs_data, lhs_size);
