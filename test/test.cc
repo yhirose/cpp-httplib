@@ -779,6 +779,322 @@ TEST(CancelTest, WithCancelLargePayload_Online) {
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
+TEST(CancelTest, NoCancelPost) {
+  Server svr;
+
+  svr.Post("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Post("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+               "application/json", [](uint64_t, uint64_t) { return true; });
+  ASSERT_TRUE(res);
+  EXPECT_EQ("Hello World!", res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(CancelTest, WithCancelSmallPayloadPost) {
+  Server svr;
+
+  svr.Post("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Post("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+               "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, WithCancelLargePayloadPost) {
+  Server svr;
+
+  svr.Post("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content(LARGE_DATA, "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Post("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+               "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, NoCancelPut) {
+  Server svr;
+
+  svr.Put("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Put("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+              "application/json", [](uint64_t, uint64_t) { return true; });
+  ASSERT_TRUE(res);
+  EXPECT_EQ("Hello World!", res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(CancelTest, WithCancelSmallPayloadPut) {
+  Server svr;
+
+  svr.Put("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Put("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+              "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, WithCancelLargePayloadPut) {
+  Server svr;
+
+  svr.Put("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content(LARGE_DATA, "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Put("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+              "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, NoCancelPatch) {
+  Server svr;
+
+  svr.Patch("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Patch("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+                "application/json", [](uint64_t, uint64_t) { return true; });
+  ASSERT_TRUE(res);
+  EXPECT_EQ("Hello World!", res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(CancelTest, WithCancelSmallPayloadPatch) {
+  Server svr;
+
+  svr.Patch("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Patch("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+                "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, WithCancelLargePayloadPatch) {
+  Server svr;
+
+  svr.Patch("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content(LARGE_DATA, "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Patch("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+                "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, NoCancelDelete) {
+  Server svr;
+
+  svr.Delete("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Delete("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+                 "application/json", [](uint64_t, uint64_t) { return true; });
+  ASSERT_TRUE(res);
+  EXPECT_EQ("Hello World!", res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(CancelTest, WithCancelSmallPayloadDelete) {
+  Server svr;
+
+  svr.Delete("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Delete("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+                 "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST(CancelTest, WithCancelLargePayloadDelete) {
+  Server svr;
+
+  svr.Delete("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content(LARGE_DATA, "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+
+  auto res =
+      cli.Delete("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
+                 "application/json", [](uint64_t, uint64_t) { return false; });
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
 TEST(BaseAuthTest, FromHTTPWatch_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
   auto host = "httpbin.org";
