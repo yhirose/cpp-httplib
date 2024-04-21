@@ -116,6 +116,76 @@ TEST(TrimTests, TrimStringTests) {
   EXPECT_TRUE(detail::trim_copy("").empty());
 }
 
+TEST(DivideTest, DivideStringTests) {
+  auto divide = [](const std::string &str, char d) {
+    std::string lhs;
+    std::string rhs;
+
+    detail::divide(str, d,
+                   [&](const char *lhs_data, std::size_t lhs_size,
+                       const char *rhs_data, std::size_t rhs_size) {
+                     lhs.assign(lhs_data, lhs_size);
+                     rhs.assign(rhs_data, rhs_size);
+                   });
+
+    return std::make_pair(std::move(lhs), std::move(rhs));
+  };
+
+  {
+    const auto res = divide("", '=');
+    EXPECT_EQ(res.first, "");
+    EXPECT_EQ(res.second, "");
+  }
+
+  {
+    const auto res = divide("=", '=');
+    EXPECT_EQ(res.first, "");
+    EXPECT_EQ(res.second, "");
+  }
+
+  {
+    const auto res = divide(" ", '=');
+    EXPECT_EQ(res.first, " ");
+    EXPECT_EQ(res.second, "");
+  }
+
+  {
+    const auto res = divide("a", '=');
+    EXPECT_EQ(res.first, "a");
+    EXPECT_EQ(res.second, "");
+  }
+
+  {
+    const auto res = divide("a=", '=');
+    EXPECT_EQ(res.first, "a");
+    EXPECT_EQ(res.second, "");
+  }
+
+  {
+    const auto res = divide("=b", '=');
+    EXPECT_EQ(res.first, "");
+    EXPECT_EQ(res.second, "b");
+  }
+
+  {
+    const auto res = divide("a=b", '=');
+    EXPECT_EQ(res.first, "a");
+    EXPECT_EQ(res.second, "b");
+  }
+
+  {
+    const auto res = divide("a=b=", '=');
+    EXPECT_EQ(res.first, "a");
+    EXPECT_EQ(res.second, "b=");
+  }
+
+  {
+    const auto res = divide("a=b=c", '=');
+    EXPECT_EQ(res.first, "a");
+    EXPECT_EQ(res.second, "b=c");
+  }
+}
+
 TEST(SplitTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
   Params dic;
@@ -156,14 +226,28 @@ TEST(SplitTest, ParseInvalidQueryTests) {
 }
 
 TEST(ParseQueryTest, ParseQueryString) {
-  string s = "key1=val1&key2=val2&key3=val3";
-  Params dic;
+  {
+    std::string s = "key1=val1&key2=val2&key3=val3";
+    Params dic;
 
-  detail::parse_query_text(s, dic);
+    detail::parse_query_text(s, dic);
 
-  EXPECT_EQ("val1", dic.find("key1")->second);
-  EXPECT_EQ("val2", dic.find("key2")->second);
-  EXPECT_EQ("val3", dic.find("key3")->second);
+    EXPECT_EQ("val1", dic.find("key1")->second);
+    EXPECT_EQ("val2", dic.find("key2")->second);
+    EXPECT_EQ("val3", dic.find("key3")->second);
+  }
+
+  {
+    std::string s = "key1&key2=val1&key3=val1=val2&key4=val1=val2=val3";
+    Params dic;
+
+    detail::parse_query_text(s, dic);
+
+    EXPECT_EQ("", dic.find("key1")->second);
+    EXPECT_EQ("val1", dic.find("key2")->second);
+    EXPECT_EQ("val1=val2", dic.find("key3")->second);
+    EXPECT_EQ("val1=val2=val3", dic.find("key4")->second);
+  }
 }
 
 TEST(ParamsToQueryTest, ConvertParamsToQuery) {
