@@ -245,7 +245,7 @@ set(_TARGET_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 include(CMakePackageConfigHelpers)
 
 # Configures the meta-file httplibConfig.cmake.in to replace variables with paths/values/etc.
-configure_package_config_file("${PROJECT_NAME}Config.cmake.in"
+configure_package_config_file("cmake/${PROJECT_NAME}Config.cmake.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
 	INSTALL_DESTINATION "${_TARGET_INSTALL_CMAKEDIR}"
 	# Passes the includedir install path
