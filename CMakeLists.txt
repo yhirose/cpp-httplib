@@ -293,6 +293,11 @@ if(HTTPLIB_INSTALL)
 		NAMESPACE ${PROJECT_NAME}::
 		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 	)
+
+	# Install documentation & license
+	# ex: /usr/share/doc/httplib/README.md and /usr/share/licenses/httplib/LICENSE
+	install(FILES "README.md" DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+	install(FILES "LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/${PROJECT_NAME}")
 endif()
 
 if(HTTPLIB_TEST)
