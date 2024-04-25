@@ -1819,6 +1819,9 @@ public:
   bool is_valid() const override;
 
   SSL_CTX *ssl_context() const;
+  
+  void update_certs (X509 *cert, EVP_PKEY *private_key,
+            X509_STORE *client_ca_cert_store = nullptr);
 
 private:
   bool process_and_close_socket(socket_t sock) override;
@@ -8752,6 +8755,19 @@ inline SSLServer::~SSLServer() {
 inline bool SSLServer::is_valid() const { return ctx_; }
 
 inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
+
+inline void SSLServer::update_certs (X509 *cert, EVP_PKEY *private_key,
+            X509_STORE *client_ca_cert_store) {
+
+    std::lock_guard<std::mutex> guard(ctx_mutex_);
+
+    SSL_CTX_use_certificate (ctx_, cert);
+    SSL_CTX_use_PrivateKey  (ctx_, private_key);
+
+    if (client_ca_cert_store != nullptr) {
+        SSL_CTX_set_cert_store  (ctx_, client_ca_cert_store);
+    }
+}
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
   auto ssl = detail::ssl_new(
