@@ -3216,7 +3216,12 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     const auto addrlen = host.length();
     if (addrlen > sizeof(sockaddr_un::sun_path)) { return INVALID_SOCKET; }
 
+#ifdef SOCK_CLOEXEC
+    auto sock = socket(hints.ai_family, hints.ai_socktype | SOCK_CLOEXEC, hints.ai_protocol);
+#else
     auto sock = socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
+#endif
+
     if (sock != INVALID_SOCKET) {
       sockaddr_un addr{};
       addr.sun_family = AF_UNIX;
@@ -3226,7 +3231,10 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
       hints.ai_addrlen = static_cast<socklen_t>(
           sizeof(addr) - sizeof(addr.sun_path) + addrlen);
 
+#ifndef SOCK_CLOEXEC
       fcntl(sock, F_SETFD, FD_CLOEXEC);
+#endif
+
       if (socket_options) { socket_options(sock); }
 
       if (!bind_or_connect(sock, hints)) {
@@ -3271,11 +3279,17 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
       sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
     }
 #else
+
+#ifdef SOCK_CLOEXEC
+    auto sock = socket(rp->ai_family, rp->ai_socktype | SOCK_CLOEXEC, rp->ai_protocol);
+#else
     auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+#endif
+
 #endif
     if (sock == INVALID_SOCKET) { continue; }
 
-#ifndef _WIN32
+#if !defined _WIN32 && !defined SOCK_CLOEXEC
     if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
       close_socket(sock);
       continue;
