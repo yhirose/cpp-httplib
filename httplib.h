@@ -4935,7 +4935,7 @@ get_range_offset_and_length(Range r, size_t content_length) {
   assert(0 <= r.first && r.first < static_cast<ssize_t>(content_length));
   assert(r.first <= r.second &&
          r.second < static_cast<ssize_t>(content_length));
-
+  (void)(content_length);
   return std::make_pair(r.first, static_cast<size_t>(r.second - r.first) + 1);
 }
 
