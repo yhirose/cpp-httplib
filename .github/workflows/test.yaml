@@ -3,39 +3,41 @@ name: test
 on: [push, pull_request]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install brotli
+        run: sudo apt-get update && sudo apt-get install -y libbrotli-dev
+      - name: build and run tests
+        run: cd test && make -j4
+      - name: run fuzz test target
+        run: cd test && make fuzz_test
 
-    strategy:
-      matrix:
-        os: [macOS-latest, ubuntu-latest, windows-latest]
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: build and run tests
+        run: |
+          cd test && make -j2
 
+  windows:
+    runs-on: windows-latest
     steps:
     - name: prepare git for checkout on windows
-      if: matrix.os == 'windows-latest'
       run: |
         git config --global core.autocrlf false
         git config --global core.eol lf
     - name: checkout
       uses: actions/checkout@v4
-    - name: install brotli library on ubuntu
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt update && sudo apt-get install -y libbrotli-dev
-    - name: install brotli library on macOS
-      if: matrix.os == 'macOS-latest'
-      run: brew install brotli
-    - name: make
-      if: matrix.os != 'windows-latest'
-      run: cd test && make -j2
-    - name: check fuzz test target
-      if: matrix.os == 'ubuntu-latest'
-      run: cd test && make fuzz_test
     - name: setup msbuild on windows
-      if: matrix.os == 'windows-latest'
       uses: microsoft/setup-msbuild@v2
     - name: make-windows
-      if: matrix.os == 'windows-latest'
       run: |
         cd test
         msbuild.exe test.sln /verbosity:minimal /t:Build "/p:Configuration=Release;Platform=x64"
         x64\Release\test.exe
+
