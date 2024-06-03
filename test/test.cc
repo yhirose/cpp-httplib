@@ -1747,6 +1747,64 @@ TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+X509* readCertificate (const std::string& strFileName) {
+    std::ifstream inStream (strFileName);
+    std::string strCertPEM ((std::istreambuf_iterator<char>(inStream)), std::istreambuf_iterator<char>());
+
+    if (strCertPEM.empty ()) return (nullptr);
+
+    BIO* pbCert = BIO_new (BIO_s_mem ());
+    BIO_write (pbCert, strCertPEM.c_str (), (int)strCertPEM.size ());
+    X509* pCert = PEM_read_bio_X509 (pbCert, NULL, 0, NULL);
+    BIO_free (pbCert);
+
+    return (pCert);
+}
+
+EVP_PKEY* readPrivateKey (const std::string& strFileName) {
+    std::ifstream inStream (strFileName);
+    std::string strPrivateKeyPEM ((std::istreambuf_iterator<char>(inStream)), std::istreambuf_iterator<char>());
+
+    if (strPrivateKeyPEM.empty ()) return (nullptr);
+
+    BIO* pbPrivKey = BIO_new (BIO_s_mem ());
+    BIO_write (pbPrivKey, strPrivateKeyPEM.c_str (), (int) strPrivateKeyPEM.size ());
+    EVP_PKEY* pPrivateKey = PEM_read_bio_PrivateKey (pbPrivKey, NULL, NULL, NULL);
+    BIO_free (pbPrivKey);
+
+    return (pPrivateKey);
+}
+
+TEST(BindServerTest, UpdateCerts) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(port > 0);
+
+  X509* cert    = readCertificate (SERVER_CERT_FILE);
+  X509* ca_cert = readCertificate (CLIENT_CA_CERT_FILE);
+  EVP_PKEY* key = readPrivateKey  (SERVER_PRIVATE_KEY_FILE);
+
+  ASSERT_TRUE(cert    != nullptr);
+  ASSERT_TRUE(ca_cert != nullptr);
+  ASSERT_TRUE(key     != nullptr);
+
+  X509_STORE* cert_store = X509_STORE_new ();
+
+  X509_STORE_add_cert (cert_store, ca_cert);
+
+  svr.update_certs (cert, key, cert_store);
+
+  ASSERT_TRUE(svr.is_valid());
+  svr.stop();
+
+  X509_free (cert);
+  X509_free (ca_cert);
+  EVP_PKEY_free (key);
+}
+#endif
+
 TEST(ErrorHandlerTest, ContentLength) {
   Server svr;
 
