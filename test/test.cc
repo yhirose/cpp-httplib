@@ -7431,3 +7431,18 @@ TEST(PathParamsTest, SequenceOfParams) {
 
   EXPECT_EQ(request.path_params, expected_params);
 }
+
+TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
+  // If ipv6 regex working, regex match codepath is taken.
+  // else port will default to 80 in Client impl
+  int clientImplMagicPort = 80;
+  int port = 4321;
+  // above ports must be different to avoid false negative
+  EXPECT_NE(clientImplMagicPort, port);
+
+  std::string ipV6TestURL = "http://[ff06::c3]";
+
+  Client cli(ipV6TestURL + ":" + std::to_string(port), CLIENT_CERT_FILE,
+               CLIENT_PRIVATE_KEY_FILE);
+  EXPECT_EQ(cli.port(), port);
+}
