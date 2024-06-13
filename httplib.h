@@ -726,6 +726,10 @@ private:
         assert(true == static_cast<bool>(fn));
         fn();
       }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+      OPENSSL_thread_stop ();
+#endif
     }
 
     ThreadPool &pool_;
