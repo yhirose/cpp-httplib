@@ -24,6 +24,7 @@ test/*.srl
 
 *.swp
 
+build/
 Debug
 Release
 *.vcxproj.user
