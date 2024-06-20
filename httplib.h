@@ -2832,15 +2832,25 @@ inline bool mmap::open(const char *path) {
   if (!::GetFileSizeEx(hFile_, &size)) { return false; }
   size_ = static_cast<size_t>(size.QuadPart);
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
+#else
+  hMapping_ =
+      ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, size.HighPart,
+                           size.LowPart, NULL);
+#endif
 
   if (hMapping_ == NULL) {
     close();
     return false;
   }
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
+#else
+  addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
+#endif
 #else
   fd_ = ::open(path, O_RDONLY);
   if (fd_ == -1) { return false; }
