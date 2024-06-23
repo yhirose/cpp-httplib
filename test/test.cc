@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -3474,7 +3475,7 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
 
 TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   auto res =
-      cli_.Get("/with-range", {{"Range", "bytes=0-9223372036854775807"}});
+      cli_.Get("/with-range", {{"Range", "bytes=0-" + std::to_string(std::numeric_limits<long>::max())}});
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
