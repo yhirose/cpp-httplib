@@ -2823,8 +2823,13 @@ inline bool mmap::open(const char *path) {
     wpath += path[i];
   }
 
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                          OPEN_EXISTING, NULL);
+#else
+  hFile_ = ::CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#endif
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
@@ -2832,7 +2837,7 @@ inline bool mmap::open(const char *path) {
   if (!::GetFileSizeEx(hFile_, &size)) { return false; }
   size_ = static_cast<size_t>(size.QuadPart);
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
 #else
@@ -2846,7 +2851,7 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
 #else
   addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
