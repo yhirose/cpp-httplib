@@ -54,9 +54,15 @@ MultipartFormData &get_file_value(MultipartFormDataItems &files,
 #endif
 }
 
-TEST(ConstructorTest, MoveConstructible) {
+TEST(ClientTest, MoveConstructible) {
   EXPECT_FALSE(std::is_copy_constructible<Client>::value);
   EXPECT_TRUE(std::is_nothrow_move_constructible<Client>::value);
+}
+
+TEST(ClientTest, MoveAssignable)
+{
+    EXPECT_FALSE(std::is_copy_assignable<Client>::value);
+    EXPECT_TRUE(std::is_nothrow_move_assignable<Client>::value);
 }
 
 #ifdef _WIN32
