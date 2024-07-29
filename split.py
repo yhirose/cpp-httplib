@@ -38,7 +38,7 @@ if os.path.exists(h_out):
     do_split = in_time > out_time
 
 if do_split:
-    with open(in_file) as f:
+    with open('.' + in_file) as f:
         lines = f.readlines()
 
     python_version = sys.version_info[0]
