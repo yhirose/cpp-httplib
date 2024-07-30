@@ -8718,7 +8718,7 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
                         SSL_OP_NO_COMPRESSION |
                             SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
 
-    SSL_CTX_set_min_proto_version(ctx_, TLS1_1_VERSION);
+    SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
 
     if (private_key_password != nullptr && (private_key_password[0] != '\0')) {
       SSL_CTX_set_default_passwd_cb_userdata(
@@ -8750,7 +8750,7 @@ inline SSLServer::SSLServer(X509 *cert, EVP_PKEY *private_key,
                         SSL_OP_NO_COMPRESSION |
                             SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
 
-    SSL_CTX_set_min_proto_version(ctx_, TLS1_1_VERSION);
+    SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
 
     if (SSL_CTX_use_certificate(ctx_, cert) != 1 ||
         SSL_CTX_use_PrivateKey(ctx_, private_key) != 1) {
