@@ -559,6 +559,8 @@ struct Request {
   const SSL *ssl = nullptr;
 #endif
 
+  socket_t sock_fd;
+
   bool has_header(const std::string &key) const;
   std::string get_header_value(const std::string &key, size_t id = 0) const;
   uint64_t get_header_value_u64(const std::string &key, size_t id = 0) const;
@@ -728,7 +730,7 @@ private:
       }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      OPENSSL_thread_stop ();
+      OPENSSL_thread_stop();
 #endif
     }
 
@@ -757,7 +759,6 @@ const char *status_message(int status);
 std::string get_bearer_token_auth(const Request &req);
 
 namespace detail {
-
 class MatcherBase {
 public:
   virtual ~MatcherBase() = default;
@@ -1824,9 +1825,9 @@ public:
   bool is_valid() const override;
 
   SSL_CTX *ssl_context() const;
-  
-  void update_certs (X509 *cert, EVP_PKEY *private_key,
-            X509_STORE *client_ca_cert_store = nullptr);
+
+  void update_certs(X509 *cert, EVP_PKEY *private_key,
+                    X509_STORE *client_ca_cert_store = nullptr);
 
 private:
   bool process_and_close_socket(socket_t sock) override;
@@ -2824,7 +2825,9 @@ inline bool mmap::open(const char *path) {
     wpath += path[i];
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM |   \
+                            WINAPI_PARTITION_GAMES) &&                         \
+    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                          OPEN_EXISTING, NULL);
 #else
@@ -2834,7 +2837,8 @@ inline bool mmap::open(const char *path) {
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM |   \
+                            WINAPI_PARTITION_GAMES)
   LARGE_INTEGER size{};
   if (!::GetFileSizeEx(hFile_, &size)) { return false; }
   size_ = static_cast<size_t>(size.QuadPart);
@@ -2846,13 +2850,13 @@ inline bool mmap::open(const char *path) {
   size_ = (static_cast<size_t>(sizeHigh) << (sizeof(DWORD) * 8)) | sizeLow;
 #endif
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
+    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
 #else
-  hMapping_ =
-      ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, size.HighPart,
-                           size.LowPart, NULL);
+  hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, size.HighPart,
+                                   size.LowPart, NULL);
 #endif
 
   if (hMapping_ == NULL) {
@@ -2860,7 +2864,8 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
+    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
 #else
   addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
@@ -5371,6 +5376,43 @@ private:
   ContentProviderWithoutLength content_provider_;
 };
 
+class SseEmitter {
+private:
+  socket_t sockFd;
+
+public:
+  long id;
+
+  string event = "message";
+
+  string data;
+
+  long retry = 3000;
+
+  SseEmitter(socket_t sockFd = 0);
+
+  socket_t getSockFD();
+
+  int send();
+
+  ~SseEmitter();
+};
+
+SseEmitter::SseEmitter(socket_t sockFd) { this->sockFd = sockFd; }
+
+socket_t SseEmitter::getSockFD() { return sockFd; }
+
+int SseEmitter::send() {
+  string sendData = "id: " + std::to_string(id) + "\nevent: " + event +
+                    "\ndata: " + data + "\nretry: " + std::to_string(retry) +
+                    "\n\n\n";
+  const char *ptr = sendData.c_str();
+  if (!is_socket_alive(sockFd)) { return -1; }
+  return send_socket(sockFd, ptr, strlen(ptr), CPPHTTPLIB_SEND_FLAGS);
+}
+
+SseEmitter::~SseEmitter() {}
+
 } // namespace detail
 
 inline std::string hosted_at(const std::string &hostname) {
@@ -6205,6 +6247,16 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     res.set_header("Accept-Ranges", "bytes");
   }
 
+  if (res.has_header("Content-Type")) {
+    string type = res.get_header_value("Content-Type");
+    if (type.find("text/event-stream") != std::string::npos) {
+      res.headers.erase("Content-Length");
+      res.headers.erase("Keep-Alive");
+      res.set_header("Connection", "keep-alive");
+      res.set_header("Cache-Control", "no-cache");
+    }
+  }
+
   if (post_routing_handler_) { post_routing_handler_(req, res); }
 
   // Response line and headers
@@ -6241,6 +6293,11 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   // Log
   if (logger_) { logger_(req, res); }
+
+  if (res.has_header("Content-Type")) {
+    string type = res.get_header_value("Content-Type");
+    if (type.find("text/event-stream") != std::string::npos) { return false; }
+  }
 
   return ret;
 }
@@ -6787,6 +6844,7 @@ Server::process_request(Stream &strm, bool close_connection,
   if (!line_reader.getline()) { return false; }
 
   Request req;
+  req.sock_fd = strm.socket();
 
   Response res;
   res.version = "HTTP/1.1";
@@ -6933,8 +6991,11 @@ inline bool Server::process_and_close_socket(socket_t sock) {
                                nullptr);
       });
 
-  detail::shutdown_socket(sock);
-  detail::close_socket(sock);
+  if (ret) {
+    detail::shutdown_socket(sock);
+    detail::close_socket(sock);
+  }
+
   return ret;
 }
 
@@ -8185,7 +8246,8 @@ inline Result ClientImpl::Patch(const std::string &path,
 
 inline Result ClientImpl::Patch(const std::string &path,
                                 const std::string &body,
-                                const std::string &content_type, Progress progress) {
+                                const std::string &content_type,
+                                Progress progress) {
   return Patch(path, Headers(), body, content_type, progress);
 }
 
@@ -8784,17 +8846,17 @@ inline bool SSLServer::is_valid() const { return ctx_; }
 
 inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
 
-inline void SSLServer::update_certs (X509 *cert, EVP_PKEY *private_key,
-            X509_STORE *client_ca_cert_store) {
+inline void SSLServer::update_certs(X509 *cert, EVP_PKEY *private_key,
+                                    X509_STORE *client_ca_cert_store) {
 
-    std::lock_guard<std::mutex> guard(ctx_mutex_);
+  std::lock_guard<std::mutex> guard(ctx_mutex_);
 
-    SSL_CTX_use_certificate (ctx_, cert);
-    SSL_CTX_use_PrivateKey  (ctx_, private_key);
+  SSL_CTX_use_certificate(ctx_, cert);
+  SSL_CTX_use_PrivateKey(ctx_, private_key);
 
-    if (client_ca_cert_store != nullptr) {
-        SSL_CTX_set_cert_store  (ctx_, client_ca_cert_store);
-    }
+  if (client_ca_cert_store != nullptr) {
+    SSL_CTX_set_cert_store(ctx_, client_ca_cert_store);
+  }
 }
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
@@ -9579,7 +9641,8 @@ inline Result Client::Patch(const std::string &path, const char *body,
 }
 inline Result Client::Patch(const std::string &path, const char *body,
                             size_t content_length,
-                            const std::string &content_type, Progress progress) {
+                            const std::string &content_type,
+                            Progress progress) {
   return cli_->Patch(path, body, content_length, content_type, progress);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
@@ -9589,15 +9652,18 @@ inline Result Client::Patch(const std::string &path, const Headers &headers,
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
                             const char *body, size_t content_length,
-                            const std::string &content_type, Progress progress) {
-  return cli_->Patch(path, headers, body, content_length, content_type, progress);
+                            const std::string &content_type,
+                            Progress progress) {
+  return cli_->Patch(path, headers, body, content_length, content_type,
+                     progress);
 }
 inline Result Client::Patch(const std::string &path, const std::string &body,
                             const std::string &content_type) {
   return cli_->Patch(path, body, content_type);
 }
 inline Result Client::Patch(const std::string &path, const std::string &body,
-                            const std::string &content_type, Progress progress) {
+                            const std::string &content_type,
+                            Progress progress) {
   return cli_->Patch(path, body, content_type, progress);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
@@ -9607,7 +9673,8 @@ inline Result Client::Patch(const std::string &path, const Headers &headers,
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
                             const std::string &body,
-                            const std::string &content_type, Progress progress) {
+                            const std::string &content_type,
+                            Progress progress) {
   return cli_->Patch(path, headers, body, content_type, progress);
 }
 inline Result Client::Patch(const std::string &path, size_t content_length,
@@ -9646,7 +9713,8 @@ inline Result Client::Delete(const std::string &path, const char *body,
 }
 inline Result Client::Delete(const std::string &path, const char *body,
                              size_t content_length,
-                             const std::string &content_type, Progress progress) {
+                             const std::string &content_type,
+                             Progress progress) {
   return cli_->Delete(path, body, content_length, content_type, progress);
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
@@ -9656,15 +9724,18 @@ inline Result Client::Delete(const std::string &path, const Headers &headers,
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const char *body, size_t content_length,
-                             const std::string &content_type, Progress progress) {
-  return cli_->Delete(path, headers, body, content_length, content_type, progress);
+                             const std::string &content_type,
+                             Progress progress) {
+  return cli_->Delete(path, headers, body, content_length, content_type,
+                      progress);
 }
 inline Result Client::Delete(const std::string &path, const std::string &body,
                              const std::string &content_type) {
   return cli_->Delete(path, body, content_type);
 }
 inline Result Client::Delete(const std::string &path, const std::string &body,
-                             const std::string &content_type, Progress progress) {
+                             const std::string &content_type,
+                             Progress progress) {
   return cli_->Delete(path, body, content_type, progress);
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
@@ -9674,7 +9745,8 @@ inline Result Client::Delete(const std::string &path, const Headers &headers,
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const std::string &body,
-                             const std::string &content_type, Progress progress) {
+                             const std::string &content_type,
+                             Progress progress) {
   return cli_->Delete(path, headers, body, content_type, progress);
 }
 inline Result Client::Options(const std::string &path) {
