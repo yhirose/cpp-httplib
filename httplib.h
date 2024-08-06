@@ -8559,6 +8559,8 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                  reinterpret_cast<const void *>(&tv), sizeof(tv));
 
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
       char buf[1];
       if (SSL_peek(ssl, buf, 1) == 0 &&
           SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN) {
