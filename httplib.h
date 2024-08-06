@@ -728,7 +728,7 @@ private:
       }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-      OPENSSL_thread_stop ();
+      OPENSSL_thread_stop();
 #endif
     }
 
@@ -1824,9 +1824,9 @@ public:
   bool is_valid() const override;
 
   SSL_CTX *ssl_context() const;
-  
-  void update_certs (X509 *cert, EVP_PKEY *private_key,
-            X509_STORE *client_ca_cert_store = nullptr);
+
+  void update_certs(X509 *cert, EVP_PKEY *private_key,
+                    X509_STORE *client_ca_cert_store = nullptr);
 
 private:
   bool process_and_close_socket(socket_t sock) override;
@@ -2824,7 +2824,9 @@ inline bool mmap::open(const char *path) {
     wpath += path[i];
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM |   \
+                            WINAPI_PARTITION_GAMES) &&                         \
+    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                          OPEN_EXISTING, NULL);
 #else
@@ -2834,7 +2836,8 @@ inline bool mmap::open(const char *path) {
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM |   \
+                            WINAPI_PARTITION_GAMES)
   LARGE_INTEGER size{};
   if (!::GetFileSizeEx(hFile_, &size)) { return false; }
   size_ = static_cast<size_t>(size.QuadPart);
@@ -2846,13 +2849,13 @@ inline bool mmap::open(const char *path) {
   size_ = (static_cast<size_t>(sizeHigh) << (sizeof(DWORD) * 8)) | sizeLow;
 #endif
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
+    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
 #else
-  hMapping_ =
-      ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, size.HighPart,
-                           size.LowPart, NULL);
+  hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, size.HighPart,
+                                   size.LowPart, NULL);
 #endif
 
   if (hMapping_ == NULL) {
@@ -2860,7 +2863,8 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
+    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
 #else
   addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
@@ -8185,7 +8189,8 @@ inline Result ClientImpl::Patch(const std::string &path,
 
 inline Result ClientImpl::Patch(const std::string &path,
                                 const std::string &body,
-                                const std::string &content_type, Progress progress) {
+                                const std::string &content_type,
+                                Progress progress) {
   return Patch(path, Headers(), body, content_type, progress);
 }
 
@@ -8784,17 +8789,17 @@ inline bool SSLServer::is_valid() const { return ctx_; }
 
 inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
 
-inline void SSLServer::update_certs (X509 *cert, EVP_PKEY *private_key,
-            X509_STORE *client_ca_cert_store) {
+inline void SSLServer::update_certs(X509 *cert, EVP_PKEY *private_key,
+                                    X509_STORE *client_ca_cert_store) {
 
-    std::lock_guard<std::mutex> guard(ctx_mutex_);
+  std::lock_guard<std::mutex> guard(ctx_mutex_);
 
-    SSL_CTX_use_certificate (ctx_, cert);
-    SSL_CTX_use_PrivateKey  (ctx_, private_key);
+  SSL_CTX_use_certificate(ctx_, cert);
+  SSL_CTX_use_PrivateKey(ctx_, private_key);
 
-    if (client_ca_cert_store != nullptr) {
-        SSL_CTX_set_cert_store  (ctx_, client_ca_cert_store);
-    }
+  if (client_ca_cert_store != nullptr) {
+    SSL_CTX_set_cert_store(ctx_, client_ca_cert_store);
+  }
 }
 
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
@@ -9579,7 +9584,8 @@ inline Result Client::Patch(const std::string &path, const char *body,
 }
 inline Result Client::Patch(const std::string &path, const char *body,
                             size_t content_length,
-                            const std::string &content_type, Progress progress) {
+                            const std::string &content_type,
+                            Progress progress) {
   return cli_->Patch(path, body, content_length, content_type, progress);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
@@ -9589,15 +9595,18 @@ inline Result Client::Patch(const std::string &path, const Headers &headers,
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
                             const char *body, size_t content_length,
-                            const std::string &content_type, Progress progress) {
-  return cli_->Patch(path, headers, body, content_length, content_type, progress);
+                            const std::string &content_type,
+                            Progress progress) {
+  return cli_->Patch(path, headers, body, content_length, content_type,
+                     progress);
 }
 inline Result Client::Patch(const std::string &path, const std::string &body,
                             const std::string &content_type) {
   return cli_->Patch(path, body, content_type);
 }
 inline Result Client::Patch(const std::string &path, const std::string &body,
-                            const std::string &content_type, Progress progress) {
+                            const std::string &content_type,
+                            Progress progress) {
   return cli_->Patch(path, body, content_type, progress);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
@@ -9607,7 +9616,8 @@ inline Result Client::Patch(const std::string &path, const Headers &headers,
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
                             const std::string &body,
-                            const std::string &content_type, Progress progress) {
+                            const std::string &content_type,
+                            Progress progress) {
   return cli_->Patch(path, headers, body, content_type, progress);
 }
 inline Result Client::Patch(const std::string &path, size_t content_length,
@@ -9646,7 +9656,8 @@ inline Result Client::Delete(const std::string &path, const char *body,
 }
 inline Result Client::Delete(const std::string &path, const char *body,
                              size_t content_length,
-                             const std::string &content_type, Progress progress) {
+                             const std::string &content_type,
+                             Progress progress) {
   return cli_->Delete(path, body, content_length, content_type, progress);
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
@@ -9656,15 +9667,18 @@ inline Result Client::Delete(const std::string &path, const Headers &headers,
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const char *body, size_t content_length,
-                             const std::string &content_type, Progress progress) {
-  return cli_->Delete(path, headers, body, content_length, content_type, progress);
+                             const std::string &content_type,
+                             Progress progress) {
+  return cli_->Delete(path, headers, body, content_length, content_type,
+                      progress);
 }
 inline Result Client::Delete(const std::string &path, const std::string &body,
                              const std::string &content_type) {
   return cli_->Delete(path, body, content_type);
 }
 inline Result Client::Delete(const std::string &path, const std::string &body,
-                             const std::string &content_type, Progress progress) {
+                             const std::string &content_type,
+                             Progress progress) {
   return cli_->Delete(path, body, content_type, progress);
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
@@ -9674,7 +9688,8 @@ inline Result Client::Delete(const std::string &path, const Headers &headers,
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const std::string &body,
-                             const std::string &content_type, Progress progress) {
+                             const std::string &content_type,
+                             Progress progress) {
   return cli_->Delete(path, headers, body, content_type, progress);
 }
 inline Result Client::Options(const std::string &path) {

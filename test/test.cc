@@ -59,10 +59,9 @@ TEST(ClientTest, MoveConstructible) {
   EXPECT_TRUE(std::is_nothrow_move_constructible<Client>::value);
 }
 
-TEST(ClientTest, MoveAssignable)
-{
-    EXPECT_FALSE(std::is_copy_assignable<Client>::value);
-    EXPECT_TRUE(std::is_nothrow_move_assignable<Client>::value);
+TEST(ClientTest, MoveAssignable) {
+  EXPECT_FALSE(std::is_copy_assignable<Client>::value);
+  EXPECT_TRUE(std::is_nothrow_move_assignable<Client>::value);
 }
 
 #ifdef _WIN32
@@ -1755,32 +1754,34 @@ TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-X509* readCertificate (const std::string& strFileName) {
-    std::ifstream inStream (strFileName);
-    std::string strCertPEM ((std::istreambuf_iterator<char>(inStream)), std::istreambuf_iterator<char>());
+X509 *readCertificate(const std::string &strFileName) {
+  std::ifstream inStream(strFileName);
+  std::string strCertPEM((std::istreambuf_iterator<char>(inStream)),
+                         std::istreambuf_iterator<char>());
 
-    if (strCertPEM.empty ()) return (nullptr);
+  if (strCertPEM.empty()) return (nullptr);
 
-    BIO* pbCert = BIO_new (BIO_s_mem ());
-    BIO_write (pbCert, strCertPEM.c_str (), (int)strCertPEM.size ());
-    X509* pCert = PEM_read_bio_X509 (pbCert, NULL, 0, NULL);
-    BIO_free (pbCert);
+  BIO *pbCert = BIO_new(BIO_s_mem());
+  BIO_write(pbCert, strCertPEM.c_str(), (int)strCertPEM.size());
+  X509 *pCert = PEM_read_bio_X509(pbCert, NULL, 0, NULL);
+  BIO_free(pbCert);
 
-    return (pCert);
+  return (pCert);
 }
 
-EVP_PKEY* readPrivateKey (const std::string& strFileName) {
-    std::ifstream inStream (strFileName);
-    std::string strPrivateKeyPEM ((std::istreambuf_iterator<char>(inStream)), std::istreambuf_iterator<char>());
+EVP_PKEY *readPrivateKey(const std::string &strFileName) {
+  std::ifstream inStream(strFileName);
+  std::string strPrivateKeyPEM((std::istreambuf_iterator<char>(inStream)),
+                               std::istreambuf_iterator<char>());
 
-    if (strPrivateKeyPEM.empty ()) return (nullptr);
+  if (strPrivateKeyPEM.empty()) return (nullptr);
 
-    BIO* pbPrivKey = BIO_new (BIO_s_mem ());
-    BIO_write (pbPrivKey, strPrivateKeyPEM.c_str (), (int) strPrivateKeyPEM.size ());
-    EVP_PKEY* pPrivateKey = PEM_read_bio_PrivateKey (pbPrivKey, NULL, NULL, NULL);
-    BIO_free (pbPrivKey);
+  BIO *pbPrivKey = BIO_new(BIO_s_mem());
+  BIO_write(pbPrivKey, strPrivateKeyPEM.c_str(), (int)strPrivateKeyPEM.size());
+  EVP_PKEY *pPrivateKey = PEM_read_bio_PrivateKey(pbPrivKey, NULL, NULL, NULL);
+  BIO_free(pbPrivKey);
 
-    return (pPrivateKey);
+  return (pPrivateKey);
 }
 
 TEST(BindServerTest, UpdateCerts) {
@@ -1789,26 +1790,26 @@ TEST(BindServerTest, UpdateCerts) {
   ASSERT_TRUE(svr.is_valid());
   ASSERT_TRUE(port > 0);
 
-  X509* cert    = readCertificate (SERVER_CERT_FILE);
-  X509* ca_cert = readCertificate (CLIENT_CA_CERT_FILE);
-  EVP_PKEY* key = readPrivateKey  (SERVER_PRIVATE_KEY_FILE);
+  X509 *cert = readCertificate(SERVER_CERT_FILE);
+  X509 *ca_cert = readCertificate(CLIENT_CA_CERT_FILE);
+  EVP_PKEY *key = readPrivateKey(SERVER_PRIVATE_KEY_FILE);
 
-  ASSERT_TRUE(cert    != nullptr);
+  ASSERT_TRUE(cert != nullptr);
   ASSERT_TRUE(ca_cert != nullptr);
-  ASSERT_TRUE(key     != nullptr);
+  ASSERT_TRUE(key != nullptr);
 
-  X509_STORE* cert_store = X509_STORE_new ();
+  X509_STORE *cert_store = X509_STORE_new();
 
-  X509_STORE_add_cert (cert_store, ca_cert);
+  X509_STORE_add_cert(cert_store, ca_cert);
 
-  svr.update_certs (cert, key, cert_store);
+  svr.update_certs(cert, key, cert_store);
 
   ASSERT_TRUE(svr.is_valid());
   svr.stop();
 
-  X509_free (cert);
-  X509_free (ca_cert);
-  EVP_PKEY_free (key);
+  X509_free(cert);
+  X509_free(ca_cert);
+  EVP_PKEY_free(key);
 }
 #endif
 
@@ -2357,8 +2358,8 @@ protected:
              })
         .Get("/with-range-customized-response",
              [&](const Request & /*req*/, Response &res) {
-              res.status = StatusCode::BadRequest_400;
-              res.set_content(JSON_DATA,  "application/json");
+               res.status = StatusCode::BadRequest_400;
+               res.set_content(JSON_DATA, "application/json");
              })
         .Post("/chunked",
               [&](const Request &req, Response & /*res*/) {
@@ -3480,8 +3481,10 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
 }
 
 TEST_F(ServerTest, GetRangeWithMaxLongLength) {
-  auto res =
-      cli_.Get("/with-range", {{"Range", "bytes=0-" + std::to_string(std::numeric_limits<long>::max())}});
+  auto res = cli_.Get(
+      "/with-range",
+      {{"Range",
+        "bytes=0-" + std::to_string(std::numeric_limits<long>::max())}});
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
@@ -3637,7 +3640,8 @@ TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
 }
 
 TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
-  auto res = cli_.Get("/with-range-customized-response", {{make_range_header({{1, 2}})}});
+  auto res = cli_.Get("/with-range-customized-response",
+                      {{make_range_header({{1, 2}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ(true, res->has_header("Content-Length"));
@@ -3646,7 +3650,8 @@ TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
 }
 
 TEST_F(ServerTest, GetWithRangeMultipartCustomizedResponseMultipleRange) {
-  auto res = cli_.Get("/with-range-customized-response", {{make_range_header({{1, 2}, {4, 5}})}});
+  auto res = cli_.Get("/with-range-customized-response",
+                      {{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ(true, res->has_header("Content-Length"));
@@ -7450,6 +7455,6 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   std::string ipV6TestURL = "http://[ff06::c3]";
 
   Client cli(ipV6TestURL + ":" + std::to_string(port), CLIENT_CERT_FILE,
-               CLIENT_PRIVATE_KEY_FILE);
+             CLIENT_PRIVATE_KEY_FILE);
   EXPECT_EQ(cli.port(), port);
 }
