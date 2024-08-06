@@ -3252,7 +3252,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     if (addrlen > sizeof(sockaddr_un::sun_path)) { return INVALID_SOCKET; }
 
 #ifdef SOCK_CLOEXEC
-    auto sock = socket(hints.ai_family, hints.ai_socktype | SOCK_CLOEXEC, hints.ai_protocol);
+    auto sock = socket(hints.ai_family, hints.ai_socktype | SOCK_CLOEXEC,
+                       hints.ai_protocol);
 #else
     auto sock = socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
 #endif
@@ -3316,7 +3317,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #else
 
 #ifdef SOCK_CLOEXEC
-    auto sock = socket(rp->ai_family, rp->ai_socktype | SOCK_CLOEXEC, rp->ai_protocol);
+    auto sock =
+        socket(rp->ai_family, rp->ai_socktype | SOCK_CLOEXEC, rp->ai_protocol);
 #else
     auto sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
 #endif
@@ -6521,9 +6523,10 @@ inline bool Server::listen_internal() {
 #endif
 
 #if defined _WIN32
-      // sockets conneced via WASAccept inherit flags NO_HANDLE_INHERIT, OVERLAPPED
+      // sockets conneced via WASAccept inherit flags NO_HANDLE_INHERIT,
+      // OVERLAPPED
       socket_t sock = WSAAccept(svr_sock_, nullptr, nullptr, nullptr, 0);
-#elif defined __linux__
+#elif defined SOCK_CLOEXEC
       socket_t sock = accept4(svr_sock_, nullptr, nullptr, SOCK_CLOEXEC);
 #else
       socket_t sock = accept(svr_sock_, nullptr, nullptr);
@@ -9343,7 +9346,7 @@ inline Client::Client(const std::string &scheme_host_port,
     cli_ = detail::make_unique<ClientImpl>(scheme_host_port, 80,
                                            client_cert_path, client_key_path);
   }
-}
+} // namespace detail
 
 inline Client::Client(const std::string &host, int port)
     : cli_(detail::make_unique<ClientImpl>(host, port)) {}
