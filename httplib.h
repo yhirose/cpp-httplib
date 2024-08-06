@@ -8554,8 +8554,6 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
     timeval tv;
     tv.tv_sec = 1;
     tv.tv_usec = 0;
-    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
-               reinterpret_cast<const void *>(&tv), sizeof(tv));
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                reinterpret_cast<const void *>(&tv), sizeof(tv));
 
