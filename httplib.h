@@ -8551,24 +8551,19 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
 #ifdef _WIN32
     SSL_shutdown(ssl);
 #else
-    auto is_peer_could_be_closed = false;
-    {
-      timeval tv;
-      tv.tv_sec = 1;
-      tv.tv_usec = 0;
-      setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-                 reinterpret_cast<const void *>(&tv), sizeof(tv));
+    timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+               reinterpret_cast<const void *>(&tv), sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const void *>(&tv), sizeof(tv));
 
+    auto ret = SSL_shutdown(ssl);
+    while (ret == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-      char buf[1];
-      if (SSL_peek(ssl, buf, 1) == 0 &&
-          SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN) {
-        is_peer_could_be_closed = true;
-      }
+      ret = SSL_shutdown(ssl);
     }
-
-    if (!is_peer_could_be_closed) { SSL_shutdown(ssl); }
 #endif
   }
 
