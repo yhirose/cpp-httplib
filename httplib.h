@@ -269,7 +269,12 @@ using socket_t = int;
 #include <iostream>
 #include <sstream>
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
+#if defined(OPENSSL_IS_BORINGSSL)
+#if OPENSSL_VERSION_NUMBER < 0x1010107f
+#error Please use OpenSSL or a current version of BoringSSL
+#endif
+#define SSL_get1_peer_certificate SSL_get_peer_certificate
+#elif OPENSSL_VERSION_NUMBER < 0x30000000L
 #error Sorry, OpenSSL versions prior to 3.0.0 are not supported
 #endif
 
@@ -727,7 +732,7 @@ private:
         fn();
       }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(OPENSSL_IS_BORINGSSL)
       OPENSSL_thread_stop();
 #endif
     }
@@ -9121,11 +9126,14 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         return true;
       },
       [&](SSL *ssl2) {
+#if defined(OPENSSL_IS_BORINGSSL)
+        SSL_set_tlsext_host_name(ssl2, host_.c_str());
+#else
         // NOTE: Direct call instead of using the OpenSSL macro to suppress
         // -Wold-style-cast warning
-        // SSL_set_tlsext_host_name(ssl2, host_.c_str());
         SSL_ctrl(ssl2, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
                  static_cast<void *>(const_cast<char *>(host_.c_str())));
+#endif
         return true;
       });
 
