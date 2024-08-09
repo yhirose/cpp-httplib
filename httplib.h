@@ -1186,6 +1186,8 @@ public:
               const Params &params);
   Result Post(const std::string &path, const Headers &headers,
               const Params &params, Progress progress);
+  Result Post(const std::string &path, const Params &params,
+              const std::string &body, const std::string &content_type);
   Result Post(const std::string &path, const MultipartFormDataItems &items);
   Result Post(const std::string &path, const Headers &headers,
               const MultipartFormDataItems &items);
@@ -1611,6 +1613,8 @@ public:
               const Params &params);
   Result Post(const std::string &path, const Headers &headers,
               const Params &params, Progress progress);
+  Result Post(const std::string &path, const Params &params,
+              const std::string &body, const std::string &content_type);
   Result Post(const std::string &path, const MultipartFormDataItems &items);
   Result Post(const std::string &path, const Headers &headers,
               const MultipartFormDataItems &items);
@@ -8007,6 +8011,13 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
               progress);
 }
 
+inline Result ClientImpl::Post(const std::string &path, const Params &params,
+                               const std::string &body,
+                               const std::string &content_type) {
+  std::string path_with_query = append_query_params(path, params);
+  return Post(path_with_query, Headers(), body, content_type);
+}
+
 inline Result ClientImpl::Post(const std::string &path,
                                const MultipartFormDataItems &items) {
   return Post(path, Headers(), items);
@@ -9524,6 +9535,11 @@ inline Result Client::Post(const std::string &path, const Headers &headers,
 inline Result Client::Post(const std::string &path, const Headers &headers,
                            const Params &params, Progress progress) {
   return cli_->Post(path, headers, params, progress);
+}
+inline Result Client::Post(const std::string &path, const Params &params,
+                           const std::string &body,
+                           const std::string &content_type) {
+  return cli_->Post(path, params, body, content_type);
 }
 inline Result Client::Post(const std::string &path,
                            const MultipartFormDataItems &items) {
