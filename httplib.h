@@ -3278,7 +3278,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
       if (socket_options) { socket_options(sock); }
 
-      if (!bind_or_connect(sock, hints)) {
+      bool dummy;
+      if (!bind_or_connect(sock, hints, dummy)) {
         close_socket(sock);
         sock = INVALID_SOCKET;
       }
@@ -3363,12 +3364,17 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     }
 
     // bind or connect
-    if (bind_or_connect(sock, *rp)) {
+    auto quit = false;
+    if (bind_or_connect(sock, *rp, quit)) {
       freeaddrinfo(result);
       return sock;
     }
 
     close_socket(sock);
+
+    if (quit) {
+      break;
+    }
   }
 
   freeaddrinfo(result);
@@ -3469,7 +3475,7 @@ inline socket_t create_client_socket(
     time_t write_timeout_usec, const std::string &intf, Error &error) {
   auto sock = create_socket(
       host, ip, port, address_family, 0, tcp_nodelay, std::move(socket_options),
-      [&](socket_t sock2, struct addrinfo &ai) -> bool {
+      [&](socket_t sock2, struct addrinfo &ai, bool& quit) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
           auto ip_from_if = if2ip(address_family, intf);
@@ -3493,7 +3499,12 @@ inline socket_t create_client_socket(
           }
           error = wait_until_socket_is_ready(sock2, connection_timeout_sec,
                                              connection_timeout_usec);
-          if (error != Error::Success) { return false; }
+          if (error != Error::Success) {
+            if (error == Error::ConnectionTimeout) {
+              quit = true;
+            }
+            return false;
+          }
         }
 
         set_nonblocking(sock2, false);
@@ -6470,7 +6481,7 @@ Server::create_server_socket(const std::string &host, int port,
   return detail::create_socket(
       host, std::string(), port, address_family_, socket_flags, tcp_nodelay_,
       std::move(socket_options),
-      [](socket_t sock, struct addrinfo &ai) -> bool {
+      [](socket_t sock, struct addrinfo &ai, bool& quit) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
         }
