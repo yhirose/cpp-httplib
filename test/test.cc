@@ -5167,8 +5167,14 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto f = std::async(std::launch::async, [&svr] { svr.listen(HOST, PORT); });
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT);
   cli.enable_server_certificate_verification(false);
@@ -5206,9 +5212,6 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
       "text/plain");
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
-
-  svr.stop();
-  f.wait();
 }
 #endif
 
