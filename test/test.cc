@@ -5176,7 +5176,7 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
 
   auto result = cli.Post(
       "/hi", content.size(),
-      [&content](size_t offset, size_t length, DataSink &sink) {
+      [&content](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
         sink.write(content.c_str(), content.size());
         return true;
       },
@@ -5189,7 +5189,7 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
   // Recoonect
   result = cli.Post(
       "/hi", content.size(),
-      [&content](size_t offset, size_t length, DataSink &sink) {
+      [&content](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
         sink.write(content.c_str(), content.size());
         return true;
       },
@@ -5199,7 +5199,7 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
 
   result = cli.Post(
       "/hi", content.size(),
-      [&content](size_t offset, size_t length, DataSink &sink) {
+      [&content](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
         sink.write(content.c_str(), content.size());
         return true;
       },
