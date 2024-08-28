@@ -2851,7 +2851,13 @@ inline bool mmap::open(const char *path) {
   DWORD sizeLow;
   sizeLow = ::GetFileSize(hFile_, &sizeHigh);
   if (sizeLow == INVALID_FILE_SIZE) { return false; }
-  size_ = (static_cast<size_t>(sizeHigh) << (sizeof(DWORD) * 8)) | sizeLow;
+  size_ = sizeLow;
+#if defined(_WIN64)
+  size_ |= (static_cast<size_t>(sizeHigh) << (sizeof(DWORD) * 8));
+#else
+  // The size of the file is too large to fit into `size_`, which is 32 bit.
+  if (sizeHigh != 0) { return false; }
+#endif
 #endif
 
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
