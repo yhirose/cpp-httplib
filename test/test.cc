@@ -467,25 +467,25 @@ TEST(ParseMultipartBoundaryTest, ValueWithQuotesAndCharset) {
 
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
+  auto val = detail::get_header_value(headers, "Content-Type", "text/plain", 0);
   EXPECT_STREQ("text/plain", val);
 }
 
 TEST(GetHeaderValueTest, DefaultValueInt) {
   Headers headers = {{"Dummy", "Dummy"}};
-  auto val = detail::get_header_value_u64(headers, "Content-Length", 0, 100);
+  auto val = detail::get_header_value_u64(headers, "Content-Length", 100, 0);
   EXPECT_EQ(100ull, val);
 }
 
 TEST(GetHeaderValueTest, RegularValue) {
   Headers headers = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
-  auto val = detail::get_header_value(headers, "Content-Type", 0, "text/plain");
+  auto val = detail::get_header_value(headers, "Content-Type", "text/plain", 0);
   EXPECT_STREQ("text/html", val);
 }
 
 TEST(GetHeaderValueTest, RegularValueWithDifferentCase) {
   Headers headers = {{"Content-Type", "text/html"}, {"Dummy", "Dummy"}};
-  auto val = detail::get_header_value(headers, "content-type", 0, "text/plain");
+  auto val = detail::get_header_value(headers, "content-type", "text/plain", 0);
   EXPECT_STREQ("text/html", val);
 }
 

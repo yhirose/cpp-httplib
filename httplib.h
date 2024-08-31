@@ -565,8 +565,10 @@ struct Request {
 #endif
 
   bool has_header(const std::string &key) const;
-  std::string get_header_value(const std::string &key, size_t id = 0) const;
-  uint64_t get_header_value_u64(const std::string &key, size_t id = 0) const;
+  std::string get_header_value(const std::string &key, const char *def = "",
+                               size_t id = 0) const;
+  uint64_t get_header_value_u64(const std::string &key, uint64_t def = 0,
+                                size_t id = 0) const;
   size_t get_header_value_count(const std::string &key) const;
   void set_header(const std::string &key, const std::string &val);
 
@@ -597,8 +599,10 @@ struct Response {
   std::string location; // Redirect location
 
   bool has_header(const std::string &key) const;
-  std::string get_header_value(const std::string &key, size_t id = 0) const;
-  uint64_t get_header_value_u64(const std::string &key, size_t id = 0) const;
+  std::string get_header_value(const std::string &key, const char *def = "",
+                               size_t id = 0) const;
+  uint64_t get_header_value_u64(const std::string &key, uint64_t def = 0,
+                                size_t id = 0) const;
   size_t get_header_value_count(const std::string &key) const;
   void set_header(const std::string &key, const std::string &val);
 
@@ -1091,9 +1095,10 @@ public:
   // Request Headers
   bool has_request_header(const std::string &key) const;
   std::string get_request_header_value(const std::string &key,
+                                       const char *def = "",
                                        size_t id = 0) const;
   uint64_t get_request_header_value_u64(const std::string &key,
-                                        size_t id = 0) const;
+                                        uint64_t def = 0, size_t id = 0) const;
   size_t get_request_header_value_count(const std::string &key) const;
 
 private:
@@ -1914,8 +1919,8 @@ inline void duration_to_sec_and_usec(const T &duration, U callback) {
 }
 
 inline uint64_t get_header_value_u64(const Headers &headers,
-                                     const std::string &key, size_t id,
-                                     uint64_t def) {
+                                     const std::string &key, uint64_t def,
+                                     size_t id) {
   auto rng = headers.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
@@ -1928,13 +1933,13 @@ inline uint64_t get_header_value_u64(const Headers &headers,
 } // namespace detail
 
 inline uint64_t Request::get_header_value_u64(const std::string &key,
-                                              size_t id) const {
-  return detail::get_header_value_u64(headers, key, id, 0);
+                                              uint64_t def, size_t id) const {
+  return detail::get_header_value_u64(headers, key, def, id);
 }
 
 inline uint64_t Response::get_header_value_u64(const std::string &key,
-                                               size_t id) const {
-  return detail::get_header_value_u64(headers, key, id, 0);
+                                               uint64_t def, size_t id) const {
+  return detail::get_header_value_u64(headers, key, def, id);
 }
 
 template <typename... Args>
@@ -2119,8 +2124,9 @@ inline std::ostream &operator<<(std::ostream &os, const Error &obj) {
 }
 
 inline uint64_t Result::get_request_header_value_u64(const std::string &key,
+                                                     uint64_t def,
                                                      size_t id) const {
-  return detail::get_header_value_u64(request_headers_, key, id, 0);
+  return detail::get_header_value_u64(request_headers_, key, def, id);
 }
 
 template <class Rep, class Period>
@@ -2220,7 +2226,7 @@ socket_t create_client_socket(
     time_t write_timeout_usec, const std::string &intf, Error &error);
 
 const char *get_header_value(const Headers &headers, const std::string &key,
-                             size_t id = 0, const char *def = nullptr);
+                             const char *def, size_t id);
 
 std::string params_to_query_str(const Params &params);
 
@@ -3948,8 +3954,8 @@ inline bool has_header(const Headers &headers, const std::string &key) {
 }
 
 inline const char *get_header_value(const Headers &headers,
-                                    const std::string &key, size_t id,
-                                    const char *def) {
+                                    const std::string &key, const char *def,
+                                    size_t id) {
   auto rng = headers.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
@@ -4146,7 +4152,7 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
 inline bool is_chunked_transfer_encoding(const Headers &headers) {
   return compare_case_ignore(
-      get_header_value(headers, "Transfer-Encoding", 0, ""), "chunked");
+      get_header_value(headers, "Transfer-Encoding", "", 0), "chunked");
 }
 
 template <typename T, typename U>
@@ -5489,8 +5495,8 @@ inline bool Request::has_header(const std::string &key) const {
 }
 
 inline std::string Request::get_header_value(const std::string &key,
-                                             size_t id) const {
-  return detail::get_header_value(headers, key, id, "");
+                                             const char *def, size_t id) const {
+  return detail::get_header_value(headers, key, def, id);
 }
 
 inline size_t Request::get_header_value_count(const std::string &key) const {
@@ -5554,8 +5560,9 @@ inline bool Response::has_header(const std::string &key) const {
 }
 
 inline std::string Response::get_header_value(const std::string &key,
+                                              const char *def,
                                               size_t id) const {
-  return detail::get_header_value(headers, key, id, "");
+  return detail::get_header_value(headers, key, def, id);
 }
 
 inline size_t Response::get_header_value_count(const std::string &key) const {
@@ -5640,8 +5647,9 @@ inline bool Result::has_request_header(const std::string &key) const {
 }
 
 inline std::string Result::get_request_header_value(const std::string &key,
+                                                    const char *def,
                                                     size_t id) const {
-  return detail::get_header_value(request_headers_, key, id, "");
+  return detail::get_header_value(request_headers_, key, def, id);
 }
 
 inline size_t
