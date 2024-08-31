@@ -5,35 +5,73 @@
 //  MIT License
 //
 
-#include <cstdio>
-#include <httplib.h>
+#include <chrono>
+#include <ctime>
+#include <format>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
-using namespace httplib;
-using namespace std;
+#include <httplib.h>
 
-auto error_html = R"(<html>
-<head><title>%d %s</title></head>
+constexpr auto error_html = R"(<html>
+<head><title>{} {}</title></head>
 <body>
 <center><h1>404 Not Found</h1></center>
-<hr><center>cpp-httplib/%s</center>
+<hr><center>cpp-httplib/{}</center>
 </body>
 </html>
 )";
 
-int main(int argc, const char **argv) {
-  Server svr;
+std::string time_local() {
+  auto p = std::chrono::system_clock::now();
+  auto t = std::chrono::system_clock::to_time_t(p);
 
-  svr.set_error_handler([](const Request & /*req*/, Response &res) {
-    char buf[BUFSIZ];
-    snprintf(buf, sizeof(buf), error_html, res.status,
-             status_message(res.status), CPPHTTPLIB_VERSION);
-    res.set_content(buf, "text/html");
+  std::stringstream ss;
+  ss << std::put_time(std::localtime(&t), "%d/%b/%Y:%H:%M:%S %z");
+  return ss.str();
+}
+
+std::string log(auto &req, auto &res) {
+  auto remote_user = "-"; // TODO:
+  auto request = std::format("{} {} {}", req.method, req.path, req.version);
+  auto body_bytes_sent = res.get_header_value("Content-Length");
+  auto http_referer = "-"; // TODO:
+  auto http_user_agent = req.get_header_value("User-Agent", "-");
+
+  // NOTE: From NGINX defualt access log format
+  // log_format combined '$remote_addr - $remote_user [$time_local] '
+  //                     '"$request" $status $body_bytes_sent '
+  //                     '"$http_referer" "$http_user_agent"';
+  return std::format(R"({} - {} [{}] "{}" {} {} "{}" "{}")", req.remote_addr,
+                     remote_user, time_local(), request, res.status,
+                     body_bytes_sent, http_referer, http_user_agent);
+}
+
+int main(int argc, const char **argv) {
+  auto base_dir = "./html";
+  auto host = "0.0.0.0";
+  auto port = 80;
+
+  httplib::Server svr;
+
+  svr.set_error_handler([](auto & /*req*/, auto &res) {
+    auto body =
+        std::format(error_html, res.status, httplib::status_message(res.status),
+                    CPPHTTPLIB_VERSION);
+
+    res.set_content(body, "text/html");
   });
 
-  svr.set_mount_point("/", "./html");
+  svr.set_logger(
+      [](auto &req, auto &res) { std::cout << log(req, res) << std::endl; });
 
-  svr.listen("0.0.0.0", 80);
+  svr.set_mount_point("/", base_dir);
 
-  return 0;
+  std::cout << std::format("Serving HTTP on {0} port {1} ...", host, port)
+            << std::endl;
+
+  auto ret = svr.listen(host, port);
+
+  return ret ? 0 : 1;
 }

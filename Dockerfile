@@ -1,11 +1,12 @@
 FROM ubuntu AS builder
-WORKDIR /app
+WORKDIR /build
 COPY httplib.h .
 COPY docker/main.cc .
 RUN apt update && apt install g++ -y
-RUN g++ -std=c++14 -static -o server -O3 -I. -DCPPHTTPLIB_USE_POLL main.cc
+RUN g++ -std=c++23 -static -o server -O2 -I. -DCPPHTTPLIB_USE_POLL main.cc && strip server
 
 FROM scratch
-COPY --from=builder /app/server /server
-COPY docker/index.html /html/index.html
+COPY --from=builder /build/server /server
+COPY docker/html/index.html /html/index.html
+EXPOSE 80
 CMD ["/server"]
