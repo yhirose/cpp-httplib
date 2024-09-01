@@ -3371,8 +3371,6 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #endif
     }
 
-    if (socket_options) { socket_options(sock); }
-
     if (rp->ai_family == AF_INET6) {
       auto opt = ipv6_v6only ? 1 : 0;
 #ifdef _WIN32
@@ -3383,6 +3381,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
                  reinterpret_cast<const void *>(&opt), sizeof(opt));
 #endif
     }
+
+    if (socket_options) { socket_options(sock); }
 
     // bind or connect
     auto quit = false;
