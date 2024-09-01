@@ -7720,6 +7720,14 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       return ret;
     };
 
+    if (res.has_header("Content-Length")) {
+      if (!req.content_receiver) {
+        auto len = std::min<size_t>(res.get_header_value_u64("Content-Length"),
+                                    res.body.max_size());
+        if (len > 0) { res.body.reserve(len); }
+      }
+    }
+
     int dummy_status;
     if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
                               dummy_status, std::move(progress), std::move(out),
