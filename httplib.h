@@ -90,6 +90,10 @@
 #define CPPHTTPLIB_TCP_NODELAY false
 #endif
 
+#ifndef CPPHTTPLIB_IPV6_V6ONLY
+#define CPPHTTPLIB_IPV6_V6ONLY false
+#endif
+
 #ifndef CPPHTTPLIB_RECV_BUFSIZ
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(16384u)
 #endif
@@ -900,6 +904,7 @@ public:
 
   Server &set_address_family(int family);
   Server &set_tcp_nodelay(bool on);
+  Server &set_ipv6_v6only(bool on);
   Server &set_socket_options(SocketOptions socket_options);
 
   Server &set_default_headers(Headers headers);
@@ -1040,6 +1045,7 @@ private:
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
+  bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
   SocketOptions socket_options_ = default_socket_options;
 
   Headers default_headers_;
@@ -1322,6 +1328,7 @@ public:
 
   void set_address_family(int family);
   void set_tcp_nodelay(bool on);
+  void set_ipv6_v6only(bool on);
   void set_socket_options(SocketOptions socket_options);
 
   void set_connection_timeout(time_t sec, time_t usec = 0);
@@ -1459,6 +1466,7 @@ protected:
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
+  bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
   SocketOptions socket_options_ = nullptr;
 
   bool compress_ = false;
@@ -1968,19 +1976,19 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
 }
 
 inline void default_socket_options(socket_t sock) {
-  int yes = 1;
+  int opt = 1;
 #ifdef _WIN32
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-             reinterpret_cast<const char *>(&yes), sizeof(yes));
+             reinterpret_cast<const char *>(&opt), sizeof(opt));
   setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-             reinterpret_cast<const char *>(&yes), sizeof(yes));
+             reinterpret_cast<const char *>(&opt), sizeof(opt));
 #else
 #ifdef SO_REUSEPORT
   setsockopt(sock, SOL_SOCKET, SO_REUSEPORT,
-             reinterpret_cast<const void *>(&yes), sizeof(yes));
+             reinterpret_cast<const void *>(&opt), sizeof(opt));
 #else
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-             reinterpret_cast<const void *>(&yes), sizeof(yes));
+             reinterpret_cast<const void *>(&opt), sizeof(opt));
 #endif
 #endif
 }
@@ -2219,12 +2227,15 @@ bool process_client_socket(socket_t sock, time_t read_timeout_sec,
                            time_t write_timeout_usec,
                            std::function<bool(Stream &)> callback);
 
-socket_t create_client_socket(
-    const std::string &host, const std::string &ip, int port,
-    int address_family, bool tcp_nodelay, SocketOptions socket_options,
-    time_t connection_timeout_sec, time_t connection_timeout_usec,
-    time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
-    time_t write_timeout_usec, const std::string &intf, Error &error);
+socket_t create_client_socket(const std::string &host, const std::string &ip,
+                              int port, int address_family, bool tcp_nodelay,
+                              bool ipv6_v6only, SocketOptions socket_options,
+                              time_t connection_timeout_sec,
+                              time_t connection_timeout_usec,
+                              time_t read_timeout_sec, time_t read_timeout_usec,
+                              time_t write_timeout_sec,
+                              time_t write_timeout_usec,
+                              const std::string &intf, Error &error);
 
 const char *get_header_value(const Headers &headers, const std::string &key,
                              const char *def, size_t id);
@@ -3239,7 +3250,7 @@ inline int shutdown_socket(socket_t sock) {
 template <typename BindOrConnect>
 socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        int address_family, int socket_flags, bool tcp_nodelay,
-                       SocketOptions socket_options,
+                       bool ipv6_v6only, SocketOptions socket_options,
                        BindOrConnect bind_or_connect) {
   // Get address info
   const char *node = nullptr;
@@ -3350,28 +3361,28 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #endif
 
     if (tcp_nodelay) {
-      auto yes = 1;
+      auto opt = 1;
 #ifdef _WIN32
       setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
-                 reinterpret_cast<const char *>(&yes), sizeof(yes));
+                 reinterpret_cast<const char *>(&opt), sizeof(opt));
 #else
       setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
-                 reinterpret_cast<const void *>(&yes), sizeof(yes));
+                 reinterpret_cast<const void *>(&opt), sizeof(opt));
+#endif
+    }
+
+    if (rp->ai_family == AF_INET6) {
+      auto opt = ipv6_v6only ? 1 : 0;
+#ifdef _WIN32
+      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
+                 reinterpret_cast<const char *>(&opt), sizeof(opt));
+#else
+      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
+                 reinterpret_cast<const void *>(&opt), sizeof(opt));
 #endif
     }
 
     if (socket_options) { socket_options(sock); }
-
-    if (rp->ai_family == AF_INET6) {
-      auto no = 0;
-#ifdef _WIN32
-      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
-                 reinterpret_cast<const char *>(&no), sizeof(no));
-#else
-      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
-                 reinterpret_cast<const void *>(&no), sizeof(no));
-#endif
-    }
 
     // bind or connect
     auto quit = false;
@@ -3477,12 +3488,14 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
 
 inline socket_t create_client_socket(
     const std::string &host, const std::string &ip, int port,
-    int address_family, bool tcp_nodelay, SocketOptions socket_options,
-    time_t connection_timeout_sec, time_t connection_timeout_usec,
-    time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
+    int address_family, bool tcp_nodelay, bool ipv6_v6only,
+    SocketOptions socket_options, time_t connection_timeout_sec,
+    time_t connection_timeout_usec, time_t read_timeout_sec,
+    time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, const std::string &intf, Error &error) {
   auto sock = create_socket(
-      host, ip, port, address_family, 0, tcp_nodelay, std::move(socket_options),
+      host, ip, port, address_family, 0, tcp_nodelay, ipv6_v6only,
+      std::move(socket_options),
       [&](socket_t sock2, struct addrinfo &ai, bool &quit) -> bool {
         if (!intf.empty()) {
 #ifdef USE_IF2IP
@@ -6061,6 +6074,11 @@ inline Server &Server::set_tcp_nodelay(bool on) {
   return *this;
 }
 
+inline Server &Server::set_ipv6_v6only(bool on) {
+  ipv6_v6only_ = on;
+  return *this;
+}
+
 inline Server &Server::set_socket_options(SocketOptions socket_options) {
   socket_options_ = std::move(socket_options);
   return *this;
@@ -6491,7 +6509,7 @@ Server::create_server_socket(const std::string &host, int port,
                              SocketOptions socket_options) const {
   return detail::create_socket(
       host, std::string(), port, address_family_, socket_flags, tcp_nodelay_,
-      std::move(socket_options),
+      ipv6_v6only_, std::move(socket_options),
       [](socket_t sock, struct addrinfo &ai, bool & /*quit*/) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
           return false;
@@ -7041,6 +7059,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   url_encode_ = rhs.url_encode_;
   address_family_ = rhs.address_family_;
   tcp_nodelay_ = rhs.tcp_nodelay_;
+  ipv6_v6only_ = rhs.ipv6_v6only_;
   socket_options_ = rhs.socket_options_;
   compress_ = rhs.compress_;
   decompress_ = rhs.decompress_;
@@ -7069,9 +7088,9 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     return detail::create_client_socket(
         proxy_host_, std::string(), proxy_port_, address_family_, tcp_nodelay_,
-        socket_options_, connection_timeout_sec_, connection_timeout_usec_,
-        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-        write_timeout_usec_, interface_, error);
+        ipv6_v6only_, socket_options_, connection_timeout_sec_,
+        connection_timeout_usec_, read_timeout_sec_, read_timeout_usec_,
+        write_timeout_sec_, write_timeout_usec_, interface_, error);
   }
 
   // Check is custom IP specified for host_
@@ -7080,10 +7099,10 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
   if (it != addr_map_.end()) { ip = it->second; }
 
   return detail::create_client_socket(
-      host_, ip, port_, address_family_, tcp_nodelay_, socket_options_,
-      connection_timeout_sec_, connection_timeout_usec_, read_timeout_sec_,
-      read_timeout_usec_, write_timeout_sec_, write_timeout_usec_, interface_,
-      error);
+      host_, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
+      socket_options_, connection_timeout_sec_, connection_timeout_usec_,
+      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+      write_timeout_usec_, interface_, error);
 }
 
 inline bool ClientImpl::create_and_connect_socket(Socket &socket,
@@ -8486,6 +8505,8 @@ inline void ClientImpl::set_address_family(int family) {
 }
 
 inline void ClientImpl::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
+
+inline void ClientImpl::set_ipv6_v6only(bool on) { ipv6_v6only_ = on; }
 
 inline void ClientImpl::set_socket_options(SocketOptions socket_options) {
   socket_options_ = std::move(socket_options);
