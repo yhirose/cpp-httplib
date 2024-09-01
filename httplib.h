@@ -932,6 +932,7 @@ public:
   bool is_running() const;
   void wait_until_ready() const;
   void stop();
+  void decommission();
 
   std::function<TaskQueue *(void)> new_task_queue;
 
@@ -1006,7 +1007,7 @@ private:
   virtual bool process_and_close_socket(socket_t sock);
 
   std::atomic<bool> is_running_{false};
-  std::atomic<bool> done_{false};
+  std::atomic<bool> is_decommisioned{false};
 
   struct MountPointEntry {
     std::string mount_point;
@@ -6111,27 +6112,27 @@ inline Server &Server::set_payload_max_length(size_t length) {
 
 inline bool Server::bind_to_port(const std::string &host, int port,
                                  int socket_flags) {
-  return bind_internal(host, port, socket_flags) >= 0;
+  auto ret = bind_internal(host, port, socket_flags);
+  if (ret == -1) { is_decommisioned = true; }
+  return ret >= 0;
 }
 inline int Server::bind_to_any_port(const std::string &host, int socket_flags) {
-  return bind_internal(host, 0, socket_flags);
+  auto ret = bind_internal(host, 0, socket_flags);
+  if (ret == -1) { is_decommisioned = true; }
+  return ret;
 }
 
-inline bool Server::listen_after_bind() {
-  auto se = detail::scope_exit([&]() { done_ = true; });
-  return listen_internal();
-}
+inline bool Server::listen_after_bind() { return listen_internal(); }
 
 inline bool Server::listen(const std::string &host, int port,
                            int socket_flags) {
-  auto se = detail::scope_exit([&]() { done_ = true; });
   return bind_to_port(host, port, socket_flags) && listen_internal();
 }
 
 inline bool Server::is_running() const { return is_running_; }
 
 inline void Server::wait_until_ready() const {
-  while (!is_running() && !done_) {
+  while (!is_running_ && !is_decommisioned) {
     std::this_thread::sleep_for(std::chrono::milliseconds{1});
   }
 }
@@ -6143,7 +6144,10 @@ inline void Server::stop() {
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
+  is_decommisioned = false;
 }
+
+inline void Server::decommission() { is_decommisioned = true; }
 
 inline bool Server::parse_request_line(const char *s, Request &req) const {
   auto len = strlen(s);
@@ -6499,6 +6503,8 @@ Server::create_server_socket(const std::string &host, int port,
 
 inline int Server::bind_internal(const std::string &host, int port,
                                  int socket_flags) {
+  if (is_decommisioned) { return -1; }
+
   if (!is_valid()) { return -1; }
 
   svr_sock_ = create_server_socket(host, port, socket_flags, socket_options_);
@@ -6524,6 +6530,8 @@ inline int Server::bind_internal(const std::string &host, int port,
 }
 
 inline bool Server::listen_internal() {
+  if (is_decommisioned) { return false; }
+
   auto ret = true;
   is_running_ = true;
   auto se = detail::scope_exit([&]() { is_running_ = false; });
@@ -6613,6 +6621,7 @@ inline bool Server::listen_internal() {
     task_queue->shutdown();
   }
 
+  is_decommisioned = !ret;
   return ret;
 }
 

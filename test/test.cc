@@ -4926,6 +4926,52 @@ TEST(ServerStopTest, ListenFailure) {
   t.join();
 }
 
+TEST(ServerStopTest, Decommision) {
+  Server svr;
+
+  svr.Get("/hi", [&](const Request &, Response &res) { res.body = "hi..."; });
+
+  for (int i = 0; i < 4; i++) {
+    auto is_even = !(i % 2);
+
+    std::thread t{[&] {
+      try {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        if (is_even) {
+          throw std::runtime_error("Some thing that happens to go wrong.");
+        }
+
+        svr.listen(HOST, PORT);
+      } catch (...) { svr.decommission(); }
+    }};
+
+    svr.wait_until_ready();
+
+    // Server is up
+    {
+      Client cli(HOST, PORT);
+      auto res = cli.Get("/hi");
+      if (is_even) {
+        EXPECT_FALSE(res);
+      } else {
+        EXPECT_TRUE(res);
+        EXPECT_EQ("hi...", res->body);
+      }
+    }
+
+    svr.stop();
+    t.join();
+
+    // Server is down...
+    {
+      Client cli(HOST, PORT);
+      auto res = cli.Get("/hi");
+      EXPECT_FALSE(res);
+    }
+  }
+}
+
 TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
 
