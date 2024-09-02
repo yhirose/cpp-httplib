@@ -6474,6 +6474,11 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
         auto path = entry.base_dir + sub_path;
         if (path.back() == '/') { path += "index.html"; }
 
+        if (detail::is_dir(path)) {
+           res.set_redirect(sub_path + "/");
+           return true;
+        }
+
         if (detail::is_file(path)) {
           for (const auto &kv : entry.headers) {
             res.set_header(kv.first, kv.second);
