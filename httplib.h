@@ -2847,9 +2847,7 @@ inline bool mmap::open(const char *path) {
     wpath += path[i];
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM |   \
-                            WINAPI_PARTITION_GAMES) &&                         \
-    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                          OPEN_EXISTING, NULL);
 #else
@@ -2859,26 +2857,22 @@ inline bool mmap::open(const char *path) {
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM |   \
-                            WINAPI_PARTITION_GAMES)
   LARGE_INTEGER size{};
   if (!::GetFileSizeEx(hFile_, &size)) { return false; }
+  // If the following line doesn't compile due to QuadPart, update Windows SDK.
+  // See:
+  // https://github.com/yhirose/cpp-httplib/issues/1903#issuecomment-2316520721
+  if (size.QuadPart > std::numeric_limits<decltype(size_)>::max()) {
+    // `size_t` might be 32-bits, on 32-bits Windows.
+    return false;
+  }
   size_ = static_cast<size_t>(size.QuadPart);
-#else
-  DWORD sizeHigh;
-  DWORD sizeLow;
-  sizeLow = ::GetFileSize(hFile_, &sizeHigh);
-  if (sizeLow == INVALID_FILE_SIZE) { return false; }
-  size_ = (static_cast<size_t>(sizeHigh) << (sizeof(DWORD) * 8)) | sizeLow;
-#endif
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
-    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
 #else
-  hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, size.HighPart,
-                                   size.LowPart, NULL);
+  hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
 #endif
 
   if (hMapping_ == NULL) {
@@ -2886,8 +2880,7 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM) && \
-    (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
 #else
   addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
