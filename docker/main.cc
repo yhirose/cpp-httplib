@@ -23,6 +23,8 @@ constexpr auto error_html = R"(<html>
 </html>
 )";
 
+void sigint_handler(int s) { exit(1); }
+
 std::string time_local() {
   auto p = std::chrono::system_clock::now();
   auto t = std::chrono::system_clock::to_time_t(p);
@@ -49,6 +51,8 @@ std::string log(auto &req, auto &res) {
 }
 
 int main(int argc, const char **argv) {
+  signal(SIGINT, sigint_handler);
+
   auto base_dir = "./html";
   auto host = "0.0.0.0";
   auto port = 80;
