@@ -3262,7 +3262,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
   memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_protocol = 0;
+  hints.ai_protocol = IPPROTO_IP;
 
   if (!ip.empty()) {
     node = ip.c_str();
