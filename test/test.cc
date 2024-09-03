@@ -4718,6 +4718,11 @@ static void test_raw_request(const std::string &req,
   svr.Put("/put_hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
+  svr.Get("/header_field_value_check", [&](const Request &req, Response &res) {
+    auto val = req.get_header_value("Test");
+    EXPECT_EQ("[   ]", val);
+    res.set_content("ok", "text/plain");
+  });
 
   // Server read timeout must be longer than the client read timeout for the
   // bug to reproduce, probably to force the server to process a request
@@ -4849,6 +4854,12 @@ TEST(ServerRequestParsingTest, InvalidSpaceInURL) {
   std::string out;
   test_raw_request("GET /h i HTTP/1.1\r\n\r\n", &out);
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
+TEST(ServerRequestParsingTest, InvalidFieldValueContains_CR_LF_NUL) {
+  std::string request(
+      "GET /header_field_value_check HTTP/1.1\r\nTest: [\r\x00\n]\r\n\r\n", 55);
+  test_raw_request(request);
 }
 
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
@@ -7571,4 +7582,27 @@ TEST(FileSystemTest, FileAndDirExistenceCheck) {
 
   EXPECT_FALSE(detail::is_file(dir_path));
   EXPECT_TRUE(detail::is_dir(dir_path));
+}
+
+TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
+  Server svr;
+
+  svr.Get("/test", [&](const Request &req, Response &) {
+    auto val = req.get_header_value("Test");
+    EXPECT_EQ(val.size(), 7u);
+    EXPECT_EQ(val, "_  _  _");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.Get("/test", {{"Test", "_\n\r_\n\r_"}});
 }

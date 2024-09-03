@@ -149,11 +149,11 @@ using ssize_t = long;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -2790,6 +2790,10 @@ inline bool stream_line_reader::getline() {
   fixed_buffer_used_size_ = 0;
   glowable_buffer_.clear();
 
+#ifndef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+  char prev_byte = 0;
+#endif
+
   for (size_t i = 0;; i++) {
     char byte;
     auto n = strm_.read(&byte, 1);
@@ -2806,7 +2810,12 @@ inline bool stream_line_reader::getline() {
 
     append(byte);
 
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
     if (byte == '\n') { break; }
+#else
+    if (prev_byte == '\r' && byte == '\n') { break; }
+    prev_byte = byte;
+#endif
   }
 
   return true;
@@ -2862,7 +2871,8 @@ inline bool mmap::open(const char *path) {
   // If the following line doesn't compile due to QuadPart, update Windows SDK.
   // See:
   // https://github.com/yhirose/cpp-httplib/issues/1903#issuecomment-2316520721
-  if (static_cast<ULONGLONG>(size.QuadPart) > std::numeric_limits<decltype(size_)>::max()) {
+  if (static_cast<ULONGLONG>(size.QuadPart) >
+      std::numeric_limits<decltype(size_)>::max()) {
     // `size_t` might be 32-bits, on 32-bits Windows.
     return false;
   }
@@ -4049,7 +4059,22 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     parse_header(line_reader.ptr(), end,
-                 [&](const std::string &key, const std::string &val) {
+                 [&](const std::string &key, std::string &val) {
+                   // NOTE: From RFC 9110:
+                   // Field values containing CR, LF, or NUL characters are
+                   // invalid and dangerous, due to the varying ways that
+                   // implementations might parse and interpret those
+                   // characters; a recipient of CR, LF, or NUL within a field
+                   // value MUST either reject the message or replace each of
+                   // those characters with SP before further processing or
+                   // forwarding of that message.
+                   for (auto &c : val) {
+                     switch (c) {
+                     case '\0':
+                     case '\n':
+                     case '\r': c = ' '; break;
+                     }
+                   }
                    headers.emplace(key, val);
                  });
   }
