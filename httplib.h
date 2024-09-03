@@ -4021,6 +4021,18 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     auto val = compare_case_ignore(key, "Location")
                    ? std::string(p, end)
                    : decode_url(std::string(p, end), false);
+
+    // NOTE: From RFC 9110:
+    // Field values containing CR, LF, or NUL characters are
+    // invalid and dangerous, due to the varying ways that
+    // implementations might parse and interpret those
+    // characters; a recipient of CR, LF, or NUL within a field
+    // value MUST either reject the message or replace each of
+    // those characters with SP before further processing or
+    // forwarding of that message.
+    static const std::string CR_LF_NUL("\r\n\0", 3);
+    if (val.find_first_of(CR_LF_NUL) != std::string::npos) { return false; }
+
     fn(key, val);
     return true;
   }
@@ -4058,25 +4070,12 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     // Exclude line terminator
     auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
-    parse_header(line_reader.ptr(), end,
-                 [&](const std::string &key, std::string &val) {
-                   // NOTE: From RFC 9110:
-                   // Field values containing CR, LF, or NUL characters are
-                   // invalid and dangerous, due to the varying ways that
-                   // implementations might parse and interpret those
-                   // characters; a recipient of CR, LF, or NUL within a field
-                   // value MUST either reject the message or replace each of
-                   // those characters with SP before further processing or
-                   // forwarding of that message.
-                   for (auto &c : val) {
-                     switch (c) {
-                     case '\0':
-                     case '\n':
-                     case '\r': c = ' '; break;
-                     }
-                   }
-                   headers.emplace(key, val);
-                 });
+    if (!parse_header(line_reader.ptr(), end,
+                      [&](const std::string &key, std::string &val) {
+                        headers.emplace(key, val);
+                      })) {
+      return false;
+    }
   }
 
   return true;

@@ -4718,9 +4718,7 @@ static void test_raw_request(const std::string &req,
   svr.Put("/put_hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
-  svr.Get("/header_field_value_check", [&](const Request &req, Response &res) {
-    auto val = req.get_header_value("Test");
-    EXPECT_EQ("[   ]", val);
+  svr.Get("/header_field_value_check", [&](const Request &/*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
@@ -4857,9 +4855,11 @@ TEST(ServerRequestParsingTest, InvalidSpaceInURL) {
 }
 
 TEST(ServerRequestParsingTest, InvalidFieldValueContains_CR_LF_NUL) {
+  std::string out;
   std::string request(
       "GET /header_field_value_check HTTP/1.1\r\nTest: [\r\x00\n]\r\n\r\n", 55);
-  test_raw_request(request);
+  test_raw_request(request, &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
@@ -7587,10 +7587,8 @@ TEST(FileSystemTest, FileAndDirExistenceCheck) {
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   Server svr;
 
-  svr.Get("/test", [&](const Request &req, Response &) {
-    auto val = req.get_header_value("Test");
-    EXPECT_EQ(val.size(), 7u);
-    EXPECT_EQ(val, "_  _  _");
+  svr.Get("/test", [&](const Request &/*req*/, Response &res) {
+    EXPECT_EQ(res.status, 400);
   });
 
   auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
