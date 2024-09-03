@@ -7561,3 +7561,14 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
              CLIENT_PRIVATE_KEY_FILE);
   EXPECT_EQ(cli.port(), port);
 }
+
+TEST(FileSystemTest, FileAndDirExistenceCheck) {
+  auto file_path = "./www/dir/index.html";
+  auto dir_path = "./www/dir";
+
+  EXPECT_TRUE(detail::is_file(file_path));
+  EXPECT_FALSE(detail::is_dir(file_path));
+
+  EXPECT_FALSE(detail::is_file(dir_path));
+  EXPECT_TRUE(detail::is_dir(dir_path));
+}
