@@ -2198,6 +2198,10 @@ make_basic_authentication_header(const std::string &username,
 
 namespace detail {
 
+bool is_file(const std::string &path);
+
+bool is_dir(const std::string &path);
+
 std::string encode_query_param(const std::string &value);
 
 std::string decode_url(const std::string &s, bool convert_plus_to_space);
@@ -2525,16 +2529,6 @@ inline std::string base64_encode(const std::string &in) {
   return out;
 }
 
-inline bool is_file(const std::string &path) {
-  struct stat st;
-  return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
-}
-
-inline bool is_dir(const std::string &path) {
-  struct stat st;
-  return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
-}
-
 inline bool is_valid_path(const std::string &path) {
   size_t level = 0;
   size_t i = 0;
@@ -2575,6 +2569,16 @@ inline bool is_valid_path(const std::string &path) {
   }
 
   return true;
+}
+
+inline bool is_file(const std::string &path) {
+  struct stat st;
+  return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+}
+
+inline bool is_dir(const std::string &path) {
+  struct stat st;
+  return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
 }
 
 inline std::string encode_query_param(const std::string &value) {

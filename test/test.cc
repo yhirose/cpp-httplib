@@ -7563,8 +7563,8 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
 }
 
 TEST(FileSystemTest, FileAndDirExistenceCheck) {
-  std::string file_path = "./www/dir/index.html";
-  std::string dir_path = "./www/dir";
+  auto file_path = "./www/dir/index.html";
+  auto dir_path = "./www/dir";
 
   EXPECT_TRUE(detail::is_file(file_path));
   EXPECT_FALSE(detail::is_dir(file_path));
