@@ -1,7 +1,9 @@
 #include <httplib.h>
 #include <signal.h>
 
+#ifndef _WIN32
 #include <curl/curl.h>
+#endif
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -7607,6 +7609,7 @@ TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   cli.Get("/test", {{"Test", "_\n\r_\n\r_"}});
 }
 
+#ifndef _WIN32
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";
   static constexpr char accept[] = "Upload accepted";
@@ -7704,3 +7707,4 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
     }
   }
 }
+#endif
