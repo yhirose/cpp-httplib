@@ -6956,7 +6956,9 @@ Server::process_request(Stream &strm, bool close_connection,
       strm.write_format("HTTP/1.1 %d %s\r\n\r\n", status,
                         status_message(status));
       break;
-    default: return write_response(strm, close_connection, req, res);
+    default:
+      connection_closed = true;
+      return write_response(strm, true, req, res);
     }
   }
 
