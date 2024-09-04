@@ -1,6 +1,9 @@
 #include <httplib.h>
 #include <signal.h>
 
+#ifndef _WIN32
+#include <curl/curl.h>
+#endif
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -12,6 +15,7 @@
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
@@ -7604,3 +7608,103 @@ TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   Client cli(HOST, PORT);
   cli.Get("/test", {{"Test", "_\n\r_\n\r_"}});
 }
+
+#ifndef _WIN32
+TEST(Expect100ContinueTest, ServerClosesConnection) {
+  static constexpr char reject[] = "Unauthorized";
+  static constexpr char accept[] = "Upload accepted";
+  constexpr size_t total_size = 10 * 1024 * 1024 * 1024ULL;
+
+  Server svr;
+
+  svr.set_expect_100_continue_handler([](const Request &/*req*/, Response &res) {
+    res.status = StatusCode::Unauthorized_401;
+    res.set_content(reject, "text/plain");
+    return res.status;
+  });
+  svr.Post("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content(accept, "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    const auto curl = std::unique_ptr<CURL, decltype(&curl_easy_cleanup)>{
+        curl_easy_init(), &curl_easy_cleanup};
+    ASSERT_NE(curl, nullptr);
+
+    curl_easy_setopt(curl.get(), CURLOPT_URL, HOST);
+    curl_easy_setopt(curl.get(), CURLOPT_PORT, PORT);
+    curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+    auto list = std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>{
+        curl_slist_append(nullptr, "Content-Type: application/octet-stream"),
+        &curl_slist_free_all};
+    ASSERT_NE(list, nullptr);
+    curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, list.get());
+
+    struct read_data {
+      size_t read_size;
+      size_t total_size;
+    } data = {0, total_size};
+    using read_callback_t =
+        size_t (*)(char *ptr, size_t size, size_t nmemb, void *userdata);
+    read_callback_t read_callback = [](char *ptr, size_t size, size_t nmemb,
+                                       void *userdata) -> size_t {
+      read_data *data = (read_data *)userdata;
+
+      if (!userdata || data->read_size >= data->total_size) { return 0; }
+
+      std::fill_n(ptr, size * nmemb, 'A');
+      data->read_size += size * nmemb;
+      return size * nmemb;
+    };
+    curl_easy_setopt(curl.get(), CURLOPT_READDATA, data);
+    curl_easy_setopt(curl.get(), CURLOPT_READFUNCTION, read_callback);
+
+    std::vector<char> buffer;
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &buffer);
+    using write_callback_t =
+        size_t (*)(char *ptr, size_t size, size_t nmemb, void *userdata);
+    write_callback_t write_callback = [](char *ptr, size_t size, size_t nmemb,
+                                         void *userdata) -> size_t {
+      std::vector<char> *buffer = (std::vector<char> *)userdata;
+      buffer->reserve(buffer->size() + size * nmemb + 1);
+      buffer->insert(buffer->end(), (char *)ptr, (char *)ptr + size * nmemb);
+      return size * nmemb;
+    };
+    curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
+
+    {
+      const auto res = curl_easy_perform(curl.get());
+      ASSERT_EQ(res, CURLE_OK);
+    }
+
+    {
+      auto response_code = long{};
+      const auto res =
+          curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &response_code);
+      ASSERT_EQ(res, CURLE_OK);
+      ASSERT_EQ(response_code, StatusCode::Unauthorized_401);
+    }
+
+    {
+      auto dl = curl_off_t{};
+      const auto res = curl_easy_getinfo(curl.get(), CURLINFO_SIZE_DOWNLOAD_T, &dl);
+      ASSERT_EQ(res, CURLE_OK);
+      ASSERT_EQ(dl, sizeof reject - 1);
+    }
+
+    {
+      buffer.push_back('\0');
+      ASSERT_STRCASEEQ(buffer.data(), reject);
+    }
+  }
+}
+#endif

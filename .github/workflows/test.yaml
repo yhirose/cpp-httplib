@@ -8,8 +8,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: install brotli
-        run: sudo apt-get update && sudo apt-get install -y libbrotli-dev
+      - name: install libraries
+        run: sudo apt-get update && sudo apt-get install -y libbrotli-dev libcurl4-openssl-dev
       - name: build and run tests
         run: cd test && make -j4
       - name: run fuzz test target
