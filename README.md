@@ -857,6 +857,19 @@ Dockerfile for static HTTP server is available. Port number of this HTTP server 
 > docker build -t cpp-httplib-server .
 ...
 
+> docker run --rm -it -p 8080:80 -v ./docker/html:/html cpp-httplib-server
+Serving HTTP on 0.0.0.0 port 80 ...
+192.168.65.1 - - [31/Aug/2024:21:33:56 +0000] "GET / HTTP/1.1" 200 599 "-" "curl/8.7.1"
+192.168.65.1 - - [31/Aug/2024:21:34:26 +0000] "GET / HTTP/1.1" 200 599 "-" "Mozilla/5.0 ..."
+192.168.65.1 - - [31/Aug/2024:21:34:26 +0000] "GET /favicon.ico HTTP/1.1" 404 152 "-" "Mozilla/5.0 ..."
+```
+
+From Docker Hub
+
+```bash
+> docker run --rm -it -p 8080:80 -v ./docker/html:/html yhirose4dockerhub/cpp-httplib-server
+...
+
 > docker run --init --rm -it -p 8080:80 -v ./docker/html:/html cpp-httplib-server
 Serving HTTP on 0.0.0.0 port 80 ...
 192.168.65.1 - - [31/Aug/2024:21:33:56 +0000] "GET / HTTP/1.1" 200 599 "-" "curl/8.7.1"
