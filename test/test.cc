@@ -7614,7 +7614,7 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
 
   Server svr;
 
-  svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
+  svr.set_expect_100_continue_handler([](const Request &/*req*/, Response &res) {
     res.status = StatusCode::Unauthorized_401;
     res.set_content(reject, "text/plain");
     return res.status;
