@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 gtest_dep = dependency('gtest', main: true)
+libcurl_dep = dependency('libcurl')
 openssl = find_program('openssl')
 test_conf = files('test.conf')
 
@@ -119,7 +120,8 @@ test(
     'test.cc',
     dependencies: [
       cpp_httplib_dep,
-      gtest_dep
+      gtest_dep,
+      libcurl_dep
     ],
     override_options: test_options
   ),
