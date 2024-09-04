@@ -3250,6 +3250,24 @@ inline int shutdown_socket(socket_t sock) {
 #endif
 }
 
+inline std::string escape_abstract_namespace_unix_domain(const std::string& s) {
+  if (s.size() > 1 && s[0] == '\0') {
+    auto ret = s;
+    ret[0] = '@';
+    return ret;
+  }
+  return s;
+}
+
+inline std::string unescape_abstract_namespace_unix_domain(const std::string& s) {
+  if (s.size() > 1 && s[0] == '@') {
+    auto ret = s;
+    ret[0] = '\0';
+    return ret;
+  }
+  return s;
+}
+
 template <typename BindOrConnect>
 socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        int address_family, int socket_flags, bool tcp_nodelay,
@@ -3290,7 +3308,9 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     if (sock != INVALID_SOCKET) {
       sockaddr_un addr{};
       addr.sun_family = AF_UNIX;
-      std::copy(host.begin(), host.end(), addr.sun_path);
+
+      auto unescaped_host = unescape_abstract_namespace_unix_domain(host);
+      std::copy(unescaped_host.begin(), unescaped_host.end(), addr.sun_path);
 
       hints.ai_addr = reinterpret_cast<sockaddr *>(&addr);
       hints.ai_addrlen = static_cast<socklen_t>(
@@ -7044,9 +7064,10 @@ inline ClientImpl::ClientImpl(const std::string &host, int port)
 inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
-    : host_(host), port_(port),
-      host_and_port_(adjust_host_string(host) + ":" + std::to_string(port)),
-      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
+    : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
+      host_and_port_(adjust_host_string(host_) + ":" + std::to_string(port)),
+      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {
+    }
 
 inline ClientImpl::~ClientImpl() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
