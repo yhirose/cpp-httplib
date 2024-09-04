@@ -24,9 +24,11 @@ else()
     FetchContent_MakeAvailable(gtest)
 endif()
 
+find_package(curl REQUIRED)
+
 add_executable(httplib-test test.cc)
 target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/bigobj>")
-target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main)
+target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main CURL::libcurl)
 gtest_discover_tests(httplib-test)
 
 file(
