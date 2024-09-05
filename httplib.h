@@ -321,13 +321,50 @@ make_unique(std::size_t n) {
   return std::unique_ptr<T>(new RT[n]);
 }
 
-struct ci {
+inline unsigned char to_lower(int c) {
+  const static unsigned char table[256] = {
+      0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,
+      15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,
+      30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,
+      45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,
+      60,  61,  62,  63,  64,  97,  98,  99,  100, 101, 102, 103, 104, 105, 106,
+      107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121,
+      122, 91,  92,  93,  94,  95,  96,  97,  98,  99,  100, 101, 102, 103, 104,
+      105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
+      120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134,
+      135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
+      150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164,
+      165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
+      180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 224, 225, 226,
+      227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241,
+      242, 243, 244, 245, 246, 215, 248, 249, 250, 251, 252, 253, 254, 223, 224,
+      225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+      240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254,
+      255,
+  };
+  assert(0 <= c && c < 256);
+  return table[c];
+}
+
+struct case_ignore_equal {
   bool operator()(const std::string &s1, const std::string &s2) const {
-    return std::lexicographical_compare(s1.begin(), s1.end(), s2.begin(),
-                                        s2.end(),
-                                        [](unsigned char c1, unsigned char c2) {
-                                          return ::tolower(c1) < ::tolower(c2);
-                                        });
+    return s1.size() == s2.size() &&
+           std::equal(s1.begin(), s1.end(), s2.begin(), [](char a, char b) {
+             return to_lower(a) == to_lower(b);
+           });
+  }
+};
+
+struct case_ignore_hash {
+  constexpr size_t operator()(std::string_view key) const {
+    return hash_core(key.data(), key.size(), 0);
+  }
+
+  constexpr size_t hash_core(const char *s, size_t l, size_t h) const {
+    return (l == 0)
+               ? h
+               : hash_core(s + 1, l - 1,
+                           (h * 33) ^ static_cast<unsigned char>(to_lower(*s)));
   }
 };
 
@@ -436,7 +473,9 @@ enum StatusCode {
   NetworkAuthenticationRequired_511 = 511,
 };
 
-using Headers = std::multimap<std::string, std::string, detail::ci>;
+using Headers =
+    std::unordered_multimap<std::string, std::string, detail::case_ignore_hash,
+                            detail::case_ignore_equal>;
 
 using Params = std::multimap<std::string, std::string>;
 using Match = std::smatch;
@@ -4007,7 +4046,7 @@ inline const char *get_header_value(const Headers &headers,
 inline bool compare_case_ignore(const std::string &a, const std::string &b) {
   if (a.size() != b.size()) { return false; }
   for (size_t i = 0; i < b.size(); i++) {
-    if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
+    if (to_lower(a[i]) != to_lower(b[i])) { return false; }
   }
   return true;
 }
@@ -4822,7 +4861,7 @@ private:
                               const std::string &b) const {
     if (a.size() < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
-      if (::tolower(a[i]) != ::tolower(b[i])) { return false; }
+      if (to_lower(a[i]) != to_lower(b[i])) { return false; }
     }
     return true;
   }
