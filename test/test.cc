@@ -5098,6 +5098,11 @@ TEST(MountTest, Redicect) {
   res = cli.Get("/file/");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
+
+  cli.set_follow_location(true);
+  res = cli.Get("/dir");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
