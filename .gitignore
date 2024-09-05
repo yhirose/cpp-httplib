@@ -21,6 +21,8 @@ test/test.xcodeproj/*/xcuser*
 test/*.o
 test/*.pem
 test/*.srl
+benchmark/server
+benchmark/server-crow
 
 *.swp
 
@@ -34,6 +36,7 @@ Release
 *.db
 ipch
 *.dSYM
+*.pyc
 .*
 !/.gitattributes
 !/.travis.yml
