@@ -7698,7 +7698,7 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
       auto dl = curl_off_t{};
       const auto res = curl_easy_getinfo(curl.get(), CURLINFO_SIZE_DOWNLOAD_T, &dl);
       ASSERT_EQ(res, CURLE_OK);
-      ASSERT_EQ(dl, sizeof reject - 1);
+      ASSERT_EQ(dl, (curl_off_t)sizeof reject - 1);
     }
 
     {
