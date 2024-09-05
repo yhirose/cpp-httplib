@@ -1,4 +1,4 @@
-CXXFLAGS = -std=c++14 -O2 -I..
+CXXFLAGS = -std=c++11 -O2 -I..
 
 THEAD_POOL_COUNT = 16
 BENCH_FLAGS = -c 8 -d 5s
