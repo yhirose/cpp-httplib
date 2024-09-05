@@ -342,8 +342,7 @@ inline unsigned char to_lower(int c) {
       240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254,
       255,
   };
-  assert(0 <= c && c < 256);
-  return table[c];
+  return table[(unsigned char)(char)c];
 }
 
 struct case_ignore_equal {
