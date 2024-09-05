@@ -3250,7 +3250,7 @@ inline int shutdown_socket(socket_t sock) {
 #endif
 }
 
-inline std::string escape_abstract_namespace_unix_domain(const std::string& s) {
+inline std::string escape_abstract_namespace_unix_domain(const std::string &s) {
   if (s.size() > 1 && s[0] == '\0') {
     auto ret = s;
     ret[0] = '@';
@@ -3259,7 +3259,8 @@ inline std::string escape_abstract_namespace_unix_domain(const std::string& s) {
   return s;
 }
 
-inline std::string unescape_abstract_namespace_unix_domain(const std::string& s) {
+inline std::string
+unescape_abstract_namespace_unix_domain(const std::string &s) {
   if (s.size() > 1 && s[0] == '@') {
     auto ret = s;
     ret[0] = '\0';
@@ -4903,16 +4904,6 @@ private:
   size_t buf_spos_ = 0;
   size_t buf_epos_ = 0;
 };
-
-inline std::string to_lower(const char *beg, const char *end) {
-  std::string out;
-  auto it = beg;
-  while (it != end) {
-    out += static_cast<char>(::tolower(*it));
-    it++;
-  }
-  return out;
-}
 
 inline std::string random_string(size_t length) {
   static const char data[] =
@@ -7068,8 +7059,7 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_key_path)
     : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
       host_and_port_(adjust_host_string(host_) + ":" + std::to_string(port)),
-      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {
-    }
+      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
   std::lock_guard<std::mutex> guard(socket_mutex_);
