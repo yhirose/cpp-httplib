@@ -5068,6 +5068,38 @@ TEST(MountTest, Unmount) {
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
+TEST(MountTest, Redicect) {
+  Server svr;
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.set_mount_point("/", "./www");
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/dir/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  res = cli.Get("/dir");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::MovedPermanently_301, res->status);
+
+  res = cli.Get("/file");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  res = cli.Get("/file/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ExceptionTest, ThrowExceptionInHandler) {
   Server svr;
