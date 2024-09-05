@@ -3005,7 +3005,7 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
   while (true) {
     res = fn();
     if (res < 0 && errno == EINTR) {
-      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      std::this_thread::sleep_for(std::chrono::microseconds{1});
       continue;
     }
     break;
@@ -3225,10 +3225,10 @@ inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
       return false;
     } else if (val == 0) {
       auto current = steady_clock::now();
-      auto duration = duration_cast<milliseconds>(current - start);
-      auto timeout = keep_alive_timeout_sec * 1000;
+      auto duration = duration_cast<microseconds>(current - start);
+      auto timeout = keep_alive_timeout_sec * 1000 * 1000;
       if (duration.count() > timeout) { return false; }
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_for(std::chrono::microseconds{1});
     } else {
       return true;
     }
@@ -6217,7 +6217,7 @@ inline bool Server::is_running() const { return is_running_; }
 
 inline void Server::wait_until_ready() const {
   while (!is_running_ && !is_decommisioned) {
-    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    std::this_thread::sleep_for(std::chrono::microseconds{1});
   }
 }
 
@@ -6656,7 +6656,7 @@ inline bool Server::listen_internal() {
         if (errno == EMFILE) {
           // The per-process limit of open file descriptors has been reached.
           // Try to accept new connections after a short sleep.
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          std::this_thread::sleep_for(std::chrono::microseconds{1});
           continue;
         } else if (errno == EINTR || errno == EAGAIN) {
           continue;
@@ -8718,7 +8718,7 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
 
     auto ret = SSL_shutdown(ssl);
     while (ret == 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::this_thread::sleep_for(std::chrono::microseconds{1});
       ret = SSL_shutdown(ssl);
     }
 #endif
@@ -8825,7 +8825,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
         if (SSL_pending(ssl_) > 0) {
           return SSL_read(ssl_, ptr, static_cast<int>(size));
         } else if (is_readable()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          std::this_thread::sleep_for(std::chrono::microseconds{1});
           ret = SSL_read(ssl_, ptr, static_cast<int>(size));
           if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
@@ -8856,7 +8856,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
       while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
 #endif
         if (is_writable()) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          std::this_thread::sleep_for(std::chrono::microseconds{1});
           ret = SSL_write(ssl_, ptr, static_cast<int>(handle_size));
           if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
