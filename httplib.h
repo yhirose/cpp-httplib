@@ -840,7 +840,7 @@ public:
   bool match(Request &request) const override;
 
 private:
-  static constexpr char marker = ':';
+  static constexpr char marker[] = "/:";
   // Treat segment separators as the end of path parameter capture
   // Does not need to handle query parameters as they are parsed before path
   // matching
@@ -5899,13 +5899,14 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
 #endif
 
   while (true) {
-    const auto marker_pos = pattern.find(marker, last_param_end);
+    const auto marker_pos = pattern.find(
+        marker, last_param_end == 0 ? last_param_end : last_param_end - 1);
     if (marker_pos == std::string::npos) { break; }
 
     static_fragments_.push_back(
-        pattern.substr(last_param_end, marker_pos - last_param_end));
+        pattern.substr(last_param_end, marker_pos - last_param_end + 1));
 
-    const auto param_name_start = marker_pos + 1;
+    const auto param_name_start = marker_pos + 2;
 
     auto sep_pos = pattern.find(separator, param_name_start);
     if (sep_pos == std::string::npos) { sep_pos = pattern.length(); }
@@ -5967,7 +5968,7 @@ inline bool PathParamsMatcher::match(Request &request) const {
     request.path_params.emplace(
         param_name, request.path.substr(starting_pos, sep_pos - starting_pos));
 
-    // Mark everythin up to '/' as matched
+    // Mark everything up to '/' as matched
     starting_pos = sep_pos + 1;
   }
   // Returns false if the path is longer than the pattern
