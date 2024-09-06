@@ -3189,43 +3189,6 @@ private:
 };
 #endif
 
-inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
-  const auto timeout = keep_alive_timeout_sec * 1000;
-
-#ifdef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
-  const auto start = std::chrono::steady_clock::now();
-#else
-  time_t elapse = 0;
-#endif
-  while (true) {
-    auto val = select_read(sock, 0, 10000);
-
-#ifndef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
-    elapse += 12; // heuristic...
-#endif
-
-    if (val < 0) {
-      return false;
-    } else if (val == 0) {
-#ifdef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
-      auto current = std::chrono::steady_clock::now();
-      auto duration = duration_cast<milliseconds>(current - start);
-      if (duration.count() > timeout) { return false; }
-#else
-      if (elapse > timeout) { return false; }
-#endif
-
-      std::this_thread::sleep_for(std::chrono::milliseconds{10});
-
-#ifndef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
-      elapse += 12; // heuristic...
-#endif
-    } else {
-      return true;
-    }
-  }
-}
-
 template <typename T>
 inline bool
 process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
@@ -3235,7 +3198,7 @@ process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
   auto ret = false;
   auto count = keep_alive_max_count;
   while (svr_sock != INVALID_SOCKET && count > 0 &&
-         keep_alive(sock, keep_alive_timeout_sec)) {
+         select_read(sock, keep_alive_timeout_sec, 0) > 0) {
     auto close_connection = count == 1;
     auto connection_closed = false;
     ret = callback(close_connection, connection_closed);
@@ -4103,13 +4066,12 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     if (line_reader.end_with_crlf()) {
       // Blank line indicates end of headers.
       if (line_reader.size() == 2) { break; }
-#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
     } else {
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
       // Blank line indicates end of headers.
       if (line_reader.size() == 1) { break; }
       line_terminator_len = 1;
 #else
-    } else {
       continue; // Skip invalid line.
 #endif
     }
@@ -8730,7 +8692,7 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
 
     auto ret = SSL_shutdown(ssl);
     while (ret == 0) {
-      std::this_thread::sleep_for(std::chrono::microseconds{10});
+      std::this_thread::sleep_for(std::chrono::milliseconds{100});
       ret = SSL_shutdown(ssl);
     }
 #endif
