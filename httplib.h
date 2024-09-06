@@ -3192,6 +3192,7 @@ private:
 
 inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
   using namespace std::chrono;
+  auto timeout = keep_alive_timeout_sec * 1000;
   auto start = steady_clock::now();
   while (true) {
     auto val = select_read(sock, 0, 10000);
@@ -3199,10 +3200,9 @@ inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
       return false;
     } else if (val == 0) {
       auto current = steady_clock::now();
-      auto duration = duration_cast<microseconds>(current - start);
-      auto timeout = keep_alive_timeout_sec * 1000 * 1000;
+      auto duration = duration_cast<milliseconds>(current - start);
       if (duration.count() > timeout) { return false; }
-      std::this_thread::sleep_for(std::chrono::microseconds{1});
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
     } else {
       return true;
     }
@@ -4303,7 +4303,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 }
 
 inline ssize_t write_request_line(Stream &strm, const std::string &method,
-                                          const std::string &path) {
+                                  const std::string &path) {
   std::string s = method;
   s += " ";
   s += path;
@@ -6213,7 +6213,7 @@ inline bool Server::is_running() const { return is_running_; }
 
 inline void Server::wait_until_ready() const {
   while (!is_running_ && !is_decommisioned) {
-    std::this_thread::sleep_for(std::chrono::microseconds{1});
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
   }
 }
 
