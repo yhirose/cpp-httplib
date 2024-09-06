@@ -7599,6 +7599,18 @@ TEST(PathParamsTest, SequenceOfParams) {
   EXPECT_EQ(request.path_params, expected_params);
 }
 
+TEST(PathParamsTest, SemicolonInTheMiddleIsNotAParam) {
+  const auto pattern = "/prefix:suffix";
+  detail::PathParamsMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/prefix:suffix";
+  ASSERT_TRUE(matcher.match(request));
+
+  const std::unordered_map<std::string, std::string> expected_params = {};
+  EXPECT_EQ(request.path_params, expected_params);
+}
+
 TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   // If ipv6 regex working, regex match codepath is taken.
   // else port will default to 80 in Client impl
