@@ -355,7 +355,7 @@ struct case_ignore_equal {
 };
 
 struct case_ignore_hash {
-  constexpr size_t operator()(const std::string &key) const {
+  size_t operator()(const std::string &key) const {
     return hash_core(key.data(), key.size(), 0);
   }
 
