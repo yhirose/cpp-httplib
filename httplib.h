@@ -3191,18 +3191,36 @@ private:
 #endif
 
 inline bool keep_alive(socket_t sock, time_t keep_alive_timeout_sec) {
-  using namespace std::chrono;
-  auto timeout = keep_alive_timeout_sec * 1000;
-  auto start = steady_clock::now();
+  const auto timeout = keep_alive_timeout_sec * 1000;
+
+#ifdef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
+  const auto start = std::chrono::steady_clock::now();
+#else
+  time_t elapse = 0;
+#endif
   while (true) {
     auto val = select_read(sock, 0, 10000);
+
+#ifndef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
+    elapse += 12; // heuristic...
+#endif
+
     if (val < 0) {
       return false;
     } else if (val == 0) {
-      auto current = steady_clock::now();
+#ifdef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
+      auto current = std::chrono::steady_clock::now();
       auto duration = duration_cast<milliseconds>(current - start);
       if (duration.count() > timeout) { return false; }
+#else
+      if (elapse > timeout) { return false; }
+#endif
+
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
+
+#ifndef CPPHTTPLIB_USE_STEADY_TIMER_FOR_KEEP_ALIVE
+      elapse += 12; // heuristic...
+#endif
     } else {
       return true;
     }
