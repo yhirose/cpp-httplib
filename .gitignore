@@ -21,6 +21,7 @@ test/test.xcodeproj/*/xcuser*
 test/*.o
 test/*.pem
 test/*.srl
+work/
 benchmark/server
 benchmark/server-crow
 
