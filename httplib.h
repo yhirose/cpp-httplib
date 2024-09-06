@@ -840,7 +840,6 @@ public:
   bool match(Request &request) const override;
 
 private:
-  static constexpr char marker[] = "/:";
   // Treat segment separators as the end of path parameter capture
   // Does not need to handle query parameters as they are parsed before path
   // matching
@@ -5887,6 +5886,8 @@ inline socket_t BufferStream::socket() const { return 0; }
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
 inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
+  static constexpr char marker[] = "/:";
+
   // One past the last ending position of a path param substring
   std::size_t last_param_end = 0;
 
