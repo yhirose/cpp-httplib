@@ -321,6 +321,8 @@ make_unique(std::size_t n) {
   return std::unique_ptr<T>(new RT[n]);
 }
 
+namespace case_ignore {
+
 inline unsigned char to_lower(int c) {
   const static unsigned char table[256] = {
       0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,
@@ -345,27 +347,35 @@ inline unsigned char to_lower(int c) {
   return table[(unsigned char)(char)c];
 }
 
-struct case_ignore_equal {
-  bool operator()(const std::string &s1, const std::string &s2) const {
-    return s1.size() == s2.size() &&
-           std::equal(s1.begin(), s1.end(), s2.begin(), [](char a, char b) {
-             return to_lower(a) == to_lower(b);
-           });
+inline bool equal(const std::string &a, const std::string &b) {
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(),
+                    [](char a, char b) { return to_lower(a) == to_lower(b); });
+}
+
+struct equal_to {
+  bool operator()(const std::string &a, const std::string &b) const {
+    return equal(a, b);
   }
 };
 
-struct case_ignore_hash {
+struct hash {
   size_t operator()(const std::string &key) const {
     return hash_core(key.data(), key.size(), 0);
   }
 
-  constexpr size_t hash_core(const char *s, size_t l, size_t h) const {
-    return (l == 0)
-               ? h
-               : hash_core(s + 1, l - 1,
-                           (h * 33) ^ static_cast<unsigned char>(to_lower(*s)));
+  size_t hash_core(const char *s, size_t l, size_t h) const {
+    return (l == 0) ? h
+                    : hash_core(s + 1, l - 1,
+                                // Unsets the 6 high bits of h, therefore no
+                                // overflow happens
+                                (((std::numeric_limits<size_t>::max)() >> 6) &
+                                 h * 33) ^
+                                    static_cast<unsigned char>(to_lower(*s)));
   }
 };
+
+}; // namespace case_ignore
 
 // This is based on
 // "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4189".
@@ -473,8 +483,8 @@ enum StatusCode {
 };
 
 using Headers =
-    std::unordered_multimap<std::string, std::string, detail::case_ignore_hash,
-                            detail::case_ignore_equal>;
+    std::unordered_multimap<std::string, std::string, detail::case_ignore::hash,
+                            detail::case_ignore::equal_to>;
 
 using Params = std::multimap<std::string, std::string>;
 using Match = std::smatch;
@@ -3996,14 +4006,6 @@ inline const char *get_header_value(const Headers &headers,
   return def;
 }
 
-inline bool compare_case_ignore(const std::string &a, const std::string &b) {
-  if (a.size() != b.size()) { return false; }
-  for (size_t i = 0; i < b.size(); i++) {
-    if (to_lower(a[i]) != to_lower(b[i])) { return false; }
-  }
-  return true;
-}
-
 template <typename T>
 inline bool parse_header(const char *beg, const char *end, T fn) {
   // Skip trailing spaces and tabs.
@@ -4031,7 +4033,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     if (!key_len) { return false; }
 
     auto key = std::string(beg, key_end);
-    auto val = compare_case_ignore(key, "Location")
+    auto val = case_ignore::equal(key, "Location")
                    ? std::string(p, end)
                    : decode_url(std::string(p, end), false);
 
@@ -4196,7 +4198,7 @@ inline bool read_content_chunked(Stream &strm, T &x,
 }
 
 inline bool is_chunked_transfer_encoding(const Headers &headers) {
-  return compare_case_ignore(
+  return case_ignore::equal(
       get_header_value(headers, "Transfer-Encoding", "", 0), "chunked");
 }
 
@@ -4835,7 +4837,9 @@ private:
                               const std::string &b) const {
     if (a.size() < b.size()) { return false; }
     for (size_t i = 0; i < b.size(); i++) {
-      if (to_lower(a[i]) != to_lower(b[i])) { return false; }
+      if (case_ignore::to_lower(a[i]) != case_ignore::to_lower(b[i])) {
+        return false;
+      }
     }
     return true;
   }
