@@ -273,7 +273,7 @@ using socket_t = int;
 #include <iostream>
 #include <sstream>
 
-#if defined(OPENSSL_IS_BORINGSSL)
+#if defined(OPENSSL_IS_BORINGSSL) || defined(LIBRESSL_VERSION_NUMBER)
 #if OPENSSL_VERSION_NUMBER < 0x1010107f
 #error Please use OpenSSL or a current version of BoringSSL
 #endif
@@ -776,7 +776,7 @@ private:
         fn();
       }
 
-#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(OPENSSL_IS_BORINGSSL)
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(OPENSSL_IS_BORINGSSL) && !defined(LIBRESSL_VERSION_NUMBER)
       OPENSSL_thread_stop();
 #endif
     }
