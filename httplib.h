@@ -697,8 +697,6 @@ public:
   virtual void get_local_ip_and_port(std::string &ip, int &port) const = 0;
   virtual socket_t socket() const = 0;
 
-  template <typename... Args>
-  ssize_t write_format(const char *fmt, const Args &...args);
   ssize_t write(const char *ptr);
   ssize_t write(const std::string &s);
 };
@@ -1987,30 +1985,6 @@ inline uint64_t Request::get_header_value_u64(const std::string &key,
 inline uint64_t Response::get_header_value_u64(const std::string &key,
                                                uint64_t def, size_t id) const {
   return detail::get_header_value_u64(headers, key, def, id);
-}
-
-template <typename... Args>
-inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
-  const auto bufsiz = 2048;
-  std::array<char, bufsiz> buf{};
-
-  auto sn = snprintf(buf.data(), buf.size() - 1, fmt, args...);
-  if (sn <= 0) { return sn; }
-
-  auto n = static_cast<size_t>(sn);
-
-  if (n >= buf.size() - 1) {
-    std::vector<char> glowable_buf(buf.size());
-
-    while (n >= glowable_buf.size() - 1) {
-      glowable_buf.resize(glowable_buf.size() * 2);
-      n = static_cast<size_t>(
-          snprintf(&glowable_buf[0], glowable_buf.size() - 1, fmt, args...));
-    }
-    return write(&glowable_buf[0], n);
-  } else {
-    return write(buf.data(), n);
-  }
 }
 
 inline void default_socket_options(socket_t sock) {
@@ -4117,12 +4091,11 @@ inline bool read_headers(Stream &strm, Headers &headers) {
       // Blank line indicates end of headers.
       if (line_reader.size() == 1) { break; }
       line_terminator_len = 1;
-    }
 #else
     } else {
       continue; // Skip invalid line.
-    }
 #endif
+    }
 
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
 
@@ -4327,13 +4300,36 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
         }
         return ret;
       });
-} // namespace detail
+}
+
+inline ssize_t write_request_line(Stream &strm, const std::string &method,
+                                          const std::string &path) {
+  std::string s = method;
+  s += " ";
+  s += path;
+  s += " HTTP/1.1\r\n";
+  return strm.write(s.data(), s.size());
+}
+
+inline ssize_t write_response_line(Stream &strm, int status) {
+  std::string s = "HTTP/1.1 ";
+  s += std::to_string(status);
+  s += " ";
+  s += httplib::status_message(status);
+  s += "\r\n";
+  return strm.write(s.data(), s.size());
+}
 
 inline ssize_t write_headers(Stream &strm, const Headers &headers) {
   ssize_t write_len = 0;
   for (const auto &x : headers) {
-    auto len =
-        strm.write_format("%s: %s\r\n", x.first.c_str(), x.second.c_str());
+    std::string s;
+    s = x.first;
+    s += ": ";
+    s += x.second;
+    s += "\r\n";
+
+    auto len = strm.write(s.data(), s.size());
     if (len < 0) { return len; }
     write_len += len;
   }
@@ -6316,23 +6312,24 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   if (close_connection || req.get_header_value("Connection") == "close") {
     res.set_header("Connection", "close");
   } else {
-    std::stringstream ss;
-    ss << "timeout=" << keep_alive_timeout_sec_
-       << ", max=" << keep_alive_max_count_;
-    res.set_header("Keep-Alive", ss.str());
+    std::string s = "timeout=";
+    s += std::to_string(keep_alive_timeout_sec_);
+    s += ", max=";
+    s += std::to_string(keep_alive_max_count_);
+    res.set_header("Keep-Alive", s);
   }
 
-  if (!res.has_header("Content-Type") &&
-      (!res.body.empty() || res.content_length_ > 0 || res.content_provider_)) {
+  if ((!res.body.empty() || res.content_length_ > 0 || res.content_provider_) &&
+      !res.has_header("Content-Type")) {
     res.set_header("Content-Type", "text/plain");
   }
 
-  if (!res.has_header("Content-Length") && res.body.empty() &&
-      !res.content_length_ && !res.content_provider_) {
+  if (res.body.empty() && !res.content_length_ && !res.content_provider_ &&
+      !res.has_header("Content-Length")) {
     res.set_header("Content-Length", "0");
   }
 
-  if (!res.has_header("Accept-Ranges") && req.method == "HEAD") {
+  if (req.method == "HEAD" && !res.has_header("Accept-Ranges")) {
     res.set_header("Accept-Ranges", "bytes");
   }
 
@@ -6341,12 +6338,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   // Response line and headers
   {
     detail::BufferStream bstrm;
-
-    if (!bstrm.write_format("HTTP/1.1 %d %s\r\n", res.status,
-                            status_message(res.status))) {
-      return false;
-    }
-
+    if (!detail::write_response_line(bstrm, res.status)) { return false; }
     if (!header_writer_(bstrm, res.headers)) { return false; }
 
     // Flush buffer
@@ -7006,8 +6998,8 @@ Server::process_request(Stream &strm, bool close_connection,
     switch (status) {
     case StatusCode::Continue_100:
     case StatusCode::ExpectationFailed_417:
-      strm.write_format("HTTP/1.1 %d %s\r\n\r\n", status,
-                        status_message(status));
+      detail::write_response_line(strm, status);
+      strm.write("\r\n");
       break;
     default:
       connection_closed = true;
@@ -7617,7 +7609,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     detail::BufferStream bstrm;
 
     const auto &path = url_encode_ ? detail::encode_url(req.path) : req.path;
-    bstrm.write_format("%s %s HTTP/1.1\r\n", req.method.c_str(), path.c_str());
+    detail::write_request_line(bstrm, req.method, path);
 
     header_writer_(bstrm, req.headers);
 
@@ -8718,7 +8710,7 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
 
     auto ret = SSL_shutdown(ssl);
     while (ret == 0) {
-      std::this_thread::sleep_for(std::chrono::microseconds{1});
+      std::this_thread::sleep_for(std::chrono::microseconds{10});
       ret = SSL_shutdown(ssl);
     }
 #endif
@@ -8825,7 +8817,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
         if (SSL_pending(ssl_) > 0) {
           return SSL_read(ssl_, ptr, static_cast<int>(size));
         } else if (is_readable()) {
-          std::this_thread::sleep_for(std::chrono::microseconds{1});
+          std::this_thread::sleep_for(std::chrono::microseconds{10});
           ret = SSL_read(ssl_, ptr, static_cast<int>(size));
           if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
@@ -8856,7 +8848,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
       while (--n >= 0 && err == SSL_ERROR_WANT_WRITE) {
 #endif
         if (is_writable()) {
-          std::this_thread::sleep_for(std::chrono::microseconds{1});
+          std::this_thread::sleep_for(std::chrono::microseconds{10});
           ret = SSL_write(ssl_, ptr, static_cast<int>(handle_size));
           if (ret >= 0) { return ret; }
           err = SSL_get_error(ssl_, ret);
