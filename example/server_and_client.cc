@@ -5,41 +5,86 @@
 //  MIT License
 //
 
+#include <httplib.h>
 #include <iostream>
 #include <string>
-#include <string>
-#include <httplib.h>
 
 using namespace httplib;
 
-const char *HOST = "localhost";
-const int PORT = 1234;
+std::string dump_headers(const Headers &headers) {
+  std::string s;
+  char buf[BUFSIZ];
 
-const std::string JSON_DATA = R"({"hello": "world"})";
+  for (auto it = headers.begin(); it != headers.end(); ++it) {
+    const auto &x = *it;
+    snprintf(buf, sizeof(buf), "%s: %s\n", x.first.c_str(), x.second.c_str());
+    s += buf;
+  }
+
+  return s;
+}
+
+void logger(const Request &req, const Response &res) {
+  std::string s;
+  char buf[BUFSIZ];
+
+  s += "================================\n";
+
+  snprintf(buf, sizeof(buf), "%s %s %s", req.method.c_str(),
+           req.version.c_str(), req.path.c_str());
+  s += buf;
+
+  std::string query;
+  for (auto it = req.params.begin(); it != req.params.end(); ++it) {
+    const auto &x = *it;
+    snprintf(buf, sizeof(buf), "%c%s=%s",
+             (it == req.params.begin()) ? '?' : '&', x.first.c_str(),
+             x.second.c_str());
+    query += buf;
+  }
+  snprintf(buf, sizeof(buf), "%s\n", query.c_str());
+  s += buf;
+
+  s += dump_headers(req.headers);
+
+  s += "--------------------------------\n";
+
+  snprintf(buf, sizeof(buf), "%d %s\n", res.status, res.version.c_str());
+  s += buf;
+  s += dump_headers(res.headers);
+  s += "\n";
+
+  if (!res.body.empty()) { s += res.body; }
+
+  s += "\n";
+
+  std::cout << s;
+}
 
 int main(void) {
+  // Server
   Server svr;
+  svr.set_logger(logger);
 
-  svr.Post("/api", [&](const Request & /*req*/, Response &res) {
-    res.set_content("Hello World!", "text/plain");
+  svr.Post("/post", [&](const Request & /*req*/, Response &res) {
+    res.set_content("POST", "text/plain");
   });
 
-  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto th = std::thread([&]() { svr.listen("localhost", 8080); });
 
   auto se = detail::scope_exit([&] {
     svr.stop();
-    thread.join();
+    th.join();
   });
 
   svr.wait_until_ready();
 
-  Client cli(HOST, PORT);
+  // Client
+  Client cli{"localhost", 8080};
 
-  auto res =
-      cli.Post("/api", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-               "application/json", [](uint64_t, uint64_t) { return true; });
+  std::string body = R"({"hello": "world"})";
 
-  if (res) {
-    std::cout << res->body << std::endl;
-  }
+  auto res = cli.Post("/post", body, "application/json");
+  std::cout << "--------------------------------" << std::endl;
+  std::cout << to_string(res.error()) << std::endl;
 }
