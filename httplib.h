@@ -3765,8 +3765,9 @@ inline bool can_compress_content_type(const std::string &content_type) {
   case "application/protobuf"_t:
   case "application/xhtml+xml"_t: return true;
 
-  default:
-    return !content_type.rfind("text/", 0) && tag != "text/event-stream"_t;
+  case "text/event-stream"_t: return false;
+
+  default: return !content_type.rfind("text/", 0);
   }
 }
 
