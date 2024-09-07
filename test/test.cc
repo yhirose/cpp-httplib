@@ -2300,6 +2300,18 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("Hello World!", "text/plain");
              })
+        .Get("/file_content",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_file_content("./www/dir/test.html");
+             })
+        .Get("/file_content_with_content_type",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_file_content("./www/file", "text/plain");
+             })
+        .Get("/invalid_file_content",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_file_content("./www/dir/invalid_file_path");
+             })
         .Get("/http_response_splitting",
              [&](const Request & /*req*/, Response &res) {
                res.set_header("a", "1\r\nSet-Cookie: a=1");
@@ -2902,6 +2914,30 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
+}
+
+TEST_F(ServerTest, GetFileContent) {
+  auto res = cli_.Get("/file_content");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(9, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GetFileContentWithContentType) {
+  auto res = cli_.Get("/file_content_with_content_type");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(5, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("file\n", res->body);
+}
+
+TEST_F(ServerTest, GetInvalidFileContent) {
+  auto res = cli_.Get("/invalid_file_content");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
 TEST_F(ServerTest, GetMethod200withPercentEncoding) {
@@ -4722,9 +4758,10 @@ static void test_raw_request(const std::string &req,
   svr.Put("/put_hi", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
-  svr.Get("/header_field_value_check", [&](const Request &/*req*/, Response &res) {
-    res.set_content("ok", "text/plain");
-  });
+  svr.Get("/header_field_value_check",
+          [&](const Request & /*req*/, Response &res) {
+            res.set_content("ok", "text/plain");
+          });
 
   // Server read timeout must be longer than the client read timeout for the
   // bug to reproduce, probably to force the server to process a request
@@ -7640,7 +7677,7 @@ TEST(FileSystemTest, FileAndDirExistenceCheck) {
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   Server svr;
 
-  svr.Get("/test", [&](const Request &/*req*/, Response &res) {
+  svr.Get("/test", [&](const Request & /*req*/, Response &res) {
     EXPECT_EQ(res.status, 400);
   });
 
@@ -7666,11 +7703,12 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
 
   Server svr;
 
-  svr.set_expect_100_continue_handler([](const Request &/*req*/, Response &res) {
-    res.status = StatusCode::Unauthorized_401;
-    res.set_content(reject, "text/plain");
-    return res.status;
-  });
+  svr.set_expect_100_continue_handler(
+      [](const Request & /*req*/, Response &res) {
+        res.status = StatusCode::Unauthorized_401;
+        res.set_content(reject, "text/plain");
+        return res.status;
+      });
   svr.Post("/", [&](const Request & /*req*/, Response &res) {
     res.set_content(accept, "text/plain");
   });
@@ -7745,7 +7783,8 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
 
     {
       auto dl = curl_off_t{};
-      const auto res = curl_easy_getinfo(curl.get(), CURLINFO_SIZE_DOWNLOAD_T, &dl);
+      const auto res =
+          curl_easy_getinfo(curl.get(), CURLINFO_SIZE_DOWNLOAD_T, &dl);
       ASSERT_EQ(res, CURLE_OK);
       ASSERT_EQ(dl, (curl_off_t)sizeof reject - 1);
     }

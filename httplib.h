@@ -675,6 +675,10 @@ struct Response {
       const std::string &content_type, ContentProviderWithoutLength provider,
       ContentProviderResourceReleaser resource_releaser = nullptr);
 
+  void set_file_content(const std::string &path,
+                        const std::string &content_type);
+  void set_file_content(const std::string &path);
+
   Response() = default;
   Response(const Response &) = default;
   Response &operator=(const Response &) = default;
@@ -692,6 +696,8 @@ struct Response {
   ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
   bool content_provider_success_ = false;
+  std::string file_content_path_;
+  std::string file_content_content_type_;
 };
 
 class Stream {
@@ -5703,6 +5709,16 @@ inline void Response::set_chunked_content_provider(
   is_chunked_content_provider_ = true;
 }
 
+inline void Response::set_file_content(const std::string &path,
+                                       const std::string &content_type) {
+  file_content_path_ = path;
+  file_content_content_type_ = content_type;
+}
+
+inline void Response::set_file_content(const std::string &path) {
+  file_content_path_ = path;
+}
+
 // Result implementation
 inline bool Result::has_request_header(const std::string &key) const {
   return request_headers_.find(key) != request_headers_.end();
@@ -7041,6 +7057,32 @@ Server::process_request(Stream &strm, bool close_connection,
       res.content_provider_ = nullptr;
       res.status = StatusCode::RangeNotSatisfiable_416;
       return write_response(strm, close_connection, req, res);
+    }
+
+    // Serve file content by using a content provider
+    if (!res.file_content_path_.empty()) {
+      const auto &path = res.file_content_path_;
+      auto mm = std::make_shared<detail::mmap>(path.c_str());
+      if (!mm->is_open()) {
+        res.body.clear();
+        res.content_length_ = 0;
+        res.content_provider_ = nullptr;
+        res.status = StatusCode::NotFound_404;
+        return write_response(strm, close_connection, req, res);
+      }
+
+      auto content_type = res.file_content_content_type_;
+      if (content_type.empty()) {
+        content_type = detail::find_content_type(
+            path, file_extension_and_mimetype_map_, default_file_mimetype_);
+      }
+
+      res.set_content_provider(
+          mm->size(), content_type,
+          [mm](size_t offset, size_t length, DataSink &sink) -> bool {
+            sink.write(mm->data() + offset, length);
+            return true;
+          });
     }
 
     return write_response_with_content(strm, close_connection, req, res);

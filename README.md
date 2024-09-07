@@ -384,6 +384,18 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 });
 ```
 
+### Send file content
+
+```cpp
+svr.Get("/content", [&](const Request &req, Response &res) {
+  res.set_file_content("./path/to/conent.html");
+});
+
+svr.Get("/content", [&](const Request &req, Response &res) {
+  res.set_file_content("./path/to/conent", "text/html");
+});
+```
+
 ### 'Expect: 100-continue' handler
 
 By default, the server sends a `100 Continue` response for an `Expect: 100-continue` header.
