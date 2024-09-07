@@ -2,12 +2,15 @@ CXXFLAGS = -std=c++11 -O2 -I..
 
 THEAD_POOL_COUNT = 16
 
-BENCH_CMD = bombardier -c 8 -d 5s localhost:8080
-# BENCH_CMD = wrk -d 5s http://localhost:8080
+BENCH = bombardier -l -c 10 -d 5s localhost:8080
+MONITOR = ali http://localhost:8080
 
 # cpp-httplib
 bench: server
-	@./server & export PID=$$!; $(BENCH_CMD); kill $${PID}
+	@./server & export PID=$$!; $(BENCH); kill $${PID}
+
+monitor: server
+	@./server & export PID=$$!; $(MONITOR); kill $${PID}
 
 run : server
 	@./server
@@ -17,7 +20,10 @@ server : cpp-httplib/main.cpp ../httplib.h
 
 # crow
 bench-crow: server-crow
-	@./server-crow & export PID=$$!; $(BENCH_CMD); kill $${PID}
+	@./server-crow & export PID=$$!; $(BENCH); kill $${PID}
+
+monitor-crow: server-crow
+	@./server-crow & export PID=$$!; $(MONITOR); kill $${PID}
 
 run-crow : server-crow
 	@./server-crow
@@ -25,15 +31,9 @@ run-crow : server-crow
 server-crow : crow/main.cpp
 	g++ -o $@ $(CXXFLAGS) crow/main.cpp
 
-# flask
-bench-flask:
-	@FLASK_APP=flask/main.py flask run --port=8080 & export PID=$$!; $(BENCH_CMD); kill $${PID}
-
-run-flask:
-	@FLASK_APP=flask/main.py flask run --port=8080
-
 # misc
-bench-all: bench bench-crow bench-flask
+issue:
+	$(BENCH)
 
 clean:
 	rm -rf server*
