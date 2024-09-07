@@ -792,7 +792,8 @@ private:
         fn();
       }
 
-#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(OPENSSL_IS_BORINGSSL) && !defined(LIBRESSL_VERSION_NUMBER)
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(OPENSSL_IS_BORINGSSL) &&   \
+    !defined(LIBRESSL_VERSION_NUMBER)
       OPENSSL_thread_stop();
 #endif
     }
