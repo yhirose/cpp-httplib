@@ -53,9 +53,12 @@ benchmark : benchmark.cc ../httplib.h Makefile
 one_time_request : one_time_request.cc ../httplib.h Makefile
 	$(CXX) -o one_time_request $(CXXFLAGS) one_time_request.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
 
+server_and_client : server_and_client.cc ../httplib.h Makefile
+	$(CXX) -o server_and_client $(CXXFLAGS) server_and_client.cc $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT)
+
 pem:
 	openssl genrsa 2048 > key.pem
 	openssl req -new -key key.pem | openssl x509 -days 3650 -req -signkey key.pem > cert.pem
 
 clean:
-	rm server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark one_time_request *.pem
+	rm server client hello simplecli simplesvr upload redirect ssesvr ssecli benchmark one_time_request server_and_client *.pem

@@ -9,6 +9,8 @@ example/benchmark
 example/redirect
 example/sse*
 example/upload
+example/one_time_request
+example/server_and_client
 example/*.pem
 test/httplib.cc
 test/httplib.h
