@@ -50,8 +50,12 @@ class FuzzableServer : public httplib::Server {
 public:
   void ProcessFuzzedRequest(FuzzedStream &stream) {
     bool connection_close = false;
-    process_request(stream, /*last_connection=*/false, connection_close,
-                    nullptr);
+    process_request(stream,
+                    /*remote_addr=*/"",
+                    /*remote_port =*/0,
+                    /*local_addr=*/"",
+                    /*local_port =*/0,
+                    /*last_connection=*/false, connection_close, nullptr);
   }
 };
 
