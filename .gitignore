@@ -24,8 +24,7 @@ test/*.o
 test/*.pem
 test/*.srl
 work/
-benchmark/server
-benchmark/server-crow
+benchmark/server*
 
 *.swp
 
