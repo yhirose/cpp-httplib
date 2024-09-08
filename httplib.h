@@ -1010,7 +1010,9 @@ public:
   std::function<TaskQueue *(void)> new_task_queue;
 
 protected:
-  bool process_request(Stream &strm, bool close_connection,
+  bool process_request(Stream &strm, const std::string &remote_addr,
+                       int remote_port, const std::string &local_addr,
+                       int local_port, bool close_connection,
                        bool &connection_closed,
                        const std::function<void(Request &)> &setup_request);
 
@@ -1448,6 +1450,7 @@ public:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
+  void enable_server_host_verification(bool enabled);
 #endif
 
   void set_logger(Logger logger);
@@ -1562,6 +1565,7 @@ protected:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool server_certificate_verification_ = true;
+  bool server_host_verification_ = true;
 #endif
 
   Logger logger_;
@@ -1867,6 +1871,7 @@ public:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
+  void enable_server_host_verification(bool enabled);
 #endif
 
   void set_logger(Logger logger);
@@ -4200,11 +4205,18 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
   assert(chunk_len == 0);
 
-  // NOTE: In RFC 9112, '7.1 Chunked Transfer Coding' mentiones "The chunked transfer coding is complete when a chunk with a chunk-size of zero is received, possibly followed by a trailer section, and finally terminated by an empty line". https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1
+  // NOTE: In RFC 9112, '7.1 Chunked Transfer Coding' mentiones "The chunked
+  // transfer coding is complete when a chunk with a chunk-size of zero is
+  // received, possibly followed by a trailer section, and finally terminated by
+  // an empty line". https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1
   //
-  // In '7.1.3. Decoding Chunked', however, the pseudo-code in the section does't care for the existence of the final CRLF. In other words, it seems to be ok whether the final CRLF exists or not in the chunked data. https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1.3
+  // In '7.1.3. Decoding Chunked', however, the pseudo-code in the section
+  // does't care for the existence of the final CRLF. In other words, it seems
+  // to be ok whether the final CRLF exists or not in the chunked data.
+  // https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1.3
   //
-  // According to the reference code in RFC 9112, cpp-htpplib now allows chuncked transfer coding data without the final CRLF.
+  // According to the reference code in RFC 9112, cpp-htpplib now allows
+  // chuncked transfer coding data without the final CRLF.
   if (!line_reader.getline()) { return true; }
 
   while (strcmp(line_reader.ptr(), "\r\n") != 0) {
@@ -6942,7 +6954,9 @@ inline bool Server::dispatch_request_for_content_reader(
 }
 
 inline bool
-Server::process_request(Stream &strm, bool close_connection,
+Server::process_request(Stream &strm, const std::string &remote_addr,
+                        int remote_port, const std::string &local_addr,
+                        int local_port, bool close_connection,
                         bool &connection_closed,
                         const std::function<void(Request &)> &setup_request) {
   std::array<char, 2048> buf{};
@@ -6996,11 +7010,13 @@ Server::process_request(Stream &strm, bool close_connection,
     connection_closed = true;
   }
 
-  strm.get_remote_ip_and_port(req.remote_addr, req.remote_port);
+  req.remote_addr = remote_addr;
+  req.remote_port = remote_port;
   req.set_header("REMOTE_ADDR", req.remote_addr);
   req.set_header("REMOTE_PORT", std::to_string(req.remote_port));
 
-  strm.get_local_ip_and_port(req.local_addr, req.local_port);
+  req.local_addr = local_addr;
+  req.local_port = local_port;
   req.set_header("LOCAL_ADDR", req.local_addr);
   req.set_header("LOCAL_PORT", std::to_string(req.local_port));
 
@@ -7118,12 +7134,21 @@ Server::process_request(Stream &strm, bool close_connection,
 inline bool Server::is_valid() const { return true; }
 
 inline bool Server::process_and_close_socket(socket_t sock) {
+  std::string remote_addr;
+  int remote_port = 0;
+  detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
+
+  std::string local_addr;
+  int local_port = 0;
+  detail::get_local_ip_and_port(sock, local_addr, local_port);
+
   auto ret = detail::process_server_socket(
       svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_,
-      [this](Stream &strm, bool close_connection, bool &connection_closed) {
-        return process_request(strm, close_connection, connection_closed,
+      [&](Stream &strm, bool close_connection, bool &connection_closed) {
+        return process_request(strm, remote_addr, remote_port, local_addr,
+                               local_port, close_connection, connection_closed,
                                nullptr);
       });
 
@@ -7195,6 +7220,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 #endif
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   server_certificate_verification_ = rhs.server_certificate_verification_;
+  server_host_verification_ = rhs.server_host_verification_;
 #endif
   logger_ = rhs.logger_;
 }
@@ -8699,6 +8725,10 @@ inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
 inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
   server_certificate_verification_ = enabled;
 }
+
+inline void ClientImpl::enable_server_host_verification(bool enabled) {
+  server_host_verification_ = enabled;
+}
 #endif
 
 inline void ClientImpl::set_logger(Logger logger) {
@@ -9030,13 +9060,22 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
   auto ret = false;
   if (ssl) {
+    std::string remote_addr;
+    int remote_port = 0;
+    detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
+
+    std::string local_addr;
+    int local_port = 0;
+    detail::get_local_ip_and_port(sock, local_addr, local_port);
+
     ret = detail::process_server_socket_ssl(
         svr_sock_, ssl, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
         read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
         write_timeout_usec_,
-        [this, ssl](Stream &strm, bool close_connection,
-                    bool &connection_closed) {
-          return process_request(strm, close_connection, connection_closed,
+        [&](Stream &strm, bool close_connection, bool &connection_closed) {
+          return process_request(strm, remote_addr, remote_port, local_addr,
+                                 local_port, close_connection,
+                                 connection_closed,
                                  [&](Request &req) { req.ssl = ssl; });
         });
 
@@ -9286,11 +9325,14 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             return false;
           }
 
-          if (!verify_host(server_cert)) {
-            X509_free(server_cert);
-            error = Error::SSLServerVerification;
-            return false;
+          if (server_host_verification_) {
+            if (!verify_host(server_cert)) {
+              X509_free(server_cert);
+              error = Error::SSLServerVerification;
+              return false;
+            }
           }
+
           X509_free(server_cert);
         }
 
@@ -10021,6 +10063,10 @@ inline void Client::set_proxy_digest_auth(const std::string &username,
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline void Client::enable_server_certificate_verification(bool enabled) {
   cli_->enable_server_certificate_verification(enabled);
+}
+
+inline void Client::enable_server_host_verification(bool enabled) {
+  cli_->enable_server_host_verification(enabled);
 }
 #endif
 
