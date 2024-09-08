@@ -32,6 +32,8 @@ server-crow : crow/main.cpp
 	g++ -o $@ $(CXXFLAGS) crow/main.cpp
 
 # misc
+bench-all: bench-crow bench
+
 issue:
 	$(BENCH)
 
