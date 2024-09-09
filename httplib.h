@@ -1007,6 +1007,10 @@ public:
   void stop();
   void decommission();
 
+  // helpers, member functions to get access to mime file map and other things
+   enum StaticFileResponse { SFR_DirRedirect, SFR_File, SFR_CouldNotOpen, SFR_NotFound };
+   inline StaticFileResponse respond_with_static_file(const Request &req, Response &res, std::string sub_path, std::string disk_base_dir) const;
+
   std::function<TaskQueue *(void)> new_task_queue;
 
 protected:
@@ -6556,6 +6560,42 @@ Server::read_content_core(Stream &strm, Request &req, Response &res,
   }
 
   return true;
+}
+
+
+inline Server::StaticFileResponse Server::respond_with_static_file(const Request &req, Response &res, std::string sub_path, std::string disk_base_dir) const {
+      if (detail::is_valid_path(sub_path)) {
+        auto path = disk_base_dir + '/' +  sub_path;
+        if (path.back() == '/') { path += "index.html"; }
+
+        else if (detail::is_dir(path)) {
+           res.set_redirect(sub_path + "/");
+           return SFR_DirRedirect;
+        }
+
+        if (detail::is_file(path)) {
+          auto mm = std::make_shared<detail::mmap>(path.c_str());
+          if (!mm->is_open()) { return SFR_CouldNotOpen; }
+
+          res.set_content_provider(
+              mm->size(),
+              detail::find_content_type(path, file_extension_and_mimetype_map_,
+                                        default_file_mimetype_),
+              [mm](size_t offset, size_t length, DataSink &sink) -> bool {
+                sink.write(mm->data() + offset, length);
+                return true;
+              });
+
+          bool head = req.method == "HEAD";
+          if (!head && file_request_handler_) {
+            file_request_handler_(req, res);
+          }
+
+          return SFR_File;
+        }
+      }
+  res.status = StatusCode::NotFound_404;
+  return SFR_NotFound;
 }
 
 inline bool Server::handle_file_request(const Request &req, Response &res,
