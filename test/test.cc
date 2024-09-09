@@ -2916,6 +2916,15 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+TEST_F(ServerTest, GetEmptyFile) {
+  auto res = cli_.Get("/empty_file");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ(0, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("", res->body);
+}
+
 TEST_F(ServerTest, GetFileContent) {
   auto res = cli_.Get("/file_content");
   ASSERT_TRUE(res);
