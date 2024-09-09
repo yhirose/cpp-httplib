@@ -2300,6 +2300,14 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("Hello World!", "text/plain");
              })
+        .Get("/file_content_dir_no_slash",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_file_content("./www/dir");
+             })
+        .Get("/file_content_dir_with_slash/",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_file_content("./www/dir/");
+             })
         .Get("/file_content",
              [&](const Request & /*req*/, Response &res) {
                res.set_file_content("./www/dir/test.html");
@@ -2916,13 +2924,31 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
-TEST_F(ServerTest, GetFileContent) {
+TEST_F(ServerTest, GetFileContent_File) {
   auto res = cli_.Get("/file_content");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ(9, std::stoi(res->get_header_value("Content-Length")));
   EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GetFileContent_DirNoSlash) {
+  auto res = cli_.Get("/file_content_dir_no_slash");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(9, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("index.html", res->body);
+}
+
+TEST_F(ServerTest, GetFileContent_DirWithSlash) {
+  auto res = cli_.Get("/file_content_dir_with_slash/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ(9, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("index.html", res->body);
 }
 
 TEST_F(ServerTest, GetFileContentWithContentType) {
