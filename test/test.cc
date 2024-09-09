@@ -2920,7 +2920,7 @@ TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
   EXPECT_EQ(0, std::stoi(res->get_header_value("Content-Length")));
   EXPECT_EQ("", res->body);
 }
