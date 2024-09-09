@@ -3374,6 +3374,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #endif
     return INVALID_SOCKET;
   }
+  auto se = detail::scope_exit([&] { freeaddrinfo(result); });
 
   for (auto rp = result; rp; rp = rp->ai_next) {
     // Create a socket
@@ -3443,17 +3444,13 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
     // bind or connect
     auto quit = false;
-    if (bind_or_connect(sock, *rp, quit)) {
-      freeaddrinfo(result);
-      return sock;
-    }
+    if (bind_or_connect(sock, *rp, quit)) { return sock; }
 
     close_socket(sock);
 
     if (quit) { break; }
   }
 
-  freeaddrinfo(result);
   return INVALID_SOCKET;
 }
 
@@ -3486,6 +3483,7 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   hints.ai_protocol = 0;
 
   if (getaddrinfo(host.c_str(), "0", &hints, &result)) { return false; }
+  auto se = detail::scope_exit([&] { freeaddrinfo(result); });
 
   auto ret = false;
   for (auto rp = result; rp; rp = rp->ai_next) {
@@ -3496,7 +3494,6 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
     }
   }
 
-  freeaddrinfo(result);
   return ret;
 }
 
@@ -3508,6 +3505,8 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
 inline std::string if2ip(int address_family, const std::string &ifn) {
   struct ifaddrs *ifap;
   getifaddrs(&ifap);
+  auto se = detail::scope_exit([&] { freeifaddrs(ifap); });
+
   std::string addr_candidate;
   for (auto ifa = ifap; ifa; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr && ifn == ifa->ifa_name &&
@@ -3517,7 +3516,6 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
         auto sa = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
         char buf[INET_ADDRSTRLEN];
         if (inet_ntop(AF_INET, &sa->sin_addr, buf, INET_ADDRSTRLEN)) {
-          freeifaddrs(ifap);
           return std::string(buf, INET_ADDRSTRLEN);
         }
       } else if (ifa->ifa_addr->sa_family == AF_INET6) {
@@ -3530,7 +3528,6 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
             if (s6_addr_head == 0xfc || s6_addr_head == 0xfd) {
               addr_candidate = std::string(buf, INET6_ADDRSTRLEN);
             } else {
-              freeifaddrs(ifap);
               return std::string(buf, INET6_ADDRSTRLEN);
             }
           }
@@ -3538,7 +3535,6 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
       }
     }
   }
-  freeifaddrs(ifap);
   return addr_candidate;
 }
 #endif
@@ -5539,6 +5535,7 @@ inline void hosted_at(const std::string &hostname,
 #endif
     return;
   }
+  auto se = detail::scope_exit([&] { freeaddrinfo(result); });
 
   for (auto rp = result; rp; rp = rp->ai_next) {
     const auto &addr =
@@ -5550,8 +5547,6 @@ inline void hosted_at(const std::string &hostname,
       addrs.push_back(ip);
     }
   }
-
-  freeaddrinfo(result);
 }
 
 inline std::string append_query_params(const std::string &path,
@@ -7223,7 +7218,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 #endif
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   server_certificate_verification_ = rhs.server_certificate_verification_;
-  server_host_verification_ = rhs.server_host_verification_;
+  server_hostname_verification_ = rhs.server_hostname_verification_;
 #endif
   logger_ = rhs.logger_;
 }
@@ -8701,11 +8696,11 @@ inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
 inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
                                                     std::size_t size) const {
   auto mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
+  auto se = detail::scope_exit([&] { BIO_free_all(mem); });
   if (!mem) { return nullptr; }
 
   auto inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
   if (!inf) {
-    BIO_free_all(mem);
     return nullptr;
   }
 
@@ -8721,7 +8716,6 @@ inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
   }
 
   sk_X509_INFO_pop_free(inf, X509_INFO_free);
-  BIO_free_all(mem);
   return cts;
 }
 
