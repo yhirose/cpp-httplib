@@ -691,6 +691,8 @@ struct Response {
       const std::string &content_type, ContentProviderWithoutLength provider,
       ContentProviderResourceReleaser resource_releaser = nullptr);
 
+  void set_static_file_content(const std::string &basedir, const std::string &subpath);
+
   void set_file_content(const std::string &path,
                         const std::string &content_type);
   void set_file_content(const std::string &path);
@@ -714,6 +716,8 @@ struct Response {
   bool content_provider_success_ = false;
   std::string file_content_path_;
   std::string file_content_content_type_;
+  std::string static_file_content_subpath_;
+  std::string static_file_content_basedir_;
 };
 
 class Stream {
@@ -5753,6 +5757,11 @@ inline void Response::set_file_content(const std::string &path) {
   file_content_path_ = path;
 }
 
+inline void Response::set_static_file_content(const std::string &basedir, const std::string &subpath) {
+  static_file_content_basedir_ = basedir;
+  static_file_content_subpath_ = subpath;
+}
+
 // Result implementation
 inline bool Result::has_request_header(const std::string &key) const {
   return request_headers_.find(key) != request_headers_.end();
@@ -7095,6 +7104,26 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       res.content_provider_ = nullptr;
       res.status = StatusCode::RangeNotSatisfiable_416;
       return write_response(strm, close_connection, req, res);
+    }
+
+    // Serve file content by using a content provider,
+    // but do extra filesystem checks and dir redirects
+    if (!res.static_file_content_subpath_.empty()) {
+      auto const& subpath = res.static_file_content_subpath_;
+      auto const& basedir = res.static_file_content_basedir_;
+      if (detail::is_valid_path(subpath)) {
+        std::string path = basedir + "/" + subpath;
+        if (path.back() == '/') { path += "index.html"; }
+
+        if (detail::is_dir(path)) {
+           res.set_redirect(subpath + "/", StatusCode::SeeOther_303);   // 303 = repeat POST if it was a post
+        }
+
+        else if (detail::is_file(path)) {
+           res.set_file_content(path);
+           // and FALL THROUGH to the next handler
+         }
+      }
     }
 
     // Serve file content by using a content provider
