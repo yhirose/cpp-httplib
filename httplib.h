@@ -1135,6 +1135,7 @@ enum class Error {
   SSLConnection,
   SSLLoadingCerts,
   SSLServerVerification,
+  SSLServerHostnameVerification,
   UnsupportedMultipartBoundaryChars,
   Compression,
   ConnectionTimeout,
@@ -1450,7 +1451,7 @@ public:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
-  void enable_server_host_verification(bool enabled);
+  void enable_server_hostname_verification(bool enabled);
 #endif
 
   void set_logger(Logger logger);
@@ -1565,7 +1566,7 @@ protected:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool server_certificate_verification_ = true;
-  bool server_host_verification_ = true;
+  bool server_hostname_verification_ = true;
 #endif
 
   Logger logger_;
@@ -1871,7 +1872,7 @@ public:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
-  void enable_server_host_verification(bool enabled);
+  void enable_server_hostname_verification(bool enabled);
 #endif
 
   void set_logger(Logger logger);
@@ -2163,6 +2164,8 @@ inline std::string to_string(const Error error) {
   case Error::SSLConnection: return "SSL connection failed";
   case Error::SSLLoadingCerts: return "SSL certificate loading failed";
   case Error::SSLServerVerification: return "SSL server verification failed";
+  case Error::SSLServerHostnameVerification:
+    return "SSL server hostname verification failed";
   case Error::UnsupportedMultipartBoundaryChars:
     return "Unsupported HTTP multipart boundary characters";
   case Error::Compression: return "Compression failed";
@@ -8726,8 +8729,8 @@ inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
   server_certificate_verification_ = enabled;
 }
 
-inline void ClientImpl::enable_server_host_verification(bool enabled) {
-  server_host_verification_ = enabled;
+inline void ClientImpl::enable_server_hostname_verification(bool enabled) {
+  server_hostname_verification_ = enabled;
 }
 #endif
 
@@ -9319,21 +9322,19 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           }
 
           auto server_cert = SSL_get1_peer_certificate(ssl2);
+          auto se = detail::scope_exit([&] { X509_free(server_cert); });
 
           if (server_cert == nullptr) {
             error = Error::SSLServerVerification;
             return false;
           }
 
-          if (server_host_verification_) {
+          if (server_hostname_verification_) {
             if (!verify_host(server_cert)) {
-              X509_free(server_cert);
-              error = Error::SSLServerVerification;
+              error = Error::SSLServerHostnameVerification;
               return false;
             }
           }
-
-          X509_free(server_cert);
         }
 
         return true;
@@ -10065,8 +10066,8 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
   cli_->enable_server_certificate_verification(enabled);
 }
 
-inline void Client::enable_server_host_verification(bool enabled) {
-  cli_->enable_server_host_verification(enabled);
+inline void Client::enable_server_hostname_verification(bool enabled) {
+  cli_->enable_server_hostname_verification(enabled);
 }
 #endif
 
