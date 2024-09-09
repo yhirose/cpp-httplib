@@ -2958,7 +2958,7 @@ inline bool mmap::open(const char *path) {
   addr_ = ::mmap(NULL, size_, PROT_READ, MAP_PRIVATE, fd_, 0);
 #endif
 
-  if (addr_ == nullptr) {
+  if (addr_ == nullptr || addr_ == MAP_FAILED) {
     close();
     return false;
   }
