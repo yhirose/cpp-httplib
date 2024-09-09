@@ -8983,7 +8983,8 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
 
     if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) !=
-            1) {
+            1 ||
+        SSL_CTX_check_private_key(ctx_) != 1) {
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
     } else if (client_ca_cert_file_path || client_ca_cert_dir_path) {
@@ -9106,6 +9107,8 @@ inline SSLClient::SSLClient(const std::string &host, int port,
                             const std::string &private_key_password)
     : ClientImpl(host, port, client_cert_path, client_key_path) {
   ctx_ = SSL_CTX_new(TLS_client_method());
+
+  SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
 
   detail::split(&host_[0], &host_[host_.size()], '.',
                 [&](const char *b, const char *e) {
