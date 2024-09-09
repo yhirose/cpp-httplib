@@ -1452,6 +1452,7 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
+  void set_server_certificate_verifier(std::function<bool(SSL *ssl)> verifier);
 #endif
 
   void set_logger(Logger logger);
@@ -1567,6 +1568,7 @@ protected:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool server_certificate_verification_ = true;
   bool server_hostname_verification_ = true;
+  std::function<bool(SSL *ssl)> server_certificate_verifier_;
 #endif
 
   Logger logger_;
@@ -1873,6 +1875,7 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
+  void set_server_certificate_verifier(std::function<bool(SSL *ssl)> verifier);
 #endif
 
   void set_logger(Logger logger);
@@ -7219,6 +7222,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   server_certificate_verification_ = rhs.server_certificate_verification_;
   server_hostname_verification_ = rhs.server_hostname_verification_;
+  server_certificate_verifier_ = rhs.server_certificate_verifier_;
 #endif
   logger_ = rhs.logger_;
 }
@@ -8700,9 +8704,7 @@ inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
   if (!mem) { return nullptr; }
 
   auto inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
-  if (!inf) {
-    return nullptr;
-  }
+  if (!inf) { return nullptr; }
 
   auto cts = X509_STORE_new();
   if (cts) {
@@ -8725,6 +8727,11 @@ inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
 
 inline void ClientImpl::enable_server_hostname_verification(bool enabled) {
   server_hostname_verification_ = enabled;
+}
+
+inline void ClientImpl::set_server_certificate_verifier(
+    std::function<bool(SSL *ssl)> verifier) {
+  server_certificate_verifier_ = verifier;
 }
 #endif
 
@@ -9311,25 +9318,32 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         }
 
         if (server_certificate_verification_) {
-          verify_result_ = SSL_get_verify_result(ssl2);
-
-          if (verify_result_ != X509_V_OK) {
-            error = Error::SSLServerVerification;
-            return false;
-          }
-
-          auto server_cert = SSL_get1_peer_certificate(ssl2);
-          auto se = detail::scope_exit([&] { X509_free(server_cert); });
-
-          if (server_cert == nullptr) {
-            error = Error::SSLServerVerification;
-            return false;
-          }
-
-          if (server_hostname_verification_) {
-            if (!verify_host(server_cert)) {
-              error = Error::SSLServerHostnameVerification;
+          if (server_certificate_verifier_) {
+            if (!server_certificate_verifier_(ssl2)) {
+              error = Error::SSLServerVerification;
               return false;
+            }
+          } else {
+            verify_result_ = SSL_get_verify_result(ssl2);
+
+            if (verify_result_ != X509_V_OK) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            auto server_cert = SSL_get1_peer_certificate(ssl2);
+            auto se = detail::scope_exit([&] { X509_free(server_cert); });
+
+            if (server_cert == nullptr) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            if (server_hostname_verification_) {
+              if (!verify_host(server_cert)) {
+                error = Error::SSLServerHostnameVerification;
+                return false;
+              }
             }
           }
         }
@@ -10065,6 +10079,11 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
 
 inline void Client::enable_server_hostname_verification(bool enabled) {
   cli_->enable_server_hostname_verification(enabled);
+}
+
+inline void Client::set_server_certificate_verifier(
+    std::function<bool(SSL *ssl)> verifier) {
+  cli_->set_server_certificate_verifier(verifier);
 }
 #endif
 
