@@ -97,37 +97,33 @@ int main(void)
 
   Server svr;
 
-  svr.Get("/hi", [](const Request& req, Response& res) {
+  svr.Get("/hi", [](const Request &req, Response &res) {
     res.set_content("Hello World!", "text/plain");
   });
 
   // Match the request path against a regular expression
   // and extract its captures
-  svr.Get(R"(/numbers/(\d+))", [&](const Request& req, Response& res) {
+  svr.Get(R"(/numbers/(\d+))", [&](const Request &req, Response &res) {
     auto numbers = req.matches[1];
     res.set_content(numbers, "text/plain");
   });
 
   // Capture the second segment of the request path as "id" path param
-  svr.Get("/users/:id", [&](const Request& req, Response& res) {
+  svr.Get("/users/:id", [&](const Request &req, Response &res) {
     auto user_id = req.path_params.at("id");
     res.set_content(user_id, "text/plain");
   });
 
   // Extract values from HTTP headers and URL query params
-  svr.Get("/body-header-param", [](const Request& req, Response& res) {
+  svr.Get("/body-header-param", [](const Request &req, Response &res) {
     if (req.has_header("Content-Length")) {
       auto val = req.get_header_value("Content-Length");
     }
-    if (req.has_param("key")) {
-      auto val = req.get_param_value("key");
-    }
+    if (req.has_param("key")) { auto val = req.get_param_value("key"); }
     res.set_content(req.body, "text/plain");
   });
 
-  svr.Get("/stop", [&](const Request& req, Response& res) {
-    svr.stop();
-  });
+  svr.Get("/stop", [&](const Request &req, Response &res) { svr.stop(); });
 
   svr.listen("localhost", 1234);
 }
@@ -276,7 +272,7 @@ svr.set_post_routing_handler([](const auto& req, auto& res) {
 svr.Post("/multipart", [&](const auto& req, auto& res) {
   auto size = req.files.size();
   auto ret = req.has_file("name1");
-  const auto& file = req.get_file_value("name1");
+  const auto &file = req.get_file_value("name1");
   // file.filename;
   // file.content_type;
   // file.content;
@@ -288,10 +284,10 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 ```cpp
 svr.Post("/content_receiver",
   [&](const Request &req, Response &res, const ContentReader &content_reader) {
-    if (req.is_multipart_form_data()) {
-      // NOTE: `content_reader` is blocking until every form data field is read
-      MultipartFormDataItems files;
-      content_reader(
+  if (req.is_multipart_form_data()) {
+    // NOTE: `content_reader` is blocking until every form data field is read
+    MultipartFormDataItems files;
+    content_reader(
         [&](const MultipartFormData &file) {
           files.push_back(file);
           return true;
@@ -300,13 +296,13 @@ svr.Post("/content_receiver",
           files.back().content.append(data, data_length);
           return true;
         });
-    } else {
-      std::string body;
-      content_reader([&](const char *data, size_t data_length) {
-        body.append(data, data_length);
-        return true;
-      });
-    }
+  } else {
+    std::string body;
+    content_reader([&](const char *data, size_t data_length) {
+      body.append(data, data_length);
+      return true;
+    });
+  }
   });
 ```
 
@@ -319,14 +315,14 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
   auto data = new std::string("abcdefg");
 
   res.set_content_provider(
-    data->size(), // Content length
-    "text/plain", // Content type
-    [&, data](size_t offset, size_t length, DataSink &sink) {
-      const auto &d = *data;
-      sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
-      return true; // return 'false' if you want to cancel the process.
-    },
-    [data](bool success) { delete data; });
+      data->size(), // Content length
+      "text/plain", // Content type
+      [&, data](size_t offset, size_t length, DataSink &sink) {
+        const auto &d = *data;
+        sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
+        return true; // return 'false' if you want to cancel the process.
+      },
+      [data](bool success) { delete data; });
 });
 ```
 
@@ -335,17 +331,17 @@ Without content length:
 ```cpp
 svr.Get("/stream", [&](const Request &req, Response &res) {
   res.set_content_provider(
-    "text/plain", // Content type
-    [&](size_t offset, DataSink &sink) {
-      if (/* there is still data */) {
-        std::vector<char> data;
-        // prepare data...
-        sink.write(data.data(), data.size());
-      } else {
-        sink.done(); // No more data
-      }
-      return true; // return 'false' if you want to cancel the process.
-    });
+      "text/plain", // Content type
+      [&](size_t offset, DataSink &sink) {
+        if (/* there is still data */) {
+          std::vector<char> data;
+          // prepare data...
+          sink.write(data.data(), data.size());
+        } else {
+          sink.done(); // No more data
+        }
+        return true; // return 'false' if you want to cancel the process.
+      });
 });
 ```
 
@@ -354,15 +350,13 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 ```cpp
 svr.Get("/chunked", [&](const Request& req, Response& res) {
   res.set_chunked_content_provider(
-    "text/plain",
-    [](size_t offset, DataSink &sink) {
-      sink.write("123", 3);
-      sink.write("345", 3);
-      sink.write("789", 3);
-      sink.done(); // No more data
-      return true; // return 'false' if you want to cancel the process.
-    }
-  );
+      "text/plain", [](size_t offset, DataSink &sink) {
+        sink.write("123", 3);
+        sink.write("345", 3);
+        sink.write("789", 3);
+        sink.done(); // No more data
+        return true; // return 'false' if you want to cancel the process.
+      });
 });
 ```
 
@@ -371,23 +365,20 @@ With trailer:
 ```cpp
 svr.Get("/chunked", [&](const Request& req, Response& res) {
   res.set_header("Trailer", "Dummy1, Dummy2");
-  res.set_chunked_content_provider(
-    "text/plain",
-    [](size_t offset, DataSink &sink) {
-      sink.write("123", 3);
-      sink.write("345", 3);
-      sink.write("789", 3);
-      sink.done_with_trailer({
-        {"Dummy1", "DummyVal1"},
-        {"Dummy2", "DummyVal2"}
-      });
-      return true;
-    }
-  );
+  res.set_chunked_content_provider("text/plain", [](size_t offset,
+                                                    DataSink &sink) {
+    sink.write("123", 3);
+    sink.write("345", 3);
+    sink.write("789", 3);
+    sink.done_with_trailer({{"Dummy1", "DummyVal1"}, {"Dummy2", "DummyVal2"}});
+    return true;
+  });
 });
 ```
 
 ### Send file content
+
+We can set a file path for the response body. It's a user's responsibility to pass a valid regular file path. If the path doesn't exist, or a directory path, cpp-httplib throws an exception.
 
 ```cpp
 svr.Get("/content", [&](const Request &req, Response &res) {
@@ -452,7 +443,8 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 If you want to set the thread count at runtime, there is no convenient way... But here is how.
 
 ```cpp
-svr.new_task_queue = [] { return new ThreadPool(12); };
+svr.new_task_queue = [] {
+  return new ThreadPool(12); };
 ```
 
 You can also provide an optional parameter to limit the maximum number
@@ -460,7 +452,8 @@ of pending requests, i.e. requests `accept()`ed by the listener but
 still waiting to be serviced by worker threads.
 
 ```cpp
-svr.new_task_queue = [] { return new ThreadPool(/*num_threads=*/12, /*max_queued_requests=*/18); };
+svr.new_task_queue = [] {
+  return new ThreadPool(/*num_threads=*/12, /*max_queued_requests=*/18); };
 ```
 
 Default limit is 0 (unlimited). Once the limit is reached, the listener
@@ -473,9 +466,7 @@ You can supply your own thread pool implementation according to your need.
 ```cpp
 class YourThreadPoolTaskQueue : public TaskQueue {
 public:
-  YourThreadPoolTaskQueue(size_t n) {
-    pool_.start_with_thread_count(n);
-  }
+  YourThreadPoolTaskQueue(size_t n) { pool_.start_with_thread_count(n); }
 
   virtual bool enqueue(std::function<void()> fn) override {
     /* Return true if the task was actually enqueued, or false
@@ -483,9 +474,7 @@ public:
     return pool_.enqueue(fn);
   }
 
-  virtual void shutdown() override {
-    pool_.shutdown_gracefully();
-  }
+  virtual void shutdown() override { pool_.shutdown_gracefully(); }
 
 private:
   YourThreadPool pool_;
@@ -648,8 +637,8 @@ std::string body;
 
 auto res = cli.Get("/large-data",
   [&](const char *data, size_t data_length) {
-    body.append(data, data_length);
-    return true;
+  body.append(data, data_length);
+  return true;
   });
 ```
 
@@ -659,12 +648,12 @@ std::string body;
 auto res = cli.Get(
   "/stream", Headers(),
   [&](const Response &response) {
-    EXPECT_EQ(StatusCode::OK_200, response.status);
-    return true; // return 'false' if you want to cancel the request.
+  EXPECT_EQ(StatusCode::OK_200, response.status);
+  return true; // return 'false' if you want to cancel the request.
   },
   [&](const char *data, size_t data_length) {
-    body.append(data, data_length);
-    return true; // return 'false' if you want to cancel the request.
+  body.append(data, data_length);
+  return true; // return 'false' if you want to cancel the request.
   });
 ```
 
@@ -676,8 +665,8 @@ std::string body = ...;
 auto res = cli.Post(
   "/stream", body.size(),
   [](size_t offset, size_t length, DataSink &sink) {
-    sink.write(body.data() + offset, length);
-    return true; // return 'false' if you want to cancel the request.
+  sink.write(body.data() + offset, length);
+  return true; // return 'false' if you want to cancel the request.
   },
   "text/plain");
 ```
@@ -688,11 +677,11 @@ auto res = cli.Post(
 auto res = cli.Post(
   "/stream",
   [](size_t offset, DataSink &sink) {
-    sink.os << "chunked data 1";
-    sink.os << "chunked data 2";
-    sink.os << "chunked data 3";
-    sink.done();
-    return true; // return 'false' if you want to cancel the request.
+  sink.os << "chunked data 1";
+  sink.os << "chunked data 2";
+  sink.os << "chunked data 3";
+  sink.done();
+  return true; // return 'false' if you want to cancel the request.
   },
   "text/plain");
 ```
@@ -704,9 +693,8 @@ httplib::Client cli(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
 auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
-  printf("%lld / %lld bytes => %d%% complete\n",
-    len, total,
-    (int)(len*100/total));
+  printf("%lld / %lld bytes => %d%% complete\n", len, total,
+         (int)(len * 100 / total));
   return true; // return 'false' if you want to cancel the request.
 }
 );
@@ -904,8 +892,8 @@ g++ 4.8 and below cannot build this library since `<regex>` in the versions are 
 Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32_LEAN_AND_MEAN` beforehand.
 
 ```cpp
-#include <httplib.h>
 #include <Windows.h>
+#include <httplib.h>
 ```
 
 ```cpp
