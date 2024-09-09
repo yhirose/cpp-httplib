@@ -2253,9 +2253,15 @@ make_basic_authentication_header(const std::string &username,
 
 namespace detail {
 
-bool is_file(const std::string &path);
+struct FileStat {
+  FileStat(const std::string &path);
+  bool is_file() const;
+  bool is_dir() const;
 
-bool is_dir(const std::string &path);
+private:
+  struct stat st_;
+  int ret_ = -1;
+};
 
 std::string encode_query_param(const std::string &value);
 
@@ -2626,14 +2632,14 @@ inline bool is_valid_path(const std::string &path) {
   return true;
 }
 
-inline bool is_file(const std::string &path) {
-  struct stat st;
-  return stat(path.c_str(), &st) >= 0 && S_ISREG(st.st_mode);
+inline FileStat::FileStat(const std::string &path) {
+  ret_ = stat(path.c_str(), &st_);
 }
-
-inline bool is_dir(const std::string &path) {
-  struct stat st;
-  return stat(path.c_str(), &st) >= 0 && S_ISDIR(st.st_mode);
+inline bool FileStat::is_file() const {
+  return ret_ >= 0 && S_ISREG(st_.st_mode);
+}
+inline bool FileStat::is_dir() const {
+  return ret_ >= 0 && S_ISDIR(st_.st_mode);
 }
 
 inline std::string encode_query_param(const std::string &value) {
@@ -6085,7 +6091,8 @@ inline bool Server::set_base_dir(const std::string &dir,
 
 inline bool Server::set_mount_point(const std::string &mount_point,
                                     const std::string &dir, Headers headers) {
-  if (detail::is_dir(dir)) {
+  detail::FileStat stat(dir);
+  if (stat.is_dir()) {
     std::string mnt = !mount_point.empty() ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
       base_dirs_.push_back({mnt, dir, std::move(headers)});
@@ -6569,12 +6576,14 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
         auto path = entry.base_dir + sub_path;
         if (path.back() == '/') { path += "index.html"; }
 
-        if (detail::is_dir(path)) {
+        detail::FileStat stat(path);
+
+        if (stat.is_dir()) {
           res.set_redirect(sub_path + "/", StatusCode::MovedPermanently_301);
           return true;
         }
 
-        if (detail::is_file(path)) {
+        if (stat.is_file()) {
           for (const auto &kv : entry.headers) {
             res.set_header(kv.first, kv.second);
           }
