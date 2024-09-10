@@ -1,6 +1,6 @@
 CXXFLAGS = -std=c++11 -O2 -I..
 
-THEAD_POOL_COUNT = 16
+CPPHTTPLIB_FLAGS = -DCPPHTTPLIB_THREAD_POOL_COUNT=16
 
 BENCH = bombardier -c 10 -d 5s localhost:8080
 MONITOR = ali http://localhost:8080
@@ -18,7 +18,7 @@ run : server
 	@./server
 
 server : cpp-httplib/main.cpp ../httplib.h
-	g++ -o $@ $(CXXFLAGS) -DCPPHTTPLIB_THREAD_POOL_COUNT=$(THEAD_POOL_COUNT) cpp-httplib/main.cpp
+	g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib/main.cpp
 
 # cpp-httplib
 bench-base: server-base
@@ -33,7 +33,7 @@ run-base : server-base
 	@./server-base
 
 server-base : cpp-httplib-base/main.cpp cpp-httplib-base/httplib.h
-	g++ -o $@ $(CXXFLAGS) -DCPPHTTPLIB_THREAD_POOL_COUNT=$(THEAD_POOL_COUNT) cpp-httplib-base/main.cpp
+	g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib-base/main.cpp
 
 # crow
 bench-crow: server-crow
@@ -51,10 +51,12 @@ server-crow : crow/main.cpp
 	g++ -o $@ $(CXXFLAGS) crow/main.cpp
 
 # misc
+build: server server-base server-crow
+
 bench-all: bench-crow bench bench-base
 
 issue:
-	$(BENCH)
+	bombardier -c 10 -d 30s localhost:8080
 
 clean:
 	rm -rf server*
