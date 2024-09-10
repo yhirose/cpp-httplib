@@ -2468,13 +2468,14 @@ public:
 
 private:
 #if defined(_WIN32)
-  HANDLE hFile_;
-  HANDLE hMapping_;
+  HANDLE hFile_ = NULL;
+  HANDLE hMapping_ = NULL;
+  bool is_open_empty_file_on_windows_ = false;
 #else
-  int fd_;
+  int fd_ = -1;
 #endif
-  size_t size_;
-  void *addr_;
+  size_t size_ = 0;
+  void *addr_ = nullptr;
 };
 
 } // namespace detail
@@ -2895,14 +2896,7 @@ inline void stream_line_reader::append(char c) {
   }
 }
 
-inline mmap::mmap(const char *path)
-#if defined(_WIN32)
-    : hFile_(NULL), hMapping_(NULL)
-#else
-    : fd_(-1)
-#endif
-      ,
-      size_(0), addr_(nullptr) {
+inline mmap::mmap(const char *path) {
   open(path);
 }
 
@@ -2946,6 +2940,13 @@ inline bool mmap::open(const char *path) {
   hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
 #endif
 
+  // TODO: Special treatment for an empty file on Windows... (#1933)
+  if (hMapping_ == NULL && size_ == 0) {
+    close();
+    is_open_empty_file_on_windows_ = true;
+    return true;
+  }
+
   if (hMapping_ == NULL) {
     close();
     return false;
@@ -2956,6 +2957,11 @@ inline bool mmap::open(const char *path) {
 #else
   addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
 #endif
+
+  if (addr_ == nullptr) {
+    close();
+    return false;
+  }
 #else
   fd_ = ::open(path, O_RDONLY);
   if (fd_ == -1) { return false; }
@@ -2968,21 +2974,33 @@ inline bool mmap::open(const char *path) {
   size_ = static_cast<size_t>(sb.st_size);
 
   addr_ = ::mmap(NULL, size_, PROT_READ, MAP_PRIVATE, fd_, 0);
-#endif
 
-  if (addr_ == nullptr) {
+  if (addr_ == MAP_FAILED) {
     close();
     return false;
   }
+#endif
 
   return true;
 }
 
-inline bool mmap::is_open() const { return addr_ != nullptr; }
+inline bool mmap::is_open() const {
+#if defined(_WIN32)
+  if (is_open_empty_file_on_windows_) {
+    return true;
+  }
+#endif
+  return addr_ != nullptr;
+}
 
 inline size_t mmap::size() const { return size_; }
 
 inline const char *mmap::data() const {
+#if defined(_WIN32)
+  if (is_open_empty_file_on_windows_) {
+    return "";
+  }
+#endif
   return static_cast<const char *>(addr_);
 }
 
@@ -3002,6 +3020,8 @@ inline void mmap::close() {
     ::CloseHandle(hFile_);
     hFile_ = INVALID_HANDLE_VALUE;
   }
+
+  is_open_empty_file_on_windows_ = false;
 #else
   if (addr_ != nullptr) {
     munmap(addr_, size_);
