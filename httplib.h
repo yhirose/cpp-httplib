@@ -2470,12 +2470,12 @@ private:
 #if defined(_WIN32)
   HANDLE hFile_ = NULL;
   HANDLE hMapping_ = NULL;
-  bool is_open_empty_file_on_windows_ = false;
 #else
   int fd_ = -1;
 #endif
   size_t size_ = 0;
   void *addr_ = nullptr;
+  bool is_open_empty_file = false;
 };
 
 } // namespace detail
@@ -2940,10 +2940,10 @@ inline bool mmap::open(const char *path) {
   hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
 #endif
 
-  // TODO: Special treatment for an empty file on Windows... (#1933)
+  // Special treatment for an empty file...
   if (hMapping_ == NULL && size_ == 0) {
     close();
-    is_open_empty_file_on_windows_ = true;
+    is_open_empty_file = true;
     return true;
   }
 
@@ -2975,8 +2975,10 @@ inline bool mmap::open(const char *path) {
 
   addr_ = ::mmap(NULL, size_, PROT_READ, MAP_PRIVATE, fd_, 0);
 
-  if (addr_ == MAP_FAILED) {
+  // Special treatment for an empty file...
+  if (addr_ == MAP_FAILED && size_ == 0) {
     close();
+    is_open_empty_file = true;
     return false;
   }
 #endif
@@ -2985,23 +2987,13 @@ inline bool mmap::open(const char *path) {
 }
 
 inline bool mmap::is_open() const {
-#if defined(_WIN32)
-  if (is_open_empty_file_on_windows_) {
-    return true;
-  }
-#endif
-  return addr_ != nullptr;
+  return is_open_empty_file ? true : addr_ != nullptr;
 }
 
 inline size_t mmap::size() const { return size_; }
 
 inline const char *mmap::data() const {
-#if defined(_WIN32)
-  if (is_open_empty_file_on_windows_) {
-    return "";
-  }
-#endif
-  return static_cast<const char *>(addr_);
+  return is_open_empty_file ? "" : static_cast<const char *>(addr_);
 }
 
 inline void mmap::close() {
@@ -3021,7 +3013,7 @@ inline void mmap::close() {
     hFile_ = INVALID_HANDLE_VALUE;
   }
 
-  is_open_empty_file_on_windows_ = false;
+  is_open_empty_file = false;
 #else
   if (addr_ != nullptr) {
     munmap(addr_, size_);
