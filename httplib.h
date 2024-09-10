@@ -5752,21 +5752,12 @@ inline void Response::set_chunked_content_provider(
 
 inline void Response::set_file_content(const std::string &path,
                                        const std::string &content_type) {
-  detail::FileStat stat(dir);
-  if (stat.is_file(path)) {
-    file_content_path_ = path;
-    file_content_content_type_ = content_type;
-    return;
-  }
-
-#ifndef CPPHTTPLIB_NO_EXCEPTIONS
-  std::string msg = "'" + path + "' is not a regular file.";
-  throw std::invalid_argument(msg);
-#endif
+  file_content_path_ = path;
+  file_content_content_type_ = content_type;
 }
 
 inline void Response::set_file_content(const std::string &path) {
-  return set_file_content(path, std::string());
+  file_content_path_ = path;
 }
 
 // Result implementation

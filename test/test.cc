@@ -2288,8 +2288,6 @@ protected:
   {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     cli_.enable_server_certificate_verification(false);
-#else
-#error no ssl
 #endif
   }
 
