@@ -366,7 +366,7 @@ inline unsigned char to_lower(int c) {
 inline bool equal(const std::string &a, const std::string &b) {
   return a.size() == b.size() &&
          std::equal(a.begin(), a.end(), b.begin(),
-                    [](char a, char b) { return to_lower(a) == to_lower(b); });
+                    [](char ca, char cb) { return to_lower(ca) == to_lower(cb); });
 }
 
 struct equal_to {
