@@ -19,7 +19,7 @@ jobs:
         dry-run: false
         language: c++
     - name: Upload Crash
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       if: failure() && steps.build.outcome == 'success'
       with:
         name: artifacts
