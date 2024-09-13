@@ -9003,12 +9003,22 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
           reinterpret_cast<void *>(const_cast<char *>(private_key_password)));
     }
 
-    if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1 ||
-        SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) !=
-            1 ||
-        SSL_CTX_check_private_key(ctx_) != 1) {
-      SSL_CTX_free(ctx_);
-      ctx_ = nullptr;
+    if (strlen(cert_path) > 0) {
+       if (SSL_CTX_use_certificate_chain_file(ctx_, cert_path) != 1) {
+         SSL_CTX_free(ctx_);
+         ctx_ = nullptr;
+         throw std::runtime_error( std::string("Cert chain file: ") + ERR_error_string(ERR_get_error(), nullptr) );
+       }
+       if (SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) != 1) {
+         SSL_CTX_free(ctx_);
+         ctx_ = nullptr;
+         throw std::runtime_error( std::string("Cert privatekey file: ") + ERR_error_string(ERR_get_error(), nullptr) );
+       }
+       if (SSL_CTX_check_private_key(ctx_) != 1) {
+         SSL_CTX_free(ctx_);
+         ctx_ = nullptr;
+         throw std::runtime_error( std::string("Cert check privatekey: ") + ERR_error_string(ERR_get_error(), nullptr) );
+       }
     } else if (client_ca_cert_file_path || client_ca_cert_dir_path) {
       SSL_CTX_load_verify_locations(ctx_, client_ca_cert_file_path,
                                     client_ca_cert_dir_path);
