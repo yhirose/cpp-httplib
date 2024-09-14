@@ -22,7 +22,7 @@ server : cpp-httplib/main.cpp ../httplib.h
 
 # cpp-httplib
 bench-base: server-base
-	@echo "---------------------\n cpp-httplib v0.17.0\n---------------------\n"
+	@echo "---------------------\n cpp-httplib v0.18.0\n---------------------\n"
 	@./server-base & export PID=$$!; $(BENCH); kill $${PID}
 	@echo ""
 
