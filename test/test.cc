@@ -734,17 +734,19 @@ TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
   EXPECT_EQ(1u, addrs.size());
 }
 
+#if 0 // It depends on each test environment...
 TEST(HostnameToIPConversionTest, YouTube_Online) {
   auto host = "www.youtube.com";
 
   std::vector<std::string> addrs;
   hosted_at(host, addrs);
+
   EXPECT_EQ(20u, addrs.size());
 
-  // It depends on each test environment...
-  // auto it = std::find(addrs.begin(), addrs.end(), "2607:f8b0:4006:809::200e");
-  // EXPECT_TRUE(it != addrs.end());
+  auto it = std::find(addrs.begin(), addrs.end(), "2607:f8b0:4006:809::200e");
+  EXPECT_TRUE(it != addrs.end());
 }
+#endif
 
 TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   auto host = "www.httpwatch.com";
