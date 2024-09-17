@@ -13,7 +13,7 @@ project(
     'b_lto=true',
     'warning_level=3'
   ],
-  meson_version: '>=0.47.0'
+  meson_version: '>=0.62.0'
 )
 
 # Check just in case downstream decides to edit the source
@@ -98,20 +98,18 @@ if get_option('cpp-httplib_compile')
   )
 else
   install_headers('httplib.h')
-  cpp_httplib_dep = declare_dependency(compile_args: args, dependencies: deps, include_directories: include_directories('.'))
+  cpp_httplib_dep = declare_dependency(compile_args: args, dependencies: deps, include_directories: '.')
 
   import('pkgconfig').generate(
     name: 'cpp-httplib',
     description: 'A C++ HTTP/HTTPS server and client library',
-    install_dir: join_paths(get_option('datadir'), 'pkgconfig'),
+    install_dir: get_option('datadir')/'pkgconfig',
     url: 'https://github.com/yhirose/cpp-httplib',
     version: version
   )
 endif
 
-if meson.version().version_compare('>=0.54.0')
-  meson.override_dependency('cpp-httplib', cpp_httplib_dep)
-endif
+meson.override_dependency('cpp-httplib', cpp_httplib_dep)
 
 if get_option('cpp-httplib_test')
   subdir('test')

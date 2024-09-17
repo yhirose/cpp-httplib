@@ -103,9 +103,9 @@ client_encrypted_cert_pem = custom_target(
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
-subdir(join_paths('www', 'dir'))
-subdir(join_paths('www2', 'dir'))
-subdir(join_paths('www3', 'dir'))
+subdir('www' /'dir')
+subdir('www2'/'dir')
+subdir('www3'/'dir')
 
 # GoogleTest 1.13.0 requires C++14
 test_options = []
