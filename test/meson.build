@@ -104,7 +104,7 @@ client_encrypted_cert_pem = custom_target(
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
-subdir('www' /'dir')
+subdir('www')
 subdir('www2'/'dir')
 subdir('www3'/'dir')
 
