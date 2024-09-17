@@ -6,6 +6,7 @@ gtest_dep = dependency('gtest', main: true)
 libcurl_dep = dependency('libcurl')
 openssl = find_program('openssl')
 test_conf = files('test.conf')
+req_x509_flag = openssl.version().version_compare('>=3.2.0') ? '-x509v1' : '-x509'
 
 key_pem = custom_target(
   'key_pem',
@@ -31,7 +32,7 @@ cert2_pem = custom_target(
   'cert2_pem',
   input: key_pem,
   output: 'cert2.pem',
-  command: [openssl, 'req', '-x509', '-config', test_conf, '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-out', '@OUTPUT@', '-extensions', 'SAN']
+  command: [openssl, 'req', req_x509_flag, '-config', test_conf, '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-out', '@OUTPUT@', '-extensions', 'SAN']
 )
 
 key_encrypted_pem = custom_target(
@@ -44,7 +45,7 @@ cert_encrypted_pem = custom_target(
   'cert_encrypted_pem',
   input: key_encrypted_pem,
   output: 'cert_encrypted.pem',
-  command: [openssl, 'req', '-x509', '-config', test_conf, '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-out', '@OUTPUT@', '-extensions', 'SAN']
+  command: [openssl, 'req', req_x509_flag, '-config', test_conf, '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-out', '@OUTPUT@', '-extensions', 'SAN']
 )
 
 rootca_key_pem = custom_target(
@@ -57,7 +58,7 @@ rootca_cert_pem = custom_target(
   'rootca_cert_pem',
   input: rootca_key_pem,
   output: 'rootCA.cert.pem',
-  command: [openssl, 'req', '-x509', '-new', '-batch', '-config', files('test.rootCA.conf'), '-key', '@INPUT@', '-days', '1024', '-out', '@OUTPUT@']
+  command: [openssl, 'req', req_x509_flag, '-new', '-batch', '-config', files('test.rootCA.conf'), '-key', '@INPUT@', '-days', '1024', '-out', '@OUTPUT@']
 )
 
 client_key_pem = custom_target(
@@ -103,9 +104,9 @@ client_encrypted_cert_pem = custom_target(
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
-subdir(join_paths('www', 'dir'))
-subdir(join_paths('www2', 'dir'))
-subdir(join_paths('www3', 'dir'))
+subdir('www' /'dir')
+subdir('www2'/'dir')
+subdir('www3'/'dir')
 
 # GoogleTest 1.13.0 requires C++14
 test_options = []
