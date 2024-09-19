@@ -37,6 +37,11 @@ file(
 )
 
 if(HTTPLIB_IS_USING_OPENSSL)
+    if (OPENSSL_VERSION VERSION_LESS "3.2.0")
+      set(OPENSSL_X509_FLAG "-x509")
+    else()
+      set(OPENSSL_X509_FLAG "-x509v1")
+    endif()
     find_program(OPENSSL_COMMAND
         NAMES openssl
         PATHS ${OPENSSL_INCLUDE_DIR}/../bin
@@ -56,7 +61,7 @@ if(HTTPLIB_IS_USING_OPENSSL)
         COMMAND_ERROR_IS_FATAL ANY
     )
     execute_process(
-        COMMAND ${OPENSSL_COMMAND} req -x509 -new -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key key.pem -sha256 -days 3650 -nodes -out cert2.pem -extensions SAN
+        COMMAND ${OPENSSL_COMMAND} req ${OPENSSL_X509_FLAG} -new -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key key.pem -sha256 -days 3650 -nodes -out cert2.pem -extensions SAN
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
@@ -67,7 +72,7 @@ if(HTTPLIB_IS_USING_OPENSSL)
         COMMAND_ERROR_IS_FATAL ANY
     )
     execute_process(
-        COMMAND ${OPENSSL_COMMAND} req -x509 -new -batch -config ${CMAKE_CURRENT_LIST_DIR}/test.rootCA.conf -key rootCA.key.pem -days 1024
+        COMMAND ${OPENSSL_COMMAND} req ${OPENSSL_X509_FLAG} -new -batch -config ${CMAKE_CURRENT_LIST_DIR}/test.rootCA.conf -key rootCA.key.pem -days 1024
         OUTPUT_FILE rootCA.cert.pem
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
