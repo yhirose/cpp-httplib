@@ -5104,16 +5104,19 @@ inline bool range_error(Request &req, Response &res) {
       }
 
       // Ranges must be in ascending order
-      if (first_pos <= prev_first_pos) { return true; }
+      if (prev_first_pos != -1 && // Fixed: checking initial value
+        first_pos <= prev_first_pos) { return true; }
 
       // Request must not have more than two overlapping ranges
-      if (first_pos <= prev_last_pos) {
+      if (prev_last_pos != -1 && // Fixed: checking initial value
+        first_pos <= prev_last_pos) {
         overwrapping_count++;
         if (overwrapping_count > 2) { return true; }
       }
 
-      prev_first_pos = (std::max)(prev_first_pos, first_pos);
-      prev_last_pos = (std::max)(prev_last_pos, last_pos);
+      // Fixed: checking initial values
+      prev_first_pos = (prev_first_pos == -1) ? first_pos : (std::max)(prev_first_pos, first_pos); 
+      prev_last_pos = (prev_last_pos == -1) ? last_pos : (std::max)(prev_last_pos, last_pos);
     }
   }
 
