@@ -3700,6 +3700,16 @@ TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   EXPECT_EQ(0U, res->body.size());
 }
 
+TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
+  auto res = cli_.Get("/with-range", {{"Range", "bytes=0-"}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
+}
+
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
