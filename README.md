@@ -85,6 +85,33 @@ cli.enable_server_host_verification(false);
 > [!NOTE]
 > When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
+Unix Domain Socket Support
+--------------------------
+
+Unix Domain Socket support is available on Linux and macOS.
+
+```c++
+// Create a server
+httplib::Server svr("./my-socket.sock");
+// Add an endpoint
+svr.get("/hi", [](const httplib::Request &, httplib::Response &res) {
+  res.set_content("Hello World!", "text/plain");
+});
+// Start the server in a separate thread
+std::thread t{[&] {
+  svr.set_address_family(AF_UNIX).listen(this->address, 80);
+}};
+
+
+httplib::Client cli("./my-socket.sock");
+cli.set_address_family(AF_UNIX);
+auto res = cli.Get("/hi");
+```
+
+"my-socket.sock" can be a relative path or an absolute path. You application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
+
+
+
 Server
 ------
 
