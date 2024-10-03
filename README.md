@@ -843,6 +843,23 @@ Use `poll` instead of `select`
 
 `select` system call is used as default since it's more widely supported. If you want to let cpp-httplib use `poll` instead, you can do so with `CPPHTTPLIB_USE_POLL`.
 
+Unix Domain Socket Support
+--------------------------
+
+Unix Domain Socket support is available on Linux and macOS.
+
+```c++
+// Server
+httplib::Server svr("./my-socket.sock");
+svr.set_address_family(AF_UNIX).listen("./my-socket.sock", 80);
+
+// Client
+httplib::Client cli("./my-socket.sock");
+cli.set_address_family(AF_UNIX);
+```
+
+"my-socket.sock" can be a relative path or an absolute path. You application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
+
 
 Split httplib.h into .h and .cc
 -------------------------------
