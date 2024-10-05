@@ -165,11 +165,9 @@ TEST(SocketStream, is_writable_UNIX) {
   };
   asSocketStream(fds[0], [&](Stream &s0) {
     EXPECT_EQ(s0.socket(), fds[0]);
-    EXPECT_TRUE(s0.is_alive());
     EXPECT_TRUE(s0.is_writable());
 
     EXPECT_EQ(0, close(fds[1]));
-    EXPECT_FALSE(s0.is_alive());
     EXPECT_FALSE(s0.is_writable());
 
     return true;
@@ -211,7 +209,6 @@ TEST(SocketStream, is_writable_INET) {
   };
   asSocketStream(disconnected_svr_sock, [&](Stream &ss) {
     EXPECT_EQ(ss.socket(), disconnected_svr_sock);
-    EXPECT_FALSE(ss.is_alive());
     EXPECT_FALSE(ss.is_writable());
 
     return true;
@@ -5459,15 +5456,13 @@ TEST(LongPollingTest, ClientCloseDetection) {
   svr.Get("/events", [&](const Request & /*req*/, Response &res) {
     res.set_chunked_content_provider(
         "text/plain", [](std::size_t const, DataSink &sink) -> bool {
-          EXPECT_TRUE(sink.is_alive());
-          EXPECT_TRUE(sink.is_writable());
+          EXPECT_TRUE(sink.is_writable()); // the socket is alive
           sink.os << "hello";
 
           auto count = 10;
-          while (count > 0 && sink.is_writable() && sink.is_alive()) {
+          while (count > 0 && sink.is_writable()) {
             this_thread::sleep_for(chrono::milliseconds(10));
           }
-          EXPECT_FALSE(sink.is_alive());
           EXPECT_FALSE(sink.is_writable());
           return true;
         });
@@ -5490,6 +5485,44 @@ TEST(LongPollingTest, ClientCloseDetection) {
   });
 
   ASSERT_FALSE(res);
+}
+
+TEST(LongPollingTest, ClientCloseDetectionOnResponse) {
+  Server svr;
+
+  bool cancelled = false;
+  std::thread processing_thread;
+  svr.Get("/events", [&](const Request & /*req*/, Response &res) {
+      processing_thread = std::thread([&]() {
+        EXPECT_TRUE(res.is_alive());
+        auto count = 10;
+        while (count > 0 && res.is_alive()) {
+          this_thread::sleep_for(chrono::milliseconds(10));
+        }
+        EXPECT_FALSE(res.is_alive());
+        cancelled = true;
+      });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  cli.Get("/events", [&](const char *data, size_t data_length) {
+    EXPECT_EQ("hello", string(data, data_length));
+    return false; // close the socket immediately.
+  });
+
+  processing_thread.join();
+
+  ASSERT_TRUE(cancelled);
 }
 
 TEST(GetWithParametersTest, GetWithParameters) {
