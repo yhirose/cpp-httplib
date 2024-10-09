@@ -5268,6 +5268,40 @@ TEST(KeepAliveTest, Issue1041) {
   EXPECT_EQ(StatusCode::OK_200, result->status);
 }
 
+TEST(KeepAliveTest, Issue1959) {
+  Server svr;
+  svr.set_keep_alive_timeout(5);
+
+  svr.Get("/a", [&](const Request & /*req*/, Response &res) {
+    res.set_content("a", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    if (!svr.is_running()) return;
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_keep_alive(true);
+
+  using namespace std::chrono;
+  auto start = steady_clock::now();
+
+  cli.Get("/a");
+
+  svr.stop();
+  listen_thread.join();
+
+  auto end = steady_clock::now();
+
+  EXPECT_LT(duration_cast<milliseconds>(end - start).count(), 5000);
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(KeepAliveTest, SSLClientReconnection) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);

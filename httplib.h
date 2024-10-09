@@ -3251,6 +3251,18 @@ private:
 };
 #endif
 
+bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
+                time_t keep_alive_timeout_sec) {
+  using namespace std::chrono;
+  const auto start = steady_clock::now();
+  while (svr_sock != INVALID_SOCKET &&
+         (steady_clock::now() - start) < seconds(keep_alive_timeout_sec)) {
+    if (select_read(sock, 0, 10000) > 0) { return true; }
+  }
+
+  return false;
+}
+
 template <typename T>
 inline bool
 process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
@@ -3259,8 +3271,7 @@ process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
   assert(keep_alive_max_count > 0);
   auto ret = false;
   auto count = keep_alive_max_count;
-  while (svr_sock != INVALID_SOCKET && count > 0 &&
-         select_read(sock, keep_alive_timeout_sec, 0) > 0) {
+  while (keep_alive(svr_sock, sock, keep_alive_timeout_sec) && count > 0) {
     auto close_connection = count == 1;
     auto connection_closed = false;
     ret = callback(close_connection, connection_closed);
