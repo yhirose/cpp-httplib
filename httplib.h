@@ -369,8 +369,9 @@ inline unsigned char to_lower(int c) {
 
 inline bool equal(const std::string &a, const std::string &b) {
   return a.size() == b.size() &&
-         std::equal(a.begin(), a.end(), b.begin(),
-                    [](char ca, char cb) { return to_lower(ca) == to_lower(cb); });
+         std::equal(a.begin(), a.end(), b.begin(), [](char ca, char cb) {
+           return to_lower(ca) == to_lower(cb);
+         });
 }
 
 struct equal_to {
@@ -2900,9 +2901,7 @@ inline void stream_line_reader::append(char c) {
   }
 }
 
-inline mmap::mmap(const char *path) {
-  open(path);
-}
+inline mmap::mmap(const char *path) { open(path); }
 
 inline mmap::~mmap() { close(); }
 
@@ -9492,8 +9491,8 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
 
   auto type = GEN_DNS;
 
-  struct in6_addr addr6 {};
-  struct in_addr addr {};
+  struct in6_addr addr6{};
+  struct in_addr addr{};
   size_t addr_len = 0;
 
 #ifndef __MINGW32__
