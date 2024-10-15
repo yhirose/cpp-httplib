@@ -395,7 +395,7 @@ struct hash {
   }
 };
 
-}; // namespace case_ignore
+} // namespace case_ignore
 
 // This is based on
 // "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4189".
