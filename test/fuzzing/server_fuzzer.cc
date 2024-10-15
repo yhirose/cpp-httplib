@@ -27,6 +27,8 @@ public:
 
   bool is_writable() const override { return true; }
 
+  bool is_alive() const override { return true; }
+
   void get_remote_ip_and_port(std::string &ip, int &port) const override {
     ip = "127.0.0.1";
     port = 8080;
