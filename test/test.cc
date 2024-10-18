@@ -4922,6 +4922,15 @@ TEST(ServerRequestParsingTest, InvalidFieldValueContains_CR_LF_NUL) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
+TEST(ServerRequestParsingTest, EmptyFieldValue) {
+  std::string out;
+
+  test_raw_request("GET /header_field_value_check HTTP/1.1\r\n"
+                   "Test: \r\n\r\n",
+                   &out);
+  EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
+}
+
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 

@@ -396,7 +396,7 @@ struct hash {
   }
 };
 
-}; // namespace case_ignore
+} // namespace case_ignore
 
 // This is based on
 // "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4189".
@@ -4114,7 +4114,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     p++;
   }
 
-  if (p < end) {
+  if (p <= end) {
     auto key_len = key_end - beg;
     if (!key_len) { return false; }
 
