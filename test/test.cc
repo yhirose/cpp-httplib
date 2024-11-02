@@ -2013,7 +2013,46 @@ TEST(ErrorHandlerTest, ContentLength) {
 }
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
-TEST(ExceptionHandlerTest, ContentLength) {
+TEST(ExceptionTest, WithoutExceptionHandler) {
+  Server svr;
+
+  svr.Get("/exception", [&](const Request & /*req*/, Response & /*res*/) {
+    throw std::runtime_error("exception...");
+  });
+
+  svr.Get("/unknown", [&](const Request & /*req*/, Response & /*res*/) {
+    throw std::runtime_error("exception\r\n...");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  {
+    auto res = cli.Get("/exception");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
+    EXPECT_EQ("exception...", res->get_header_value("EXCEPTION_WHAT"));
+  }
+
+  {
+    auto res = cli.Get("/unknown");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
+    EXPECT_EQ("exception\\r\\n...", res->get_header_value("EXCEPTION_WHAT"));
+  }
+}
+
+TEST(ExceptionTest, WithExceptionHandler) {
   Server svr;
 
   svr.set_exception_handler([](const Request & /*req*/, Response &res,
@@ -2021,7 +2060,9 @@ TEST(ExceptionHandlerTest, ContentLength) {
     EXPECT_FALSE(ep == nullptr);
     try {
       std::rethrow_exception(ep);
-    } catch (std::exception &e) { EXPECT_EQ("abc", std::string(e.what())); }
+    } catch (std::exception &e) {
+      EXPECT_EQ("abc", std::string(e.what()));
+    } catch (...) {}
     res.status = StatusCode::InternalServerError_500;
     res.set_content("abcdefghijklmnopqrstuvwxyz",
                     "text/html"); // <= Content-Length still 13 at this point
@@ -2063,6 +2104,66 @@ TEST(ExceptionHandlerTest, ContentLength) {
       EXPECT_EQ("26", res->get_header_value("Content-Length"));
       EXPECT_EQ("abcdefghijklmnopqrstuvwxyz", res->body);
     }
+  }
+}
+
+TEST(ExceptionTest, AndErrorHandler) {
+  Server svr;
+
+  svr.set_error_handler([](const Request & /*req*/, Response &res) {
+    if (res.body.empty()) { res.set_content("NOT_FOUND", "text/html"); }
+  });
+
+  svr.set_exception_handler(
+      [](const Request & /*req*/, Response &res, std::exception_ptr ep) {
+        EXPECT_FALSE(ep == nullptr);
+        try {
+          std::rethrow_exception(ep);
+        } catch (std::exception &e) {
+          res.set_content(e.what(), "text/html");
+        } catch (...) {}
+        res.status = StatusCode::InternalServerError_500;
+      });
+
+  svr.Get("/exception", [](const Request & /*req*/, Response &res) {
+    throw std::runtime_error("EXCEPTION");
+  });
+
+  svr.Get("/error", [](const Request & /*req*/, Response &res) {
+    res.set_content("ERROR", "text/html");
+    res.status = StatusCode::InternalServerError_500;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  {
+    auto res = cli.Get("/exception");
+    ASSERT_TRUE(res);
+    EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+    EXPECT_EQ("EXCEPTION", res->body);
+  }
+
+  {
+    auto res = cli.Get("/error");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+    EXPECT_EQ("ERROR", res->body);
+  }
+
+  {
+    auto res = cli.Get("/invalid");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::NotFound_404, res->status);
+    EXPECT_EQ("NOT_FOUND", res->body);
   }
 }
 #endif
@@ -5169,47 +5270,6 @@ TEST(MountTest, Redicect) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
-
-#ifndef CPPHTTPLIB_NO_EXCEPTIONS
-TEST(ExceptionTest, ThrowExceptionInHandler) {
-  Server svr;
-
-  svr.Get("/exception", [&](const Request & /*req*/, Response & /*res*/) {
-    throw std::runtime_error("exception...");
-  });
-
-  svr.Get("/unknown", [&](const Request & /*req*/, Response & /*res*/) {
-    throw std::runtime_error("exception\r\n...");
-  });
-
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  Client cli("localhost", PORT);
-
-  {
-    auto res = cli.Get("/exception");
-    ASSERT_TRUE(res);
-    EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
-    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
-    EXPECT_EQ("exception...", res->get_header_value("EXCEPTION_WHAT"));
-  }
-
-  {
-    auto res = cli.Get("/unknown");
-    ASSERT_TRUE(res);
-    EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
-    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
-    EXPECT_EQ("exception\\r\\n...", res->get_header_value("EXCEPTION_WHAT"));
-  }
-}
-#endif
 
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
