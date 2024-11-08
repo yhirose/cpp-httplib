@@ -2910,9 +2910,12 @@ inline bool mmap::open(const char *path) {
 
 #if defined(_WIN32)
   std::wstring wpath;
-  for (size_t i = 0; i < strlen(path); i++) {
-    wpath += path[i];
-  }
+  int unicode_char_len = ::MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
+  if (unicode_char_len <= 0) return false;
+  wpath.resize(unicode_char_len + 10);
+  if (::MultiByteToWideChar(CP_UTF8, 0, path, static_cast<int>(strlen(path)), &wpath[0],
+							static_cast<int>(wpath.size())) <= 0)
+	  return false;
 
 #if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
