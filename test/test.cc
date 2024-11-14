@@ -2126,7 +2126,7 @@ TEST(ExceptionTest, AndErrorHandler) {
         res.status = StatusCode::InternalServerError_500;
       });
 
-  svr.Get("/exception", [](const Request & /*req*/, Response &res) {
+  svr.Get("/exception", [](const Request & /*req*/, Response & /*res*/) {
     throw std::runtime_error("EXCEPTION");
   });
 
