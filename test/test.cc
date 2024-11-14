@@ -1,3 +1,4 @@
+﻿// NOTE: This file should be saved as UTF-8 w/ BOM
 #include <httplib.h>
 #include <signal.h>
 
@@ -241,7 +242,7 @@ TEST(DecodeURLTest, PercentCharacter) {
       detail::decode_url(
           R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)",
           false),
-      R"(descrip=Gastos áéíóúñÑ 6)");
+      u8"descrip=Gastos áéíóúñÑ 6");
 }
 
 TEST(DecodeURLTest, PercentCharacterNUL) {
@@ -267,9 +268,9 @@ TEST(EncodeQueryParamTest, ParseReservedCharactersTest) {
 }
 
 TEST(EncodeQueryParamTest, TestUTF8Characters) {
-  string chineseCharacters = "中国語";
-  string russianCharacters = "дом";
-  string brazilianCharacters = "óculos";
+  string chineseCharacters = u8"中国語";
+  string russianCharacters = u8"дом";
+  string brazilianCharacters = u8"óculos";
 
   EXPECT_EQ(detail::encode_query_param(chineseCharacters),
             "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
@@ -5289,7 +5290,7 @@ TEST(MountTest, MultibytesPathName) {
   auto res = cli.Get("/日本語Dir/日本語File.txt");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ("日本語コンテンツ", res->body);
+  EXPECT_EQ(u8"日本語コンテンツ", res->body);
 }
 
 TEST(KeepAliveTest, ReadTimeout) {
