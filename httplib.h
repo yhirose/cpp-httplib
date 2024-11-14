@@ -2258,13 +2258,33 @@ make_basic_authentication_header(const std::string &username,
 
 namespace detail {
 
+#if defined(_WIN32)
+std::wstring u8string_to_wstring(const char *s) {
+  std::wstring ws;
+  auto len = static_cast<int>(strlen(s));
+  auto wlen = ::MultiByteToWideChar(CP_UTF8, 0, s, len, nullptr, 0);
+  if (wlen > 0) {
+    ws.resize(wlen);
+    wlen = ::MultiByteToWideChar(CP_UTF8, 0, s, len, const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(ws.data())), wlen);
+    if (wlen != ws.size()) {
+      ws.clear(); 
+    }
+  }
+  return ws;
+}
+#endif
+
 struct FileStat {
   FileStat(const std::string &path);
   bool is_file() const;
   bool is_dir() const;
 
 private:
+#if defined(_WIN32)
+  struct _stat st_;
+#else
   struct stat st_;
+#endif
   int ret_ = -1;
 };
 
@@ -2639,7 +2659,12 @@ inline bool is_valid_path(const std::string &path) {
 }
 
 inline FileStat::FileStat(const std::string &path) {
+#if defined(_WIN32)
+  auto wpath = u8string_to_wstring(path.c_str());
+  ret_ = _wstat(wpath.c_str(), &st_);
+#else
   ret_ = stat(path.c_str(), &st_);
+#endif
 }
 inline bool FileStat::is_file() const {
   return ret_ >= 0 && S_ISREG(st_.st_mode);
@@ -2909,19 +2934,8 @@ inline bool mmap::open(const char *path) {
   close();
 
 #if defined(_WIN32)
-  std::wstring wpath;
-  {
-    auto cp = ::GetACP();
-
-    auto len = static_cast<int>(strlen(path));
-    auto wlen = ::MultiByteToWideChar(cp, 0, path, len, nullptr, 0);
-    if (wlen <= 0) { return false; }
-
-    wpath.resize(wlen);
-    auto pwpath = const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(wpath.data()));
-    wlen = ::MultiByteToWideChar(cp, 0, path, len, pwpath, wlen);
-    if (wlen != wpath.size()) { return false; }
-  }
+  auto wpath = u8string_to_wstring(path);
+  if (wpath.empty()) { return false; }
 
 #if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,

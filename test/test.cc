@@ -5287,7 +5287,7 @@ TEST(MountTest, MultibytesPathName) {
 
   Client cli("localhost", PORT);
 
-  auto res = cli.Get("/日本語Dir/日本語File.txt");
+  auto res = cli.Get(u8"/日本語Dir/日本語File.txt");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(u8"日本語コンテンツ", res->body);
