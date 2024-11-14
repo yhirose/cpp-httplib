@@ -2265,10 +2265,10 @@ std::wstring u8string_to_wstring(const char *s) {
   auto wlen = ::MultiByteToWideChar(CP_UTF8, 0, s, len, nullptr, 0);
   if (wlen > 0) {
     ws.resize(wlen);
-    wlen = ::MultiByteToWideChar(CP_UTF8, 0, s, len, const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(ws.data())), wlen);
-    if (wlen != ws.size()) {
-      ws.clear(); 
-    }
+    wlen = ::MultiByteToWideChar(
+        CP_UTF8, 0, s, len,
+        const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(ws.data())), wlen);
+    if (wlen != ws.size()) { ws.clear(); }
   }
   return ws;
 }
