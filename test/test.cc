@@ -2004,7 +2004,7 @@ TEST(ErrorHandlerTest, ContentLength) {
   {
     Client cli(HOST, PORT);
 
-    auto res = cli.Get("/hi");
+    auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::OK_200, res->status);
     EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -2087,7 +2087,7 @@ TEST(ExceptionTest, WithExceptionHandler) {
     Client cli(HOST, PORT);
 
     for (size_t j = 0; j < 100; j++) {
-      auto res = cli.Get("/hi");
+      auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
       EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -2098,7 +2098,7 @@ TEST(ExceptionTest, WithExceptionHandler) {
     cli.set_keep_alive(true);
 
     for (size_t j = 0; j < 100; j++) {
-      auto res = cli.Get("/hi");
+      auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
       EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -3803,7 +3803,10 @@ TEST_F(ServerTest, GetRangeWithMaxLongLength) {
 }
 
 TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
-  auto res = cli_.Get("/with-range", {{"Range", "bytes=0-"}});
+  auto res = cli_.Get("/with-range", {
+                                         {"Range", "bytes=0-"},
+                                         {"Accept-Encoding", ""},
+                                     });
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("7", res->get_header_value("Content-Length"));
@@ -3899,7 +3902,10 @@ TEST_F(ServerTest, ClientStop) {
 }
 
 TEST_F(ServerTest, GetWithRange1) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{3, 5}})}});
+  auto res = cli_.Get("/with-range", {
+                                         make_range_header({{3, 5}}),
+                                         {"Accept-Encoding", ""},
+                                     });
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
@@ -3909,7 +3915,10 @@ TEST_F(ServerTest, GetWithRange1) {
 }
 
 TEST_F(ServerTest, GetWithRange2) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{1, -1}})}});
+  auto res = cli_.Get("/with-range", {
+                                         make_range_header({{1, -1}}),
+                                         {"Accept-Encoding", ""},
+                                     });
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
@@ -3919,7 +3928,10 @@ TEST_F(ServerTest, GetWithRange2) {
 }
 
 TEST_F(ServerTest, GetWithRange3) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{0, 0}})}});
+  auto res = cli_.Get("/with-range", {
+                                         make_range_header({{0, 0}}),
+                                         {"Accept-Encoding", ""},
+                                     });
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("1", res->get_header_value("Content-Length"));
@@ -3929,7 +3941,10 @@ TEST_F(ServerTest, GetWithRange3) {
 }
 
 TEST_F(ServerTest, GetWithRange4) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{-1, 2}})}});
+  auto res = cli_.Get("/with-range", {
+                                         make_range_header({{-1, 2}}),
+                                         {"Accept-Encoding", ""},
+                                     });
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
@@ -4674,7 +4689,9 @@ TEST_F(ServerTest, Gzip) {
 }
 
 TEST_F(ServerTest, GzipWithoutAcceptEncoding) {
-  auto res = cli_.Get("/compress");
+  Headers headers;
+  headers.emplace("Accept-Encoding", "");
+  auto res = cli_.Get("/compress", headers);
 
   ASSERT_TRUE(res);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
@@ -4723,12 +4740,16 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
 }
 
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "");
+
   std::string body;
-  auto res = cli_.Get("/compress", [&](const char *data, uint64_t data_length) {
-    EXPECT_EQ(100U, data_length);
-    body.append(data, data_length);
-    return true;
-  });
+  auto res = cli_.Get("/compress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(100U, data_length);
+                        body.append(data, data_length);
+                        return true;
+                      });
 
   ASSERT_TRUE(res);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());

@@ -7702,6 +7702,18 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
 
   if (!req.has_header("Accept")) { req.set_header("Accept", "*/*"); }
 
+  if (!req.has_header("Accept-Encoding")) {
+    std::string accept_encoding;
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+    accept_encoding = "br";
+#endif
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    if (!accept_encoding.empty()) { accept_encoding += ", "; }
+    accept_encoding += "gzip, deflate";
+#endif
+    req.set_header("Accept-Encoding", accept_encoding);
+  }
+
 #ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
   if (!req.has_header("User-Agent")) {
     auto agent = std::string("cpp-httplib/") + CPPHTTPLIB_VERSION;
