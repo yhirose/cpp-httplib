@@ -2910,8 +2910,15 @@ inline bool mmap::open(const char *path) {
 
 #if defined(_WIN32)
   std::wstring wpath;
-  for (size_t i = 0; i < strlen(path); i++) {
-    wpath += path[i];
+  {
+    auto len = static_cast<int>(strlen(path));
+    auto wlen = ::MultiByteToWideChar(CP_UTF8, 0, path, len, nullptr, 0);
+    if (wlen <= 0) { return false; }
+
+    wpath.resize(wlen);
+    auto pwpath = const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(wpath.data()));
+    wlen = ::MultiByteToWideChar(CP_UTF8, 0, path, len, pwpath, wlen);
+    if (wlen != wpath.size()) { return false; }
   }
 
 #if _WIN32_WINNT >= _WIN32_WINNT_WIN8

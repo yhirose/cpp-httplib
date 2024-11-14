@@ -5271,6 +5271,27 @@ TEST(MountTest, Redicect) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MountTest, MultibytesPathName) {
+  Server svr;
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.set_mount_point("/", "./www");
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  auto res = cli.Get("/日本語Dir/日本語File.txt");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("日本語コンテンツ", res->body);
+}
+
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
 
