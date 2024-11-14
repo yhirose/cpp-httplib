@@ -2259,7 +2259,7 @@ make_basic_authentication_header(const std::string &username,
 namespace detail {
 
 #if defined(_WIN32)
-std::wstring u8string_to_wstring(const char *s) {
+inline std::wstring u8string_to_wstring(const char *s) {
   std::wstring ws;
   auto len = static_cast<int>(strlen(s));
   auto wlen = ::MultiByteToWideChar(CP_UTF8, 0, s, len, nullptr, 0);
