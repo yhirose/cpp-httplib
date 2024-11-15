@@ -5609,6 +5609,7 @@ TEST(LongPollingTest, ClientCloseDetection) {
           auto count = 10;
           while (count > 0 && sink.is_writable()) {
             this_thread::sleep_for(chrono::milliseconds(10));
+            count--;
           }
           EXPECT_FALSE(sink.is_writable()); // the socket is closed
           return true;
