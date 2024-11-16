@@ -46,10 +46,11 @@ jobs:
         vcpkg install gtest curl zlib brotli
         choco install openssl
     - name: Configure CMake for Release
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL=ON -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL=ON -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
     - name: Build with CMake
       run: cmake --build build --config Release
     - name: Run tests with CTest
       run: ctest --output-on-failure --test-dir build -C Release
-    env: 
+    env:
+      VCPKG_ROOT: ${{ VCPKG_INSTALLATION_ROOT }}
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
