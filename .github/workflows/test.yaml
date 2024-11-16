@@ -43,14 +43,14 @@ jobs:
       uses: microsoft/setup-msbuild@v2
     - name: Install libraries
       run: |
-        where vcpkg
         vcpkg install gtest curl zlib brotli
         choco install openssl
     - name: Configure CMake for Release
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL=ON -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE={{ .env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL=ON -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
     - name: Build with CMake
       run: cmake --build build --config Release
     - name: Run tests with CTest
       run: ctest --output-on-failure --test-dir build -C Release
     env:
+      VCPKG_ROOT: "C:/vcpkg"
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
