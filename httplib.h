@@ -3308,8 +3308,6 @@ inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
     } else {
       return true; // Ready for read
     }
-
-    std::this_thread::sleep_for(microseconds{interval_usec});
   }
 
   return false;
