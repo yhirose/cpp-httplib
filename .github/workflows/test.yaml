@@ -35,9 +35,18 @@ jobs:
       uses: actions/checkout@v4
     - name: setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
-    - name: make-windows
+    - name: build and run tests
       run: |
         cd test
         msbuild.exe test.sln /verbosity:minimal /t:Build "/p:Configuration=Release;Platform=x64"
-        x64\Release\test.exe
-
+        x64\Release\test.exe        
+    - name: Install libraries
+      run: |
+        vcpkg install gtest curl zlib brotli
+        choco openssl
+    - name: Configure CMake for Release
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
+    - name: Build with CMake
+      run: cmake --build build --config Release
+    - name: Run tests with CTest
+      run: ctest --output-on-failure --test-dir build -C Release
