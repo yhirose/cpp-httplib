@@ -27,26 +27,29 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-    - name: prepare git for checkout on windows
+    - name: Prepare Git for Checkout on Windows
       run: |
         git config --global core.autocrlf false
         git config --global core.eol lf
-    - name: checkout
+    - name: Checkout
       uses: actions/checkout@v4
+    - name: Export GitHub Actions cache environment variables
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
-    - name: build and run tests
-      run: |
-        cd test
-        msbuild.exe test.sln /verbosity:minimal /t:Build "/p:Configuration=Release;Platform=x64"
-        x64\Release\test.exe        
     - name: Install libraries
       run: |
         vcpkg install gtest curl zlib brotli
-        choco openssl
+        choco install openssl
     - name: Configure CMake for Release
       run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
     - name: Build with CMake
       run: cmake --build build --config Release
     - name: Run tests with CTest
       run: ctest --output-on-failure --test-dir build -C Release
+    env: 
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
