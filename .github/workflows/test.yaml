@@ -11,7 +11,7 @@ jobs:
       - name: install libraries
         run: sudo apt-get update && sudo apt-get install -y libbrotli-dev libcurl4-openssl-dev
       - name: build and run tests
-        run: cd test && make -j4
+        run: cd test && make
       - name: run fuzz test target
         run: cd test && make fuzz_test
 
@@ -21,23 +21,45 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
       - name: build and run tests
-        run: |
-          cd test && make -j2
+        run: cd test && make
+      - name: run fuzz test target
+        run: cd test && make fuzz_test
 
   windows:
     runs-on: windows-latest
     steps:
-    - name: prepare git for checkout on windows
+    - name: Prepare Git for Checkout on Windows
       run: |
         git config --global core.autocrlf false
         git config --global core.eol lf
-    - name: checkout
+    - name: Checkout
       uses: actions/checkout@v4
-    - name: setup msbuild on windows
+    - name: Export GitHub Actions cache environment variables
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+    - name: Setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
-    - name: make-windows
+    - name: Install libraries
       run: |
-        cd test
-        msbuild.exe test.sln /verbosity:minimal /t:Build "/p:Configuration=Release;Platform=x64"
-        x64\Release\test.exe
+        vcpkg install gtest curl zlib brotli
+        choco install openssl
 
+    - name: Configure CMake with SSL
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL=ON -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
+    - name: Build with with SSL
+      run: cmake --build build --config Release
+    - name: Run tests with SSL
+      run: ctest --output-on-failure --test-dir build -C Release
+
+    - name: Configure CMake without SSL
+      run: cmake -B build-no-ssl -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake -DHTTPLIB_TEST=ON -DHTTPLIB_REQUIRE_OPENSSL=ON -DHTTPLIB_REQUIRE_ZLIB=ON -DHTTPLIB_REQUIRE_BROTLI=ON
+    - name: Build without SSL
+      run: cmake --build build-no-ssl --config Release
+    - name: Run tests without SSL
+      run: ctest --output-on-failure --test-dir build-no-ssl -C Release
+    env:
+      VCPKG_ROOT: "C:/vcpkg"
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"

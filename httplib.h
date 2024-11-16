@@ -1582,6 +1582,9 @@ private:
   bool send_(Request &req, Response &res, Error &error);
   Result send_(Request &&req);
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  bool is_ssl_peer_could_be_closed(SSL *ssl) const;
+#endif
   socket_t create_client_socket(Error &error) const;
   bool read_response_line(Stream &strm, const Request &req,
                           Response &res) const;
@@ -7415,6 +7418,14 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   return ret;
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+inline bool ClientImpl::is_ssl_peer_could_be_closed(SSL *ssl) const {
+  char buf[1];
+  return !SSL_peek(ssl, buf, 1) &&
+    SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
+}
+#endif
+
 inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
@@ -7426,6 +7437,15 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     auto is_alive = false;
     if (socket_.is_open()) {
       is_alive = detail::is_socket_alive(socket_.sock);
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+      if (is_alive && is_ssl()) {
+        if (is_ssl_peer_could_be_closed(socket_.ssl)) {
+          is_alive = false;
+        }
+      }
+#endif
+
       if (!is_alive) {
         // Attempt to avoid sigpipe by shutting down nongracefully if it seems
         // like the other side has already closed the connection Also, there
@@ -7922,9 +7942,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   if (is_ssl()) {
     auto is_proxy_enabled = !proxy_host_.empty() && proxy_port_ != -1;
     if (!is_proxy_enabled) {
-      char buf[1];
-      if (SSL_peek(socket_.ssl, buf, 1) == 0 &&
-          SSL_get_error(socket_.ssl, 0) == SSL_ERROR_ZERO_RETURN) {
+      if (is_ssl_peer_could_be_closed(socket_.ssl)) {
         error = Error::SSLPeerCouldBeClosed_;
         return false;
       }
