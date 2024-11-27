@@ -612,6 +612,7 @@ using Ranges = std::vector<Range>;
 struct Request {
   std::string method;
   std::string path;
+  Params params;
   Headers headers;
   std::string body;
 
@@ -623,7 +624,6 @@ struct Request {
   // for server
   std::string version;
   std::string target;
-  Params params;
   MultipartFormDataMap files;
   Ranges ranges;
   Match matches;
@@ -7420,7 +7420,7 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 inline bool ClientImpl::is_ssl_peer_could_be_closed(SSL *ssl) const {
   char buf[1];
   return !SSL_peek(ssl, buf, 1) &&
-    SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
+         SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
 }
 #endif
 
@@ -7438,9 +7438,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       if (is_alive && is_ssl()) {
-        if (is_ssl_peer_could_be_closed(socket_.ssl)) {
-          is_alive = false;
-        }
+        if (is_ssl_peer_could_be_closed(socket_.ssl)) { is_alive = false; }
       }
 #endif
 
@@ -7799,7 +7797,13 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   {
     detail::BufferStream bstrm;
 
-    const auto &path = url_encode_ ? detail::encode_url(req.path) : req.path;
+    const auto &path_with_query =
+        req.params.empty() ? req.path
+                           : append_query_params(req.path, req.params);
+
+    const auto &path =
+        url_encode_ ? detail::encode_url(path_with_query) : path_with_query;
+
     detail::write_request_line(bstrm, req.method, path);
 
     header_writer_(bstrm, req.headers);
