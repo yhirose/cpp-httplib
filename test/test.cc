@@ -6542,6 +6542,40 @@ TEST(SendAPI, SimpleInterface_Online) {
   EXPECT_EQ(StatusCode::MovedPermanently_301, res->status);
 }
 
+TEST(SendAPI, WithParamsInRequest) {
+  Server svr;
+
+  svr.Get("/", [&](const Request &req, Response & /*res*/) {
+    EXPECT_TRUE(req.has_param("test"));
+    EXPECT_EQ("test_value", req.get_param_value("test"));
+  });
+
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  {
+    Request req;
+    req.method = "GET";
+    req.path = "/";
+    req.params.emplace("test", "test_value");
+    auto res = cli.send(req);
+    ASSERT_TRUE(res);
+  }
+  {
+    auto res = cli.Get("/", {{"test", "test_value"}}, Headers{});
+    ASSERT_TRUE(res);
+  }
+}
+
 TEST(ClientImplMethods, GetSocketTest) {
   httplib::Server svr;
   svr.Get("/", [&](const httplib::Request & /*req*/, httplib::Response &res) {
