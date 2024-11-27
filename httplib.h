@@ -2271,7 +2271,7 @@ inline std::wstring u8string_to_wstring(const char *s) {
     wlen = ::MultiByteToWideChar(
         CP_UTF8, 0, s, len,
         const_cast<LPWSTR>(reinterpret_cast<LPCWSTR>(ws.data())), wlen);
-    if (wlen != ws.size()) { ws.clear(); }
+    if (wlen != static_cast<int>(ws.size())) { ws.clear(); }
   }
   return ws;
 }
