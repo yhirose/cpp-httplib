@@ -4260,7 +4260,8 @@ TEST_F(ServerTest, PutLargeFileWithGzip2) {
   EXPECT_EQ(LARGE_DATA, res->body);
   // The compressed size should be less than a 10th of the original. May vary
   // depending on the zlib library.
-  EXPECT_LT(res.get_request_header_value_u64("Content-Length"),  10 * 1024 * 1024);
+  EXPECT_LT(res.get_request_header_value_u64("Content-Length"),
+            static_cast<uint64_t>(10 * 1024 * 1024));
   EXPECT_EQ("gzip", res.get_request_header_value("Content-Encoding"));
 }
 
