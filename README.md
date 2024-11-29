@@ -79,7 +79,7 @@ cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(false);
 
 // Disable host verification
-cli.enable_server_host_verification(false);
+cli.enable_server_hostname_verification(false);
 ```
 
 > [!NOTE]
