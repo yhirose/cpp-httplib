@@ -7999,8 +7999,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
     if (res.has_header("Content-Length")) {
       if (!req.content_receiver) {
-        auto len = std::min<size_t>(res.get_header_value_u64("Content-Length"),
-                                    res.body.max_size());
+        auto contentLength = (size_t)res.get_header_value_u64("Content-Length");
+        auto len = std::min<size_t>(contentLength, res.body.max_size());
         if (len > 0) { res.body.reserve(len); }
       }
     }
