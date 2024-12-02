@@ -8002,7 +8002,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
           error = Error::Read;
           return false;
         }
-        res.body.reserve(len);
+        res.body.reserve(static_cast<size_t>(len));
       }
     }
 
