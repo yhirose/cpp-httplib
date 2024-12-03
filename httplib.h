@@ -7438,7 +7438,9 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       if (is_alive && is_ssl()) {
+        detail::set_nonblocking(socket_.sock, true);
         if (is_ssl_peer_could_be_closed(socket_.ssl)) { is_alive = false; }
+        detail::set_nonblocking(socket_.sock, false);
       }
 #endif
 
