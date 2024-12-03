@@ -7964,7 +7964,9 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&
       req.method != "CONNECT") {
-    auto redirect = 300 < res.status && res.status < 400 && follow_location_;
+    auto redirect = 300 < res.status && res.status < 400 &&
+                    res.status != StatusCode::NotModified_304 &&
+                    follow_location_;
 
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {
@@ -8008,12 +8010,14 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    int dummy_status;
-    if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
-                              dummy_status, std::move(progress), std::move(out),
-                              decompress_)) {
-      if (error != Error::Canceled) { error = Error::Read; }
-      return false;
+    if (res.status != StatusCode::NotModified_304) {
+      int dummy_status;
+      if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
+                                dummy_status, std::move(progress),
+                                std::move(out), decompress_)) {
+        if (error != Error::Canceled) { error = Error::Read; }
+        return false;
+      }
     }
   }
 
