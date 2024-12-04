@@ -7418,6 +7418,10 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 inline bool ClientImpl::is_ssl_peer_could_be_closed(SSL *ssl) const {
+  detail::set_nonblocking(socket_.sock, true);
+  auto se = detail::scope_exit(
+      [&]() { detail::set_nonblocking(socket_.sock, false); });
+
   char buf[1];
   return !SSL_peek(ssl, buf, 1) &&
          SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
@@ -7438,9 +7442,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       if (is_alive && is_ssl()) {
-        detail::set_nonblocking(socket_.sock, true);
         if (is_ssl_peer_could_be_closed(socket_.ssl)) { is_alive = false; }
-        detail::set_nonblocking(socket_.sock, false);
       }
 #endif
 
