@@ -513,37 +513,37 @@ TEST(GetHeaderValueTest, RegularValueInt) {
 
 TEST(GetHeaderValueTest, Range) {
   {
-    Headers headers = {make_range_header({{1, -1}})};
+    auto headers = Headers{make_range_header({{1, -1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-", val);
   }
 
   {
-    Headers headers = {make_range_header({{-1, 1}})};
+    auto headers = Headers{make_range_header({{-1, 1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=-1", val);
   }
 
   {
-    Headers headers = {make_range_header({{1, 10}})};
+    auto headers = Headers{make_range_header({{1, 10}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-10", val);
   }
 
   {
-    Headers headers = {make_range_header({{1, 10}, {100, -1}})};
+    auto headers = Headers{make_range_header({{1, 10}, {100, -1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-10, 100-", val);
   }
 
   {
-    Headers headers = {make_range_header({{1, 10}, {100, 200}})};
+    auto headers = Headers{make_range_header({{1, 10}, {100, 200}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=1-10, 100-200", val);
   }
 
   {
-    Headers headers = {make_range_header({{0, 0}, {-1, 1}})};
+    auto headers = Headers{make_range_header({{0, 0}, {-1, 1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=0-0, -1", val);
   }
@@ -789,24 +789,47 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver_Online) {
 #endif
   cli.set_connection_timeout(2);
 
-  std::string body;
-  auto res = cli.Get(
-      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
-      [&](const Response &response) {
-        EXPECT_EQ(StatusCode::OK_200, response.status);
-        return true;
-      },
-      [&](const char *data, size_t data_length) {
-        body.append(data, data_length);
-        return true;
-      });
-  ASSERT_TRUE(res);
+  {
+    std::string body;
+    auto res = cli.Get(
+        "/httpgallery/chunked/chunkedimage.aspx",
+        [&](const Response &response) {
+          EXPECT_EQ(StatusCode::OK_200, response.status);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          body.append(data, data_length);
+          return true;
+        });
+    ASSERT_TRUE(res);
 
-  std::string out;
-  detail::read_file("./image.jpg", out);
+    std::string out;
+    detail::read_file("./image.jpg", out);
 
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(out, body);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(out, body);
+  }
+
+  {
+    std::string body;
+    auto res = cli.Get(
+        "/httpgallery/chunked/chunkedimage.aspx", Params{},
+        [&](const Response &response) {
+          EXPECT_EQ(StatusCode::OK_200, response.status);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          body.append(data, data_length);
+          return true;
+        });
+    ASSERT_TRUE(res);
+
+    std::string out;
+    detail::read_file("./image.jpg", out);
+
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(out, body);
+  }
 }
 
 TEST(RangeTest, FromHTTPBin_Online) {
@@ -835,7 +858,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   }
 
   {
-    Headers headers = {make_range_header({{1, -1}})};
+    auto headers = Headers{make_range_header({{1, -1}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -843,7 +866,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   }
 
   {
-    Headers headers = {make_range_header({{1, 10}})};
+    auto headers = Headers{make_range_header({{1, 10}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijk", res->body);
@@ -851,7 +874,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   }
 
   {
-    Headers headers = {make_range_header({{0, 31}})};
+    auto headers = Headers{make_range_header({{0, 31}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -859,7 +882,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   }
 
   {
-    Headers headers = {make_range_header({{0, -1}})};
+    auto headers = Headers{make_range_header({{0, -1}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
@@ -867,7 +890,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   }
 
   {
-    Headers headers = {make_range_header({{0, 32}})};
+    auto headers = Headers{make_range_header({{0, 32}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
@@ -1053,9 +1076,8 @@ TEST(CancelTest, NoCancelPost) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Post("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-               "application/json", [](uint64_t, uint64_t) { return true; });
+  auto res = cli.Post("/", JSON_DATA, "application/json",
+                      [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res);
   EXPECT_EQ("Hello World!", res->body);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -1080,9 +1102,8 @@ TEST(CancelTest, WithCancelSmallPayloadPost) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Post("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-               "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Post("/", JSON_DATA, "application/json",
+                      [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1106,9 +1127,8 @@ TEST(CancelTest, WithCancelLargePayloadPost) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Post("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-               "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Post("/", JSON_DATA, "application/json",
+                      [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1132,9 +1152,8 @@ TEST(CancelTest, NoCancelPut) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Put("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-              "application/json", [](uint64_t, uint64_t) { return true; });
+  auto res = cli.Put("/", JSON_DATA, "application/json",
+                     [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res);
   EXPECT_EQ("Hello World!", res->body);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -1159,9 +1178,8 @@ TEST(CancelTest, WithCancelSmallPayloadPut) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Put("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-              "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Put("/", JSON_DATA, "application/json",
+                     [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1185,9 +1203,8 @@ TEST(CancelTest, WithCancelLargePayloadPut) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Put("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-              "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Put("/", JSON_DATA, "application/json",
+                     [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1211,9 +1228,8 @@ TEST(CancelTest, NoCancelPatch) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Patch("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-                "application/json", [](uint64_t, uint64_t) { return true; });
+  auto res = cli.Patch("/", JSON_DATA, "application/json",
+                       [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res);
   EXPECT_EQ("Hello World!", res->body);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -1238,9 +1254,8 @@ TEST(CancelTest, WithCancelSmallPayloadPatch) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Patch("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-                "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Patch("/", JSON_DATA, "application/json",
+                       [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1264,9 +1279,8 @@ TEST(CancelTest, WithCancelLargePayloadPatch) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Patch("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-                "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Patch("/", JSON_DATA, "application/json",
+                       [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1290,9 +1304,8 @@ TEST(CancelTest, NoCancelDelete) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Delete("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-                 "application/json", [](uint64_t, uint64_t) { return true; });
+  auto res = cli.Delete("/", JSON_DATA, "application/json",
+                        [](uint64_t, uint64_t) { return true; });
   ASSERT_TRUE(res);
   EXPECT_EQ("Hello World!", res->body);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -1317,9 +1330,8 @@ TEST(CancelTest, WithCancelSmallPayloadDelete) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Delete("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-                 "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Delete("/", JSON_DATA, "application/json",
+                        [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1343,9 +1355,8 @@ TEST(CancelTest, WithCancelLargePayloadDelete) {
   Client cli(HOST, PORT);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res =
-      cli.Delete("/", Headers(), JSON_DATA.data(), JSON_DATA.size(),
-                 "application/json", [](uint64_t, uint64_t) { return false; });
+  auto res = cli.Delete("/", JSON_DATA, "application/json",
+                        [](uint64_t, uint64_t) { return false; });
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -1374,8 +1385,8 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
   }
 
   {
-    auto res =
-        cli.Get(path, {make_basic_authentication_header("hello", "world")});
+    auto res = cli.Get(
+        path, Headers{make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
               res->body);
@@ -1592,7 +1603,7 @@ TEST(HttpsToHttpRedirectTest2, Redirect_Online) {
   params.emplace("url", "http://www.google.com");
   params.emplace("status_code", "302");
 
-  auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  auto res = cli.Get("/httpbin/redirect-to", params);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -1604,7 +1615,7 @@ TEST(HttpsToHttpRedirectTest3, Redirect_Online) {
   Params params;
   params.emplace("url", "http://www.google.com");
 
-  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -2004,7 +2015,7 @@ TEST(ErrorHandlerTest, ContentLength) {
   {
     Client cli(HOST, PORT);
 
-    auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
+    auto res = cli.Get("/hi", Headers{{"Accept-Encoding", ""}});
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::OK_200, res->status);
     EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -2087,7 +2098,7 @@ TEST(ExceptionTest, WithExceptionHandler) {
     Client cli(HOST, PORT);
 
     for (size_t j = 0; j < 100; j++) {
-      auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
+      auto res = cli.Get("/hi", Headers{{"Accept-Encoding", ""}});
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
       EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -2098,7 +2109,7 @@ TEST(ExceptionTest, WithExceptionHandler) {
     cli.set_keep_alive(true);
 
     for (size_t j = 0; j < 100; j++) {
-      auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
+      auto res = cli.Get("/hi", Headers{{"Accept-Encoding", ""}});
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
       EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -3349,7 +3360,7 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
 }
 
 TEST_F(ServerTest, StaticFileRange) {
-  auto res = cli_.Get("/dir/test.abcde", {{make_range_header({{2, 3}})}});
+  auto res = cli_.Get("/dir/test.abcde", Headers{make_range_header({{2, 3}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
@@ -3360,8 +3371,8 @@ TEST_F(ServerTest, StaticFileRange) {
 }
 
 TEST_F(ServerTest, StaticFileRanges) {
-  auto res =
-      cli_.Get("/dir/test.abcde", {{make_range_header({{1, 2}, {4, -1}})}});
+  auto res = cli_.Get("/dir/test.abcde",
+                      Headers{make_range_header({{1, 2}, {4, -1}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_TRUE(
@@ -3373,7 +3384,7 @@ TEST_F(ServerTest, StaticFileRanges) {
 }
 
 TEST_F(ServerTest, StaticFileRangeHead) {
-  auto res = cli_.Head("/dir/test.abcde", {{make_range_header({{2, 3}})}});
+  auto res = cli_.Head("/dir/test.abcde", Headers{make_range_header({{2, 3}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
@@ -3383,7 +3394,7 @@ TEST_F(ServerTest, StaticFileRangeHead) {
 }
 
 TEST_F(ServerTest, StaticFileRangeBigFile) {
-  auto res = cli_.Get("/dir/1MB.txt", {{make_range_header({{-1, 5}})}});
+  auto res = cli_.Get("/dir/1MB.txt", Headers{make_range_header({{-1, 5}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -3395,7 +3406,7 @@ TEST_F(ServerTest, StaticFileRangeBigFile) {
 }
 
 TEST_F(ServerTest, StaticFileRangeBigFile2) {
-  auto res = cli_.Get("/dir/1MB.txt", {{make_range_header({{1, 4097}})}});
+  auto res = cli_.Get("/dir/1MB.txt", Headers{make_range_header({{1, 4097}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -3724,7 +3735,7 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
 }
 
 TEST_F(ServerTest, GetStreamed2) {
-  auto res = cli_.Get("/streamed", {{make_range_header({{2, 3}})}});
+  auto res = cli_.Get("/streamed", Headers{make_range_header({{2, 3}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
@@ -3742,7 +3753,8 @@ TEST_F(ServerTest, GetStreamed) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRange1) {
-  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{3, 5}})}});
+  auto res =
+      cli_.Get("/streamed-with-range", Headers{make_range_header({{3, 5}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
@@ -3752,7 +3764,8 @@ TEST_F(ServerTest, GetStreamedWithRange1) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRange2) {
-  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{1, -1}})}});
+  auto res =
+      cli_.Get("/streamed-with-range", Headers{make_range_header({{1, -1}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
@@ -3762,7 +3775,7 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
-  auto res = cli_.Get("/streamed-with-range", {{"Range", "bytes=-3"}});
+  auto res = cli_.Get("/streamed-with-range", Headers{{"Range", "bytes=-3"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
@@ -3772,7 +3785,8 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
-  auto res = cli_.Get("/streamed-with-range?error", {{"Range", "bytes=-9999"}});
+  auto res =
+      cli_.Get("/streamed-with-range?error", Headers{{"Range", "bytes=-9999"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -3781,8 +3795,9 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeError) {
-  auto res = cli_.Get("/streamed-with-range",
-                      {{"Range", "bytes=92233720368547758079223372036854775806-"
+  auto res =
+      cli_.Get("/streamed-with-range",
+               Headers{{"Range", "bytes=92233720368547758079223372036854775806-"
                                  "92233720368547758079223372036854775807"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
@@ -3794,8 +3809,8 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
 TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   auto res = cli_.Get(
       "/with-range",
-      {{"Range",
-        "bytes=0-" + std::to_string(std::numeric_limits<long>::max())}});
+      Headers{{"Range",
+               "bytes=0-" + std::to_string(std::numeric_limits<long>::max())}});
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
@@ -3803,7 +3818,7 @@ TEST_F(ServerTest, GetRangeWithMaxLongLength) {
 }
 
 TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          {"Range", "bytes=0-"},
                                          {"Accept-Encoding", ""},
                                      });
@@ -3816,8 +3831,8 @@ TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
-  auto res =
-      cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
+  auto res = cli_.Get("/streamed-with-range",
+                      Headers{make_range_header({{1, 2}, {4, 5}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("267", res->get_header_value("Content-Length"));
@@ -3831,8 +3846,8 @@ TEST_F(ServerTest, GetStreamedWithTooManyRanges) {
     ranges.emplace_back(0, -1);
   }
 
-  auto res =
-      cli_.Get("/streamed-with-range?error", {{make_range_header(ranges)}});
+  auto res = cli_.Get("/streamed-with-range?error",
+                      Headers{make_range_header(ranges)});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -3842,7 +3857,7 @@ TEST_F(ServerTest, GetStreamedWithTooManyRanges) {
 
 TEST_F(ServerTest, GetStreamedWithNonAscendingRanges) {
   auto res = cli_.Get("/streamed-with-range?error",
-                      {{make_range_header({{0, -1}, {0, -1}})}});
+                      Headers{make_range_header({{0, -1}, {0, -1}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -3851,8 +3866,9 @@ TEST_F(ServerTest, GetStreamedWithNonAscendingRanges) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangesMoreThanTwoOverwrapping) {
-  auto res = cli_.Get("/streamed-with-range?error",
-                      {{make_range_header({{0, 1}, {1, 2}, {2, 3}, {3, 4}})}});
+  auto res =
+      cli_.Get("/streamed-with-range?error",
+               Headers{make_range_header({{0, 1}, {1, 2}, {2, 3}, {3, 4}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -3902,7 +3918,7 @@ TEST_F(ServerTest, ClientStop) {
 }
 
 TEST_F(ServerTest, GetWithRange1) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{3, 5}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -3915,7 +3931,7 @@ TEST_F(ServerTest, GetWithRange1) {
 }
 
 TEST_F(ServerTest, GetWithRange2) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{1, -1}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -3928,7 +3944,7 @@ TEST_F(ServerTest, GetWithRange2) {
 }
 
 TEST_F(ServerTest, GetWithRange3) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{0, 0}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -3941,7 +3957,7 @@ TEST_F(ServerTest, GetWithRange3) {
 }
 
 TEST_F(ServerTest, GetWithRange4) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{-1, 2}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -3954,13 +3970,15 @@ TEST_F(ServerTest, GetWithRange4) {
 }
 
 TEST_F(ServerTest, GetWithRangeOffsetGreaterThanContent) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{10000, 20000}})}});
+  auto res =
+      cli_.Get("/with-range", Headers{make_range_header({{10000, 20000}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
 }
 
 TEST_F(ServerTest, GetWithRangeMultipart) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
+  auto res =
+      cli_.Get("/with-range", Headers{make_range_header({{1, 2}, {4, 5}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("267", res->get_header_value("Content-Length"));
@@ -3969,15 +3987,15 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
 }
 
 TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
-  auto res =
-      cli_.Get("/with-range", {{make_range_header({{-1, 2}, {10000, 30000}})}});
+  auto res = cli_.Get("/with-range",
+                      Headers{make_range_header({{-1, 2}, {10000, 30000}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
 }
 
 TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
   auto res = cli_.Get("/with-range-customized-response",
-                      {{make_range_header({{1, 2}})}});
+                      Headers{make_range_header({{1, 2}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ(true, res->has_header("Content-Length"));
@@ -3987,7 +4005,7 @@ TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
 
 TEST_F(ServerTest, GetWithRangeMultipartCustomizedResponseMultipleRange) {
   auto res = cli_.Get("/with-range-customized-response",
-                      {{make_range_header({{1, 2}, {4, 5}})}});
+                      Headers{make_range_header({{1, 2}, {4, 5}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ(true, res->has_header("Content-Length"));
@@ -3996,7 +4014,7 @@ TEST_F(ServerTest, GetWithRangeMultipartCustomizedResponseMultipleRange) {
 }
 
 TEST_F(ServerTest, Issue1772) {
-  auto res = cli_.Get("/issue1772", {{make_range_header({{1000, -1}})}});
+  auto res = cli_.Get("/issue1772", Headers{make_range_header({{1000, -1}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
 }
@@ -5681,7 +5699,7 @@ TEST(GetWithParametersTest, GetWithParameters) {
     params.emplace("hello", "world");
     params.emplace("hello2", "world2");
     params.emplace("hello3", "world3");
-    auto res = cli.Get("/", params, Headers{});
+    auto res = cli.Get("/", params);
 
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -5738,11 +5756,10 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   params.emplace("hello", "world");
 
   std::string body;
-  auto res = cli.Get("/", params, Headers{},
-                     [&](const char *data, size_t data_length) {
-                       body.append(data, data_length);
-                       return true;
-                     });
+  auto res = cli.Get("/", params, [&](const char *data, size_t data_length) {
+    body.append(data, data_length);
+    return true;
+  });
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -5764,7 +5781,7 @@ TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
   Client cli(host);
 #endif
 
-  cli.set_default_headers({make_range_header({{1, 10}})});
+  cli.set_default_headers(Headers{make_range_header({{1, 10}})});
   cli.set_connection_timeout(5);
 
   {
@@ -6572,7 +6589,7 @@ TEST(SendAPI, WithParamsInRequest) {
     ASSERT_TRUE(res);
   }
   {
-    auto res = cli.Get("/", {{"test", "test_value"}}, Headers{});
+    auto res = cli.Get("/", Params{{"test", "test_value"}});
     ASSERT_TRUE(res);
   }
 }
@@ -6701,8 +6718,8 @@ TEST(YahooRedirectTest3, NewResultInterface_Online) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding_Online) {
   Client cli("https://cdnjs.cloudflare.com");
-  auto res =
-      cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "br"}});
+  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
+                     Headers{{"Accept-Encoding", "br"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -6731,7 +6748,7 @@ TEST(HttpsToHttpRedirectTest2, SimpleInterface_Online) {
   params.emplace("url", "http://www.google.com");
   params.emplace("status_code", "302");
 
-  auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  auto res = cli.Get("/httpbin/redirect-to", params);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -6743,7 +6760,7 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface_Online) {
   Params params;
   params.emplace("url", "http://www.google.com");
 
-  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -7898,7 +7915,7 @@ TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
-  cli.Get("/test", {{"Test", "_\n\r_\n\r_"}});
+  cli.Get("/test", Headers{{"Test", "_\n\r_\n\r_"}});
 }
 
 #ifndef _WIN32
