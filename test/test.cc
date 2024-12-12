@@ -6132,6 +6132,18 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(SSLClientTest, Issue2004) {
+  Client client("https://google.com");
+  client.set_follow_location(true);
+
+  auto res = client.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+
+  auto body = res->body;
+  EXPECT_EQ(body.substr(0, 15), "<!doctype html>");
+}
+
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
