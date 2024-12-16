@@ -8908,6 +8908,7 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
   // best-efforts.
   if (shutdown_gracefully) {
 #ifdef _WIN32
+    (void)(sock);
     SSL_shutdown(ssl);
 #else
     timeval tv;
