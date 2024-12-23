@@ -5156,7 +5156,18 @@ inline bool range_error(Request &req, Response &res) {
         last_pos = contant_len - 1;
       }
 
-      if (last_pos == -1) { last_pos = contant_len - 1; }
+      // NOTE: RFC-9110 '14.1.2. Byte Ranges':
+      // A client can limit the number of bytes requested without knowing the
+      // size of the selected representation. If the last-pos value is absent,
+      // or if the value is greater than or equal to the current length of the
+      // representation data, the byte range is interpreted as the remainder of
+      // the representation (i.e., the server replaces the value of last-pos
+      // with a value that is one less than the current length of the selected
+      // representation).
+      // https://www.rfc-editor.org/rfc/rfc9110.html#section-14.1.2-6
+      if (last_pos == -1 || last_pos >= contant_len) {
+          last_pos = contant_len - 1;
+      }
 
       // Range must be within content length
       if (!(0 <= first_pos && first_pos <= last_pos &&

@@ -3795,11 +3795,14 @@ TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   auto res = cli_.Get(
       "/with-range",
       {{"Range",
-        "bytes=0-" + std::to_string(std::numeric_limits<long>::max())}});
-  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
-  EXPECT_EQ("0", res->get_header_value("Content-Length"));
-  EXPECT_EQ(false, res->has_header("Content-Range"));
-  EXPECT_EQ(0U, res->body.size());
+        "bytes=0-" + std::to_string(std::numeric_limits<long>::max())},
+       {"Accept-Encoding", ""}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
 }
 
 TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
