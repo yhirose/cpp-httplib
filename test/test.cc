@@ -3036,6 +3036,16 @@ TEST_F(ServerTest, GetFileContent) {
   EXPECT_EQ("test.html", res->body);
 }
 
+TEST_F(ServerTest, GetFileContentWithRange) {
+  auto res = cli_.Get("/file_content", {{make_range_header({{1, 3}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ("bytes 1-3/9", res->get_header_value("Content-Range"));
+  EXPECT_EQ(3, std::stoi(res->get_header_value("Content-Length")));
+  EXPECT_EQ("est", res->body);
+}
+
 TEST_F(ServerTest, GetFileContentWithContentType) {
   auto res = cli_.Get("/file_content_with_content_type");
   ASSERT_TRUE(res);

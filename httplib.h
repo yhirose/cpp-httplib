@@ -7183,14 +7183,6 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
                                       : StatusCode::PartialContent_206;
     }
 
-    if (detail::range_error(req, res)) {
-      res.body.clear();
-      res.content_length_ = 0;
-      res.content_provider_ = nullptr;
-      res.status = StatusCode::RangeNotSatisfiable_416;
-      return write_response(strm, close_connection, req, res);
-    }
-
     // Serve file content by using a content provider
     if (!res.file_content_path_.empty()) {
       const auto &path = res.file_content_path_;
@@ -7215,6 +7207,14 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
             sink.write(mm->data() + offset, length);
             return true;
           });
+    }
+
+    if (detail::range_error(req, res)) {
+      res.body.clear();
+      res.content_length_ = 0;
+      res.content_provider_ = nullptr;
+      res.status = StatusCode::RangeNotSatisfiable_416;
+      return write_response(strm, close_connection, req, res);
     }
 
     return write_response_with_content(strm, close_connection, req, res);
