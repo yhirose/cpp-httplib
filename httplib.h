@@ -5166,7 +5166,7 @@ inline bool range_error(Request &req, Response &res) {
       // representation).
       // https://www.rfc-editor.org/rfc/rfc9110.html#section-14.1.2-6
       if (last_pos == -1 || last_pos >= contant_len) {
-          last_pos = contant_len - 1;
+        last_pos = contant_len - 1;
       }
 
       // Range must be within content length

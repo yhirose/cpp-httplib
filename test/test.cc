@@ -3804,8 +3804,7 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
 TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   auto res = cli_.Get(
       "/with-range",
-      {{"Range",
-        "bytes=0-" + std::to_string(std::numeric_limits<long>::max())},
+      {{"Range", "bytes=0-" + std::to_string(std::numeric_limits<long>::max())},
        {"Accept-Encoding", ""}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
