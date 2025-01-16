@@ -7925,6 +7925,88 @@ TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   cli.Get("/test", {{"Test", "_\n\r_\n\r_"}});
 }
 
+TEST(InvalidHeaderCharsTest, is_field_name) {
+  EXPECT_TRUE(detail::fields::is_field_name("exampleToken"));
+  EXPECT_TRUE(detail::fields::is_field_name("token123"));
+  EXPECT_TRUE(detail::fields::is_field_name("!#$%&'*+-.^_`|~"));
+
+  EXPECT_FALSE(detail::fields::is_field_name("example token"));
+  EXPECT_FALSE(detail::fields::is_field_name(" example_token"));
+  EXPECT_FALSE(detail::fields::is_field_name("example_token "));
+  EXPECT_FALSE(detail::fields::is_field_name("token@123"));
+  EXPECT_FALSE(detail::fields::is_field_name(""));
+  EXPECT_FALSE(detail::fields::is_field_name("example\rtoken"));
+  EXPECT_FALSE(detail::fields::is_field_name("example\ntoken"));
+  EXPECT_FALSE(detail::fields::is_field_name(std::string("\0", 1)));
+  EXPECT_FALSE(detail::fields::is_field_name("example\ttoken"));
+}
+
+TEST(InvalidHeaderCharsTest, is_field_value) {
+  EXPECT_TRUE(detail::fields::is_field_value("exampleToken"));
+  EXPECT_TRUE(detail::fields::is_field_value("token123"));
+  EXPECT_TRUE(detail::fields::is_field_value("!#$%&'*+-.^_`|~"));
+
+  EXPECT_TRUE(detail::fields::is_field_value("example token"));
+  EXPECT_FALSE(detail::fields::is_field_value(" example_token"));
+  EXPECT_FALSE(detail::fields::is_field_value("example_token "));
+  EXPECT_TRUE(detail::fields::is_field_value("token@123"));
+  EXPECT_FALSE(detail::fields::is_field_value(""));
+  EXPECT_FALSE(detail::fields::is_field_value("example\rtoken"));
+  EXPECT_FALSE(detail::fields::is_field_value("example\ntoken"));
+  EXPECT_FALSE(detail::fields::is_field_value(std::string("\0", 1)));
+  EXPECT_TRUE(detail::fields::is_field_value("example\ttoken"));
+
+  EXPECT_TRUE(detail::fields::is_field_value("0"));
+}
+
+TEST(InvalidHeaderCharsTest, OnServer) {
+  Server svr;
+
+  svr.Get("/test_name", [&](const Request &req, Response &res) {
+    std::string header = "Not Set";
+    if (req.has_param("header")) { header = req.get_param_value("header"); }
+
+    res.set_header(header, "value");
+    res.set_content("Page Content Page Content", "text/plain");
+  });
+
+  svr.Get("/test_value", [&](const Request &req, Response &res) {
+    std::string header = "Not Set";
+    if (req.has_param("header")) { header = req.get_param_value("header"); }
+
+    res.set_header("X-Test", header);
+    res.set_content("Page Content Page Content", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  {
+    auto res = cli.Get(
+        R"(/test_name?header=Value%00%0d%0aHEADER_KEY%3aHEADER_VALUE%0d%0a%0d%0aBODY_BODY_BODY)");
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ("Page Content Page Content", res->body);
+    EXPECT_FALSE(res->has_header("HEADER_KEY"));
+  }
+  {
+    auto res = cli.Get(
+        R"(/test_value?header=Value%00%0d%0aHEADER_KEY%3aHEADER_VALUE%0d%0a%0d%0aBODY_BODY_BODY)");
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ("Page Content Page Content", res->body);
+    EXPECT_FALSE(res->has_header("HEADER_KEY"));
+  }
+}
+
 #ifndef _WIN32
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";

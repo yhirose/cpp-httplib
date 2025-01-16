@@ -2506,6 +2506,60 @@ private:
   bool is_open_empty_file = false;
 };
 
+// NOTE: https://www.rfc-editor.org/rfc/rfc9110#section-5
+namespace fields {
+
+inline bool is_token_char(char c) {
+  return std::isalnum(c) || c == '!' || c == '#' || c == '$' || c == '%' ||
+         c == '&' || c == '\'' || c == '*' || c == '+' || c == '-' ||
+         c == '.' || c == '^' || c == '_' || c == '`' || c == '|' || c == '~';
+}
+
+inline bool is_token(const std::string &s) {
+  if (s.empty()) { return false; }
+  for (auto c : s) {
+    if (!is_token_char(c)) { return false; }
+  }
+  return true;
+}
+
+inline bool is_field_name(const std::string &s) { return is_token(s); }
+
+inline bool is_vchar(char c) { return c >= 33 && c <= 126; }
+
+inline bool is_obs_text(char c) { return 128 <= static_cast<unsigned char>(c); }
+
+inline bool is_field_vchar(char c) { return is_vchar(c) || is_obs_text(c); }
+
+inline bool is_field_content(const std::string &s) {
+  if (s.empty()) { return false; }
+
+  if (s.size() == 1) {
+    return is_field_vchar(s[0]);
+  } else if (s.size() == 2) {
+    return is_field_vchar(s[0]) && is_field_vchar(s[1]);
+  } else {
+    size_t i = 0;
+
+    if (!is_field_vchar(s[i])) { return false; }
+    i++;
+
+    while (i < s.size() - 1) {
+      auto c = s[i++];
+      if (c == ' ' || c == '\t' || is_field_vchar(c)) {
+      } else {
+        return false;
+      }
+    }
+
+    return is_field_vchar(s[i]);
+  }
+}
+
+inline bool is_field_value(const std::string &s) { return is_field_content(s); }
+
+}; // namespace fields
+
 } // namespace detail
 
 // ----------------------------------------------------------------------------
@@ -5699,7 +5753,8 @@ inline size_t Request::get_header_value_count(const std::string &key) const {
 
 inline void Request::set_header(const std::string &key,
                                 const std::string &val) {
-  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
+  if (detail::fields::is_field_name(key) &&
+      detail::fields::is_field_value(val)) {
     headers.emplace(key, val);
   }
 }
@@ -5765,13 +5820,14 @@ inline size_t Response::get_header_value_count(const std::string &key) const {
 
 inline void Response::set_header(const std::string &key,
                                  const std::string &val) {
-  if (!detail::has_crlf(key) && !detail::has_crlf(val)) {
+  if (detail::fields::is_field_name(key) &&
+      detail::fields::is_field_value(val)) {
     headers.emplace(key, val);
   }
 }
 
 inline void Response::set_redirect(const std::string &url, int stat) {
-  if (!detail::has_crlf(url)) {
+  if (detail::fields::is_field_value(url)) {
     set_header("Location", url);
     if (300 <= stat && stat < 400) {
       this->status = stat;
