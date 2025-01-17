@@ -125,6 +125,21 @@ int main(void)
     res.set_content(req.body, "text/plain");
   });
 
+  // If the handler takes time to finish, you can also poll the connection state
+  svr.Get("/task", [&](const Request& req, Response& res) {
+    const char * result = nullptr;
+    process.run(); // for example, starting an external process
+    while (result == nullptr) {
+      sleep(1);
+      if (req.is_connection_closed()) {
+        process.kill(); // kill the process
+        return;
+      }
+      result = process.stdout(); // != nullptr if the process finishes
+    }
+    res.set_content(result, "text/plain");
+  });
+
   svr.Get("/stop", [&](const Request& req, Response& res) {
     svr.stop();
   });

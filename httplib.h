@@ -628,6 +628,7 @@ struct Request {
   Ranges ranges;
   Match matches;
   std::unordered_map<std::string, std::string> path_params;
+  std::function<bool()> is_connection_closed = []() { return true; };
 
   // for client
   ResponseHandler response_handler;
@@ -2572,7 +2573,7 @@ inline bool is_field_content(const std::string &s) {
 
 inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 
-}; // namespace fields
+} // namespace fields
 
 } // namespace detail
 
@@ -7216,6 +7217,11 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       return write_response(strm, true, req, res);
     }
   }
+
+  // Setup `is_connection_closed` method
+  req.is_connection_closed = [&]() {
+    return !detail::is_socket_alive(strm.socket());
+  };
 
   // Routing
   auto routed = false;
