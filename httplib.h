@@ -2573,7 +2573,7 @@ inline bool is_field_content(const std::string &s) {
 
 inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 
-}; // namespace fields
+} // namespace fields
 
 } // namespace detail
 
