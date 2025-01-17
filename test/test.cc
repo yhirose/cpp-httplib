@@ -511,6 +511,15 @@ TEST(GetHeaderValueTest, RegularValueInt) {
   EXPECT_EQ(100ull, val);
 }
 
+TEST(GetHeaderValueTest, RegularInvalidValueInt) {
+  Headers headers = {{"Content-Length", "x"}};
+  auto is_invalid_value = false;
+  auto val = detail::get_header_value_u64(headers, "Content-Length", 0, 0,
+                                          is_invalid_value);
+  EXPECT_EQ(0ull, val);
+  EXPECT_TRUE(is_invalid_value);
+}
+
 TEST(GetHeaderValueTest, Range) {
   {
     Headers headers = {make_range_header({{1, -1}})};
@@ -7496,9 +7505,9 @@ TEST(MultipartFormDataTest, CloseDelimiterWithoutCRLF) {
              "text2"
              "\r\n------------";
 
-  std::string resonse;
-  ASSERT_TRUE(send_request(1, req, &resonse));
-  ASSERT_EQ("200", resonse.substr(9, 3));
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("200", response.substr(9, 3));
 }
 
 TEST(MultipartFormDataTest, ContentLength) {
@@ -7543,11 +7552,10 @@ TEST(MultipartFormDataTest, ContentLength) {
              "text2"
              "\r\n------------\r\n";
 
-  std::string resonse;
-  ASSERT_TRUE(send_request(1, req, &resonse));
-  ASSERT_EQ("200", resonse.substr(9, 3));
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("200", response.substr(9, 3));
 }
-
 #endif
 
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
@@ -8005,6 +8013,32 @@ TEST(InvalidHeaderCharsTest, OnServer) {
     EXPECT_EQ("Page Content Page Content", res->body);
     EXPECT_FALSE(res->has_header("HEADER_KEY"));
   }
+}
+
+TEST(InvalidHeaderValueTest, InvalidContentLength) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &) { handled = true; });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_FALSE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Length: x\r\n"
+             "\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("HTTP/1.1 400 Bad Request",
+            response.substr(0, response.find("\r\n")));
 }
 
 #ifndef _WIN32
