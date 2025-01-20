@@ -1,7 +1,7 @@
 //
 //  server_and_client.cc
 //
-//  Copyright (c) 2024 Yuji Hirose. All rights reserved.
+//  Copyright (c) 2025 Yuji Hirose. All rights reserved.
 //  MIT License
 //
 
