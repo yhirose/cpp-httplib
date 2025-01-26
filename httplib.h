@@ -4457,7 +4457,7 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
         } else {
           auto is_invalid_value = false;
           auto len = get_header_value_u64(x.headers, "Content-Length",
-                                          std::numeric_limits<uint64_t>::max(),
+                                         (std::numeric_limits<uint64_t>::max)(),
                                           0, is_invalid_value);
 
           if (is_invalid_value) {
