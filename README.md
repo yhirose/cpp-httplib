@@ -39,10 +39,10 @@ svr.listen("0.0.0.0", 8080);
 #include "path/to/httplib.h"
 
 // HTTP
-httplib::Client cli("http://yhirose.github.io/hi");
+httplib::Client cli("http://yhirose.github.io");
 
 // HTTPS
-httplib::Client cli("https://yhirose.github.io/hi");
+httplib::Client cli("https://yhirose.github.io");
 
 auto res = cli.Get("/hi");
 res->status;
