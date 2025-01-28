@@ -218,7 +218,9 @@ using socket_t = SOCKET;
 #include <csignal>
 #include <pthread.h>
 #include <sys/mman.h>
-#include <sys/select.h>
+#ifndef __VMS
+  #include <sys/select.h>
+#endif
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
