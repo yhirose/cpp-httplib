@@ -1863,6 +1863,32 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
   }
 }
 
+TEST(PathUrlEncodeTest, IncludePercentEncodingLF) {
+  Server svr;
+
+  svr.Get("/", [](const Request &req, Response &res) {
+    EXPECT_EQ("\x0A", req.get_param_value("something"));
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_url_encode(false);
+
+    auto res = cli.Get("/?something=%0A");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+}
+
 TEST(BindServerTest, DISABLED_BindDualStack) {
   Server svr;
 
