@@ -219,7 +219,7 @@ using socket_t = SOCKET;
 #include <pthread.h>
 #include <sys/mman.h>
 #ifndef __VMS
-  #include <sys/select.h>
+#include <sys/select.h>
 #endif
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -4458,9 +4458,9 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
           ret = read_content_without_length(strm, out);
         } else {
           auto is_invalid_value = false;
-          auto len = get_header_value_u64(x.headers, "Content-Length",
-                                         (std::numeric_limits<uint64_t>::max)(),
-                                          0, is_invalid_value);
+          auto len = get_header_value_u64(
+              x.headers, "Content-Length",
+              (std::numeric_limits<uint64_t>::max)(), 0, is_invalid_value);
 
           if (is_invalid_value) {
             ret = false;
