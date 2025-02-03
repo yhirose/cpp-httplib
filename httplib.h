@@ -3184,32 +3184,73 @@ inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
   });
 }
 
-inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
+template <bool WithExtraFD>
+inline ssize_t select_read_impl(socket_t sock, socket_t extra_fd, time_t sec,
+                                time_t usec, bool *sock_readable,
+                                bool *extra_fd_readable) {
 #ifdef CPPHTTPLIB_USE_POLL
-  struct pollfd pfd_read;
-  pfd_read.fd = sock;
-  pfd_read.events = POLLIN;
+  constexpr size_t nfds = WithExtraFD ? 2 : 1;
+  struct pollfd pfd_read[nfds];
+  pfd_read[0].fd = sock;
+  pfd_read[0].events = POLLIN;
+  if (WithExtraFD) {
+    pfd_read[1].fd = extra_fd;
+    pfd_read[1].events = POLLIN;
+  }
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
+  size_t ret = handle_EINTR([&]() { return poll(pfd_read, nfds, timeout); });
+  if (WithExtraFD && ret > 0) {
+    assert(sock_readable && extra_fd_readable);
+    *sock_readable = pfd_read[0].revents & POLLIN;
+    *extra_fd_readable = pfd_read[1].revents & POLLIN;
+  }
+  return ret;
 #else
 #ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return -1; }
+  if (sock >= FD_SETSIZE || (WithExtraFD && extra_fd >= FD_SETSIZE)) {
+    return -1;
+  }
 #endif
 
+  int nfds;
   fd_set fds;
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
+
+  if (WithExtraFD) {
+    FD_SET(extra_fd, &fds);
+    nfds = static_cast<int>((std::max)(sock, extra_fd) + 1);
+  } else {
+    nfds = static_cast<int>(sock + 1);
+  }
 
   timeval tv;
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
-  return handle_EINTR([&]() {
-    return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
-  });
+  ssize_t ret =
+      handle_EINTR([&]() { return select(nfds, &fds, nullptr, nullptr, &tv); });
+  if (WithExtraFD && ret > 0) {
+    assert(sock_readable && extra_fd_readable);
+    *sock_readable = FD_ISSET(sock, &fds);
+    *extra_fd_readable = FD_ISSET(extra_fd, &fds);
+  }
+  return ret;
 #endif
+}
+
+inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
+  return select_read_impl<false>(sock, INVALID_SOCKET, sec, usec, nullptr,
+                                 nullptr);
+}
+
+inline ssize_t select_read(socket_t sock, socket_t extra_fd, time_t sec,
+                           time_t usec, bool &sock_readable,
+                           bool &extra_fd_readable) {
+  return select_read_impl<true>(sock, extra_fd, sec, usec, &sock_readable,
+                                &extra_fd_readable);
 }
 
 inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
