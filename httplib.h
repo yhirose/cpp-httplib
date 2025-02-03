@@ -2371,11 +2371,22 @@ bool parse_multipart_boundary(const std::string &content_type,
 
 bool parse_range_header(const std::string &s, Ranges &ranges);
 
+void random_bytes(char *ptr, size_t length, bool alphanum);
+
+std::string random_string(size_t length);
+
 int close_socket(socket_t sock);
 
 ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags);
 
 ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags);
+
+ssize_t select_read(socket_t sock, time_t sec, time_t usec);
+
+ssize_t select_read(socket_t sock, socket_t extra_fd, time_t sec, time_t usec,
+                    bool &sock_readable, bool &extra_fd_readable);
+
+void set_nonblocking(socket_t sock, bool nonblocking);
 
 enum class EncodingType { None = 0, Gzip, Brotli };
 
