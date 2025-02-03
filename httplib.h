@@ -5132,7 +5132,7 @@ private:
   size_t buf_epos_ = 0;
 };
 
-inline std::string random_string(size_t length) {
+inline void random_bytes(char *ptr, size_t length, bool alphanum) {
   static const char data[] =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -5147,11 +5147,26 @@ inline std::string random_string(size_t length) {
 
   static std::mt19937 engine(seed_sequence);
 
-  std::string result;
-  for (size_t i = 0; i < length; i++) {
-    result += data[engine() % (sizeof(data) - 1)];
+  if (alphanum) {
+    for (size_t i = 0; i < length; i++) {
+      *(ptr++) = data[engine() % (sizeof(data) - 1)];
+    }
+  } else {
+    for (size_t i = 0; i < length;) {
+      auto val = engine();
+      for (size_t j = 0; i < length && j < sizeof(val); ++i, ++j) {
+        *(ptr++) = static_cast<char>(val);
+        val >>= 8;
+      }
+    }
   }
-  return result;
+}
+
+inline std::string random_string(size_t length) {
+  std::string s;
+  s.resize(length);
+  random_bytes(&s[0], length, true);
+  return s;
 }
 
 inline std::string make_multipart_data_boundary() {
