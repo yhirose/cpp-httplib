@@ -735,6 +735,10 @@ public:
   virtual bool is_readable() const = 0;
   virtual bool is_writable() const = 0;
 
+  // Returns maximum size that may be passed to read() without blocking; read()
+  // may return fewer bytes
+  virtual size_t nonblocking_read_size() const = 0;
+
   virtual ssize_t read(char *ptr, size_t size) = 0;
   virtual ssize_t write(const char *ptr, size_t size) = 0;
   virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
@@ -2384,6 +2388,7 @@ public:
 
   bool is_readable() const override;
   bool is_writable() const override;
+  size_t nonblocking_read_size() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
@@ -3311,6 +3316,7 @@ public:
 
   bool is_readable() const override;
   bool is_writable() const override;
+  size_t nonblocking_read_size() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
@@ -3341,6 +3347,7 @@ public:
 
   bool is_readable() const override;
   bool is_writable() const override;
+  size_t nonblocking_read_size() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
@@ -5977,6 +5984,10 @@ inline bool SocketStream::is_writable() const {
          is_socket_alive(sock_);
 }
 
+inline size_t SocketStream::nonblocking_read_size() const {
+  return read_buff_content_size_ - read_buff_off_;
+}
+
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
 #ifdef _WIN32
   size =
@@ -6050,6 +6061,10 @@ inline socket_t SocketStream::socket() const { return sock_; }
 inline bool BufferStream::is_readable() const { return true; }
 
 inline bool BufferStream::is_writable() const { return true; }
+
+inline size_t BufferStream::nonblocking_read_size() const {
+  return (std::numeric_limits<size_t>::max)();
+}
 
 inline ssize_t BufferStream::read(char *ptr, size_t size) {
 #if defined(_MSC_VER) && _MSC_VER < 1910
@@ -9119,6 +9134,10 @@ inline bool SSLSocketStream::is_readable() const {
 inline bool SSLSocketStream::is_writable() const {
   return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0 &&
          is_socket_alive(sock_);
+}
+
+inline size_t SSLSocketStream::nonblocking_read_size() const {
+  return static_cast<size_t>(SSL_pending(ssl_));
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
