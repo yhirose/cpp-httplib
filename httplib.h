@@ -2549,7 +2549,7 @@ inline bool is_obs_text(char c) { return 128 <= static_cast<unsigned char>(c); }
 inline bool is_field_vchar(char c) { return is_vchar(c) || is_obs_text(c); }
 
 inline bool is_field_content(const std::string &s) {
-  if (s.empty()) { return false; }
+  if (s.empty()) { return true; }
 
   if (s.size() == 1) {
     return is_field_vchar(s[0]);
@@ -4214,22 +4214,21 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     if (!key_len) { return false; }
 
     auto key = std::string(beg, key_end);
-    auto val = case_ignore::equal(key, "Location")
-                   ? std::string(p, end)
-                   : decode_url(std::string(p, end), false);
+    // auto val = (case_ignore::equal(key, "Location") ||
+    //             case_ignore::equal(key, "Referer"))
+    //                ? std::string(p, end)
+    //                : decode_url(std::string(p, end), false);
+    auto val = std::string(p, end);
 
-    // NOTE: From RFC 9110:
-    // Field values containing CR, LF, or NUL characters are
-    // invalid and dangerous, due to the varying ways that
-    // implementations might parse and interpret those
-    // characters; a recipient of CR, LF, or NUL within a field
-    // value MUST either reject the message or replace each of
-    // those characters with SP before further processing or
-    // forwarding of that message.
-    static const std::string CR_LF_NUL("\r\n\0", 3);
-    if (val.find_first_of(CR_LF_NUL) != std::string::npos) { return false; }
+    if (!detail::fields::is_field_value(val)) { return false; }
 
-    fn(key, val);
+    if (case_ignore::equal(key, "Location") ||
+        case_ignore::equal(key, "Referer")) {
+      fn(key, val);
+    } else {
+      fn(key, decode_url(val, false));
+    }
+
     return true;
   }
 
@@ -4265,7 +4264,7 @@ inline bool read_headers(Stream &strm, Headers &headers) {
     auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
     if (!parse_header(line_reader.ptr(), end,
-                      [&](const std::string &key, std::string &val) {
+                      [&](const std::string &key, const std::string &val) {
                         headers.emplace(key, val);
                       })) {
       return false;
