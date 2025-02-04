@@ -537,6 +537,11 @@ using Progress = std::function<bool(uint64_t current, uint64_t total)>;
 struct Response;
 using ResponseHandler = std::function<bool(const Response &response)>;
 
+class Stream;
+// Note: do not replace 'std::function<bool(Stream &strm)>' with StreamHandler;
+// signature is not final
+using StreamHandler = std::function<bool(Stream &strm)>;
+
 struct MultipartFormData {
   std::string name;
   std::string content;
@@ -725,6 +730,9 @@ struct Response {
                         const std::string &content_type);
   void set_file_content(const std::string &path);
 
+  // EXPERIMENTAL callback function signature may change
+  void set_stream_handler(StreamHandler stream_handler);
+
   Response() = default;
   Response(const Response &) = default;
   Response &operator=(const Response &) = default;
@@ -744,6 +752,8 @@ struct Response {
   bool content_provider_success_ = false;
   std::string file_content_path_;
   std::string file_content_content_type_;
+  // EXPERIMENTAL function signature may change
+  StreamHandler stream_handler_;
 };
 
 class Stream {
@@ -5972,6 +5982,10 @@ inline void Response::set_file_content(const std::string &path) {
   file_content_path_ = path;
 }
 
+inline void Response::set_stream_handler(StreamHandler stream_handler) {
+  stream_handler_ = std::move(stream_handler);
+}
+
 // Result implementation
 inline bool Result::has_request_header(const std::string &key) const {
   return request_headers_.find(key) != request_headers_.end();
@@ -6608,18 +6622,21 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     res.set_header("Keep-Alive", s);
   }
 
-  if ((!res.body.empty() || res.content_length_ > 0 || res.content_provider_) &&
-      !res.has_header("Content-Type")) {
-    res.set_header("Content-Type", "text/plain");
-  }
+  if (!res.stream_handler_) {
+    if ((!res.body.empty() || res.content_length_ > 0 ||
+         res.content_provider_) &&
+        !res.has_header("Content-Type")) {
+      res.set_header("Content-Type", "text/plain");
+    }
 
-  if (res.body.empty() && !res.content_length_ && !res.content_provider_ &&
-      !res.has_header("Content-Length")) {
-    res.set_header("Content-Length", "0");
-  }
+    if (res.body.empty() && !res.content_length_ && !res.content_provider_ &&
+        !res.has_header("Content-Length")) {
+      res.set_header("Content-Length", "0");
+    }
 
-  if (req.method == "HEAD" && !res.has_header("Accept-Ranges")) {
-    res.set_header("Accept-Ranges", "bytes");
+    if (req.method == "HEAD" && !res.has_header("Accept-Ranges")) {
+      res.set_header("Accept-Ranges", "bytes");
+    }
   }
 
   if (post_routing_handler_) { post_routing_handler_(req, res); }
@@ -6637,16 +6654,24 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   // Body
   auto ret = true;
-  if (req.method != "HEAD") {
-    if (!res.body.empty()) {
-      if (!detail::write_data(strm, res.body.data(), res.body.size())) {
-        ret = false;
-      }
-    } else if (res.content_provider_) {
-      if (write_content_with_provider(strm, req, res, boundary, content_type)) {
-        res.content_provider_success_ = true;
-      } else {
-        ret = false;
+  if (res.stream_handler_) {
+    // Log early
+    if (logger_) { logger_(req, res); }
+
+    return res.stream_handler_(strm);
+  } else {
+    if (req.method != "HEAD") {
+      if (!res.body.empty()) {
+        if (!detail::write_data(strm, res.body.data(), res.body.size())) {
+          ret = false;
+        }
+      } else if (res.content_provider_) {
+        if (write_content_with_provider(strm, req, res, boundary,
+                                        content_type)) {
+          res.content_provider_success_ = true;
+        } else {
+          ret = false;
+        }
       }
     }
   }
