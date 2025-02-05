@@ -1866,7 +1866,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
 TEST(PathUrlEncodeTest, IncludePercentEncodingLF) {
   Server svr;
 
-  svr.Get("/", [](const Request &req, Response &res) {
+  svr.Get("/", [](const Request &req, Response &) {
     EXPECT_EQ("\x0A", req.get_param_value("something"));
   });
 
@@ -4936,8 +4936,10 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
                           "Connection: close\r\n"
                           "\r\n";
 
-  ASSERT_TRUE(send_request(5, req));
-  EXPECT_EQ(header_value, "\v bar \x1B");
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+  EXPECT_EQ(header_value, "");
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, 24));
 }
 
 // Sends a raw request and verifies that there isn't a crash or exception.
@@ -5091,6 +5093,14 @@ TEST(ServerRequestParsingTest, InvalidFieldValueContains_CR_LF_NUL) {
   std::string out;
   std::string request(
       "GET /header_field_value_check HTTP/1.1\r\nTest: [\r\x00\n]\r\n\r\n", 55);
+  test_raw_request(request, &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
+TEST(ServerRequestParsingTest, InvalidFieldValueContains_LF) {
+  std::string out;
+  std::string request(
+      "GET /header_field_value_check HTTP/1.1\r\nTest: [\n\n\n]\r\n\r\n", 55);
   test_raw_request(request, &out);
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
@@ -7984,7 +7994,7 @@ TEST(InvalidHeaderCharsTest, is_field_value) {
   EXPECT_FALSE(detail::fields::is_field_value(" example_token"));
   EXPECT_FALSE(detail::fields::is_field_value("example_token "));
   EXPECT_TRUE(detail::fields::is_field_value("token@123"));
-  EXPECT_FALSE(detail::fields::is_field_value(""));
+  EXPECT_TRUE(detail::fields::is_field_value(""));
   EXPECT_FALSE(detail::fields::is_field_value("example\rtoken"));
   EXPECT_FALSE(detail::fields::is_field_value("example\ntoken"));
   EXPECT_FALSE(detail::fields::is_field_value(std::string("\0", 1)));
