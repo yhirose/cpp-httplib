@@ -2,37 +2,47 @@
 
 """This script splits httplib.h into .h and .cc parts."""
 
-import argparse
 import os
 import sys
 
-border = (
+BORDER = (
     "// ----------------------------------------------------------------------------"
 )
 
 
-def main():
-    args_parser = argparse.ArgumentParser(description=__doc__)
-    args_parser.add_argument(
-        "-e",
-        "--extension",
-        help="extension of the implementation file (default: cc)",
-        default="cc",
-    )
-    args_parser.add_argument(
-        "-o", "--out", help="where to write the files (default: out)", default="out"
-    )
-    args = args_parser.parse_args()
+def walk_dir(file_name, directory):
+    for root, subdirs, files in os.walk(directory):
+        if file_name in files:
+            return os.path.join(root, file_name)
+        for subdir in subdirs:
+            return walk_dir(file_name, os.path.join(root, subdir))
 
+
+def locate_file(file_name, search_dirs):
     cur_dir = os.path.dirname(sys.argv[0])
-    lib_name = "httplib"
-    header_name = "/" + lib_name + ".h"
-    source_name = "/" + lib_name + "." + args.extension
-    # get the input file
-    in_file = cur_dir + header_name
-    # get the output file
-    h_out = args.out + header_name
-    cc_out = args.out + source_name
+    initial_path = os.path.join(cur_dir, file_name)
+
+    if os.path.isfile(initial_path):
+        return initial_path
+
+    for directory in search_dirs:
+        result = walk_dir(file_name, os.path.join(cur_dir, directory))
+        if result:
+            return result
+
+    return None
+
+
+def split(lib_name, search_dirs=[], extension="cc", out="out"):
+    header_name = lib_name + ".h"
+    source_name = lib_name + "." + extension
+    in_file = locate_file(header_name, search_dirs)
+    if not in_file:
+        print("File not found: {}".format(header_name))
+        return
+
+    h_out = os.path.join(out, header_name)
+    cc_out = os.path.join(out, source_name)
 
     # if the modification time of the out file is after the in file,
     # don't split (as it is already finished)
@@ -49,17 +59,16 @@ def main():
 
         python_version = sys.version_info[0]
         if python_version < 3:
-            os.makedirs(args.out)
+            os.makedirs(out)
         else:
-            os.makedirs(args.out, exist_ok=True)
+            os.makedirs(out, exist_ok=True)
 
         in_implementation = False
-        cc_out = args.out + source_name
         with open(h_out, "w") as fh, open(cc_out, "w") as fc:
-            fc.write('#include "httplib.h"\n')
+            fc.write('#include "{}"\n'.format(header_name))
             fc.write("namespace httplib {\n")
             for line in lines:
-                is_border_line = border in line
+                is_border_line = BORDER in line
                 if is_border_line:
                     in_implementation = not in_implementation
                 elif in_implementation:
@@ -71,6 +80,28 @@ def main():
         print("Wrote {} and {}".format(h_out, cc_out))
     else:
         print("{} and {} are up to date".format(h_out, cc_out))
+
+
+def main():
+    import argparse
+
+    args_parser = argparse.ArgumentParser(description=__doc__)
+    args_parser.add_argument(
+        "-e",
+        "--extension",
+        help="extension of the implementation file (default: cc)",
+        default="cc",
+    )
+    args_parser.add_argument(
+        "-o", "--out", help="where to write the files (default: out)", default="out"
+    )
+    args = args_parser.parse_args()
+
+    search_dirs = ["example"]
+    lib_names = ["httplib"]
+
+    for lib_name in lib_names:
+        split(lib_name, search_dirs, args.extension, args.out)
 
 
 if __name__ == "__main__":
