@@ -95,12 +95,19 @@ def main():
     args_parser.add_argument(
         "-o", "--out", help="where to write the files (default: out)", default="out"
     )
+    args_parser.add_argument(
+        "-l",
+        "--library",
+        action="append",
+        dest="libraries",
+        help="the libraries to split (default: [httplib])",
+    )
     args = args_parser.parse_args()
 
+    default_libraries = ["httplib"]
     search_dirs = ["example"]
-    lib_names = ["httplib"]
 
-    for lib_name in lib_names:
+    for lib_name in args.libraries or default_libraries:
         split(lib_name, search_dirs, args.extension, args.out)
 
 
