@@ -3,11 +3,13 @@
 """This script splits httplib.h into .h and .cc parts."""
 
 import os
+import re
 import sys
 
 BORDER = (
     "// ----------------------------------------------------------------------------"
 )
+INLINE_RE = re.compile(r"inline(?! namespace) ")
 
 
 def walk_dir(file_name, directory):
@@ -72,7 +74,7 @@ def split(lib_name, search_dirs=[], extension="cc", out="out"):
                 if is_border_line:
                     in_implementation = not in_implementation
                 elif in_implementation:
-                    fc.write(line.replace("inline ", ""))
+                    fc.write(INLINE_RE.sub("", line))
                 else:
                     fh.write(line)
             fc.write("} // namespace httplib\n")
