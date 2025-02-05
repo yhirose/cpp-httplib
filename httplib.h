@@ -3212,7 +3212,10 @@ inline ssize_t select_read_impl(socket_t sock, socket_t extra_fd, time_t sec,
     pfd_read[1].events = POLLIN;
   }
 
-  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
+  auto timeout =
+      static_cast<int>((WithExtraFD && sec == static_cast<time_t>(-1))
+                           ? -1
+                           : sec * 1000 + usec / 1000);
 
   size_t ret = handle_EINTR([&]() { return poll(pfd_read, nfds, timeout); });
   if (WithExtraFD && ret > 0) {
@@ -3240,12 +3243,15 @@ inline ssize_t select_read_impl(socket_t sock, socket_t extra_fd, time_t sec,
     nfds = static_cast<int>(sock + 1);
   }
 
-  timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
+  timeval tv, *ptv = nullptr;
+  if (!WithExtraFD || sec != static_cast<time_t>(-1)) {
+    tv.tv_sec = static_cast<long>(sec);
+    tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
+    ptv = &tv;
+  }
 
   ssize_t ret =
-      handle_EINTR([&]() { return select(nfds, &fds, nullptr, nullptr, &tv); });
+      handle_EINTR([&]() { return select(nfds, &fds, nullptr, nullptr, ptv); });
   if (WithExtraFD && ret > 0) {
     assert(sock_readable && extra_fd_readable);
     *sock_readable = FD_ISSET(sock, &fds);
