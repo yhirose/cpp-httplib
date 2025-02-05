@@ -20,8 +20,8 @@ def walk_dir(file_name, directory):
             return walk_dir(file_name, os.path.join(root, subdir))
 
 
-def locate_file(file_name, search_dirs):
-    cur_dir = os.path.dirname(sys.argv[0])
+def locate_file(file_name, search_dirs, base_directory=None):
+    cur_dir = base_directory or os.path.dirname(sys.argv[0])
     initial_path = os.path.join(cur_dir, file_name)
 
     if os.path.isfile(initial_path):
@@ -35,10 +35,10 @@ def locate_file(file_name, search_dirs):
     return None
 
 
-def split(lib_name, search_dirs=[], extension="cc", out="out"):
+def split(lib_name, search_dirs=[], extension="cc", out="out", base_directory=None):
     header_name = lib_name + ".h"
     source_name = lib_name + "." + extension
-    in_file = locate_file(header_name, search_dirs)
+    in_file = locate_file(header_name, search_dirs, base_directory)
     if not in_file:
         print("File not found: {}".format(header_name))
         return
@@ -104,13 +104,24 @@ def main():
         dest="libraries",
         help="the libraries to split (default: [httplib])",
     )
+    args_parser.add_argument(
+        "-b",
+        "--base-directory",
+        help="where to look for files (default: <script directory>)",
+    )
     args = args_parser.parse_args()
 
     default_libraries = ["httplib"]
     search_dirs = ["example"]
 
     for lib_name in args.libraries or default_libraries:
-        split(lib_name, search_dirs, args.extension, args.out)
+        split(
+            lib_name,
+            search_dirs,
+            args.extension,
+            args.out,
+            args.base_directory,
+        )
 
 
 if __name__ == "__main__":
