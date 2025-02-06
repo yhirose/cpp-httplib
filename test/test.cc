@@ -6189,7 +6189,7 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
-TEST(SSLClientTest, Issue2004) {
+TEST(SSLClientTest, Issue2004_Online) {
   Client client("https://google.com");
   client.set_follow_location(true);
 
