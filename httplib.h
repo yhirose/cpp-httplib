@@ -5381,10 +5381,14 @@ write_multipart_ranges_data(Stream &strm, const Request &req, Response &res,
 
 inline bool expect_content(const Request &req) {
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
-      req.method == "PRI" || req.method == "DELETE") {
+      req.method == "DELETE") {
     return true;
   }
-  // TODO: check if Content-Length is set
+  if (req.has_header("Content-Length") &&
+      req.get_header_value_u64("Content-Length") > 0) {
+    return true;
+  }
+  if (is_chunked_transfer_encoding(req.headers)) { return true; }
   return false;
 }
 
