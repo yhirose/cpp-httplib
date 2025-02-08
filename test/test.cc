@@ -2977,6 +2977,11 @@ protected:
                res.status = 401;
                res.set_header("WWW-Authenticate", "Basic realm=123456");
              })
+        .Delete("/issue609",
+                [](const httplib::Request &, httplib::Response &res,
+                   const httplib::ContentReader &) {
+                  res.set_content("ok", "text/plain");
+                })
 #if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT)
         .Get("/compress",
              [&](const Request & /*req*/, Response &res) {
@@ -4046,6 +4051,13 @@ TEST_F(ServerTest, Issue1772) {
   auto res = cli_.Get("/issue1772", {{make_range_header({{1000, -1}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+}
+
+TEST_F(ServerTest, Issue609) {
+  auto res = cli_.Delete("/issue609");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(std::string("ok"), res->body);
 }
 
 TEST_F(ServerTest, GetStreamedChunked) {
