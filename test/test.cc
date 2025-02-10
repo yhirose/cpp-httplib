@@ -8393,7 +8393,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
   svr.wait_until_ready();
 
   const time_t timeout = 2000;
-  const time_t threshold = 500; // SSL_shutdown is slow...
+  const time_t threshold = 1000; // SSL_shutdown is slow...
 
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);

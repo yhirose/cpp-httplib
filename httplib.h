@@ -6014,12 +6014,6 @@ inline void calc_actual_timeout(time_t global_timeout_msec,
                                 time_t duration_msec, time_t timeout_sec,
                                 time_t timeout_usec, time_t &actual_timeout_sec,
                                 time_t &actual_timeout_usec) {
-  if (global_timeout_msec <= 0) {
-    actual_timeout_sec = timeout_sec;
-    actual_timeout_usec = timeout_usec;
-    return;
-  }
-
   auto timeout_msec = (timeout_sec * 1000) + (timeout_usec / 1000);
 
   auto actual_timeout_msec =
@@ -6045,6 +6039,10 @@ inline SocketStream::SocketStream(
 inline SocketStream::~SocketStream() = default;
 
 inline bool SocketStream::is_readable() const {
+  if (global_timeout_msec_ <= 0) {
+    return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
+  }
+
   time_t read_timeout_sec;
   time_t read_timeout_usec;
   calc_actual_timeout(global_timeout_msec_, duration(), read_timeout_sec_,
@@ -9190,6 +9188,10 @@ inline SSLSocketStream::SSLSocketStream(
 inline SSLSocketStream::~SSLSocketStream() = default;
 
 inline bool SSLSocketStream::is_readable() const {
+  if (global_timeout_msec_ <= 0) {
+    return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
+  }
+
   time_t read_timeout_sec;
   time_t read_timeout_usec;
   calc_actual_timeout(global_timeout_msec_, duration(), read_timeout_sec_,
