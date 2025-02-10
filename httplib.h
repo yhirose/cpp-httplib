@@ -669,7 +669,7 @@ struct Request {
   bool is_chunked_content_provider_ = false;
   size_t authorization_count_ = 0;
   std::chrono::time_point<std::chrono::steady_clock> start_time_ =
-      std::chrono::steady_clock::now();
+      std::chrono::steady_clock::time_point::min();
 };
 
 struct Response {
@@ -8101,6 +8101,9 @@ inline Result ClientImpl::send_with_content_provider(
   req.headers = headers;
   req.path = path;
   req.progress = progress;
+  if (global_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
 
   auto error = Error::Success;
 
@@ -8283,6 +8286,9 @@ inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
   req.path = path;
   req.headers = headers;
   req.progress = std::move(progress);
+  if (global_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
 
   return send_(std::move(req));
 }
@@ -8348,6 +8354,9 @@ inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
         return content_receiver(data, data_length);
       };
   req.progress = std::move(progress);
+  if (global_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
 
   return send_(std::move(req));
 }
@@ -8393,6 +8402,9 @@ inline Result ClientImpl::Head(const std::string &path,
   req.method = "HEAD";
   req.headers = headers;
   req.path = path;
+  if (global_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
 
   return send_(std::move(req));
 }
@@ -8810,6 +8822,9 @@ inline Result ClientImpl::Delete(const std::string &path,
   req.headers = headers;
   req.path = path;
   req.progress = progress;
+  if (global_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
 
   if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
   req.body.assign(body, content_length);
@@ -8857,6 +8872,9 @@ inline Result ClientImpl::Options(const std::string &path,
   req.method = "OPTIONS";
   req.headers = headers;
   req.path = path;
+  if (global_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
 
   return send_(std::move(req));
 }
@@ -9540,6 +9558,9 @@ inline bool SSLClient::connect_with_proxy(
             Request req2;
             req2.method = "CONNECT";
             req2.path = host_and_port_;
+            if (global_timeout_msec_ > 0) {
+              req2.start_time_ = std::chrono::steady_clock::now();
+            }
             return process_request(strm, req2, proxy_res, false, error);
           })) {
     // Thread-safe to close everything because we are assuming there are no
@@ -9568,6 +9589,9 @@ inline bool SSLClient::connect_with_proxy(
                       req3, auth, 1, detail::random_string(10),
                       proxy_digest_auth_username_, proxy_digest_auth_password_,
                       true));
+                  if (global_timeout_msec_ > 0) {
+                    req3.start_time_ = std::chrono::steady_clock::now();
+                  }
                   return process_request(strm, req3, proxy_res, false, error);
                 })) {
           // Thread-safe to close everything because we are assuming there are
