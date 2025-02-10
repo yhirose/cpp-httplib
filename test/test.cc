@@ -8194,7 +8194,7 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
 }
 #endif
 
-TEST(GlobalTimeoutTest, ContentStream) {
+TEST(MaxTimeoutTest, ContentStream) {
   Server svr;
 
   svr.Get("/stream", [&](const Request &, Response &res) {
@@ -8270,7 +8270,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
   const time_t threshold = 200;
 
   Client cli("localhost", PORT);
-  cli.set_global_timeout(std::chrono::milliseconds(timeout));
+  cli.set_max_timeout(std::chrono::milliseconds(timeout));
 
 
   {
@@ -8320,7 +8320,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(GlobalTimeoutTest, ContentStreamSSL) {
+TEST(MaxTimeoutTest, ContentStreamSSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 
   svr.Get("/stream", [&](const Request &, Response &res) {
@@ -8397,7 +8397,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
 
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
-  cli.set_global_timeout(std::chrono::milliseconds(timeout));
+  cli.set_max_timeout(std::chrono::milliseconds(timeout));
 
   {
     auto start = std::chrono::steady_clock::now();

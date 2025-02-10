@@ -66,8 +66,8 @@
 #define CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_USECOND 0
 #endif
 
-#ifndef CPPHTTPLIB_CLIENT_GLOBAL_TIMEOUT_MSECOND
-#define CPPHTTPLIB_CLIENT_GLOBAL_TIMEOUT_MSECOND 0
+#ifndef CPPHTTPLIB_CLIENT_MAX_TIMEOUT_MSECOND
+#define CPPHTTPLIB_CLIENT_MAX_TIMEOUT_MSECOND 0
 #endif
 
 #ifndef CPPHTTPLIB_IDLE_INTERVAL_SECOND
@@ -1431,9 +1431,9 @@ public:
   template <class Rep, class Period>
   void set_write_timeout(const std::chrono::duration<Rep, Period> &duration);
 
-  void set_global_timeout(time_t msec);
+  void set_max_timeout(time_t msec);
   template <class Rep, class Period>
-  void set_global_timeout(const std::chrono::duration<Rep, Period> &duration);
+  void set_max_timeout(const std::chrono::duration<Rep, Period> &duration);
 
   void set_basic_auth(const std::string &username, const std::string &password);
   void set_bearer_token_auth(const std::string &token);
@@ -1543,7 +1543,7 @@ protected:
   time_t read_timeout_usec_ = CPPHTTPLIB_CLIENT_READ_TIMEOUT_USECOND;
   time_t write_timeout_sec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_SECOND;
   time_t write_timeout_usec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_USECOND;
-  time_t global_timeout_msec_ = CPPHTTPLIB_CLIENT_GLOBAL_TIMEOUT_MSECOND;
+  time_t max_timeout_msec_ = CPPHTTPLIB_CLIENT_MAX_TIMEOUT_MSECOND;
 
   std::string basic_auth_username_;
   std::string basic_auth_password_;
@@ -1868,9 +1868,9 @@ public:
   template <class Rep, class Period>
   void set_write_timeout(const std::chrono::duration<Rep, Period> &duration);
 
-  void set_global_timeout(time_t msec);
+  void set_max_timeout(time_t msec);
   template <class Rep, class Period>
-  void set_global_timeout(const std::chrono::duration<Rep, Period> &duration);
+  void set_max_timeout(const std::chrono::duration<Rep, Period> &duration);
 
   void set_basic_auth(const std::string &username, const std::string &password);
   void set_bearer_token_auth(const std::string &token);
@@ -2261,11 +2261,11 @@ inline void ClientImpl::set_write_timeout(
 }
 
 template <class Rep, class Period>
-inline void ClientImpl::set_global_timeout(
+inline void ClientImpl::set_max_timeout(
     const std::chrono::duration<Rep, Period> &duration) {
   auto msec =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-  set_global_timeout(msec);
+  set_max_timeout(msec);
 }
 
 template <class Rep, class Period>
@@ -2288,8 +2288,8 @@ Client::set_write_timeout(const std::chrono::duration<Rep, Period> &duration) {
 
 template <class Rep, class Period>
 inline void
-Client::set_global_timeout(const std::chrono::duration<Rep, Period> &duration) {
-  cli_->set_global_timeout(duration);
+Client::set_max_timeout(const std::chrono::duration<Rep, Period> &duration) {
+  cli_->set_max_timeout(duration);
 }
 
 /*
@@ -2369,7 +2369,7 @@ void split(const char *b, const char *e, char d, size_t m,
 bool process_client_socket(
     socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
     time_t write_timeout_sec, time_t write_timeout_usec,
-    time_t global_timeout_msec,
+    time_t max_timeout_msec,
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     std::function<bool(Stream &)> callback);
 
@@ -3338,7 +3338,7 @@ class SocketStream final : public Stream {
 public:
   SocketStream(socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
                time_t write_timeout_sec, time_t write_timeout_usec,
-               time_t global_timeout_msec = 0,
+               time_t max_timeout_msec = 0,
                std::chrono::time_point<std::chrono::steady_clock> start_time =
                    std::chrono::steady_clock::time_point::min());
   ~SocketStream() override;
@@ -3358,7 +3358,7 @@ private:
   time_t read_timeout_usec_;
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
-  time_t global_timeout_msec_;
+  time_t max_timeout_msec_;
   const std::chrono::time_point<std::chrono::steady_clock> start_time;
 
   std::vector<char> read_buff_;
@@ -3374,7 +3374,7 @@ public:
   SSLSocketStream(
       socket_t sock, SSL *ssl, time_t read_timeout_sec,
       time_t read_timeout_usec, time_t write_timeout_sec,
-      time_t write_timeout_usec, time_t global_timeout_msec = 0,
+      time_t write_timeout_usec, time_t max_timeout_msec = 0,
       std::chrono::time_point<std::chrono::steady_clock> start_time =
           std::chrono::steady_clock::time_point::min());
   ~SSLSocketStream() override;
@@ -3395,7 +3395,7 @@ private:
   time_t read_timeout_usec_;
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
-  time_t global_timeout_msec_;
+  time_t max_timeout_msec_;
   const std::chrono::time_point<std::chrono::steady_clock> start_time;
 };
 #endif
@@ -3470,11 +3470,11 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
 inline bool process_client_socket(
     socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
     time_t write_timeout_sec, time_t write_timeout_usec,
-    time_t global_timeout_msec,
+    time_t max_timeout_msec,
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     std::function<bool(Stream &)> callback) {
   SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
-                    write_timeout_sec, write_timeout_usec, global_timeout_msec,
+                    write_timeout_sec, write_timeout_usec, max_timeout_msec,
                     start_time);
   return callback(strm);
 }
@@ -6010,14 +6010,14 @@ inline ssize_t Stream::write(const std::string &s) {
 
 namespace detail {
 
-inline void calc_actual_timeout(time_t global_timeout_msec,
+inline void calc_actual_timeout(time_t max_timeout_msec,
                                 time_t duration_msec, time_t timeout_sec,
                                 time_t timeout_usec, time_t &actual_timeout_sec,
                                 time_t &actual_timeout_usec) {
   auto timeout_msec = (timeout_sec * 1000) + (timeout_usec / 1000);
 
   auto actual_timeout_msec =
-      std::min(global_timeout_msec - duration_msec, timeout_msec);
+      std::min(max_timeout_msec - duration_msec, timeout_msec);
 
   actual_timeout_sec = actual_timeout_msec / 1000;
   actual_timeout_usec = (actual_timeout_msec % 1000) * 1000;
@@ -6027,25 +6027,25 @@ inline void calc_actual_timeout(time_t global_timeout_msec,
 inline SocketStream::SocketStream(
     socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
     time_t write_timeout_sec, time_t write_timeout_usec,
-    time_t global_timeout_msec,
+    time_t max_timeout_msec,
     std::chrono::time_point<std::chrono::steady_clock> start_time)
     : sock_(sock), read_timeout_sec_(read_timeout_sec),
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      global_timeout_msec_(global_timeout_msec), start_time(start_time),
+      max_timeout_msec_(max_timeout_msec), start_time(start_time),
       read_buff_(read_buff_size_, 0) {}
 
 inline SocketStream::~SocketStream() = default;
 
 inline bool SocketStream::is_readable() const {
-  if (global_timeout_msec_ <= 0) {
+  if (max_timeout_msec_ <= 0) {
     return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
   }
 
   time_t read_timeout_sec;
   time_t read_timeout_usec;
-  calc_actual_timeout(global_timeout_msec_, duration(), read_timeout_sec_,
+  calc_actual_timeout(max_timeout_msec_, duration(), read_timeout_sec_,
                       read_timeout_usec_, read_timeout_sec, read_timeout_usec);
 
   return select_read(sock_, read_timeout_sec, read_timeout_usec) > 0;
@@ -7457,7 +7457,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   read_timeout_usec_ = rhs.read_timeout_usec_;
   write_timeout_sec_ = rhs.write_timeout_sec_;
   write_timeout_usec_ = rhs.write_timeout_usec_;
-  global_timeout_msec_ = rhs.global_timeout_msec_;
+  max_timeout_msec_ = rhs.max_timeout_msec_;
   basic_auth_username_ = rhs.basic_auth_username_;
   basic_auth_password_ = rhs.basic_auth_password_;
   bearer_token_auth_token_ = rhs.bearer_token_auth_token_;
@@ -8101,7 +8101,7 @@ inline Result ClientImpl::send_with_content_provider(
   req.headers = headers;
   req.path = path;
   req.progress = progress;
-  if (global_timeout_msec_ > 0) {
+  if (max_timeout_msec_ > 0) {
     req.start_time_ = std::chrono::steady_clock::now();
   }
 
@@ -8261,7 +8261,7 @@ inline bool ClientImpl::process_socket(
     std::function<bool(Stream &strm)> callback) {
   return detail::process_client_socket(
       socket.sock, read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_, global_timeout_msec_, start_time,
+      write_timeout_usec_, max_timeout_msec_, start_time,
       std::move(callback));
 }
 
@@ -8286,7 +8286,7 @@ inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
   req.path = path;
   req.headers = headers;
   req.progress = std::move(progress);
-  if (global_timeout_msec_ > 0) {
+  if (max_timeout_msec_ > 0) {
     req.start_time_ = std::chrono::steady_clock::now();
   }
 
@@ -8354,7 +8354,7 @@ inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
         return content_receiver(data, data_length);
       };
   req.progress = std::move(progress);
-  if (global_timeout_msec_ > 0) {
+  if (max_timeout_msec_ > 0) {
     req.start_time_ = std::chrono::steady_clock::now();
   }
 
@@ -8402,7 +8402,7 @@ inline Result ClientImpl::Head(const std::string &path,
   req.method = "HEAD";
   req.headers = headers;
   req.path = path;
-  if (global_timeout_msec_ > 0) {
+  if (max_timeout_msec_ > 0) {
     req.start_time_ = std::chrono::steady_clock::now();
   }
 
@@ -8822,7 +8822,7 @@ inline Result ClientImpl::Delete(const std::string &path,
   req.headers = headers;
   req.path = path;
   req.progress = progress;
-  if (global_timeout_msec_ > 0) {
+  if (max_timeout_msec_ > 0) {
     req.start_time_ = std::chrono::steady_clock::now();
   }
 
@@ -8872,7 +8872,7 @@ inline Result ClientImpl::Options(const std::string &path,
   req.method = "OPTIONS";
   req.headers = headers;
   req.path = path;
-  if (global_timeout_msec_ > 0) {
+  if (max_timeout_msec_ > 0) {
     req.start_time_ = std::chrono::steady_clock::now();
   }
 
@@ -8928,8 +8928,8 @@ inline void ClientImpl::set_write_timeout(time_t sec, time_t usec) {
   write_timeout_usec_ = usec;
 }
 
-inline void ClientImpl::set_global_timeout(time_t msec) {
-  global_timeout_msec_ = msec;
+inline void ClientImpl::set_max_timeout(time_t msec) {
+  max_timeout_msec_ = msec;
 }
 
 inline void ClientImpl::set_basic_auth(const std::string &username,
@@ -9173,11 +9173,11 @@ template <typename T>
 inline bool process_client_socket_ssl(
     SSL *ssl, socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
     time_t write_timeout_sec, time_t write_timeout_usec,
-    time_t global_timeout_msec,
+    time_t max_timeout_msec,
     std::chrono::time_point<std::chrono::steady_clock> start_time, T callback) {
   SSLSocketStream strm(sock, ssl, read_timeout_sec, read_timeout_usec,
                        write_timeout_sec, write_timeout_usec,
-                       global_timeout_msec, start_time);
+                       max_timeout_msec, start_time);
   return callback(strm);
 }
 
@@ -9193,26 +9193,26 @@ public:
 inline SSLSocketStream::SSLSocketStream(
     socket_t sock, SSL *ssl, time_t read_timeout_sec, time_t read_timeout_usec,
     time_t write_timeout_sec, time_t write_timeout_usec,
-    time_t global_timeout_msec,
+    time_t max_timeout_msec,
     std::chrono::time_point<std::chrono::steady_clock> start_time)
     : sock_(sock), ssl_(ssl), read_timeout_sec_(read_timeout_sec),
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      global_timeout_msec_(global_timeout_msec), start_time(start_time) {
+      max_timeout_msec_(max_timeout_msec), start_time(start_time) {
   SSL_clear_mode(ssl, SSL_MODE_AUTO_RETRY);
 }
 
 inline SSLSocketStream::~SSLSocketStream() = default;
 
 inline bool SSLSocketStream::is_readable() const {
-  if (global_timeout_msec_ <= 0) {
+  if (max_timeout_msec_ <= 0) {
     return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
   }
 
   time_t read_timeout_sec;
   time_t read_timeout_usec;
-  calc_actual_timeout(global_timeout_msec_, duration(), read_timeout_sec_,
+  calc_actual_timeout(max_timeout_msec_, duration(), read_timeout_sec_,
                       read_timeout_usec_, read_timeout_sec, read_timeout_usec);
 
   return select_read(sock_, read_timeout_sec, read_timeout_usec) > 0;
@@ -9553,12 +9553,12 @@ inline bool SSLClient::connect_with_proxy(
   Response proxy_res;
   if (!detail::process_client_socket(
           socket.sock, read_timeout_sec_, read_timeout_usec_,
-          write_timeout_sec_, write_timeout_usec_, global_timeout_msec_,
+          write_timeout_sec_, write_timeout_usec_, max_timeout_msec_,
           start_time, [&](Stream &strm) {
             Request req2;
             req2.method = "CONNECT";
             req2.path = host_and_port_;
-            if (global_timeout_msec_ > 0) {
+            if (max_timeout_msec_ > 0) {
               req2.start_time_ = std::chrono::steady_clock::now();
             }
             return process_request(strm, req2, proxy_res, false, error);
@@ -9580,7 +9580,7 @@ inline bool SSLClient::connect_with_proxy(
         proxy_res = Response();
         if (!detail::process_client_socket(
                 socket.sock, read_timeout_sec_, read_timeout_usec_,
-                write_timeout_sec_, write_timeout_usec_, global_timeout_msec_,
+                write_timeout_sec_, write_timeout_usec_, max_timeout_msec_,
                 start_time, [&](Stream &strm) {
                   Request req3;
                   req3.method = "CONNECT";
@@ -9589,7 +9589,7 @@ inline bool SSLClient::connect_with_proxy(
                       req3, auth, 1, detail::random_string(10),
                       proxy_digest_auth_username_, proxy_digest_auth_password_,
                       true));
-                  if (global_timeout_msec_ > 0) {
+                  if (max_timeout_msec_ > 0) {
                     req3.start_time_ = std::chrono::steady_clock::now();
                   }
                   return process_request(strm, req3, proxy_res, false, error);
@@ -9754,7 +9754,7 @@ inline bool SSLClient::process_socket(
   assert(socket.ssl);
   return detail::process_client_socket_ssl(
       socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
-      write_timeout_sec_, write_timeout_usec_, global_timeout_msec_, start_time,
+      write_timeout_sec_, write_timeout_usec_, max_timeout_msec_, start_time,
       std::move(callback));
 }
 
