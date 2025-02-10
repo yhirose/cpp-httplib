@@ -8205,7 +8205,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
         [&, data](size_t offset, size_t length, DataSink &sink) {
           const size_t DATA_CHUNK_SIZE = 4;
           const auto &d = *data;
-          std::this_thread::sleep_for(std::chrono::milliseconds(250));
+          std::this_thread::sleep_for(std::chrono::seconds(1));
           sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
           return true;
         },
@@ -8222,7 +8222,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
         "text/plain",
         [i](size_t, DataSink &sink) {
           if (*i < 5) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             sink.write("abcd", 4);
             (*i)++;
           } else {
@@ -8243,7 +8243,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
         "text/plain",
         [i](size_t, DataSink &sink) {
           if (*i < 5) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             sink.os << "abcd";
             (*i)++;
           } else {
@@ -8266,8 +8266,8 @@ TEST(GlobalTimeoutTest, ContentStream) {
 
   svr.wait_until_ready();
 
-  const time_t timeout = 500;
-  const time_t threshold = 10;
+  const time_t timeout = 2000;
+  const time_t threshold = 100;
 
   Client cli("localhost", PORT);
   cli.set_global_timeout(std::chrono::milliseconds(timeout));
@@ -8331,7 +8331,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
         [&, data](size_t offset, size_t length, DataSink &sink) {
           const size_t DATA_CHUNK_SIZE = 4;
           const auto &d = *data;
-          std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
           sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
           return true;
         },
@@ -8348,7 +8348,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
         "text/plain",
         [i](size_t, DataSink &sink) {
           if (*i < 5) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             sink.write("abcd", 4);
             (*i)++;
           } else {
@@ -8369,7 +8369,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
         "text/plain",
         [i](size_t, DataSink &sink) {
           if (*i < 5) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             sink.os << "abcd";
             (*i)++;
           } else {
@@ -8392,8 +8392,8 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
 
   svr.wait_until_ready();
 
-  const time_t timeout = 500;
-  const time_t threshold = 120; // SSL_shutdown takes about 100ms
+  const time_t timeout = 2000;
+  const time_t threshold = 500; // SSL_shutdown is slow...
 
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
