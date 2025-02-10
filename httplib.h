@@ -3210,60 +3210,43 @@ inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
   });
 }
 
-inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
+template <bool Read>
+inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
 #ifdef CPPHTTPLIB_USE_POLL
-  struct pollfd pfd_read;
-  pfd_read.fd = sock;
-  pfd_read.events = POLLIN;
+  struct pollfd pfd;
+  pfd.fd = sock;
+  pfd.events = (Read ? POLLIN : POLLOUT);
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
+  return handle_EINTR([&]() { return poll(&pfd, 1, timeout); });
 #else
 #ifndef _WIN32
   if (sock >= FD_SETSIZE) { return -1; }
 #endif
 
-  fd_set fds;
+  fd_set fds, *rfds, *wfds;
   FD_ZERO(&fds);
   FD_SET(sock, &fds);
+  rfds = (Read ? &fds : nullptr);
+  wfds = (Read ? nullptr : &fds);
 
   timeval tv;
   tv.tv_sec = static_cast<long>(sec);
   tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
 
   return handle_EINTR([&]() {
-    return select(static_cast<int>(sock + 1), &fds, nullptr, nullptr, &tv);
+    return select(static_cast<int>(sock + 1), rfds, wfds, nullptr, &tv);
   });
 #endif
 }
 
+inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
+  return select_impl<true>(sock, sec, usec);
+}
+
 inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
-#ifdef CPPHTTPLIB_USE_POLL
-  struct pollfd pfd_read;
-  pfd_read.fd = sock;
-  pfd_read.events = POLLOUT;
-
-  auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
-
-  return handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
-#else
-#ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return -1; }
-#endif
-
-  fd_set fds;
-  FD_ZERO(&fds);
-  FD_SET(sock, &fds);
-
-  timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
-
-  return handle_EINTR([&]() {
-    return select(static_cast<int>(sock + 1), nullptr, &fds, nullptr, &tv);
-  });
-#endif
+  return select_impl<false>(sock, sec, usec);
 }
 
 inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
