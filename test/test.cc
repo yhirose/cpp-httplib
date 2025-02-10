@@ -8281,6 +8281,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
+    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8295,6 +8296,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
+    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8312,6 +8314,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
+    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8407,6 +8410,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
+    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8421,6 +8425,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
+    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8438,6 +8443,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
+    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
