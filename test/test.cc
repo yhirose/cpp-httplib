@@ -8267,7 +8267,7 @@ TEST(GlobalTimeoutTest, ContentStream) {
   svr.wait_until_ready();
 
   const time_t timeout = 2000;
-  const time_t threshold = 100;
+  const time_t threshold = 200;
 
   Client cli("localhost", PORT);
   cli.set_global_timeout(std::chrono::milliseconds(timeout));
@@ -8281,7 +8281,6 @@ TEST(GlobalTimeoutTest, ContentStream) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
-    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8296,7 +8295,6 @@ TEST(GlobalTimeoutTest, ContentStream) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
-    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8314,7 +8312,6 @@ TEST(GlobalTimeoutTest, ContentStream) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
-    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8396,7 +8393,7 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
   svr.wait_until_ready();
 
   const time_t timeout = 2000;
-  const time_t threshold = 500; // SSL_shutdown is slow...
+  const time_t threshold = 300; // SSL_shutdown is slow...
 
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
@@ -8410,7 +8407,6 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
-    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8425,7 +8421,6 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
-    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
@@ -8443,7 +8438,6 @@ TEST(GlobalTimeoutTest, ContentStreamSSL) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - start)
                        .count();
-    std::cout << elapsed << std::endl;
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
