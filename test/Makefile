@@ -42,6 +42,9 @@ test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 test_split : test.cc ../httplib.h httplib.cc Makefile cert.pem
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS)
 
+check_abi:
+	@./check-shared-library-abi-compatibility.sh
+
 test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS)
 
