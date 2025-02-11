@@ -23,6 +23,7 @@ test/test.xcodeproj/*/xcuser*
 test/*.o
 test/*.pem
 test/*.srl
+test/_build_*
 work/
 benchmark/server*
 

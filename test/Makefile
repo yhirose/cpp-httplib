@@ -69,5 +69,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -f test test_split test_proxy server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc
+	rm -rf test test_split test_proxy server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build*
 

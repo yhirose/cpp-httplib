@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-CURRENT_COMMIT=$(git rev-parse HEAD)
-PREVIOUS_VERSION=$(git describe --tags --abbrev=0 $CURRENT_COMMIT)
-
-BUILD_DIR=_build_for_is_abi_compatible
+PREVIOUS_VERSION=$(git describe --tags --abbrev=0 master)
+BUILD_DIR=_build_for_abi_compatibility_check
 
 # Make the build directory
 rm -rf $BUILD_DIR
@@ -29,6 +27,7 @@ cd ..
 
 # Build the nearest vesion
 cd old
+
 cmake \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS="-g -Og" \
@@ -44,15 +43,16 @@ cmake --build . --target clean > /dev/null
 cd ..
 
 # Checkout the original commit
-if [ "$CURRENT_COMMIT" = "$(git rev-parse master)" ]; then
-  git checkout -q  master
-else
-  git checkout -q "${CURRENT_COMMIT}"
-fi
+git checkout -q  master
 
 # ABI compatibility check
-../check-abi-compatibility.sh ./old/out/lib/libcpp-httplib.so ./new/out/lib/libcpp-httplib.so
-
-# Clean the build directory
-cd ..
-rm -rf $BUILD_DIR
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  ../check-abi-compatibility.sh ./old/out/lib/libcpp-httplib.so ./new/out/lib/libcpp-httplib.so
+  exit $?
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  ../check-abi-compatibility.sh ./old/out/lib/libcpp-httplib.dylib ./new/out/lib/libcpp-httplib.dylib
+  exit $?
+else
+  echo "Unknown OS..."
+  exit 1
+fi
