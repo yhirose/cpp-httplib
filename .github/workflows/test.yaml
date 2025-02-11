@@ -5,6 +5,7 @@ on: [push, pull_request]
 jobs:
   ubuntu:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -17,6 +18,7 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -27,6 +29,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
     - name: Prepare Git for Checkout on Windows
       run: |
