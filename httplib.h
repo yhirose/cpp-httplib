@@ -7234,18 +7234,18 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 #endif
 #endif
 
-  // Check if the request URI doesn't exceed the limit
-  if (line_reader.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
-    Headers dummy;
-    detail::read_headers(strm, dummy);
-    res.status = StatusCode::UriTooLong_414;
-    return write_response(strm, close_connection, req, res);
-  }
-
   // Request line and headers
   if (!parse_request_line(line_reader.ptr(), req) ||
       !detail::read_headers(strm, req.headers)) {
     res.status = StatusCode::BadRequest_400;
+    return write_response(strm, close_connection, req, res);
+  }
+
+  // Check if the request URI doesn't exceed the limit
+  if (req.target.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+    Headers dummy;
+    detail::read_headers(strm, dummy);
+    res.status = StatusCode::UriTooLong_414;
     return write_response(strm, close_connection, req, res);
   }
 

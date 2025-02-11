@@ -3541,7 +3541,7 @@ TEST_F(ServerTest, LongRequest) {
 
 TEST_F(ServerTest, TooLongRequest) {
   std::string request;
-  for (size_t i = 0; i < 545; i++) {
+  for (size_t i = 0; i < 546; i++) {
     request += "/TooLongRequest";
   }
   request += "_NG";
@@ -3550,6 +3550,17 @@ TEST_F(ServerTest, TooLongRequest) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
+}
+
+TEST_F(ServerTest, AlmostTooLongRequest) {
+  // test for #2046 - URI length check shouldn't include other content on req line
+  // URI is max URI length, minus 14 other chars in req line (GET, space, leading /, space, HTTP/1.1)
+  std::string request = "/" + string(CPPHTTPLIB_REQUEST_URI_MAX_LENGTH - 14, 'A');
+
+  auto res = cli_.Get(request.c_str());
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
 TEST_F(ServerTest, LongHeader) {
