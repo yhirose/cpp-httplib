@@ -193,6 +193,7 @@ using ssize_t = long;
 #endif
 
 using socket_t = SOCKET;
+using socklen_t = int;
 #ifdef CPPHTTPLIB_USE_POLL
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 #endif
@@ -847,6 +848,16 @@ private:
 using Logger = std::function<void(const Request &, const Response &)>;
 
 using SocketOptions = std::function<void(socket_t sock)>;
+
+namespace detail {
+
+bool set_socket_opt_impl(socket_t sock, int level, int optname,
+                         const void *optval, socklen_t optlen);
+bool set_socket_opt(socket_t sock, int level, int optname, int opt);
+bool set_socket_opt_time(socket_t sock, int level, int optname, time_t sec,
+                         time_t usec);
+
+} // namespace detail
 
 void default_socket_options(socket_t sock);
 
@@ -2075,20 +2086,45 @@ inline uint64_t Response::get_header_value_u64(const std::string &key,
   return detail::get_header_value_u64(headers, key, def, id);
 }
 
-inline void default_socket_options(socket_t sock) {
-  int opt = 1;
+namespace detail {
+
+inline bool set_socket_opt_impl(socket_t sock, int level, int optname,
+                                const void *optval, socklen_t optlen) {
+  return setsockopt(sock, level, optname,
 #ifdef _WIN32
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-             reinterpret_cast<const char *>(&opt), sizeof(opt));
+                    reinterpret_cast<const char *>(optval),
 #else
+                    optval,
+#endif
+                    optlen) == 0;
+}
+
+inline bool set_socket_opt(socket_t sock, int level, int optname, int optval) {
+  return set_socket_opt_impl(sock, level, optname, &optval, sizeof(optval));
+}
+
+inline bool set_socket_opt_time(socket_t sock, int level, int optname,
+                                time_t sec, time_t usec) {
+#ifdef _WIN32
+  auto timeout = static_cast<uint32_t>(sec * 1000 + usec / 1000);
+#else
+  timeval timeout;
+  timeout.tv_sec = static_cast<long>(sec);
+  timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>(usec);
+#endif
+  return set_socket_opt_impl(sock, level, optname, &timeout, sizeof(timeout));
+}
+
+} // namespace detail
+
+inline void default_socket_options(socket_t sock) {
+  detail::set_socket_opt(sock, SOL_SOCKET,
 #ifdef SO_REUSEPORT
-  setsockopt(sock, SOL_SOCKET, SO_REUSEPORT,
-             reinterpret_cast<const void *>(&opt), sizeof(opt));
+                         SO_REUSEPORT,
 #else
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-             reinterpret_cast<const void *>(&opt), sizeof(opt));
+                         SO_REUSEADDR,
 #endif
-#endif
+                         1);
 }
 
 inline const char *status_message(int status) {
@@ -3605,26 +3641,10 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     }
 #endif
 
-    if (tcp_nodelay) {
-      auto opt = 1;
-#ifdef _WIN32
-      setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
-                 reinterpret_cast<const char *>(&opt), sizeof(opt));
-#else
-      setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
-                 reinterpret_cast<const void *>(&opt), sizeof(opt));
-#endif
-    }
+    if (tcp_nodelay) { set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1); }
 
     if (rp->ai_family == AF_INET6) {
-      auto opt = ipv6_v6only ? 1 : 0;
-#ifdef _WIN32
-      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
-                 reinterpret_cast<const char *>(&opt), sizeof(opt));
-#else
-      setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
-                 reinterpret_cast<const void *>(&opt), sizeof(opt));
-#endif
+      set_socket_opt(sock, IPPROTO_IPV6, IPV6_V6ONLY, ipv6_v6only ? 1 : 0);
     }
 
     if (socket_options) { socket_options(sock); }
@@ -3767,36 +3787,10 @@ inline socket_t create_client_socket(
         }
 
         set_nonblocking(sock2, false);
-
-        {
-#ifdef _WIN32
-          auto timeout = static_cast<uint32_t>(read_timeout_sec * 1000 +
-                                               read_timeout_usec / 1000);
-          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
-                     reinterpret_cast<const char *>(&timeout), sizeof(timeout));
-#else
-          timeval tv;
-          tv.tv_sec = static_cast<long>(read_timeout_sec);
-          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec);
-          setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO,
-                     reinterpret_cast<const void *>(&tv), sizeof(tv));
-#endif
-        }
-        {
-
-#ifdef _WIN32
-          auto timeout = static_cast<uint32_t>(write_timeout_sec * 1000 +
-                                               write_timeout_usec / 1000);
-          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
-                     reinterpret_cast<const char *>(&timeout), sizeof(timeout));
-#else
-          timeval tv;
-          tv.tv_sec = static_cast<long>(write_timeout_sec);
-          tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec);
-          setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO,
-                     reinterpret_cast<const void *>(&tv), sizeof(tv));
-#endif
-        }
+        set_socket_opt_time(sock2, SOL_SOCKET, SO_RCVTIMEO, read_timeout_sec,
+                            read_timeout_usec);
+        set_socket_opt_time(sock2, SOL_SOCKET, SO_SNDTIMEO, write_timeout_sec,
+                            write_timeout_usec);
 
         error = Error::Success;
         return true;
@@ -6946,35 +6940,10 @@ inline bool Server::listen_internal() {
         break;
       }
 
-      {
-#ifdef _WIN32
-        auto timeout = static_cast<uint32_t>(read_timeout_sec_ * 1000 +
-                                             read_timeout_usec_ / 1000);
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-                   reinterpret_cast<const char *>(&timeout), sizeof(timeout));
-#else
-        timeval tv;
-        tv.tv_sec = static_cast<long>(read_timeout_sec_);
-        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(read_timeout_usec_);
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-                   reinterpret_cast<const void *>(&tv), sizeof(tv));
-#endif
-      }
-      {
-
-#ifdef _WIN32
-        auto timeout = static_cast<uint32_t>(write_timeout_sec_ * 1000 +
-                                             write_timeout_usec_ / 1000);
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
-                   reinterpret_cast<const char *>(&timeout), sizeof(timeout));
-#else
-        timeval tv;
-        tv.tv_sec = static_cast<long>(write_timeout_sec_);
-        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(write_timeout_usec_);
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
-                   reinterpret_cast<const void *>(&tv), sizeof(tv));
-#endif
-      }
+      detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO,
+                                  read_timeout_sec_, read_timeout_usec_);
+      detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
+                                  write_timeout_sec_, write_timeout_usec_);
 
       if (!task_queue->enqueue(
               [this, sock]() { process_and_close_socket(sock); })) {
@@ -9097,11 +9066,7 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
     (void)(sock);
     SSL_shutdown(ssl);
 #else
-    timeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-               reinterpret_cast<const void *>(&tv), sizeof(tv));
+    detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 1, 0);
 
     auto ret = SSL_shutdown(ssl);
     while (ret == 0) {
