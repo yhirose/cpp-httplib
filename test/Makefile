@@ -28,6 +28,11 @@ TEST_ARGS = gtest/gtest-all.cc gtest/gtest_main.cc $(OPENSSL_SUPPORT) $(ZLIB_SUP
 # OSS-Fuzz will define its own value for LIB_FUZZING_ENGINE.
 LIB_FUZZING_ENGINE ?= standalone_fuzz_target_runner.o
 
+CLANG_FORMAT = clang-format
+REALPATH = $(shell which grealpath 2>/dev/null || which realpath 2>/dev/null)
+STYLE_CHECK_FILES = $(filter-out httplib.h httplib.cc, \
+	$(wildcard fuzzing/*.h fuzzing/*.cc *.h *.cc ../httplib.h))
+
 all : test test_split
 	./test
 
@@ -44,6 +49,28 @@ test_split : test.cc ../httplib.h httplib.cc Makefile cert.pem
 
 check_abi:
 	@./check-shared-library-abi-compatibility.sh
+
+.PHONY: style_check
+style_check: $(STYLE_CHECK_FILES)
+	@for file in $(STYLE_CHECK_FILES); do \
+		$(CLANG_FORMAT) $$file > $$file.formatted; \
+		if ! diff -u $$file $$file.formatted; then \
+			file2=$$($(REALPATH) --relative-to=.. $$file); \
+			printf "\n%*s\n" 80 | tr ' ' '#'; \
+			printf "##%*s##\n" 76; \
+			printf "##   %-70s   ##\n" "$$file2 not properly formatted. Please run clang-format."; \
+			printf "##%*s##\n" 76; \
+			printf "%*s\n\n" 80 | tr ' ' '#'; \
+			failed=1; \
+		fi; \
+		rm -f $$file.formatted; \
+	done; \
+	if [ -n "$$failed" ]; then \
+		echo "Style check failed for one or more files. See above for details."; \
+		false; \
+	else \
+		echo "All files are properly formatted."; \
+	fi
 
 test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS)

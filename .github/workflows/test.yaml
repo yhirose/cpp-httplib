@@ -3,6 +3,18 @@ name: test
 on: [push, pull_request]
 
 jobs:
+  style-check:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    continue-on-error: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: run style check
+        run: |
+          clang-format --version
+          cd test && make style_check
+
   ubuntu:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
