@@ -1,6 +1,15 @@
 name: test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      gtest_filter:
+        description: 'Google Test filter'
+
+env:
+  GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
 
 jobs:
   ubuntu:
