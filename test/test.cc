@@ -8295,7 +8295,8 @@ TEST(MaxTimeoutTest, ContentStream) {
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold);
+    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
+        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
   }
 
   {
@@ -8309,7 +8310,8 @@ TEST(MaxTimeoutTest, ContentStream) {
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold);
+    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
+        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
   }
 
   {
@@ -8326,7 +8328,8 @@ TEST(MaxTimeoutTest, ContentStream) {
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold);
+    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
+        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
   }
 }
 
@@ -8421,7 +8424,8 @@ TEST(MaxTimeoutTest, ContentStreamSSL) {
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold);
+    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
+        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
   }
 
   {
@@ -8435,7 +8439,8 @@ TEST(MaxTimeoutTest, ContentStreamSSL) {
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold);
+    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
+        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
   }
 
   {
@@ -8452,7 +8457,8 @@ TEST(MaxTimeoutTest, ContentStreamSSL) {
 
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold);
+    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
+        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
   }
 }
 #endif
