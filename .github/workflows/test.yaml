@@ -8,15 +8,15 @@ on:
       gtest_filter:
         description: 'Google Test filter'
       test_linux:
-        description: 'Test Linux'
+        description: 'Test on Linux'
         type: boolean
         default: true
       test_macos:
-        description: 'Test MacOS'
+        description: 'Test on MacOS'
         type: boolean
         default: true
       test_windows:
-        description: 'Test Windows'
+        description: 'Test on Windows'
         type: boolean
         default: true
 
