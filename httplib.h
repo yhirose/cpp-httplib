@@ -9062,18 +9062,13 @@ inline void ssl_delete(std::mutex &ctx_mutex, SSL *ssl, socket_t sock,
   // Note that it is not always possible to avoid SIGPIPE, this is merely a
   // best-efforts.
   if (shutdown_gracefully) {
-#ifdef _WIN32
     (void)(sock);
-    SSL_shutdown(ssl);
-#else
-    detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 1, 0);
-
-    auto ret = SSL_shutdown(ssl);
-    while (ret == 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds{100});
-      ret = SSL_shutdown(ssl);
+    // SSL_shutdown() returns 0 on first call (indicating close_notify alert
+    // sent) and 1 on subsequent call (indicating close_notify alert received)
+    if (SSL_shutdown(ssl) == 0) {
+      // Expected to return 1, but even if it doesn't, we free ssl
+      SSL_shutdown(ssl);
     }
-#endif
   }
 
   std::lock_guard<std::mutex> guard(ctx_mutex);
