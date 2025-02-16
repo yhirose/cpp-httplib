@@ -670,7 +670,7 @@ struct Request {
   bool is_chunked_content_provider_ = false;
   size_t authorization_count_ = 0;
   std::chrono::time_point<std::chrono::steady_clock> start_time_ =
-      std::chrono::steady_clock::time_point::min();
+      (std::chrono::steady_clock::time_point::min)();
 };
 
 struct Response {
@@ -3359,7 +3359,7 @@ public:
                time_t write_timeout_sec, time_t write_timeout_usec,
                time_t max_timeout_msec = 0,
                std::chrono::time_point<std::chrono::steady_clock> start_time =
-                   std::chrono::steady_clock::time_point::min());
+                   (std::chrono::steady_clock::time_point::min)());
   ~SocketStream() override;
 
   bool is_readable() const override;
@@ -3395,7 +3395,7 @@ public:
       time_t read_timeout_usec, time_t write_timeout_sec,
       time_t write_timeout_usec, time_t max_timeout_msec = 0,
       std::chrono::time_point<std::chrono::steady_clock> start_time =
-          std::chrono::steady_clock::time_point::min());
+          (std::chrono::steady_clock::time_point::min)());
   ~SSLSocketStream() override;
 
   bool is_readable() const override;
@@ -5994,7 +5994,7 @@ inline void calc_actual_timeout(time_t max_timeout_msec,
   auto timeout_msec = (timeout_sec * 1000) + (timeout_usec / 1000);
 
   auto actual_timeout_msec =
-      std::min(max_timeout_msec - duration_msec, timeout_msec);
+      (std::min)(max_timeout_msec - duration_msec, timeout_msec);
 
   actual_timeout_sec = actual_timeout_msec / 1000;
   actual_timeout_usec = (actual_timeout_msec % 1000) * 1000;
