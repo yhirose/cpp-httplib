@@ -435,6 +435,12 @@ private:
 
 } // namespace detail
 
+enum SSLVerifierResponse {
+  Verified, // connection certificate is verified and accepted
+  CheckAgain, // use the built-in certificate checker again
+  Declined // connection certificate was process but is declined
+};
+
 enum StatusCode {
   // Information responses
   Continue_100 = 100,
@@ -1483,7 +1489,7 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
-  void set_server_certificate_verifier(std::function<bool(SSL *ssl)> verifier);
+  void set_server_certificate_verifier(std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
 
   void set_logger(Logger logger);
@@ -1600,7 +1606,7 @@ protected:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   bool server_certificate_verification_ = true;
   bool server_hostname_verification_ = true;
-  std::function<bool(SSL *ssl)> server_certificate_verifier_;
+  std::function<SSLVerifierResponse(SSL *ssl)> server_certificate_verifier_;
 #endif
 
   Logger logger_;
@@ -1913,7 +1919,7 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
-  void set_server_certificate_verifier(std::function<bool(SSL *ssl)> verifier);
+  void set_server_certificate_verifier(std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
 
   void set_logger(Logger logger);
@@ -9009,7 +9015,7 @@ inline void ClientImpl::enable_server_hostname_verification(bool enabled) {
 }
 
 inline void ClientImpl::set_server_certificate_verifier(
-    std::function<bool(SSL *ssl)> verifier) {
+    std::function<SSLVerifierResponse(SSL *ssl)> verifier) {
   server_certificate_verifier_ = verifier;
 }
 #endif
@@ -9623,12 +9629,20 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         }
 
         if (server_certificate_verification_) {
-          if (server_certificate_verifier_) {
-            if (!server_certificate_verifier_(ssl2)) {
-              error = Error::SSLServerVerification;
-              return false;
-            }
-          } else {
+          // set default status to CheckAgain
+          SSLVerifierResponse verificationStatus = SSLVerifierResponse::CheckAgain;
+
+          if (server_certificate_verifier_) 
+            verificationStatus = server_certificate_verifier_(ssl2);
+
+          if (verificationStatus == SSLVerifierResponse::Declined) 
+          {
+            error = Error::SSLServerVerification;
+            return false;
+          }
+
+          if (verificationStatus == SSLVerifierResponse::CheckAgain)
+          {
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
@@ -10389,7 +10403,7 @@ inline void Client::enable_server_hostname_verification(bool enabled) {
 }
 
 inline void Client::set_server_certificate_verifier(
-    std::function<bool(SSL *ssl)> verifier) {
+    std::function<SSLVerifierResponse(SSL *ssl)> verifier) {
   cli_->set_server_certificate_verifier(verifier);
 }
 #endif
