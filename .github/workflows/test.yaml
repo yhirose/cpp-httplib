@@ -7,6 +7,18 @@ on:
     inputs:
       gtest_filter:
         description: 'Google Test filter'
+      test_linux:
+        description: 'Test Linux'
+        type: boolean
+        default: true
+      test_macos:
+        description: 'Test MacOS'
+        type: boolean
+        default: true
+      test_windows:
+        description: 'Test Windows'
+        type: boolean
+        default: true
 
 env:
   GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
@@ -14,7 +26,11 @@ env:
 jobs:
   ubuntu:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -27,7 +43,11 @@ jobs:
 
   macos:
     runs-on: macos-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -38,7 +58,11 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_windows == 'true')
     steps:
     - name: Prepare Git for Checkout on Windows
       run: |
