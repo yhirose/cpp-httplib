@@ -26,7 +26,7 @@ endif()
 
 find_package(CURL REQUIRED)
 
-add_executable(httplib-test test.cc)
+add_executable(httplib-test test.cc include_httplib.cc $<$<BOOL:${WIN32}>:include_windows_h.cc>)
 target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/bigobj>")
 target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main CURL::libcurl)
 gtest_discover_tests(httplib-test)
