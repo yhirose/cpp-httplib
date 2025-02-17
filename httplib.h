@@ -9634,20 +9634,20 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         }
 
         if (server_certificate_verification_) {
-          auto verification_status_ =
+          auto verification_status =
               SSLVerifierResponse::NoDecisionMade;
 
           if (server_certificate_verifier_) {
-            verification_status_ = server_certificate_verifier_(ssl2);
+            verification_status = server_certificate_verifier_(ssl2);
           }
 
-          if (verification_status_ ==
+          if (verification_status ==
               SSLVerifierResponse::CertificateRejected) {
             error = Error::SSLServerVerification;
             return false;
           }
 
-          if (verification_status_ == SSLVerifierResponse::NoDecisionMade) {
+          if (verification_status == SSLVerifierResponse::NoDecisionMade) {
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
