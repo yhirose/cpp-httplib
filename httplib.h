@@ -9735,8 +9735,8 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
 
   auto type = GEN_DNS;
 
-  struct in6_addr addr6{};
-  struct in_addr addr{};
+  struct in6_addr addr6 = {};
+  struct in_addr addr = {};
   size_t addr_len = 0;
 
 #ifndef __MINGW32__
