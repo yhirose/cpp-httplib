@@ -436,9 +436,9 @@ private:
 } // namespace detail
 
 enum SSLVerifierResponse {
-  Verified, // connection certificate is verified and accepted
-  CheckAgain, // use the built-in certificate checker again
-  Declined // connection certificate was process but is declined
+  NoDecisionMade, // no decision has been made, use the built-in certificate verifier
+  CertificateAccepted, // connection certificate is verified and accepted
+  CertificateRejected // connection certificate was processed but is rejected
 };
 
 enum StatusCode {
@@ -9630,18 +9630,20 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 
         if (server_certificate_verification_) {
           // set default status to CheckAgain
-          SSLVerifierResponse verificationStatus = SSLVerifierResponse::CheckAgain;
+          SSLVerifierResponse verification_status_ = SSLVerifierResponse::NoDecisionMade;
 
           if (server_certificate_verifier_) 
-            verificationStatus = server_certificate_verifier_(ssl2);
+          {
+            verification_status_ = server_certificate_verifier_(ssl2);
+          }
 
-          if (verificationStatus == SSLVerifierResponse::Declined) 
+          if (verification_status_ == SSLVerifierResponse::CertificateRejected) 
           {
             error = Error::SSLServerVerification;
             return false;
           }
 
-          if (verificationStatus == SSLVerifierResponse::CheckAgain)
+          if (verification_status_ == SSLVerifierResponse::NoDecisionMade)
           {
             verify_result_ = SSL_get_verify_result(ssl2);
 
