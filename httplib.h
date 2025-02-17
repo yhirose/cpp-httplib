@@ -5987,9 +5987,9 @@ inline ssize_t Stream::write(const std::string &s) {
 
 namespace detail {
 
-inline void calc_actual_timeout(time_t max_timeout_msec,
-                                time_t duration_msec, time_t timeout_sec,
-                                time_t timeout_usec, time_t &actual_timeout_sec,
+inline void calc_actual_timeout(time_t max_timeout_msec, time_t duration_msec,
+                                time_t timeout_sec, time_t timeout_usec,
+                                time_t &actual_timeout_sec,
                                 time_t &actual_timeout_usec) {
   auto timeout_msec = (timeout_sec * 1000) + (timeout_usec / 1000);
 
@@ -8213,8 +8213,7 @@ inline bool ClientImpl::process_socket(
     std::function<bool(Stream &strm)> callback) {
   return detail::process_client_socket(
       socket.sock, read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_, max_timeout_msec_, start_time,
-      std::move(callback));
+      write_timeout_usec_, max_timeout_msec_, start_time, std::move(callback));
 }
 
 inline bool ClientImpl::is_ssl() const { return false; }
@@ -9119,8 +9118,8 @@ inline bool process_client_socket_ssl(
     time_t max_timeout_msec,
     std::chrono::time_point<std::chrono::steady_clock> start_time, T callback) {
   SSLSocketStream strm(sock, ssl, read_timeout_sec, read_timeout_usec,
-                       write_timeout_sec, write_timeout_usec,
-                       max_timeout_msec, start_time);
+                       write_timeout_sec, write_timeout_usec, max_timeout_msec,
+                       start_time);
   return callback(strm);
 }
 

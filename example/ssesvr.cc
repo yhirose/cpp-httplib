@@ -12,8 +12,7 @@ using namespace std;
 
 class EventDispatcher {
 public:
-  EventDispatcher() {
-  }
+  EventDispatcher() {}
 
   void wait_event(DataSink *sink) {
     unique_lock<mutex> lk(m_);

@@ -3553,9 +3553,11 @@ TEST_F(ServerTest, TooLongRequest) {
 }
 
 TEST_F(ServerTest, AlmostTooLongRequest) {
-  // test for #2046 - URI length check shouldn't include other content on req line
-  // URI is max URI length, minus 14 other chars in req line (GET, space, leading /, space, HTTP/1.1)
-  std::string request = "/" + string(CPPHTTPLIB_REQUEST_URI_MAX_LENGTH - 14, 'A');
+  // test for #2046 - URI length check shouldn't include other content on req
+  // line URI is max URI length, minus 14 other chars in req line (GET, space,
+  // leading /, space, HTTP/1.1)
+  std::string request =
+      "/" + string(CPPHTTPLIB_REQUEST_URI_MAX_LENGTH - 14, 'A');
 
   auto res = cli_.Get(request.c_str());
 
@@ -8283,7 +8285,6 @@ TEST(MaxTimeoutTest, ContentStream) {
   Client cli("localhost", PORT);
   cli.set_max_timeout(std::chrono::milliseconds(timeout));
 
-
   {
     auto start = std::chrono::steady_clock::now();
 
@@ -8345,7 +8346,7 @@ TEST(MaxTimeoutTest, ContentStreamSSL) {
         [&, data](size_t offset, size_t length, DataSink &sink) {
           const size_t DATA_CHUNK_SIZE = 4;
           const auto &d = *data;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+          std::this_thread::sleep_for(std::chrono::seconds(1));
           sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
           return true;
         },
