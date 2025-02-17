@@ -436,9 +436,12 @@ private:
 } // namespace detail
 
 enum SSLVerifierResponse {
-  NoDecisionMade, // no decision has been made, use the built-in certificate verifier
-  CertificateAccepted, // connection certificate is verified and accepted
-  CertificateRejected // connection certificate was processed but is rejected
+  // no decision has been made, use the built-in certificate verifier
+  NoDecisionMade,
+  // connection certificate is verified and accepted
+  CertificateAccepted,
+  // connection certificate was processed but is rejected
+  CertificateRejected
 };
 
 enum StatusCode {
@@ -1489,7 +1492,8 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
-  void set_server_certificate_verifier(std::function<SSLVerifierResponse(SSL *ssl)> verifier);
+  void set_server_certificate_verifier(
+      std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
 
   void set_logger(Logger logger);
@@ -1919,7 +1923,8 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
-  void set_server_certificate_verifier(std::function<SSLVerifierResponse(SSL *ssl)> verifier);
+  void set_server_certificate_verifier(
+      std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
 
   void set_logger(Logger logger);
@@ -9629,21 +9634,20 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         }
 
         if (server_certificate_verification_) {
-          SSLVerifierResponse verification_status_ = SSLVerifierResponse::NoDecisionMade;
+          SSLVerifierResponse verification_status_ =
+              SSLVerifierResponse::NoDecisionMade;
 
-          if (server_certificate_verifier_) 
-          {
+          if (server_certificate_verifier_) {
             verification_status_ = server_certificate_verifier_(ssl2);
           }
 
-          if (verification_status_ == SSLVerifierResponse::CertificateRejected) 
-          {
+          if (verification_status_ ==
+              SSLVerifierResponse::CertificateRejected) {
             error = Error::SSLServerVerification;
             return false;
           }
 
-          if (verification_status_ == SSLVerifierResponse::NoDecisionMade)
-          {
+          if (verification_status_ == SSLVerifierResponse::NoDecisionMade) {
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
