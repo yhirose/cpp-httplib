@@ -9640,8 +9640,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             verification_status = server_certificate_verifier_(ssl2);
           }
 
-          if (verification_status ==
-              SSLVerifierResponse::CertificateRejected) {
+          if (verification_status == SSLVerifierResponse::CertificateRejected) {
             error = Error::SSLServerVerification;
             return false;
           }
