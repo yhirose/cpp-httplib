@@ -9634,8 +9634,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         }
 
         if (server_certificate_verification_) {
-          auto verification_status =
-              SSLVerifierResponse::NoDecisionMade;
+          auto verification_status = SSLVerifierResponse::NoDecisionMade;
 
           if (server_certificate_verifier_) {
             verification_status = server_certificate_verifier_(ssl2);
