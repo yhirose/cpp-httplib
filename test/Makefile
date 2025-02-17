@@ -31,7 +31,7 @@ LIB_FUZZING_ENGINE ?= standalone_fuzz_target_runner.o
 CLANG_FORMAT = clang-format
 REALPATH = $(shell which grealpath 2>/dev/null || which realpath 2>/dev/null)
 STYLE_CHECK_FILES = $(filter-out httplib.h httplib.cc, \
-	$(wildcard fuzzing/*.h fuzzing/*.cc *.h *.cc ../httplib.h))
+	$(wildcard example/*.h example/*.cc fuzzing/*.h fuzzing/*.cc *.h *.cc ../httplib.h))
 
 all : test test_split
 	./test
