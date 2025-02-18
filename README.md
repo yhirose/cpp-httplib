@@ -406,11 +406,11 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 
 ```cpp
 svr.Get("/content", [&](const Request &req, Response &res) {
-  res.set_file_content("./path/to/conent.html");
+  res.set_file_content("./path/to/content.html");
 });
 
 svr.Get("/content", [&](const Request &req, Response &res) {
-  res.set_file_content("./path/to/conent", "text/html");
+  res.set_file_content("./path/to/content", "text/html");
 });
 ```
 
@@ -843,7 +843,7 @@ Please see https://github.com/google/brotli for more detail.
 
 ### Default `Accept-Encoding` value
 
-The default `Acdcept-Encoding` value contains all possible compression types. So, the following two examples are same.
+The default `Accept-Encoding` value contains all possible compression types. So, the following two examples are same.
 
 ```c++
 res = cli.Get("/resource/foo");

@@ -894,7 +894,7 @@ public:
  * Captures parameters in request path and stores them in Request::path_params
  *
  * Capture name is a substring of a pattern from : to /.
- * The rest of the pattern is matched agains the request path directly
+ * The rest of the pattern is matched against the request path directly
  * Parameters are captured starting from the next character after
  * the end of the last matched static pattern fragment until the next /.
  *
@@ -1124,7 +1124,7 @@ private:
   virtual bool process_and_close_socket(socket_t sock);
 
   std::atomic<bool> is_running_{false};
-  std::atomic<bool> is_decommisioned{false};
+  std::atomic<bool> is_decommissioned{false};
 
   struct MountPointEntry {
     std::string mount_point;
@@ -2586,7 +2586,7 @@ private:
   char *fixed_buffer_;
   const size_t fixed_buffer_size_;
   size_t fixed_buffer_used_size_ = 0;
-  std::string glowable_buffer_;
+  std::string growable_buffer_;
 };
 
 class mmap {
@@ -3022,18 +3022,18 @@ inline stream_line_reader::stream_line_reader(Stream &strm, char *fixed_buffer,
       fixed_buffer_size_(fixed_buffer_size) {}
 
 inline const char *stream_line_reader::ptr() const {
-  if (glowable_buffer_.empty()) {
+  if (growable_buffer_.empty()) {
     return fixed_buffer_;
   } else {
-    return glowable_buffer_.data();
+    return growable_buffer_.data();
   }
 }
 
 inline size_t stream_line_reader::size() const {
-  if (glowable_buffer_.empty()) {
+  if (growable_buffer_.empty()) {
     return fixed_buffer_used_size_;
   } else {
-    return glowable_buffer_.size();
+    return growable_buffer_.size();
   }
 }
 
@@ -3044,7 +3044,7 @@ inline bool stream_line_reader::end_with_crlf() const {
 
 inline bool stream_line_reader::getline() {
   fixed_buffer_used_size_ = 0;
-  glowable_buffer_.clear();
+  growable_buffer_.clear();
 
 #ifndef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
   char prev_byte = 0;
@@ -3082,11 +3082,11 @@ inline void stream_line_reader::append(char c) {
     fixed_buffer_[fixed_buffer_used_size_++] = c;
     fixed_buffer_[fixed_buffer_used_size_] = '\0';
   } else {
-    if (glowable_buffer_.empty()) {
+    if (growable_buffer_.empty()) {
       assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
-      glowable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
+      growable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
     }
-    glowable_buffer_ += c;
+    growable_buffer_ += c;
   }
 }
 
@@ -4259,10 +4259,6 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     if (!key_len) { return false; }
 
     auto key = std::string(beg, key_end);
-    // auto val = (case_ignore::equal(key, "Location") ||
-    //             case_ignore::equal(key, "Referer"))
-    //                ? std::string(p, end)
-    //                : decode_url(std::string(p, end), false);
     auto val = std::string(p, end);
 
     if (!detail::fields::is_field_value(val)) { return false; }
@@ -4401,7 +4397,7 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
   assert(chunk_len == 0);
 
-  // NOTE: In RFC 9112, '7.1 Chunked Transfer Coding' mentiones "The chunked
+  // NOTE: In RFC 9112, '7.1 Chunked Transfer Coding' mentions "The chunked
   // transfer coding is complete when a chunk with a chunk-size of zero is
   // received, possibly followed by a trailer section, and finally terminated by
   // an empty line". https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1
@@ -4411,8 +4407,8 @@ inline bool read_content_chunked(Stream &strm, T &x,
   // to be ok whether the final CRLF exists or not in the chunked data.
   // https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1.3
   //
-  // According to the reference code in RFC 9112, cpp-htpplib now allows
-  // chuncked transfer coding data without the final CRLF.
+  // According to the reference code in RFC 9112, cpp-httplib now allows
+  // chunked transfer coding data without the final CRLF.
   if (!line_reader.getline()) { return true; }
 
   while (strcmp(line_reader.ptr(), "\r\n") != 0) {
@@ -5002,7 +4998,7 @@ public:
 
               it = params.find("filename*");
               if (it != params.end()) {
-                // Only allow UTF-8 enconnding...
+                // Only allow UTF-8 encoding...
                 static const std::regex re_rfc5987_encoding(
                     R"~(^UTF-8''(.+?)$)~", std::regex_constants::icase);
 
@@ -5249,7 +5245,7 @@ serialize_multipart_formdata(const MultipartFormDataItems &items,
 
 inline bool range_error(Request &req, Response &res) {
   if (!req.ranges.empty() && 200 <= res.status && res.status < 300) {
-    ssize_t contant_len = static_cast<ssize_t>(
+    ssize_t content_len = static_cast<ssize_t>(
         res.content_length_ ? res.content_length_ : res.body.size());
 
     ssize_t prev_first_pos = -1;
@@ -5269,12 +5265,12 @@ inline bool range_error(Request &req, Response &res) {
 
       if (first_pos == -1 && last_pos == -1) {
         first_pos = 0;
-        last_pos = contant_len;
+        last_pos = content_len;
       }
 
       if (first_pos == -1) {
-        first_pos = contant_len - last_pos;
-        last_pos = contant_len - 1;
+        first_pos = content_len - last_pos;
+        last_pos = content_len - 1;
       }
 
       // NOTE: RFC-9110 '14.1.2. Byte Ranges':
@@ -5286,13 +5282,13 @@ inline bool range_error(Request &req, Response &res) {
       // with a value that is one less than the current length of the selected
       // representation).
       // https://www.rfc-editor.org/rfc/rfc9110.html#section-14.1.2-6
-      if (last_pos == -1 || last_pos >= contant_len) {
-        last_pos = contant_len - 1;
+      if (last_pos == -1 || last_pos >= content_len) {
+        last_pos = content_len - 1;
       }
 
       // Range must be within content length
       if (!(0 <= first_pos && first_pos <= last_pos &&
-            last_pos <= contant_len - 1)) {
+            last_pos <= content_len - 1)) {
         return true;
       }
 
@@ -6486,12 +6482,12 @@ inline Server &Server::set_payload_max_length(size_t length) {
 inline bool Server::bind_to_port(const std::string &host, int port,
                                  int socket_flags) {
   auto ret = bind_internal(host, port, socket_flags);
-  if (ret == -1) { is_decommisioned = true; }
+  if (ret == -1) { is_decommissioned = true; }
   return ret >= 0;
 }
 inline int Server::bind_to_any_port(const std::string &host, int socket_flags) {
   auto ret = bind_internal(host, 0, socket_flags);
-  if (ret == -1) { is_decommisioned = true; }
+  if (ret == -1) { is_decommissioned = true; }
   return ret;
 }
 
@@ -6505,7 +6501,7 @@ inline bool Server::listen(const std::string &host, int port,
 inline bool Server::is_running() const { return is_running_; }
 
 inline void Server::wait_until_ready() const {
-  while (!is_running_ && !is_decommisioned) {
+  while (!is_running_ && !is_decommissioned) {
     std::this_thread::sleep_for(std::chrono::milliseconds{1});
   }
 }
@@ -6517,10 +6513,10 @@ inline void Server::stop() {
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
-  is_decommisioned = false;
+  is_decommissioned = false;
 }
 
-inline void Server::decommission() { is_decommisioned = true; }
+inline void Server::decommission() { is_decommissioned = true; }
 
 inline bool Server::parse_request_line(const char *s, Request &req) const {
   auto len = strlen(s);
@@ -6879,7 +6875,7 @@ Server::create_server_socket(const std::string &host, int port,
 
 inline int Server::bind_internal(const std::string &host, int port,
                                  int socket_flags) {
-  if (is_decommisioned) { return -1; }
+  if (is_decommissioned) { return -1; }
 
   if (!is_valid()) { return -1; }
 
@@ -6906,7 +6902,7 @@ inline int Server::bind_internal(const std::string &host, int port,
 }
 
 inline bool Server::listen_internal() {
-  if (is_decommisioned) { return false; }
+  if (is_decommissioned) { return false; }
 
   auto ret = true;
   is_running_ = true;
@@ -6930,7 +6926,7 @@ inline bool Server::listen_internal() {
 #endif
 
 #if defined _WIN32
-      // sockets conneced via WASAccept inherit flags NO_HANDLE_INHERIT,
+      // sockets connected via WASAccept inherit flags NO_HANDLE_INHERIT,
       // OVERLAPPED
       socket_t sock = WSAAccept(svr_sock_, nullptr, nullptr, nullptr, 0);
 #elif defined SOCK_CLOEXEC
@@ -6972,7 +6968,7 @@ inline bool Server::listen_internal() {
     task_queue->shutdown();
   }
 
-  is_decommisioned = !ret;
+  is_decommissioned = !ret;
   return ret;
 }
 
@@ -7594,7 +7590,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 #endif
 
       if (!is_alive) {
-        // Attempt to avoid sigpipe by shutting down nongracefully if it seems
+        // Attempt to avoid sigpipe by shutting down non-gracefully if it seems
         // like the other side has already closed the connection Also, there
         // cannot be any requests in flight from other threads since we locked
         // request_mutex_, so safe to close everything immediately
