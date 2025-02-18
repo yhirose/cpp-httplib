@@ -884,7 +884,7 @@ Unix Domain Socket support is available on Linux and macOS.
 
 ```c++
 // Server
-httplib::Server svr("./my-socket.sock");
+httplib::Server svr;
 svr.set_address_family(AF_UNIX).listen("./my-socket.sock", 80);
 
 // Client
