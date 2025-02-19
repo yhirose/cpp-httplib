@@ -41,7 +41,7 @@ std::string log(auto &req, auto &res) {
   auto http_referer = "-"; // TODO:
   auto http_user_agent = req.get_header_value("User-Agent", "-");
 
-  // NOTE: From NGINX defualt access log format
+  // NOTE: From NGINX default access log format
   // log_format combined '$remote_addr - $remote_user [$time_local] '
   //                     '"$request" $status $body_bytes_sent '
   //                     '"$http_referer" "$http_user_agent"';
