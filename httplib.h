@@ -9607,6 +9607,18 @@ inline bool SSLClient::connect_with_proxy(
         !proxy_digest_auth_password_.empty()) {
       std::map<std::string, std::string> auth;
       if (detail::parse_www_authenticate(proxy_res, auth, true)) {
+        // Close the current socket and create a new one for the authenticated
+        // request
+        shutdown_ssl(socket, true);
+        shutdown_socket(socket);
+        close_socket(socket);
+
+        // Create a new socket for the authenticated CONNECT request
+        if (!create_and_connect_socket(socket, error)) {
+          success = false;
+          return false;
+        }
+
         proxy_res = Response();
         if (!detail::process_client_socket(
                 socket.sock, read_timeout_sec_, read_timeout_usec_,

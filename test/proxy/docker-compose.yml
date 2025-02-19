@@ -1,5 +1,3 @@
-version: '2'
-
 services:
   squid_basic:
     image: squid_basic
