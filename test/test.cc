@@ -8341,8 +8341,7 @@ TEST(MaxTimeoutTest, ContentStream) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(MaxTimeoutTest, ContentStreamSSL) {
   time_t timeout = 2000;
-  time_t threshold = 200; // TODO: This value should be adjusted due to the
-                          // slowness of SSL_shutdown on some operating systems.
+  time_t threshold = 500; // SSL_shutdown is slow on some operating systems.
 
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 
