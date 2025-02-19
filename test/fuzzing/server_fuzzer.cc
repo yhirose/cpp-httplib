@@ -25,7 +25,9 @@ public:
 
   bool is_readable() const override { return true; }
 
-  bool is_writable() const override { return true; }
+  bool wait_readable() const override { return true; }
+
+  bool wait_writable() const override { return true; }
 
   void get_remote_ip_and_port(std::string &ip, int &port) const override {
     ip = "127.0.0.1";

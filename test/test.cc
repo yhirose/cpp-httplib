@@ -156,7 +156,7 @@ TEST_F(UnixSocketTest, abstract) {
 }
 #endif
 
-TEST(SocketStream, is_writable_UNIX) {
+TEST(SocketStream, wait_writable_UNIX) {
   int fds[2];
   ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
 
@@ -167,17 +167,17 @@ TEST(SocketStream, is_writable_UNIX) {
   };
   asSocketStream(fds[0], [&](Stream &s0) {
     EXPECT_EQ(s0.socket(), fds[0]);
-    EXPECT_TRUE(s0.is_writable());
+    EXPECT_TRUE(s0.wait_writable());
 
     EXPECT_EQ(0, close(fds[1]));
-    EXPECT_FALSE(s0.is_writable());
+    EXPECT_FALSE(s0.wait_writable());
 
     return true;
   });
   EXPECT_EQ(0, close(fds[0]));
 }
 
-TEST(SocketStream, is_writable_INET) {
+TEST(SocketStream, wait_writable_INET) {
   sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
@@ -212,7 +212,7 @@ TEST(SocketStream, is_writable_INET) {
   };
   asSocketStream(disconnected_svr_sock, [&](Stream &ss) {
     EXPECT_EQ(ss.socket(), disconnected_svr_sock);
-    EXPECT_FALSE(ss.is_writable());
+    EXPECT_FALSE(ss.wait_writable());
 
     return true;
   });
