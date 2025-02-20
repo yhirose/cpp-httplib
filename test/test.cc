@@ -8434,3 +8434,114 @@ TEST(ClientInThreadTest, Issue2068) {
     t.join();
   }
 }
+
+template <typename S, typename C>
+static void stream_handler_test(S &svr, C &cli) {
+  const auto delay = std::chrono::milliseconds{200};
+  const auto timeout_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(delay).count() / 2;
+
+  svr.Get("/", [delay](const Request &req, Response &res) {
+    // Request should contain limited default headers
+    EXPECT_EQ(req.has_header("Host"), true);
+    EXPECT_EQ(req.has_header("User-Agent"), true);
+    EXPECT_EQ(req.has_header("Connection"), true);
+    // Need connection to close at the end for test to succeed
+    EXPECT_EQ(req.get_header_value("Connection"), "close");
+    // REMOTE_ADDR, REMOTE_PORT, LOCAL_ADDR, LOCAL_PORT = 4
+    EXPECT_EQ(req.headers.size(), (4 + 3));
+
+    res.set_stream_handler([&](Stream &strm) -> bool {
+      char buf[16]{};
+      // Client shpuld time out first
+      std::this_thread::sleep_for(delay);
+      strm.write(buf, sizeof(buf));
+
+      // Synchronize with client and close connection
+      EXPECT_TRUE(strm.wait_readable());
+
+      // Read to avoid RST on Windows
+      strm.read(buf, sizeof(buf));
+
+      return true;
+    });
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Request req;
+  req.method = "GET";
+  req.path = "/";
+  req.response_handler = [](const Response &res) -> bool {
+    EXPECT_EQ(res.get_header_value("Connection"), "close");
+    EXPECT_EQ(res.headers.size(), 1);
+    return true;
+  };
+  req.stream_handler = [delay](Stream &strm) -> bool {
+    char buf[16]{};
+    ssize_t n = 0;
+    // Buffer should be empty and first read should time out
+    EXPECT_FALSE(strm.is_readable());
+    EXPECT_FALSE(strm.wait_readable());
+
+    // Sever will send data soon
+    std::this_thread::sleep_for(delay);
+    EXPECT_TRUE(strm.wait_readable());
+
+    n = strm.read(buf, sizeof(buf) / 2);
+    EXPECT_EQ(sizeof(buf) / 2, n);
+
+    // Server sent 16 bytes, we read 8; remainder should be buffered
+    EXPECT_TRUE(strm.is_readable());
+
+    // Read remaining bytes from buffer
+    n = strm.read(buf, sizeof(buf) / 2);
+    EXPECT_EQ(sizeof(buf) / 2, n);
+
+    // Buffer should be empty
+    EXPECT_FALSE(strm.is_readable());
+
+    // Signal server to close connection
+    strm.write(buf, sizeof(buf));
+    std::this_thread::sleep_for(delay);
+
+    // Server should have closed connection
+    n = strm.read(buf, sizeof(buf));
+    EXPECT_EQ(0, n);
+
+    return true;
+  };
+
+  cli.set_read_timeout(0, timeout_us);
+
+  Response res;
+  Error error;
+  ASSERT_TRUE(cli.send(req, res, error));
+  EXPECT_EQ(StatusCode::OK_200, res.status);
+  EXPECT_EQ(res.headers.size(), 1);
+  EXPECT_TRUE(res.body.empty());
+}
+
+TEST(StreamHandlerTest, Basic) {
+  Server svr;
+  Client cli(HOST, PORT);
+
+  stream_handler_test(svr, cli);
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(StreamHandlerTest, BasicSSL) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+
+  stream_handler_test(svr, cli);
+}
+#endif
