@@ -20,6 +20,10 @@ on:
         type: boolean
         default: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
 env:
   GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
 
