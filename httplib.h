@@ -194,9 +194,7 @@ using ssize_t = long;
 
 using socket_t = SOCKET;
 using socklen_t = int;
-#ifdef CPPHTTPLIB_USE_POLL
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
-#endif
 
 #else // not _WIN32
 
@@ -216,16 +214,11 @@ using socklen_t = int;
 #ifdef __linux__
 #include <resolv.h>
 #endif
-#include <netinet/tcp.h>
-#ifdef CPPHTTPLIB_USE_POLL
-#include <poll.h>
-#endif
 #include <csignal>
+#include <netinet/tcp.h>
+#include <poll.h>
 #include <pthread.h>
 #include <sys/mman.h>
-#ifndef __VMS
-#include <sys/select.h>
-#endif
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -3259,7 +3252,6 @@ inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
 
 template <bool Read>
 inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
-#ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd;
   pfd.fd = sock;
   pfd.events = (Read ? POLLIN : POLLOUT);
@@ -3267,25 +3259,6 @@ inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
   return handle_EINTR([&]() { return poll(&pfd, 1, timeout); });
-#else
-#ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return -1; }
-#endif
-
-  fd_set fds, *rfds, *wfds;
-  FD_ZERO(&fds);
-  FD_SET(sock, &fds);
-  rfds = (Read ? &fds : nullptr);
-  wfds = (Read ? nullptr : &fds);
-
-  timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
-
-  return handle_EINTR([&]() {
-    return select(static_cast<int>(sock + 1), rfds, wfds, nullptr, &tv);
-  });
-#endif
 }
 
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
@@ -3298,7 +3271,6 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 
 inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
                                         time_t usec) {
-#ifdef CPPHTTPLIB_USE_POLL
   struct pollfd pfd_read;
   pfd_read.fd = sock;
   pfd_read.events = POLLIN | POLLOUT;
@@ -3319,38 +3291,6 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
   }
 
   return Error::Connection;
-#else
-#ifndef _WIN32
-  if (sock >= FD_SETSIZE) { return Error::Connection; }
-#endif
-
-  fd_set fdsr;
-  FD_ZERO(&fdsr);
-  FD_SET(sock, &fdsr);
-
-  auto fdsw = fdsr;
-  auto fdse = fdsr;
-
-  timeval tv;
-  tv.tv_sec = static_cast<long>(sec);
-  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
-
-  auto ret = handle_EINTR([&]() {
-    return select(static_cast<int>(sock + 1), &fdsr, &fdsw, &fdse, &tv);
-  });
-
-  if (ret == 0) { return Error::ConnectionTimeout; }
-
-  if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
-    auto error = 0;
-    socklen_t len = sizeof(error);
-    auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
-                          reinterpret_cast<char *>(&error), &len);
-    auto successful = res >= 0 && !error;
-    return successful ? Error::Success : Error::Connection;
-  }
-  return Error::Connection;
-#endif
 }
 
 inline bool is_socket_alive(socket_t sock) {
@@ -7196,20 +7136,6 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   res.version = "HTTP/1.1";
   res.headers = default_headers_;
 
-#ifdef _WIN32
-  // TODO: Increase FD_SETSIZE statically (libzmq), dynamically (MySQL).
-#else
-#ifndef CPPHTTPLIB_USE_POLL
-  // Socket file descriptor exceeded FD_SETSIZE...
-  if (strm.socket() >= FD_SETSIZE) {
-    Headers dummy;
-    detail::read_headers(strm, dummy);
-    res.status = StatusCode::InternalServerError_500;
-    return write_response(strm, close_connection, req, res);
-  }
-#endif
-#endif
-
   // Request line and headers
   if (!parse_request_line(line_reader.ptr(), req) ||
       !detail::read_headers(strm, req.headers)) {
@@ -10440,7 +10366,7 @@ inline SSL_CTX *Client::ssl_context() const {
 
 } // namespace httplib
 
-#if defined(_WIN32) && defined(CPPHTTPLIB_USE_POLL)
+#ifdef _WIN32
 #undef poll
 #endif
 
