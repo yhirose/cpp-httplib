@@ -8207,9 +8207,8 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
 }
 #endif
 
-TEST(MaxTimeoutTest, ContentStream) {
-  Server svr;
-
+template <typename S, typename C>
+inline void max_timeout_test(S &svr, C &cli, time_t timeout, time_t threshold) {
   svr.Get("/stream", [&](const Request &, Response &res) {
     auto data = new std::string("01234567890123456789");
 
@@ -8279,10 +8278,6 @@ TEST(MaxTimeoutTest, ContentStream) {
 
   svr.wait_until_ready();
 
-  const time_t timeout = 2000;
-  const time_t threshold = 200;
-
-  Client cli("localhost", PORT);
   cli.set_max_timeout(std::chrono::milliseconds(timeout));
 
   {
@@ -8334,132 +8329,25 @@ TEST(MaxTimeoutTest, ContentStream) {
   }
 }
 
+TEST(MaxTimeoutTest, ContentStream) {
+  time_t timeout = 2000;
+  time_t threshold = 200;
+
+  Server svr;
+  Client cli("localhost", PORT);
+  max_timeout_test(svr, cli, timeout, threshold);
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(MaxTimeoutTest, ContentStreamSSL) {
+  time_t timeout = 2000;
+  time_t threshold = 500; // SSL_shutdown is slow on some operating systems.
+
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-
-  svr.Get("/stream", [&](const Request &, Response &res) {
-    auto data = new std::string("01234567890123456789");
-
-    res.set_content_provider(
-        data->size(), "text/plain",
-        [&, data](size_t offset, size_t length, DataSink &sink) {
-          const size_t DATA_CHUNK_SIZE = 4;
-          const auto &d = *data;
-          std::this_thread::sleep_for(std::chrono::seconds(1));
-          sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
-          return true;
-        },
-        [data](bool success) {
-          EXPECT_FALSE(success);
-          delete data;
-        });
-  });
-
-  svr.Get("/stream_without_length", [&](const Request &, Response &res) {
-    auto i = new size_t(0);
-
-    res.set_content_provider(
-        "text/plain",
-        [i](size_t, DataSink &sink) {
-          if (*i < 5) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            sink.write("abcd", 4);
-            (*i)++;
-          } else {
-            sink.done();
-          }
-          return true;
-        },
-        [i](bool success) {
-          EXPECT_FALSE(success);
-          delete i;
-        });
-  });
-
-  svr.Get("/chunked", [&](const Request &, Response &res) {
-    auto i = new size_t(0);
-
-    res.set_chunked_content_provider(
-        "text/plain",
-        [i](size_t, DataSink &sink) {
-          if (*i < 5) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            sink.os << "abcd";
-            (*i)++;
-          } else {
-            sink.done();
-          }
-          return true;
-        },
-        [i](bool success) {
-          EXPECT_FALSE(success);
-          delete i;
-        });
-  });
-
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  const time_t timeout = 2000;
-  const time_t threshold = 1000; // SSL_shutdown is slow...
 
   SSLClient cli("localhost", PORT);
   cli.enable_server_certificate_verification(false);
-  cli.set_max_timeout(std::chrono::milliseconds(timeout));
 
-  {
-    auto start = std::chrono::steady_clock::now();
-
-    auto res = cli.Get("/stream");
-
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-    ASSERT_FALSE(res);
-    EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
-        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
-  }
-
-  {
-    auto start = std::chrono::steady_clock::now();
-
-    auto res = cli.Get("/stream_without_length");
-
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-    ASSERT_FALSE(res);
-    EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
-        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
-  }
-
-  {
-    auto start = std::chrono::steady_clock::now();
-
-    auto res = cli.Get("/chunked", [&](const char *data, size_t data_length) {
-      EXPECT_EQ("abcd", string(data, data_length));
-      return true;
-    });
-
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-    ASSERT_FALSE(res);
-    EXPECT_EQ(Error::Read, res.error());
-    EXPECT_TRUE(timeout <= elapsed && elapsed < timeout + threshold)
-        << "Timeout exceeded by " << (elapsed - timeout) << "ms";
-  }
+  max_timeout_test(svr, cli, timeout, threshold);
 }
 #endif
