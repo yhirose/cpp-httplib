@@ -145,12 +145,6 @@
 #define CPPHTTPLIB_LISTEN_BACKLOG 5
 #endif
 
-#if !defined(CPPHTTPLIB_USE_POLL) && !defined(CPPHTTPLIB_USE_SELECT)
-#define CPPHTTPLIB_USE_POLL
-#elif defined(CPPHTTPLIB_USE_POLL) && defined(CPPHTTPLIB_USE_SELECT)
-#error "CPPHTTPLIB_USE_POLL and CPPHTTPLIB_USE_SELECT are mutually exclusive"
-#endif
-
 /*
  * Headers
  */
