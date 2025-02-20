@@ -31,7 +31,7 @@ endif
 if cxx.has_function('poll', prefix: '#include <poll.h>')
   # Use poll if present
   add_project_arguments('-DCPPHTTPLIB_USE_POLL', language: 'cpp')
-elif cxx.has_function('select', prefix: '#include <sys/select.h>')
+else if cxx.has_function('select', prefix: '#include <sys/select.h>')
   # Use select otherwise
   add_project_arguments('-DCPPHTTPLIB_USE_SELECT', language: 'cpp')
 endif
