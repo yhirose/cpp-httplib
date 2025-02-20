@@ -872,11 +872,6 @@ res->body; // Compressed data
 
 ```
 
-Use `select()` instead of `poll()`
-----------------------------------
-
-cpp-httplib defaults to the widely supported `poll()` system call. If your OS lacks support for `poll()`, define `CPPHTTPLIB_USE_SELECT` to use `select()` instead.
-
 Unix Domain Socket Support
 --------------------------
 

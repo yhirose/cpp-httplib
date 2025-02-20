@@ -16,24 +16,15 @@ project(
   meson_version: '>=0.62.0'
 )
 
-cxx = meson.get_compiler('cpp')
-
 # Check just in case downstream decides to edit the source
 # and add a project version
 version = meson.project_version()
 if version == 'undefined'
+  cxx = meson.get_compiler('cpp')
   version = cxx.get_define('CPPHTTPLIB_VERSION',
     prefix: '#include <httplib.h>',
     include_directories: include_directories('.')).strip('"')
   assert(version != '', 'failed to get version from httplib.h')
-endif
-
-if cxx.has_function('poll', prefix: '#include <poll.h>')
-  # Use poll if present
-  add_project_arguments('-DCPPHTTPLIB_USE_POLL', language: 'cpp')
-elif cxx.has_function('select', prefix: '#include <sys/select.h>')
-  # Use select otherwise
-  add_project_arguments('-DCPPHTTPLIB_USE_SELECT', language: 'cpp')
 endif
 
 deps = [dependency('threads')]

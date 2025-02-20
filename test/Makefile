@@ -1,10 +1,6 @@
 CXX = clang++
 CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
 
-ifeq ($(SELECT_IMPL),select)
-    CXXFLAGS += -DCPPHTTPLIB_USE_SELECT
-endif
-
 PREFIX ?= $(shell brew --prefix)
 
 OPENSSL_DIR = $(PREFIX)/opt/openssl@3
