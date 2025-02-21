@@ -7340,7 +7340,7 @@ inline ClientImpl::~ClientImpl() {
       std::lock_guard<std::mutex> guard(socket_mutex_);
       if (socket_requests_in_flight_ == 0) { break; }
     }
-    std::this_thread::sleep_for(std::chrono::microseconds{1});
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
   }
 
   std::lock_guard<std::mutex> guard(socket_mutex_);
