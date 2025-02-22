@@ -578,7 +578,7 @@ auto res = cli.Get("/hi", headers);
 ```
 or
 ```c++
-auto res = cli.Get("/hi", {{"Hello", "World!"}});
+auto res = cli.Get("/hi", httplib::Headers{{"Hello", "World!"}});
 ```
 or
 ```c++
@@ -675,7 +675,7 @@ auto res = cli.Get("/large-data",
 std::string body;
 
 auto res = cli.Get(
-  "/stream", Headers(),
+  "/stream",
   [&](const Response &response) {
     EXPECT_EQ(StatusCode::OK_200, response.status);
     return true; // return 'false' if you want to cancel the request.
@@ -847,13 +847,13 @@ The default `Accept-Encoding` value contains all possible compression types. So,
 
 ```c++
 res = cli.Get("/resource/foo");
-res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate, br"}});
+res = cli.Get("/resource/foo", httplib::Headers{{"Accept-Encoding", "gzip, deflate, br"}});
 ```
 
 If we don't want a response without compression, we have to set `Accept-Encoding` to an empty string. This behavior is similar to curl.
 
 ```c++
-res = cli.Get("/resource/foo", {{"Accept-Encoding", ""}});
+res = cli.Get("/resource/foo", httplib::Headers{{"Accept-Encoding", ""}});
 ```
 
 ### Compress request body on client
