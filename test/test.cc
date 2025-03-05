@@ -668,7 +668,7 @@ TEST(ParseAcceptEncoding1, AcceptEncoding) {
 
 TEST(ParseAcceptEncoding2, AcceptEncoding) {
   Request req;
-  req.set_header("Accept-Encoding", "gzip, deflate, br");
+  req.set_header("Accept-Encoding", "gzip, deflate, br, zstd");
 
   Response res;
   res.set_header("Content-Type", "text/plain");
@@ -679,6 +679,8 @@ TEST(ParseAcceptEncoding2, AcceptEncoding) {
   EXPECT_TRUE(ret == detail::EncodingType::Brotli);
 #elif CPPHTTPLIB_ZLIB_SUPPORT
   EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#elif CPPHTTPLIB_ZSTD_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Zstd);
 #else
   EXPECT_TRUE(ret == detail::EncodingType::None);
 #endif
@@ -686,7 +688,7 @@ TEST(ParseAcceptEncoding2, AcceptEncoding) {
 
 TEST(ParseAcceptEncoding3, AcceptEncoding) {
   Request req;
-  req.set_header("Accept-Encoding", "br;q=1.0, gzip;q=0.8, *;q=0.1");
+  req.set_header("Accept-Encoding", "br;q=1.0, gzip;q=0.8, zstd;q=0.8, *;q=0.1");
 
   Response res;
   res.set_header("Content-Type", "text/plain");
@@ -697,6 +699,8 @@ TEST(ParseAcceptEncoding3, AcceptEncoding) {
   EXPECT_TRUE(ret == detail::EncodingType::Brotli);
 #elif CPPHTTPLIB_ZLIB_SUPPORT
   EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#elif CPPHTTPLIB_ZSTD_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Zstd);
 #else
   EXPECT_TRUE(ret == detail::EncodingType::None);
 #endif
@@ -3007,7 +3011,7 @@ protected:
                    const httplib::ContentReader &) {
                   res.set_content("ok", "text/plain");
                 })
-#if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT)
+#if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT) || defined(CPPHTTPLIB_ZSTD_SUPPORT)
         .Get("/compress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
@@ -4925,6 +4929,249 @@ TEST_F(ServerTest, Brotli) {
             "7890123456789012345678901234567890",
             res->body);
   EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+#endif
+
+#ifdef CPPHTTPLIB_ZSTD_SUPPORT
+TEST_F(ServerTest, Zstd) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+  auto res = cli_.Get("/compress", headers);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ("zstd", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("26", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, ZstdWithoutAcceptEncoding) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "");
+  auto res = cli_.Get("/compress", headers);
+
+  ASSERT_TRUE(res);
+  EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, ZstdWithContentReceiver) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+  std::string body;
+  auto res = cli_.Get("/compress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(100U, data_length);
+                        body.append(data, data_length);
+                        return true;
+                      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ("zstd", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("26", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, ZstdWithoutDecompressing) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+
+  cli_.set_decompress(false);
+  auto res = cli_.Get("/compress", headers);
+
+  unsigned char compressed[26] = {
+      0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x64, 0x8d, 0x00,
+      0x00, 0x50, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
+      0x37, 0x38, 0x39, 0x30, 0x01, 0x00, 0xd7, 0xa9,
+      0x20, 0x01
+  };
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ("zstd", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("26", res->get_header_value("Content-Length"));
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ(26U, res->body.size());
+  EXPECT_TRUE(std::memcmp(compressed, res->body.data(), sizeof(compressed)) == 0);
+}
+
+TEST_F(ServerTest, ZstdWithContentReceiverWithoutAcceptEncoding) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "");
+
+  std::string body;
+  auto res = cli_.Get("/compress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(100U, data_length);
+                        body.append(data, data_length);
+                        return true;
+                      });
+
+  ASSERT_TRUE(res);
+  EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, NoZstd) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+  auto res = cli_.Get("/nocompress", headers);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(false, res->has_header("Content-Encoding"));
+  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, NoZstdWithContentReceiver) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+  std::string body;
+  auto res = cli_.Get("/nocompress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(100U, data_length);
+                        body.append(data, data_length);
+                        return true;
+                      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(false, res->has_header("Content-Encoding"));
+  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
+  EXPECT_EQ("100", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+// TODO: How to enable zstd ??
+TEST_F(ServerTest, MultipartFormDataZstd) {
+  MultipartFormDataItems items = {
+      {"key1", "test", "", ""},
+      {"key2", "--abcdefg123", "", ""},
+  };
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+
+  
+  cli_.set_compress(true);
+  auto res = cli_.Post("/compress-multipart", headers, items);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, PutWithContentProviderWithZstd) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "zstd");
+  
+  cli_.set_compress(true);
+  auto res = cli_.Put(
+      "/put", headers, 3,
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.os << "PUT";
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
+TEST(ZstdDecompressor, ChunkedDecompression) {
+  std::string data;
+  for (size_t i = 0; i < 32 * 1024; ++i) {
+    data.push_back(static_cast<char>('a' + i % 26));
+  }
+
+  std::string compressed_data;
+  {
+    httplib::detail::zstd_compressor compressor;
+    bool result = compressor.compress(
+        data.data(), data.size(),
+        /*last=*/true,
+        [&](const char *compressed_data_chunk, size_t compressed_data_size) {
+          compressed_data.insert(compressed_data.size(), compressed_data_chunk,
+                                 compressed_data_size);
+          return true;
+        });
+    ASSERT_TRUE(result);
+  }
+
+  std::string decompressed_data;
+  {
+    httplib::detail::zstd_decompressor decompressor;
+
+    // Chunk size is chosen specifically to have a decompressed chunk size equal
+    // to 16384 bytes 16384 bytes is the size of decompressor output buffer
+    size_t chunk_size = 130;
+    for (size_t chunk_begin = 0; chunk_begin < compressed_data.size();
+         chunk_begin += chunk_size) {
+      size_t current_chunk_size =
+          std::min(compressed_data.size() - chunk_begin, chunk_size);
+      bool result = decompressor.decompress(
+          compressed_data.data() + chunk_begin, current_chunk_size,
+          [&](const char *decompressed_data_chunk,
+              size_t decompressed_data_chunk_size) {
+            decompressed_data.insert(decompressed_data.size(),
+                                     decompressed_data_chunk,
+                                     decompressed_data_chunk_size);
+            return true;
+          });
+      ASSERT_TRUE(result);
+    }
+  }
+  ASSERT_EQ(data, decompressed_data);
+}
+
+TEST(ZstdDecompressor, Decompress) {
+  std::string original_text = "Compressed with ZSTD";
+  unsigned char data[29] = {
+      0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x14, 0xa1, 0x00,
+      0x00, 0x43, 0x6f, 0x6d, 0x70, 0x72, 0x65, 0x73,
+      0x73, 0x65, 0x64, 0x20, 0x77, 0x69, 0x74, 0x68,
+      0x20, 0x5a, 0x53, 0x54, 0x44
+  };
+  std::string compressed_data(data, data + sizeof(data) / sizeof(data[0]));
+
+  std::string decompressed_data;
+  {
+    httplib::detail::zstd_decompressor decompressor;
+
+    bool result = decompressor.decompress(
+        compressed_data.data(), compressed_data.size(),
+        [&](const char *decompressed_data_chunk,
+            size_t decompressed_data_chunk_size) {
+          decompressed_data.insert(decompressed_data.size(),
+                                   decompressed_data_chunk,
+                                   decompressed_data_chunk_size);
+          return true;
+        });
+    ASSERT_TRUE(result);
+  }
+  ASSERT_EQ(original_text, decompressed_data);
 }
 #endif
 
