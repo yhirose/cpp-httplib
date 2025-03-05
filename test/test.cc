@@ -1361,6 +1361,14 @@ TEST(CancelTest, WithCancelLargePayloadDelete) {
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
+static std::string remove_whitespace(const std::string &input) {
+  std::string output;
+  output.reserve(input.size());
+  std::copy_if(input.begin(), input.end(), std::back_inserter(output),
+               [](unsigned char c) { return !std::isspace(c); });
+  return output;
+}
+
 TEST(BaseAuthTest, FromHTTPWatch_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
   auto host = "httpbin.org";
@@ -1388,8 +1396,8 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
     auto res =
         cli.Get(path, {make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res);
-    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-              res->body);
+    EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
+              remove_whitespace(res->body));
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -1397,8 +1405,8 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
     cli.set_basic_auth("hello", "world");
     auto res = cli.Get(path);
     ASSERT_TRUE(res);
-    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-              res->body);
+    EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
+              remove_whitespace(res->body));
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -1454,8 +1462,8 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
     for (const auto &path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res);
-      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-                res->body);
+      EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
+                remove_whitespace(res->body));
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
