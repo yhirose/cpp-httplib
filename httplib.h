@@ -240,7 +240,6 @@ using socket_t = int;
 #include <errno.h>
 #include <exception>
 #include <fcntl.h>
-#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -2387,8 +2386,6 @@ std::string encode_query_param(const std::string &value);
 
 std::string decode_url(const std::string &s, bool convert_plus_to_space);
 
-void read_file(const std::string &path, std::string &out);
-
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -2914,15 +2911,6 @@ inline std::string decode_url(const std::string &s,
   }
 
   return result;
-}
-
-inline void read_file(const std::string &path, std::string &out) {
-  std::ifstream fs(path, std::ios_base::binary);
-  fs.seekg(0, std::ios_base::end);
-  auto size = fs.tellg();
-  fs.seekg(0);
-  out.resize(static_cast<size_t>(size));
-  fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
 inline std::string file_extension(const std::string &path) {

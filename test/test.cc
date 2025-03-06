@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <fstream>
 #include <future>
 #include <limits>
 #include <memory>
@@ -57,6 +58,16 @@ MultipartFormData &get_file_value(MultipartFormDataItems &files,
   if (it != files.end()) { return *it; }
   throw std::runtime_error("invalid multipart form data name error");
 #endif
+}
+
+static void read_file(const std::string &path, std::string &out) {
+  std::ifstream fs(path, std::ios_base::binary);
+  if (!fs) throw std::runtime_error("File not found: " + path);
+  fs.seekg(0, std::ios_base::end);
+  auto size = fs.tellg();
+  fs.seekg(0);
+  out.resize(static_cast<size_t>(size));
+  fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
 #ifndef _WIN32
@@ -729,7 +740,7 @@ TEST(ChunkedEncodingTest, FromHTTPWatch_Online) {
   ASSERT_TRUE(res);
 
   std::string out;
-  detail::read_file("./image.jpg", out);
+  read_file("./image.jpg", out);
 
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(out, res->body);
@@ -782,7 +793,7 @@ TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   ASSERT_TRUE(res);
 
   std::string out;
-  detail::read_file("./image.jpg", out);
+  read_file("./image.jpg", out);
 
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(out, body);
@@ -814,7 +825,7 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver_Online) {
   ASSERT_TRUE(res);
 
   std::string out;
-  detail::read_file("./image.jpg", out);
+  read_file("./image.jpg", out);
 
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(out, body);
@@ -6176,7 +6187,7 @@ TEST(SSLClientTest, ServerCertificateVerification4) {
 
 TEST(SSLClientTest, ServerCertificateVerification5_Online) {
   std::string cert;
-  detail::read_file(CA_CERT_FILE, cert);
+  read_file(CA_CERT_FILE, cert);
 
   SSLClient cli("google.com");
   cli.load_ca_cert_store(cert.data(), cert.size());
