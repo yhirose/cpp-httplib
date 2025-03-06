@@ -963,6 +963,10 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 > [!NOTE]
 > Windows 8 or lower, Visual Studio 2015 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
 
+### 32-bit Limitations
+
+The maximum payload length, configured through `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` or `set_payload_max_length()`, may be further restricted by other components, such as the `std::string::max_size()` limit, compressors/decompressors, or file request handling (where files larger than 4GB are not supported and may be truncated). Different limits may apply based on the API used.
+
 License
 -------
 
