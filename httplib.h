@@ -1229,182 +1229,71 @@ public:
 
   virtual bool is_valid() const;
 
-  Result Get(const std::string &path);
-  Result Get(const std::string &path, const Headers &headers);
-  Result Get(const std::string &path, Progress progress);
-  Result Get(const std::string &path, const Headers &headers,
-             Progress progress);
-  Result Get(const std::string &path, ContentReceiver content_receiver);
-  Result Get(const std::string &path, const Headers &headers,
-             ContentReceiver content_receiver);
-  Result Get(const std::string &path, ContentReceiver content_receiver,
-             Progress progress);
-  Result Get(const std::string &path, const Headers &headers,
-             ContentReceiver content_receiver, Progress progress);
-  Result Get(const std::string &path, ResponseHandler response_handler,
-             ContentReceiver content_receiver);
-  Result Get(const std::string &path, const Headers &headers,
-             ResponseHandler response_handler,
-             ContentReceiver content_receiver);
-  Result Get(const std::string &path, ResponseHandler response_handler,
-             ContentReceiver content_receiver, Progress progress);
-  Result Get(const std::string &path, const Headers &headers,
-             ResponseHandler response_handler, ContentReceiver content_receiver,
-             Progress progress);
-
-  Result Get(const std::string &path, const Params &params,
-             const Headers &headers, Progress progress = nullptr);
-  Result Get(const std::string &path, const Params &params,
-             const Headers &headers, ContentReceiver content_receiver,
-             Progress progress = nullptr);
-  Result Get(const std::string &path, const Params &params,
-             const Headers &headers, ResponseHandler response_handler,
-             ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, Progress progress = nullptr);
+  Result Get(const std::string &path, const Headers &headers, Progress progress = nullptr);
+  Result Get(const std::string &path, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Headers &headers, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, ResponseHandler response_handler, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Headers &headers, ResponseHandler response_handler, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, Progress progres = nullptr);
+  Result Get(const std::string &path, const Params &params, const Headers &headers, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, const Headers &headers, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, ResponseHandler response_handler, ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, const Headers &headers, ResponseHandler response_handler, ContentReceiver content_receiver, Progress progress = nullptr);
 
   Result Head(const std::string &path);
   Result Head(const std::string &path, const Headers &headers);
 
   Result Post(const std::string &path);
   Result Post(const std::string &path, const Headers &headers);
-  Result Post(const std::string &path, const char *body, size_t content_length,
-              const std::string &content_type);
-  Result Post(const std::string &path, const Headers &headers, const char *body,
-              size_t content_length, const std::string &content_type);
-  Result Post(const std::string &path, const Headers &headers, const char *body,
-              size_t content_length, const std::string &content_type,
-              Progress progress);
-  Result Post(const std::string &path, const std::string &body,
-              const std::string &content_type);
-  Result Post(const std::string &path, const std::string &body,
-              const std::string &content_type, Progress progress);
-  Result Post(const std::string &path, const Headers &headers,
-              const std::string &body, const std::string &content_type);
-  Result Post(const std::string &path, const Headers &headers,
-              const std::string &body, const std::string &content_type,
-              Progress progress);
-  Result Post(const std::string &path, size_t content_length,
-              ContentProvider content_provider,
-              const std::string &content_type);
-  Result Post(const std::string &path,
-              ContentProviderWithoutLength content_provider,
-              const std::string &content_type);
-  Result Post(const std::string &path, const Headers &headers,
-              size_t content_length, ContentProvider content_provider,
-              const std::string &content_type);
-  Result Post(const std::string &path, const Headers &headers,
-              ContentProviderWithoutLength content_provider,
-              const std::string &content_type);
+  Result Post(const std::string &path, const char *body, size_t content_length, const std::string &content_type);
+  Result Post(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, Progress progress = nullptr);
+  Result Post(const std::string &path, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Post(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type);
+  Result Post(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type);
+  Result Post(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type);
+  Result Post(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type);
   Result Post(const std::string &path, const Params &params);
-  Result Post(const std::string &path, const Headers &headers,
-              const Params &params);
-  Result Post(const std::string &path, const Headers &headers,
-              const Params &params, Progress progress);
+  Result Post(const std::string &path, const Headers &headers, const Params &params, Progress progress = nullptr);
   Result Post(const std::string &path, const MultipartFormDataItems &items);
-  Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items);
-  Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items, const std::string &boundary);
-  Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items,
-              const MultipartFormDataProviderItems &provider_items);
+  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItems &items);
+  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItems &items, const std::string &boundary);
+  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItems &items, const MultipartFormDataProviderItems &provider_items);
 
   Result Put(const std::string &path);
-  Result Put(const std::string &path, const char *body, size_t content_length,
-             const std::string &content_type);
-  Result Put(const std::string &path, const Headers &headers, const char *body,
-             size_t content_length, const std::string &content_type);
-  Result Put(const std::string &path, const Headers &headers, const char *body,
-             size_t content_length, const std::string &content_type,
-             Progress progress);
-  Result Put(const std::string &path, const std::string &body,
-             const std::string &content_type);
-  Result Put(const std::string &path, const std::string &body,
-             const std::string &content_type, Progress progress);
-  Result Put(const std::string &path, const Headers &headers,
-             const std::string &body, const std::string &content_type);
-  Result Put(const std::string &path, const Headers &headers,
-             const std::string &body, const std::string &content_type,
-             Progress progress);
-  Result Put(const std::string &path, size_t content_length,
-             ContentProvider content_provider, const std::string &content_type);
-  Result Put(const std::string &path,
-             ContentProviderWithoutLength content_provider,
-             const std::string &content_type);
-  Result Put(const std::string &path, const Headers &headers,
-             size_t content_length, ContentProvider content_provider,
-             const std::string &content_type);
-  Result Put(const std::string &path, const Headers &headers,
-             ContentProviderWithoutLength content_provider,
-             const std::string &content_type);
+  Result Put(const std::string &path, const char *body, size_t content_length, const std::string &content_type);
+  Result Put(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, Progress progress = nullptr);
+  Result Put(const std::string &path, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Put(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type);
+  Result Put(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type);
+  Result Put(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type);
+  Result Put(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type);
   Result Put(const std::string &path, const Params &params);
-  Result Put(const std::string &path, const Headers &headers,
-             const Params &params);
-  Result Put(const std::string &path, const Headers &headers,
-             const Params &params, Progress progress);
+  Result Put(const std::string &path, const Headers &headers, const Params &params, Progress progress = nullptr);
   Result Put(const std::string &path, const MultipartFormDataItems &items);
-  Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items);
-  Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items, const std::string &boundary);
-  Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items,
-             const MultipartFormDataProviderItems &provider_items);
+  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItems &items);
+  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItems &items, const std::string &boundary);
+  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItems &items, const MultipartFormDataProviderItems &provider_items);
 
   Result Patch(const std::string &path);
-  Result Patch(const std::string &path, const char *body, size_t content_length,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const char *body, size_t content_length,
-               const std::string &content_type, Progress progress);
-  Result Patch(const std::string &path, const Headers &headers,
-               const char *body, size_t content_length,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const Headers &headers,
-               const char *body, size_t content_length,
-               const std::string &content_type, Progress progress);
-  Result Patch(const std::string &path, const std::string &body,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const std::string &body,
-               const std::string &content_type, Progress progress);
-  Result Patch(const std::string &path, const Headers &headers,
-               const std::string &body, const std::string &content_type);
-  Result Patch(const std::string &path, const Headers &headers,
-               const std::string &body, const std::string &content_type,
-               Progress progress);
-  Result Patch(const std::string &path, size_t content_length,
-               ContentProvider content_provider,
-               const std::string &content_type);
-  Result Patch(const std::string &path,
-               ContentProviderWithoutLength content_provider,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const Headers &headers,
-               size_t content_length, ContentProvider content_provider,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const Headers &headers,
-               ContentProviderWithoutLength content_provider,
-               const std::string &content_type);
+  Result Patch(const std::string &path, const char *body, size_t content_length, const std::string &content_type, Progress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, Progress progress = nullptr);
+  Result Patch(const std::string &path, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Patch(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type);
+  Result Patch(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type);
+  Result Patch(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type);
+  Result Patch(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type);
 
   Result Delete(const std::string &path);
   Result Delete(const std::string &path, const Headers &headers);
-  Result Delete(const std::string &path, const char *body,
-                size_t content_length, const std::string &content_type);
-  Result Delete(const std::string &path, const char *body,
-                size_t content_length, const std::string &content_type,
-                Progress progress);
-  Result Delete(const std::string &path, const Headers &headers,
-                const char *body, size_t content_length,
-                const std::string &content_type);
-  Result Delete(const std::string &path, const Headers &headers,
-                const char *body, size_t content_length,
-                const std::string &content_type, Progress progress);
-  Result Delete(const std::string &path, const std::string &body,
-                const std::string &content_type);
-  Result Delete(const std::string &path, const std::string &body,
-                const std::string &content_type, Progress progress);
-  Result Delete(const std::string &path, const Headers &headers,
-                const std::string &body, const std::string &content_type);
-  Result Delete(const std::string &path, const Headers &headers,
-                const std::string &body, const std::string &content_type,
-                Progress progress);
+  Result Delete(const std::string &path, const char *body, size_t content_length, const std::string &content_type, Progress progress = nullptr);
+  Result Delete(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, Progress progress = nullptr);
+  Result Delete(const std::string &path, const std::string &body, const std::string &content_type, Progress progress = nullptr);
+  Result Delete(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, Progress progress = nullptr);
 
   Result Options(const std::string &path);
   Result Options(const std::string &path, const Headers &headers);
@@ -1509,8 +1398,8 @@ protected:
   //   shutdown_socket
   //   close_socket
   // should ONLY be called when socket_mutex_ is locked.
-  // Also, shutdown_ssl and close_socket should also NOT be called concurrently
-  // with a DIFFERENT thread sending requests using that socket.
+  // Also, shutdown_ssl and close_socket should also NOT be called
+  // concurrently with a DIFFERENT thread sending requests using that socket.
   virtual void shutdown_ssl(Socket &socket, bool shutdown_gracefully);
   void shutdown_socket(Socket &socket) const;
   void close_socket(Socket &socket);
@@ -1668,33 +1557,29 @@ public:
 
   bool is_valid() const;
 
-  Result Get(const std::string &path);
-  Result Get(const std::string &path, const Headers &headers);
-  Result Get(const std::string &path, Progress progress);
+  Result Get(const std::string &path, Progress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers,
-             Progress progress);
-  Result Get(const std::string &path, ContentReceiver content_receiver);
-  Result Get(const std::string &path, const Headers &headers,
-             ContentReceiver content_receiver);
+             Progress progress = nullptr);
   Result Get(const std::string &path, ContentReceiver content_receiver,
-             Progress progress);
+             Progress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers,
-             ContentReceiver content_receiver, Progress progress);
-  Result Get(const std::string &path, ResponseHandler response_handler,
-             ContentReceiver content_receiver);
-  Result Get(const std::string &path, const Headers &headers,
-             ResponseHandler response_handler,
-             ContentReceiver content_receiver);
+             ContentReceiver content_receiver, Progress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers,
              ResponseHandler response_handler, ContentReceiver content_receiver,
-             Progress progress);
+             Progress progress = nullptr);
   Result Get(const std::string &path, ResponseHandler response_handler,
-             ContentReceiver content_receiver, Progress progress);
-
+             ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params,
+             Progress progress = nullptr);
   Result Get(const std::string &path, const Params &params,
              const Headers &headers, Progress progress = nullptr);
   Result Get(const std::string &path, const Params &params,
+             ContentReceiver content_receiver, Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params,
              const Headers &headers, ContentReceiver content_receiver,
+             Progress progress = nullptr);
+  Result Get(const std::string &path, const Params &params,
+             ResponseHandler response_handler, ContentReceiver content_receiver,
              Progress progress = nullptr);
   Result Get(const std::string &path, const Params &params,
              const Headers &headers, ResponseHandler response_handler,
@@ -1708,19 +1593,13 @@ public:
   Result Post(const std::string &path, const char *body, size_t content_length,
               const std::string &content_type);
   Result Post(const std::string &path, const Headers &headers, const char *body,
-              size_t content_length, const std::string &content_type);
-  Result Post(const std::string &path, const Headers &headers, const char *body,
               size_t content_length, const std::string &content_type,
-              Progress progress);
+              Progress progress = nullptr);
   Result Post(const std::string &path, const std::string &body,
-              const std::string &content_type);
-  Result Post(const std::string &path, const std::string &body,
-              const std::string &content_type, Progress progress);
-  Result Post(const std::string &path, const Headers &headers,
-              const std::string &body, const std::string &content_type);
+              const std::string &content_type, Progress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers,
               const std::string &body, const std::string &content_type,
-              Progress progress);
+              Progress progress = nullptr);
   Result Post(const std::string &path, size_t content_length,
               ContentProvider content_provider,
               const std::string &content_type);
@@ -1735,9 +1614,7 @@ public:
               const std::string &content_type);
   Result Post(const std::string &path, const Params &params);
   Result Post(const std::string &path, const Headers &headers,
-              const Params &params);
-  Result Post(const std::string &path, const Headers &headers,
-              const Params &params, Progress progress);
+              const Params &params, Progress progress = nullptr);
   Result Post(const std::string &path, const MultipartFormDataItems &items);
   Result Post(const std::string &path, const Headers &headers,
               const MultipartFormDataItems &items);
@@ -1751,19 +1628,13 @@ public:
   Result Put(const std::string &path, const char *body, size_t content_length,
              const std::string &content_type);
   Result Put(const std::string &path, const Headers &headers, const char *body,
-             size_t content_length, const std::string &content_type);
-  Result Put(const std::string &path, const Headers &headers, const char *body,
              size_t content_length, const std::string &content_type,
-             Progress progress);
+             Progress progress = nullptr);
   Result Put(const std::string &path, const std::string &body,
-             const std::string &content_type);
-  Result Put(const std::string &path, const std::string &body,
-             const std::string &content_type, Progress progress);
-  Result Put(const std::string &path, const Headers &headers,
-             const std::string &body, const std::string &content_type);
+             const std::string &content_type, Progress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers,
              const std::string &body, const std::string &content_type,
-             Progress progress);
+             Progress progress = nullptr);
   Result Put(const std::string &path, size_t content_length,
              ContentProvider content_provider, const std::string &content_type);
   Result Put(const std::string &path,
@@ -1777,9 +1648,7 @@ public:
              const std::string &content_type);
   Result Put(const std::string &path, const Params &params);
   Result Put(const std::string &path, const Headers &headers,
-             const Params &params);
-  Result Put(const std::string &path, const Headers &headers,
-             const Params &params, Progress progress);
+             const Params &params, Progress progress = nullptr);
   Result Put(const std::string &path, const MultipartFormDataItems &items);
   Result Put(const std::string &path, const Headers &headers,
              const MultipartFormDataItems &items);
@@ -1791,24 +1660,15 @@ public:
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const char *body, size_t content_length,
-               const std::string &content_type, Progress progress);
+               const std::string &content_type, Progress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers,
                const char *body, size_t content_length,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const Headers &headers,
-               const char *body, size_t content_length,
-               const std::string &content_type, Progress progress);
+               const std::string &content_type, Progress progress = nullptr);
   Result Patch(const std::string &path, const std::string &body,
-               const std::string &content_type);
-  Result Patch(const std::string &path, const std::string &body,
-               const std::string &content_type, Progress progress);
-  Result Patch(const std::string &path, const Headers &headers,
-               const std::string &body, const std::string &content_type);
+               const std::string &content_type, Progress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers,
                const std::string &body, const std::string &content_type,
-               Progress progress);
+               Progress progress = nullptr);
   Result Patch(const std::string &path, size_t content_length,
                ContentProvider content_provider,
                const std::string &content_type);
@@ -1825,25 +1685,16 @@ public:
   Result Delete(const std::string &path);
   Result Delete(const std::string &path, const Headers &headers);
   Result Delete(const std::string &path, const char *body,
-                size_t content_length, const std::string &content_type);
-  Result Delete(const std::string &path, const char *body,
                 size_t content_length, const std::string &content_type,
-                Progress progress);
+                Progress progress = nullptr);
   Result Delete(const std::string &path, const Headers &headers,
                 const char *body, size_t content_length,
-                const std::string &content_type);
-  Result Delete(const std::string &path, const Headers &headers,
-                const char *body, size_t content_length,
-                const std::string &content_type, Progress progress);
+                const std::string &content_type, Progress progress = nullptr);
   Result Delete(const std::string &path, const std::string &body,
-                const std::string &content_type);
-  Result Delete(const std::string &path, const std::string &body,
-                const std::string &content_type, Progress progress);
-  Result Delete(const std::string &path, const Headers &headers,
-                const std::string &body, const std::string &content_type);
+                const std::string &content_type, Progress progress = nullptr);
   Result Delete(const std::string &path, const Headers &headers,
                 const std::string &body, const std::string &content_type,
-                Progress progress);
+                Progress progress = nullptr);
 
   Result Options(const std::string &path);
   Result Options(const std::string &path, const Headers &headers);
@@ -2334,8 +2185,8 @@ Client::set_max_timeout(const std::chrono::duration<Rep, Period> &duration) {
 }
 
 /*
- * Forward declarations and types that will be part of the .h file if split into
- * .h + .cc.
+ * Forward declarations and types that will be part of the .h file if split
+ * into .h + .cc.
  */
 
 std::string hosted_at(const std::string &hostname);
@@ -3102,8 +2953,8 @@ inline bool mmap::open(const char *path) {
 
   LARGE_INTEGER size{};
   if (!::GetFileSizeEx(hFile_, &size)) { return false; }
-  // If the following line doesn't compile due to QuadPart, update Windows SDK.
-  // See:
+  // If the following line doesn't compile due to QuadPart, update Windows
+  // SDK. See:
   // https://github.com/yhirose/cpp-httplib/issues/1903#issuecomment-2316520721
   if (static_cast<ULONGLONG>(size.QuadPart) >
       (std::numeric_limits<decltype(size_)>::max)()) {
@@ -3570,8 +3421,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
      * https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsasocketa
      *
      * WSA_FLAG_NO_HANDLE_INHERIT:
-     * This flag is supported on Windows 7 with SP1, Windows Server 2008 R2 with
-     * SP1, and later
+     * This flag is supported on Windows 7 with SP1, Windows Server 2008 R2
+     * with SP1, and later
      *
      */
     if (sock == INVALID_SOCKET) {
@@ -3823,12 +3674,12 @@ inline constexpr unsigned int str2tag_core(const char *s, size_t l,
                                            unsigned int h) {
   return (l == 0)
              ? h
-             : str2tag_core(
-                   s + 1, l - 1,
-                   // Unsets the 6 high bits of h, therefore no overflow happens
-                   (((std::numeric_limits<unsigned int>::max)() >> 6) &
-                    h * 33) ^
-                       static_cast<unsigned char>(*s));
+             : str2tag_core(s + 1, l - 1,
+                            // Unsets the 6 high bits of h, therefore no
+                            // overflow happens
+                            (((std::numeric_limits<unsigned int>::max)() >> 6) &
+                             h * 33) ^
+                                static_cast<unsigned char>(*s));
 }
 
 inline unsigned int str2tag(const std::string &s) {
@@ -4337,8 +4188,9 @@ inline bool read_content_chunked(Stream &strm, T &x,
 
   // NOTE: In RFC 9112, '7.1 Chunked Transfer Coding' mentions "The chunked
   // transfer coding is complete when a chunk with a chunk-size of zero is
-  // received, possibly followed by a trailer section, and finally terminated by
-  // an empty line". https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1
+  // received, possibly followed by a trailer section, and finally terminated
+  // by an empty line".
+  // https://www.rfc-editor.org/rfc/rfc9112.html#section-7.1
   //
   // In '7.1.3. Decoding Chunked', however, the pseudo-code in the section
   // does't care for the existence of the final CRLF. In other words, it seems
@@ -7509,8 +7361,9 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
 
-    // Set this to false immediately - if it ever gets set to true by the end of
-    // the request, we know another thread instructed us to close the socket.
+    // Set this to false immediately - if it ever gets set to true by the end
+    // of the request, we know another thread instructed us to close the
+    // socket.
     socket_should_be_closed_when_request_is_done_ = false;
 
     auto is_alive = false;
@@ -8117,8 +7970,8 @@ inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
     const MultipartFormDataProviderItems &provider_items) const {
   size_t cur_item = 0;
   size_t cur_start = 0;
-  // cur_item and cur_start are copied to within the std::function and maintain
-  // state between successive calls
+  // cur_item and cur_start are copied to within the std::function and
+  // maintain state between successive calls
   return [&, cur_item, cur_start](size_t offset,
                                   DataSink &sink) mutable -> bool {
     if (!offset && !items.empty()) {
@@ -8167,16 +8020,8 @@ inline bool ClientImpl::process_socket(
 
 inline bool ClientImpl::is_ssl() const { return false; }
 
-inline Result ClientImpl::Get(const std::string &path) {
-  return Get(path, Headers(), Progress());
-}
-
 inline Result ClientImpl::Get(const std::string &path, Progress progress) {
   return Get(path, Headers(), std::move(progress));
-}
-
-inline Result ClientImpl::Get(const std::string &path, const Headers &headers) {
-  return Get(path, headers, Progress());
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
@@ -8194,11 +8039,6 @@ inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Get(const std::string &path,
-                              ContentReceiver content_receiver) {
-  return Get(path, Headers(), nullptr, std::move(content_receiver), nullptr);
-}
-
-inline Result ClientImpl::Get(const std::string &path,
                               ContentReceiver content_receiver,
                               Progress progress) {
   return Get(path, Headers(), nullptr, std::move(content_receiver),
@@ -8206,29 +8046,10 @@ inline Result ClientImpl::Get(const std::string &path,
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
-                              ContentReceiver content_receiver) {
-  return Get(path, headers, nullptr, std::move(content_receiver), nullptr);
-}
-
-inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
                               ContentReceiver content_receiver,
                               Progress progress) {
   return Get(path, headers, nullptr, std::move(content_receiver),
              std::move(progress));
-}
-
-inline Result ClientImpl::Get(const std::string &path,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver) {
-  return Get(path, Headers(), std::move(response_handler),
-             std::move(content_receiver), nullptr);
-}
-
-inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
-                              ResponseHandler response_handler,
-                              ContentReceiver content_receiver) {
-  return Get(path, headers, std::move(response_handler),
-             std::move(content_receiver), nullptr);
 }
 
 inline Result ClientImpl::Get(const std::string &path,
@@ -8262,6 +8083,14 @@ inline Result ClientImpl::Get(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
+                              Progress progress) {
+  if (params.empty()) { return Get(path, std::move(progress)); }
+
+  std::string path_with_query = append_query_params(path, params);
+  return Get(path_with_query, std::move(progress));
+}
+
+inline Result ClientImpl::Get(const std::string &path, const Params &params,
                               const Headers &headers, Progress progress) {
   if (params.empty()) { return Get(path, headers); }
 
@@ -8270,11 +8099,26 @@ inline Result ClientImpl::Get(const std::string &path, const Params &params,
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
+                              ContentReceiver content_receiver,
+                              Progress progress) {
+  return Get(path, params, Headers{}, nullptr, std::move(content_receiver),
+             std::move(progress));
+}
+
+inline Result ClientImpl::Get(const std::string &path, const Params &params,
                               const Headers &headers,
                               ContentReceiver content_receiver,
                               Progress progress) {
   return Get(path, params, headers, nullptr, std::move(content_receiver),
              std::move(progress));
+}
+
+inline Result ClientImpl::Get(const std::string &path, const Params &params,
+                              ResponseHandler response_handler,
+                              ContentReceiver content_receiver,
+                              Progress progress) {
+  return Get(path, params, Headers{}, std::move(response_handler),
+             std::move(content_receiver), std::move(progress));
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
@@ -8326,13 +8170,6 @@ inline Result ClientImpl::Post(const std::string &path, const char *body,
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
                                const char *body, size_t content_length,
-                               const std::string &content_type) {
-  return send_with_content_provider("POST", path, headers, body, content_length,
-                                    nullptr, nullptr, content_type, nullptr);
-}
-
-inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
-                               const char *body, size_t content_length,
                                const std::string &content_type,
                                Progress progress) {
   return send_with_content_provider("POST", path, headers, body, content_length,
@@ -8340,22 +8177,9 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Post(const std::string &path, const std::string &body,
-                               const std::string &content_type) {
-  return Post(path, Headers(), body, content_type);
-}
-
-inline Result ClientImpl::Post(const std::string &path, const std::string &body,
                                const std::string &content_type,
                                Progress progress) {
   return Post(path, Headers(), body, content_type, progress);
-}
-
-inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
-                               const std::string &body,
-                               const std::string &content_type) {
-  return send_with_content_provider("POST", path, headers, body.data(),
-                                    body.size(), nullptr, nullptr, content_type,
-                                    nullptr);
 }
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
@@ -8399,12 +8223,6 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   return send_with_content_provider("POST", path, headers, nullptr, 0, nullptr,
                                     std::move(content_provider), content_type,
                                     nullptr);
-}
-
-inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
-                               const Params &params) {
-  auto query = detail::params_to_query_str(params);
-  return Post(path, headers, query, "application/x-www-form-urlencoded");
 }
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
@@ -8466,13 +8284,6 @@ inline Result ClientImpl::Put(const std::string &path, const char *body,
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
                               const char *body, size_t content_length,
-                              const std::string &content_type) {
-  return send_with_content_provider("PUT", path, headers, body, content_length,
-                                    nullptr, nullptr, content_type, nullptr);
-}
-
-inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const char *body, size_t content_length,
                               const std::string &content_type,
                               Progress progress) {
   return send_with_content_provider("PUT", path, headers, body, content_length,
@@ -8480,22 +8291,9 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Put(const std::string &path, const std::string &body,
-                              const std::string &content_type) {
-  return Put(path, Headers(), body, content_type);
-}
-
-inline Result ClientImpl::Put(const std::string &path, const std::string &body,
                               const std::string &content_type,
                               Progress progress) {
   return Put(path, Headers(), body, content_type, progress);
-}
-
-inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const std::string &body,
-                              const std::string &content_type) {
-  return send_with_content_provider("PUT", path, headers, body.data(),
-                                    body.size(), nullptr, nullptr, content_type,
-                                    nullptr);
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
@@ -8539,12 +8337,6 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 
 inline Result ClientImpl::Put(const std::string &path, const Params &params) {
   return Put(path, Headers(), params);
-}
-
-inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const Params &params) {
-  auto query = detail::params_to_query_str(params);
-  return Put(path, headers, query, "application/x-www-form-urlencoded");
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
@@ -8599,21 +8391,9 @@ inline Result ClientImpl::Patch(const std::string &path) {
 
 inline Result ClientImpl::Patch(const std::string &path, const char *body,
                                 size_t content_length,
-                                const std::string &content_type) {
-  return Patch(path, Headers(), body, content_length, content_type);
-}
-
-inline Result ClientImpl::Patch(const std::string &path, const char *body,
-                                size_t content_length,
                                 const std::string &content_type,
                                 Progress progress) {
   return Patch(path, Headers(), body, content_length, content_type, progress);
-}
-
-inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
-                                const char *body, size_t content_length,
-                                const std::string &content_type) {
-  return Patch(path, headers, body, content_length, content_type, nullptr);
 }
 
 inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
@@ -8627,21 +8407,9 @@ inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
 
 inline Result ClientImpl::Patch(const std::string &path,
                                 const std::string &body,
-                                const std::string &content_type) {
-  return Patch(path, Headers(), body, content_type);
-}
-
-inline Result ClientImpl::Patch(const std::string &path,
-                                const std::string &body,
                                 const std::string &content_type,
                                 Progress progress) {
   return Patch(path, Headers(), body, content_type, progress);
-}
-
-inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
-                                const std::string &body,
-                                const std::string &content_type) {
-  return Patch(path, headers, body, content_type, nullptr);
 }
 
 inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
@@ -8694,22 +8462,9 @@ inline Result ClientImpl::Delete(const std::string &path,
 
 inline Result ClientImpl::Delete(const std::string &path, const char *body,
                                  size_t content_length,
-                                 const std::string &content_type) {
-  return Delete(path, Headers(), body, content_length, content_type);
-}
-
-inline Result ClientImpl::Delete(const std::string &path, const char *body,
-                                 size_t content_length,
                                  const std::string &content_type,
                                  Progress progress) {
   return Delete(path, Headers(), body, content_length, content_type, progress);
-}
-
-inline Result ClientImpl::Delete(const std::string &path,
-                                 const Headers &headers, const char *body,
-                                 size_t content_length,
-                                 const std::string &content_type) {
-  return Delete(path, headers, body, content_length, content_type, nullptr);
 }
 
 inline Result ClientImpl::Delete(const std::string &path,
@@ -8734,23 +8489,10 @@ inline Result ClientImpl::Delete(const std::string &path,
 
 inline Result ClientImpl::Delete(const std::string &path,
                                  const std::string &body,
-                                 const std::string &content_type) {
-  return Delete(path, Headers(), body.data(), body.size(), content_type);
-}
-
-inline Result ClientImpl::Delete(const std::string &path,
-                                 const std::string &body,
                                  const std::string &content_type,
                                  Progress progress) {
   return Delete(path, Headers(), body.data(), body.size(), content_type,
                 progress);
-}
-
-inline Result ClientImpl::Delete(const std::string &path,
-                                 const Headers &headers,
-                                 const std::string &body,
-                                 const std::string &content_type) {
-  return Delete(path, headers, body.data(), body.size(), content_type);
 }
 
 inline Result ClientImpl::Delete(const std::string &path,
@@ -8785,8 +8527,8 @@ inline void ClientImpl::stop() {
   // If there is anything ongoing right now, the ONLY thread-safe thing we can
   // do is to shutdown_socket, so that threads using this socket suddenly
   // discover they can't read/write any more and error out. Everything else
-  // (closing the socket, shutting ssl down) is unsafe because these actions are
-  // not thread-safe.
+  // (closing the socket, shutting ssl down) is unsafe because these actions
+  // are not thread-safe.
   if (socket_requests_in_flight_ > 0) {
     shutdown_socket(socket_);
 
@@ -9415,7 +9157,8 @@ inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (ca_cert_store) {
     if (ctx_) {
       if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store) {
-        // Free memory allocated for old cert and use new store `ca_cert_store`
+        // Free memory allocated for old cert and use new store
+        // `ca_cert_store`
         SSL_CTX_set_cert_store(ctx_, ca_cert_store);
       }
     } else {
@@ -9439,7 +9182,6 @@ inline bool SSLClient::create_and_connect_socket(Socket &socket, Error &error) {
   return is_valid() && ClientImpl::create_and_connect_socket(socket, error);
 }
 
-// Assumes that socket_mutex_ is locked and that there are no requests in flight
 inline bool SSLClient::connect_with_proxy(
     Socket &socket,
     std::chrono::time_point<std::chrono::steady_clock> start_time,
@@ -9856,24 +9598,12 @@ inline bool Client::is_valid() const {
   return cli_ != nullptr && cli_->is_valid();
 }
 
-inline Result Client::Get(const std::string &path) { return cli_->Get(path); }
-inline Result Client::Get(const std::string &path, const Headers &headers) {
-  return cli_->Get(path, headers);
-}
 inline Result Client::Get(const std::string &path, Progress progress) {
   return cli_->Get(path, std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Headers &headers,
                           Progress progress) {
   return cli_->Get(path, headers, std::move(progress));
-}
-inline Result Client::Get(const std::string &path,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, std::move(content_receiver));
-}
-inline Result Client::Get(const std::string &path, const Headers &headers,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, headers, std::move(content_receiver));
 }
 inline Result Client::Get(const std::string &path,
                           ContentReceiver content_receiver, Progress progress) {
@@ -9886,18 +9616,6 @@ inline Result Client::Get(const std::string &path, const Headers &headers,
 }
 inline Result Client::Get(const std::string &path,
                           ResponseHandler response_handler,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, std::move(response_handler),
-                   std::move(content_receiver));
-}
-inline Result Client::Get(const std::string &path, const Headers &headers,
-                          ResponseHandler response_handler,
-                          ContentReceiver content_receiver) {
-  return cli_->Get(path, headers, std::move(response_handler),
-                   std::move(content_receiver));
-}
-inline Result Client::Get(const std::string &path,
-                          ResponseHandler response_handler,
                           ContentReceiver content_receiver, Progress progress) {
   return cli_->Get(path, std::move(response_handler),
                    std::move(content_receiver), std::move(progress));
@@ -9907,16 +9625,31 @@ inline Result Client::Get(const std::string &path, const Headers &headers,
                           ContentReceiver content_receiver, Progress progress) {
   return cli_->Get(path, headers, std::move(response_handler),
                    std::move(content_receiver), std::move(progress));
+}
+inline Result Client::Get(const std::string &path, const Params &params,
+                          Progress progress) {
+  return cli_->Get(path, params, Headers{}, std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers, Progress progress) {
   return cli_->Get(path, params, headers, std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Params &params,
+                          ContentReceiver content_receiver, Progress progress) {
+  return cli_->Get(path, params, std::move(content_receiver),
+                   std::move(progress));
+}
+inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers,
                           ContentReceiver content_receiver, Progress progress) {
   return cli_->Get(path, params, headers, std::move(content_receiver),
                    std::move(progress));
+}
+inline Result Client::Get(const std::string &path, const Params &params,
+                          ResponseHandler response_handler,
+                          ContentReceiver content_receiver, Progress progress) {
+  return cli_->Get(path, params, std::move(response_handler),
+                   std::move(content_receiver), std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers,
@@ -9942,27 +9675,13 @@ inline Result Client::Post(const std::string &path, const char *body,
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
                            const char *body, size_t content_length,
-                           const std::string &content_type) {
-  return cli_->Post(path, headers, body, content_length, content_type);
-}
-inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const char *body, size_t content_length,
                            const std::string &content_type, Progress progress) {
   return cli_->Post(path, headers, body, content_length, content_type,
                     progress);
 }
 inline Result Client::Post(const std::string &path, const std::string &body,
-                           const std::string &content_type) {
-  return cli_->Post(path, body, content_type);
-}
-inline Result Client::Post(const std::string &path, const std::string &body,
                            const std::string &content_type, Progress progress) {
   return cli_->Post(path, body, content_type, progress);
-}
-inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const std::string &body,
-                           const std::string &content_type) {
-  return cli_->Post(path, headers, body, content_type);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
                            const std::string &body,
@@ -9996,10 +9715,6 @@ inline Result Client::Post(const std::string &path, const Params &params) {
   return cli_->Post(path, params);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const Params &params) {
-  return cli_->Post(path, headers, params);
-}
-inline Result Client::Post(const std::string &path, const Headers &headers,
                            const Params &params, Progress progress) {
   return cli_->Post(path, headers, params, progress);
 }
@@ -10030,26 +9745,12 @@ inline Result Client::Put(const std::string &path, const char *body,
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
                           const char *body, size_t content_length,
-                          const std::string &content_type) {
-  return cli_->Put(path, headers, body, content_length, content_type);
-}
-inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const char *body, size_t content_length,
                           const std::string &content_type, Progress progress) {
   return cli_->Put(path, headers, body, content_length, content_type, progress);
 }
 inline Result Client::Put(const std::string &path, const std::string &body,
-                          const std::string &content_type) {
-  return cli_->Put(path, body, content_type);
-}
-inline Result Client::Put(const std::string &path, const std::string &body,
                           const std::string &content_type, Progress progress) {
   return cli_->Put(path, body, content_type, progress);
-}
-inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const std::string &body,
-                          const std::string &content_type) {
-  return cli_->Put(path, headers, body, content_type);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
                           const std::string &body,
@@ -10079,13 +9780,6 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
                           const std::string &content_type) {
   return cli_->Put(path, headers, std::move(content_provider), content_type);
 }
-inline Result Client::Put(const std::string &path, const Params &params) {
-  return cli_->Put(path, params);
-}
-inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const Params &params) {
-  return cli_->Put(path, headers, params);
-}
 inline Result Client::Put(const std::string &path, const Headers &headers,
                           const Params &params, Progress progress) {
   return cli_->Put(path, headers, params, progress);
@@ -10114,19 +9808,9 @@ inline Result Client::Patch(const std::string &path) {
 }
 inline Result Client::Patch(const std::string &path, const char *body,
                             size_t content_length,
-                            const std::string &content_type) {
-  return cli_->Patch(path, body, content_length, content_type);
-}
-inline Result Client::Patch(const std::string &path, const char *body,
-                            size_t content_length,
                             const std::string &content_type,
                             Progress progress) {
   return cli_->Patch(path, body, content_length, content_type, progress);
-}
-inline Result Client::Patch(const std::string &path, const Headers &headers,
-                            const char *body, size_t content_length,
-                            const std::string &content_type) {
-  return cli_->Patch(path, headers, body, content_length, content_type);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
                             const char *body, size_t content_length,
@@ -10136,18 +9820,9 @@ inline Result Client::Patch(const std::string &path, const Headers &headers,
                      progress);
 }
 inline Result Client::Patch(const std::string &path, const std::string &body,
-                            const std::string &content_type) {
-  return cli_->Patch(path, body, content_type);
-}
-inline Result Client::Patch(const std::string &path, const std::string &body,
                             const std::string &content_type,
                             Progress progress) {
   return cli_->Patch(path, body, content_type, progress);
-}
-inline Result Client::Patch(const std::string &path, const Headers &headers,
-                            const std::string &body,
-                            const std::string &content_type) {
-  return cli_->Patch(path, headers, body, content_type);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
                             const std::string &body,
@@ -10186,19 +9861,9 @@ inline Result Client::Delete(const std::string &path, const Headers &headers) {
 }
 inline Result Client::Delete(const std::string &path, const char *body,
                              size_t content_length,
-                             const std::string &content_type) {
-  return cli_->Delete(path, body, content_length, content_type);
-}
-inline Result Client::Delete(const std::string &path, const char *body,
-                             size_t content_length,
                              const std::string &content_type,
                              Progress progress) {
   return cli_->Delete(path, body, content_length, content_type, progress);
-}
-inline Result Client::Delete(const std::string &path, const Headers &headers,
-                             const char *body, size_t content_length,
-                             const std::string &content_type) {
-  return cli_->Delete(path, headers, body, content_length, content_type);
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const char *body, size_t content_length,
@@ -10208,18 +9873,9 @@ inline Result Client::Delete(const std::string &path, const Headers &headers,
                       progress);
 }
 inline Result Client::Delete(const std::string &path, const std::string &body,
-                             const std::string &content_type) {
-  return cli_->Delete(path, body, content_type);
-}
-inline Result Client::Delete(const std::string &path, const std::string &body,
                              const std::string &content_type,
                              Progress progress) {
   return cli_->Delete(path, body, content_type, progress);
-}
-inline Result Client::Delete(const std::string &path, const Headers &headers,
-                             const std::string &body,
-                             const std::string &content_type) {
-  return cli_->Delete(path, headers, body, content_type);
 }
 inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const std::string &body,
