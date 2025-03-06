@@ -47,15 +47,30 @@ jobs:
       (github.event_name == 'pull_request'  &&
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    strategy:
+      matrix:
+        config:
+        - arch_flags: -m32
+          arch_suffix: :i386
+          name: (32-bit)
+        - arch_flags:
+          arch_suffix:
+          name: (64-bit)
+    name: ubuntu ${{ matrix.config.name }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
       - name: install libraries
-        run: sudo apt-get update && sudo apt-get install -y libbrotli-dev libcurl4-openssl-dev
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y libc6-dev${{ matrix.config.arch_suffix }} libstdc++-13-dev${{ matrix.config.arch_suffix }} \
+            libssl-dev${{ matrix.config.arch_suffix }} libcurl4-openssl-dev${{ matrix.config.arch_suffix }} \
+            zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }}
       - name: build and run tests
-        run: cd test && make
+        run: cd test && make EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}"
       - name: run fuzz test target
-        run: cd test && make fuzz_test
+        run: cd test && make EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}" fuzz_test
 
   macos:
     runs-on: macos-latest
