@@ -1594,36 +1594,40 @@ TEST(YahooRedirectTest, Redirect_Online) {
   EXPECT_EQ("https://www.yahoo.com/", res->location);
 }
 
+// Previously "nghttp2.org" "/httpbin/redirect-to"
+#define REDIR_HOST "httpbingo.org"
+#define REDIR_PATH "/redirect-to"
+
 TEST(HttpsToHttpRedirectTest, Redirect_Online) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli(REDIR_HOST);
   cli.set_follow_location(true);
-  auto res = cli.Get(
-      "/httpbin/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+  auto res =
+      cli.Get(REDIR_PATH "?url=http%3A%2F%2Fexample.com&status_code=302");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(HttpsToHttpRedirectTest2, Redirect_Online) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli(REDIR_HOST);
   cli.set_follow_location(true);
 
   Params params;
-  params.emplace("url", "http://www.google.com");
+  params.emplace("url", "http://example.com");
   params.emplace("status_code", "302");
 
-  auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  auto res = cli.Get(REDIR_PATH, params, Headers{});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(HttpsToHttpRedirectTest3, Redirect_Online) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli(REDIR_HOST);
   cli.set_follow_location(true);
 
   Params params;
-  params.emplace("url", "http://www.google.com");
+  params.emplace("url", "http://example.com");
 
-  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  auto res = cli.Get(REDIR_PATH "?status_code=302", params, Headers{});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -6817,38 +6821,41 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding_Online) {
 }
 #endif
 
+// Previously "https://nghttp2.org" "/httpbin/redirect-to"
+#undef REDIR_HOST // Silence compiler warning
+#define REDIR_HOST "https://httpbingo.org"
+
 TEST(HttpsToHttpRedirectTest, SimpleInterface_Online) {
-  Client cli("https://nghttp2.org");
+  Client cli(REDIR_HOST);
   cli.set_follow_location(true);
   auto res =
-      cli.Get("/httpbin/"
-              "redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
+      cli.Get(REDIR_PATH "?url=http%3A%2F%2Fexample.com&status_code=302");
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(HttpsToHttpRedirectTest2, SimpleInterface_Online) {
-  Client cli("https://nghttp2.org");
+  Client cli(REDIR_HOST);
   cli.set_follow_location(true);
 
   Params params;
-  params.emplace("url", "http://www.google.com");
+  params.emplace("url", "http://example.com");
   params.emplace("status_code", "302");
 
-  auto res = cli.Get("/httpbin/redirect-to", params, Headers{});
+  auto res = cli.Get(REDIR_PATH, params, Headers{});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(HttpsToHttpRedirectTest3, SimpleInterface_Online) {
-  Client cli("https://nghttp2.org");
+  Client cli(REDIR_HOST);
   cli.set_follow_location(true);
 
   Params params;
-  params.emplace("url", "http://www.google.com");
+  params.emplace("url", "http://example.com");
 
-  auto res = cli.Get("/httpbin/redirect-to?status_code=302", params, Headers{});
+  auto res = cli.Get(REDIR_PATH "?status_code=302", params, Headers{});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
