@@ -1,5 +1,5 @@
 CXX = clang++
-CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
+CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow $(EXTRA_CXXFLAGS) # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
 
 PREFIX ?= $(shell brew --prefix)
 
@@ -41,6 +41,7 @@ proxy : test_proxy
 
 test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS)
+	@file $@
 
 # Note: The intention of test_split is to verify that it works to compile and
 # link the split httplib.h, so there is normally no need to execute it.
@@ -83,6 +84,7 @@ fuzz_test: server_fuzzer
 # Fuzz target, so that you can choose which $(LIB_FUZZING_ENGINE) to use.
 server_fuzzer : fuzzing/server_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
 	$(CXX) -o $@ -I.. $(CXXFLAGS) $< $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(LIB_FUZZING_ENGINE) -pthread
+	@file $@
 
 # Standalone fuzz runner, which just reads inputs from fuzzing/corpus/ dir and
 # feeds it to server_fuzzer.
