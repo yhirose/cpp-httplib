@@ -4170,6 +4170,9 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     p++;
   }
 
+  auto name = std::string(beg, p);
+  if (!detail::fields::is_field_name(name)) { return false; }
+
   if (p == end) { return false; }
 
   auto key_end = p;

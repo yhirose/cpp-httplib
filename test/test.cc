@@ -5156,6 +5156,14 @@ TEST(ServerRequestParsingTest, InvalidFieldValueContains_LF) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
+TEST(ServerRequestParsingTest, InvalidFieldNameContains_PreceedingSpaces) {
+  std::string out;
+  std::string request(
+      "GET /header_field_value_check HTTP/1.1\r\n  Test: val\r\n\r\n", 55);
+  test_raw_request(request, &out);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
 TEST(ServerRequestParsingTest, EmptyFieldValue) {
   std::string out;
 
