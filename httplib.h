@@ -194,7 +194,6 @@ using ssize_t = long;
 
 using socket_t = SOCKET;
 using socklen_t = int;
-#define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 
 #else // not _WIN32
 
@@ -2660,7 +2659,9 @@ inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 /*
  * Implementation that will be part of the .cc file if split into .h + .cc.
  */
-
+#if defined(_WIN32)
+#define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
+#endif
 namespace detail {
 
 inline bool is_hex(char c, int &v) {
@@ -10372,13 +10373,13 @@ inline SSL_CTX *Client::ssl_context() const {
   return nullptr;
 }
 #endif
-
+#ifdef _WIN32
+#undef poll
+#endif
 // ----------------------------------------------------------------------------
 
 } // namespace httplib
 
-#ifdef _WIN32
-#undef poll
-#endif
+
 
 #endif // CPPHTTPLIB_HTTPLIB_H
