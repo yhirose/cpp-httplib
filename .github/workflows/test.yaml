@@ -98,9 +98,17 @@ jobs:
       matrix:
         config:
         - with_ssl: false
+          compiled: false
+          run_tests: true
           name: without SSL
         - with_ssl: true
+          compiled: false
+          run_tests: true
           name: with SSL
+        - with_ssl: false
+          compiled: true
+          run_tests: false
+          name: compiled
     name: windows ${{ matrix.config.name }}
     steps:
     - name: Prepare Git for Checkout on Windows
@@ -128,12 +136,14 @@ jobs:
         -DCMAKE_BUILD_TYPE=Release
         -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
         -DHTTPLIB_TEST=ON
+        -DHTTPLIB_COMPILE=${{ matrix.config.compiled && 'ON' || 'OFF' }}
         -DHTTPLIB_REQUIRE_ZLIB=ON
         -DHTTPLIB_REQUIRE_BROTLI=ON
         -DHTTPLIB_REQUIRE_OPENSSL=${{ matrix.config.with_ssl && 'ON' || 'OFF' }}
     - name: Build ${{ matrix.config.name }}
       run: cmake --build build --config Release -- /v:m /clp:ShowCommandLine
     - name: Run tests ${{ matrix.config.name }}
+      if: ${{ matrix.config.run_tests }}
       run: ctest --output-on-failure --test-dir build -C Release
 
     env:
