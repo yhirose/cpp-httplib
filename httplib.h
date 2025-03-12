@@ -9063,14 +9063,6 @@ inline bool process_client_socket_ssl(
   return callback(strm);
 }
 
-class SSLInit {
-public:
-  SSLInit() {
-    OPENSSL_init_ssl(
-        OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
-  }
-};
-
 // SSL socket stream implementation
 inline SSLSocketStream::SSLSocketStream(
     socket_t sock, SSL *ssl, time_t read_timeout_sec, time_t read_timeout_usec,
@@ -9190,8 +9182,6 @@ inline time_t SSLSocketStream::duration() const {
              std::chrono::steady_clock::now() - start_time)
       .count();
 }
-
-static SSLInit sslinit_;
 
 } // namespace detail
 
