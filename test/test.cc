@@ -8468,3 +8468,54 @@ TEST(ClientInThreadTest, Issue2068) {
     t.join();
   }
 }
+
+TEST(MatchedRouteTest, BasicAndFileRequests) {
+  std::vector<std::string> paths{
+      "/route1/1/2",
+      "/route1/1",
+  };
+  std::vector<std::string> routes{
+      "/route1/:arg1/:arg2",
+      "/route1/:arg1",
+  };
+
+  Server svr;
+  svr.set_mount_point("/", "./www");
+  svr.Get("/route1/:arg1", [&](const Request & /*req*/, Response & /*res*/) {});
+  svr.Get("/route1/:arg1/:arg2",
+          [&](const Request & /*req*/, Response & /*res*/) {});
+
+  svr.set_post_routing_handler([&](const Request &req, Response & /*res*/) {
+    if (!routes.empty()) {
+      EXPECT_EQ(req.path, paths.back());
+      ASSERT_EQ(req.matched_route, routes.back());
+      paths.pop_back();
+      routes.pop_back();
+    } else {
+      EXPECT_EQ(req.path, "/file");
+      EXPECT_EQ(req.matched_route, nullptr);
+    }
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+
+    listen_thread.join();
+
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  auto res = cli.Get("/route1/1");
+  ASSERT_TRUE(res);
+
+  res = cli.Get("/route1/1/2");
+  ASSERT_TRUE(res);
+
+  res = cli.Get("/file");
+  ASSERT_TRUE(res);
+}

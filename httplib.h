@@ -620,6 +620,7 @@ using Ranges = std::vector<Range>;
 struct Request {
   std::string method;
   std::string path;
+  const char *matched_route = nullptr;
   Params params;
   Headers headers;
   std::string body;
@@ -871,10 +872,16 @@ namespace detail {
 
 class MatcherBase {
 public:
+  MatcherBase(std::string pattern) : pattern_(pattern) {}
   virtual ~MatcherBase() = default;
+
+  const std::string &pattern() const { return pattern_; }
 
   // Match request path and populate its matches and
   virtual bool match(Request &request) const = 0;
+
+private:
+  std::string pattern_;
 };
 
 /**
@@ -926,7 +933,8 @@ private:
  */
 class RegexMatcher final : public MatcherBase {
 public:
-  RegexMatcher(const std::string &pattern) : regex_(pattern) {}
+  RegexMatcher(const std::string &pattern)
+      : MatcherBase(pattern), regex_(pattern) {}
 
   bool match(Request &request) const override;
 
@@ -6084,7 +6092,8 @@ inline time_t BufferStream::duration() const { return 0; }
 
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
-inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
+inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern)
+    : MatcherBase(pattern) {
   static constexpr char marker[] = "/:";
 
   // One past the last ending position of a path param substring
@@ -6987,6 +6996,7 @@ inline bool Server::dispatch_request(Request &req, Response &res,
     const auto &handler = x.second;
 
     if (matcher->match(req)) {
+      req.matched_route = matcher->pattern().c_str();
       handler(req, res);
       return true;
     }
@@ -7107,6 +7117,7 @@ inline bool Server::dispatch_request_for_content_reader(
     const auto &handler = x.second;
 
     if (matcher->match(req)) {
+      req.matched_route = matcher->pattern().c_str();
       handler(req, res, content_reader);
       return true;
     }
