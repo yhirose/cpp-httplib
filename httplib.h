@@ -192,9 +192,9 @@ using ssize_t = long;
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
 #endif
 
+using nfds_t = unsigned long;
 using socket_t = SOCKET;
 using socklen_t = int;
-#define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 
 #else // not _WIN32
 
@@ -3240,6 +3240,14 @@ inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
   });
 }
 
+inline int poll_wrapper(struct pollfd *fds, nfds_t nfds, int timeout) {
+#ifdef _WIN32
+  return ::WSAPoll(fds, nfds, timeout);
+#else
+  return ::poll(fds, nfds, timeout);
+#endif
+}
+
 template <bool Read>
 inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
   struct pollfd pfd;
@@ -3248,7 +3256,7 @@ inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  return handle_EINTR([&]() { return poll(&pfd, 1, timeout); });
+  return handle_EINTR([&]() { return poll_wrapper(&pfd, 1, timeout); });
 }
 
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
@@ -3267,7 +3275,8 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
 
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
-  auto poll_res = handle_EINTR([&]() { return poll(&pfd_read, 1, timeout); });
+  auto poll_res =
+      handle_EINTR([&]() { return poll_wrapper(&pfd_read, 1, timeout); });
 
   if (poll_res == 0) { return Error::ConnectionTimeout; }
 
@@ -10376,9 +10385,5 @@ inline SSL_CTX *Client::ssl_context() const {
 // ----------------------------------------------------------------------------
 
 } // namespace httplib
-
-#ifdef _WIN32
-#undef poll
-#endif
 
 #endif // CPPHTTPLIB_HTTPLIB_H
