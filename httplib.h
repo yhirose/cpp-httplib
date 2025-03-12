@@ -145,6 +145,16 @@
 #define CPPHTTPLIB_LISTEN_BACKLOG 5
 #endif
 
+#ifndef CPPHTTPLIB_DEFINE_STATIC
+#ifdef CPPHTTPLIB_NO_EXIT_TIME_DESTRUCTORS
+#define CPPHTTPLIB_DEFINE_STATIC(var_type, var, init)                          \
+  static var_type &var = *new typename std::remove_cv<var_type>::type init
+#else
+#define CPPHTTPLIB_DEFINE_STATIC(var_type, var, init)                          \
+  static var_type var = typename std::remove_cv<var_type>::type init
+#endif
+#endif
+
 /*
  * Headers
  */
@@ -2919,7 +2929,7 @@ inline std::string decode_url(const std::string &s,
 
 inline std::string file_extension(const std::string &path) {
   std::smatch m;
-  static auto re = std::regex("\\.([a-zA-Z0-9]+)$");
+  CPPHTTPLIB_DEFINE_STATIC(const std::regex, re, ("\\.([a-zA-Z0-9]+)$"));
   if (std::regex_search(path, m, re)) { return m[1].str(); }
   return std::string();
 }
@@ -4912,9 +4922,10 @@ public:
             file_.content_type =
                 trim_copy(header.substr(str_len(header_content_type)));
           } else {
-            static const std::regex re_content_disposition(
-                R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
-                std::regex_constants::icase);
+            CPPHTTPLIB_DEFINE_STATIC(
+                const std::regex, re_content_disposition,
+                (R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
+                 std::regex_constants::icase));
 
             std::smatch m;
             if (std::regex_match(header, m, re_content_disposition)) {
@@ -4935,8 +4946,9 @@ public:
               it = params.find("filename*");
               if (it != params.end()) {
                 // Only allow UTF-8 encoding...
-                static const std::regex re_rfc5987_encoding(
-                    R"~(^UTF-8''(.+?)$)~", std::regex_constants::icase);
+                CPPHTTPLIB_DEFINE_STATIC(
+                    const std::regex, re_rfc5987_encoding,
+                    (R"~(^UTF-8''(.+?)$)~", std::regex_constants::icase));
 
                 std::smatch m2;
                 if (std::regex_match(it->second, m2, re_rfc5987_encoding)) {
@@ -5614,7 +5626,7 @@ public:
   bool is_valid_ = false;
 };
 
-static WSInit wsinit_;
+CPPHTTPLIB_DEFINE_STATIC(WSInit, wsinit_, ());
 #endif
 
 inline bool parse_www_authenticate(const Response &res,
@@ -5622,7 +5634,8 @@ inline bool parse_www_authenticate(const Response &res,
                                    bool is_proxy) {
   auto auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
   if (res.has_header(auth_key)) {
-    static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
+    CPPHTTPLIB_DEFINE_STATIC(const std::regex, re,
+                             (R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~"));
     auto s = res.get_header_value(auth_key);
     auto pos = s.find(' ');
     if (pos != std::string::npos) {
@@ -5706,7 +5719,7 @@ inline void hosted_at(const std::string &hostname,
 inline std::string append_query_params(const std::string &path,
                                        const Params &params) {
   std::string path_with_query = path;
-  const static std::regex re("[^?]+\\?.*");
+  CPPHTTPLIB_DEFINE_STATIC(const std::regex, re, ("[^?]+\\?.*"));
   auto delm = std::regex_match(path, re) ? '&' : '?';
   path_with_query += delm + detail::params_to_query_str(params);
   return path_with_query;
@@ -6480,9 +6493,9 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     if (count != 3) { return false; }
   }
 
-  static const std::set<std::string> methods{
-      "GET",     "HEAD",    "POST",  "PUT",   "DELETE",
-      "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
+  CPPHTTPLIB_DEFINE_STATIC(std::set<std::string>, methods,
+                           ({"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT",
+                             "OPTIONS", "TRACE", "PATCH", "PRI"}));
 
   if (methods.find(req.method) == methods.end()) { return false; }
 
@@ -7469,9 +7482,11 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
   if (!line_reader.getline()) { return false; }
 
 #ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
-  const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
+  CPPTHTTPLIB_DEFINE_STATIC(std::regex, re,
+                            ("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n"));
 #else
-  const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
+  CPPHTTPLIB_DEFINE_STATIC(const std::regex, re,
+                           ("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n"));
 #endif
 
   std::cmatch m;
@@ -7703,8 +7718,9 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   auto location = res.get_header_value("location");
   if (location.empty()) { return false; }
 
-  const static std::regex re(
-      R"((?:(https?):)?(?://(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+  CPPHTTPLIB_DEFINE_STATIC(
+      const std::regex, re,
+      (R"((?:(https?):)?(?://(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)"));
 
   std::smatch m;
   if (!std::regex_match(location, m, re)) { return false; }
@@ -9787,8 +9803,10 @@ inline Client::Client(const std::string &scheme_host_port)
 inline Client::Client(const std::string &scheme_host_port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path) {
-  const static std::regex re(
-      R"((?:([a-z]+):\/\/)?(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)");
+
+  CPPHTTPLIB_DEFINE_STATIC(
+      const std::regex, re,
+      (R"((?:([a-z]+):\/\/)?(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)"));
 
   std::smatch m;
   if (std::regex_match(scheme_host_port, m, re)) {

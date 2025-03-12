@@ -40,12 +40,14 @@ using namespace httplib;
 const char *HOST = "localhost";
 const int PORT = 1234;
 
-const string LONG_QUERY_VALUE = string(25000, '@');
-const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
+CPPHTTPLIB_DEFINE_STATIC(const string, LONG_QUERY_VALUE, (25000, '@'));
+CPPHTTPLIB_DEFINE_STATIC(const string, LONG_QUERY_URL,
+                         ("/long-query-value?key=" + LONG_QUERY_VALUE));
 
-const std::string JSON_DATA = "{\"hello\":\"world\"}";
+CPPHTTPLIB_DEFINE_STATIC(const string, JSON_DATA, ("{\"hello\":\"world\"}"));
 
-const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
+CPPHTTPLIB_DEFINE_STATIC(const string, LARGE_DATA,
+                         (1024 * 1024 * 100, '@')); // 100MB
 
 MultipartFormData &get_file_value(MultipartFormDataItems &files,
                                   const char *key) {
