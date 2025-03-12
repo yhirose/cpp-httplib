@@ -2050,6 +2050,10 @@ inline void duration_to_sec_and_usec(const T &duration, U callback) {
   callback(static_cast<time_t>(sec), static_cast<time_t>(usec));
 }
 
+template <size_t N> inline constexpr size_t str_len(const char (&)[N]) {
+  return N - 1;
+}
+
 inline bool is_numeric(const std::string &str) {
   return !str.empty() && std::all_of(str.begin(), str.end(), ::isdigit);
 }
@@ -2209,9 +2213,9 @@ inline const char *status_message(int status) {
 
 inline std::string get_bearer_token_auth(const Request &req) {
   if (req.has_header("Authorization")) {
-    static std::string BearerHeaderPrefix = "Bearer ";
+    constexpr auto bearer_header_prefix_len = detail::str_len("Bearer ");
     return req.get_header_value("Authorization")
-        .substr(BearerHeaderPrefix.length());
+        .substr(bearer_header_prefix_len);
   }
   return "";
 }
@@ -4646,10 +4650,8 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
       }
     }
 
-    static const std::string done_marker("0\r\n");
-    if (!write_data(strm, done_marker.data(), done_marker.size())) {
-      ok = false;
-    }
+    constexpr const char done_marker[] = "0\r\n";
+    if (!write_data(strm, done_marker, str_len(done_marker))) { ok = false; }
 
     // Trailer
     if (trailer) {
@@ -4661,8 +4663,8 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
       }
     }
 
-    static const std::string crlf("\r\n");
-    if (!write_data(strm, crlf.data(), crlf.size())) { ok = false; }
+    constexpr const char crlf[] = "\r\n";
+    if (!write_data(strm, crlf, str_len(crlf))) { ok = false; }
   };
 
   data_sink.done = [&](void) { done_with_trailer(nullptr); };
@@ -4904,11 +4906,11 @@ public:
             return false;
           }
 
-          static const std::string header_content_type = "Content-Type:";
+          constexpr const char header_content_type[] = "Content-Type:";
 
           if (start_with_case_ignore(header, header_content_type)) {
             file_.content_type =
-                trim_copy(header.substr(header_content_type.size()));
+                trim_copy(header.substr(str_len(header_content_type)));
           } else {
             static const std::regex re_content_disposition(
                 R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
@@ -5005,10 +5007,10 @@ private:
     file_.content_type.clear();
   }
 
-  bool start_with_case_ignore(const std::string &a,
-                              const std::string &b) const {
-    if (a.size() < b.size()) { return false; }
-    for (size_t i = 0; i < b.size(); i++) {
+  bool start_with_case_ignore(const std::string &a, const char *b) const {
+    const auto b_len = strlen(b);
+    if (a.size() < b_len) { return false; }
+    for (size_t i = 0; i < b_len; i++) {
       if (case_ignore::to_lower(a[i]) != case_ignore::to_lower(b[i])) {
         return false;
       }
@@ -5095,7 +5097,7 @@ private:
 };
 
 inline std::string random_string(size_t length) {
-  static const char data[] =
+  constexpr const char data[] =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
   // std::random_device might actually be deterministic on some
@@ -6094,7 +6096,7 @@ inline time_t BufferStream::duration() const { return 0; }
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
 inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
-  static constexpr char marker[] = "/:";
+  constexpr const char marker[] = "/:";
 
   // One past the last ending position of a path param substring
   std::size_t last_param_end = 0;
@@ -6115,7 +6117,7 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
     static_fragments_.push_back(
         pattern.substr(last_param_end, marker_pos - last_param_end + 1));
 
-    const auto param_name_start = marker_pos + 2;
+    const auto param_name_start = marker_pos + str_len(marker);
 
     auto sep_pos = pattern.find(separator, param_name_start);
     if (sep_pos == std::string::npos) { sep_pos = pattern.length(); }
