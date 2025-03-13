@@ -963,6 +963,16 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 > [!NOTE]
 > Windows 8 or lower, Visual Studio 2015 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
 
+### Exit-time destructors
+
+By default, the library relies on exit-time destructors for the cleanup of its static objects when the program terminates. To disable these exit-time destructors, define the preprocessor macro `CPPHTTPLIB_NO_EXIT_TIME_DESTRUCTORS` before including `httplib.h`.
+
+> [!NOTE]
+> When exit-time destructors are disabled, all static variables are allocated on the heap and are not deleted, to prevent their destructors from being called at exit time. This results in purposeful memory leaks, but since the program is exiting, it typically does not affect the application's behavior.
+
+> [!NOTE]
+> If you use `std::atexit()` to register a function that accesses client or server objects from this library, it is recommended to disable exit-time destructors. This ensures that the objects remain valid when your registered function runs, avoiding potential issues with destructors being called before your function executes.
+
 License
 -------
 
