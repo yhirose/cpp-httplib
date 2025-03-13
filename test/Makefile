@@ -18,7 +18,7 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 BROTLI_DIR = $(PREFIX)/opt/brotli
 BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
-TEST_ARGS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread -lcurl
+TEST_ARGS = gtest_main.o gtest-all.o -Igtest -Igtest/include $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) -pthread -lcurl
 
 # By default, use standalone_fuzz_target_runner.
 # This runner does no fuzzing, but simply executes the inputs
@@ -33,19 +33,30 @@ REALPATH = $(shell which grealpath 2>/dev/null || which realpath 2>/dev/null)
 STYLE_CHECK_FILES = $(filter-out httplib.h httplib.cc, \
 	$(wildcard example/*.h example/*.cc fuzzing/*.h fuzzing/*.cc *.h *.cc ../httplib.h))
 
-all : test test_split
+all : test test_no_exit_time_dtors test_split
 	./test
+	GTEST_FILTER="ExitTimeDtorsTest.*" ./test_no_exit_time_dtors
 
 proxy : test_proxy
 	./test_proxy
 
-test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
+gtest-all.o : gtest/src/gtest-all.cc
+	$(CXX) -c -o $@ $(CXXFLAGS) -Igtest -Igtest/include $<
+
+gtest_main.o : gtest/src/gtest_main.cc
+	$(CXX) -c -o $@ $(CXXFLAGS) -Igtest -Igtest/include $<
+
+test : gtest_main.o gtest-all.o test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS)
 	@file $@
 
+test_no_exit_time_dtors : gtest_main.o gtest-all.o test.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) -DCPPHTTPLIB_NO_EXIT_TIME_DESTRUCTORS \
+		$(if $(findstring clang,$(CXX)),-Wexit-time-destructors -Werror=exit-time-destructors) test.cc $(TEST_ARGS)
+
 # Note: The intention of test_split is to verify that it works to compile and
 # link the split httplib.h, so there is normally no need to execute it.
-test_split : test.cc ../httplib.h httplib.cc Makefile cert.pem
+test_split : gtest_main.o gtest-all.o test.cc ../httplib.h httplib.cc Makefile cert.pem
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS)
 
 check_abi:
@@ -73,7 +84,7 @@ style_check: $(STYLE_CHECK_FILES)
 		echo "All files are properly formatted."; \
 	fi
 
-test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
+test_proxy : gtest_main.o gtest-all.o test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS)
 
 # Runs server_fuzzer.cc based on value of $(LIB_FUZZING_ENGINE).
@@ -98,5 +109,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_proxy server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
+	rm -rf test test_no_exit_time_dtors test_split test_proxy server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
 

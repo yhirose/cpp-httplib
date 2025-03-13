@@ -8470,3 +8470,75 @@ TEST(ClientInThreadTest, Issue2068) {
     t.join();
   }
 }
+
+#if defined(__SANITIZE_ADDRESS__)
+#define ASAN_ENABLED 1
+#else
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define ASAN_ENABLED 1
+#else
+#define ASAN_ENABLED 0
+#endif
+#else
+#define ASAN_ENABLED 0
+#endif
+#endif
+
+// No death tests on Windows
+#ifndef _WIN32
+bool KilledByAbortOrSegfault(int exit_status) {
+  return
+#if ASAN_ENABLED
+      // For ASan in some environments
+      (WIFEXITED(exit_status) && WEXITSTATUS(exit_status) == 1) ||
+#endif
+      (WIFSIGNALED(exit_status) &&
+       (WTERMSIG(exit_status) == SIGABRT || WTERMSIG(exit_status) == SIGSEGV));
+}
+
+Server *issue2097_svr = nullptr;
+std::thread *issue2097_svr_thread = nullptr;
+
+TEST(ExitTimeDtorsTest, Issue2097) {
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  ASSERT_EXIT(
+      {
+        issue2097_svr = new Server();
+        std::atexit([]() {
+          // Wait a bit before stopping server to simulate delayed exit
+          std::this_thread::sleep_for(std::chrono::milliseconds(200));
+          issue2097_svr->stop();
+          issue2097_svr_thread->join();
+        });
+
+        issue2097_svr_thread = new std::thread([]() {
+          issue2097_svr->Get(
+              "/hi", [](const Request & /*req*/, httplib::Response &res) {
+                res.set_content("Quack", "text/plain");
+              });
+
+          issue2097_svr->listen(HOST, PORT);
+        });
+
+        std::thread cli_thread([]() {
+          Client cli(HOST, PORT);
+          while (true) {
+            auto res = cli.Get("/hi");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          }
+        });
+
+        std::thread([]() {
+          std::this_thread::sleep_for(std::chrono::milliseconds(200));
+          std::exit(42);
+        }).join();
+      },
+#ifdef CPPHTTPLIB_NO_EXIT_TIME_DESTRUCTORS
+      ::testing::ExitedWithCode(42),
+#else
+      KilledByAbortOrSegfault,
+#endif
+      "");
+}
+#endif

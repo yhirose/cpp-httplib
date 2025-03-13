@@ -16,6 +16,7 @@ test/httplib.cc
 test/httplib.h
 test/test
 test/server_fuzzer
+test/test_no_exit_time_dtors
 test/test_proxy
 test/test_split
 test/test.xcodeproj/xcuser*
