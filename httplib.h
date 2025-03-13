@@ -5100,16 +5100,15 @@ inline std::string random_string(size_t length) {
   constexpr const char data[] =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-  // std::random_device might actually be deterministic on some
-  // platforms, but due to lack of support in the c++ standard library,
-  // doing better requires either some ugly hacks or breaking portability.
-  static std::random_device seed_gen;
-
-  // Request 128 bits of entropy for initialization
-  static std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(),
-                                     seed_gen()};
-
-  static std::mt19937 engine(seed_sequence);
+  static thread_local std::mt19937 engine([]() {
+    // std::random_device might actually be deterministic on some
+    // platforms, but due to lack of support in the c++ standard library,
+    // doing better requires either some ugly hacks or breaking portability.
+    std::random_device seed_gen;
+    // Request 128 bits of entropy for initialization
+    std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(), seed_gen()};
+    return std::mt19937(seed_sequence);
+  }());
 
   std::string result;
   for (size_t i = 0; i < length; i++) {
