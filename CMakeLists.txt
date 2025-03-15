@@ -8,6 +8,7 @@
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
+	* HTTPLIB_REQUIRE_ZSTD (default off)
 	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
