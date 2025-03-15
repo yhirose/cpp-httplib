@@ -18,7 +18,8 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 BROTLI_DIR = $(PREFIX)/opt/brotli
 BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
-ZSTD_SUPPORT = -DCPPHTTPLIB_ZSTD_SUPPORT -lzstd
+ZSTD_DIR = $(PREFIX)/opt/zstd
+ZSTD_SUPPORT = -DCPPHTTPLIB_ZSTD_SUPPORT -I$(ZSTD_DIR)/include -L$(ZSTD_DIR)/lib -lzstd
 
 TEST_ARGS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) -pthread -lcurl
 
