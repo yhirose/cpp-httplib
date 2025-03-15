@@ -35,6 +35,10 @@ if(@HTTPLIB_IS_USING_BROTLI@)
 	find_dependency(Brotli COMPONENTS common encoder decoder)
 endif()
 
+if(@HTTPLIB_IS_USING_ZSTD@)
+	find_dependency(zstd)
+endif()
+
 # Mildly useful for end-users
 # Not really recommended to be used though
 set_and_check(HTTPLIB_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@")
@@ -46,6 +50,7 @@ set_and_check(HTTPLIB_HEADER_PATH "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@/httpl
 set(httplib_OpenSSL_FOUND @HTTPLIB_IS_USING_OPENSSL@)
 set(httplib_ZLIB_FOUND @HTTPLIB_IS_USING_ZLIB@)
 set(httplib_Brotli_FOUND @HTTPLIB_IS_USING_BROTLI@)
+set(httplib_zstd_FOUND @HTTPLIB_IS_USING_ZSTD@)
 
 check_required_components(httplib)
 

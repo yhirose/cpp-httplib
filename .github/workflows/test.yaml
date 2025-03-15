@@ -66,7 +66,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libc6-dev${{ matrix.config.arch_suffix }} libstdc++-13-dev${{ matrix.config.arch_suffix }} \
             libssl-dev${{ matrix.config.arch_suffix }} libcurl4-openssl-dev${{ matrix.config.arch_suffix }} \
-            zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }}
+            zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }} \
+            libzstd-dev${{ matrix.config.arch_suffix }}
       - name: build and run tests
         run: cd test && make EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}"
       - name: run fuzz test target
@@ -126,7 +127,7 @@ jobs:
     - name: Setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
     - name: Install vcpkg dependencies
-      run: vcpkg install gtest curl zlib brotli
+      run: vcpkg install gtest curl zlib brotli zstd
     - name: Install OpenSSL
       if: ${{ matrix.config.with_ssl }}
       run: choco install openssl
@@ -139,6 +140,7 @@ jobs:
         -DHTTPLIB_COMPILE=${{ matrix.config.compiled && 'ON' || 'OFF' }}
         -DHTTPLIB_REQUIRE_ZLIB=ON
         -DHTTPLIB_REQUIRE_BROTLI=ON
+        -DHTTPLIB_REQUIRE_ZSTD=ON
         -DHTTPLIB_REQUIRE_OPENSSL=${{ matrix.config.with_ssl && 'ON' || 'OFF' }}
     - name: Build ${{ matrix.config.name }}
       run: cmake --build build --config Release -- /v:m /clp:ShowCommandLine
