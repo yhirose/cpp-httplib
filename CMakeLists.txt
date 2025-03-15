@@ -158,14 +158,11 @@ elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
 endif()
 
 if(HTTPLIB_REQUIRE_ZSTD)
-	find_package(ZSTD REQUIRED)
+	find_package(zstd REQUIRED)
 	set(HTTPLIB_IS_USING_ZSTD TRUE)
 elseif(HTTPLIB_USE_ZSTD_IF_AVAILABLE)
-	find_package(ZSTD QUIET)
-	# FindZLIB doesn't have a ZLIB_FOUND variable, so check the target.
-	if(TARGET ZSTD::ZSTD)
-		set(HTTPLIB_IS_USING_ZSTD TRUE)
-	endif()
+	find_package(zstd QUIET)
+	set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
@@ -242,7 +239,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::encoder>
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::decoder>
 		$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:ZLIB::ZLIB>
-		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:ZSTD::ZSTD>
+		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:zstd>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
 )
