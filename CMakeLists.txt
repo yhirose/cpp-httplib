@@ -240,7 +240,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::encoder>
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::decoder>
 		$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:ZLIB::ZLIB>
-		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:zstd>
+		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:zstd::libzstd>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
 )
