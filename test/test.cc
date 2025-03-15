@@ -688,7 +688,8 @@ TEST(ParseAcceptEncoding2, AcceptEncoding) {
 
 TEST(ParseAcceptEncoding3, AcceptEncoding) {
   Request req;
-  req.set_header("Accept-Encoding", "br;q=1.0, gzip;q=0.8, zstd;q=0.8, *;q=0.1");
+  req.set_header("Accept-Encoding",
+                 "br;q=1.0, gzip;q=0.8, zstd;q=0.8, *;q=0.1");
 
   Response res;
   res.set_header("Content-Type", "text/plain");
@@ -3011,7 +3012,8 @@ protected:
                    const httplib::ContentReader &) {
                   res.set_content("ok", "text/plain");
                 })
-#if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT) || defined(CPPHTTPLIB_ZSTD_SUPPORT)
+#if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT) ||  \
+    defined(CPPHTTPLIB_ZSTD_SUPPORT)
         .Get("/compress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
@@ -4991,12 +4993,10 @@ TEST_F(ServerTest, ZstdWithoutDecompressing) {
   cli_.set_decompress(false);
   auto res = cli_.Get("/compress", headers);
 
-  unsigned char compressed[26] = {
-      0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x64, 0x8d, 0x00,
-      0x00, 0x50, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
-      0x37, 0x38, 0x39, 0x30, 0x01, 0x00, 0xd7, 0xa9,
-      0x20, 0x01
-  };
+  unsigned char compressed[26] = {0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x64, 0x8d,
+                                  0x00, 0x00, 0x50, 0x31, 0x32, 0x33, 0x34,
+                                  0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x01,
+                                  0x00, 0xd7, 0xa9, 0x20, 0x01};
 
   ASSERT_TRUE(res);
   EXPECT_EQ("zstd", res->get_header_value("Content-Encoding"));
@@ -5004,7 +5004,8 @@ TEST_F(ServerTest, ZstdWithoutDecompressing) {
   EXPECT_EQ("26", res->get_header_value("Content-Length"));
   EXPECT_EQ(StatusCode::OK_200, res->status);
   ASSERT_EQ(26U, res->body.size());
-  EXPECT_TRUE(std::memcmp(compressed, res->body.data(), sizeof(compressed)) == 0);
+  EXPECT_TRUE(std::memcmp(compressed, res->body.data(), sizeof(compressed)) ==
+              0);
 }
 
 TEST_F(ServerTest, ZstdWithContentReceiverWithoutAcceptEncoding) {
@@ -5074,7 +5075,6 @@ TEST_F(ServerTest, MultipartFormDataZstd) {
   Headers headers;
   headers.emplace("Accept-Encoding", "zstd");
 
-  
   cli_.set_compress(true);
   auto res = cli_.Post("/compress-multipart", headers, items);
 
@@ -5085,7 +5085,7 @@ TEST_F(ServerTest, MultipartFormDataZstd) {
 TEST_F(ServerTest, PutWithContentProviderWithZstd) {
   Headers headers;
   headers.emplace("Accept-Encoding", "zstd");
-  
+
   cli_.set_compress(true);
   auto res = cli_.Put(
       "/put", headers, 3,
@@ -5148,12 +5148,10 @@ TEST(ZstdDecompressor, ChunkedDecompression) {
 
 TEST(ZstdDecompressor, Decompress) {
   std::string original_text = "Compressed with ZSTD";
-  unsigned char data[29] = {
-      0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x14, 0xa1, 0x00,
-      0x00, 0x43, 0x6f, 0x6d, 0x70, 0x72, 0x65, 0x73,
-      0x73, 0x65, 0x64, 0x20, 0x77, 0x69, 0x74, 0x68,
-      0x20, 0x5a, 0x53, 0x54, 0x44
-  };
+  unsigned char data[29] = {0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x14, 0xa1, 0x00,
+                            0x00, 0x43, 0x6f, 0x6d, 0x70, 0x72, 0x65, 0x73,
+                            0x73, 0x65, 0x64, 0x20, 0x77, 0x69, 0x74, 0x68,
+                            0x20, 0x5a, 0x53, 0x54, 0x44};
   std::string compressed_data(data, data + sizeof(data) / sizeof(data[0]));
 
   std::string decompressed_data;

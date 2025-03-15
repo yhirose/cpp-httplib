@@ -2449,7 +2449,7 @@ ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags);
 
 ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags);
 
-enum class EncodingType { None = 0, Gzip, Brotli, Zstd};
+enum class EncodingType { None = 0, Gzip, Brotli, Zstd };
 
 EncodingType encoding_type(const Request &req, const Response &res);
 
@@ -4201,63 +4201,49 @@ inline zstd_compressor::zstd_compressor() {
   ZSTD_CCtx_setParameter(ctx_, ZSTD_c_compressionLevel, ZSTD_fast);
 }
 
-inline zstd_compressor::~zstd_compressor() {
-  ZSTD_freeCCtx(ctx_);
-}
+inline zstd_compressor::~zstd_compressor() { ZSTD_freeCCtx(ctx_); }
 
 inline bool zstd_compressor::compress(const char *data, size_t data_length,
                                       bool last, Callback callback) {
   std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
 
   ZSTD_EndDirective mode = last ? ZSTD_e_end : ZSTD_e_continue;
-  ZSTD_inBuffer input = { data, data_length, 0 };
+  ZSTD_inBuffer input = {data, data_length, 0};
 
   bool finished;
   do {
-    ZSTD_outBuffer output = { buff.data(), CPPHTTPLIB_COMPRESSION_BUFSIZ, 0 };
+    ZSTD_outBuffer output = {buff.data(), CPPHTTPLIB_COMPRESSION_BUFSIZ, 0};
     size_t const remaining = ZSTD_compressStream2(ctx_, &output, &input, mode);
 
-    if (ZSTD_isError(remaining)) {
-      return false;
-    }
+    if (ZSTD_isError(remaining)) { return false; }
 
-    if (!callback(buff.data(), output.pos)) {
-      return false;
-    }
+    if (!callback(buff.data(), output.pos)) { return false; }
 
     finished = last ? (remaining == 0) : (input.pos == input.size);
 
-  } while(!finished);
+  } while (!finished);
 
   return true;
 }
 
-inline zstd_decompressor::zstd_decompressor() {
-  ctx_ = ZSTD_createDCtx();
-}
+inline zstd_decompressor::zstd_decompressor() { ctx_ = ZSTD_createDCtx(); }
 
-inline zstd_decompressor::~zstd_decompressor() {
-  ZSTD_freeDCtx(ctx_);
-}
+inline zstd_decompressor::~zstd_decompressor() { ZSTD_freeDCtx(ctx_); }
 
 inline bool zstd_decompressor::is_valid() const { return ctx_ != nullptr; }
 
 inline bool zstd_decompressor::decompress(const char *data, size_t data_length,
                                           Callback callback) {
   std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
-  ZSTD_inBuffer input = { data, data_length, 0 };
+  ZSTD_inBuffer input = {data, data_length, 0};
 
   while (input.pos < input.size) {
-    ZSTD_outBuffer output = { buff.data(), CPPHTTPLIB_COMPRESSION_BUFSIZ, 0 };
-    size_t const remaining = ZSTD_decompressStream(ctx_, &output , &input);
+    ZSTD_outBuffer output = {buff.data(), CPPHTTPLIB_COMPRESSION_BUFSIZ, 0};
+    size_t const remaining = ZSTD_decompressStream(ctx_, &output, &input);
 
-    if (ZSTD_isError(remaining)) {
-      return false;
-    }
+    if (ZSTD_isError(remaining)) { return false; }
 
-    if (!callback(buff.data(), output.pos)) {
-      return false;
-    }
+    if (!callback(buff.data(), output.pos)) { return false; }
   }
 
   return true;
