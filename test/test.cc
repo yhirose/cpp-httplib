@@ -5571,6 +5571,9 @@ TEST(StreamingTest, NoContentLengthStreaming) {
           s += std::string(data, len);
           return true;
         });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
     EXPECT_EQ("aaabbb", s);
   });
   auto get_se = detail::scope_exit([&] { get_thread.join(); });
