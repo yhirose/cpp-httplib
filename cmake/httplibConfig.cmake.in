@@ -22,9 +22,11 @@ if(@HTTPLIB_IS_USING_OPENSSL@)
 		# Since we use both, we need to search for both.
 		find_dependency(OpenSSL @_HTTPLIB_OPENSSL_MIN_VER@ COMPONENTS Crypto SSL)
 	endif()
+	set(httplib_OpenSSL_FOUND ${OpenSSL_FOUND})
 endif()
 if(@HTTPLIB_IS_USING_ZLIB@)
 	find_dependency(ZLIB)
+	set(httplib_ZLIB_FOUND ${ZLIB_FOUND})
 endif()
 
 if(@HTTPLIB_IS_USING_BROTLI@)
@@ -33,10 +35,12 @@ if(@HTTPLIB_IS_USING_BROTLI@)
 	list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 	set(BROTLI_USE_STATIC_LIBS @BROTLI_USE_STATIC_LIBS@)
 	find_dependency(Brotli COMPONENTS common encoder decoder)
+	set(httplib_Brotli_FOUND ${Brotli_FOUND})
 endif()
 
 if(@HTTPLIB_IS_USING_ZSTD@)
 	find_dependency(zstd)
+	set(httplib_zstd_FOUND ${zstd_FOUND})
 endif()
 
 # Mildly useful for end-users
@@ -45,12 +49,6 @@ set_and_check(HTTPLIB_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@")
 # Lets the end-user find the header path with the header appended
 # This is helpful if you're using Cmake's pre-compiled header feature
 set_and_check(HTTPLIB_HEADER_PATH "@PACKAGE_CMAKE_INSTALL_FULL_INCLUDEDIR@/httplib.h")
-
-# Consider each library support as a "component"
-set(httplib_OpenSSL_FOUND @HTTPLIB_IS_USING_OPENSSL@)
-set(httplib_ZLIB_FOUND @HTTPLIB_IS_USING_ZLIB@)
-set(httplib_Brotli_FOUND @HTTPLIB_IS_USING_BROTLI@)
-set(httplib_zstd_FOUND @HTTPLIB_IS_USING_ZSTD@)
 
 check_required_components(httplib)
 
