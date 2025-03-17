@@ -5723,7 +5723,8 @@ inline bool parse_www_authenticate(const Response &res,
                                    bool is_proxy) {
   auto auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
   if (res.has_header(auth_key)) {
-    thread_local auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
+    thread_local auto re =
+        std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
     auto s = res.get_header_value(auth_key);
     auto pos = s.find(' ');
     if (pos != std::string::npos) {
@@ -7583,7 +7584,7 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 #ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
   thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
 #else
-  thread_local const  std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
+  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
 #endif
 
   std::cmatch m;
