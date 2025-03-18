@@ -3365,7 +3365,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
-  const std::chrono::time_point<std::chrono::steady_clock> start_time;
+  const std::chrono::time_point<std::chrono::steady_clock> start_time_;
 
   std::vector<char> read_buff_;
   size_t read_buff_off_ = 0;
@@ -3403,7 +3403,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
-  const std::chrono::time_point<std::chrono::steady_clock> start_time;
+  const std::chrono::time_point<std::chrono::steady_clock> start_time_;
 };
 #endif
 
@@ -6060,7 +6060,7 @@ inline SocketStream::SocketStream(
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      max_timeout_msec_(max_timeout_msec), start_time(start_time),
+      max_timeout_msec_(max_timeout_msec), start_time_(start_time),
       read_buff_(read_buff_size_, 0) {}
 
 inline SocketStream::~SocketStream() = default;
@@ -6158,7 +6158,7 @@ inline socket_t SocketStream::socket() const { return sock_; }
 
 inline time_t SocketStream::duration() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time)
+             std::chrono::steady_clock::now() - start_time_)
       .count();
 }
 
@@ -9200,7 +9200,7 @@ inline SSLSocketStream::SSLSocketStream(
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      max_timeout_msec_(max_timeout_msec), start_time(start_time) {
+      max_timeout_msec_(max_timeout_msec), start_time_(start_time) {
   SSL_clear_mode(ssl, SSL_MODE_AUTO_RETRY);
 }
 
@@ -9306,7 +9306,7 @@ inline socket_t SSLSocketStream::socket() const { return sock_; }
 
 inline time_t SSLSocketStream::duration() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time)
+             std::chrono::steady_clock::now() - start_time_)
       .count();
 }
 
