@@ -70,7 +70,6 @@ static void read_file(const std::string &path, std::string &out) {
   fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
-#ifndef _WIN32
 class UnixSocketTest : public ::testing::Test {
 protected:
   void TearDown() override { std::remove(pathname_.c_str()); }
@@ -167,6 +166,7 @@ TEST_F(UnixSocketTest, abstract) {
 }
 #endif
 
+#ifndef _WIN32
 TEST(SocketStream, wait_writable_UNIX) {
   int fds[2];
   ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
