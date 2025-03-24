@@ -184,10 +184,10 @@ using ssize_t = long;
 #define NOMINMAX
 #endif // NOMINMAX
 
+#include <afunix.h>
 #include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <afunix.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
@@ -3570,8 +3570,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
       if (socket_options) { socket_options(sock); }
 
 #ifdef _WIN32
-      // Setting SO_REUSEADDR seems not to work well with AF_UNIX on windows, so avoid
-      // setting default_socket_options.
+      // Setting SO_REUSEADDR seems not to work well with AF_UNIX on windows, so
+      // remove the option.
       detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 0);
 #endif
 
