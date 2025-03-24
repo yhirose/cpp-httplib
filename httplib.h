@@ -197,6 +197,10 @@ using ssize_t = long;
 #endif // NOMINMAX
 
 #include <io.h>
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) &&                                     \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#define CERT_CHAIN_PARA_HAS_EXTRA_FIELDS
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -1275,6 +1279,17 @@ public:
       : res_(std::move(res)), err_(err),
         request_headers_(std::move(request_headers)), ssl_error_(ssl_error),
         ssl_openssl_error_(ssl_openssl_error) {}
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  Result(std::unique_ptr<Response> &&res, Error err, Headers &&request_headers,
+         int ssl_error, unsigned long ssl_openssl_error,
+         unsigned long wincrypt_error, unsigned long wincrypt_chain_error)
+      : res_(std::move(res)), err_(err),
+        request_headers_(std::move(request_headers)), ssl_error_(ssl_error),
+        ssl_openssl_error_(ssl_openssl_error), wincrypt_error_(wincrypt_error),
+        wincrypt_chain_error_(wincrypt_chain_error) {}
+#endif
 #endif
   // Response
   operator bool() const { return res_ != nullptr; }
@@ -1295,6 +1310,14 @@ public:
   int ssl_error() const { return ssl_error_; }
   // OpenSSL Error
   unsigned long ssl_openssl_error() const { return ssl_openssl_error_; }
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  // Windows Certificate Error (from GetLastError or policy_status.dwError)
+  unsigned long wincrypt_error() const { return wincrypt_error_; }
+  // Windows Certificate Chain Trust Status (from TrustStatus.dwErrorStatus)
+  unsigned long wincrypt_chain_error() const { return wincrypt_chain_error_; }
+#endif
 #endif
 
   // Request Headers
@@ -1313,6 +1336,12 @@ private:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int ssl_error_ = 0;
   unsigned long ssl_openssl_error_ = 0;
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  unsigned long wincrypt_error_ = 0;
+  unsigned long wincrypt_chain_error_ = 0;
+#endif
 #endif
 };
 
@@ -1614,6 +1643,12 @@ protected:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int last_ssl_error_ = 0;
   unsigned long last_openssl_error_ = 0;
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  unsigned long last_wincrypt_error_ = 0;
+  unsigned long last_wincrypt_chain_error_ = 0;
+#endif
 #endif
 
 private:
@@ -6040,6 +6075,7 @@ inline bool is_ssl_peer_could_be_closed(SSL *ssl, socket_t sock) {
 }
 
 #ifdef _WIN32
+#ifdef CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
 inline bool load_system_certs_on_windows(X509_STORE *store) {
@@ -6066,6 +6102,7 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
 
   return result;
 }
+#endif // CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) &&                    \
     defined(TARGET_OS_OSX)
 template <typename T>
@@ -6347,8 +6384,8 @@ inline std::string decode_uri(const std::string &value) {
   return result;
 }
 
-[[deprecated("Use encode_uri_component instead")]]
-inline std::string encode_query_param(const std::string &value) {
+[[deprecated("Use encode_uri_component instead")]] inline std::string
+encode_query_param(const std::string &value) {
   return encode_uri_component(value);
 }
 
@@ -8344,8 +8381,19 @@ inline Result ClientImpl::send_(Request &&req) {
   auto error = Error::Success;
   auto ret = send(req, *res, error);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  return Result{ret ? std::move(res) : nullptr,
+                error,
+                std::move(req.headers),
+                last_ssl_error_,
+                last_openssl_error_,
+                last_wincrypt_error_,
+                last_wincrypt_chain_error_};
+#else
   return Result{ret ? std::move(res) : nullptr, error, std::move(req.headers),
                 last_ssl_error_, last_openssl_error_};
+#endif
 #else
   return Result{ret ? std::move(res) : nullptr, error, std::move(req.headers)};
 #endif
@@ -8899,8 +8947,19 @@ inline Result ClientImpl::send_with_content_provider(
       std::move(content_provider_without_length), content_type, error);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  return Result{std::move(res),
+                error,
+                std::move(req.headers),
+                last_ssl_error_,
+                last_openssl_error_,
+                last_wincrypt_error_,
+                last_wincrypt_chain_error_};
+#else
   return Result{std::move(res), error, std::move(req.headers), last_ssl_error_,
                 last_openssl_error_};
+#endif
 #else
   return Result{std::move(res), error, std::move(req.headers)};
 #endif
@@ -10483,8 +10542,10 @@ inline bool SSLClient::load_certs() {
     } else {
       auto loaded = false;
 #ifdef _WIN32
+#ifdef CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
+#endif // CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) &&                    \
     defined(TARGET_OS_OSX)
       loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
@@ -10529,6 +10590,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           }
 
           if (verification_status == SSLVerifierResponse::NoDecisionMade) {
+#if !defined(_WIN32) ||                                                        \
+    defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
@@ -10536,6 +10599,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
               error = Error::SSLServerVerification;
               return false;
             }
+#endif // not _WIN32 ||
+       // CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 
             auto server_cert = SSL_get1_peer_certificate(ssl2);
             auto se = detail::scope_exit([&] { X509_free(server_cert); });
@@ -10546,6 +10611,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
               return false;
             }
 
+#if !defined(_WIN32) ||                                                        \
+    defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
             if (server_hostname_verification_) {
               if (!verify_host(server_cert)) {
                 last_openssl_error_ = X509_V_ERR_HOSTNAME_MISMATCH;
@@ -10553,6 +10620,101 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
                 return false;
               }
             }
+#else  // _WIN32 && !
+       // CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+       // Windows Schannel verification path - clear OpenSSL errors since
+       // we're not using OpenSSL for certificate verification
+            last_openssl_error_ = 0;
+
+            // Convert OpenSSL certificate to DER format
+            auto der_cert =
+                std::vector<unsigned char>(i2d_X509(server_cert, nullptr));
+            auto der_cert_data = der_cert.data();
+            if (i2d_X509(server_cert, &der_cert_data) < 0) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            // Create a certificate context from the DER-encoded certificate
+            auto cert_context = CertCreateCertificateContext(
+                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, der_cert.data(),
+                static_cast<DWORD>(der_cert.size()));
+
+            if (cert_context == nullptr) {
+              last_wincrypt_error_ = GetLastError();
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            auto chain_para = CERT_CHAIN_PARA{};
+            chain_para.cbSize = sizeof(chain_para);
+            chain_para.dwUrlRetrievalTimeout = 10 * 1000;
+
+            auto chain_context = PCCERT_CHAIN_CONTEXT{};
+            auto result = CertGetCertificateChain(
+                nullptr, cert_context, nullptr, cert_context->hCertStore,
+                &chain_para,
+                CERT_CHAIN_CACHE_END_CERT |
+                    CERT_CHAIN_REVOCATION_CHECK_END_CERT |
+                    CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
+                nullptr, &chain_context);
+
+            CertFreeCertificateContext(cert_context);
+
+            if (!result || chain_context == nullptr) {
+              if (!result) { last_wincrypt_error_ = GetLastError(); }
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            // Capture detailed chain trust status before using the chain
+            last_wincrypt_chain_error_ =
+                chain_context->TrustStatus.dwErrorStatus;
+
+            // Verify chain policy
+            auto extra_policy_para = SSL_EXTRA_CERT_CHAIN_POLICY_PARA{};
+            extra_policy_para.cbSize = sizeof(extra_policy_para);
+            extra_policy_para.dwAuthType = AUTHTYPE_SERVER;
+            auto whost = detail::u8string_to_wstring(host_.c_str());
+            if (server_hostname_verification_) {
+              extra_policy_para.pwszServerName =
+                  const_cast<wchar_t *>(whost.c_str());
+            }
+
+            auto policy_para = CERT_CHAIN_POLICY_PARA{};
+            policy_para.cbSize = sizeof(policy_para);
+            policy_para.dwFlags =
+                CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS;
+            policy_para.pvExtraPolicyPara = &extra_policy_para;
+
+            auto policy_status = CERT_CHAIN_POLICY_STATUS{};
+            policy_status.cbSize = sizeof(policy_status);
+
+            result = CertVerifyCertificateChainPolicy(
+                CERT_CHAIN_POLICY_SSL, chain_context, &policy_para,
+                &policy_status);
+
+            CertFreeCertificateChain(chain_context);
+
+            if (!result) {
+              last_wincrypt_error_ = GetLastError();
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            if (policy_status.dwError != 0) {
+              // Store the specific Windows certificate error code
+              last_wincrypt_error_ = policy_status.dwError;
+
+              if (policy_status.dwError == CERT_E_CN_NO_MATCH) {
+                error = Error::SSLServerHostnameVerification;
+              } else {
+                error = Error::SSLServerVerification;
+              }
+              return false;
+            }
+#endif // not _WIN32 ||
+       // CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
           }
         }
 
@@ -11267,8 +11429,8 @@ inline void Client::set_follow_location(bool on) {
 
 inline void Client::set_path_encode(bool on) { cli_->set_path_encode(on); }
 
-[[deprecated("Use set_path_encode instead")]]
-inline void Client::set_url_encode(bool on) {
+[[deprecated("Use set_path_encode instead")]] inline void
+Client::set_url_encode(bool on) {
   cli_->set_path_encode(on);
 }
 

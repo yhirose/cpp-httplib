@@ -112,13 +112,26 @@ if (!res) {
       break;
 
     case httplib::Error::SSLServerVerification:
-      std::cout << "SSL verification failed, X509 error: "
-                << res->ssl_openssl_error() << std::endl;
+      std::cout << "SSL verification failed" << std::endl;
+#if defined(_WIN32) && !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+      // On Windows with Schannel, check Windows certificate errors
+      std::cout << "  Windows error: 0x" << std::hex << res->wincrypt_error()
+                << ", chain status: 0x" << res->wincrypt_chain_error() << std::endl;
+#else
+      // On other platforms, check OpenSSL errors
+      std::cout << "  X509 error: " << res->ssl_openssl_error() << std::endl;
+#endif
       break;
 
     case httplib::Error::SSLServerHostnameVerification:
-      std::cout << "SSL hostname verification failed, X509 error: "
-                << res->ssl_openssl_error() << std::endl;
+      std::cout << "SSL hostname verification failed" << std::endl;
+#if defined(_WIN32) && !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+      // On Windows with Schannel, check Windows certificate errors
+      std::cout << "  Windows error: 0x" << std::hex << res->wincrypt_error() << std::endl;
+#else
+      // On other platforms, check OpenSSL errors
+      std::cout << "  X509 error: " << res->ssl_openssl_error() << std::endl;
+#endif
       break;
 
     default:
@@ -127,6 +140,62 @@ if (!res) {
   }
 }
 ```
+
+For a simpler platform-agnostic approach, you can check which error field is non-zero:
+
+```c++
+auto res = cli.Get("/");
+if (!res) {
+  if (res.error() == httplib::Error::SSLServerVerification) {
+    std::cout << "Certificate verification failed!" << std::endl;
+
+    // Check which backend reported the error
+    if (res->ssl_openssl_error() != 0) {
+      // OpenSSL reported the error (Linux, macOS, or Windows with Schannel disabled)
+      std::cout << "OpenSSL error: " << res->ssl_openssl_error() << std::endl;
+    }
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#if defined(_WIN32) && !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+    else if (res->wincrypt_error() != 0) {
+      // Windows Schannel reported the error
+      std::cout << "Windows error: 0x" << std::hex << res->wincrypt_error() << std::endl;
+      std::cout << "Chain status: 0x" << std::hex << res->wincrypt_chain_error() << std::endl;
+    }
+#endif
+#endif
+  }
+}
+```
+
+### Windows Certificate Verification
+
+On Windows, by default, cpp-httplib uses Windows Schannel for certificate verification instead of OpenSSL's verification. This provides automatic root certificate updates from Windows Update.
+
+**When certificate verification fails on Windows:**
+- OpenSSL still handles the TLS handshake
+- Windows Schannel performs certificate verification
+- Check `wincrypt_error()` and `wincrypt_chain_error()` for diagnostic information
+- The `ssl_openssl_error()` field will be 0 for certificate verification errors
+
+**Windows-specific error codes** (`wincrypt_error()`) include:
+- `CERT_E_EXPIRED` (0x800B0101) - Certificate has expired
+- `CERT_E_UNTRUSTEDROOT` (0x800B0109) - Certificate chain to untrusted root
+- `CERT_E_CN_NO_MATCH` (0x800B010F) - Certificate CN doesn't match hostname
+- `CERT_E_REVOKED` (0x800B010C) - Certificate has been revoked
+- `CERT_E_CHAINING` (0x800B010A) - Error building certificate chain
+
+**Chain trust status** (`wincrypt_chain_error()`) provides additional details:
+- `CERT_TRUST_IS_NOT_TIME_VALID` (0x00000001) - Certificate expired
+- `CERT_TRUST_IS_REVOKED` (0x00000004) - Certificate revoked
+- `CERT_TRUST_IS_NOT_SIGNATURE_VALID` (0x00000008) - Invalid signature
+- `CERT_TRUST_IS_UNTRUSTED_ROOT` (0x00000020) - Untrusted root
+
+To disable Windows automatic certificate updates and use OpenSSL verification:
+```cmake
+set(HTTPLIB_USE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE OFF)
+```
+
+Or define `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` before including httplib.h.
 
 Server
 ------
