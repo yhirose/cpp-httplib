@@ -184,10 +184,12 @@ using ssize_t = long;
 #define NOMINMAX
 #endif // NOMINMAX
 
-#include <afunix.h>
 #include <io.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
+// afunix.h uses types declared in winsock2.h, so has to be included after it.
+#include <afunix.h>
 
 #ifndef WSA_FLAG_NO_HANDLE_INHERIT
 #define WSA_FLAG_NO_HANDLE_INHERIT 0x80
