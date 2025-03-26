@@ -4,11 +4,14 @@
 
 import argparse
 import os
+import re
 import sys
+import typing
 
-border = '// ----------------------------------------------------------------------------'
+BORDER: str = '// ----------------------------------------------------------------------------'
+INLINE_PATTERN = re.compile(r'\binline\s+')
 
-args_parser = argparse.ArgumentParser(description=__doc__)
+args_parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
 args_parser.add_argument(
     "-e", "--extension", help="extension of the implementation file (default: cc)",
     default="cc"
@@ -16,51 +19,56 @@ args_parser.add_argument(
 args_parser.add_argument(
     "-o", "--out", help="where to write the files (default: out)", default="out"
 )
-args = args_parser.parse_args()
+args: argparse.Namespace = args_parser.parse_args()
 
-cur_dir = os.path.dirname(sys.argv[0])
-lib_name = 'httplib'
-header_name = '/' + lib_name + '.h'
-source_name = '/' + lib_name + '.' + args.extension
-# get the input file
-in_file = cur_dir + header_name
-# get the output file
-h_out = args.out + header_name
-cc_out = args.out + source_name
+cur_dir: str = os.path.dirname(sys.argv[0])
+lib_name: str = 'httplib'
+header_name: str = os.path.join(lib_name + '.h')
+source_name: str = os.path.join(lib_name + '.' + args.extension)
+in_file: str = os.path.join(cur_dir, lib_name + '.h')
+h_out: str = os.path.join(args.out, header_name)
+cc_out: str = os.path.join(args.out, source_name)
 
-# if the modification time of the out file is after the in file,
-# don't split (as it is already finished)
-do_split = True
-
-if os.path.exists(h_out):
-    in_time = os.path.getmtime(in_file)
-    out_time = os.path.getmtime(h_out)
+# Check if we need to split
+do_split: bool = True
+if os.path.exists(h_out) and os.path.exists(cc_out):
+    in_time: float = os.path.getmtime(in_file)
+    out_time: float = max(os.path.getmtime(h_out), os.path.getmtime(cc_out))
     do_split = in_time > out_time
 
 if do_split:
-    with open(in_file) as f:
-        lines = f.readlines()
+    # Read entire file at once
+    with open(in_file) as f: # type: typing.TextIO
+        content: str = f.read()
 
-    python_version = sys.version_info[0]
-    if python_version < 3:
-        os.makedirs(args.out)
-    else:
-        os.makedirs(args.out, exist_ok=True)
+    os.makedirs(args.out, exist_ok=True)
 
-    in_implementation = False
-    cc_out = args.out + source_name
-    with open(h_out, 'w') as fh, open(cc_out, 'w') as fc:
-        fc.write('#include "httplib.h"\n')
-        fc.write('namespace httplib {\n')
-        for line in lines:
-            is_border_line = border in line
-            if is_border_line:
-                in_implementation = not in_implementation
-            elif in_implementation:
-                fc.write(line.replace('inline ', ''))
-            else:
-                fh.write(line)
-        fc.write('} // namespace httplib\n')
+    # Pre-allocate buffers
+    header_lines: typing.List[str] = []
+    impl_lines: typing.List[str] = [
+        '#include "httplib.h"\n',
+        'namespace httplib {\n'
+    ]
+
+    in_implementation: bool = False
+    border_stripped: str = BORDER.strip()
+
+    for line in content.splitlines(keepends=True):
+        if line.strip() == border_stripped:
+            in_implementation = not in_implementation
+            continue
+
+        if in_implementation:
+            impl_lines.append(INLINE_PATTERN.sub('', line, 1))
+        else:
+            header_lines.append(line)
+
+    impl_lines.append('} // namespace httplib\n')
+
+    # Write all at once
+    with open(h_out, 'w') as fh, open(cc_out, 'w') as fc: # type: typing.TextIO, typing.TextIO
+        fh.writelines(header_lines)
+        fc.writelines(impl_lines)
 
     print("Wrote {} and {}".format(h_out, cc_out))
 else:
