@@ -159,10 +159,16 @@ elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
 endif()
 
 if(HTTPLIB_REQUIRE_ZSTD)
-	find_package(zstd REQUIRED)
+	find_package(zstd)
+	if(NOT zstd_FOUND)
+		find_package(PkgConfig REQUIRED)
+		pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
+		add_library(zstd::libzstd ALIAS PkgConfig::zstd)
+	endif()
 	set(HTTPLIB_IS_USING_ZSTD TRUE)
 elseif(HTTPLIB_USE_ZSTD_IF_AVAILABLE)
 	find_package(zstd QUIET)
+	# TODO: try to find it via pkg-config
 	set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 endif()
 
