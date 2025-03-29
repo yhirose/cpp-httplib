@@ -168,7 +168,17 @@ if(HTTPLIB_REQUIRE_ZSTD)
 	set(HTTPLIB_IS_USING_ZSTD TRUE)
 elseif(HTTPLIB_USE_ZSTD_IF_AVAILABLE)
 	find_package(zstd QUIET)
-	# TODO: try to find it via pkg-config
+	if(NOT zstd_FOUND)
+		find_package(PkgConfig QUIET)
+		if(PKG_CONFIG_FOUND)
+			pkg_check_modules(zstd QUIET IMPORTED_TARGET libzstd)
+
+			if(TARGET PkgConfig::zstd)
+				add_library(zstd::libzstd ALIAS PkgConfig::zstd)
+			endif()
+		endif()
+	endif()
+	# Both find_package and PkgConf set a XXX_FOUND var
 	set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 endif()
 
