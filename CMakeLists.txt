@@ -18,7 +18,7 @@
 
 	-------------------------------------------------------------------------------
 
-	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL ZLIB Brotli) is available.
+	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL ZLIB Brotli zstd) is available.
 	This creates a httplib::httplib target (if found and if listed components are supported).
 	It can be linked like so:
 
