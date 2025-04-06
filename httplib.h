@@ -6055,9 +6055,7 @@ inline void calc_actual_timeout(time_t max_timeout_msec, time_t duration_msec,
   auto actual_timeout_msec =
       (std::min)(max_timeout_msec - duration_msec, timeout_msec);
 
-  if (actual_timeout_msec < 0) {
-    actual_timeout_msec = 0;
-  }
+  if (actual_timeout_msec < 0) { actual_timeout_msec = 0; }
 
   actual_timeout_sec = actual_timeout_msec / 1000;
   actual_timeout_usec = (actual_timeout_msec % 1000) * 1000;
