@@ -1115,10 +1115,18 @@ private:
                          MultipartContentHeader multipart_header,
                          ContentReceiver multipart_receiver) const;
 
+  void record_client_sock(socket_t sock);
+  
+  void remove_client_sock(socket_t sock);
+
   virtual bool process_and_close_socket(socket_t sock);
 
   std::atomic<bool> is_running_{false};
   std::atomic<bool> is_decommissioned{false};
+
+  // record all client sock
+  std::mutex cilent_sock_set_mutex_;
+  std::unordered_set<socket_t> client_sock_set_;
 
   struct MountPointEntry {
     std::string mount_point;
@@ -6566,6 +6574,13 @@ inline void Server::stop() {
     std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
+
+    std::lock_guard<std::mutex> guard(cilent_sock_set_mutex_);
+    for (auto it = client_sock_set_.begin(); it != client_sock_set_.end();) {
+      detail::shutdown_socket(*it);
+      detail::close_socket(*it);
+      it = client_sock_set_.erase(it);
+    }
   }
   is_decommissioned = false;
 }
@@ -6869,6 +6884,16 @@ Server::read_content_core(Stream &strm, Request &req, Response &res,
   return true;
 }
 
+inline void Server::record_client_sock(socket_t sock) {
+  std::lock_guard<std::mutex> guard(cilent_sock_set_mutex_);
+  client_sock_set_.insert(sock);
+}
+
+inline void Server::remove_client_sock(socket_t sock) {
+  std::lock_guard<std::mutex> guard(cilent_sock_set_mutex_);
+  client_sock_set_.erase(sock);
+}
+
 inline bool Server::handle_file_request(const Request &req, Response &res,
                                         bool head) {
   for (const auto &entry : base_dirs_) {
@@ -7016,8 +7041,10 @@ inline bool Server::listen_internal() {
       detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
                                   write_timeout_sec_, write_timeout_usec_);
 
+      record_client_sock(sock);
       if (!task_queue->enqueue(
               [this, sock]() { process_and_close_socket(sock); })) {
+        remove_client_sock(sock);
         detail::shutdown_socket(sock);
         detail::close_socket(sock);
       }
@@ -7438,6 +7465,7 @@ inline bool Server::process_and_close_socket(socket_t sock) {
                                nullptr);
       });
 
+  remove_client_sock(sock);
   detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return ret;
@@ -9451,6 +9479,7 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
     detail::ssl_delete(ctx_mutex_, ssl, sock, shutdown_gracefully);
   }
 
+  remove_client_sock(sock);
   detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return ret;
