@@ -7329,8 +7329,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   }
 
   // Setup `is_connection_closed` method
-  req.is_connection_closed = [&]() {
-    return !detail::is_socket_alive(strm.socket());
+  auto sock = strm.socket();
+  req.is_connection_closed = [sock]() {
+    return !detail::is_socket_alive(sock);
   };
 
   // Routing
