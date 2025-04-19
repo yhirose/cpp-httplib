@@ -7711,8 +7711,9 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
       socket_requests_are_from_thread_ = std::thread::id();
     }
 
-    if (socket_should_be_closed_when_request_is_done_ || close_connection ||
-        !ret) {
+    if ((socket_should_be_closed_when_request_is_done_ || close_connection ||
+         !ret) &&
+        res.status != StatusCode::SwitchingProtocol_101) {
       shutdown_ssl(socket_, true);
       shutdown_socket(socket_);
       close_socket(socket_);
@@ -8225,7 +8226,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    if (res.status != StatusCode::NotModified_304) {
+    if (res.status != StatusCode::NotModified_304 &&
+        res.status != StatusCode::SwitchingProtocol_101) {
       int dummy_status;
       if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
                                 dummy_status, std::move(progress),
