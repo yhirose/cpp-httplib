@@ -43,6 +43,9 @@ const int PORT = 1234;
 const string LONG_QUERY_VALUE = string(25000, '@');
 const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
 
+const string TOO_LONG_QUERY_VALUE = string(35000, '@');
+const string TOO_LONG_QUERY_URL = "/too-long-query-value?key=" + TOO_LONG_QUERY_VALUE;
+
 const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
@@ -2867,6 +2870,11 @@ protected:
                EXPECT_EQ(LONG_QUERY_URL, req.target);
                EXPECT_EQ(LONG_QUERY_VALUE, req.get_param_value("key"));
              })
+        .Get("/too-long-query-value",
+             [&](const Request &req, Response & /*res*/) {
+               EXPECT_EQ(TOO_LONG_QUERY_URL, req.target);
+               EXPECT_EQ(TOO_LONG_QUERY_VALUE, req.get_param_value("key"));
+             })
         .Get("/array-param",
              [&](const Request &req, Response & /*res*/) {
                EXPECT_EQ(3u, req.get_param_value_count("array"));
@@ -3653,6 +3661,13 @@ TEST_F(ServerTest, LongQueryValue) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
+}
+
+TEST_F(ServerTest, TooLongQueryValue) {
+  auto res = cli_.Get(TOO_LONG_QUERY_URL.c_str());
+
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::Read, res.error());
 }
 
 TEST_F(ServerTest, TooLongHeader) {

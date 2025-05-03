@@ -145,6 +145,10 @@
 #define CPPHTTPLIB_LISTEN_BACKLOG 5
 #endif
 
+#ifndef CPPHTTPLIB_MAX_LINE_LENGTH
+#define CPPHTTPLIB_MAX_LINE_LENGTH 32768
+#endif
+
 /*
  * Headers
  */
@@ -3067,6 +3071,11 @@ inline bool stream_line_reader::getline() {
 #endif
 
   for (size_t i = 0;; i++) {
+    if (size() >= CPPHTTPLIB_MAX_LINE_LENGTH) {
+      // Treat exceptionally long lines as an error to
+      // prevent infinite loops/memory exhaustion
+      return false;
+    }
     char byte;
     auto n = strm_.read(&byte, 1);
 
