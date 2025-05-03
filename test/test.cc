@@ -44,7 +44,8 @@ const string LONG_QUERY_VALUE = string(25000, '@');
 const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
 
 const string TOO_LONG_QUERY_VALUE = string(35000, '@');
-const string TOO_LONG_QUERY_URL = "/too-long-query-value?key=" + TOO_LONG_QUERY_VALUE;
+const string TOO_LONG_QUERY_URL =
+    "/too-long-query-value?key=" + TOO_LONG_QUERY_VALUE;
 
 const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
