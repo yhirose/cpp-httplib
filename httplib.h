@@ -1087,8 +1087,7 @@ private:
   bool listen_internal();
 
   bool routing(Request &req, Response &res, Stream &strm);
-  bool handle_file_request(const Request &req, Response &res,
-                           bool head = false);
+  bool handle_file_request(const Request &req, Response &res);
   bool dispatch_request(Request &req, Response &res,
                         const Handlers &handlers) const;
   bool dispatch_request_for_content_reader(
@@ -6880,8 +6879,7 @@ Server::read_content_core(Stream &strm, Request &req, Response &res,
   return true;
 }
 
-inline bool Server::handle_file_request(const Request &req, Response &res,
-                                        bool head) {
+inline bool Server::handle_file_request(const Request &req, Response &res) {
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
@@ -6914,7 +6912,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
                 return true;
               });
 
-          if (!head && file_request_handler_) {
+          if (req.method != "HEAD" && file_request_handler_) {
             file_request_handler_(req, res);
           }
 
@@ -7048,9 +7046,8 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
   }
 
   // File handler
-  auto is_head_request = req.method == "HEAD";
-  if ((req.method == "GET" || is_head_request) &&
-      handle_file_request(req, res, is_head_request)) {
+  if ((req.method == "GET" || req.method == "HEAD") &&
+      handle_file_request(req, res)) {
     return true;
   }
 
