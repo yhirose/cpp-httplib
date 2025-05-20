@@ -5732,6 +5732,41 @@ TEST(KeepAliveTest, ReadTimeout) {
   EXPECT_EQ("b", resb->body);
 }
 
+TEST(KeepAliveTest, MaxCount) {
+  size_t keep_alive_max_count = 3;
+
+  Server svr;
+  svr.set_keep_alive_max_count(keep_alive_max_count);
+
+  svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_keep_alive(true);
+
+  for (size_t i = 0; i < 5; i++) {
+    auto result = cli.Get("/hi");
+    ASSERT_TRUE(result);
+    EXPECT_EQ(StatusCode::OK_200, result->status);
+
+    if (i == keep_alive_max_count - 1) {
+      EXPECT_EQ("close", result->get_header_value("Connection"));
+    } else {
+      EXPECT_FALSE(result->has_header("Connection"));
+    }
+  }
+}
+
 TEST(KeepAliveTest, Issue1041) {
   Server svr;
   svr.set_keep_alive_timeout(3);
