@@ -2263,7 +2263,7 @@ TEST(NoContentTest, ContentLength) {
   }
 }
 
-TEST(RoutingHandlerTest, PreRoutingHandler) {
+TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
@@ -2351,6 +2351,63 @@ TEST(RoutingHandlerTest, PreRoutingHandler) {
     EXPECT_EQ("Error", res->body);
     EXPECT_EQ(0U, res->get_header_value_count("PRE_ROUTING"));
     EXPECT_EQ(0U, res->get_header_value_count("POST_ROUTING"));
+  }
+}
+
+TEST(RequestHandlerTest, PreRequestHandler) {
+  auto route_path = "/user/:user";
+
+  Server svr;
+
+  svr.Get("/hi", [](const Request &, Response &res) {
+    res.set_content("hi", "text/plain");
+  });
+
+  svr.Get(route_path, [](const Request &req, Response &res) {
+    res.set_content(req.path_params.at("user"), "text/plain");
+  });
+
+  svr.set_pre_request_handler([&](const Request &req, Response &res) {
+    if (req.matched_route == route_path) {
+      auto user = req.path_params.at("user");
+      if (user != "john") {
+        res.status = StatusCode::Forbidden_403;
+        res.set_content("error", "text/html");
+        return Server::HandlerResponse::Handled;
+      }
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  {
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("hi", res->body);
+  }
+
+  {
+    auto res = cli.Get("/user/john");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("john", res->body);
+  }
+
+  {
+    auto res = cli.Get("/user/invalid-user");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+    EXPECT_EQ("error", res->body);
   }
 }
 

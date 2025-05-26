@@ -636,6 +636,7 @@ using Ranges = std::vector<Range>;
 struct Request {
   std::string method;
   std::string path;
+  std::string matched_route;
   Params params;
   Headers headers;
   std::string body;
@@ -887,10 +888,16 @@ namespace detail {
 
 class MatcherBase {
 public:
+  MatcherBase(std::string pattern) : pattern_(pattern) {}
   virtual ~MatcherBase() = default;
+
+  const std::string &pattern() const { return pattern_; }
 
   // Match request path and populate its matches and
   virtual bool match(Request &request) const = 0;
+
+private:
+  std::string pattern_;
 };
 
 /**
@@ -942,7 +949,8 @@ private:
  */
 class RegexMatcher final : public MatcherBase {
 public:
-  RegexMatcher(const std::string &pattern) : regex_(pattern) {}
+  RegexMatcher(const std::string &pattern)
+      : MatcherBase(pattern), regex_(pattern) {}
 
   bool match(Request &request) const override;
 
@@ -1009,8 +1017,11 @@ public:
   }
 
   Server &set_exception_handler(ExceptionHandler handler);
+
   Server &set_pre_routing_handler(HandlerWithResponse handler);
   Server &set_post_routing_handler(Handler handler);
+
+  Server &set_pre_request_handler(HandlerWithResponse handler);
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
   Server &set_logger(Logger logger);
@@ -1153,6 +1164,7 @@ private:
   ExceptionHandler exception_handler_;
   HandlerWithResponse pre_routing_handler_;
   Handler post_routing_handler_;
+  HandlerWithResponse pre_request_handler_;
   Expect100ContinueHandler expect_100_continue_handler_;
 
   Logger logger_;
@@ -6224,7 +6236,8 @@ inline time_t BufferStream::duration() const { return 0; }
 
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
-inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
+inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern)
+    : MatcherBase(pattern) {
   constexpr const char marker[] = "/:";
 
   // One past the last ending position of a path param substring
@@ -6472,6 +6485,11 @@ inline Server &Server::set_pre_routing_handler(HandlerWithResponse handler) {
 
 inline Server &Server::set_post_routing_handler(Handler handler) {
   post_routing_handler_ = std::move(handler);
+  return *this;
+}
+
+inline Server &Server::set_pre_request_handler(HandlerWithResponse handler) {
+  pre_request_handler_ = std::move(handler);
   return *this;
 }
 
@@ -7129,7 +7147,11 @@ inline bool Server::dispatch_request(Request &req, Response &res,
     const auto &handler = x.second;
 
     if (matcher->match(req)) {
-      handler(req, res);
+      req.matched_route = matcher->pattern();
+      if (!pre_request_handler_ ||
+          pre_request_handler_(req, res) != HandlerResponse::Handled) {
+        handler(req, res);
+      }
       return true;
     }
   }
@@ -7256,7 +7278,11 @@ inline bool Server::dispatch_request_for_content_reader(
     const auto &handler = x.second;
 
     if (matcher->match(req)) {
-      handler(req, res, content_reader);
+      req.matched_route = matcher->pattern();
+      if (!pre_request_handler_ ||
+          pre_request_handler_(req, res) != HandlerResponse::Handled) {
+        handler(req, res, content_reader);
+      }
       return true;
     }
   }

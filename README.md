@@ -285,6 +285,22 @@ svr.set_post_routing_handler([](const auto& req, auto& res) {
 });
 ```
 
+### Pre request handler
+
+```cpp
+svr.set_pre_request_handler([](const auto& req, auto& res) {
+  if (req.matched_route == "/user/:user") {
+    auto user = req.path_params.at("user");
+    if (user != "john") {
+      res.status = StatusCode::Forbidden_403;
+      res.set_content("error", "text/html");
+      return Server::HandlerResponse::Handled;
+    }
+  }
+  return Server::HandlerResponse::Unhandled;
+});
+```
+
 ### 'multipart/form-data' POST data
 
 ```cpp
