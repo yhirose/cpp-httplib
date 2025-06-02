@@ -1,4 +1,4 @@
-//
+﻿//
 //  httplib.h
 //
 //  Copyright (c) 2025 Yuji Hirose. All rights reserved.
@@ -9158,7 +9158,7 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
     BIO_set_nbio(bio, 1);
     SSL_set_bio(ssl, bio, bio);
 
-    if (!setup(ssl) || SSL_connect_or_accept(ssl) != 1) {
+    if (!setup(ssl)) {
       SSL_shutdown(ssl);
       {
         std::lock_guard<std::mutex> guard(ctx_mutex);
@@ -9167,8 +9167,64 @@ inline SSL *ssl_new(socket_t sock, SSL_CTX *ctx, std::mutex &ctx_mutex,
       set_nonblocking(sock, false);
       return nullptr;
     }
-    BIO_set_nbio(bio, 0);
-    set_nonblocking(sock, false);
+
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+
+    while (true) {
+      int ret = SSL_connect_or_accept(ssl);
+      if (ret == 1) {
+        BIO_set_nbio(bio, 0);
+        set_nonblocking(sock, false);
+        return ssl;
+      }
+
+      int ssl_err = SSL_get_error(ssl, ret);
+      if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE) {
+        fd_set read_fds, write_fds;
+        FD_ZERO(&read_fds);
+        FD_ZERO(&write_fds);
+        if (ssl_err == SSL_ERROR_WANT_READ) {
+          FD_SET(sock, &read_fds);
+        }
+        else {
+          FD_SET(sock, &write_fds);
+        }
+
+        int select_ret = select(sock + 1, &read_fds, &write_fds, nullptr, &timeout);
+        if (select_ret > 0) {
+          continue;
+        }
+        else if (select_ret == 0) {
+          SSL_shutdown(ssl);
+          {
+            std::lock_guard<std::mutex> guard(ctx_mutex);
+            SSL_free(ssl);
+          }
+          set_nonblocking(sock, false);
+          return nullptr;
+        }
+        else {
+          SSL_shutdown(ssl);
+          {
+            std::lock_guard<std::mutex> guard(ctx_mutex);
+            SSL_free(ssl);
+          }
+          set_nonblocking(sock, false);
+          return nullptr;
+        }
+      }
+      else {
+        SSL_shutdown(ssl);
+        {
+          std::lock_guard<std::mutex> guard(ctx_mutex);
+          SSL_free(ssl);
+        }
+        set_nonblocking(sock, false);
+        return nullptr;
+      }
+    }
   }
 
   return ssl;
