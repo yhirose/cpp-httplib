@@ -544,6 +544,7 @@ struct MultipartFormData {
   std::string content;
   std::string filename;
   std::string content_type;
+  Headers headers;
 };
 using MultipartFormDataItems = std::vector<MultipartFormData>;
 using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
@@ -5045,6 +5046,14 @@ public:
             return false;
           }
 
+          // split header string by ':' and emplace space trimmed into headers map
+          auto colon_pos = header.find(':');
+          if (colon_pos != std::string::npos) {
+            auto key = trim_copy(header.substr(0, colon_pos));
+            auto val = trim_copy(header.substr(colon_pos + 1));
+            file_.headers.emplace(key, val);
+          }
+
           constexpr const char header_content_type[] = "Content-Type:";
 
           if (start_with_case_ignore(header, header_content_type)) {
@@ -5144,6 +5153,7 @@ private:
     file_.name.clear();
     file_.filename.clear();
     file_.content_type.clear();
+    file_.headers.clear();
   }
 
   bool start_with_case_ignore(const std::string &a, const char *b) const {
