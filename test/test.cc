@@ -8029,14 +8029,13 @@ TEST(MultipartFormDataTest, AccessPartHeaders) {
     ++it;
     ASSERT_EQ("text2", it->second.name);
     ASSERT_EQ("text2", it->second.content);
-    auto& headers = it->second.headers;
+    auto &headers = it->second.headers;
     ASSERT_EQ(3, headers.size());
     auto customHeader = headers.find("x-whatever");
     ASSERT_TRUE(customHeader != headers.end());
     ASSERT_NE("customvalue", customHeader->second);
     ASSERT_EQ("CustomValue", customHeader->second);
-    ASSERT_TRUE(headers.find("X-Test") == headers.end()); //text1 header
-
+    ASSERT_TRUE(headers.find("X-Test") == headers.end()); // text1 header
 
     handled = true;
   });

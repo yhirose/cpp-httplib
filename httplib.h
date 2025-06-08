@@ -5048,10 +5048,10 @@ public:
 
           // parse and emplace space trimmed headers into a map
           if (!parse_header(
-                 header.data(), header.data() + header.size(),
-                 [&](const std::string &key, const std::string &val) {
-                   file_.headers.emplace(key, val);
-                 })) {
+                  header.data(), header.data() + header.size(),
+                  [&](const std::string &key, const std::string &val) {
+                    file_.headers.emplace(key, val);
+                  })) {
             is_valid_ = false;
             return false;
           }
