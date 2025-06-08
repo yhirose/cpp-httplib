@@ -5046,12 +5046,14 @@ public:
             return false;
           }
 
-          // split header string by ':' and emplace space trimmed into headers map
-          auto colon_pos = header.find(':');
-          if (colon_pos != std::string::npos) {
-            auto key = trim_copy(header.substr(0, colon_pos));
-            auto val = trim_copy(header.substr(colon_pos + 1));
-            file_.headers.emplace(key, val);
+          // parse and emplace space trimmed headers into a map
+          if (!parse_header(
+                 header.data(), header.data() + header.size(),
+                 [&](const std::string &key, const std::string &val) {
+                   file_.headers.emplace(key, val);
+                 })) {
+            is_valid_ = false;
+            return false;
           }
 
           constexpr const char header_content_type[] = "Content-Type:";
