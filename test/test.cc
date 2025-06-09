@@ -8022,8 +8022,8 @@ TEST(MultipartFormDataTest, AccessPartHeaders) {
     ASSERT_EQ("text1", it->second.name);
     ASSERT_EQ("text1", it->second.content);
     ASSERT_EQ(1, it->second.headers.count("Content-Length"));
-    auto content_lenght = it->second.headers.find("CONTENT-length");
-    ASSERT_EQ("5", content_lenght->second);
+    auto content_length = it->second.headers.find("CONTENT-length");
+    ASSERT_EQ("5", content_length->second);
     ASSERT_EQ(3, it->second.headers.size());
 
     ++it;
