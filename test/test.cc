@@ -8010,6 +8010,68 @@ TEST(MultipartFormDataTest, ContentLength) {
   ASSERT_TRUE(send_request(1, req, &response));
   ASSERT_EQ("200", response.substr(9, 3));
 }
+
+TEST(MultipartFormDataTest, AccessPartHeaders) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &req, Response &) {
+    ASSERT_EQ(2u, req.files.size());
+
+    auto it = req.files.begin();
+    ASSERT_EQ("text1", it->second.name);
+    ASSERT_EQ("text1", it->second.content);
+    ASSERT_EQ(1, it->second.headers.count("Content-Length"));
+    auto content_length = it->second.headers.find("CONTENT-length");
+    ASSERT_EQ("5", content_length->second);
+    ASSERT_EQ(3, it->second.headers.size());
+
+    ++it;
+    ASSERT_EQ("text2", it->second.name);
+    ASSERT_EQ("text2", it->second.content);
+    auto &headers = it->second.headers;
+    ASSERT_EQ(3, headers.size());
+    auto custom_header = headers.find("x-whatever");
+    ASSERT_TRUE(custom_header != headers.end());
+    ASSERT_NE("customvalue", custom_header->second);
+    ASSERT_EQ("CustomValue", custom_header->second);
+    ASSERT_TRUE(headers.find("X-Test") == headers.end()); // text1 header
+
+    handled = true;
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Type: multipart/form-data;boundary=--------\r\n"
+             "Content-Length: 232\r\n"
+             "\r\n----------\r\n"
+             "Content-Disposition: form-data; name=\"text1\"\r\n"
+             "Content-Length: 5\r\n"
+             "X-Test: 1\r\n"
+             "\r\n"
+             "text1"
+             "\r\n----------\r\n"
+             "Content-Disposition: form-data; name=\"text2\"\r\n"
+             "Content-Type: text/plain\r\n"
+             "X-Whatever: CustomValue\r\n"
+             "\r\n"
+             "text2"
+             "\r\n------------\r\n"
+             "That should be disregarded. Not even read";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("200", response.substr(9, 3));
+}
 #endif
 
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
