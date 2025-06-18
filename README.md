@@ -671,7 +671,7 @@ cli.set_connection_timeout(0, 300000); // 300 milliseconds
 cli.set_read_timeout(5, 0); // 5 seconds
 cli.set_write_timeout(5, 0); // 5 seconds
 
-// This method works the same as curl's `--max-timeout` option
+// This method works the same as curl's `--max-time` option
 svr.set_max_timeout(5000); // 5 seconds
 ```
 
