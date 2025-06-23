@@ -3992,6 +3992,16 @@ TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   EXPECT_EQ("267", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(267U, res->body.size());
+
+  // Check that both range contents are present
+  EXPECT_TRUE(res->body.find("bc\r\n") != std::string::npos);
+  EXPECT_TRUE(res->body.find("ef\r\n") != std::string::npos);
+
+  // Check that Content-Range headers are present for both ranges
+  EXPECT_TRUE(res->body.find("Content-Range: bytes 1-2/7") !=
+              std::string::npos);
+  EXPECT_TRUE(res->body.find("Content-Range: bytes 4-5/7") !=
+              std::string::npos);
 }
 
 TEST_F(ServerTest, GetStreamedWithTooManyRanges) {
@@ -4009,14 +4019,59 @@ TEST_F(ServerTest, GetStreamedWithTooManyRanges) {
   EXPECT_EQ(0U, res->body.size());
 }
 
-TEST_F(ServerTest, GetStreamedWithNonAscendingRanges) {
-  auto res = cli_.Get("/streamed-with-range?error",
-                      {{make_range_header({{0, -1}, {0, -1}})}});
+TEST_F(ServerTest, GetStreamedWithOverwrapping) {
+  auto res =
+      cli_.Get("/streamed-with-range", {{make_range_header({{1, 4}, {2, 5}})}});
   ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
-  EXPECT_EQ("0", res->get_header_value("Content-Length"));
-  EXPECT_EQ(false, res->has_header("Content-Range"));
-  EXPECT_EQ(0U, res->body.size());
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ(5U, res->body.size());
+
+  // Check that overlapping ranges are coalesced into a single range
+  EXPECT_EQ("bcdef", res->body);
+  EXPECT_EQ("bytes 1-5/7", res->get_header_value("Content-Range"));
+
+  // Should be single range, not multipart
+  EXPECT_TRUE(res->has_header("Content-Range"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+}
+
+TEST_F(ServerTest, GetStreamedWithNonAscendingRanges) {
+  auto res =
+      cli_.Get("/streamed-with-range", {{make_range_header({{4, 5}, {0, 2}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ(268U, res->body.size());
+
+  // Check that both range contents are present
+  EXPECT_TRUE(res->body.find("ef\r\n") != std::string::npos);
+  EXPECT_TRUE(res->body.find("abc\r\n") != std::string::npos);
+
+  // Check that Content-Range headers are present for both ranges
+  EXPECT_TRUE(res->body.find("Content-Range: bytes 4-5/7") !=
+              std::string::npos);
+  EXPECT_TRUE(res->body.find("Content-Range: bytes 0-2/7") !=
+              std::string::npos);
+}
+
+TEST_F(ServerTest, GetStreamedWithDuplicateRanges) {
+  auto res =
+      cli_.Get("/streamed-with-range", {{make_range_header({{0, 2}, {0, 2}})}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ(269U, res->body.size());
+
+  // Check that both duplicate range contents are present
+  size_t first_abc = res->body.find("abc\r\n");
+  EXPECT_TRUE(first_abc != std::string::npos);
+  size_t second_abc = res->body.find("abc\r\n", first_abc + 1);
+  EXPECT_TRUE(second_abc != std::string::npos);
+
+  // Check that Content-Range headers are present for both ranges
+  size_t first_range = res->body.find("Content-Range: bytes 0-2/7");
+  EXPECT_TRUE(first_range != std::string::npos);
+  size_t second_range =
+      res->body.find("Content-Range: bytes 0-2/7", first_range + 1);
+  EXPECT_TRUE(second_range != std::string::npos);
 }
 
 TEST_F(ServerTest, GetStreamedWithRangesMoreThanTwoOverwrapping) {
@@ -4120,6 +4175,19 @@ TEST_F(ServerTest, GetWithRange4) {
   EXPECT_EQ(true, res->has_header("Content-Range"));
   EXPECT_EQ("bytes 5-6/7", res->get_header_value("Content-Range"));
   EXPECT_EQ(std::string("fg"), res->body);
+}
+
+TEST_F(ServerTest, GetWithRange5) {
+  auto res = cli_.Get("/with-range", {
+                                         make_range_header({{0, 5}}),
+                                         {"Accept-Encoding", ""},
+                                     });
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ(true, res->has_header("Content-Range"));
+  EXPECT_EQ("bytes 0-5/7", res->get_header_value("Content-Range"));
+  EXPECT_EQ(std::string("abcdef"), res->body);
 }
 
 TEST_F(ServerTest, GetWithRangeOffsetGreaterThanContent) {
