@@ -5373,7 +5373,7 @@ inline void coalesce_ranges(Ranges &ranges, size_t content_length) {
       if (first_pos <= prev.second + 1 &&
           !(first_pos == prev.first && last_pos == prev.second)) {
         // Extend the previous range
-        prev.second = std::max(prev.second, last_pos);
+        prev.second = (std::max)(prev.second, last_pos);
         continue;
       }
     }
