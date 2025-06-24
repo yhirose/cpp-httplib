@@ -1,5 +1,10 @@
 CXX = clang++
-CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow $(EXTRA_CXXFLAGS) # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
+ifeq ($(BUILD_ARC), armeabi-v7a)
+    CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow -march=armv7-a
+else
+    CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
+endif
+$(info    CXXFLAGS is $(CXXFLAGS))
 
 PREFIX ?= $(shell brew --prefix)
 
