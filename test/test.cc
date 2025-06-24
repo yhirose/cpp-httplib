@@ -3112,6 +3112,10 @@ protected:
                 }
               })
 #endif
+        .Get("/benchmark",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content("Benchmark Response", "text/plain");
+             })
         ;
 
     persons_["john"] = "programmer";
@@ -3153,6 +3157,36 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
+}
+
+TEST_F(ServerTest, GetBenchmark) {
+  const int NUM_REQUESTS = 100;
+  const int MAX_AVERAGE_MS = 10;
+  
+  double total_time = 0.0;
+  
+  // Warm up request
+  auto warmup = cli_.Get("/benchmark");
+  ASSERT_TRUE(warmup);
+  
+  // Perform benchmark requests
+  for (int i = 0; i < NUM_REQUESTS; ++i) {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto res = cli_.Get("/benchmark");
+    auto end = std::chrono::high_resolution_clock::now();
+    
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("Benchmark Response", res->body);
+    
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    total_time += elapsed / 1000.0; // Convert to milliseconds
+  }
+  
+  double avg_time = total_time / NUM_REQUESTS;
+  
+  ASSERT_LE(avg_time, MAX_AVERAGE_MS) 
+    << "Average response time: " << avg_time << "ms exceeds " << MAX_AVERAGE_MS << "ms";
 }
 
 TEST_F(ServerTest, GetEmptyFile) {
