@@ -308,6 +308,201 @@ TEST(TrimTests, TrimStringTests) {
   EXPECT_TRUE(detail::trim_copy("").empty());
 }
 
+TEST(ParseAcceptHeaderTest, BasicAcceptParsing) {
+  // Simple case without quality values
+  std::vector<std::string> result1;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "text/html,application/json,text/plain", result1));
+  EXPECT_EQ(result1.size(), 3);
+  EXPECT_EQ(result1[0], "text/html");
+  EXPECT_EQ(result1[1], "application/json");
+  EXPECT_EQ(result1[2], "text/plain");
+
+  // With quality values
+  std::vector<std::string> result2;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "text/html;q=0.9,application/json;q=1.0,text/plain;q=0.8", result2));
+  EXPECT_EQ(result2.size(), 3);
+  EXPECT_EQ(result2[0], "application/json"); // highest q value
+  EXPECT_EQ(result2[1], "text/html");
+  EXPECT_EQ(result2[2], "text/plain"); // lowest q value
+}
+
+TEST(ParseAcceptHeaderTest, MixedQualityValues) {
+  // Mixed with and without quality values
+  std::vector<std::string> result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "text/html,application/json;q=0.5,text/plain;q=0.8", result));
+  EXPECT_EQ(result.size(), 3);
+  EXPECT_EQ(result[0], "text/html");        // no q value means 1.0
+  EXPECT_EQ(result[1], "text/plain");       // q=0.8
+  EXPECT_EQ(result[2], "application/json"); // q=0.5
+}
+
+TEST(ParseAcceptHeaderTest, EdgeCases) {
+  // Empty header
+  std::vector<std::string> empty_result;
+  EXPECT_TRUE(detail::parse_accept_header("", empty_result));
+  EXPECT_TRUE(empty_result.empty());
+
+  // Single type
+  std::vector<std::string> single_result;
+  EXPECT_TRUE(detail::parse_accept_header("application/json", single_result));
+  EXPECT_EQ(single_result.size(), 1);
+  EXPECT_EQ(single_result[0], "application/json");
+
+  // Wildcard types
+  std::vector<std::string> wildcard_result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "text/*;q=0.5,*/*;q=0.1,application/json", wildcard_result));
+  EXPECT_EQ(wildcard_result.size(), 3);
+  EXPECT_EQ(wildcard_result[0], "application/json");
+  EXPECT_EQ(wildcard_result[1], "text/*");
+  EXPECT_EQ(wildcard_result[2], "*/*");
+}
+
+TEST(ParseAcceptHeaderTest, RealWorldExamples) {
+  // Common browser Accept header
+  std::vector<std::string> browser_result;
+  EXPECT_TRUE(
+      detail::parse_accept_header("text/html,application/xhtml+xml,application/"
+                                  "xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+                                  browser_result));
+  EXPECT_EQ(browser_result.size(), 6);
+  EXPECT_EQ(browser_result[0], "text/html");             // q=1.0 (default)
+  EXPECT_EQ(browser_result[1], "application/xhtml+xml"); // q=1.0 (default)
+  EXPECT_EQ(browser_result[2], "image/webp");            // q=1.0 (default)
+  EXPECT_EQ(browser_result[3], "image/apng");            // q=1.0 (default)
+  EXPECT_EQ(browser_result[4], "application/xml");       // q=0.9
+  EXPECT_EQ(browser_result[5], "*/*");                   // q=0.8
+
+  // API client header
+  std::vector<std::string> api_result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "application/json;q=0.9,application/xml;q=0.8,text/plain;q=0.1",
+      api_result));
+  EXPECT_EQ(api_result.size(), 3);
+  EXPECT_EQ(api_result[0], "application/json");
+  EXPECT_EQ(api_result[1], "application/xml");
+  EXPECT_EQ(api_result[2], "text/plain");
+}
+
+TEST(ParseAcceptHeaderTest, SpecialCases) {
+  // Quality value with 3 decimal places
+  std::vector<std::string> decimal_result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "text/html;q=0.123,application/json;q=0.456", decimal_result));
+  EXPECT_EQ(decimal_result.size(), 2);
+  EXPECT_EQ(decimal_result[0], "application/json"); // Higher q value
+  EXPECT_EQ(decimal_result[1], "text/html");
+
+  // Zero quality (should still be included but with lowest priority)
+  std::vector<std::string> zero_q_result;
+  EXPECT_TRUE(detail::parse_accept_header("text/html;q=0,application/json;q=1",
+                                          zero_q_result));
+  EXPECT_EQ(zero_q_result.size(), 2);
+  EXPECT_EQ(zero_q_result[0], "application/json"); // q=1
+  EXPECT_EQ(zero_q_result[1], "text/html");        // q=0
+
+  // No spaces around commas
+  std::vector<std::string> no_space_result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "text/html;q=0.9,application/json;q=0.8,text/plain;q=0.7",
+      no_space_result));
+  EXPECT_EQ(no_space_result.size(), 3);
+  EXPECT_EQ(no_space_result[0], "text/html");
+  EXPECT_EQ(no_space_result[1], "application/json");
+  EXPECT_EQ(no_space_result[2], "text/plain");
+}
+
+TEST(ParseAcceptHeaderTest, InvalidCases) {
+  std::vector<std::string> result;
+
+  // Invalid quality value (> 1.0)
+  EXPECT_FALSE(
+      detail::parse_accept_header("text/html;q=1.5,application/json", result));
+
+  // Invalid quality value (< 0.0)
+  EXPECT_FALSE(
+      detail::parse_accept_header("text/html;q=-0.1,application/json", result));
+
+  // Invalid quality value (not a number)
+  EXPECT_FALSE(detail::parse_accept_header(
+      "text/html;q=invalid,application/json", result));
+
+  // Empty quality value
+  EXPECT_FALSE(
+      detail::parse_accept_header("text/html;q=,application/json", result));
+
+  // Invalid media type format (no slash and not wildcard)
+  EXPECT_FALSE(
+      detail::parse_accept_header("invalidtype,application/json", result));
+
+  // Empty media type
+  result.clear();
+  EXPECT_FALSE(detail::parse_accept_header(",application/json", result));
+
+  // Only commas
+  result.clear();
+  EXPECT_FALSE(detail::parse_accept_header(",,,", result));
+
+  // Valid cases should still work
+  EXPECT_TRUE(detail::parse_accept_header("*/*", result));
+  EXPECT_EQ(result.size(), 1);
+  EXPECT_EQ(result[0], "*/*");
+
+  EXPECT_TRUE(detail::parse_accept_header("*", result));
+  EXPECT_EQ(result.size(), 1);
+  EXPECT_EQ(result[0], "*");
+
+  EXPECT_TRUE(detail::parse_accept_header("text/*", result));
+  EXPECT_EQ(result.size(), 1);
+  EXPECT_EQ(result[0], "text/*");
+}
+
+TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
+  Server svr;
+
+  svr.Get("/accept_ok", [&](const Request &req, Response &res) {
+    EXPECT_EQ(req.accept_content_types.size(), 3);
+    EXPECT_EQ(req.accept_content_types[0], "application/json");
+    EXPECT_EQ(req.accept_content_types[1], "text/html");
+    EXPECT_EQ(req.accept_content_types[2], "*/*");
+    res.set_content("ok", "text/plain");
+  });
+
+  svr.Get("/accept_bad_request", [&](const Request &req, Response &res) {
+    EXPECT_TRUE(false);
+    res.set_content("bad request", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  {
+    auto res =
+        cli.Get("/accept_ok",
+                {{"Accept", "application/json, text/html;q=0.8, */*;q=0.1"}});
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  {
+    auto res = cli.Get("/accept_bad_request",
+                       {{"Accept", "text/html;q=abc,application/json"}});
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  }
+}
+
 TEST(DivideTest, DivideStringTests) {
   auto divide = [](const std::string &str, char d) {
     std::string lhs;
