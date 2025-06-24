@@ -553,6 +553,15 @@ struct MultipartFormData {
 using MultipartFormDataItems = std::vector<MultipartFormData>;
 using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
 
+struct MultipartFormDataForClientInput {
+  std::string name;
+  std::string content;
+  std::string filename;
+  std::string content_type;
+};
+using MultipartFormDataItemsForClientInput =
+    std::vector<MultipartFormDataForClientInput>;
+
 class DataSink {
 public:
   DataSink() : os(&sb_), sb_(*this) {}
@@ -1330,13 +1339,15 @@ public:
               const Params &params);
   Result Post(const std::string &path, const Headers &headers,
               const Params &params, Progress progress);
-  Result Post(const std::string &path, const MultipartFormDataItems &items);
+  Result Post(const std::string &path,
+              const MultipartFormDataItemsForClientInput &items);
   Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items);
+              const MultipartFormDataItemsForClientInput &items);
   Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items, const std::string &boundary);
+              const MultipartFormDataItemsForClientInput &items,
+              const std::string &boundary);
   Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items,
+              const MultipartFormDataItemsForClientInput &items,
               const MultipartFormDataProviderItems &provider_items);
 
   Result Put(const std::string &path);
@@ -1372,13 +1383,15 @@ public:
              const Params &params);
   Result Put(const std::string &path, const Headers &headers,
              const Params &params, Progress progress);
-  Result Put(const std::string &path, const MultipartFormDataItems &items);
+  Result Put(const std::string &path,
+             const MultipartFormDataItemsForClientInput &items);
   Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items);
+             const MultipartFormDataItemsForClientInput &items);
   Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items, const std::string &boundary);
+             const MultipartFormDataItemsForClientInput &items,
+             const std::string &boundary);
   Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items,
+             const MultipartFormDataItemsForClientInput &items,
              const MultipartFormDataProviderItems &provider_items);
 
   Result Patch(const std::string &path);
@@ -1664,7 +1677,8 @@ private:
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type, Progress progress);
   ContentProviderWithoutLength get_multipart_content_provider(
-      const std::string &boundary, const MultipartFormDataItems &items,
+      const std::string &boundary,
+      const MultipartFormDataItemsForClientInput &items,
       const MultipartFormDataProviderItems &provider_items) const;
 
   std::string adjust_host_string(const std::string &host) const;
@@ -1769,13 +1783,15 @@ public:
               const Params &params);
   Result Post(const std::string &path, const Headers &headers,
               const Params &params, Progress progress);
-  Result Post(const std::string &path, const MultipartFormDataItems &items);
+  Result Post(const std::string &path,
+              const MultipartFormDataItemsForClientInput &items);
   Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items);
+              const MultipartFormDataItemsForClientInput &items);
   Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items, const std::string &boundary);
+              const MultipartFormDataItemsForClientInput &items,
+              const std::string &boundary);
   Result Post(const std::string &path, const Headers &headers,
-              const MultipartFormDataItems &items,
+              const MultipartFormDataItemsForClientInput &items,
               const MultipartFormDataProviderItems &provider_items);
 
   Result Put(const std::string &path);
@@ -1811,13 +1827,15 @@ public:
              const Params &params);
   Result Put(const std::string &path, const Headers &headers,
              const Params &params, Progress progress);
-  Result Put(const std::string &path, const MultipartFormDataItems &items);
+  Result Put(const std::string &path,
+             const MultipartFormDataItemsForClientInput &items);
   Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items);
+             const MultipartFormDataItemsForClientInput &items);
   Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items, const std::string &boundary);
+             const MultipartFormDataItemsForClientInput &items,
+             const std::string &boundary);
   Result Put(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items,
+             const MultipartFormDataItemsForClientInput &items,
              const MultipartFormDataProviderItems &provider_items);
 
   Result Patch(const std::string &path);
@@ -5331,7 +5349,7 @@ serialize_multipart_formdata_get_content_type(const std::string &boundary) {
 }
 
 inline std::string
-serialize_multipart_formdata(const MultipartFormDataItems &items,
+serialize_multipart_formdata(const MultipartFormDataItemsForClientInput &items,
                              const std::string &boundary, bool finish = true) {
   std::string body;
 
@@ -8370,7 +8388,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 }
 
 inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
-    const std::string &boundary, const MultipartFormDataItems &items,
+    const std::string &boundary,
+    const MultipartFormDataItemsForClientInput &items,
     const MultipartFormDataProviderItems &provider_items) const {
   size_t cur_item = 0;
   size_t cur_start = 0;
@@ -8671,13 +8690,15 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
               progress);
 }
 
-inline Result ClientImpl::Post(const std::string &path,
-                               const MultipartFormDataItems &items) {
+inline Result
+ClientImpl::Post(const std::string &path,
+                 const MultipartFormDataItemsForClientInput &items) {
   return Post(path, Headers(), items);
 }
 
-inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
-                               const MultipartFormDataItems &items) {
+inline Result
+ClientImpl::Post(const std::string &path, const Headers &headers,
+                 const MultipartFormDataItemsForClientInput &items) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
@@ -8685,9 +8706,10 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   return Post(path, headers, body, content_type);
 }
 
-inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
-                               const MultipartFormDataItems &items,
-                               const std::string &boundary) {
+inline Result
+ClientImpl::Post(const std::string &path, const Headers &headers,
+                 const MultipartFormDataItemsForClientInput &items,
+                 const std::string &boundary) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
@@ -8700,7 +8722,7 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
 
 inline Result
 ClientImpl::Post(const std::string &path, const Headers &headers,
-                 const MultipartFormDataItems &items,
+                 const MultipartFormDataItemsForClientInput &items,
                  const MultipartFormDataProviderItems &provider_items) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
@@ -8811,13 +8833,15 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
              progress);
 }
 
-inline Result ClientImpl::Put(const std::string &path,
-                              const MultipartFormDataItems &items) {
+inline Result
+ClientImpl::Put(const std::string &path,
+                const MultipartFormDataItemsForClientInput &items) {
   return Put(path, Headers(), items);
 }
 
-inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const MultipartFormDataItems &items) {
+inline Result
+ClientImpl::Put(const std::string &path, const Headers &headers,
+                const MultipartFormDataItemsForClientInput &items) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
@@ -8826,7 +8850,7 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const MultipartFormDataItems &items,
+                              const MultipartFormDataItemsForClientInput &items,
                               const std::string &boundary) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
@@ -8840,7 +8864,7 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 
 inline Result
 ClientImpl::Put(const std::string &path, const Headers &headers,
-                const MultipartFormDataItems &items,
+                const MultipartFormDataItemsForClientInput &items,
                 const MultipartFormDataProviderItems &provider_items) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
@@ -10251,21 +10275,21 @@ inline Result Client::Post(const std::string &path, const Headers &headers,
   return cli_->Post(path, headers, params, progress);
 }
 inline Result Client::Post(const std::string &path,
-                           const MultipartFormDataItems &items) {
+                           const MultipartFormDataItemsForClientInput &items) {
   return cli_->Post(path, items);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const MultipartFormDataItems &items) {
+                           const MultipartFormDataItemsForClientInput &items) {
   return cli_->Post(path, headers, items);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const MultipartFormDataItems &items,
+                           const MultipartFormDataItemsForClientInput &items,
                            const std::string &boundary) {
   return cli_->Post(path, headers, items, boundary);
 }
 inline Result
 Client::Post(const std::string &path, const Headers &headers,
-             const MultipartFormDataItems &items,
+             const MultipartFormDataItemsForClientInput &items,
              const MultipartFormDataProviderItems &provider_items) {
   return cli_->Post(path, headers, items, provider_items);
 }
@@ -10338,21 +10362,21 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
   return cli_->Put(path, headers, params, progress);
 }
 inline Result Client::Put(const std::string &path,
-                          const MultipartFormDataItems &items) {
+                          const MultipartFormDataItemsForClientInput &items) {
   return cli_->Put(path, items);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const MultipartFormDataItems &items) {
+                          const MultipartFormDataItemsForClientInput &items) {
   return cli_->Put(path, headers, items);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const MultipartFormDataItems &items,
+                          const MultipartFormDataItemsForClientInput &items,
                           const std::string &boundary) {
   return cli_->Put(path, headers, items, boundary);
 }
 inline Result
 Client::Put(const std::string &path, const Headers &headers,
-            const MultipartFormDataItems &items,
+            const MultipartFormDataItemsForClientInput &items,
             const MultipartFormDataProviderItems &provider_items) {
   return cli_->Put(path, headers, items, provider_items);
 }

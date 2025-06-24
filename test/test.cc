@@ -3161,7 +3161,7 @@ TEST_F(ServerTest, GetMethod200) {
 
 TEST(BenchmarkTest, SimpleGetPerformance) {
   Server svr;
-  
+
   svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
     res.set_content("Benchmark Response", "text/plain");
   });
@@ -3176,13 +3176,13 @@ TEST(BenchmarkTest, SimpleGetPerformance) {
   svr.wait_until_ready();
 
   Client cli("localhost", PORT);
-  
+
   const int NUM_REQUESTS = 50;
   const int MAX_AVERAGE_MS = 5;
-  
+
   auto warmup = cli.Get("/benchmark");
   ASSERT_TRUE(warmup);
-  
+
   auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < NUM_REQUESTS; ++i) {
     auto res = cli.Get("/benchmark");
@@ -3190,14 +3190,17 @@ TEST(BenchmarkTest, SimpleGetPerformance) {
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
   auto end = std::chrono::high_resolution_clock::now();
-  
-  auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+  auto total_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
   double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
-  
-  std::cout << "Standalone: " << NUM_REQUESTS << " requests in " << total_ms 
+
+  std::cout << "Standalone: " << NUM_REQUESTS << " requests in " << total_ms
             << "ms (avg: " << avg_ms << "ms)" << std::endl;
-  
-  EXPECT_LE(avg_ms, MAX_AVERAGE_MS) << "Standalone test too slow: " << avg_ms << "ms (Issue #1777)";
+
+  EXPECT_LE(avg_ms, MAX_AVERAGE_MS)
+      << "Standalone test too slow: " << avg_ms << "ms (Issue #1777)";
 }
 
 TEST_F(ServerTest, GetEmptyFile) {
@@ -3830,7 +3833,7 @@ TEST_F(ServerTest, TooLongHeader) {
 TEST_F(ServerTest, HeaderCountAtLimit) {
   // Test with headers just under the 100 limit
   httplib::Headers headers;
-  
+
   // Add 95 custom headers (the client will add Host, User-Agent, Accept, etc.)
   // This should keep us just under the 100 header limit
   for (int i = 0; i < 95; i++) {
@@ -3838,29 +3841,27 @@ TEST_F(ServerTest, HeaderCountAtLimit) {
     std::string value = "value" + std::to_string(i);
     headers.emplace(name, value);
   }
-  
+
   // This should work fine as we're under the limit
   auto res = cli_.Get("/hi", headers);
   EXPECT_TRUE(res);
-  if (res) {
-    EXPECT_EQ(StatusCode::OK_200, res->status);
-  }
+  if (res) { EXPECT_EQ(StatusCode::OK_200, res->status); }
 }
 
 TEST_F(ServerTest, HeaderCountExceedsLimit) {
   // Test with many headers to exceed the 100 limit
   httplib::Headers headers;
-  
+
   // Add 150 headers to definitely exceed the 100 limit
   for (int i = 0; i < 150; i++) {
     std::string name = "X-Test-Header-" + std::to_string(i);
     std::string value = "value" + std::to_string(i);
     headers.emplace(name, value);
   }
-  
+
   // This should fail due to exceeding header count limit
   auto res = cli_.Get("/hi", headers);
-  
+
   // The request should either fail or return 400 Bad Request
   if (res) {
     // If we get a response, it should be 400 Bad Request
@@ -3911,19 +3912,20 @@ TEST_F(ServerTest, PlusSignEncoding) {
 TEST_F(ServerTest, HeaderCountSecurityTest) {
   // This test simulates a potential DoS attack using many headers
   // to verify our security fix prevents memory exhaustion
-  
+
   httplib::Headers attack_headers;
-  
-  // Attempt to add many headers like an attacker would (200 headers to far exceed limit)
+
+  // Attempt to add many headers like an attacker would (200 headers to far
+  // exceed limit)
   for (int i = 0; i < 200; i++) {
     std::string name = "X-Attack-Header-" + std::to_string(i);
     std::string value = "attack_payload_" + std::to_string(i);
     attack_headers.emplace(name, value);
   }
-  
+
   // Try to POST with excessive headers
   auto res = cli_.Post("/", attack_headers, "test_data", "text/plain");
-  
+
   // Should either fail or return 400 Bad Request due to security limit
   if (res) {
     // If we get a response, it should be 400 Bad Request
@@ -3935,7 +3937,7 @@ TEST_F(ServerTest, HeaderCountSecurityTest) {
 }
 
 TEST_F(ServerTest, MultipartFormData) {
-  MultipartFormDataItems items = {
+  MultipartFormDataItemsForClientInput items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
@@ -3950,7 +3952,7 @@ TEST_F(ServerTest, MultipartFormData) {
 }
 
 TEST_F(ServerTest, MultipartFormDataMultiFileValues) {
-  MultipartFormDataItems items = {
+  MultipartFormDataItemsForClientInput items = {
       {"text", "default text", "", ""},
 
       {"multi_text1", "aaaaa", "", ""},
@@ -4890,7 +4892,7 @@ TEST_F(ServerTest, PostContentReceiver) {
 }
 
 TEST_F(ServerTest, PostMultipartFileContentReceiver) {
-  MultipartFormDataItems items = {
+  MultipartFormDataItemsForClientInput items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
@@ -4905,7 +4907,7 @@ TEST_F(ServerTest, PostMultipartFileContentReceiver) {
 }
 
 TEST_F(ServerTest, PostMultipartPlusBoundary) {
-  MultipartFormDataItems items = {
+  MultipartFormDataItemsForClientInput items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
@@ -5160,7 +5162,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
 }
 
 TEST_F(ServerTest, MultipartFormDataGzip) {
-  MultipartFormDataItems items = {
+  MultipartFormDataItemsForClientInput items = {
       {"key1", "test", "", ""},
       {"key2", "--abcdefg123", "", ""},
   };
@@ -5324,7 +5326,7 @@ TEST_F(ServerTest, NoZstdWithContentReceiver) {
 
 // TODO: How to enable zstd ??
 TEST_F(ServerTest, MultipartFormDataZstd) {
-  MultipartFormDataItems items = {
+  MultipartFormDataItemsForClientInput items = {
       {"key1", "test", "", ""},
       {"key2", "--abcdefg123", "", ""},
   };
@@ -7507,7 +7509,7 @@ TEST(MultipartFormDataTest, LargeData) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItems items{
+    MultipartFormDataItemsForClientInput items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -7650,7 +7652,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItems items{
+    MultipartFormDataItemsForClientInput items{
         {"name1", "Testing123", "filename1", "application/octet-stream"},
         {"name2", "Testing456", "", ""}, // not a file
     };
@@ -7855,7 +7857,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItems items{
+    MultipartFormDataItemsForClientInput items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -7873,7 +7875,7 @@ TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
 
   Client cli("https://localhost:8080");
 
-  MultipartFormDataItems items{
+  MultipartFormDataItemsForClientInput items{
       {"document", buffer.str(), "2MB_data", "application/octet-stream"},
       {"hello", "world", "", ""},
   };
@@ -7938,7 +7940,7 @@ TEST(MultipartFormDataTest, PutFormData) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItems items{
+    MultipartFormDataItemsForClientInput items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -8002,7 +8004,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItems items{
+    MultipartFormDataItemsForClientInput items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -8021,7 +8023,7 @@ TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
   Client cli("https://localhost:8080");
   cli.enable_server_certificate_verification(false);
 
-  MultipartFormDataItems items{
+  MultipartFormDataItemsForClientInput items{
       {"document", buffer.str(), "2MB_data", "application/octet-stream"},
       {"hello", "world", "", ""},
   };
