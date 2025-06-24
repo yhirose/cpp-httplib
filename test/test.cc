@@ -3,7 +3,11 @@
 #include <signal.h>
 
 #ifndef _WIN32
+#include <arpa/inet.h>
 #include <curl/curl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 #include <gtest/gtest.h>
 
@@ -3823,6 +3827,50 @@ TEST_F(ServerTest, TooLongHeader) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST_F(ServerTest, HeaderCountAtLimit) {
+  // Test with headers just under the 100 limit
+  httplib::Headers headers;
+  
+  // Add 95 custom headers (the client will add Host, User-Agent, Accept, etc.)
+  // This should keep us just under the 100 header limit
+  for (int i = 0; i < 95; i++) {
+    std::string name = "X-Test-Header-" + std::to_string(i);
+    std::string value = "value" + std::to_string(i);
+    headers.emplace(name, value);
+  }
+  
+  // This should work fine as we're under the limit
+  auto res = cli_.Get("/hi", headers);
+  EXPECT_TRUE(res);
+  if (res) {
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+}
+
+TEST_F(ServerTest, HeaderCountExceedsLimit) {
+  // Test with many headers to exceed the 100 limit
+  httplib::Headers headers;
+  
+  // Add 150 headers to definitely exceed the 100 limit
+  for (int i = 0; i < 150; i++) {
+    std::string name = "X-Test-Header-" + std::to_string(i);
+    std::string value = "value" + std::to_string(i);
+    headers.emplace(name, value);
+  }
+  
+  // This should fail due to exceeding header count limit
+  auto res = cli_.Get("/hi", headers);
+  
+  // The request should either fail or return 400 Bad Request
+  if (res) {
+    // If we get a response, it should be 400 Bad Request
+    EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  } else {
+    // Or the request should fail entirely
+    EXPECT_FALSE(res);
+  }
+}
+
 TEST_F(ServerTest, PercentEncoding) {
   auto res = cli_.Get("/e%6edwith%");
   ASSERT_TRUE(res);
@@ -3858,6 +3906,32 @@ TEST_F(ServerTest, PlusSignEncoding) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("a +b", res->body);
+}
+
+TEST_F(ServerTest, HeaderCountSecurityTest) {
+  // This test simulates a potential DoS attack using many headers
+  // to verify our security fix prevents memory exhaustion
+  
+  httplib::Headers attack_headers;
+  
+  // Attempt to add many headers like an attacker would (200 headers to far exceed limit)
+  for (int i = 0; i < 200; i++) {
+    std::string name = "X-Attack-Header-" + std::to_string(i);
+    std::string value = "attack_payload_" + std::to_string(i);
+    attack_headers.emplace(name, value);
+  }
+  
+  // Try to POST with excessive headers
+  auto res = cli_.Post("/", attack_headers, "test_data", "text/plain");
+  
+  // Should either fail or return 400 Bad Request due to security limit
+  if (res) {
+    // If we get a response, it should be 400 Bad Request
+    EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  } else {
+    // Request failed, which is the expected behavior for DoS protection
+    EXPECT_FALSE(res);
+  }
 }
 
 TEST_F(ServerTest, MultipartFormData) {

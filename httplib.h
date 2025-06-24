@@ -90,6 +90,10 @@
 #define CPPHTTPLIB_HEADER_MAX_LENGTH 8192
 #endif
 
+#ifndef CPPHTTPLIB_HEADER_MAX_COUNT
+#define CPPHTTPLIB_HEADER_MAX_COUNT 100
+#endif
+
 #ifndef CPPHTTPLIB_REDIRECT_MAX_COUNT
 #define CPPHTTPLIB_REDIRECT_MAX_COUNT 20
 #endif
@@ -4355,6 +4359,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   char buf[bufsiz];
   stream_line_reader line_reader(strm, buf, bufsiz);
 
+  size_t header_count = 0;
+
   for (;;) {
     if (!line_reader.getline()) { return false; }
 
@@ -4375,6 +4381,9 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
 
+    // Check header count limit
+    if (header_count >= CPPHTTPLIB_HEADER_MAX_COUNT) { return false; }
+
     // Exclude line terminator
     auto end = line_reader.ptr() + line_reader.size() - line_terminator_len;
 
@@ -4384,6 +4393,8 @@ inline bool read_headers(Stream &strm, Headers &headers) {
                       })) {
       return false;
     }
+
+    header_count++;
   }
 
   return true;
@@ -4486,8 +4497,12 @@ inline bool read_content_chunked(Stream &strm, T &x,
   // chunked transfer coding data without the final CRLF.
   if (!line_reader.getline()) { return true; }
 
+  size_t trailer_header_count = 0;
   while (strcmp(line_reader.ptr(), "\r\n") != 0) {
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
+
+    // Check trailer header count limit
+    if (trailer_header_count >= CPPHTTPLIB_HEADER_MAX_COUNT) { return false; }
 
     // Exclude line terminator
     constexpr auto line_terminator_len = 2;
@@ -4497,6 +4512,8 @@ inline bool read_content_chunked(Stream &strm, T &x,
                  [&](const std::string &key, const std::string &val) {
                    x.headers.emplace(key, val);
                  });
+
+    trailer_header_count++;
 
     if (!line_reader.getline()) { return false; }
   }
