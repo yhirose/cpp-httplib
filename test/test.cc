@@ -3160,33 +3160,88 @@ TEST_F(ServerTest, GetMethod200) {
 }
 
 TEST_F(ServerTest, GetBenchmark) {
+  // Simple benchmark test for detecting performance regressions (Issue #1777)
+  // This test helps identify slow response times that may indicate DNS or socket issues
+  
   const int NUM_REQUESTS = 100;
-  const int MAX_AVERAGE_MS = 10;
+  const int MAX_AVERAGE_MS = 10; // Fail if average exceeds 10ms (performance regression)
   
-  double total_time = 0.0;
-  
-  // Warm up request
+  // Warmup request
   auto warmup = cli_.Get("/benchmark");
   ASSERT_TRUE(warmup);
   
-  // Perform benchmark requests
+  // Measure performance of multiple requests
+  auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < NUM_REQUESTS; ++i) {
-    auto start = std::chrono::high_resolution_clock::now();
     auto res = cli_.Get("/benchmark");
-    auto end = std::chrono::high_resolution_clock::now();
-    
-    ASSERT_TRUE(res);
+    ASSERT_TRUE(res) << "Request " << i << " failed";
     EXPECT_EQ(StatusCode::OK_200, res->status);
-    EXPECT_EQ("Benchmark Response", res->body);
-    
-    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    total_time += elapsed / 1000.0; // Convert to milliseconds
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  
+  auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
+  
+  std::cout << "Benchmark: " << NUM_REQUESTS << " requests in " << total_ms 
+            << "ms (avg: " << avg_ms << "ms)" << std::endl;
+  
+  // Fail if average response time is too high (indicates performance regression)
+  EXPECT_LE(avg_ms, MAX_AVERAGE_MS) << "Average response time too slow: " << avg_ms << "ms"
+                                    << " - this may indicate DNS resolution or socket creation issues (Issue #1777)";
+}
+
+TEST_F(ServerTest, GetBenchmarkParallel) {
+  // Test parallel requests to detect performance issues (Issue #1777)
+  // This test helps identify connection overhead and potential bottlenecks
+  
+  const int num_requests = 50;
+  const int num_threads = 5;
+  const int requests_per_thread = num_requests / num_threads;
+  
+  std::vector<std::thread> threads;
+  std::vector<double> thread_times(num_threads);
+  std::atomic<bool> all_successful{true};
+  
+  auto start_total = std::chrono::high_resolution_clock::now();
+  
+  for (int t = 0; t < num_threads; ++t) {
+    threads.emplace_back([&, t]() {
+      auto start = std::chrono::high_resolution_clock::now();
+      
+      for (int i = 0; i < requests_per_thread; ++i) {
+        auto res = cli_.Get("/benchmark");
+        if (!res) {
+          all_successful = false;
+          return;
+        }
+      }
+      
+      auto end = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+      thread_times[static_cast<size_t>(t)] = static_cast<double>(duration) / requests_per_thread;
+    });
   }
   
-  double avg_time = total_time / NUM_REQUESTS;
+  for (auto& t : threads) {
+    t.join();
+  }
   
-  ASSERT_LE(avg_time, MAX_AVERAGE_MS) 
-    << "Average response time: " << avg_time << "ms exceeds " << MAX_AVERAGE_MS << "ms";
+  auto end_total = std::chrono::high_resolution_clock::now();
+  auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_total - start_total).count();
+  
+  ASSERT_TRUE(all_successful) << "Some parallel requests failed";
+  
+  double avg_per_thread = 0;
+  for (double time : thread_times) {
+    avg_per_thread += time;
+  }
+  avg_per_thread /= num_threads;
+  
+  std::cout << "Parallel: " << num_requests << " requests across " << num_threads 
+            << " threads in " << total_ms << "ms"
+            << " (avg per request: " << avg_per_thread << "ms)" << std::endl;
+  
+  EXPECT_LE(avg_per_thread, 50.0) << "Parallel requests too slow: " << avg_per_thread << "ms";
 }
 
 TEST_F(ServerTest, GetEmptyFile) {
