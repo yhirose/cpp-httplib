@@ -8257,6 +8257,60 @@ TEST(MultipartFormDataTest, AccessPartHeaders) {
 }
 #endif
 
+TEST(MultipartFormDataTest, LargeHeader) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &req, Response &) {
+    ASSERT_EQ(1u, req.files.size());
+
+    auto it = req.files.begin();
+    ASSERT_EQ("name1", it->second.name);
+    ASSERT_EQ("text1", it->second.content);
+
+    handled = true;
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  auto boundary = std::string("cpp-httplib-multipart-data");
+  std::string content = "--" + boundary +
+                        "\r\n"
+                        "Content-Disposition: form-data; name=\"name1\"\r\n"
+                        "\r\n"
+                        "text1\r\n"
+                        "--" +
+                        boundary + "--\r\n";
+  std::string header_prefix = "POST /test HTTP/1.1\r\n"
+                              "Content-Type: multipart/form-data;boundary=" +
+                              boundary +
+                              "\r\n"
+                              "Content-Length: " +
+                              std::to_string(content.size()) +
+                              "\r\n"
+                              "Dummy-Header: ";
+  std::string header_suffix = "\r\n"
+                              "\r\n";
+  size_t read_buff_size = 1024u * 4; // SocketStream::read_buff_size_
+  size_t header_dummy_size =
+      read_buff_size -
+      (header_prefix.size() + header_suffix.size() + boundary.size() / 2);
+  auto header_dummy = std::string(header_dummy_size, '@');
+  auto req = header_prefix + header_dummy + header_suffix + content;
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("200", response.substr(9, 3));
+}
+
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
   static constexpr unsigned int number_of_tasks{1000000};
   std::atomic_uint count{0};

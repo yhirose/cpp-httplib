@@ -5028,10 +5028,9 @@ public:
     while (buf_size() > 0) {
       switch (state_) {
       case 0: { // Initial boundary
-        buf_erase(buf_find(dash_boundary_crlf_));
-        if (dash_boundary_crlf_.size() > buf_size()) { return true; }
-        if (!buf_start_with(dash_boundary_crlf_)) { return false; }
-        buf_erase(dash_boundary_crlf_.size());
+        auto pos = buf_find(dash_boundary_crlf_);
+        if (pos == buf_size()) { return true; }
+        buf_erase(pos + dash_boundary_crlf_.size());
         state_ = 1;
         break;
       }
