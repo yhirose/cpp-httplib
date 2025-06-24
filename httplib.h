@@ -1450,6 +1450,11 @@ public:
   Result Delete(const std::string &path, const Headers &headers,
                 const std::string &body, const std::string &content_type,
                 Progress progress);
+  Result Delete(const std::string &path, const Params &params);
+  Result Delete(const std::string &path, const Headers &headers,
+                const Params &params);
+  Result Delete(const std::string &path, const Headers &headers,
+                const Params &params, Progress progress);
 
   Result Options(const std::string &path);
   Result Options(const std::string &path, const Headers &headers);
@@ -1894,6 +1899,11 @@ public:
   Result Delete(const std::string &path, const Headers &headers,
                 const std::string &body, const std::string &content_type,
                 Progress progress);
+  Result Delete(const std::string &path, const Params &params);
+  Result Delete(const std::string &path, const Headers &headers,
+                const Params &params);
+  Result Delete(const std::string &path, const Headers &headers,
+                const Params &params, Progress progress);
 
   Result Options(const std::string &path);
   Result Options(const std::string &path, const Headers &headers);
@@ -9172,6 +9182,23 @@ inline Result ClientImpl::Delete(const std::string &path,
                 progress);
 }
 
+inline Result ClientImpl::Delete(const std::string &path, const Params &params) {
+  return Delete(path, Headers(), params);
+}
+
+inline Result ClientImpl::Delete(const std::string &path, const Headers &headers,
+                                 const Params &params) {
+  auto query = detail::params_to_query_str(params);
+  return Delete(path, headers, query, "application/x-www-form-urlencoded");
+}
+
+inline Result ClientImpl::Delete(const std::string &path, const Headers &headers,
+                                 const Params &params, Progress progress) {
+  auto query = detail::params_to_query_str(params);
+  return Delete(path, headers, query, "application/x-www-form-urlencoded",
+                progress);
+}
+
 inline Result ClientImpl::Options(const std::string &path) {
   return Options(path, Headers());
 }
@@ -10626,6 +10653,17 @@ inline Result Client::Delete(const std::string &path, const Headers &headers,
                              const std::string &content_type,
                              Progress progress) {
   return cli_->Delete(path, headers, body, content_type, progress);
+}
+inline Result Client::Delete(const std::string &path, const Params &params) {
+  return cli_->Delete(path, params);
+}
+inline Result Client::Delete(const std::string &path, const Headers &headers,
+                             const Params &params) {
+  return cli_->Delete(path, headers, params);
+}
+inline Result Client::Delete(const std::string &path, const Headers &headers,
+                             const Params &params, Progress progress) {
+  return cli_->Delete(path, headers, params, progress);
 }
 inline Result Client::Options(const std::string &path) {
   return cli_->Options(path);

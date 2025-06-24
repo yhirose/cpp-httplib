@@ -2850,6 +2850,20 @@ protected:
                  res.status = StatusCode::NotFound_404;
                }
              })
+        .Delete("/person",
+                [&](const Request &req, Response &res) {
+                  if (req.has_param("name")) {
+                    string name = req.get_param_value("name");
+                    if (persons_.find(name) != persons_.end()) {
+                      persons_.erase(name);
+                      res.set_content("DELETED", "text/plain");
+                    } else {
+                      res.status = StatusCode::NotFound_404;
+                    }
+                  } else {
+                    res.status = StatusCode::BadRequest_400;
+                  }
+                })
         .Post("/x-www-form-urlencoded-json",
               [&](const Request &req, Response &res) {
                 auto json = req.get_param_value("json");
@@ -3560,6 +3574,108 @@ TEST_F(ServerTest, PutMethod3) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
   ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
   ASSERT_EQ("coder", res->body);
+}
+
+TEST_F(ServerTest, DeleteMethod1) {
+  auto res = cli_.Get("/person/john4");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::NotFound_404, res->status);
+
+  Params params;
+  params.emplace("name", "john4");
+  params.emplace("note", "coder");
+
+  res = cli_.Post("/person", params);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+
+  res = cli_.Get("/person/john4");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+  ASSERT_EQ("coder", res->body);
+
+  Params delete_params;
+  delete_params.emplace("name", "john4");
+
+  res = cli_.Delete("/person", delete_params);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("DELETED", res->body);
+
+  res = cli_.Get("/person/john4");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST_F(ServerTest, DeleteMethod2) {
+  auto res = cli_.Get("/person/john5");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::NotFound_404, res->status);
+
+  Params params;
+  params.emplace("name", "john5");
+  params.emplace("note", "developer");
+
+  res = cli_.Post("/person", params);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+
+  res = cli_.Get("/person/john5");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+  ASSERT_EQ("developer", res->body);
+
+  Params delete_params;
+  delete_params.emplace("name", "john5");
+
+  Headers headers;
+  headers.emplace("Custom-Header", "test-value");
+
+  res = cli_.Delete("/person", headers, delete_params);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("DELETED", res->body);
+
+  res = cli_.Get("/person/john5");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST_F(ServerTest, DeleteMethod3) {
+  auto res = cli_.Get("/person/john6");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::NotFound_404, res->status);
+
+  Params params;
+  params.emplace("name", "john6");
+  params.emplace("note", "tester");
+
+  res = cli_.Post("/person", params);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+
+  res = cli_.Get("/person/john6");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
+  ASSERT_EQ("tester", res->body);
+
+  Params delete_params;
+  delete_params.emplace("name", "john6");
+
+  Headers headers;
+  headers.emplace("Custom-Header", "test-value");
+
+  res = cli_.Delete("/person", headers, delete_params, nullptr);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("DELETED", res->body);
+
+  res = cli_.Get("/person/john6");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::NotFound_404, res->status);
 }
 
 TEST_F(ServerTest, PostWwwFormUrlEncodedJson) {
