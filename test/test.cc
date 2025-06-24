@@ -3155,6 +3155,47 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+TEST(BenchmarkTest, SimpleGetPerformance) {
+  Server svr;
+  
+  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Benchmark Response", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  
+  const int NUM_REQUESTS = 50;
+  const int MAX_AVERAGE_MS = 5;
+  
+  auto warmup = cli.Get("/benchmark");
+  ASSERT_TRUE(warmup);
+  
+  auto start = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < NUM_REQUESTS; ++i) {
+    auto res = cli.Get("/benchmark");
+    ASSERT_TRUE(res) << "Request " << i << " failed";
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  
+  auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
+  
+  std::cout << "Standalone: " << NUM_REQUESTS << " requests in " << total_ms 
+            << "ms (avg: " << avg_ms << "ms)" << std::endl;
+  
+  EXPECT_LE(avg_ms, MAX_AVERAGE_MS) << "Standalone test too slow: " << avg_ms << "ms (Issue #1777)";
+}
+
 TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
   ASSERT_TRUE(res);
