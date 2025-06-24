@@ -471,7 +471,7 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
     res.set_content("ok", "text/plain");
   });
 
-  svr.Get("/accept_bad_request", [&](const Request &req, Response &res) {
+  svr.Get("/accept_bad_request", [&](const Request & /*req*/, Response &res) {
     EXPECT_TRUE(false);
     res.set_content("bad request", "text/plain");
   });
