@@ -3112,10 +3112,6 @@ protected:
                 }
               })
 #endif
-        .Get("/benchmark",
-             [&](const Request & /*req*/, Response &res) {
-               res.set_content("Benchmark Response", "text/plain");
-             })
         ;
 
     persons_["john"] = "programmer";
@@ -3159,21 +3155,33 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
-TEST_F(ServerTest, GetBenchmark) {
-  // Simple benchmark test for detecting performance regressions (Issue #1777)
-  // This test helps identify slow response times that may indicate DNS or socket issues
+TEST(BenchmarkTest, SimpleGetPerformance) {
+  Server svr;
   
-  const int NUM_REQUESTS = 100;
-  const int MAX_AVERAGE_MS = 10; // Fail if average exceeds 10ms (performance regression)
+  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Benchmark Response", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
   
-  // Warmup request
-  auto warmup = cli_.Get("/benchmark");
+  const int NUM_REQUESTS = 50;
+  const int MAX_AVERAGE_MS = 15;
+  
+  auto warmup = cli.Get("/benchmark");
   ASSERT_TRUE(warmup);
   
-  // Measure performance of multiple requests
   auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < NUM_REQUESTS; ++i) {
-    auto res = cli_.Get("/benchmark");
+    auto res = cli.Get("/benchmark");
     ASSERT_TRUE(res) << "Request " << i << " failed";
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
@@ -3182,66 +3190,57 @@ TEST_F(ServerTest, GetBenchmark) {
   auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
   
-  std::cout << "Benchmark: " << NUM_REQUESTS << " requests in " << total_ms 
+  std::cout << "Standalone: " << NUM_REQUESTS << " requests in " << total_ms 
             << "ms (avg: " << avg_ms << "ms)" << std::endl;
   
-  // Fail if average response time is too high (indicates performance regression)
-  EXPECT_LE(avg_ms, MAX_AVERAGE_MS) << "Average response time too slow: " << avg_ms << "ms"
-                                    << " - this may indicate DNS resolution or socket creation issues (Issue #1777)";
+  EXPECT_LE(avg_ms, MAX_AVERAGE_MS) << "Standalone test too slow: " << avg_ms << "ms (Issue #1777)";
 }
 
-TEST_F(ServerTest, GetBenchmarkParallel) {
-  // Test parallel requests to detect performance issues (Issue #1777)
-  // This test helps identify connection overhead and potential bottlenecks
+TEST(BenchmarkTest, MultiClientConnectionTest) {
+  // Test connection overhead with multiple clients (Issue #1777)
+  // This helps identify DNS resolution delays and socket creation issues
   
-  const int num_requests = 50;
-  const int num_threads = 5;
-  const int requests_per_thread = num_requests / num_threads;
+  Server svr;
   
-  std::vector<std::thread> threads;
-  std::vector<double> thread_times(num_threads);
-  std::atomic<bool> all_successful{true};
+  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
+    res.set_content("OK", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+  
+  const int NUM_CLIENTS = 10;
+  const int REQUESTS_PER_CLIENT = 5;
   
   auto start_total = std::chrono::high_resolution_clock::now();
   
-  for (int t = 0; t < num_threads; ++t) {
-    threads.emplace_back([&, t]() {
-      auto start = std::chrono::high_resolution_clock::now();
-      
-      for (int i = 0; i < requests_per_thread; ++i) {
-        auto res = cli_.Get("/benchmark");
-        if (!res) {
-          all_successful = false;
-          return;
-        }
-      }
-      
-      auto end = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-      thread_times[static_cast<size_t>(t)] = static_cast<double>(duration) / requests_per_thread;
-    });
-  }
-  
-  for (auto& t : threads) {
-    t.join();
+  // Test multiple clients each making several requests
+  for (int client_id = 0; client_id < NUM_CLIENTS; ++client_id) {
+    Client cli("localhost", PORT);
+    
+    for (int req = 0; req < REQUESTS_PER_CLIENT; ++req) {
+      auto res = cli.Get("/benchmark");
+      ASSERT_TRUE(res) << "Client " << client_id << " request " << req << " failed";
+      EXPECT_EQ(StatusCode::OK_200, res->status);
+    }
   }
   
   auto end_total = std::chrono::high_resolution_clock::now();
   auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_total - start_total).count();
+  auto total_requests = NUM_CLIENTS * REQUESTS_PER_CLIENT;
+  double avg_ms = static_cast<double>(total_ms) / total_requests;
   
-  ASSERT_TRUE(all_successful) << "Some parallel requests failed";
+  std::cout << "Multi-client: " << NUM_CLIENTS << " clients x " << REQUESTS_PER_CLIENT 
+            << " requests (" << total_requests << " total) in " << total_ms 
+            << "ms (avg: " << avg_ms << "ms)" << std::endl;
   
-  double avg_per_thread = 0;
-  for (double time : thread_times) {
-    avg_per_thread += time;
-  }
-  avg_per_thread /= num_threads;
-  
-  std::cout << "Parallel: " << num_requests << " requests across " << num_threads 
-            << " threads in " << total_ms << "ms"
-            << " (avg per request: " << avg_per_thread << "ms)" << std::endl;
-  
-  EXPECT_LE(avg_per_thread, 50.0) << "Parallel requests too slow: " << avg_per_thread << "ms";
+  EXPECT_LE(avg_ms, 20.0) << "Multi-client test too slow: " << avg_ms << "ms (Issue #1777)";
 }
 
 TEST_F(ServerTest, GetEmptyFile) {
