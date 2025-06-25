@@ -9182,18 +9182,20 @@ inline Result ClientImpl::Delete(const std::string &path,
                 progress);
 }
 
-inline Result ClientImpl::Delete(const std::string &path, const Params &params) {
+inline Result ClientImpl::Delete(const std::string &path,
+                                 const Params &params) {
   return Delete(path, Headers(), params);
 }
 
-inline Result ClientImpl::Delete(const std::string &path, const Headers &headers,
-                                 const Params &params) {
+inline Result ClientImpl::Delete(const std::string &path,
+                                 const Headers &headers, const Params &params) {
   auto query = detail::params_to_query_str(params);
   return Delete(path, headers, query, "application/x-www-form-urlencoded");
 }
 
-inline Result ClientImpl::Delete(const std::string &path, const Headers &headers,
-                                 const Params &params, Progress progress) {
+inline Result ClientImpl::Delete(const std::string &path,
+                                 const Headers &headers, const Params &params,
+                                 Progress progress) {
   auto query = detail::params_to_query_str(params);
   return Delete(path, headers, query, "application/x-www-form-urlencoded",
                 progress);
