@@ -3368,14 +3368,16 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
-TEST(BenchmarkTest, SimpleGetPerformance) {
+void performance_test(const char *host) {
+  auto port = 1234;
+
   Server svr;
 
   svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
     res.set_content("Benchmark Response", "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread = std::thread([&]() { svr.listen(host, port); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     listen_thread.join();
@@ -3384,7 +3386,7 @@ TEST(BenchmarkTest, SimpleGetPerformance) {
 
   svr.wait_until_ready();
 
-  Client cli("localhost", PORT);
+  Client cli(host, port);
 
   const int NUM_REQUESTS = 50;
   const int MAX_AVERAGE_MS = 5;
@@ -3405,12 +3407,17 @@ TEST(BenchmarkTest, SimpleGetPerformance) {
           .count();
   double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
 
-  std::cout << "Standalone: " << NUM_REQUESTS << " requests in " << total_ms
-            << "ms (avg: " << avg_ms << "ms)" << std::endl;
+  std::cout << "Peformance test at \"" << host << "\": " << NUM_REQUESTS
+            << " requests in " << total_ms << "ms (avg: " << avg_ms << "ms)"
+            << std::endl;
 
   EXPECT_LE(avg_ms, MAX_AVERAGE_MS)
-      << "Standalone test too slow: " << avg_ms << "ms (Issue #1777)";
+      << "Performance is too slow: " << avg_ms << "ms (Issue #1777)";
 }
+
+TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
+
+TEST(BenchmarkTest, v6) { performance_test("::1"); }
 
 TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
