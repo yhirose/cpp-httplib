@@ -6115,6 +6115,273 @@ TEST(ServerStopTest, Decommision) {
   }
 }
 
+// Helper function for string body upload progress tests
+template <typename SetupHandler, typename ClientCall>
+void TestStringBodyUploadProgress(SetupHandler &&setup_handler,
+                                  ClientCall &&client_call,
+                                  const string &body) {
+  Server svr;
+  setup_handler(svr);
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  vector<uint64_t> progress_values;
+  bool progress_called = false;
+
+  auto res =
+      client_call(cli, body, [&](uint64_t current, uint64_t /*total*/) -> bool {
+        progress_values.push_back(current);
+        progress_called = true;
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_TRUE(progress_called);
+}
+
+TEST(UploadProgressTest, PostStringBodyBasic) {
+  TestStringBodyUploadProgress(
+      [](Server &svr) {
+        svr.Post("/test", [](const Request & /*req*/, Response &res) {
+          res.set_content("received", "text/plain");
+        });
+      },
+      [](Client &cli, const string &body, UploadProgress progress_callback) {
+        return cli.Post("/test", body, "text/plain", progress_callback);
+      },
+      "test data for upload progress");
+}
+
+TEST(UploadProgressTest, PutStringBodyBasic) {
+  TestStringBodyUploadProgress(
+      [](Server &svr) {
+        svr.Put("/test", [](const Request & /*req*/, Response &res) {
+          res.set_content("put received", "text/plain");
+        });
+      },
+      [](Client &cli, const string &body, UploadProgress progress_callback) {
+        return cli.Put("/test", body, "text/plain", progress_callback);
+      },
+      "put test data for upload progress");
+}
+
+TEST(UploadProgressTest, PatchStringBodyBasic) {
+  TestStringBodyUploadProgress(
+      [](Server &svr) {
+        svr.Patch("/test", [](const Request & /*req*/, Response &res) {
+          res.set_content("patch received", "text/plain");
+        });
+      },
+      [](Client &cli, const string &body, UploadProgress progress_callback) {
+        return cli.Patch("/test", body, "text/plain", progress_callback);
+      },
+      "patch test data for upload progress");
+}
+
+// Helper function for content provider upload progress tests
+template <typename SetupHandler, typename ClientCall>
+void TestContentProviderUploadProgress(SetupHandler &&setup_handler,
+                                       ClientCall &&client_call) {
+  Server svr;
+  setup_handler(svr);
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  vector<uint64_t> progress_values;
+
+  auto res =
+      client_call(cli, [&](uint64_t current, uint64_t /*total*/) -> bool {
+        progress_values.push_back(current);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_FALSE(progress_values.empty());
+}
+
+TEST(UploadProgressTest, PostContentProviderProgress) {
+  TestContentProviderUploadProgress(
+      [](Server &svr) {
+        svr.Post("/test", [](const Request & /*req*/, Response &res) {
+          res.set_content("provider received", "text/plain");
+        });
+      },
+      [](Client &cli, UploadProgress progress_callback) {
+        return cli.Post(
+            "/test", 10,
+            [](size_t /*offset*/, size_t /*length*/, DataSink &sink) -> bool {
+              sink.os << "test data";
+              return true;
+            },
+            "text/plain", progress_callback);
+      });
+}
+
+// Helper function for multipart upload progress tests
+template <typename SetupHandler, typename ClientCall>
+void TestMultipartUploadProgress(SetupHandler &&setup_handler,
+                                 ClientCall &&client_call,
+                                 const string &endpoint) {
+  Server svr;
+  setup_handler(svr);
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  vector<uint64_t> progress_values;
+
+  MultipartFormDataItemsForClientInput items = {
+      {"field1", "value1", "", ""},
+      {"field2", "longer value for progress tracking test", "", ""},
+      {"file1", "file content data for upload progress", "test.txt",
+       "text/plain"}};
+
+  auto res = client_call(cli, endpoint, items,
+                         [&](uint64_t current, uint64_t /*total*/) -> bool {
+                           progress_values.push_back(current);
+                           return true;
+                         });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_FALSE(progress_values.empty());
+}
+
+TEST(UploadProgressTest, PostMultipartProgress) {
+  TestMultipartUploadProgress(
+      [](Server &svr) {
+        svr.Post("/multipart", [](const Request &req, Response &res) {
+          EXPECT_FALSE(req.files.empty());
+          res.set_content("multipart received", "text/plain");
+        });
+      },
+      [](Client &cli, const string &endpoint,
+         const MultipartFormDataItemsForClientInput &items,
+         UploadProgress progress_callback) {
+        return cli.Post(endpoint, items, progress_callback);
+      },
+      "/multipart");
+}
+
+// Helper function for basic download progress tests
+template <typename SetupHandler, typename ClientCall>
+void TestBasicDownloadProgress(SetupHandler &&setup_handler,
+                               ClientCall &&client_call, const string &endpoint,
+                               size_t expected_content_size) {
+  Server svr;
+  setup_handler(svr);
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  vector<uint64_t> progress_values;
+
+  auto res = client_call(cli, endpoint,
+                         [&](uint64_t current, uint64_t /*total*/) -> bool {
+                           progress_values.push_back(current);
+                           return true;
+                         });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_FALSE(progress_values.empty());
+  EXPECT_EQ(expected_content_size, res->body.size());
+}
+
+TEST(DownloadProgressTest, GetBasic) {
+  TestBasicDownloadProgress(
+      [](Server &svr) {
+        svr.Get("/download", [](const Request & /*req*/, Response &res) {
+          string content(1000, 'D');
+          res.set_content(content, "text/plain");
+        });
+      },
+      [](Client &cli, const string &endpoint,
+         DownloadProgress progress_callback) {
+        return cli.Get(endpoint, progress_callback);
+      },
+      "/download", 1000u);
+}
+
+// Helper function for content receiver download progress tests
+template <typename SetupHandler, typename ClientCall>
+void TestContentReceiverDownloadProgress(SetupHandler &&setup_handler,
+                                         ClientCall &&client_call,
+                                         const string &endpoint,
+                                         size_t expected_content_size) {
+  Server svr;
+  setup_handler(svr);
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  vector<uint64_t> progress_values;
+  string received_body;
+
+  auto res = client_call(
+      cli, endpoint,
+      [&](const char *data, size_t data_length) -> bool {
+        received_body.append(data, data_length);
+        return true;
+      },
+      [&](uint64_t current, uint64_t /*total*/) -> bool {
+        progress_values.push_back(current);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_FALSE(progress_values.empty());
+  EXPECT_EQ(expected_content_size, received_body.size());
+  EXPECT_TRUE(res->body.empty());
+}
+
+TEST(DownloadProgressTest, GetWithContentReceiver) {
+  TestContentReceiverDownloadProgress(
+      [](Server &svr) {
+        svr.Get("/download-receiver",
+                [](const Request & /*req*/, Response &res) {
+                  string content(2000, 'R');
+                  res.set_content(content, "text/plain");
+                });
+      },
+      [](Client &cli, const string &endpoint, ContentReceiver content_receiver,
+         DownloadProgress progress_callback) {
+        return cli.Get(endpoint, content_receiver, progress_callback);
+      },
+      "/download-receiver", 2000u);
+}
+
 TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
 
