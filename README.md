@@ -5,7 +5,7 @@ cpp-httplib
 
 A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
-It's extremely easy to setup. Just include the **httplib.h** file in your code!
+It's extremely easy to set up. Just include the **httplib.h** file in your code!
 
 > [!IMPORTANT]
 > This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
@@ -187,7 +187,7 @@ svr.set_file_extension_and_mimetype_mapping("cpp", "text/x-c");
 svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
 ```
 
-The followings are built-in mappings:
+The following are built-in mappings:
 
 | Extension  |          MIME Type          | Extension  |          MIME Type          |
 | :--------- | :-------------------------- | :--------- | :-------------------------- |
@@ -201,7 +201,7 @@ The followings are built-in mappings:
 | bmp        | image/bmp                   | 7z         | application/x-7z-compressed |
 | gif        | image/gif                   | atom       | application/atom+xml        |
 | png        | image/png                   | pdf        | application/pdf             |
-| svg        | image/svg+xml               | mjs, js    | application/javascript      |
+| svg        | image/svg+xml               | mjs, js    | text/javascript             |
 | webp       | image/webp                  | json       | application/json            |
 | ico        | image/x-icon                | rss        | application/rss+xml         |
 | tif        | image/tiff                  | tar        | application/x-tar           |
@@ -451,7 +451,7 @@ svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
 ### Keep-Alive connection
 
 ```cpp
-svr.set_keep_alive_max_count(2); // Default is 5
+svr.set_keep_alive_max_count(2); // Default is 100
 svr.set_keep_alive_timeout(10);  // Default is 5
 ```
 
@@ -578,9 +578,11 @@ enum Error {
   SSLConnection,
   SSLLoadingCerts,
   SSLServerVerification,
+  SSLServerHostnameVerification,
   UnsupportedMultipartBoundaryChars,
   Compression,
   ConnectionTimeout,
+  ProxyConnection,
 };
 ```
 
@@ -672,7 +674,7 @@ cli.set_read_timeout(5, 0); // 5 seconds
 cli.set_write_timeout(5, 0); // 5 seconds
 
 // This method works the same as curl's `--max-time` option
-svr.set_max_timeout(5000); // 5 seconds
+cli.set_max_timeout(5000); // 5 seconds
 ```
 
 ### Receive content with a content receiver
@@ -846,6 +848,7 @@ The server can apply compression to the following MIME type contents:
   * application/javascript
   * application/json
   * application/xml
+  * application/protobuf
   * application/xhtml+xml
 
 ### Zlib Support
@@ -857,13 +860,18 @@ The server can apply compression to the following MIME type contents:
 Brotli compression is available with `CPPHTTPLIB_BROTLI_SUPPORT`. Necessary libraries should be linked.
 Please see https://github.com/google/brotli for more detail.
 
+### Zstd Support
+
+Zstd compression is available with `CPPHTTPLIB_ZSTD_SUPPORT`. Necessary libraries should be linked.
+Please see https://github.com/facebook/zstd for more detail.
+
 ### Default `Accept-Encoding` value
 
 The default `Accept-Encoding` value contains all possible compression types. So, the following two examples are same.
 
 ```c++
 res = cli.Get("/resource/foo");
-res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate, br"}});
+res = cli.Get("/resource/foo", {{"Accept-Encoding", "br, gzip, deflate, zstd"}});
 ```
 
 If we don't want a response without compression, we have to set `Accept-Encoding` to an empty string. This behavior is similar to curl.
@@ -903,7 +911,7 @@ httplib::Client cli("./my-socket.sock");
 cli.set_address_family(AF_UNIX);
 ```
 
-"my-socket.sock" can be a relative path or an absolute path. You application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
+"my-socket.sock" can be a relative path or an absolute path. Your application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
 
 
 Split httplib.h into .h and .cc
