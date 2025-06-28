@@ -341,122 +341,6 @@ using socket_t = int;
  */
 namespace httplib {
 
-// Windows compatibility for getaddrinfo error codes
-#ifdef _WIN32
-#ifndef EAI_SYSTEM
-#define EAI_SYSTEM WSANO_RECOVERY
-#endif
-#ifndef EAI_AGAIN
-#define EAI_AGAIN WSATRY_AGAIN
-#endif
-#endif
-
-// Timeout-enabled getaddrinfo for Issue #1601: Client Get operation stalls when
-// network is down
-inline int getaddrinfo_with_timeout(const char *node, const char *service,
-                                    const struct addrinfo *hints,
-                                    struct addrinfo **res, time_t timeout_sec) {
-  if (timeout_sec <= 0) {
-    // No timeout specified, use standard getaddrinfo
-    return getaddrinfo(node, service, hints, res);
-  }
-
-#ifdef _WIN32
-  // Windows-specific implementation using GetAddrInfoEx with overlapped I/O
-  OVERLAPPED overlapped = {0};
-  HANDLE event = CreateEvent(NULL, TRUE, FALSE, NULL);
-  if (!event) {
-    return EAI_FAIL;
-  }
-  
-  overlapped.hEvent = event;
-  
-  ADDRINFOEX *result_addrinfo = nullptr;
-  HANDLE cancel_handle = nullptr;
-  
-  // Convert struct addrinfo* to ADDRINFOEX* hints if provided
-  ADDRINFOEX hints_ex = {0};
-  if (hints) {
-    hints_ex.ai_flags = hints->ai_flags;
-    hints_ex.ai_family = hints->ai_family;
-    hints_ex.ai_socktype = hints->ai_socktype;
-    hints_ex.ai_protocol = hints->ai_protocol;
-  }
-  
-  int ret = GetAddrInfoEx(
-    node,
-    service, 
-    NS_DNS,
-    NULL,
-    hints ? &hints_ex : NULL,
-    &result_addrinfo,
-    NULL,
-    &overlapped,
-    NULL,
-    &cancel_handle
-  );
-  
-  if (ret == WSA_IO_PENDING) {
-    DWORD wait_result = WaitForSingleObject(event, static_cast<DWORD>(timeout_sec * 1000));
-    if (wait_result == WAIT_TIMEOUT) {
-      if (cancel_handle) {
-        GetAddrInfoExCancel(&cancel_handle);
-      }
-      CloseHandle(event);
-      return EAI_AGAIN;
-    }
-    
-    DWORD bytes_returned;
-    if (!GetOverlappedResult((HANDLE)INVALID_SOCKET, &overlapped, &bytes_returned, FALSE)) {
-      CloseHandle(event);
-      return WSAGetLastError();
-    }
-  }
-  
-  CloseHandle(event);
-  
-  if (ret == NO_ERROR) {
-    *res = reinterpret_cast<struct addrinfo*>(result_addrinfo);
-    return 0;
-  }
-  
-  return ret;
-#else
-  // Unix/Linux implementation using thread-based timeout
-  std::mutex result_mutex;
-  std::condition_variable result_cv;
-  auto completed = false;
-  auto result = EAI_SYSTEM;
-  struct addrinfo *result_addrinfo = nullptr;
-
-  // Launch getaddrinfo in a separate thread
-  std::thread resolve_thread([&]() {
-    auto thread_result = getaddrinfo(node, service, hints, &result_addrinfo);
-
-    std::lock_guard<std::mutex> lock(result_mutex);
-    result = thread_result;
-    completed = true;
-    result_cv.notify_one();
-  });
-
-  // Wait for completion or timeout
-  std::unique_lock<std::mutex> lock(result_mutex);
-  auto finished = result_cv.wait_for(lock, std::chrono::seconds(timeout_sec),
-                                     [&] { return completed; });
-
-  if (finished) {
-    // Operation completed within timeout
-    resolve_thread.join();
-    *res = result_addrinfo;
-    return result;
-  } else {
-    // Timeout occurred
-    resolve_thread.detach(); // Let the thread finish in background
-    return EAI_AGAIN;        // Return timeout error
-  }
-#endif
-}
-
 namespace detail {
 
 /*
@@ -3485,6 +3369,100 @@ unescape_abstract_namespace_unix_domain(const std::string &s) {
   return s;
 }
 
+inline int getaddrinfo_with_timeout(const char *node, const char *service,
+                                    const struct addrinfo *hints,
+                                    struct addrinfo **res, time_t timeout_sec) {
+  if (timeout_sec <= 0) {
+    // No timeout specified, use standard getaddrinfo
+    return getaddrinfo(node, service, hints, res);
+  }
+
+#ifdef _WIN32
+  // Windows-specific implementation using GetAddrInfoEx with overlapped I/O
+  OVERLAPPED overlapped = {0};
+  HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  if (!event) { return EAI_FAIL; }
+
+  overlapped.hEvent = event;
+
+  PADDRINFOEXW result_addrinfo = nullptr;
+  HANDLE cancel_handle = nullptr;
+
+  ADDRINFOEXW hints_ex = {0};
+  if (hints) {
+    hints_ex.ai_flags = hints->ai_flags;
+    hints_ex.ai_family = hints->ai_family;
+    hints_ex.ai_socktype = hints->ai_socktype;
+    hints_ex.ai_protocol = hints->ai_protocol;
+  }
+
+  auto wnode = u8string_to_wstring(node);
+  auto wservice = u8string_to_wstring(service);
+
+  auto ret = ::GetAddrInfoExW(wnode.data(), wservice.data(), NS_DNS, nullptr,
+                              hints ? &hints_ex : nullptr, &result_addrinfo,
+                              nullptr, &overlapped, nullptr, &cancel_handle);
+
+  if (ret == WSA_IO_PENDING) {
+    auto wait_result =
+        ::WaitForSingleObject(event, static_cast<DWORD>(timeout_sec * 1000));
+    if (wait_result == WAIT_TIMEOUT) {
+      if (cancel_handle) { ::GetAddrInfoExCancel(&cancel_handle); }
+      ::CloseHandle(event);
+      return EAI_AGAIN;
+    }
+
+    DWORD bytes_returned;
+    if (!::GetOverlappedResult((HANDLE)INVALID_SOCKET, &overlapped,
+                               &bytes_returned, FALSE)) {
+      ::CloseHandle(event);
+      return ::WSAGetLastError();
+    }
+  }
+
+  ::CloseHandle(event);
+
+  if (ret == NO_ERROR || ret == WSA_IO_PENDING) {
+    *res = reinterpret_cast<struct addrinfo *>(result_addrinfo);
+    return 0;
+  }
+
+  return ret;
+#else
+  // macOS/Linux implementation using thread-based timeout
+  std::mutex result_mutex;
+  std::condition_variable result_cv;
+  auto completed = false;
+  auto result = EAI_SYSTEM;
+  struct addrinfo *result_addrinfo = nullptr;
+
+  std::thread resolve_thread([&]() {
+    auto thread_result = getaddrinfo(node, service, hints, &result_addrinfo);
+
+    std::lock_guard<std::mutex> lock(result_mutex);
+    result = thread_result;
+    completed = true;
+    result_cv.notify_one();
+  });
+
+  // Wait for completion or timeout
+  std::unique_lock<std::mutex> lock(result_mutex);
+  auto finished = result_cv.wait_for(lock, std::chrono::seconds(timeout_sec),
+                                     [&] { return completed; });
+
+  if (finished) {
+    // Operation completed within timeout
+    resolve_thread.join();
+    *res = result_addrinfo;
+    return result;
+  } else {
+    // Timeout occurred
+    resolve_thread.detach(); // Let the thread finish in background
+    return EAI_AGAIN;        // Return timeout error
+  }
+#endif
+}
+
 template <typename BindOrConnect>
 socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        int address_family, int socket_flags, bool tcp_nodelay,
@@ -5987,7 +5965,8 @@ inline void hosted_at(const std::string &hostname,
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
 
-  if (getaddrinfo_with_timeout(hostname.c_str(), nullptr, &hints, &result, 0)) {
+  if (detail::getaddrinfo_with_timeout(hostname.c_str(), nullptr, &hints,
+                                       &result, 0)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
