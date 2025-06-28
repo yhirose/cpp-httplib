@@ -341,11 +341,11 @@ using socket_t = int;
  */
 namespace httplib {
 
-// Timeout-enabled getaddrinfo for Issue #1601: Client Get operation stalls when network is down
+// Timeout-enabled getaddrinfo for Issue #1601: Client Get operation stalls when
+// network is down
 inline int getaddrinfo_with_timeout(const char *node, const char *service,
                                     const struct addrinfo *hints,
-                                    struct addrinfo **res,
-                                    time_t timeout_sec) {
+                                    struct addrinfo **res, time_t timeout_sec) {
   if (timeout_sec <= 0) {
     // No timeout specified, use standard getaddrinfo
     return getaddrinfo(node, service, hints, res);
@@ -361,7 +361,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   // Launch getaddrinfo in a separate thread
   std::thread resolve_thread([&]() {
     auto thread_result = getaddrinfo(node, service, hints, &result_addrinfo);
-    
+
     std::lock_guard<std::mutex> lock(result_mutex);
     result = thread_result;
     completed = true;
@@ -370,7 +370,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
 
   // Wait for completion or timeout
   std::unique_lock<std::mutex> lock(result_mutex);
-  auto finished = result_cv.wait_for(lock, std::chrono::seconds(timeout_sec), 
+  auto finished = result_cv.wait_for(lock, std::chrono::seconds(timeout_sec),
                                      [&] { return completed; });
 
   if (finished) {
@@ -381,7 +381,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   } else {
     // Timeout occurred
     resolve_thread.detach(); // Let the thread finish in background
-    return EAI_AGAIN; // Return timeout error
+    return EAI_AGAIN;        // Return timeout error
   }
 }
 
@@ -3487,7 +3487,8 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
   auto service = std::to_string(port);
 
-  if (getaddrinfo_with_timeout(node, service.c_str(), &hints, &result, timeout_sec)) {
+  if (getaddrinfo_with_timeout(node, service.c_str(), &hints, &result,
+                               timeout_sec)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
@@ -3585,7 +3586,9 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
 
-  if (getaddrinfo_with_timeout(host.c_str(), "0", &hints, &result, 0)) { return false; }
+  if (getaddrinfo_with_timeout(host.c_str(), "0", &hints, &result, 0)) {
+    return false;
+  }
   auto se = detail::scope_exit([&] { freeaddrinfo(result); });
 
   auto ret = false;
@@ -3690,7 +3693,8 @@ inline socket_t create_client_socket(
 
         error = Error::Success;
         return true;
-      }, connection_timeout_sec); // Pass DNS timeout
+      },
+      connection_timeout_sec); // Pass DNS timeout
 
   if (sock != INVALID_SOCKET) {
     error = Error::Success;
