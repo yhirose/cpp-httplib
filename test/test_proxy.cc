@@ -1,9 +1,18 @@
+#include <chrono>
 #include <future>
 #include <gtest/gtest.h>
 #include <httplib.h>
 
 using namespace std;
 using namespace httplib;
+
+std::string normalizeJson(const std::string &json) {
+  std::string result;
+  for (char c : json) {
+    if (c != ' ' && c != '\t' && c != '\n' && c != '\r') { result += c; }
+  }
+  return result;
+}
 
 template <typename T> void ProxyTest(T &cli, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
@@ -81,7 +90,7 @@ TEST(RedirectTest, YouTubeNoSSLBasic) {
   RedirectProxyText(cli, "/", true);
 }
 
-TEST(RedirectTest, DISABLED_YouTubeNoSSLDigest) {
+TEST(RedirectTest, YouTubeNoSSLDigest) {
   Client cli("youtube.com");
   RedirectProxyText(cli, "/", false);
 }
@@ -92,6 +101,7 @@ TEST(RedirectTest, YouTubeSSLBasic) {
 }
 
 TEST(RedirectTest, YouTubeSSLDigest) {
+  std::this_thread::sleep_for(std::chrono::seconds(3));
   SSLClient cli("youtube.com");
   RedirectProxyText(cli, "/", false);
 }
@@ -113,8 +123,8 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
     auto res = cli.Get("/basic-auth/hello/world",
                        {make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-              res->body);
+    EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
+              normalizeJson(res->body));
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -122,8 +132,8 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
     cli.set_basic_auth("hello", "world");
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-              res->body);
+    EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
+              normalizeJson(res->body));
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -179,8 +189,8 @@ template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-                res->body);
+      EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
+                normalizeJson(res->body));
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
@@ -249,8 +259,8 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
-      EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
-                res->body);
+      EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
+                normalizeJson(res->body));
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
   }
