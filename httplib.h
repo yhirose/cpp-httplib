@@ -361,7 +361,68 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
     return getaddrinfo(node, service, hints, res);
   }
 
-  // Use thread-based timeout implementation for cross-platform compatibility
+#ifdef _WIN32
+  // Windows-specific implementation using GetAddrInfoEx with overlapped I/O
+  OVERLAPPED overlapped = {0};
+  HANDLE event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  if (!event) {
+    return EAI_FAIL;
+  }
+  
+  overlapped.hEvent = event;
+  
+  ADDRINFOEX *result_addrinfo = nullptr;
+  HANDLE cancel_handle = nullptr;
+  
+  // Convert struct addrinfo* to ADDRINFOEX* hints if provided
+  ADDRINFOEX hints_ex = {0};
+  if (hints) {
+    hints_ex.ai_flags = hints->ai_flags;
+    hints_ex.ai_family = hints->ai_family;
+    hints_ex.ai_socktype = hints->ai_socktype;
+    hints_ex.ai_protocol = hints->ai_protocol;
+  }
+  
+  int ret = GetAddrInfoEx(
+    node,
+    service, 
+    NS_DNS,
+    NULL,
+    hints ? &hints_ex : NULL,
+    &result_addrinfo,
+    NULL,
+    &overlapped,
+    NULL,
+    &cancel_handle
+  );
+  
+  if (ret == WSA_IO_PENDING) {
+    DWORD wait_result = WaitForSingleObject(event, static_cast<DWORD>(timeout_sec * 1000));
+    if (wait_result == WAIT_TIMEOUT) {
+      if (cancel_handle) {
+        GetAddrInfoExCancel(&cancel_handle);
+      }
+      CloseHandle(event);
+      return EAI_AGAIN;
+    }
+    
+    DWORD bytes_returned;
+    if (!GetOverlappedResult((HANDLE)INVALID_SOCKET, &overlapped, &bytes_returned, FALSE)) {
+      CloseHandle(event);
+      return WSAGetLastError();
+    }
+  }
+  
+  CloseHandle(event);
+  
+  if (ret == NO_ERROR) {
+    *res = reinterpret_cast<struct addrinfo*>(result_addrinfo);
+    return 0;
+  }
+  
+  return ret;
+#else
+  // Unix/Linux implementation using thread-based timeout
   std::mutex result_mutex;
   std::condition_variable result_cv;
   auto completed = false;
@@ -393,6 +454,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
     resolve_thread.detach(); // Let the thread finish in background
     return EAI_AGAIN;        // Return timeout error
   }
+#endif
 }
 
 namespace detail {
