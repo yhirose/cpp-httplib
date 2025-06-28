@@ -341,6 +341,16 @@ using socket_t = int;
  */
 namespace httplib {
 
+// Windows compatibility for getaddrinfo error codes
+#ifdef _WIN32
+#ifndef EAI_SYSTEM
+#define EAI_SYSTEM WSANO_RECOVERY
+#endif
+#ifndef EAI_AGAIN
+#define EAI_AGAIN WSATRY_AGAIN
+#endif
+#endif
+
 // Timeout-enabled getaddrinfo for Issue #1601: Client Get operation stalls when
 // network is down
 inline int getaddrinfo_with_timeout(const char *node, const char *service,
