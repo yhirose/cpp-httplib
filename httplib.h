@@ -8130,7 +8130,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     auto data = req.body.data();
 
     while (written < body_size) {
-      size_t to_write = std::min(CPPHTTPLIB_SEND_BUFSIZ, body_size - written);
+      size_t to_write = (std::min)(CPPHTTPLIB_SEND_BUFSIZ, body_size - written);
       if (!detail::write_data(strm, data + written, to_write)) {
         error = Error::Write;
         return false;
