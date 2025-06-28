@@ -341,6 +341,50 @@ using socket_t = int;
  */
 namespace httplib {
 
+// Timeout-enabled getaddrinfo for Issue #1601: Client Get operation stalls when network is down
+inline int getaddrinfo_with_timeout(const char *node, const char *service,
+                                    const struct addrinfo *hints,
+                                    struct addrinfo **res,
+                                    time_t timeout_sec) {
+  if (timeout_sec <= 0) {
+    // No timeout specified, use standard getaddrinfo
+    return getaddrinfo(node, service, hints, res);
+  }
+
+  // Use thread-based timeout implementation for cross-platform compatibility
+  std::mutex result_mutex;
+  std::condition_variable result_cv;
+  auto completed = false;
+  auto result = EAI_SYSTEM;
+  struct addrinfo *result_addrinfo = nullptr;
+
+  // Launch getaddrinfo in a separate thread
+  std::thread resolve_thread([&]() {
+    auto thread_result = getaddrinfo(node, service, hints, &result_addrinfo);
+    
+    std::lock_guard<std::mutex> lock(result_mutex);
+    result = thread_result;
+    completed = true;
+    result_cv.notify_one();
+  });
+
+  // Wait for completion or timeout
+  std::unique_lock<std::mutex> lock(result_mutex);
+  auto finished = result_cv.wait_for(lock, std::chrono::seconds(timeout_sec), 
+                                     [&] { return completed; });
+
+  if (finished) {
+    // Operation completed within timeout
+    resolve_thread.join();
+    *res = result_addrinfo;
+    return result;
+  } else {
+    // Timeout occurred
+    resolve_thread.detach(); // Let the thread finish in background
+    return EAI_AGAIN; // Return timeout error
+  }
+}
+
 namespace detail {
 
 /*
@@ -3373,7 +3417,7 @@ template <typename BindOrConnect>
 socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        int address_family, int socket_flags, bool tcp_nodelay,
                        bool ipv6_v6only, SocketOptions socket_options,
-                       BindOrConnect bind_or_connect) {
+                       BindOrConnect bind_or_connect, time_t timeout_sec = 0) {
   // Get address info
   const char *node = nullptr;
   struct addrinfo hints;
@@ -3443,7 +3487,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
   auto service = std::to_string(port);
 
-  if (getaddrinfo(node, service.c_str(), &hints, &result)) {
+  if (getaddrinfo_with_timeout(node, service.c_str(), &hints, &result, timeout_sec)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
@@ -3541,7 +3585,7 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
 
-  if (getaddrinfo(host.c_str(), "0", &hints, &result)) { return false; }
+  if (getaddrinfo_with_timeout(host.c_str(), "0", &hints, &result, 0)) { return false; }
   auto se = detail::scope_exit([&] { freeaddrinfo(result); });
 
   auto ret = false;
@@ -3646,7 +3690,7 @@ inline socket_t create_client_socket(
 
         error = Error::Success;
         return true;
-      });
+      }, connection_timeout_sec); // Pass DNS timeout
 
   if (sock != INVALID_SOCKET) {
     error = Error::Success;
@@ -5867,7 +5911,7 @@ inline void hosted_at(const std::string &hostname,
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
 
-  if (getaddrinfo(hostname.c_str(), nullptr, &hints, &result)) {
+  if (getaddrinfo_with_timeout(hostname.c_str(), nullptr, &hints, &result, 0)) {
 #if defined __linux__ && !defined __ANDROID__
     res_init();
 #endif
