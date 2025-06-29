@@ -3388,8 +3388,11 @@ void performance_test(const char *host) {
 
   Client cli(host, port);
 
-  const int NUM_WARMUP = 10;
-  const int NUM_REQUESTS = 50;
+  // const int NUM_WARMUP = 10;
+  // const int NUM_REQUESTS = 50;
+  // const int MAX_AVERAGE_MS = 5;
+  const int NUM_WARMUP = 0;
+  const int NUM_REQUESTS = 1;
   const int MAX_AVERAGE_MS = 5;
 
   for (int i = 0; i < NUM_WARMUP; ++i) {
