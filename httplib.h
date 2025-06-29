@@ -3428,36 +3428,36 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   }
 
   return ret;
-#elif defined(_GNU_SOURCE) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2))
+#elif defined(_GNU_SOURCE) && defined(__GLIBC__) &&                            \
+    (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2))
   // Linux implementation using getaddrinfo_a for asynchronous DNS resolution
   struct gaicb request;
   struct gaicb *requests[1] = {&request};
   struct sigevent sevp;
   struct timespec timeout;
-  
+
   // Initialize the request structure
   memset(&request, 0, sizeof(request));
   request.ar_name = node;
   request.ar_service = service;
   request.ar_request = hints;
-  
+
   // Set up timeout
   timeout.tv_sec = timeout_sec;
   timeout.tv_nsec = 0;
-  
+
   // Initialize sigevent structure (not used, but required)
   memset(&sevp, 0, sizeof(sevp));
   sevp.sigev_notify = SIGEV_NONE;
-  
+
   // Start asynchronous resolution
   int start_result = getaddrinfo_a(GAI_NOWAIT, requests, 1, &sevp);
-  if (start_result != 0) {
-    return start_result;
-  }
-  
+  if (start_result != 0) { return start_result; }
+
   // Wait for completion with timeout
-  int wait_result = gai_suspend((const struct gaicb * const *)requests, 1, &timeout);
-  
+  int wait_result =
+      gai_suspend((const struct gaicb *const *)requests, 1, &timeout);
+
   if (wait_result == 0) {
     // Completed successfully, get the result
     int gai_result = gai_error(&request);
@@ -3466,9 +3466,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
       return 0;
     } else {
       // Clean up on error
-      if (request.ar_result) {
-        freeaddrinfo(request.ar_result);
-      }
+      if (request.ar_result) { freeaddrinfo(request.ar_result); }
       return gai_result;
     }
   } else if (wait_result == EAI_AGAIN) {
