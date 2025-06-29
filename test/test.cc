@@ -3396,13 +3396,12 @@ void performance_test(const char *host) {
 
   auto end = std::chrono::high_resolution_clock::now();
 
-  auto total_ms =
+  auto elapsed =
       std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
           .count();
-  double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
 
-  EXPECT_LE(avg_ms, 5) << "Performance is too slow: " << avg_ms
-                       << "ms (Issue #1777)";
+  EXPECT_LE(elapsed, 5) << "Performance is too slow: " << elapsed
+                        << "ms (Issue #1777)";
 }
 
 TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
