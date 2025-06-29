@@ -48,7 +48,15 @@ all : test test_split
 	./test
 
 proxy : test_proxy
-	./test_proxy
+	@echo "Starting proxy server..."
+	cd proxy && \
+	docker-compose up -d
+	@echo "Running proxy tests..."
+	./test_proxy; \
+	exit_code=$$?; \
+	echo "Stopping proxy server..."; \
+	docker-compose down; \
+	exit $$exit_code
 
 test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS)
