@@ -3388,24 +3388,12 @@ void performance_test(const char *host) {
 
   Client cli(host, port);
 
-  // const int NUM_WARMUP = 10;
-  // const int NUM_REQUESTS = 50;
-  // const int MAX_AVERAGE_MS = 5;
-  const int NUM_WARMUP = 0;
-  const int NUM_REQUESTS = 1;
-  const int MAX_AVERAGE_MS = 5;
-
-  for (int i = 0; i < NUM_WARMUP; ++i) {
-    auto warmup = cli.Get("/benchmark");
-    ASSERT_TRUE(warmup);
-  }
-
   auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < NUM_REQUESTS; ++i) {
-    auto res = cli.Get("/benchmark");
-    ASSERT_TRUE(res);
-    EXPECT_EQ(StatusCode::OK_200, res->status);
-  }
+
+  auto res = cli.Get("/benchmark");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
   auto end = std::chrono::high_resolution_clock::now();
 
   auto total_ms =
@@ -3413,8 +3401,8 @@ void performance_test(const char *host) {
           .count();
   double avg_ms = static_cast<double>(total_ms) / NUM_REQUESTS;
 
-  EXPECT_LE(avg_ms, MAX_AVERAGE_MS)
-      << "Performance is too slow: " << avg_ms << "ms (Issue #1777)";
+  EXPECT_LE(avg_ms, 5) << "Performance is too slow: " << avg_ms
+                       << "ms (Issue #1777)";
 }
 
 TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
