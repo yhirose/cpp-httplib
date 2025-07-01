@@ -1312,7 +1312,7 @@ public:
   Result Post(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Params &params);
   Result Post(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Post(const std::string &path, const Headers &headers, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers);
   Result Post(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1329,7 +1329,7 @@ public:
   Result Put(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Params &params);
   Result Put(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Put(const std::string &path, const Headers &headers, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers);
   Result Put(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1649,13 +1649,13 @@ public:
   Result Head(const std::string &path, const Headers &headers);
 
   Result Post(const std::string &path);
-  Result Post(const std::string &path, const Headers &headers, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Params &params);
   Result Post(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers);
   Result Post(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1672,7 +1672,7 @@ public:
   Result Put(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Params &params);
   Result Put(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Put(const std::string &path, const Headers &headers, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers);
   Result Put(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1689,7 +1689,7 @@ public:
   Result Patch(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Params &params);
   Result Patch(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Patch(const std::string &path, const Headers &headers, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers);
   Result Patch(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
@@ -8992,9 +8992,9 @@ inline Result ClientImpl::Post(const std::string &path) {
   return Post(path, std::string(), std::string());
 }
 
-inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
-                               UploadProgress progress) {
-  return Post(path, headers, nullptr, 0, std::string(), progress);
+inline Result ClientImpl::Post(const std::string &path,
+                               const Headers &headers) {
+  return Post(path, headers, nullptr, 0, std::string());
 }
 
 inline Result ClientImpl::Post(const std::string &path, const char *body,
@@ -9122,9 +9122,8 @@ inline Result ClientImpl::Put(const std::string &path) {
   return Put(path, std::string(), std::string());
 }
 
-inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              UploadProgress progress) {
-  return Put(path, headers, nullptr, 0, std::string(), progress);
+inline Result ClientImpl::Put(const std::string &path, const Headers &headers) {
+  return Put(path, headers, nullptr, 0, std::string());
 }
 
 inline Result ClientImpl::Put(const std::string &path, const char *body,
@@ -10600,9 +10599,8 @@ inline Result Client::Head(const std::string &path, const Headers &headers) {
 }
 
 inline Result Client::Post(const std::string &path) { return cli_->Post(path); }
-inline Result Client::Post(const std::string &path, const Headers &headers,
-                           UploadProgress progress) {
-  return cli_->Post(path, headers, progress);
+inline Result Client::Post(const std::string &path, const Headers &headers) {
+  return cli_->Post(path, headers);
 }
 inline Result Client::Post(const std::string &path, const char *body,
                            size_t content_length,
@@ -10687,9 +10685,8 @@ inline Result Client::Post(const std::string &path, const Headers &headers,
 }
 
 inline Result Client::Put(const std::string &path) { return cli_->Put(path); }
-inline Result Client::Put(const std::string &path, const Headers &headers,
-                          UploadProgress progress) {
-  return cli_->Put(path, headers, progress);
+inline Result Client::Put(const std::string &path, const Headers &headers) {
+  return cli_->Put(path, headers);
 }
 inline Result Client::Put(const std::string &path, const char *body,
                           size_t content_length,
@@ -10775,9 +10772,8 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
 inline Result Client::Patch(const std::string &path) {
   return cli_->Patch(path);
 }
-inline Result Client::Patch(const std::string &path, const Headers &headers,
-                            UploadProgress progress) {
-  return cli_->Patch(path, headers, progress);
+inline Result Client::Patch(const std::string &path, const Headers &headers) {
+  return cli_->Patch(path, headers);
 }
 inline Result Client::Patch(const std::string &path, const char *body,
                             size_t content_length,
