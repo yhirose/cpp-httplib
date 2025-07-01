@@ -278,13 +278,15 @@ using socket_t = int;
 #include <unordered_set>
 #include <utility>
 
+#if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
-#if TARGET_OS_OSX || TARGET_OS_IPHONE
+#if TARGET_OS_OSX
 #include <CFNetwork/CFHost.h>
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 #endif
+#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -302,14 +304,16 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 
+#if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
 #if defined(__APPLE__)
-#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
 #include <TargetConditionals.h>
 #if TARGET_OS_OSX
+#include <CFNetwork/CFHost.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
-#endif // TARGET_OS_OSX
-#endif // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#endif // ___APPLE__
+#endif
+#endif
+#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -3383,6 +3387,7 @@ unescape_abstract_namespace_unix_domain(const std::string &s) {
 inline int getaddrinfo_with_timeout(const char *node, const char *service,
                                     const struct addrinfo *hints,
                                     struct addrinfo **res, time_t timeout_sec) {
+#ifdef CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
   if (timeout_sec <= 0) {
     // No timeout specified, use standard getaddrinfo
     return getaddrinfo(node, service, hints, res);
@@ -3690,6 +3695,10 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
     return EAI_AGAIN;        // Return timeout error
   }
 #endif
+#else
+  (void)(timeout_sec); // Unused parameter for non-blocking getaddrinfo
+  return getaddrinfo(node, service, hints, res);
+#endif
 }
 
 template <typename BindOrConnect>
@@ -3868,6 +3877,7 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   if (getaddrinfo_with_timeout(host.c_str(), "0", &hints, &result, 0)) {
     return false;
   }
+
   auto se = detail::scope_exit([&] { freeaddrinfo(result); });
 
   auto ret = false;
