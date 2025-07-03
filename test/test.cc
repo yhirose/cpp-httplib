@@ -313,7 +313,7 @@ TEST(ParseAcceptHeaderTest, BasicAcceptParsing) {
   std::vector<std::string> result1;
   EXPECT_TRUE(detail::parse_accept_header(
       "text/html,application/json,text/plain", result1));
-  EXPECT_EQ(result1.size(), 3);
+  EXPECT_EQ(result1.size(), 3U);
   EXPECT_EQ(result1[0], "text/html");
   EXPECT_EQ(result1[1], "application/json");
   EXPECT_EQ(result1[2], "text/plain");
@@ -322,7 +322,7 @@ TEST(ParseAcceptHeaderTest, BasicAcceptParsing) {
   std::vector<std::string> result2;
   EXPECT_TRUE(detail::parse_accept_header(
       "text/html;q=0.9,application/json;q=1.0,text/plain;q=0.8", result2));
-  EXPECT_EQ(result2.size(), 3);
+  EXPECT_EQ(result2.size(), 3U);
   EXPECT_EQ(result2[0], "application/json"); // highest q value
   EXPECT_EQ(result2[1], "text/html");
   EXPECT_EQ(result2[2], "text/plain"); // lowest q value
@@ -333,7 +333,7 @@ TEST(ParseAcceptHeaderTest, MixedQualityValues) {
   std::vector<std::string> result;
   EXPECT_TRUE(detail::parse_accept_header(
       "text/html,application/json;q=0.5,text/plain;q=0.8", result));
-  EXPECT_EQ(result.size(), 3);
+  EXPECT_EQ(result.size(), 3U);
   EXPECT_EQ(result[0], "text/html");        // no q value means 1.0
   EXPECT_EQ(result[1], "text/plain");       // q=0.8
   EXPECT_EQ(result[2], "application/json"); // q=0.5
@@ -348,14 +348,14 @@ TEST(ParseAcceptHeaderTest, EdgeCases) {
   // Single type
   std::vector<std::string> single_result;
   EXPECT_TRUE(detail::parse_accept_header("application/json", single_result));
-  EXPECT_EQ(single_result.size(), 1);
+  EXPECT_EQ(single_result.size(), 1U);
   EXPECT_EQ(single_result[0], "application/json");
 
   // Wildcard types
   std::vector<std::string> wildcard_result;
   EXPECT_TRUE(detail::parse_accept_header(
       "text/*;q=0.5,*/*;q=0.1,application/json", wildcard_result));
-  EXPECT_EQ(wildcard_result.size(), 3);
+  EXPECT_EQ(wildcard_result.size(), 3U);
   EXPECT_EQ(wildcard_result[0], "application/json");
   EXPECT_EQ(wildcard_result[1], "text/*");
   EXPECT_EQ(wildcard_result[2], "*/*");
@@ -368,7 +368,7 @@ TEST(ParseAcceptHeaderTest, RealWorldExamples) {
       detail::parse_accept_header("text/html,application/xhtml+xml,application/"
                                   "xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
                                   browser_result));
-  EXPECT_EQ(browser_result.size(), 6);
+  EXPECT_EQ(browser_result.size(), 6U);
   EXPECT_EQ(browser_result[0], "text/html");             // q=1.0 (default)
   EXPECT_EQ(browser_result[1], "application/xhtml+xml"); // q=1.0 (default)
   EXPECT_EQ(browser_result[2], "image/webp");            // q=1.0 (default)
@@ -381,7 +381,7 @@ TEST(ParseAcceptHeaderTest, RealWorldExamples) {
   EXPECT_TRUE(detail::parse_accept_header(
       "application/json;q=0.9,application/xml;q=0.8,text/plain;q=0.1",
       api_result));
-  EXPECT_EQ(api_result.size(), 3);
+  EXPECT_EQ(api_result.size(), 3U);
   EXPECT_EQ(api_result[0], "application/json");
   EXPECT_EQ(api_result[1], "application/xml");
   EXPECT_EQ(api_result[2], "text/plain");
@@ -392,7 +392,7 @@ TEST(ParseAcceptHeaderTest, SpecialCases) {
   std::vector<std::string> decimal_result;
   EXPECT_TRUE(detail::parse_accept_header(
       "text/html;q=0.123,application/json;q=0.456", decimal_result));
-  EXPECT_EQ(decimal_result.size(), 2);
+  EXPECT_EQ(decimal_result.size(), 2U);
   EXPECT_EQ(decimal_result[0], "application/json"); // Higher q value
   EXPECT_EQ(decimal_result[1], "text/html");
 
@@ -400,7 +400,7 @@ TEST(ParseAcceptHeaderTest, SpecialCases) {
   std::vector<std::string> zero_q_result;
   EXPECT_TRUE(detail::parse_accept_header("text/html;q=0,application/json;q=1",
                                           zero_q_result));
-  EXPECT_EQ(zero_q_result.size(), 2);
+  EXPECT_EQ(zero_q_result.size(), 2U);
   EXPECT_EQ(zero_q_result[0], "application/json"); // q=1
   EXPECT_EQ(zero_q_result[1], "text/html");        // q=0
 
@@ -409,7 +409,7 @@ TEST(ParseAcceptHeaderTest, SpecialCases) {
   EXPECT_TRUE(detail::parse_accept_header(
       "text/html;q=0.9,application/json;q=0.8,text/plain;q=0.7",
       no_space_result));
-  EXPECT_EQ(no_space_result.size(), 3);
+  EXPECT_EQ(no_space_result.size(), 3U);
   EXPECT_EQ(no_space_result[0], "text/html");
   EXPECT_EQ(no_space_result[1], "application/json");
   EXPECT_EQ(no_space_result[2], "text/plain");
@@ -448,15 +448,15 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
 
   // Valid cases should still work
   EXPECT_TRUE(detail::parse_accept_header("*/*", result));
-  EXPECT_EQ(result.size(), 1);
+  EXPECT_EQ(result.size(), 1U);
   EXPECT_EQ(result[0], "*/*");
 
   EXPECT_TRUE(detail::parse_accept_header("*", result));
-  EXPECT_EQ(result.size(), 1);
+  EXPECT_EQ(result.size(), 1U);
   EXPECT_EQ(result[0], "*");
 
   EXPECT_TRUE(detail::parse_accept_header("text/*", result));
-  EXPECT_EQ(result.size(), 1);
+  EXPECT_EQ(result.size(), 1U);
   EXPECT_EQ(result[0], "text/*");
 }
 
@@ -464,7 +464,7 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   Server svr;
 
   svr.Get("/accept_ok", [&](const Request &req, Response &res) {
-    EXPECT_EQ(req.accept_content_types.size(), 3);
+    EXPECT_EQ(req.accept_content_types.size(), 3U);
     EXPECT_EQ(req.accept_content_types[0], "application/json");
     EXPECT_EQ(req.accept_content_types[1], "text/html");
     EXPECT_EQ(req.accept_content_types[2], "*/*");
@@ -8780,16 +8780,16 @@ TEST(MultipartFormDataTest, AccessPartHeaders) {
     auto it = req.files.begin();
     ASSERT_EQ("text1", it->second.name);
     ASSERT_EQ("text1", it->second.content);
-    ASSERT_EQ(1, it->second.headers.count("Content-Length"));
+    ASSERT_EQ(1U, it->second.headers.count("Content-Length"));
     auto content_length = it->second.headers.find("CONTENT-length");
     ASSERT_EQ("5", content_length->second);
-    ASSERT_EQ(3, it->second.headers.size());
+    ASSERT_EQ(3U, it->second.headers.size());
 
     ++it;
     ASSERT_EQ("text2", it->second.name);
     ASSERT_EQ("text2", it->second.content);
     auto &headers = it->second.headers;
-    ASSERT_EQ(3, headers.size());
+    ASSERT_EQ(3U, headers.size());
     auto custom_header = headers.find("x-whatever");
     ASSERT_TRUE(custom_header != headers.end());
     ASSERT_NE("customvalue", custom_header->second);
