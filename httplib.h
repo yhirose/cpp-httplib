@@ -197,6 +197,9 @@ using ssize_t = long;
 #endif // NOMINMAX
 
 #include <io.h>
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+#define CERT_CHAIN_PARA_HAS_EXTRA_FIELDS
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -5999,34 +6002,7 @@ inline bool is_ssl_peer_could_be_closed(SSL *ssl, socket_t sock) {
          SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
 }
 
-#ifdef _WIN32
-// NOTE: This code came up with the following stackoverflow post:
-// https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
-inline bool load_system_certs_on_windows(X509_STORE *store) {
-  auto hStore = CertOpenSystemStoreW((HCRYPTPROV_LEGACY)NULL, L"ROOT");
-  if (!hStore) { return false; }
-
-  auto result = false;
-  PCCERT_CONTEXT pContext = NULL;
-  while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
-         nullptr) {
-    auto encoded_cert =
-        static_cast<const unsigned char *>(pContext->pbCertEncoded);
-
-    auto x509 = d2i_X509(NULL, &encoded_cert, pContext->cbCertEncoded);
-    if (x509) {
-      X509_STORE_add_cert(store, x509);
-      X509_free(x509);
-      result = true;
-    }
-  }
-
-  CertFreeCertificateContext(pContext);
-  CertCloseStore(hStore, 0);
-
-  return result;
-}
-#elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
 #if TARGET_OS_OSX
 template <typename T>
 using CFObjectPtr =
@@ -6116,7 +6092,7 @@ inline bool load_system_certs_on_macos(X509_STORE *store) {
   return result;
 }
 #endif // TARGET_OS_OSX
-#endif // _WIN32
+#endif // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN && __APPLE__
 #endif // CPPHTTPLIB_OPENSSL_SUPPORT
 
 #ifdef _WIN32
@@ -10220,14 +10196,11 @@ inline bool SSLClient::load_certs() {
       }
     } else {
       auto loaded = false;
-#ifdef _WIN32
-      loaded =
-          detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
-#elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
 #if TARGET_OS_OSX
       loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
 #endif // TARGET_OS_OSX
-#endif // _WIN32
+#endif // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN && __APPLE__
       if (!loaded) { SSL_CTX_set_default_verify_paths(ctx_); }
     }
   });
@@ -10267,12 +10240,14 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           }
 
           if (verification_status == SSLVerifierResponse::NoDecisionMade) {
+#ifndef _WIN32
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
               error = Error::SSLServerVerification;
               return false;
             }
+#endif
 
             auto server_cert = SSL_get1_peer_certificate(ssl2);
             auto se = detail::scope_exit([&] { X509_free(server_cert); });
@@ -10282,12 +10257,92 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
               return false;
             }
 
+#ifdef _WIN32
+            // Convert OpenSSL certificate to DER format
+            auto der_cert =
+                std::vector<unsigned char>(i2d_X509(server_cert, nullptr));
+            auto der_cert_data = der_cert.data();
+            if (i2d_X509(server_cert, &der_cert_data) < 0) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            // Create a certificate context from the DER-encoded certificate
+            auto cert_context = CertCreateCertificateContext(
+                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, der_cert.data(),
+                static_cast<DWORD>(der_cert.size()));
+
+            if (cert_context == nullptr) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            auto chain_para = CERT_CHAIN_PARA{};
+            chain_para.cbSize = sizeof(chain_para);
+            chain_para.dwUrlRetrievalTimeout = 10 * 1000;
+
+            auto chain_context = PCCERT_CHAIN_CONTEXT{};
+            auto result = CertGetCertificateChain(
+                nullptr, cert_context, nullptr, cert_context->hCertStore,
+                &chain_para,
+                CERT_CHAIN_CACHE_END_CERT |
+                    CERT_CHAIN_REVOCATION_CHECK_END_CERT |
+                    CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
+                nullptr, &chain_context);
+
+            CertFreeCertificateContext(cert_context);
+
+            if (!result || chain_context == nullptr) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            // Verify chain policy
+            auto extra_policy_para = SSL_EXTRA_CERT_CHAIN_POLICY_PARA{};
+            extra_policy_para.cbSize = sizeof(extra_policy_para);
+            extra_policy_para.dwAuthType = AUTHTYPE_SERVER;
+            auto whost = detail::u8string_to_wstring(host_.c_str());
+            if (server_hostname_verification_) {
+              extra_policy_para.pwszServerName =
+                  const_cast<wchar_t *>(whost.c_str());
+            }
+
+            auto policy_para = CERT_CHAIN_POLICY_PARA{};
+            policy_para.cbSize = sizeof(policy_para);
+            policy_para.dwFlags =
+                CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS;
+            policy_para.pvExtraPolicyPara = &extra_policy_para;
+
+            auto policy_status = CERT_CHAIN_POLICY_STATUS{};
+            policy_status.cbSize = sizeof(policy_status);
+
+            result = CertVerifyCertificateChainPolicy(
+                CERT_CHAIN_POLICY_SSL, chain_context, &policy_para,
+                &policy_status);
+
+            CertFreeCertificateChain(chain_context);
+
+            if (!result) {
+              error = Error::SSLServerVerification;
+              return false;
+            }
+
+            if (policy_status.dwError != 0) {
+              if (policy_status.dwError == CERT_E_CN_NO_MATCH) {
+                error = Error::SSLServerHostnameVerification;
+              } else {
+                error = Error::SSLServerVerification;
+              }
+              return false;
+            }
+#else
             if (server_hostname_verification_) {
               if (!verify_host(server_cert)) {
                 error = Error::SSLServerHostnameVerification;
                 return false;
               }
             }
+#endif
           }
         }
 
