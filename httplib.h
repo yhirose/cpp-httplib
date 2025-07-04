@@ -249,6 +249,10 @@ using socket_t = int;
 #endif
 #endif //_WIN32
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -278,15 +282,12 @@ using socket_t = int;
 #include <unordered_set>
 #include <utility>
 
-#if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
+#if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO) || defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
 #if TARGET_OS_OSX
 #include <CFNetwork/CFHost.h>
 #include <CoreFoundation/CoreFoundation.h>
 #endif
-#endif
-#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
+#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO or CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -304,14 +305,9 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 
-#if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
 #if TARGET_OS_OSX
-#include <CFNetwork/CFHost.h>
-#include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
-#endif
 #endif
 #endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
 
@@ -3444,7 +3440,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   }
 
   return ret;
-#elif defined(__APPLE__)
+#elif defined(TARGET_OS_OSX)
   // macOS implementation using CFHost API for asynchronous DNS resolution
   CFStringRef hostname_ref = CFStringCreateWithCString(
       kCFAllocatorDefault, node, kCFStringEncodingUTF8);
@@ -6026,8 +6022,7 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
 
   return result;
 }
-#elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
-#if TARGET_OS_OSX
+#elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(TARGET_OS_OSX)
 template <typename T>
 using CFObjectPtr =
     std::unique_ptr<typename std::remove_pointer<T>::type, void (*)(CFTypeRef)>;
@@ -6115,7 +6110,6 @@ inline bool load_system_certs_on_macos(X509_STORE *store) {
 
   return result;
 }
-#endif // TARGET_OS_OSX
 #endif // _WIN32
 #endif // CPPHTTPLIB_OPENSSL_SUPPORT
 
@@ -10223,10 +10217,8 @@ inline bool SSLClient::load_certs() {
 #ifdef _WIN32
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
-#elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(__APPLE__)
-#if TARGET_OS_OSX
+#elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && defined(TARGET_OS_OSX)
       loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
-#endif // TARGET_OS_OSX
 #endif // _WIN32
       if (!loaded) { SSL_CTX_set_default_verify_paths(ctx_); }
     }
