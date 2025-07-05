@@ -1319,6 +1319,7 @@ public:
   Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Put(const std::string &path);
   Result Put(const std::string &path, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1336,6 +1337,7 @@ public:
   Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1353,6 +1355,7 @@ public:
   Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Delete(const std::string &path, DownloadProgress progress = nullptr);
   Result Delete(const std::string &path, const char *body, size_t content_length, const std::string &content_type, DownloadProgress progress = nullptr);
@@ -1662,6 +1665,7 @@ public:
   Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Put(const std::string &path);
   Result Put(const std::string &path, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1679,6 +1683,7 @@ public:
   Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Patch(const std::string &path);
   Result Patch(const std::string &path, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
@@ -1696,6 +1701,7 @@ public:
   Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Delete(const std::string &path, DownloadProgress progress = nullptr);
   Result Delete(const std::string &path, const char *body, size_t content_length, const std::string &content_type, DownloadProgress progress = nullptr);
@@ -9115,6 +9121,32 @@ ClientImpl::Post(const std::string &path, const Headers &headers,
       content_type, progress);
 }
 
+inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
+                               const std::string &body,
+                               const std::string &content_type,
+                               ContentReceiver content_receiver,
+                               DownloadProgress progress) {
+  Request req;
+  req.method = "POST";
+  req.path = path;
+  req.headers = headers;
+  req.body = body;
+  req.content_receiver =
+      [content_receiver](const char *data, size_t data_length,
+                         uint64_t /*offset*/, uint64_t /*total_length*/) {
+        return content_receiver(data, data_length);
+      };
+  req.download_progress = std::move(progress);
+
+  if (max_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
+
+  if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
+
+  return send_(std::move(req));
+}
+
 inline Result ClientImpl::Put(const std::string &path) {
   return Put(path, std::string(), std::string());
 }
@@ -9240,6 +9272,32 @@ ClientImpl::Put(const std::string &path, const Headers &headers,
       "PUT", path, headers, nullptr, 0, nullptr,
       get_multipart_content_provider(boundary, items, provider_items),
       content_type, progress);
+}
+
+inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
+                              const std::string &body,
+                              const std::string &content_type,
+                              ContentReceiver content_receiver,
+                              DownloadProgress progress) {
+  Request req;
+  req.method = "PUT";
+  req.path = path;
+  req.headers = headers;
+  req.body = body;
+  req.content_receiver =
+      [content_receiver](const char *data, size_t data_length,
+                         uint64_t /*offset*/, uint64_t /*total_length*/) {
+        return content_receiver(data, data_length);
+      };
+  req.download_progress = std::move(progress);
+
+  if (max_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
+
+  if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
+
+  return send_(std::move(req));
 }
 
 inline Result ClientImpl::Patch(const std::string &path) {
@@ -9372,6 +9430,32 @@ ClientImpl::Patch(const std::string &path, const Headers &headers,
       "PATCH", path, headers, nullptr, 0, nullptr,
       get_multipart_content_provider(boundary, items, provider_items),
       content_type, progress);
+}
+
+inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
+                                const std::string &body,
+                                const std::string &content_type,
+                                ContentReceiver content_receiver,
+                                DownloadProgress progress) {
+  Request req;
+  req.method = "PATCH";
+  req.path = path;
+  req.headers = headers;
+  req.body = body;
+  req.content_receiver =
+      [content_receiver](const char *data, size_t data_length,
+                         uint64_t /*offset*/, uint64_t /*total_length*/) {
+        return content_receiver(data, data_length);
+      };
+  req.download_progress = std::move(progress);
+
+  if (max_timeout_msec_ > 0) {
+    req.start_time_ = std::chrono::steady_clock::now();
+  }
+
+  if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
+
+  return send_(std::move(req));
 }
 
 inline Result ClientImpl::Delete(const std::string &path,
@@ -10679,6 +10763,14 @@ inline Result Client::Post(const std::string &path, const Headers &headers,
                            UploadProgress progress) {
   return cli_->Post(path, headers, items, provider_items, progress);
 }
+inline Result Client::Post(const std::string &path, const Headers &headers,
+                           const std::string &body,
+                           const std::string &content_type,
+                           ContentReceiver content_receiver,
+                           DownloadProgress progress) {
+  return cli_->Post(path, headers, body, content_type, content_receiver,
+                    progress);
+}
 
 inline Result Client::Put(const std::string &path) { return cli_->Put(path); }
 inline Result Client::Put(const std::string &path, const Headers &headers) {
@@ -10763,6 +10855,14 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
                           const MultipartFormDataProviderItems &provider_items,
                           UploadProgress progress) {
   return cli_->Put(path, headers, items, provider_items, progress);
+}
+inline Result Client::Put(const std::string &path, const Headers &headers,
+                          const std::string &body,
+                          const std::string &content_type,
+                          ContentReceiver content_receiver,
+                          DownloadProgress progress) {
+  return cli_->Put(path, headers, body, content_type, content_receiver,
+                   progress);
 }
 
 inline Result Client::Patch(const std::string &path) {
@@ -10852,6 +10952,14 @@ Client::Patch(const std::string &path, const Headers &headers,
               const MultipartFormDataProviderItems &provider_items,
               UploadProgress progress) {
   return cli_->Patch(path, headers, items, provider_items, progress);
+}
+inline Result Client::Patch(const std::string &path, const Headers &headers,
+                            const std::string &body,
+                            const std::string &content_type,
+                            ContentReceiver content_receiver,
+                            DownloadProgress progress) {
+  return cli_->Patch(path, headers, body, content_type, content_receiver,
+                     progress);
 }
 
 inline Result Client::Delete(const std::string &path,

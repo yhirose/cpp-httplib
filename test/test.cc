@@ -5302,6 +5302,195 @@ TEST_F(ServerTest, PatchContentReceiver) {
   ASSERT_EQ("content", res->body);
 }
 
+template<typename ClientType>
+void TestWithHeadersAndContentReceiver(
+    ClientType& cli,
+    std::function<Result(ClientType&, const std::string&, const Headers&, const std::string&, const std::string&,
+                        ContentReceiver, DownloadProgress)> request_func) {
+  Headers headers;
+  headers.emplace("X-Custom-Header", "test-value");
+
+  std::string received_body;
+  auto res = request_func(
+      cli, "/content_receiver", headers, "content", "application/json",
+      [&](const char *data, size_t data_length) {
+        received_body.append(data, data_length);
+        return true;
+      }, nullptr);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("content", received_body);
+}
+
+TEST_F(ServerTest, PostWithHeadersAndContentReceiver) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiver<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
+      return cli.Post(path, headers, body, content_type, receiver, progress);
+    });
+}
+
+TEST_F(ServerTest, PutWithHeadersAndContentReceiver) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiver<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
+      return cli.Put(path, headers, body, content_type, receiver, progress);
+    });
+}
+
+TEST_F(ServerTest, PatchWithHeadersAndContentReceiver) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiver<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
+      return cli.Patch(path, headers, body, content_type, receiver, progress);
+    });
+}
+
+template<typename ClientType>
+void TestWithHeadersAndContentReceiverWithProgress(
+    ClientType& cli,
+    std::function<Result(ClientType&, const std::string&, const Headers&, const std::string&, const std::string&,
+                        ContentReceiver, DownloadProgress)> request_func) {
+  Headers headers;
+  headers.emplace("X-Test-Header", "progress-test");
+
+  std::string received_body;
+  auto progress_called = false;
+
+  auto res = request_func(
+      cli, "/content_receiver", headers, "content", "text/plain",
+      [&](const char *data, size_t data_length) {
+        received_body.append(data, data_length);
+        return true;
+      },
+      [&](uint64_t /*current*/, uint64_t /*total*/) {
+        progress_called = true;
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("content", received_body);
+  EXPECT_TRUE(progress_called);
+}
+
+TEST_F(ServerTest, PostWithHeadersAndContentReceiverWithProgress) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiverWithProgress<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
+      return cli.Post(path, headers, body, content_type, receiver, progress);
+    });
+}
+
+TEST_F(ServerTest, PutWithHeadersAndContentReceiverWithProgress) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiverWithProgress<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
+      return cli.Put(path, headers, body, content_type, receiver, progress);
+    });
+}
+
+TEST_F(ServerTest, PatchWithHeadersAndContentReceiverWithProgress) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiverWithProgress<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
+      return cli.Patch(path, headers, body, content_type, receiver, progress);
+    });
+}
+
+template<typename ClientType>
+void TestWithHeadersAndContentReceiverError(
+    ClientType& cli,
+    std::function<Result(ClientType&, const std::string&, const Headers&, const std::string&, const std::string&,
+                        ContentReceiver)> request_func) {
+  Headers headers;
+  headers.emplace("X-Error-Test", "true");
+
+  std::string received_body;
+  auto receiver_failed = false;
+
+  auto res = request_func(
+      cli, "/content_receiver", headers, "content", "text/plain",
+      [&](const char *data, size_t data_length) {
+        received_body.append(data, data_length);
+        receiver_failed = true;
+        return false;
+      });
+
+  ASSERT_FALSE(res);
+  EXPECT_TRUE(receiver_failed);
+}
+
+TEST_F(ServerTest, PostWithHeadersAndContentReceiverError) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiverError<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver) {
+      return cli.Post(path, headers, body, content_type, receiver);
+    });
+}
+
+TEST_F(ServerTest, PuttWithHeadersAndContentReceiverError) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiverError<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver) {
+      return cli.Put(path, headers, body, content_type, receiver);
+    });
+}
+
+TEST_F(ServerTest, PatchWithHeadersAndContentReceiverError) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  using ClientT = SSLClient;
+#else
+  using ClientT = Client;
+#endif
+  TestWithHeadersAndContentReceiverError<ClientT>(cli_, 
+    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
+       const std::string& content_type, ContentReceiver receiver) {
+      return cli.Patch(path, headers, body, content_type, receiver);
+    });
+}
+
 TEST_F(ServerTest, PostQueryStringAndBody) {
   auto res =
       cli_.Post("/query-string-and-body?key=value", "content", "text/plain");
