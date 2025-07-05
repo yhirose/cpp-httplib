@@ -5302,11 +5302,13 @@ TEST_F(ServerTest, PatchContentReceiver) {
   ASSERT_EQ("content", res->body);
 }
 
-template<typename ClientType>
+template <typename ClientType>
 void TestWithHeadersAndContentReceiver(
-    ClientType& cli,
-    std::function<Result(ClientType&, const std::string&, const Headers&, const std::string&, const std::string&,
-                        ContentReceiver, DownloadProgress)> request_func) {
+    ClientType &cli,
+    std::function<Result(ClientType &, const std::string &, const Headers &,
+                         const std::string &, const std::string &,
+                         ContentReceiver, DownloadProgress)>
+        request_func) {
   Headers headers;
   headers.emplace("X-Custom-Header", "test-value");
 
@@ -5316,7 +5318,8 @@ void TestWithHeadersAndContentReceiver(
       [&](const char *data, size_t data_length) {
         received_body.append(data, data_length);
         return true;
-      }, nullptr);
+      },
+      nullptr);
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -5329,11 +5332,12 @@ TEST_F(ServerTest, PostWithHeadersAndContentReceiver) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiver<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
-      return cli.Post(path, headers, body, content_type, receiver, progress);
-    });
+  TestWithHeadersAndContentReceiver<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver, DownloadProgress progress) {
+        return cli.Post(path, headers, body, content_type, receiver, progress);
+      });
 }
 
 TEST_F(ServerTest, PutWithHeadersAndContentReceiver) {
@@ -5342,11 +5346,12 @@ TEST_F(ServerTest, PutWithHeadersAndContentReceiver) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiver<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
-      return cli.Put(path, headers, body, content_type, receiver, progress);
-    });
+  TestWithHeadersAndContentReceiver<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver, DownloadProgress progress) {
+        return cli.Put(path, headers, body, content_type, receiver, progress);
+      });
 }
 
 TEST_F(ServerTest, PatchWithHeadersAndContentReceiver) {
@@ -5355,18 +5360,21 @@ TEST_F(ServerTest, PatchWithHeadersAndContentReceiver) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiver<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
-      return cli.Patch(path, headers, body, content_type, receiver, progress);
-    });
+  TestWithHeadersAndContentReceiver<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver, DownloadProgress progress) {
+        return cli.Patch(path, headers, body, content_type, receiver, progress);
+      });
 }
 
-template<typename ClientType>
+template <typename ClientType>
 void TestWithHeadersAndContentReceiverWithProgress(
-    ClientType& cli,
-    std::function<Result(ClientType&, const std::string&, const Headers&, const std::string&, const std::string&,
-                        ContentReceiver, DownloadProgress)> request_func) {
+    ClientType &cli,
+    std::function<Result(ClientType &, const std::string &, const Headers &,
+                         const std::string &, const std::string &,
+                         ContentReceiver, DownloadProgress)>
+        request_func) {
   Headers headers;
   headers.emplace("X-Test-Header", "progress-test");
 
@@ -5396,11 +5404,12 @@ TEST_F(ServerTest, PostWithHeadersAndContentReceiverWithProgress) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiverWithProgress<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
-      return cli.Post(path, headers, body, content_type, receiver, progress);
-    });
+  TestWithHeadersAndContentReceiverWithProgress<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver, DownloadProgress progress) {
+        return cli.Post(path, headers, body, content_type, receiver, progress);
+      });
 }
 
 TEST_F(ServerTest, PutWithHeadersAndContentReceiverWithProgress) {
@@ -5409,11 +5418,12 @@ TEST_F(ServerTest, PutWithHeadersAndContentReceiverWithProgress) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiverWithProgress<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
-      return cli.Put(path, headers, body, content_type, receiver, progress);
-    });
+  TestWithHeadersAndContentReceiverWithProgress<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver, DownloadProgress progress) {
+        return cli.Put(path, headers, body, content_type, receiver, progress);
+      });
 }
 
 TEST_F(ServerTest, PatchWithHeadersAndContentReceiverWithProgress) {
@@ -5422,31 +5432,33 @@ TEST_F(ServerTest, PatchWithHeadersAndContentReceiverWithProgress) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiverWithProgress<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver, DownloadProgress progress) {
-      return cli.Patch(path, headers, body, content_type, receiver, progress);
-    });
+  TestWithHeadersAndContentReceiverWithProgress<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver, DownloadProgress progress) {
+        return cli.Patch(path, headers, body, content_type, receiver, progress);
+      });
 }
 
-template<typename ClientType>
+template <typename ClientType>
 void TestWithHeadersAndContentReceiverError(
-    ClientType& cli,
-    std::function<Result(ClientType&, const std::string&, const Headers&, const std::string&, const std::string&,
-                        ContentReceiver)> request_func) {
+    ClientType &cli, std::function<Result(ClientType &, const std::string &,
+                                          const Headers &, const std::string &,
+                                          const std::string &, ContentReceiver)>
+                         request_func) {
   Headers headers;
   headers.emplace("X-Error-Test", "true");
 
   std::string received_body;
   auto receiver_failed = false;
 
-  auto res = request_func(
-      cli, "/content_receiver", headers, "content", "text/plain",
-      [&](const char *data, size_t data_length) {
-        received_body.append(data, data_length);
-        receiver_failed = true;
-        return false;
-      });
+  auto res =
+      request_func(cli, "/content_receiver", headers, "content", "text/plain",
+                   [&](const char *data, size_t data_length) {
+                     received_body.append(data, data_length);
+                     receiver_failed = true;
+                     return false;
+                   });
 
   ASSERT_FALSE(res);
   EXPECT_TRUE(receiver_failed);
@@ -5458,11 +5470,12 @@ TEST_F(ServerTest, PostWithHeadersAndContentReceiverError) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiverError<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver) {
-      return cli.Post(path, headers, body, content_type, receiver);
-    });
+  TestWithHeadersAndContentReceiverError<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver) {
+        return cli.Post(path, headers, body, content_type, receiver);
+      });
 }
 
 TEST_F(ServerTest, PuttWithHeadersAndContentReceiverError) {
@@ -5471,11 +5484,12 @@ TEST_F(ServerTest, PuttWithHeadersAndContentReceiverError) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiverError<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver) {
-      return cli.Put(path, headers, body, content_type, receiver);
-    });
+  TestWithHeadersAndContentReceiverError<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver) {
+        return cli.Put(path, headers, body, content_type, receiver);
+      });
 }
 
 TEST_F(ServerTest, PatchWithHeadersAndContentReceiverError) {
@@ -5484,11 +5498,12 @@ TEST_F(ServerTest, PatchWithHeadersAndContentReceiverError) {
 #else
   using ClientT = Client;
 #endif
-  TestWithHeadersAndContentReceiverError<ClientT>(cli_, 
-    [](ClientT& cli, const std::string& path, const Headers& headers, const std::string& body, 
-       const std::string& content_type, ContentReceiver receiver) {
-      return cli.Patch(path, headers, body, content_type, receiver);
-    });
+  TestWithHeadersAndContentReceiverError<ClientT>(
+      cli_, [](ClientT &cli, const std::string &path, const Headers &headers,
+               const std::string &body, const std::string &content_type,
+               ContentReceiver receiver) {
+        return cli.Patch(path, headers, body, content_type, receiver);
+      });
 }
 
 TEST_F(ServerTest, PostQueryStringAndBody) {
