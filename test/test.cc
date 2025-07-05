@@ -931,29 +931,6 @@ TEST(BufferStreamTest, read) {
   EXPECT_EQ(0, strm.read(buf, 1));
 }
 
-TEST(ChunkedEncodingTest, FromHTTPWatch_Online) {
-  auto host = "www.httpwatch.com";
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto port = 443;
-  SSLClient cli(host, port);
-#else
-  auto port = 80;
-  Client cli(host, port);
-#endif
-  cli.set_connection_timeout(2);
-
-  auto res =
-      cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
-  ASSERT_TRUE(res);
-
-  std::string out;
-  read_file("./image.jpg", out);
-
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(out, res->body);
-}
-
 TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
   auto host = "www.httpwatch.com";
 
@@ -979,25 +956,91 @@ TEST(HostnameToIPConversionTest, YouTube_Online) {
 }
 #endif
 
-TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
-  auto host = "www.httpwatch.com";
-
+class ChunkedEncodingTest : public ::testing::Test {
+protected:
+  ChunkedEncodingTest()
+      : cli_(HOST, PORT)
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto port = 443;
-  SSLClient cli(host, port);
-#else
-  auto port = 80;
-  Client cli(host, port);
+        ,
+        svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
-  cli.set_connection_timeout(2);
+  {
+    cli_.set_connection_timeout(2);
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    cli_.enable_server_certificate_verification(false);
+#endif
+  }
 
-  std::string body;
-  auto res =
-      cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
-              [&](const char *data, size_t data_length) {
-                body.append(data, data_length);
+  virtual void SetUp() {
+    read_file("./image.jpg", image_data_);
+
+    svr_.Get("/hi", [&](const Request & /*req*/, Response &res) {
+      res.set_content("Hello World!", "text/plain");
+    });
+
+    svr_.Get(
+        "/chunked", [this](const httplib::Request &, httplib::Response &res) {
+          res.set_chunked_content_provider(
+              "image/jpeg", [this](size_t offset, httplib::DataSink &sink) {
+                size_t remaining = image_data_.size() - offset;
+                if (remaining == 0) {
+                  sink.done();
+                } else {
+                  constexpr size_t CHUNK_SIZE = 1024;
+                  size_t send_size = std::min(CHUNK_SIZE, remaining);
+                  sink.write(&image_data_[offset], send_size);
+
+                  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
                 return true;
               });
+        });
+
+    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
+
+    svr_.wait_until_ready();
+  }
+
+  virtual void TearDown() {
+    svr_.stop();
+    if (!request_threads_.empty()) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      for (auto &t : request_threads_) {
+        t.join();
+      }
+    }
+    t_.join();
+  }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli_;
+  SSLServer svr_;
+#else
+  Client cli_;
+  Server svr_;
+#endif
+  thread t_;
+  std::vector<thread> request_threads_;
+  std::string image_data_;
+};
+
+TEST_F(ChunkedEncodingTest, NormalGet) {
+  auto res = cli_.Get("/chunked");
+  ASSERT_TRUE(res);
+
+  std::string out;
+  read_file("./image.jpg", out);
+
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(out, res->body);
+}
+
+TEST_F(ChunkedEncodingTest, WithContentReceiver) {
+  std::string body;
+  auto res = cli_.Get("/chunked", [&](const char *data, size_t data_length) {
+    body.append(data, data_length);
+    return true;
+  });
   ASSERT_TRUE(res);
 
   std::string out;
@@ -1007,21 +1050,10 @@ TEST(ChunkedEncodingTest, WithContentReceiver_Online) {
   EXPECT_EQ(out, body);
 }
 
-TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver_Online) {
-  auto host = "www.httpwatch.com";
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  auto port = 443;
-  SSLClient cli(host, port);
-#else
-  auto port = 80;
-  Client cli(host, port);
-#endif
-  cli.set_connection_timeout(2);
-
+TEST_F(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
   std::string body;
-  auto res = cli.Get(
-      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
+  auto res = cli_.Get(
+      "/chunked",
       [&](const Response &response) {
         EXPECT_EQ(StatusCode::OK_200, response.status);
         return true;
