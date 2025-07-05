@@ -1235,6 +1235,10 @@ enum class Error {
   SSLPeerCouldBeClosed_,
 };
 
+// SSL Error constants
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#endif
+
 std::string to_string(Error error);
 
 std::ostream &operator<<(std::ostream &os, const Error &obj);
@@ -1251,6 +1255,11 @@ public:
          int ssl_error)
       : res_(std::move(res)), err_(err),
         request_headers_(std::move(request_headers)), ssl_error_(ssl_error) {}
+  Result(std::unique_ptr<Response> &&res, Error err, Headers &&request_headers,
+         int ssl_error, unsigned long ssl_openssl_error)
+      : res_(std::move(res)), err_(err),
+        request_headers_(std::move(request_headers)), ssl_error_(ssl_error),
+        ssl_openssl_error_(ssl_openssl_error) {}
 #endif
   // Response
   operator bool() const { return res_ != nullptr; }
@@ -1269,6 +1278,8 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   // SSL Error
   int ssl_error() const { return ssl_error_; }
+  // OpenSSL Error
+  unsigned long ssl_openssl_error() const { return ssl_openssl_error_; }
 #endif
 
   // Request Headers
@@ -1286,6 +1297,7 @@ private:
   Headers request_headers_;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int ssl_error_ = 0;
+  unsigned long ssl_openssl_error_ = 0;
 #endif
 };
 
@@ -1586,6 +1598,7 @@ protected:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int last_ssl_error_ = 0;
+  unsigned long last_openssl_error_ = 0;
 #endif
 
 private:
@@ -8196,7 +8209,7 @@ inline Result ClientImpl::send_(Request &&req) {
   auto ret = send(req, *res, error);
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   return Result{ret ? std::move(res) : nullptr, error, std::move(req.headers),
-                last_ssl_error_};
+                last_ssl_error_, last_openssl_error_};
 #else
   return Result{ret ? std::move(res) : nullptr, error, std::move(req.headers)};
 #endif
@@ -8750,7 +8763,8 @@ inline Result ClientImpl::send_with_content_provider(
       std::move(content_provider_without_length), content_type, error);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  return Result{std::move(res), error, std::move(req.headers), last_ssl_error_};
+  return Result{std::move(res), error, std::move(req.headers), last_ssl_error_,
+                last_openssl_error_};
 #else
   return Result{std::move(res), error, std::move(req.headers)};
 #endif
@@ -10015,6 +10029,7 @@ inline SSLServer::SSLServer(const char *cert_path, const char *private_key_path,
         SSL_CTX_use_PrivateKey_file(ctx_, private_key_path, SSL_FILETYPE_PEM) !=
             1 ||
         SSL_CTX_check_private_key(ctx_) != 1) {
+      last_ssl_error_ = static_cast<int>(ERR_get_error());
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
     } else if (client_ca_cert_file_path || client_ca_cert_dir_path) {
@@ -10157,6 +10172,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
                                      SSL_FILETYPE_PEM) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx_, client_key_path.c_str(),
                                     SSL_FILETYPE_PEM) != 1) {
+      last_openssl_error_ = ERR_get_error();
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
     }
@@ -10183,6 +10199,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
 
     if (SSL_CTX_use_certificate(ctx_, client_cert) != 1 ||
         SSL_CTX_use_PrivateKey(ctx_, client_key) != 1) {
+      last_openssl_error_ = ERR_get_error();
       SSL_CTX_free(ctx_);
       ctx_ = nullptr;
     }
@@ -10326,11 +10343,13 @@ inline bool SSLClient::load_certs() {
     if (!ca_cert_file_path_.empty()) {
       if (!SSL_CTX_load_verify_locations(ctx_, ca_cert_file_path_.c_str(),
                                          nullptr)) {
+        last_openssl_error_ = ERR_get_error();
         ret = false;
       }
     } else if (!ca_cert_dir_path_.empty()) {
       if (!SSL_CTX_load_verify_locations(ctx_, nullptr,
                                          ca_cert_dir_path_.c_str())) {
+        last_openssl_error_ = ERR_get_error();
         ret = false;
       }
     } else {
@@ -10376,6 +10395,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           }
 
           if (verification_status == SSLVerifierResponse::CertificateRejected) {
+            last_openssl_error_ = ERR_get_error();
             error = Error::SSLServerVerification;
             return false;
           }
@@ -10384,6 +10404,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
+              last_openssl_error_ = static_cast<unsigned long>(verify_result_);
               error = Error::SSLServerVerification;
               return false;
             }
@@ -10392,12 +10413,14 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             auto se = detail::scope_exit([&] { X509_free(server_cert); });
 
             if (server_cert == nullptr) {
+              last_openssl_error_ = ERR_get_error();
               error = Error::SSLServerVerification;
               return false;
             }
 
             if (server_hostname_verification_) {
               if (!verify_host(server_cert)) {
+                last_openssl_error_ = X509_V_ERR_HOSTNAME_MISMATCH;
                 error = Error::SSLServerHostnameVerification;
                 return false;
               }
