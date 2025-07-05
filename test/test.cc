@@ -7868,6 +7868,7 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLConnection, res.error());
+  EXPECT_EQ(2, res.ssl_error());
 }
 
 TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
