@@ -10,6 +10,7 @@
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_REQUIRE_ZSTD (default off)
 	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
+	* HTTPLIB_USE_NON_BLOCKING_GETADDRINFO (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_TEST (default off)
@@ -49,6 +50,7 @@
 	* HTTPLIB_IS_USING_BROTLI - a bool for if Brotli support is enabled.
 	* HTTPLIB_IS_USING_ZSTD - a bool for if ZSTD support is enabled.
 	* HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN - a bool for if support of loading system certs from the Apple Keychain is enabled.
+	* HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO - a bool for if nonblocking getaddrinfo is enabled.
 	* HTTPLIB_IS_COMPILED - a bool for if the library is compiled, or otherwise header-only.
 	* HTTPLIB_INCLUDE_DIR - the root path to httplib's header (e.g. /usr/include).
 	* HTTPLIB_LIBRARY - the full path to the library if compiled (e.g. /usr/lib/libhttplib.so).
@@ -104,6 +106,7 @@ option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
 option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system certs from the Apple Keychain." ON)
+option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
 # Defaults to static library
@@ -117,6 +120,7 @@ endif()
 # Set some variables that are used in-tree and while building based on our options
 set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})
 set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN ${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN})
+set(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO ${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO})
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -269,6 +273,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:CPPHTTPLIB_ZSTD_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
 	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
+	$<$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>
 )
 
 # CMake configuration files installation directory
