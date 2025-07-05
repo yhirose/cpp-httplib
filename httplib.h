@@ -1235,10 +1235,6 @@ enum class Error {
   SSLPeerCouldBeClosed_,
 };
 
-// SSL Error constants
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-#endif
-
 std::string to_string(Error error);
 
 std::ostream &operator<<(std::ostream &os, const Error &obj);
