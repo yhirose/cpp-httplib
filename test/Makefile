@@ -9,7 +9,7 @@ OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPEN
 ifneq ($(OS), Windows_NT)
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S), Darwin)
-		OPENSSL_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework CoreFoundation -framework Security -framework CFNetwork
+		OPENSSL_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
 	endif
 endif
 
@@ -24,6 +24,9 @@ ZSTD_SUPPORT = -DCPPHTTPLIB_ZSTD_SUPPORT -I$(ZSTD_DIR)/include -L$(ZSTD_DIR)/lib
 LIBS = -lpthread -lcurl
 ifneq ($(OS), Windows_NT)
 	UNAME_S := $(shell uname -s)
+	ifeq ($(UNAME_S), Darwin)
+		LIBS += -framework CoreFoundation -framework CFNetwork
+	endif
 	ifneq ($(UNAME_S), Darwin)
 		LIBS += -lanl
 	endif
