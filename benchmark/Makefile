@@ -20,36 +20,6 @@ run : server
 server : cpp-httplib/main.cpp ../httplib.h
 	@g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib/main.cpp
 
-# cpp-httplib v0.19.0
-bench-v19: server-v19
-	@echo "---------------------\n cpp-httplib v0.19.0\n---------------------\n"
-	@./server-v19 & export PID=$$!; $(BENCH); kill $${PID}
-	@echo ""
-
-monitor-v19: server-v19
-	@./server-v19 & export PID=$$!; $(MONITOR); kill $${PID}
-
-run-v19 : server-v19
-	@./server-v19
-
-server-v19 : cpp-httplib-v19/main.cpp cpp-httplib-v19/httplib.h
-	@g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib-v19/main.cpp
-
-# cpp-httplib v0.18.0
-bench-v18: server-v18
-	@echo "---------------------\n cpp-httplib v0.18.0\n---------------------\n"
-	@./server-v18 & export PID=$$!; $(BENCH); kill $${PID}
-	@echo ""
-
-monitor-v18: server-v18
-	@./server-v18 & export PID=$$!; $(MONITOR); kill $${PID}
-
-run-v18 : server-v18
-	@./server-v18
-
-server-v18 : cpp-httplib-v18/main.cpp cpp-httplib-v18/httplib.h
-	@g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib-v18/main.cpp
-
 # crow
 bench-crow: server-crow
 	@echo "-------------\n Crow v1.2.0\n-------------\n"
@@ -66,9 +36,9 @@ server-crow : crow/main.cpp
 	@g++ -o $@ $(CXXFLAGS) crow/main.cpp
 
 # misc
-build: server server-v18 server-v19 server-crow
+build: server server-crow
 
-bench-all: bench-crow bench bench-v19 bench-v18
+bench-all: bench-crow bench
 
 issue:
 	bombardier -c 10 -d 30s localhost:8080
