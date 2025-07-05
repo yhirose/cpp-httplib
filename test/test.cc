@@ -7492,6 +7492,47 @@ TEST(SSLClientTest, ServerNameIndication_Online) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(SSLClientTest, ServerCertificateVerificationError_Online) {
+  // Use a site that will cause SSL verification failure due to self-signed cert
+  SSLClient cli("self-signed.badssl.com", 443);
+  cli.enable_server_certificate_verification(true);
+  auto res = cli.Get("/");
+
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+
+  // For SSL server verification errors, ssl_error should be 0, only
+  // ssl_openssl_error should be set
+  EXPECT_EQ(0, res.ssl_error());
+
+  // Verify OpenSSL error is captured for SSLServerVerification
+  // This occurs when SSL_get_verify_result() returns a verification failure
+  EXPECT_EQ(static_cast<unsigned long>(X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT),
+            res.ssl_openssl_error());
+}
+
+TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
+  // Use a site where hostname doesn't match the certificate
+  // badssl.com provides wrong.host.badssl.com which has cert for *.badssl.com
+  SSLClient cli("wrong.host.badssl.com", 443);
+  cli.enable_server_certificate_verification(true);
+  cli.enable_server_hostname_verification(true);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(!res);
+
+  EXPECT_EQ(Error::SSLServerHostnameVerification, res.error());
+
+  // For SSL hostname verification errors, ssl_error should be 0, only
+  // ssl_openssl_error should be set
+  EXPECT_EQ(0, res.ssl_error());
+
+  // Verify OpenSSL error is captured for SSLServerHostnameVerification
+  // This occurs when verify_host() fails due to hostname mismatch
+  EXPECT_EQ(static_cast<unsigned long>(X509_V_ERR_HOSTNAME_MISMATCH),
+            res.ssl_openssl_error());
+}
+
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {
   Client cli("https://google.com");
   auto res = cli.Get("/");
@@ -7501,19 +7542,33 @@ TEST(SSLClientTest, ServerCertificateVerification1_Online) {
 
 TEST(SSLClientTest, ServerCertificateVerification2_Online) {
   SSLClient cli("google.com");
-  cli.enable_server_certificate_verification(true);
-  cli.set_ca_cert_path("hello");
-  auto res = cli.Get("/");
-  ASSERT_TRUE(!res);
-  EXPECT_EQ(Error::SSLLoadingCerts, res.error());
-}
-
-TEST(SSLClientTest, ServerCertificateVerification3_Online) {
-  SSLClient cli("google.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
   ASSERT_EQ(StatusCode::MovedPermanently_301, res->status);
+}
+
+TEST(SSLClientTest, ServerCertificateVerification3_Online) {
+  SSLClient cli("google.com");
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path("hello");
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::SSLLoadingCerts, res.error());
+
+  // For SSL_CTX operations, ssl_error should be 0, only ssl_openssl_error
+  // should be set
+  EXPECT_EQ(0, res.ssl_error());
+
+  // Verify OpenSSL error is captured for SSLLoadingCerts
+  // This error occurs when SSL_CTX_load_verify_locations() fails
+  // > openssl errstr 0x80000002
+  // error:80000002:system library::No such file or directory
+  // > openssl errstr 0xA000126
+  // error:0A000126:SSL routines::unexpected eof while reading
+  EXPECT_TRUE(res.ssl_openssl_error() == 0x80000002 ||
+              res.ssl_openssl_error() == 0xA000126);
 }
 
 TEST(SSLClientTest, ServerCertificateVerification4) {
@@ -7790,10 +7845,20 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   svr.wait_until_ready();
 
   SSLClient cli(HOST, PORT);
-  auto res = cli.Get("/test");
   cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLServerVerification, res.error());
+
+  // For SSL server verification errors, ssl_error should be 0, only
+  // ssl_openssl_error should be set
+  EXPECT_EQ(0, res.ssl_error());
+
+  // Verify OpenSSL error is captured for SSLServerVerification
+  // Note: This test may have different error codes depending on the exact
+  // verification failure
+  EXPECT_NE(0UL, res.ssl_openssl_error());
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
@@ -7868,6 +7933,7 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLConnection, res.error());
+  EXPECT_EQ(SSL_ERROR_WANT_READ, res.ssl_error());
 }
 
 TEST(SSLClientServerTest, CustomizeServerSSLCtx) {

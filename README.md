@@ -85,6 +85,49 @@ cli.enable_server_hostname_verification(false);
 > [!NOTE]
 > When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
+### SSL Error Handling
+
+When SSL operations fail, cpp-httplib provides detailed error information through two separate error fields:
+
+```c++
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "path/to/httplib.h"
+
+httplib::Client cli("https://example.com");
+
+auto res = cli.Get("/");
+if (!res) {
+  // Check the error type
+  auto err = res.error();
+  
+  switch (err) {
+    case httplib::Error::SSLConnection:
+      std::cout << "SSL connection failed, SSL error: " 
+                << res->ssl_error() << std::endl;
+      break;
+
+    case httplib::Error::SSLLoadingCerts:
+      std::cout << "SSL cert loading failed, OpenSSL error: " 
+                << std::hex << res->ssl_openssl_error() << std::endl;
+      break;
+      
+    case httplib::Error::SSLServerVerification:
+      std::cout << "SSL verification failed, X509 error: " 
+                << res->ssl_openssl_error() << std::endl;
+      break;
+      
+    case httplib::Error::SSLServerHostnameVerification:
+      std::cout << "SSL hostname verification failed, X509 error: " 
+                << res->ssl_openssl_error() << std::endl;
+      break;
+      
+    default:
+      std::cout << "HTTP error: " << httplib::to_string(err) << std::endl;
+    }
+  }
+}
+```
+
 Server
 ------
 
