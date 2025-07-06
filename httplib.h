@@ -7287,7 +7287,7 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
 inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
   FormFileMap::iterator cur;
   Params::iterator text_cur;
-  bool is_text_field = false;
+  auto is_text_field = false;
   auto file_count = 0;
   if (read_content_core(
           strm, req, res,

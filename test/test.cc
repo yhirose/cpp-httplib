@@ -3233,6 +3233,13 @@ protected:
                   }
 
                   {
+                    const auto &file = get_file_value(files, "file2");
+                    EXPECT_EQ("world.json", file.filename);
+                    EXPECT_EQ("application/json", file.content_type);
+                    EXPECT_EQ(R"({\n  "world": true\n}\n)", file.content);
+                  }
+
+                  {
                     const auto &file = get_file_value(files, "file3");
                     EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("application/octet-stream", file.content_type);
@@ -5239,7 +5246,7 @@ TEST_F(ServerTest, PostMultipartFileContentReceiver) {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
-      {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"file2", R"({\n  "world": true\n}\n)", "world.json", "application/json"},
       {"file3", "", "", "application/octet-stream"},
   };
 
@@ -5254,7 +5261,7 @@ TEST_F(ServerTest, PostMultipartPlusBoundary) {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
-      {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"file2", R"({\n  "world": true\n}\n)", "world.json", "application/json"},
       {"file3", "", "", "application/octet-stream"},
   };
 
