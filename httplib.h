@@ -571,6 +571,23 @@ struct MultipartFormData {
 using MultipartFormDataItems = std::vector<MultipartFormData>;
 using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
 
+struct FormData {
+  Params fields;              // Text fields from multipart
+  MultipartFormDataMap files; // Files from multipart
+
+  // Text field access
+  std::string get_field(const std::string &key, size_t id = 0) const;
+  std::vector<std::string> get_fields(const std::string &key) const;
+  bool has_field(const std::string &key) const;
+  size_t get_field_count(const std::string &key) const;
+
+  // File access
+  MultipartFormData get_file(const std::string &key, size_t id = 0) const;
+  std::vector<MultipartFormData> get_files(const std::string &key) const;
+  bool has_file(const std::string &key) const;
+  size_t get_file_count(const std::string &key) const;
+};
+
 struct MultipartFormDataForClientInput {
   std::string name;
   std::string content;
@@ -681,7 +698,7 @@ struct Request {
   // for server
   std::string version;
   std::string target;
-  MultipartFormDataMap files;
+  FormData form;
   Ranges ranges;
   Match matches;
   std::unordered_map<std::string, std::string> path_params;
@@ -6347,23 +6364,73 @@ inline bool Request::is_multipart_form_data() const {
 }
 
 inline bool Request::has_file(const std::string &key) const {
-  return files.find(key) != files.end();
+  return form.has_file(key);
 }
 
 inline MultipartFormData Request::get_file_value(const std::string &key) const {
-  auto it = files.find(key);
-  if (it != files.end()) { return it->second; }
-  return MultipartFormData();
+  return form.get_file(key);
 }
 
 inline std::vector<MultipartFormData>
 Request::get_file_values(const std::string &key) const {
+  return form.get_files(key);
+}
+
+// FormData implementation
+inline std::string FormData::get_field(const std::string &key,
+                                       size_t id) const {
+  auto rng = fields.equal_range(key);
+  auto it = rng.first;
+  std::advance(it, static_cast<ssize_t>(id));
+  if (it != rng.second) { return it->second; }
+  return std::string();
+}
+
+inline std::vector<std::string>
+FormData::get_fields(const std::string &key) const {
+  std::vector<std::string> values;
+  auto rng = fields.equal_range(key);
+  for (auto it = rng.first; it != rng.second; it++) {
+    values.push_back(it->second);
+  }
+  return values;
+}
+
+inline bool FormData::has_field(const std::string &key) const {
+  return fields.find(key) != fields.end();
+}
+
+inline size_t FormData::get_field_count(const std::string &key) const {
+  auto r = fields.equal_range(key);
+  return static_cast<size_t>(std::distance(r.first, r.second));
+}
+
+inline MultipartFormData FormData::get_file(const std::string &key,
+                                            size_t id) const {
+  auto rng = files.equal_range(key);
+  auto it = rng.first;
+  std::advance(it, static_cast<ssize_t>(id));
+  if (it != rng.second) { return it->second; }
+  return MultipartFormData();
+}
+
+inline std::vector<MultipartFormData>
+FormData::get_files(const std::string &key) const {
   std::vector<MultipartFormData> values;
   auto rng = files.equal_range(key);
   for (auto it = rng.first; it != rng.second; it++) {
     values.push_back(it->second);
   }
   return values;
+}
+
+inline bool FormData::has_file(const std::string &key) const {
+  return files.find(key) != files.end();
+}
+
+inline size_t FormData::get_file_count(const std::string &key) const {
+  auto r = files.equal_range(key);
+  return static_cast<size_t>(std::distance(r.first, r.second));
 }
 
 // Response implementation
@@ -7225,6 +7292,8 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
 
 inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
   MultipartFormDataMap::iterator cur;
+  Params::iterator text_cur;
+  bool is_text_field = false;
   auto file_count = 0;
   if (read_content_core(
           strm, req, res,
@@ -7239,13 +7308,28 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
             if (file_count++ == CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT) {
               return false;
             }
-            cur = req.files.emplace(file.name, file);
+
+            if (file.filename.empty()) {
+              // Text field -> form.fields
+              text_cur = req.form.fields.emplace(file.name, "");
+              is_text_field = true;
+            } else {
+              // File -> form.files
+              cur = req.form.files.emplace(file.name, file);
+              is_text_field = false;
+            }
             return true;
           },
           [&](const char *buf, size_t n) {
-            auto &content = cur->second.content;
-            if (content.size() + n > content.max_size()) { return false; }
-            content.append(buf, n);
+            if (is_text_field) {
+              // Text field content -> form.fields
+              text_cur->second.append(buf, n);
+            } else {
+              // File content -> form.files
+              auto &content = cur->second.content;
+              if (content.size() + n > content.max_size()) { return false; }
+              content.append(buf, n);
+            }
             return true;
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
@@ -7655,7 +7739,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
 
     if (type != detail::EncodingType::None) {
       if (pre_compression_logger_) { pre_compression_logger_(req, res); }
-      
+
       std::unique_ptr<detail::compressor> compressor;
       std::string content_encoding;
 
