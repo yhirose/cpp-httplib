@@ -561,19 +561,20 @@ using UploadProgress = std::function<bool(uint64_t current, uint64_t total)>;
 struct Response;
 using ResponseHandler = std::function<bool(const Response &response)>;
 
-struct MultipartFormData {
+struct FormFile {
   std::string name;
   std::string content;
   std::string filename;
   std::string content_type;
   Headers headers;
 };
-using MultipartFormDataItems = std::vector<MultipartFormData>;
-using MultipartFormDataMap = std::multimap<std::string, MultipartFormData>;
+
+using FormFileMap = std::multimap<std::string, FormFile>;
+using FormFileItems = std::vector<FormFile>;
 
 struct FormData {
-  Params fields;              // Text fields from multipart
-  MultipartFormDataMap files; // Files from multipart
+  Params fields;     // Text fields from multipart
+  FormFileMap files; // Files from multipart
 
   // Text field access
   std::string get_field(const std::string &key, size_t id = 0) const;
@@ -582,20 +583,19 @@ struct FormData {
   size_t get_field_count(const std::string &key) const;
 
   // File access
-  MultipartFormData get_file(const std::string &key, size_t id = 0) const;
-  std::vector<MultipartFormData> get_files(const std::string &key) const;
+  FormFile get_file(const std::string &key, size_t id = 0) const;
+  FormFileItems get_files(const std::string &key) const;
   bool has_file(const std::string &key) const;
   size_t get_file_count(const std::string &key) const;
 };
 
-struct MultipartFormDataForClientInput {
+struct FormDataInput {
   std::string name;
   std::string content;
   std::string filename;
   std::string content_type;
 };
-using MultipartFormDataItemsForClientInput =
-    std::vector<MultipartFormDataForClientInput>;
+using FormDataInputItems = std::vector<FormDataInput>;
 
 class DataSink {
 public:
@@ -653,21 +653,19 @@ using ContentReceiverWithProgress =
 using ContentReceiver =
     std::function<bool(const char *data, size_t data_length)>;
 
-using MultipartContentHeader =
-    std::function<bool(const MultipartFormData &file)>;
+using FormFileHeader = std::function<bool(const FormFile &file)>;
 
 class ContentReader {
 public:
   using Reader = std::function<bool(ContentReceiver receiver)>;
-  using MultipartReader = std::function<bool(MultipartContentHeader header,
-                                             ContentReceiver receiver)>;
+  using MultipartReader =
+      std::function<bool(FormFileHeader header, ContentReceiver receiver)>;
 
   ContentReader(Reader reader, MultipartReader multipart_reader)
       : reader_(std::move(reader)),
         multipart_reader_(std::move(multipart_reader)) {}
 
-  bool operator()(MultipartContentHeader header,
-                  ContentReceiver receiver) const {
+  bool operator()(FormFileHeader header, ContentReceiver receiver) const {
     return multipart_reader_(std::move(header), std::move(receiver));
   }
 
@@ -729,8 +727,8 @@ struct Request {
   bool is_multipart_form_data() const;
 
   bool has_file(const std::string &key) const;
-  MultipartFormData get_file_value(const std::string &key) const;
-  std::vector<MultipartFormData> get_file_values(const std::string &key) const;
+  FormFile get_file_value(const std::string &key) const;
+  FormFileItems get_file_values(const std::string &key) const;
 
   // private members...
   size_t redirect_count_ = CPPHTTPLIB_REDIRECT_MAX_COUNT;
@@ -1176,14 +1174,14 @@ private:
                                    Response &res, const std::string &boundary,
                                    const std::string &content_type);
   bool read_content(Stream &strm, Request &req, Response &res);
-  bool
-  read_content_with_content_receiver(Stream &strm, Request &req, Response &res,
-                                     ContentReceiver receiver,
-                                     MultipartContentHeader multipart_header,
-                                     ContentReceiver multipart_receiver);
+  bool read_content_with_content_receiver(Stream &strm, Request &req,
+                                          Response &res,
+                                          ContentReceiver receiver,
+                                          FormFileHeader multipart_header,
+                                          ContentReceiver multipart_receiver);
   bool read_content_core(Stream &strm, Request &req, Response &res,
                          ContentReceiver receiver,
-                         MultipartContentHeader multipart_header,
+                         FormFileHeader multipart_header,
                          ContentReceiver multipart_receiver) const;
 
   virtual bool process_and_close_socket(socket_t sock);
@@ -1350,16 +1348,16 @@ public:
   Result Post(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Params &params);
-  Result Post(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const FormDataInputItems &items, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers);
   Result Post(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const Params &params);
-  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
-  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const FormDataInputItems &items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const FormDataInputItems &items, const std::string &boundary, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const FormDataInputItems &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Put(const std::string &path);
@@ -1368,16 +1366,16 @@ public:
   Result Put(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Params &params);
-  Result Put(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const FormDataInputItems &items, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers);
   Result Put(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const Params &params);
-  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
-  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const FormDataInputItems &items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const FormDataInputItems &items, const std::string &boundary, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const FormDataInputItems &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Patch(const std::string &path);
@@ -1386,16 +1384,16 @@ public:
   Result Patch(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Params &params);
-  Result Patch(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const FormDataInputItems &items, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const Params &params);
-  Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
-  Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const FormDataInputItems &items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const FormDataInputItems &items, const std::string &boundary, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const FormDataInputItems &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Delete(const std::string &path, DownloadProgress progress = nullptr);
@@ -1645,8 +1643,7 @@ private:
       ContentProviderWithoutLength content_provider_without_length,
       const std::string &content_type, UploadProgress progress);
   ContentProviderWithoutLength get_multipart_content_provider(
-      const std::string &boundary,
-      const MultipartFormDataItemsForClientInput &items,
+      const std::string &boundary, const FormDataInputItems &items,
       const MultipartFormDataProviderItems &provider_items) const;
 
   std::string adjust_host_string(const std::string &host) const;
@@ -1701,16 +1698,16 @@ public:
   Result Post(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Params &params);
-  Result Post(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const FormDataInputItems &items, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers);
   Result Post(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const Params &params);
-  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
-  Result Post(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const FormDataInputItems &items, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const FormDataInputItems &items, const std::string &boundary, UploadProgress progress = nullptr);
+  Result Post(const std::string &path, const Headers &headers, const FormDataInputItems &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
   Result Post(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Put(const std::string &path);
@@ -1719,16 +1716,16 @@ public:
   Result Put(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Params &params);
-  Result Put(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const FormDataInputItems &items, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers);
   Result Put(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const Params &params);
-  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
-  Result Put(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const FormDataInputItems &items, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const FormDataInputItems &items, const std::string &boundary, UploadProgress progress = nullptr);
+  Result Put(const std::string &path, const Headers &headers, const FormDataInputItems &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
   Result Put(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Patch(const std::string &path);
@@ -1737,16 +1734,16 @@ public:
   Result Patch(const std::string &path, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Params &params);
-  Result Patch(const std::string &path, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const FormDataInputItems &items, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers);
   Result Patch(const std::string &path, const Headers &headers, const char *body, size_t content_length, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, size_t content_length, ContentProvider content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, ContentProviderWithoutLength content_provider, const std::string &content_type, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const Params &params);
-  Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, UploadProgress progress = nullptr);
-  Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const std::string &boundary, UploadProgress progress = nullptr);
-  Result Patch(const std::string &path, const Headers &headers, const MultipartFormDataItemsForClientInput &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const FormDataInputItems &items, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const FormDataInputItems &items, const std::string &boundary, UploadProgress progress = nullptr);
+  Result Patch(const std::string &path, const Headers &headers, const FormDataInputItems &items, const MultipartFormDataProviderItems &provider_items, UploadProgress progress = nullptr);
   Result Patch(const std::string &path, const Headers &headers, const std::string &body, const std::string &content_type, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
 
   Result Delete(const std::string &path, DownloadProgress progress = nullptr);
@@ -5356,9 +5353,9 @@ inline bool parse_accept_header(const std::string &s,
   return true;
 }
 
-class MultipartFormDataParser {
+class FormDataParser {
 public:
-  MultipartFormDataParser() = default;
+  FormDataParser() = default;
 
   void set_boundary(std::string &&boundary) {
     boundary_ = boundary;
@@ -5369,7 +5366,7 @@ public:
   bool is_valid() const { return is_valid_; }
 
   bool parse(const char *buf, size_t n, const ContentReceiver &content_callback,
-             const MultipartContentHeader &header_callback) {
+             const FormFileHeader &header_callback) {
 
     buf_append(buf, n);
 
@@ -5541,7 +5538,7 @@ private:
 
   size_t state_ = 0;
   bool is_valid_ = false;
-  MultipartFormData file_;
+  FormFile file_;
 
   // Buffer
   bool start_with(const std::string &a, size_t spos, size_t epos,
@@ -5678,9 +5675,9 @@ serialize_multipart_formdata_get_content_type(const std::string &boundary) {
   return "multipart/form-data; boundary=" + boundary;
 }
 
-inline std::string
-serialize_multipart_formdata(const MultipartFormDataItemsForClientInput &items,
-                             const std::string &boundary, bool finish = true) {
+inline std::string serialize_multipart_formdata(const FormDataInputItems &items,
+                                                const std::string &boundary,
+                                                bool finish = true) {
   std::string body;
 
   for (const auto &item : items) {
@@ -6367,12 +6364,11 @@ inline bool Request::has_file(const std::string &key) const {
   return form.has_file(key);
 }
 
-inline MultipartFormData Request::get_file_value(const std::string &key) const {
+inline FormFile Request::get_file_value(const std::string &key) const {
   return form.get_file(key);
 }
 
-inline std::vector<MultipartFormData>
-Request::get_file_values(const std::string &key) const {
+inline FormFileItems Request::get_file_values(const std::string &key) const {
   return form.get_files(key);
 }
 
@@ -6405,18 +6401,16 @@ inline size_t FormData::get_field_count(const std::string &key) const {
   return static_cast<size_t>(std::distance(r.first, r.second));
 }
 
-inline MultipartFormData FormData::get_file(const std::string &key,
-                                            size_t id) const {
+inline FormFile FormData::get_file(const std::string &key, size_t id) const {
   auto rng = files.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
   if (it != rng.second) { return it->second; }
-  return MultipartFormData();
+  return FormFile();
 }
 
-inline std::vector<MultipartFormData>
-FormData::get_files(const std::string &key) const {
-  std::vector<MultipartFormData> values;
+inline FormFileItems FormData::get_files(const std::string &key) const {
+  FormFileItems values;
   auto rng = files.equal_range(key);
   for (auto it = rng.first; it != rng.second; it++) {
     values.push_back(it->second);
@@ -7291,7 +7285,7 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
 }
 
 inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
-  MultipartFormDataMap::iterator cur;
+  FormFileMap::iterator cur;
   Params::iterator text_cur;
   bool is_text_field = false;
   auto file_count = 0;
@@ -7304,7 +7298,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
             return true;
           },
           // Multipart
-          [&](const MultipartFormData &file) {
+          [&](const FormFile &file) {
             if (file_count++ == CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT) {
               return false;
             }
@@ -7347,19 +7341,16 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
 
 inline bool Server::read_content_with_content_receiver(
     Stream &strm, Request &req, Response &res, ContentReceiver receiver,
-    MultipartContentHeader multipart_header,
-    ContentReceiver multipart_receiver) {
+    FormFileHeader multipart_header, ContentReceiver multipart_receiver) {
   return read_content_core(strm, req, res, std::move(receiver),
                            std::move(multipart_header),
                            std::move(multipart_receiver));
 }
 
-inline bool
-Server::read_content_core(Stream &strm, Request &req, Response &res,
-                          ContentReceiver receiver,
-                          MultipartContentHeader multipart_header,
-                          ContentReceiver multipart_receiver) const {
-  detail::MultipartFormDataParser multipart_form_data_parser;
+inline bool Server::read_content_core(
+    Stream &strm, Request &req, Response &res, ContentReceiver receiver,
+    FormFileHeader multipart_header, ContentReceiver multipart_receiver) const {
+  detail::FormDataParser multipart_form_data_parser;
   ContentReceiverWithProgress out;
 
   if (req.is_multipart_form_data()) {
@@ -7590,7 +7581,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
             return read_content_with_content_receiver(
                 strm, req, res, std::move(receiver), nullptr, nullptr);
           },
-          [&](MultipartContentHeader header, ContentReceiver receiver) {
+          [&](FormFileHeader header, ContentReceiver receiver) {
             return read_content_with_content_receiver(strm, req, res, nullptr,
                                                       std::move(header),
                                                       std::move(receiver));
@@ -8957,8 +8948,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 }
 
 inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
-    const std::string &boundary,
-    const MultipartFormDataItemsForClientInput &items,
+    const std::string &boundary, const FormDataInputItems &items,
     const MultipartFormDataProviderItems &provider_items) const {
   size_t cur_item = 0;
   size_t cur_start = 0;
@@ -9172,17 +9162,15 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   return Post(path, headers, query, "application/x-www-form-urlencoded");
 }
 
-inline Result
-ClientImpl::Post(const std::string &path,
-                 const MultipartFormDataItemsForClientInput &items,
-                 UploadProgress progress) {
+inline Result ClientImpl::Post(const std::string &path,
+                               const FormDataInputItems &items,
+                               UploadProgress progress) {
   return Post(path, Headers(), items, progress);
 }
 
-inline Result
-ClientImpl::Post(const std::string &path, const Headers &headers,
-                 const MultipartFormDataItemsForClientInput &items,
-                 UploadProgress progress) {
+inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
+                               const FormDataInputItems &items,
+                               UploadProgress progress) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
@@ -9190,10 +9178,10 @@ ClientImpl::Post(const std::string &path, const Headers &headers,
   return Post(path, headers, body, content_type, progress);
 }
 
-inline Result
-ClientImpl::Post(const std::string &path, const Headers &headers,
-                 const MultipartFormDataItemsForClientInput &items,
-                 const std::string &boundary, UploadProgress progress) {
+inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
+                               const FormDataInputItems &items,
+                               const std::string &boundary,
+                               UploadProgress progress) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
@@ -9242,7 +9230,7 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
 
 inline Result
 ClientImpl::Post(const std::string &path, const Headers &headers,
-                 const MultipartFormDataItemsForClientInput &items,
+                 const FormDataInputItems &items,
                  const MultipartFormDataProviderItems &provider_items,
                  UploadProgress progress) {
   const auto &boundary = detail::make_multipart_data_boundary();
@@ -9328,13 +9316,13 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Put(const std::string &path,
-                              const MultipartFormDataItemsForClientInput &items,
+                              const FormDataInputItems &items,
                               UploadProgress progress) {
   return Put(path, Headers(), items, progress);
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const MultipartFormDataItemsForClientInput &items,
+                              const FormDataInputItems &items,
                               UploadProgress progress) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
@@ -9344,7 +9332,7 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
-                              const MultipartFormDataItemsForClientInput &items,
+                              const FormDataInputItems &items,
                               const std::string &boundary,
                               UploadProgress progress) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
@@ -9395,7 +9383,7 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 
 inline Result
 ClientImpl::Put(const std::string &path, const Headers &headers,
-                const MultipartFormDataItemsForClientInput &items,
+                const FormDataInputItems &items,
                 const MultipartFormDataProviderItems &provider_items,
                 UploadProgress progress) {
   const auto &boundary = detail::make_multipart_data_boundary();
@@ -9482,17 +9470,15 @@ inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
   return Patch(path, headers, query, "application/x-www-form-urlencoded");
 }
 
-inline Result
-ClientImpl::Patch(const std::string &path,
-                  const MultipartFormDataItemsForClientInput &items,
-                  UploadProgress progress) {
+inline Result ClientImpl::Patch(const std::string &path,
+                                const FormDataInputItems &items,
+                                UploadProgress progress) {
   return Patch(path, Headers(), items, progress);
 }
 
-inline Result
-ClientImpl::Patch(const std::string &path, const Headers &headers,
-                  const MultipartFormDataItemsForClientInput &items,
-                  UploadProgress progress) {
+inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
+                                const FormDataInputItems &items,
+                                UploadProgress progress) {
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
@@ -9500,10 +9486,10 @@ ClientImpl::Patch(const std::string &path, const Headers &headers,
   return Patch(path, headers, body, content_type, progress);
 }
 
-inline Result
-ClientImpl::Patch(const std::string &path, const Headers &headers,
-                  const MultipartFormDataItemsForClientInput &items,
-                  const std::string &boundary, UploadProgress progress) {
+inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
+                                const FormDataInputItems &items,
+                                const std::string &boundary,
+                                UploadProgress progress) {
   if (!detail::is_multipart_boundary_chars_valid(boundary)) {
     return Result{nullptr, Error::UnsupportedMultipartBoundaryChars};
   }
@@ -9553,7 +9539,7 @@ inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
 
 inline Result
 ClientImpl::Patch(const std::string &path, const Headers &headers,
-                  const MultipartFormDataItemsForClientInput &items,
+                  const FormDataInputItems &items,
                   const MultipartFormDataProviderItems &provider_items,
                   UploadProgress progress) {
   const auto &boundary = detail::make_multipart_data_boundary();
@@ -10888,23 +10874,23 @@ inline Result Client::Post(const std::string &path, const Headers &headers,
   return cli_->Post(path, headers, params);
 }
 inline Result Client::Post(const std::string &path,
-                           const MultipartFormDataItemsForClientInput &items,
+                           const FormDataInputItems &items,
                            UploadProgress progress) {
   return cli_->Post(path, items, progress);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const MultipartFormDataItemsForClientInput &items,
+                           const FormDataInputItems &items,
                            UploadProgress progress) {
   return cli_->Post(path, headers, items, progress);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const MultipartFormDataItemsForClientInput &items,
+                           const FormDataInputItems &items,
                            const std::string &boundary,
                            UploadProgress progress) {
   return cli_->Post(path, headers, items, boundary, progress);
 }
 inline Result Client::Post(const std::string &path, const Headers &headers,
-                           const MultipartFormDataItemsForClientInput &items,
+                           const FormDataInputItems &items,
                            const MultipartFormDataProviderItems &provider_items,
                            UploadProgress progress) {
   return cli_->Post(path, headers, items, provider_items, progress);
@@ -10981,23 +10967,23 @@ inline Result Client::Put(const std::string &path, const Headers &headers,
   return cli_->Put(path, headers, params);
 }
 inline Result Client::Put(const std::string &path,
-                          const MultipartFormDataItemsForClientInput &items,
+                          const FormDataInputItems &items,
                           UploadProgress progress) {
   return cli_->Put(path, items, progress);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const MultipartFormDataItemsForClientInput &items,
+                          const FormDataInputItems &items,
                           UploadProgress progress) {
   return cli_->Put(path, headers, items, progress);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const MultipartFormDataItemsForClientInput &items,
+                          const FormDataInputItems &items,
                           const std::string &boundary,
                           UploadProgress progress) {
   return cli_->Put(path, headers, items, boundary, progress);
 }
 inline Result Client::Put(const std::string &path, const Headers &headers,
-                          const MultipartFormDataItemsForClientInput &items,
+                          const FormDataInputItems &items,
                           const MultipartFormDataProviderItems &provider_items,
                           UploadProgress progress) {
   return cli_->Put(path, headers, items, provider_items, progress);
@@ -11077,24 +11063,24 @@ inline Result Client::Patch(const std::string &path, const Headers &headers,
   return cli_->Patch(path, headers, params);
 }
 inline Result Client::Patch(const std::string &path,
-                            const MultipartFormDataItemsForClientInput &items,
+                            const FormDataInputItems &items,
                             UploadProgress progress) {
   return cli_->Patch(path, items, progress);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
-                            const MultipartFormDataItemsForClientInput &items,
+                            const FormDataInputItems &items,
                             UploadProgress progress) {
   return cli_->Patch(path, headers, items, progress);
 }
 inline Result Client::Patch(const std::string &path, const Headers &headers,
-                            const MultipartFormDataItemsForClientInput &items,
+                            const FormDataInputItems &items,
                             const std::string &boundary,
                             UploadProgress progress) {
   return cli_->Patch(path, headers, items, boundary, progress);
 }
 inline Result
 Client::Patch(const std::string &path, const Headers &headers,
-              const MultipartFormDataItemsForClientInput &items,
+              const FormDataInputItems &items,
               const MultipartFormDataProviderItems &provider_items,
               UploadProgress progress) {
   return cli_->Patch(path, headers, items, provider_items, progress);

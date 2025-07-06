@@ -55,11 +55,10 @@ const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
 
-MultipartFormData &get_file_value(MultipartFormDataItems &files,
-                                  const char *key) {
-  auto it = std::find_if(
-      files.begin(), files.end(),
-      [&](const MultipartFormData &file) { return file.name == key; });
+FormFile &get_file_value(FormFileItems &files, const char *key) {
+  auto it = std::find_if(files.begin(), files.end(), [&](const FormFile &file) {
+    return file.name == key;
+  });
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
   return *it;
 #else
@@ -3201,9 +3200,9 @@ protected:
               [&](const Request &req, Response &res,
                   const ContentReader &content_reader) {
                 if (req.is_multipart_form_data()) {
-                  MultipartFormDataItems files;
+                  FormFileItems files;
                   content_reader(
-                      [&](const MultipartFormData &file) {
+                      [&](const FormFile &file) {
                         files.push_back(file);
                         return true;
                       },
@@ -4281,7 +4280,7 @@ TEST_F(ServerTest, HeaderCountSecurityTest) {
 }
 
 TEST_F(ServerTest, MultipartFormData) {
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
@@ -4296,7 +4295,7 @@ TEST_F(ServerTest, MultipartFormData) {
 }
 
 TEST_F(ServerTest, MultipartFormDataMultiFileValues) {
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"text", "default text", "", ""},
 
       {"multi_text1", "aaaaa", "", ""},
@@ -5236,7 +5235,7 @@ TEST_F(ServerTest, PostContentReceiver) {
 }
 
 TEST_F(ServerTest, PostMultipartFileContentReceiver) {
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
@@ -5251,7 +5250,7 @@ TEST_F(ServerTest, PostMultipartFileContentReceiver) {
 }
 
 TEST_F(ServerTest, PostMultipartPlusBoundary) {
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"text1", "text default", "", ""},
       {"text2", "aωb", "", ""},
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
@@ -5710,7 +5709,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
 }
 
 TEST_F(ServerTest, MultipartFormDataGzip) {
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"key1", "test", "", ""},
       {"key2", "--abcdefg123", "", ""},
   };
@@ -5874,7 +5873,7 @@ TEST_F(ServerTest, NoZstdWithContentReceiver) {
 
 // TODO: How to enable zstd ??
 TEST_F(ServerTest, MultipartFormDataZstd) {
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"key1", "test", "", ""},
       {"key2", "--abcdefg123", "", ""},
   };
@@ -5923,14 +5922,15 @@ TEST_F(ServerTest, PreCompressionLogging) {
   std::string post_compression_content_encoding;
 
   // Set up pre-compression logger
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+  svr_.set_pre_compression_logger([&](const Request & /*req*/,
+                                      const Response &res) {
     pre_compression_body = res.body;
     pre_compression_content_type = res.get_header_value("Content-Type");
     pre_compression_content_encoding = res.get_header_value("Content-Encoding");
   });
 
   // Set up post-compression logger
-  svr_.set_logger([&](const Request &req, const Response &res) {
+  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
     post_compression_body = res.body;
     post_compression_content_type = res.get_header_value("Content-Type");
     post_compression_content_encoding =
@@ -5972,11 +5972,12 @@ TEST_F(ServerTest, PreCompressionLoggingWithBrotli) {
   std::string pre_compression_body;
   std::string post_compression_body;
 
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
-    pre_compression_body = res.body;
-  });
+  svr_.set_pre_compression_logger(
+      [&](const Request & /*req*/, const Response &res) {
+        pre_compression_body = res.body;
+      });
 
-  svr_.set_logger([&](const Request &req, const Response &res) {
+  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
     post_compression_body = res.body;
   });
 
@@ -6005,11 +6006,12 @@ TEST_F(ServerTest, PreCompressionLoggingWithoutCompression) {
   std::string pre_compression_body;
   std::string post_compression_body;
 
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
-    pre_compression_body = res.body;
-  });
+  svr_.set_pre_compression_logger(
+      [&](const Request & /*req*/, const Response &res) {
+        pre_compression_body = res.body;
+      });
 
-  svr_.set_logger([&](const Request &req, const Response &res) {
+  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
     post_compression_body = res.body;
   });
 
@@ -6038,10 +6040,11 @@ TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
   bool pre_logger_called = false;
 
   // Set only pre-compression logger
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
-    pre_compression_body = res.body;
-    pre_logger_called = true;
-  });
+  svr_.set_pre_compression_logger(
+      [&](const Request & /*req*/, const Response &res) {
+        pre_compression_body = res.body;
+        pre_logger_called = true;
+      });
 
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip");
@@ -6631,7 +6634,7 @@ void TestMultipartUploadProgress(SetupHandler &&setup_handler,
   Client cli(HOST, PORT);
   vector<uint64_t> progress_values;
 
-  MultipartFormDataItemsForClientInput items = {
+  FormDataInputItems items = {
       {"field1", "value1", "", ""},
       {"field2", "longer value for progress tracking test", "", ""},
       {"file1", "file content data for upload progress", "test.txt",
@@ -6656,8 +6659,7 @@ TEST(UploadProgressTest, PostMultipartProgress) {
           res.set_content("multipart received", "text/plain");
         });
       },
-      [](Client &cli, const string &endpoint,
-         const MultipartFormDataItemsForClientInput &items,
+      [](Client &cli, const string &endpoint, const FormDataInputItems &items,
          UploadProgress progress_callback) {
         return cli.Post(endpoint, items, progress_callback);
       },
@@ -8495,9 +8497,9 @@ TEST(MultipartFormDataTest, LargeData) {
   svr.Post("/post", [&](const Request &req, Response & /*res*/,
                         const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      MultipartFormDataItems files;
+      FormFileItems files;
       content_reader(
-          [&](const MultipartFormData &file) {
+          [&](const FormFile &file) {
             files.push_back(file);
             return true;
           },
@@ -8541,7 +8543,7 @@ TEST(MultipartFormDataTest, LargeData) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItemsForClientInput items{
+    FormDataInputItems items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -8583,9 +8585,9 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   svr.Post("/post-items", [&](const Request &req, Response & /*res*/,
                               const ContentReader &content_reader) {
     ASSERT_TRUE(req.is_multipart_form_data());
-    MultipartFormDataItems files;
+    FormFileItems files;
     content_reader(
-        [&](const MultipartFormData &file) {
+        [&](const FormFile &file) {
           files.push_back(file);
           return true;
         },
@@ -8610,9 +8612,9 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   svr.Post("/post-providers", [&](const Request &req, Response & /*res*/,
                                   const ContentReader &content_reader) {
     ASSERT_TRUE(req.is_multipart_form_data());
-    MultipartFormDataItems files;
+    FormFileItems files;
     content_reader(
-        [&](const MultipartFormData &file) {
+        [&](const FormFile &file) {
           files.push_back(file);
           return true;
         },
@@ -8637,9 +8639,9 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   svr.Post("/post-both", [&](const Request &req, Response & /*res*/,
                              const ContentReader &content_reader) {
     ASSERT_TRUE(req.is_multipart_form_data());
-    MultipartFormDataItems files;
+    FormFileItems files;
     content_reader(
-        [&](const MultipartFormData &file) {
+        [&](const FormFile &file) {
           files.push_back(file);
           return true;
         },
@@ -8684,7 +8686,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItemsForClientInput items{
+    FormDataInputItems items{
         {"name1", "Testing123", "filename1", "application/octet-stream"},
         {"name2", "Testing456", "", ""}, // not a file
     };
@@ -8843,9 +8845,9 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   svr.Post("/post_customboundary", [&](const Request &req, Response & /*res*/,
                                        const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      MultipartFormDataItems files;
+      FormFileItems files;
       content_reader(
-          [&](const MultipartFormData &file) {
+          [&](const FormFile &file) {
             files.push_back(file);
             return true;
           },
@@ -8889,7 +8891,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItemsForClientInput items{
+    FormDataInputItems items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -8907,7 +8909,7 @@ TEST(MultipartFormDataTest, PostInvalidBoundaryChars) {
 
   Client cli("https://localhost:8080");
 
-  MultipartFormDataItemsForClientInput items{
+  FormDataInputItems items{
       {"document", buffer.str(), "2MB_data", "application/octet-stream"},
       {"hello", "world", "", ""},
   };
@@ -8926,9 +8928,9 @@ TEST(MultipartFormDataTest, PutFormData) {
   svr.Put("/put", [&](const Request &req, const Response & /*res*/,
                       const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      MultipartFormDataItems files;
+      FormFileItems files;
       content_reader(
-          [&](const MultipartFormData &file) {
+          [&](const FormFile &file) {
             files.push_back(file);
             return true;
           },
@@ -8972,7 +8974,7 @@ TEST(MultipartFormDataTest, PutFormData) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItemsForClientInput items{
+    FormDataInputItems items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -8990,9 +8992,9 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
           [&](const Request &req, const Response & /*res*/,
               const ContentReader &content_reader) {
             if (req.is_multipart_form_data()) {
-              MultipartFormDataItems files;
+              FormFileItems files;
               content_reader(
-                  [&](const MultipartFormData &file) {
+                  [&](const FormFile &file) {
                     files.push_back(file);
                     return true;
                   },
@@ -9036,7 +9038,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
     Client cli("https://localhost:8080");
     cli.enable_server_certificate_verification(false);
 
-    MultipartFormDataItemsForClientInput items{
+    FormDataInputItems items{
         {"document", buffer.str(), "2MB_data", "application/octet-stream"},
         {"hello", "world", "", ""},
     };
@@ -9055,7 +9057,7 @@ TEST(MultipartFormDataTest, PutInvalidBoundaryChars) {
   Client cli("https://localhost:8080");
   cli.enable_server_certificate_verification(false);
 
-  MultipartFormDataItemsForClientInput items{
+  FormDataInputItems items{
       {"document", buffer.str(), "2MB_data", "application/octet-stream"},
       {"hello", "world", "", ""},
   };

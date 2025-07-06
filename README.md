@@ -393,6 +393,11 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
               << " (" << file.content_type << ") - "
               << file.content.size() << " bytes" << std::endl;
 
+    // Access additional headers if needed
+    for (const auto& header : file.headers) {
+      std::cout << "Header: " << header.first << " = " << header.second << std::endl;
+    }
+
     // Save to disk
     std::ofstream ofs(file.filename, std::ios::binary);
     ofs << file.content;
@@ -430,22 +435,6 @@ svr.Post("/multipart", [&](const auto& req, auto& res) {
 });
 ```
 
-#### Legacy API (still supported)
-
-> **Note**: The `req.files` field has been removed. Use `req.form.files` and `req.form.fields` instead.
-> For backward compatibility, `req.get_file_value()`, `req.has_file()`, and `req.get_file_values()` methods are still available and will delegate to the new `req.form` API.
-
-```cpp
-svr.Post("/multipart", [&](const auto& req, auto& res) {
-  // Legacy API - still works but delegates to req.form internally
-  auto ret = req.has_file("name1");              // -> req.form.has_file("name1")
-  const auto& file = req.get_file_value("name1"); // -> req.form.get_file("name1")
-  // file.filename;
-  // file.content_type;
-  // file.content;
-});
-```
-
 ### Receive content with a content receiver
 
 ```cpp
@@ -454,9 +443,9 @@ svr.Post("/content_receiver",
     if (req.is_multipart_form_data()) {
       // NOTE: `content_reader` is blocking until every form data field is read
       // This approach allows streaming processing of large files
-      MultipartFormDataItems items;
+      FormFileItems items;
       content_reader(
-        [&](const MultipartFormData &item) {
+        [&](const FormFile &item) {
           items.push_back(item);
           return true;
         },
@@ -781,7 +770,7 @@ auto res = cli.Post("/post", params);
 ### POST with Multipart Form Data
 
 ```c++
-httplib::MultipartFormDataItems items = {
+httplib::FormDataInputItems items = {
   { "text1", "text default", "", "" },
   { "text2", "aωb", "", "" },
   { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
