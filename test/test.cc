@@ -258,33 +258,33 @@ TEST(StartupTest, WSAStartup) {
 }
 #endif
 
-TEST(DecodeURLTest, PercentCharacter) {
+TEST(DecodePathTest, PercentCharacter) {
   EXPECT_EQ(
-      detail::decode_url(
+      detail::decode_path(
           R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)",
           false),
       u8"descrip=Gastos áéíóúñÑ 6");
 }
 
-TEST(DecodeURLTest, PercentCharacterNUL) {
+TEST(DecodePathTest, PercentCharacterNUL) {
   string expected;
   expected.push_back('x');
   expected.push_back('\0');
   expected.push_back('x');
 
-  EXPECT_EQ(detail::decode_url("x%00x", false), expected);
+  EXPECT_EQ(detail::decode_path("x%00x", false), expected);
 }
 
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 
-  EXPECT_EQ(detail::encode_query_param(unescapedCharacters), "-_.!~*'()");
+  EXPECT_EQ(httplib::encode_uri_component(unescapedCharacters), "-_.!~*'()");
 }
 
 TEST(EncodeQueryParamTest, ParseReservedCharactersTest) {
   string reservedCharacters = ";,/?:@&=+$";
 
-  EXPECT_EQ(detail::encode_query_param(reservedCharacters),
+  EXPECT_EQ(httplib::encode_uri_component(reservedCharacters),
             "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
 }
 
@@ -293,13 +293,168 @@ TEST(EncodeQueryParamTest, TestUTF8Characters) {
   string russianCharacters = u8"дом";
   string brazilianCharacters = u8"óculos";
 
-  EXPECT_EQ(detail::encode_query_param(chineseCharacters),
+  EXPECT_EQ(httplib::encode_uri_component(chineseCharacters),
             "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
 
-  EXPECT_EQ(detail::encode_query_param(russianCharacters),
+  EXPECT_EQ(httplib::encode_uri_component(russianCharacters),
             "%D0%B4%D0%BE%D0%BC");
 
-  EXPECT_EQ(detail::encode_query_param(brazilianCharacters), "%C3%B3culos");
+  EXPECT_EQ(httplib::encode_uri_component(brazilianCharacters), "%C3%B3culos");
+}
+
+TEST(EncodeUriComponentTest, ParseUnescapedChararactersTest) {
+  string unescapedCharacters = "-_.!~*'()";
+
+  EXPECT_EQ(httplib::encode_uri_component(unescapedCharacters), "-_.!~*'()");
+}
+
+TEST(EncodeUriComponentTest, ParseReservedCharactersTest) {
+  string reservedCharacters = ";,/?:@&=+$";
+
+  EXPECT_EQ(httplib::encode_uri_component(reservedCharacters),
+            "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
+}
+
+TEST(EncodeUriComponentTest, TestUTF8Characters) {
+  string chineseCharacters = u8"中国語";
+  string russianCharacters = u8"дом";
+  string brazilianCharacters = u8"óculos";
+
+  EXPECT_EQ(httplib::encode_uri_component(chineseCharacters),
+            "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
+
+  EXPECT_EQ(httplib::encode_uri_component(russianCharacters),
+            "%D0%B4%D0%BE%D0%BC");
+
+  EXPECT_EQ(httplib::encode_uri_component(brazilianCharacters), "%C3%B3culos");
+}
+
+TEST(EncodeUriComponentTest, TestPathComponentEncoding) {
+  // Issue #2082 use case: encoding path component with ampersand
+  string pathWithAmpersand = "Piri Tommy Villiers - on & on";
+
+  EXPECT_EQ(httplib::encode_uri_component(pathWithAmpersand),
+            "Piri%20Tommy%20Villiers%20-%20on%20%26%20on");
+}
+
+TEST(EncodeUriTest, ParseUnescapedChararactersTest) {
+  string unescapedCharacters = "-_.!~*'()";
+
+  EXPECT_EQ(httplib::encode_uri(unescapedCharacters), "-_.!~*'()");
+}
+
+TEST(EncodeUriTest, ParseReservedCharactersTest) {
+  string reservedCharacters = ";,/?:@&=+$#";
+
+  EXPECT_EQ(httplib::encode_uri(reservedCharacters), ";,/?:@&=+$#");
+}
+
+TEST(EncodeUriTest, TestUTF8Characters) {
+  string chineseCharacters = u8"中国語";
+  string russianCharacters = u8"дом";
+  string brazilianCharacters = u8"óculos";
+
+  EXPECT_EQ(httplib::encode_uri(chineseCharacters),
+            "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
+
+  EXPECT_EQ(httplib::encode_uri(russianCharacters), "%D0%B4%D0%BE%D0%BC");
+
+  EXPECT_EQ(httplib::encode_uri(brazilianCharacters), "%C3%B3culos");
+}
+
+TEST(EncodeUriTest, TestCompleteUri) {
+  string uri =
+      "https://example.com/path/to/resource?query=value&param=test#fragment";
+
+  EXPECT_EQ(
+      httplib::encode_uri(uri),
+      "https://example.com/path/to/resource?query=value&param=test#fragment");
+}
+
+TEST(EncodeUriTest, TestUriWithSpacesAndSpecialChars) {
+  string uri =
+      "https://example.com/path with spaces/file name.html?q=hello world";
+
+  EXPECT_EQ(httplib::encode_uri(uri),
+            "https://example.com/path%20with%20spaces/"
+            "file%20name.html?q=hello%20world");
+}
+
+TEST(DecodeUriComponentTest, ParseEncodedChararactersTest) {
+  string encodedString = "%3B%2C%2F%3F%3A%40%26%3D%2B%24";
+
+  EXPECT_EQ(httplib::decode_uri_component(encodedString), ";,/?:@&=+$");
+}
+
+TEST(DecodeUriComponentTest, ParseUnescapedChararactersTest) {
+  string unescapedCharacters = "-_.!~*'()";
+
+  EXPECT_EQ(httplib::decode_uri_component(unescapedCharacters), "-_.!~*'()");
+}
+
+TEST(DecodeUriComponentTest, TestUTF8Characters) {
+  string encodedChinese = "%E4%B8%AD%E5%9B%BD%E8%AA%9E";
+  string encodedRussian = "%D0%B4%D0%BE%D0%BC";
+  string encodedBrazilian = "%C3%B3culos";
+
+  EXPECT_EQ(httplib::decode_uri_component(encodedChinese), u8"中国語");
+  EXPECT_EQ(httplib::decode_uri_component(encodedRussian), u8"дом");
+  EXPECT_EQ(httplib::decode_uri_component(encodedBrazilian), u8"óculos");
+}
+
+TEST(DecodeUriComponentTest, TestPathComponentDecoding) {
+  string encodedPath = "Piri%20Tommy%20Villiers%20-%20on%20%26%20on";
+
+  EXPECT_EQ(httplib::decode_uri_component(encodedPath),
+            "Piri Tommy Villiers - on & on");
+}
+
+TEST(DecodeUriTest, ParseEncodedChararactersTest) {
+  string encodedString = "%20%22%3C%3E%5C%5E%60%7B%7D%7C";
+
+  EXPECT_EQ(httplib::decode_uri(encodedString), " \"<>\\^`{}|");
+}
+
+TEST(DecodeUriTest, ParseUnescapedChararactersTest) {
+  string unescapedCharacters = "-_.!~*'();,/?:@&=+$#";
+
+  EXPECT_EQ(httplib::decode_uri(unescapedCharacters), "-_.!~*'();,/?:@&=+$#");
+}
+
+TEST(DecodeUriTest, TestUTF8Characters) {
+  string encodedChinese = "%E4%B8%AD%E5%9B%BD%E8%AA%9E";
+  string encodedRussian = "%D0%B4%D0%BE%D0%BC";
+  string encodedBrazilian = "%C3%B3culos";
+
+  EXPECT_EQ(httplib::decode_uri(encodedChinese), u8"中国語");
+  EXPECT_EQ(httplib::decode_uri(encodedRussian), u8"дом");
+  EXPECT_EQ(httplib::decode_uri(encodedBrazilian), u8"óculos");
+}
+
+TEST(DecodeUriTest, TestCompleteUri) {
+  string encodedUri = "https://example.com/path%20with%20spaces/"
+                      "file%20name.html?q=hello%20world";
+
+  EXPECT_EQ(
+      httplib::decode_uri(encodedUri),
+      "https://example.com/path with spaces/file name.html?q=hello world");
+}
+
+TEST(DecodeUriTest, TestRoundTripWithEncodeUri) {
+  string original =
+      "https://example.com/path with spaces/file name.html?q=hello world";
+  string encoded = httplib::encode_uri(original);
+  string decoded = httplib::decode_uri(encoded);
+
+  EXPECT_EQ(decoded, original);
+}
+
+TEST(DecodeUriComponentTest, TestRoundTripWithEncodeUriComponent) {
+  string original = "Piri Tommy Villiers - on & on";
+  string encoded = httplib::encode_uri_component(original);
+  string decoded = httplib::decode_uri_component(encoded);
+
+  EXPECT_EQ(decoded, original);
 }
 
 TEST(TrimTests, TrimStringTests) {
@@ -2116,7 +2271,7 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
 
   {
     Client cli(HOST, PORT);
-    cli.set_url_encode(false);
+    cli.set_path_encode(false);
 
     auto res = cli.Get("/foo?a=explicitly+encoded");
     ASSERT_TRUE(res);
@@ -2146,7 +2301,7 @@ TEST(PathUrlEncodeTest, IncludePercentEncodingLF) {
 
   {
     Client cli(HOST, PORT);
-    cli.set_url_encode(false);
+    cli.set_path_encode(false);
 
     auto res = cli.Get("/?something=%0A");
     ASSERT_TRUE(res);

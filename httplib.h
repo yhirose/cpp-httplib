@@ -1444,7 +1444,7 @@ public:
   void set_keep_alive(bool on);
   void set_follow_location(bool on);
 
-  void set_url_encode(bool on);
+  void set_path_encode(bool on);
 
   void set_compress(bool on);
 
@@ -1556,7 +1556,7 @@ protected:
   bool keep_alive_ = false;
   bool follow_location_ = false;
 
-  bool url_encode_ = true;
+  bool path_encode_ = true;
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
@@ -1794,6 +1794,7 @@ public:
   void set_keep_alive(bool on);
   void set_follow_location(bool on);
 
+  void set_path_encode(bool on);
   void set_url_encode(bool on);
 
   void set_compress(bool on);
@@ -2248,6 +2249,16 @@ std::string hosted_at(const std::string &hostname);
 
 void hosted_at(const std::string &hostname, std::vector<std::string> &addrs);
 
+std::string encode_uri_component(const std::string &value);
+
+std::string encode_uri(const std::string &value);
+
+std::string decode_uri_component(const std::string &value);
+
+std::string decode_uri(const std::string &value);
+
+std::string encode_query_param(const std::string &value);
+
 std::string append_query_params(const std::string &path, const Params &params);
 
 std::pair<std::string, std::string> make_range_header(const Ranges &ranges);
@@ -2289,9 +2300,7 @@ private:
   int ret_ = -1;
 };
 
-std::string encode_query_param(const std::string &value);
-
-std::string decode_url(const std::string &s, bool convert_plus_to_space);
+std::string decode_path(const std::string &s, bool convert_plus_to_space);
 
 std::string trim_copy(const std::string &s);
 
@@ -2761,28 +2770,7 @@ inline bool FileStat::is_dir() const {
   return ret_ >= 0 && S_ISDIR(st_.st_mode);
 }
 
-inline std::string encode_query_param(const std::string &value) {
-  std::ostringstream escaped;
-  escaped.fill('0');
-  escaped << std::hex;
-
-  for (auto c : value) {
-    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
-        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-        c == ')') {
-      escaped << c;
-    } else {
-      escaped << std::uppercase;
-      escaped << '%' << std::setw(2)
-              << static_cast<int>(static_cast<unsigned char>(c));
-      escaped << std::nouppercase;
-    }
-  }
-
-  return escaped.str();
-}
-
-inline std::string encode_url(const std::string &s) {
+inline std::string encode_path(const std::string &s) {
   std::string result;
   result.reserve(s.size());
 
@@ -2814,8 +2802,8 @@ inline std::string encode_url(const std::string &s) {
   return result;
 }
 
-inline std::string decode_url(const std::string &s,
-                              bool convert_plus_to_space) {
+inline std::string decode_path(const std::string &s,
+                               bool convert_plus_to_space) {
   std::string result;
 
   for (size_t i = 0; i < s.size(); i++) {
@@ -4539,7 +4527,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
         case_ignore::equal(key, "Referer")) {
       fn(key, val);
     } else {
-      fn(key, decode_url(val, false));
+      fn(key, decode_path(val, false));
     }
 
     return true;
@@ -5104,7 +5092,7 @@ inline std::string params_to_query_str(const Params &params) {
     if (it != params.begin()) { query += "&"; }
     query += it->first;
     query += "=";
-    query += encode_query_param(it->second);
+    query += httplib::encode_uri_component(it->second);
   }
   return query;
 }
@@ -5127,7 +5115,7 @@ inline void parse_query_text(const char *data, std::size_t size,
            });
 
     if (!key.empty()) {
-      params.emplace(decode_url(key, true), decode_url(val, true));
+      params.emplace(decode_path(key, true), decode_path(val, true));
     }
   });
 }
@@ -5437,7 +5425,7 @@ public:
 
                 std::smatch m2;
                 if (std::regex_match(it->second, m2, re_rfc5987_encoding)) {
-                  file_.filename = decode_url(m2[1], false); // override...
+                  file_.filename = decode_path(m2[1], false); // override...
                 } else {
                   is_valid_ = false;
                   return false;
@@ -6260,6 +6248,94 @@ inline void hosted_at(const std::string &hostname,
   }
 }
 
+inline std::string encode_uri_component(const std::string &value) {
+  std::ostringstream escaped;
+  escaped.fill('0');
+  escaped << std::hex;
+
+  for (auto c : value) {
+    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
+        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
+        c == ')') {
+      escaped << c;
+    } else {
+      escaped << std::uppercase;
+      escaped << '%' << std::setw(2)
+              << static_cast<int>(static_cast<unsigned char>(c));
+      escaped << std::nouppercase;
+    }
+  }
+
+  return escaped.str();
+}
+
+inline std::string encode_uri(const std::string &value) {
+  std::ostringstream escaped;
+  escaped.fill('0');
+  escaped << std::hex;
+
+  for (auto c : value) {
+    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
+        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
+        c == ')' || c == ';' || c == '/' || c == '?' || c == ':' || c == '@' ||
+        c == '&' || c == '=' || c == '+' || c == '$' || c == ',' || c == '#') {
+      escaped << c;
+    } else {
+      escaped << std::uppercase;
+      escaped << '%' << std::setw(2)
+              << static_cast<int>(static_cast<unsigned char>(c));
+      escaped << std::nouppercase;
+    }
+  }
+
+  return escaped.str();
+}
+
+inline std::string decode_uri_component(const std::string &value) {
+  std::string result;
+
+  for (size_t i = 0; i < value.size(); i++) {
+    if (value[i] == '%' && i + 2 < value.size()) {
+      auto val = 0;
+      if (detail::from_hex_to_i(value, i + 1, 2, val)) {
+        result += static_cast<char>(val);
+        i += 2;
+      } else {
+        result += value[i];
+      }
+    } else {
+      result += value[i];
+    }
+  }
+
+  return result;
+}
+
+inline std::string decode_uri(const std::string &value) {
+  std::string result;
+
+  for (size_t i = 0; i < value.size(); i++) {
+    if (value[i] == '%' && i + 2 < value.size()) {
+      auto val = 0;
+      if (detail::from_hex_to_i(value, i + 1, 2, val)) {
+        result += static_cast<char>(val);
+        i += 2;
+      } else {
+        result += value[i];
+      }
+    } else {
+      result += value[i];
+    }
+  }
+
+  return result;
+}
+
+[[deprecated("Use encode_uri_component instead")]]
+inline std::string encode_query_param(const std::string &value) {
+  return encode_uri_component(value);
+}
+
 inline std::string append_query_params(const std::string &path,
                                        const Params &params) {
   std::string path_with_query = path;
@@ -7070,7 +7146,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     detail::divide(req.target, '?',
                    [&](const char *lhs_data, std::size_t lhs_size,
                        const char *rhs_data, std::size_t rhs_size) {
-                     req.path = detail::decode_url(
+                     req.path = detail::decode_path(
                          std::string(lhs_data, lhs_size), false);
                      detail::parse_query_text(rhs_data, rhs_size, req.params);
                    });
@@ -7967,7 +8043,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 #endif
   keep_alive_ = rhs.keep_alive_;
   follow_location_ = rhs.follow_location_;
-  url_encode_ = rhs.url_encode_;
+  path_encode_ = rhs.path_encode_;
   address_family_ = rhs.address_family_;
   tcp_nodelay_ = rhs.tcp_nodelay_;
   ipv6_v6only_ = rhs.ipv6_v6only_;
@@ -8332,7 +8408,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  auto path = detail::decode_url(next_path, true) + next_query;
+  auto path = detail::decode_path(next_path, true) + next_query;
 
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
@@ -8427,7 +8503,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   client.set_keep_alive(keep_alive_);
   client.set_follow_location(
       true); // Enable redirects to handle multi-step redirects
-  client.set_url_encode(url_encode_);
+  client.set_path_encode(path_encode_);
   client.set_compress(compress_);
   client.set_decompress(decompress_);
 
@@ -8621,7 +8697,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
                            : append_query_params(req.path, req.params);
 
     const auto &path =
-        url_encode_ ? detail::encode_url(path_with_query) : path_with_query;
+        path_encode_ ? detail::encode_path(path_with_query) : path_with_query;
 
     detail::write_request_line(bstrm, req.method, path);
 
@@ -9667,7 +9743,7 @@ inline void ClientImpl::set_keep_alive(bool on) { keep_alive_ = on; }
 
 inline void ClientImpl::set_follow_location(bool on) { follow_location_ = on; }
 
-inline void ClientImpl::set_url_encode(bool on) { url_encode_ = on; }
+inline void ClientImpl::set_path_encode(bool on) { path_encode_ = on; }
 
 inline void
 ClientImpl::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
@@ -11143,7 +11219,12 @@ inline void Client::set_follow_location(bool on) {
   cli_->set_follow_location(on);
 }
 
-inline void Client::set_url_encode(bool on) { cli_->set_url_encode(on); }
+inline void Client::set_path_encode(bool on) { cli_->set_path_encode(on); }
+
+[[deprecated("Use set_path_encode instead")]]
+inline void Client::set_url_encode(bool on) {
+  cli_->set_path_encode(on);
+}
 
 inline void Client::set_compress(bool on) { cli_->set_compress(on); }
 

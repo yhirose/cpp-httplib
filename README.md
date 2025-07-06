@@ -893,6 +893,26 @@ res->status; // 200
 cli.set_interface("eth0"); // Interface name, IP address or host name
 ```
 
+### Automatic Path Encoding
+
+The client automatically encodes special characters in URL paths by default:
+
+```cpp
+httplib::Client cli("https://example.com");
+
+// Automatic path encoding (default behavior)
+cli.set_path_encode(true);
+auto res = cli.Get("/path with spaces/file.txt"); // Automatically encodes spaces
+
+// Disable automatic path encoding
+cli.set_path_encode(false);
+auto res = cli.Get("/already%20encoded/path"); // Use pre-encoded paths
+```
+
+- `set_path_encode(bool on)` - Controls automatic encoding of special characters in URL paths
+  - `true` (default): Automatically encodes spaces, plus signs, newlines, and other special characters
+  - `false`: Sends paths as-is without encoding (useful for pre-encoded URLs)
+
 Compression
 -----------
 
@@ -967,6 +987,33 @@ cli.set_address_family(AF_UNIX);
 ```
 
 "my-socket.sock" can be a relative path or an absolute path. Your application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
+
+
+URI Encoding/Decoding Utilities
+-------------------------------
+
+cpp-httplib provides utility functions for URI encoding and decoding:
+
+```cpp
+#include <httplib.h>
+
+std::string url = "https://example.com/search?q=hello world";
+std::string encoded = httplib::encode_uri(url);
+std::string decoded = httplib::decode_uri(encoded);
+
+std::string param = "hello world";
+std::string encoded_component = httplib::encode_uri_component(param);
+std::string decoded_component = httplib::decode_uri_component(encoded_component);
+```
+
+### Functions
+
+- `encode_uri(const std::string &value)` - Encodes a full URI, preserving reserved characters like `://`, `?`, `&`, `=`
+- `decode_uri(const std::string &value)` - Decodes a URI-encoded string
+- `encode_uri_component(const std::string &value)` - Encodes a URI component (query parameter, path segment), encoding all reserved characters
+- `decode_uri_component(const std::string &value)` - Decodes a URI component
+
+Use `encode_uri()` for full URLs and `encode_uri_component()` for individual query parameters or path segments.
 
 
 Split httplib.h into .h and .cc
