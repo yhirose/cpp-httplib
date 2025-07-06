@@ -99,28 +99,28 @@ auto res = cli.Get("/");
 if (!res) {
   // Check the error type
   auto err = res.error();
-  
+
   switch (err) {
     case httplib::Error::SSLConnection:
-      std::cout << "SSL connection failed, SSL error: " 
+      std::cout << "SSL connection failed, SSL error: "
                 << res->ssl_error() << std::endl;
       break;
 
     case httplib::Error::SSLLoadingCerts:
-      std::cout << "SSL cert loading failed, OpenSSL error: " 
+      std::cout << "SSL cert loading failed, OpenSSL error: "
                 << std::hex << res->ssl_openssl_error() << std::endl;
       break;
-      
+
     case httplib::Error::SSLServerVerification:
-      std::cout << "SSL verification failed, X509 error: " 
+      std::cout << "SSL verification failed, X509 error: "
                 << res->ssl_openssl_error() << std::endl;
       break;
-      
+
     case httplib::Error::SSLServerHostnameVerification:
-      std::cout << "SSL hostname verification failed, X509 error: " 
+      std::cout << "SSL hostname verification failed, X509 error: "
                 << res->ssl_openssl_error() << std::endl;
       break;
-      
+
     default:
       std::cout << "HTTP error: " << httplib::to_string(err) << std::endl;
     }
@@ -356,13 +356,90 @@ svr.set_pre_request_handler([](const auto& req, auto& res) {
 });
 ```
 
-### 'multipart/form-data' POST data
+### Form data handling
+
+#### URL-encoded form data ('application/x-www-form-urlencoded')
+
+```cpp
+svr.Post("/form", [&](const auto& req, auto& res) {
+  // URL query parameters and form-encoded data are accessible via req.params
+  std::string username = req.get_param_value("username");
+  std::string password = req.get_param_value("password");
+
+  // Handle multiple values with same name
+  auto interests = req.get_param_values("interests");
+
+  // Check existence
+  if (req.has_param("newsletter")) {
+    // Handle newsletter subscription
+  }
+});
+```
+
+#### 'multipart/form-data' POST data
 
 ```cpp
 svr.Post("/multipart", [&](const auto& req, auto& res) {
-  auto size = req.files.size();
-  auto ret = req.has_file("name1");
-  const auto& file = req.get_file_value("name1");
+  // New structured form data API provides clear separation between text fields and files
+
+  // Access text fields (from form inputs without files)
+  std::string username = req.form.get_field("username");
+  std::string bio = req.form.get_field("bio");
+
+  // Access uploaded files
+  if (req.form.has_file("avatar")) {
+    const auto& file = req.form.get_file("avatar");
+    std::cout << "Uploaded file: " << file.filename
+              << " (" << file.content_type << ") - "
+              << file.content.size() << " bytes" << std::endl;
+
+    // Save to disk
+    std::ofstream ofs(file.filename, std::ios::binary);
+    ofs << file.content;
+  }
+
+  // Handle multiple values with same name
+  auto tags = req.form.get_fields("tags");  // e.g., multiple checkboxes
+  for (const auto& tag : tags) {
+    std::cout << "Tag: " << tag << std::endl;
+  }
+
+  auto documents = req.form.get_files("documents");  // multiple file upload
+  for (const auto& doc : documents) {
+    std::cout << "Document: " << doc.filename
+              << " (" << doc.content.size() << " bytes)" << std::endl;
+  }
+
+  // Check existence before accessing
+  if (req.form.has_field("newsletter")) {
+    std::cout << "Newsletter subscription: " << req.form.get_field("newsletter") << std::endl;
+  }
+
+  // Get counts for validation
+  if (req.form.get_field_count("tags") > 5) {
+    res.status = StatusCode::BadRequest_400;
+    res.set_content("Too many tags", "text/plain");
+    return;
+  }
+
+  // Summary
+  std::cout << "Received " << req.form.fields.size() << " text fields and "
+            << req.form.files.size() << " files" << std::endl;
+
+  res.set_content("Upload successful", "text/plain");
+});
+```
+
+#### Legacy API (still supported)
+
+> **Note**: The `req.files` field has been removed. Use `req.form.files` and `req.form.fields` instead.
+> For backward compatibility, `req.get_file_value()`, `req.has_file()`, and `req.get_file_values()` methods are still available and will delegate to the new `req.form` API.
+
+```cpp
+svr.Post("/multipart", [&](const auto& req, auto& res) {
+  // Legacy API - still works but delegates to req.form internally
+  auto ret = req.has_file("name1");              // -> req.form.has_file("name1")
+  const auto& file = req.get_file_value("name1"); // -> req.form.get_file("name1")
   // file.filename;
   // file.content_type;
   // file.content;
@@ -376,16 +453,29 @@ svr.Post("/content_receiver",
   [&](const Request &req, Response &res, const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
       // NOTE: `content_reader` is blocking until every form data field is read
-      MultipartFormDataItems files;
+      // This approach allows streaming processing of large files
+      MultipartFormDataItems items;
       content_reader(
-        [&](const MultipartFormData &file) {
-          files.push_back(file);
+        [&](const MultipartFormData &item) {
+          items.push_back(item);
           return true;
         },
         [&](const char *data, size_t data_length) {
-          files.back().content.append(data, data_length);
+          items.back().content.append(data, data_length);
           return true;
         });
+
+      // Process the received items
+      for (const auto& item : items) {
+        if (item.filename.empty()) {
+          // Text field
+          std::cout << "Field: " << item.name << " = " << item.content << std::endl;
+        } else {
+          // File
+          std::cout << "File: " << item.name << " (" << item.filename << ") - "
+                    << item.content.size() << " bytes" << std::endl;
+        }
+      }
     } else {
       std::string body;
       content_reader([&](const char *data, size_t data_length) {
