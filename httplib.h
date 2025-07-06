@@ -5365,8 +5365,8 @@ public:
 
   bool is_valid() const { return is_valid_; }
 
-  bool parse(const char *buf, size_t n, const ContentReceiver &content_callback,
-             const FormFileHeader &header_callback) {
+  bool parse(const char *buf, size_t n, const FormFileHeader &header_callback,
+             const ContentReceiver &content_callback) {
 
     buf_append(buf, n);
 
@@ -7288,7 +7288,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
   FormFileMap::iterator cur;
   Params::iterator text_cur;
   auto is_text_field = false;
-  auto file_count = 0;
+  size_t file_count = 0;
   if (read_content_core(
           strm, req, res,
           // Regular
@@ -7363,19 +7363,8 @@ inline bool Server::read_content_core(
 
     multipart_form_data_parser.set_boundary(std::move(boundary));
     out = [&](const char *buf, size_t n, uint64_t /*off*/, uint64_t /*len*/) {
-      /* For debug
-      size_t pos = 0;
-      while (pos < n) {
-        auto read_size = (std::min)<size_t>(1, n - pos);
-        auto ret = multipart_form_data_parser.parse(
-            buf + pos, read_size, multipart_receiver, multipart_header);
-        if (!ret) { return false; }
-        pos += read_size;
-      }
-      return true;
-      */
-      return multipart_form_data_parser.parse(buf, n, multipart_receiver,
-                                              multipart_header);
+      return multipart_form_data_parser.parse(buf, n, multipart_header,
+                                              multipart_receiver);
     };
   } else {
     out = [receiver](const char *buf, size_t n, uint64_t /*off*/,
