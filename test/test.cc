@@ -5901,6 +5901,143 @@ TEST_F(ServerTest, PutWithContentProviderWithZstd) {
   EXPECT_EQ("PUT", res->body);
 }
 
+// Pre-compression logging tests
+TEST_F(ServerTest, PreCompressionLogging) {
+  // Test data for compression (matches the actual /compress endpoint content)
+  const std::string test_content = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
+  
+  // Variables to capture logging data
+  std::string pre_compression_body;
+  std::string pre_compression_content_type;
+  std::string pre_compression_content_encoding;
+  
+  std::string post_compression_body;
+  std::string post_compression_content_type;
+  std::string post_compression_content_encoding;
+  
+  // Set up pre-compression logger
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+    pre_compression_content_type = res.get_header_value("Content-Type");
+    pre_compression_content_encoding = res.get_header_value("Content-Encoding");
+  });
+  
+  // Set up post-compression logger
+  svr_.set_logger([&](const Request &req, const Response &res) {
+    post_compression_body = res.body;
+    post_compression_content_type = res.get_header_value("Content-Type");
+    post_compression_content_encoding = res.get_header_value("Content-Encoding");
+  });
+  
+  // Test with gzip compression
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+  
+  auto res = cli_.Get("/compress", headers);
+  
+  // Verify response was compressed
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  
+  // Verify pre-compression logger captured uncompressed content
+  EXPECT_EQ(test_content, pre_compression_body);
+  EXPECT_EQ("text/plain", pre_compression_content_type);
+  EXPECT_TRUE(pre_compression_content_encoding.empty()); // No encoding header before compression
+  
+  // Verify post-compression logger captured compressed content
+  EXPECT_NE(test_content, post_compression_body); // Should be different after compression
+  EXPECT_EQ("text/plain", post_compression_content_type);
+  EXPECT_EQ("gzip", post_compression_content_encoding);
+  
+  // Verify compressed content is smaller
+  EXPECT_LT(post_compression_body.size(), pre_compression_body.size());
+}
+
+TEST_F(ServerTest, PreCompressionLoggingWithBrotli) {
+  const std::string test_content = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
+  
+  std::string pre_compression_body;
+  std::string post_compression_body;
+  
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+  });
+  
+  svr_.set_logger([&](const Request &req, const Response &res) {
+    post_compression_body = res.body;
+  });
+  
+  Headers headers;
+  headers.emplace("Accept-Encoding", "br");
+  
+  auto res = cli_.Get("/compress", headers);
+  
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("br", res->get_header_value("Content-Encoding"));
+  
+  // Verify pre-compression content is uncompressed
+  EXPECT_EQ(test_content, pre_compression_body);
+  
+  // Verify post-compression content is compressed
+  EXPECT_NE(test_content, post_compression_body);
+  EXPECT_LT(post_compression_body.size(), pre_compression_body.size());
+}
+
+TEST_F(ServerTest, PreCompressionLoggingWithoutCompression) {
+  const std::string test_content = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
+  
+  std::string pre_compression_body;
+  std::string post_compression_body;
+  
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+  });
+  
+  svr_.set_logger([&](const Request &req, const Response &res) {
+    post_compression_body = res.body;
+  });
+  
+  // Request without compression (use /nocompress endpoint)
+  Headers headers;
+  auto res = cli_.Get("/nocompress", headers);
+  
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
+  
+  // Pre-compression logger should not be called when no compression is applied
+  EXPECT_TRUE(pre_compression_body.empty()); // Pre-compression logger not called
+  EXPECT_EQ(test_content, post_compression_body); // Post-compression logger captures final content
+}
+
+TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
+  const std::string test_content = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
+  
+  std::string pre_compression_body;
+  bool pre_logger_called = false;
+  
+  // Set only pre-compression logger
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+    pre_logger_called = true;
+  });
+  
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+  
+  auto res = cli_.Get("/compress", headers);
+  
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  
+  // Verify pre-compression logger was called
+  EXPECT_TRUE(pre_logger_called);
+  EXPECT_EQ(test_content, pre_compression_body);
+}
+
 TEST(ZstdDecompressor, ChunkedDecompression) {
   std::string data;
   for (size_t i = 0; i < 32 * 1024; ++i) {

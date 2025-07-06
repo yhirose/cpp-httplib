@@ -275,6 +275,18 @@ svr.set_logger([](const auto& req, const auto& res) {
 });
 ```
 
+You can also set a pre-compression logger to capture request/response data before compression is applied. This is useful for debugging and monitoring purposes when you need to see the original, uncompressed response content:
+
+```cpp
+svr.set_pre_compression_logger([](const auto& req, const auto& res) {
+  // Log before compression - res.body contains uncompressed content
+  // Content-Encoding header is not yet set
+  your_pre_compression_logger(req, res);
+});
+```
+
+The pre-compression logger is only called when compression would be applied. For responses without compression, only the regular logger is called.
+
 ### Error handler
 
 ```cpp

@@ -1059,6 +1059,7 @@ public:
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
   Server &set_logger(Logger logger);
+  Server &set_pre_compression_logger(Logger logger);
 
   Server &set_address_family(int family);
   Server &set_tcp_nodelay(bool on);
@@ -1202,6 +1203,7 @@ private:
   Expect100ContinueHandler expect_100_continue_handler_;
 
   Logger logger_;
+  Logger pre_compression_logger_;
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
@@ -6913,6 +6915,11 @@ inline Server &Server::set_logger(Logger logger) {
   return *this;
 }
 
+inline Server &Server::set_pre_compression_logger(Logger logger) {
+  pre_compression_logger_ = std::move(logger);
+  return *this;
+}
+
 inline Server &
 Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   expect_100_continue_handler_ = std::move(handler);
@@ -7647,6 +7654,8 @@ inline void Server::apply_ranges(const Request &req, Response &res,
     }
 
     if (type != detail::EncodingType::None) {
+      if (pre_compression_logger_) { pre_compression_logger_(req, res); }
+      
       std::unique_ptr<detail::compressor> compressor;
       std::string content_encoding;
 
