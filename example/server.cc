@@ -103,7 +103,7 @@ int main(void) {
     res.set_content(buf, "text/html");
   });
 
-  svr.set_logger([](const Request &req, const Response &res) {
+  svr.set_access_logger([](const Request &req, const Response &res) {
     printf("%s", log(req, res).c_str());
   });
 

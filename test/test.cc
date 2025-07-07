@@ -6092,7 +6092,7 @@ TEST_F(ServerTest, PreCompressionLogging) {
   });
 
   // Set up post-compression logger
-  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
+  svr_.set_access_logger([&](const Request &req, const Response &res) {
     post_compression_body = res.body;
     post_compression_content_type = res.get_header_value("Content-Type");
     post_compression_content_encoding =
@@ -6134,12 +6134,11 @@ TEST_F(ServerTest, PreCompressionLoggingWithBrotli) {
   std::string pre_compression_body;
   std::string post_compression_body;
 
-  svr_.set_pre_compression_logger(
-      [&](const Request & /*req*/, const Response &res) {
-        pre_compression_body = res.body;
-      });
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+  });
 
-  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
+  svr_.set_access_logger([&](const Request &req, const Response &res) {
     post_compression_body = res.body;
   });
 
@@ -6168,12 +6167,11 @@ TEST_F(ServerTest, PreCompressionLoggingWithoutCompression) {
   std::string pre_compression_body;
   std::string post_compression_body;
 
-  svr_.set_pre_compression_logger(
-      [&](const Request & /*req*/, const Response &res) {
-        pre_compression_body = res.body;
-      });
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+  });
 
-  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
+  svr_.set_access_logger([&](const Request &req, const Response &res) {
     post_compression_body = res.body;
   });
 
@@ -6202,11 +6200,10 @@ TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
   bool pre_logger_called = false;
 
   // Set only pre-compression logger
-  svr_.set_pre_compression_logger(
-      [&](const Request & /*req*/, const Response &res) {
-        pre_compression_body = res.body;
-        pre_logger_called = true;
-      });
+  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
+    pre_compression_body = res.body;
+    pre_logger_called = true;
+  });
 
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip");
@@ -6220,6 +6217,150 @@ TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
   // Verify pre-compression logger was called
   EXPECT_TRUE(pre_logger_called);
   EXPECT_EQ(test_content, pre_compression_body);
+}
+
+TEST_F(ServerTest, ErrorLogging) {
+  bool error_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  // Set error logger
+  svr_.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  // Create a client that will fail to connect (invalid port)
+  httplib::Client cli("localhost", 9999); // Non-existent server
+  cli.set_connection_timeout(1, 0);       // 1 second timeout
+
+  auto res = cli.Get("/test");
+
+  // Verify the client request failed
+  EXPECT_FALSE(res);
+  EXPECT_EQ(httplib::Error::Connection, res.error());
+
+  // Note: Server error logger won't be called for client connection failures
+  // This test demonstrates the client-side error scenario
+}
+
+TEST(ClientTest, ErrorLogging) {
+  bool error_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  // Create a client that will definitely fail - use an invalid host
+  httplib::Client cli("255.255.255.255", 1); // Invalid host and port
+  cli.set_connection_timeout(1, 0);          // 1 second timeout
+
+  // Set error logger on client
+  cli.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  auto res = cli.Get("/test");
+
+  // Verify the request failed
+  EXPECT_FALSE(res);
+  EXPECT_TRUE(res.error() == httplib::Error::Connection ||
+              res.error() == httplib::Error::ConnectionTimeout);
+
+  // Verify error logger was called with correct information
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_EQ("GET", error_request_method);
+  EXPECT_EQ("/test", error_request_path);
+  EXPECT_TRUE(error_type == httplib::Error::Connection ||
+              error_type == httplib::Error::ConnectionTimeout);
+}
+
+TEST(ClientTest, ErrorLoggingTimeout) {
+  bool error_logger_called = false;
+  httplib::Error error_type;
+
+  // Create a client that will definitely timeout
+  httplib::Client cli("10.0.0.1", 80);   // Non-routable IP for timeout
+  cli.set_connection_timeout(0, 100000); // 100ms timeout
+
+  cli.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_type = err;
+  });
+
+  auto res = cli.Get("/test");
+
+  // Should fail with timeout or connection error
+  EXPECT_FALSE(res);
+  EXPECT_TRUE(res.error() == httplib::Error::ConnectionTimeout ||
+              res.error() == httplib::Error::Connection);
+
+  // Verify error logger was called
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_TRUE(error_type == httplib::Error::ConnectionTimeout ||
+              error_type == httplib::Error::Connection);
+}
+
+TEST(ClientTest, ErrorLoggingSSL) {
+  bool error_logger_called = false;
+  httplib::Error error_type;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  // Try to connect to an invalid SSL endpoint
+  httplib::Client cli("https://invalid-ssl-host.example.com");
+  cli.set_connection_timeout(2, 0);
+
+  cli.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_type = err;
+  });
+
+  auto res = cli.Get("/");
+
+  // Should fail with connection or SSL error
+  EXPECT_FALSE(res);
+
+  if (error_logger_called) {
+    // Verify we got some kind of connection-related error
+    EXPECT_TRUE(error_type == httplib::Error::Connection ||
+                error_type == httplib::Error::SSLConnection ||
+                error_type == httplib::Error::ConnectionTimeout);
+  }
+#else
+  // Skip SSL test if OpenSSL not available
+  GTEST_SKIP() << "SSL support not available";
+#endif
+}
+
+TEST(ClientTest, AccessLoggerNotCalledOnError) {
+  bool access_logger_called = false;
+  bool error_logger_called = false;
+
+  httplib::Client cli("localhost", 9999); // Non-existent server
+  cli.set_connection_timeout(1, 0);
+
+  // Set both loggers
+  cli.set_access_logger([&](const Request &req, const Response &res) {
+    access_logger_called = true;
+  });
+
+  cli.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+  });
+
+  auto res = cli.Get("/test");
+
+  // Verify the request failed
+  EXPECT_FALSE(res);
+
+  // Verify only error logger was called, not access logger
+  EXPECT_FALSE(access_logger_called);
+  EXPECT_TRUE(error_logger_called);
 }
 
 TEST(ZstdDecompressor, ChunkedDecompression) {
@@ -9650,7 +9791,7 @@ TEST(VulnerabilityTest, CRLFInjection) {
     res.set_content("Hello 4", "text/plain");
   });
 
-  svr.set_logger([](const Request &req, const Response & /*res*/) {
+  svr.set_access_logger([](const Request &req, const Response & /*res*/) {
     for (const auto &x : req.headers) {
       auto key = x.first;
       EXPECT_STRNE("evil", key.c_str());

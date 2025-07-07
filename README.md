@@ -269,23 +269,44 @@ svr.set_file_request_handler([](const Request &req, Response &res) {
 
 ### Logging
 
+cpp-httplib provides separate logging capabilities for access logs and error logs, similar to web servers like Nginx and Apache.
+
+#### Access Logging
+
+Access loggers capture successful HTTP requests and responses:
+
 ```cpp
-svr.set_logger([](const auto& req, const auto& res) {
-  your_logger(req, res);
+svr.set_access_logger([](const httplib::Request& req, const httplib::Response& res) {
+  std::cout << req.method << " " << req.path << " -> " << res.status << std::endl;
 });
 ```
 
-You can also set a pre-compression logger to capture request/response data before compression is applied. This is useful for debugging and monitoring purposes when you need to see the original, uncompressed response content:
+#### Pre-compression Logging
+
+You can also set a pre-compression logger to capture request/response data before compression is applied:
 
 ```cpp
-svr.set_pre_compression_logger([](const auto& req, const auto& res) {
+svr.set_pre_compression_logger([](const httplib::Request& req, const httplib::Response& res) {
   // Log before compression - res.body contains uncompressed content
   // Content-Encoding header is not yet set
   your_pre_compression_logger(req, res);
 });
 ```
 
-The pre-compression logger is only called when compression would be applied. For responses without compression, only the regular logger is called.
+The pre-compression logger is only called when compression would be applied. For responses without compression, only the access logger is called.
+
+#### Error Logging
+
+Error loggers capture failed requests and connection issues. Unlike access loggers, error loggers only receive the Request and Error information, as errors typically occur before a meaningful Response can be generated.
+
+```cpp
+svr.set_error_logger([](const httplib::Request& req, const httplib::Error& err) {
+  std::cerr << httplib::to_string(err) << " while processing request"
+            << ", client: " << req.get_header_value("X-Forwarded-For")
+            << ", request: '" << req.method << " " << req.path << " " << req.version << "'"
+            << ", host: " << req.get_header_value("Host") << std::endl;
+});
+```
 
 ### Error handler
 
@@ -716,6 +737,48 @@ enum Error {
   ConnectionTimeout,
   ProxyConnection,
 };
+```
+
+### Client Logging
+
+#### Access Logging
+
+```cpp
+cli.set_access_logger([](const httplib::Request& req, const httplib::Response& res) {
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::steady_clock::now() - start_time).count();
+  std::cout << "✓ " << req.method << " " << req.path
+            << " -> " << res.status << " (" << res.body.size() << " bytes, "
+            << duration << "ms)" << std::endl;
+});
+```
+
+#### Error Logging
+
+```cpp
+cli.set_error_logger([](const httplib::Request& req, const httplib::Error& err) {
+  std::cerr << "✗ " << req.method << " " << req.path
+            << " failed: " << httplib::to_string(err);
+
+  // Add specific guidance based on error type
+  switch (err) {
+    case httplib::Error::Connection:
+      std::cerr << " (verify server is running and reachable)";
+      break;
+    case httplib::Error::SSLConnection:
+      std::cerr << " (check SSL certificate and TLS configuration)";
+      break;
+    case httplib::Error::ConnectionTimeout:
+      std::cerr << " (increase timeout or check network latency)";
+      break;
+    case httplib::Error::Read:
+      std::cerr << " (server may have closed connection prematurely)";
+      break;
+    default:
+      break;
+  }
+  std::cerr << std::endl;
+});
 ```
 
 ### GET with HTTP headers

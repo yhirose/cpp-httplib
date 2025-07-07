@@ -64,7 +64,7 @@ void logger(const Request &req, const Response &res) {
 int main(void) {
   // Server
   Server svr;
-  svr.set_logger(logger);
+  svr.set_access_logger(logger);
 
   svr.Post("/post", [&](const Request & /*req*/, Response &res) {
     res.set_content("POST", "text/plain");

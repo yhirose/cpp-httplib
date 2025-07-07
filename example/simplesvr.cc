@@ -126,7 +126,7 @@ int main(int argc, const char **argv) {
     res.set_content(buf, "text/html");
   });
 
-  svr.set_logger(
+  svr.set_access_logger(
       [](const Request &req, const Response &res) { cout << log(req, res); });
 
   auto port = 8080;

@@ -926,7 +926,11 @@ private:
   std::mutex mutex_;
 };
 
-using Logger = std::function<void(const Request &, const Response &)>;
+using AccessLogger = std::function<void(const Request &, const Response &)>;
+
+// Forward declaration for Error type
+enum class Error;
+using ErrorLogger = std::function<void(const Request &, const Error &)>;
 
 using SocketOptions = std::function<void(socket_t sock)>;
 
@@ -1086,8 +1090,9 @@ public:
   Server &set_pre_request_handler(HandlerWithResponse handler);
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
-  Server &set_logger(Logger logger);
-  Server &set_pre_compression_logger(Logger logger);
+  Server &set_access_logger(AccessLogger access_logger);
+  Server &set_pre_compression_logger(AccessLogger logger);
+  Server &set_error_logger(ErrorLogger error_logger);
 
   Server &set_address_family(int family);
   Server &set_tcp_nodelay(bool on);
@@ -1230,8 +1235,9 @@ private:
   HandlerWithResponse pre_request_handler_;
   Expect100ContinueHandler expect_100_continue_handler_;
 
-  Logger logger_;
-  Logger pre_compression_logger_;
+  AccessLogger access_logger_;
+  AccessLogger pre_compression_logger_;
+  ErrorLogger error_logger_;
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
@@ -1503,7 +1509,8 @@ public:
       std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
 
-  void set_logger(Logger logger);
+  void set_access_logger(AccessLogger access_logger);
+  void set_error_logger(ErrorLogger error_logger);
 
 protected:
   struct Socket {
@@ -1620,7 +1627,8 @@ protected:
   std::function<SSLVerifierResponse(SSL *ssl)> server_certificate_verifier_;
 #endif
 
-  Logger logger_;
+  AccessLogger access_logger_;
+  ErrorLogger error_logger_;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int last_ssl_error_ = 0;
@@ -1846,7 +1854,8 @@ public:
       std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
 
-  void set_logger(Logger logger);
+  void set_access_logger(AccessLogger access_logger);
+  void set_error_logger(ErrorLogger error_logger);
 
   // SSL
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -7050,13 +7059,18 @@ inline Server &Server::set_pre_request_handler(HandlerWithResponse handler) {
   return *this;
 }
 
-inline Server &Server::set_logger(Logger logger) {
-  logger_ = std::move(logger);
+inline Server &Server::set_pre_compression_logger(AccessLogger logger) {
+  pre_compression_logger_ = std::move(logger);
   return *this;
 }
 
-inline Server &Server::set_pre_compression_logger(Logger logger) {
-  pre_compression_logger_ = std::move(logger);
+inline Server &Server::set_access_logger(AccessLogger access_logger) {
+  access_logger_ = std::move(access_logger);
+  return *this;
+}
+
+inline Server &Server::set_error_logger(ErrorLogger error_logger) {
+  error_logger_ = std::move(error_logger);
   return *this;
 }
 
@@ -7303,7 +7317,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   }
 
   // Log
-  if (logger_) { logger_(req, res); }
+  if (access_logger_) { access_logger_(req, res); }
 
   return ret;
 }
@@ -8136,7 +8150,8 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   server_hostname_verification_ = rhs.server_hostname_verification_;
   server_certificate_verifier_ = rhs.server_certificate_verifier_;
 #endif
-  logger_ = rhs.logger_;
+  access_logger_ = rhs.access_logger_;
+  error_logger_ = rhs.error_logger_;
 }
 
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
@@ -8279,7 +8294,10 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     }
 
     if (!is_alive) {
-      if (!create_and_connect_socket(socket_, error)) { return false; }
+      if (!create_and_connect_socket(socket_, error)) {
+        if (error_logger_) { error_logger_(req, error); }
+        return false;
+      }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       // TODO: refactoring
@@ -8289,11 +8307,15 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
           auto success = false;
           if (!scli.connect_with_proxy(socket_, req.start_time_, res, success,
                                        error)) {
+            if (!success && error_logger_) { error_logger_(req, error); }
             return success;
           }
         }
 
-        if (!scli.initialize_ssl(socket_, error)) { return false; }
+        if (!scli.initialize_ssl(socket_, error)) {
+          if (error_logger_) { error_logger_(req, error); }
+          return false;
+        }
       }
 #endif
     }
@@ -8340,6 +8362,8 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 
   if (!ret) {
     if (error == Error::Success) { error = Error::Unknown; }
+
+    if (error_logger_) { error_logger_(req, error); }
   }
 
   return ret;
@@ -8616,7 +8640,8 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   if (!interface_.empty()) { client.set_interface(interface_); }
 
   // Copy logging and headers
-  if (logger_) { client.set_logger(logger_); }
+  if (access_logger_) { client.set_access_logger(access_logger_); }
+  if (error_logger_) { client.set_error_logger(error_logger_); }
 
   // NOTE: DO NOT copy default_headers_ as they may contain stale Host headers
   // Each new client should generate its own headers based on its target host
@@ -9009,7 +9034,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   }
 
   // Log
-  if (logger_) { logger_(req, res); }
+  if (access_logger_) { access_logger_(req, res); }
 
   return true;
 }
@@ -9909,8 +9934,12 @@ inline void ClientImpl::set_server_certificate_verifier(
 }
 #endif
 
-inline void ClientImpl::set_logger(Logger logger) {
-  logger_ = std::move(logger);
+inline void ClientImpl::set_access_logger(AccessLogger access_logger) {
+  access_logger_ = std::move(access_logger);
+}
+
+inline void ClientImpl::set_error_logger(ErrorLogger error_logger) {
+  error_logger_ = std::move(error_logger);
 }
 
 /*
@@ -11323,8 +11352,12 @@ inline void Client::set_server_certificate_verifier(
 }
 #endif
 
-inline void Client::set_logger(Logger logger) {
-  cli_->set_logger(std::move(logger));
+inline void Client::set_access_logger(AccessLogger access_logger) {
+  cli_->set_access_logger(std::move(access_logger));
+}
+
+inline void Client::set_error_logger(ErrorLogger error_logger) {
+  cli_->set_error_logger(std::move(error_logger));
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
