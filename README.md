@@ -379,9 +379,7 @@ svr.Post("/form", [&](const auto& req, auto& res) {
 #### 'multipart/form-data' POST data
 
 ```cpp
-svr.Post("/multipart", [&](const auto& req, auto& res) {
-  // New structured form data API provides clear separation between text fields and files
-
+svr.Post("/multipart", [&](const Request& req, Response& res) {
   // Access text fields (from form inputs without files)
   std::string username = req.form.get_field("username");
   std::string bio = req.form.get_field("bio");
@@ -445,7 +443,7 @@ svr.Post("/content_receiver",
       // This approach allows streaming processing of large files
       FormFileItems items;
       content_reader(
-        [&](const FormFile &item) {
+        [&](const FormData &item) {
           items.push_back(item);
           return true;
         },
@@ -770,7 +768,7 @@ auto res = cli.Post("/post", params);
 ### POST with Multipart Form Data
 
 ```c++
-httplib::FormDataInputItems items = {
+httplib::UploadFormDataItems items = {
   { "text1", "text default", "", "" },
   { "text2", "aωb", "", "" },
   { "file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain" },
