@@ -13,7 +13,7 @@ project(
     'b_lto=true',
     'warning_level=3'
   ],
-  meson_version: '>=0.62.0'
+  meson_version: '>=0.63.0'
 )
 
 cxx = meson.get_compiler('cpp')
