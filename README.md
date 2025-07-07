@@ -441,7 +441,7 @@ svr.Post("/content_receiver",
     if (req.is_multipart_form_data()) {
       // NOTE: `content_reader` is blocking until every form data field is read
       // This approach allows streaming processing of large files
-      FormFileItems items;
+      std::vector<FormData> items;
       content_reader(
         [&](const FormData &item) {
           items.push_back(item);

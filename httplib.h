@@ -578,7 +578,7 @@ using FormFields = std::multimap<std::string, FormField>;
 
 using FormFiles = std::multimap<std::string, FormData>;
 
-struct Form {
+struct MultipartFormData {
   FormFields fields; // Text fields from multipart
   FormFiles files;   // Files from multipart
 
@@ -702,7 +702,7 @@ struct Request {
   // for server
   std::string version;
   std::string target;
-  Form form;
+  MultipartFormData form;
   Ranges ranges;
   Match matches;
   std::unordered_map<std::string, std::string> path_params;
@@ -6380,7 +6380,8 @@ Request::get_file_values(const std::string &key) const {
 }
 
 // Multipart FormData implementation
-inline std::string Form::get_field(const std::string &key, size_t id) const {
+inline std::string MultipartFormData::get_field(const std::string &key,
+                                                size_t id) const {
   auto rng = fields.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
@@ -6388,7 +6389,8 @@ inline std::string Form::get_field(const std::string &key, size_t id) const {
   return std::string();
 }
 
-inline std::vector<std::string> Form::get_fields(const std::string &key) const {
+inline std::vector<std::string>
+MultipartFormData::get_fields(const std::string &key) const {
   std::vector<std::string> values;
   auto rng = fields.equal_range(key);
   for (auto it = rng.first; it != rng.second; it++) {
@@ -6397,16 +6399,17 @@ inline std::vector<std::string> Form::get_fields(const std::string &key) const {
   return values;
 }
 
-inline bool Form::has_field(const std::string &key) const {
+inline bool MultipartFormData::has_field(const std::string &key) const {
   return fields.find(key) != fields.end();
 }
 
-inline size_t Form::get_field_count(const std::string &key) const {
+inline size_t MultipartFormData::get_field_count(const std::string &key) const {
   auto r = fields.equal_range(key);
   return static_cast<size_t>(std::distance(r.first, r.second));
 }
 
-inline FormData Form::get_file(const std::string &key, size_t id) const {
+inline FormData MultipartFormData::get_file(const std::string &key,
+                                            size_t id) const {
   auto rng = files.equal_range(key);
   auto it = rng.first;
   std::advance(it, static_cast<ssize_t>(id));
@@ -6414,7 +6417,8 @@ inline FormData Form::get_file(const std::string &key, size_t id) const {
   return FormData();
 }
 
-inline std::vector<FormData> Form::get_files(const std::string &key) const {
+inline std::vector<FormData>
+MultipartFormData::get_files(const std::string &key) const {
   std::vector<FormData> values;
   auto rng = files.equal_range(key);
   for (auto it = rng.first; it != rng.second; it++) {
@@ -6423,11 +6427,11 @@ inline std::vector<FormData> Form::get_files(const std::string &key) const {
   return values;
 }
 
-inline bool Form::has_file(const std::string &key) const {
+inline bool MultipartFormData::has_file(const std::string &key) const {
   return files.find(key) != files.end();
 }
 
-inline size_t Form::get_file_count(const std::string &key) const {
+inline size_t MultipartFormData::get_file_count(const std::string &key) const {
   auto r = files.equal_range(key);
   return static_cast<size_t>(std::distance(r.first, r.second));
 }

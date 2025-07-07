@@ -27,13 +27,26 @@ string dump_headers(const Headers &headers) {
   return s;
 }
 
-string dump_multipart_files(const MultipartFormDataMap &files) {
+string dump_multipart_formdata(const MultipartFormData &form) {
   string s;
   char buf[BUFSIZ];
 
   s += "--------------------------------\n";
 
-  for (const auto &x : files) {
+  for (const auto &x : form.fields) {
+    const auto &name = x.first;
+    const auto &field = x.second;
+
+    snprintf(buf, sizeof(buf), "name: %s\n", name.c_str());
+    s += buf;
+
+    snprintf(buf, sizeof(buf), "text length: %zu\n", field.content.size());
+    s += buf;
+
+    s += "----------------\n";
+  }
+
+  for (const auto &x : form.files) {
     const auto &name = x.first;
     const auto &file = x.second;
 
@@ -77,7 +90,7 @@ string log(const Request &req, const Response &res) {
   s += buf;
 
   s += dump_headers(req.headers);
-  s += dump_multipart_files(req.files);
+  s += dump_multipart_formdata(req.form);
 
   s += "--------------------------------\n";
 
@@ -101,7 +114,7 @@ int main(int argc, const char **argv) {
 #endif
 
   svr.Post("/multipart", [](const Request &req, Response &res) {
-    auto body = dump_headers(req.headers) + dump_multipart_files(req.files);
+    auto body = dump_headers(req.headers) + dump_multipart_formdata(req.form);
 
     res.set_content(body, "text/plain");
   });

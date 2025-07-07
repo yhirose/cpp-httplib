@@ -55,14 +55,14 @@ const std::string JSON_DATA = "{\"hello\":\"world\"}";
 
 const string LARGE_DATA = string(1024 * 1024 * 100, '@'); // 100MB
 
-FormData &get_file_value(std::vector<FormData> &files, const char *key) {
-  auto it = std::find_if(files.begin(), files.end(), [&](const FormData &file) {
+FormData &get_file_value(std::vector<FormData> &items, const char *key) {
+  auto it = std::find_if(items.begin(), items.end(), [&](const FormData &file) {
     return file.name == key;
   });
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
   return *it;
 #else
-  if (it != files.end()) { return *it; }
+  if (it != items.end()) { return *it; }
   throw std::runtime_error("invalid multipart form data name error");
 #endif
 }
@@ -3200,47 +3200,47 @@ protected:
               [&](const Request &req, Response &res,
                   const ContentReader &content_reader) {
                 if (req.is_multipart_form_data()) {
-                  std::vector<FormData> files;
+                  std::vector<FormData> items;
                   content_reader(
                       [&](const FormData &file) {
-                        files.push_back(file);
+                        items.push_back(file);
                         return true;
                       },
                       [&](const char *data, size_t data_length) {
-                        files.back().content.append(data, data_length);
+                        items.back().content.append(data, data_length);
                         return true;
                       });
 
-                  EXPECT_EQ(5u, files.size());
+                  EXPECT_EQ(5u, items.size());
 
                   {
-                    const auto &file = get_file_value(files, "text1");
+                    const auto &file = get_file_value(items, "text1");
                     EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("text default", file.content);
                   }
 
                   {
-                    const auto &file = get_file_value(files, "text2");
+                    const auto &file = get_file_value(items, "text2");
                     EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("aωb", file.content);
                   }
 
                   {
-                    const auto &file = get_file_value(files, "file1");
+                    const auto &file = get_file_value(items, "file1");
                     EXPECT_EQ("hello.txt", file.filename);
                     EXPECT_EQ("text/plain", file.content_type);
                     EXPECT_EQ("h\ne\n\nl\nl\no\n", file.content);
                   }
 
                   {
-                    const auto &file = get_file_value(files, "file2");
+                    const auto &file = get_file_value(items, "file2");
                     EXPECT_EQ("world.json", file.filename);
                     EXPECT_EQ("application/json", file.content_type);
                     EXPECT_EQ(R"({\n  "world": true\n}\n)", file.content);
                   }
 
                   {
-                    const auto &file = get_file_value(files, "file3");
+                    const auto &file = get_file_value(items, "file3");
                     EXPECT_TRUE(file.filename.empty());
                     EXPECT_EQ("application/octet-stream", file.content_type);
                     EXPECT_EQ(0u, file.content.size());
@@ -8504,26 +8504,26 @@ TEST(MultipartFormDataTest, LargeData) {
   svr.Post("/post", [&](const Request &req, Response & /*res*/,
                         const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      std::vector<FormData> files;
+      std::vector<FormData> items;
       content_reader(
           [&](const FormData &file) {
-            files.push_back(file);
+            items.push_back(file);
             return true;
           },
           [&](const char *data, size_t data_length) {
-            files.back().content.append(data, data_length);
+            items.back().content.append(data, data_length);
             return true;
           });
 
-      EXPECT_TRUE(std::string(files[0].name) == "document");
-      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
-      EXPECT_TRUE(files[0].filename == "2MB_data");
-      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+      EXPECT_TRUE(std::string(items[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), items[0].content.size());
+      EXPECT_TRUE(items[0].filename == "2MB_data");
+      EXPECT_TRUE(items[0].content_type == "application/octet-stream");
 
-      EXPECT_TRUE(files[1].name == "hello");
-      EXPECT_TRUE(files[1].content == "world");
-      EXPECT_TRUE(files[1].filename == "");
-      EXPECT_TRUE(files[1].content_type == "");
+      EXPECT_TRUE(items[1].name == "hello");
+      EXPECT_TRUE(items[1].content == "world");
+      EXPECT_TRUE(items[1].filename == "");
+      EXPECT_TRUE(items[1].content_type == "");
     } else {
       std::string body;
       content_reader([&](const char *data, size_t data_length) {
@@ -8592,92 +8592,92 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   svr.Post("/post-items", [&](const Request &req, Response & /*res*/,
                               const ContentReader &content_reader) {
     ASSERT_TRUE(req.is_multipart_form_data());
-    std::vector<FormData> files;
+    std::vector<FormData> items;
     content_reader(
         [&](const FormData &file) {
-          files.push_back(file);
+          items.push_back(file);
           return true;
         },
         [&](const char *data, size_t data_length) {
-          files.back().content.append(data, data_length);
+          items.back().content.append(data, data_length);
           return true;
         });
 
-    ASSERT_TRUE(files.size() == 2);
+    ASSERT_TRUE(items.size() == 2);
 
-    EXPECT_EQ(std::string(files[0].name), "name1");
-    EXPECT_EQ(files[0].content, "Testing123");
-    EXPECT_EQ(files[0].filename, "filename1");
-    EXPECT_EQ(files[0].content_type, "application/octet-stream");
+    EXPECT_EQ(std::string(items[0].name), "name1");
+    EXPECT_EQ(items[0].content, "Testing123");
+    EXPECT_EQ(items[0].filename, "filename1");
+    EXPECT_EQ(items[0].content_type, "application/octet-stream");
 
-    EXPECT_EQ(files[1].name, "name2");
-    EXPECT_EQ(files[1].content, "Testing456");
-    EXPECT_EQ(files[1].filename, "");
-    EXPECT_EQ(files[1].content_type, "");
+    EXPECT_EQ(items[1].name, "name2");
+    EXPECT_EQ(items[1].content, "Testing456");
+    EXPECT_EQ(items[1].filename, "");
+    EXPECT_EQ(items[1].content_type, "");
   });
 
   svr.Post("/post-providers", [&](const Request &req, Response & /*res*/,
                                   const ContentReader &content_reader) {
     ASSERT_TRUE(req.is_multipart_form_data());
-    std::vector<FormData> files;
+    std::vector<FormData> items;
     content_reader(
         [&](const FormData &file) {
-          files.push_back(file);
+          items.push_back(file);
           return true;
         },
         [&](const char *data, size_t data_length) {
-          files.back().content.append(data, data_length);
+          items.back().content.append(data, data_length);
           return true;
         });
 
-    ASSERT_TRUE(files.size() == 2);
+    ASSERT_TRUE(items.size() == 2);
 
-    EXPECT_EQ(files[0].name, "name3");
-    EXPECT_EQ(files[0].content, rand1);
-    EXPECT_EQ(files[0].filename, "filename3");
-    EXPECT_EQ(files[0].content_type, "");
+    EXPECT_EQ(items[0].name, "name3");
+    EXPECT_EQ(items[0].content, rand1);
+    EXPECT_EQ(items[0].filename, "filename3");
+    EXPECT_EQ(items[0].content_type, "");
 
-    EXPECT_EQ(files[1].name, "name4");
-    EXPECT_EQ(files[1].content, rand2);
-    EXPECT_EQ(files[1].filename, "filename4");
-    EXPECT_EQ(files[1].content_type, "");
+    EXPECT_EQ(items[1].name, "name4");
+    EXPECT_EQ(items[1].content, rand2);
+    EXPECT_EQ(items[1].filename, "filename4");
+    EXPECT_EQ(items[1].content_type, "");
   });
 
   svr.Post("/post-both", [&](const Request &req, Response & /*res*/,
                              const ContentReader &content_reader) {
     ASSERT_TRUE(req.is_multipart_form_data());
-    std::vector<FormData> files;
+    std::vector<FormData> items;
     content_reader(
         [&](const FormData &file) {
-          files.push_back(file);
+          items.push_back(file);
           return true;
         },
         [&](const char *data, size_t data_length) {
-          files.back().content.append(data, data_length);
+          items.back().content.append(data, data_length);
           return true;
         });
 
-    ASSERT_TRUE(files.size() == 4);
+    ASSERT_TRUE(items.size() == 4);
 
-    EXPECT_EQ(std::string(files[0].name), "name1");
-    EXPECT_EQ(files[0].content, "Testing123");
-    EXPECT_EQ(files[0].filename, "filename1");
-    EXPECT_EQ(files[0].content_type, "application/octet-stream");
+    EXPECT_EQ(std::string(items[0].name), "name1");
+    EXPECT_EQ(items[0].content, "Testing123");
+    EXPECT_EQ(items[0].filename, "filename1");
+    EXPECT_EQ(items[0].content_type, "application/octet-stream");
 
-    EXPECT_EQ(files[1].name, "name2");
-    EXPECT_EQ(files[1].content, "Testing456");
-    EXPECT_EQ(files[1].filename, "");
-    EXPECT_EQ(files[1].content_type, "");
+    EXPECT_EQ(items[1].name, "name2");
+    EXPECT_EQ(items[1].content, "Testing456");
+    EXPECT_EQ(items[1].filename, "");
+    EXPECT_EQ(items[1].content_type, "");
 
-    EXPECT_EQ(files[2].name, "name3");
-    EXPECT_EQ(files[2].content, rand1);
-    EXPECT_EQ(files[2].filename, "filename3");
-    EXPECT_EQ(files[2].content_type, "");
+    EXPECT_EQ(items[2].name, "name3");
+    EXPECT_EQ(items[2].content, rand1);
+    EXPECT_EQ(items[2].filename, "filename3");
+    EXPECT_EQ(items[2].content_type, "");
 
-    EXPECT_EQ(files[3].name, "name4");
-    EXPECT_EQ(files[3].content, rand2);
-    EXPECT_EQ(files[3].filename, "filename4");
-    EXPECT_EQ(files[3].content_type, "");
+    EXPECT_EQ(items[3].name, "name4");
+    EXPECT_EQ(items[3].content, rand2);
+    EXPECT_EQ(items[3].filename, "filename4");
+    EXPECT_EQ(items[3].content_type, "");
   });
 
   auto t = std::thread([&]() { svr.listen("localhost", 8080); });
@@ -8852,26 +8852,26 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
   svr.Post("/post_customboundary", [&](const Request &req, Response & /*res*/,
                                        const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      std::vector<FormData> files;
+      std::vector<FormData> items;
       content_reader(
           [&](const FormData &file) {
-            files.push_back(file);
+            items.push_back(file);
             return true;
           },
           [&](const char *data, size_t data_length) {
-            files.back().content.append(data, data_length);
+            items.back().content.append(data, data_length);
             return true;
           });
 
-      EXPECT_TRUE(std::string(files[0].name) == "document");
-      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
-      EXPECT_TRUE(files[0].filename == "2MB_data");
-      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+      EXPECT_TRUE(std::string(items[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), items[0].content.size());
+      EXPECT_TRUE(items[0].filename == "2MB_data");
+      EXPECT_TRUE(items[0].content_type == "application/octet-stream");
 
-      EXPECT_TRUE(files[1].name == "hello");
-      EXPECT_TRUE(files[1].content == "world");
-      EXPECT_TRUE(files[1].filename == "");
-      EXPECT_TRUE(files[1].content_type == "");
+      EXPECT_TRUE(items[1].name == "hello");
+      EXPECT_TRUE(items[1].content == "world");
+      EXPECT_TRUE(items[1].filename == "");
+      EXPECT_TRUE(items[1].content_type == "");
     } else {
       std::string body;
       content_reader([&](const char *data, size_t data_length) {
@@ -8935,26 +8935,26 @@ TEST(MultipartFormDataTest, PutFormData) {
   svr.Put("/put", [&](const Request &req, const Response & /*res*/,
                       const ContentReader &content_reader) {
     if (req.is_multipart_form_data()) {
-      std::vector<FormData> files;
+      std::vector<FormData> items;
       content_reader(
           [&](const FormData &file) {
-            files.push_back(file);
+            items.push_back(file);
             return true;
           },
           [&](const char *data, size_t data_length) {
-            files.back().content.append(data, data_length);
+            items.back().content.append(data, data_length);
             return true;
           });
 
-      EXPECT_TRUE(std::string(files[0].name) == "document");
-      EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
-      EXPECT_TRUE(files[0].filename == "2MB_data");
-      EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+      EXPECT_TRUE(std::string(items[0].name) == "document");
+      EXPECT_EQ(size_t(1024 * 1024 * 2), items[0].content.size());
+      EXPECT_TRUE(items[0].filename == "2MB_data");
+      EXPECT_TRUE(items[0].content_type == "application/octet-stream");
 
-      EXPECT_TRUE(files[1].name == "hello");
-      EXPECT_TRUE(files[1].content == "world");
-      EXPECT_TRUE(files[1].filename == "");
-      EXPECT_TRUE(files[1].content_type == "");
+      EXPECT_TRUE(items[1].name == "hello");
+      EXPECT_TRUE(items[1].content == "world");
+      EXPECT_TRUE(items[1].filename == "");
+      EXPECT_TRUE(items[1].content_type == "");
     } else {
       std::string body;
       content_reader([&](const char *data, size_t data_length) {
@@ -8999,26 +8999,26 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
           [&](const Request &req, const Response & /*res*/,
               const ContentReader &content_reader) {
             if (req.is_multipart_form_data()) {
-              std::vector<FormData> files;
+              std::vector<FormData> items;
               content_reader(
                   [&](const FormData &file) {
-                    files.push_back(file);
+                    items.push_back(file);
                     return true;
                   },
                   [&](const char *data, size_t data_length) {
-                    files.back().content.append(data, data_length);
+                    items.back().content.append(data, data_length);
                     return true;
                   });
 
-              EXPECT_TRUE(std::string(files[0].name) == "document");
-              EXPECT_EQ(size_t(1024 * 1024 * 2), files[0].content.size());
-              EXPECT_TRUE(files[0].filename == "2MB_data");
-              EXPECT_TRUE(files[0].content_type == "application/octet-stream");
+              EXPECT_TRUE(std::string(items[0].name) == "document");
+              EXPECT_EQ(size_t(1024 * 1024 * 2), items[0].content.size());
+              EXPECT_TRUE(items[0].filename == "2MB_data");
+              EXPECT_TRUE(items[0].content_type == "application/octet-stream");
 
-              EXPECT_TRUE(files[1].name == "hello");
-              EXPECT_TRUE(files[1].content == "world");
-              EXPECT_TRUE(files[1].filename == "");
-              EXPECT_TRUE(files[1].content_type == "");
+              EXPECT_TRUE(items[1].name == "hello");
+              EXPECT_TRUE(items[1].content == "world");
+              EXPECT_TRUE(items[1].filename == "");
+              EXPECT_TRUE(items[1].content_type == "");
             } else {
               std::string body;
               content_reader([&](const char *data, size_t data_length) {
