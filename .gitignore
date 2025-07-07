@@ -42,4 +42,4 @@ ipch
 *.pyc
 .*
 !/.gitattributes
-!/.travis.yml
+!/.github
