@@ -54,6 +54,8 @@ proxy : test_proxy
 	@echo "Starting proxy server..."
 	cd proxy && \
 	docker compose up -d
+	@echo "Waiting for proxy to be ready..."
+	@until nc -z localhost 3128 && nc -z localhost 3129; do sleep 1; done
 	@echo "Running proxy tests..."
 	./test_proxy; \
 	exit_code=$$?; \

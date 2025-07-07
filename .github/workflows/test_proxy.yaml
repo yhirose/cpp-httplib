@@ -13,7 +13,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libssl-dev zlib1g-dev libcurl4-openssl-dev libbrotli-dev libzstd-dev
+        sudo apt-get install -y build-essential libssl-dev zlib1g-dev libcurl4-openssl-dev libbrotli-dev libzstd-dev netcat
         
     - name: Run proxy tests
       run: |
