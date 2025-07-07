@@ -37,8 +37,8 @@ int main(void) {
   });
 
   svr.Post("/post", [](const Request &req, Response &res) {
-    auto image_file = req.get_file_value("image_file");
-    auto text_file = req.get_file_value("text_file");
+    const auto &image_file = req.form.get_file("image_file");
+    const auto &text_file = req.form.get_file("text_file");
 
     cout << "image file length: " << image_file.content.length() << endl
          << "image file name: " << image_file.filename << endl

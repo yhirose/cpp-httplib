@@ -732,10 +732,6 @@ struct Request {
 
   bool is_multipart_form_data() const;
 
-  bool has_file(const std::string &key) const;
-  FormData get_file_value(const std::string &key) const;
-  std::vector<FormData> get_file_values(const std::string &key) const;
-
   // private members...
   size_t redirect_count_ = CPPHTTPLIB_REDIRECT_MAX_COUNT;
   size_t content_length_ = 0;
@@ -6364,19 +6360,6 @@ inline size_t Request::get_param_value_count(const std::string &key) const {
 inline bool Request::is_multipart_form_data() const {
   const auto &content_type = get_header_value("Content-Type");
   return !content_type.rfind("multipart/form-data", 0);
-}
-
-inline bool Request::has_file(const std::string &key) const {
-  return form.has_file(key);
-}
-
-inline FormData Request::get_file_value(const std::string &key) const {
-  return form.get_file(key);
-}
-
-inline std::vector<FormData>
-Request::get_file_values(const std::string &key) const {
-  return form.get_files(key);
 }
 
 // Multipart FormData implementation
