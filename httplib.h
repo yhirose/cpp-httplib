@@ -192,11 +192,7 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-#ifdef _WIN64
 using ssize_t = __int64;
-#else
-using ssize_t = long;
-#endif
 #endif // _MSC_VER
 
 #ifndef S_ISREG
