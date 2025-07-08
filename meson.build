@@ -16,11 +16,12 @@ project(
   meson_version: '>=0.62.0'
 )
 
+cxx = meson.get_compiler('cpp')
+
 # Check just in case downstream decides to edit the source
 # and add a project version
 version = meson.project_version()
 if version == 'undefined'
-  cxx = meson.get_compiler('cpp')
   version = cxx.get_define('CPPHTTPLIB_VERSION',
     prefix: '#include <httplib.h>',
     include_directories: include_directories('.')).strip('"')
@@ -63,6 +64,21 @@ endforeach
 if brotli_found_all
   deps += brotli_deps
   args += '-DCPPHTTPLIB_BROTLI_SUPPORT'
+endif
+
+async_ns_opt = get_option('cpp-httplib_non_blocking_getaddrinfo')
+
+if host_machine.system() == 'windows'
+  async_ns_dep = cxx.find_library('ws2_32', required: async_ns_opt)
+elif host_machine.system() == 'darwin'
+  async_ns_dep = dependency('appleframeworks', modules: ['CFNetwork'], required: async_ns_opt)
+else
+  async_ns_dep = cxx.find_library('anl', required: async_ns_opt)
+endif
+
+if async_ns_dep.found()
+  deps += async_ns_dep
+  args += '-DCPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO'
 endif
 
 cpp_httplib_dep = dependency('', required: false)
