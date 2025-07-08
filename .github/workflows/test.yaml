@@ -40,6 +40,34 @@ jobs:
           clang-format --version
           cd test && make style_check
 
+  build-error-check-on-32bit:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    strategy:
+      matrix:
+        config:
+        - arch_flags: -m32
+          arch_suffix: :i386
+          name: (32-bit)
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install libraries
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y libc6-dev${{ matrix.config.arch_suffix }} libstdc++-13-dev${{ matrix.config.arch_suffix }} \
+            libssl-dev${{ matrix.config.arch_suffix }} libcurl4-openssl-dev${{ matrix.config.arch_suffix }} \
+            zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }} \
+            libzstd-dev${{ matrix.config.arch_suffix }}
+      - name: build and run tests (expect failure)
+        run: cd test && make test EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}"
+        continue-on-error: true
+
   ubuntu:
     runs-on: ubuntu-latest
     if: >
