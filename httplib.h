@@ -11,6 +11,21 @@
 #define CPPHTTPLIB_VERSION "0.22.0"
 
 /*
+ * Platform compatibility check
+ */
+
+#if defined(_WIN32) && !defined(_WIN64)
+#error                                                                         \
+    "cpp-httplib doesn't support 32-bit Windows. Please use a 64-bit compiler."
+#elif defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ < 8
+#error                                                                         \
+    "cpp-httplib doesn't support 32-bit platforms. Please use a 64-bit compiler."
+#elif defined(__SIZEOF_SIZE_T__) && __SIZEOF_SIZE_T__ < 8
+#error                                                                         \
+    "cpp-httplib doesn't support platforms where size_t is less than 64 bits."
+#endif
+
+/*
  * Configuration
  */
 
@@ -177,11 +192,7 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-#ifdef _WIN64
 using ssize_t = __int64;
-#else
-using ssize_t = long;
-#endif
 #endif // _MSC_VER
 
 #ifndef S_ISREG
