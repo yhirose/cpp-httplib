@@ -1182,12 +1182,13 @@ private:
   void apply_ranges(const Request &req, Response &res,
                     std::string &content_type, std::string &boundary) const;
   bool write_response(Stream &strm, bool close_connection, Request &req,
-                      Response &res);
+                      Response &res, Error error);
   bool write_response_with_content(Stream &strm, bool close_connection,
-                                   const Request &req, Response &res);
+                                   const Request &req, Response &res,
+                                   Error error);
   bool write_response_core(Stream &strm, bool close_connection,
                            const Request &req, Response &res,
-                           bool need_apply_ranges);
+                           bool need_apply_ranges, Error error);
   bool write_content_with_provider(Stream &strm, const Request &req,
                                    Response &res, const std::string &boundary,
                                    const std::string &content_type);
@@ -7234,23 +7235,23 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
 }
 
 inline bool Server::write_response(Stream &strm, bool close_connection,
-                                   Request &req, Response &res) {
+                                   Request &req, Response &res, Error error) {
   // NOTE: `req.ranges` should be empty, otherwise it will be applied
   // incorrectly to the error content.
   req.ranges.clear();
-  return write_response_core(strm, close_connection, req, res, false);
+  return write_response_core(strm, close_connection, req, res, false, error);
 }
 
 inline bool Server::write_response_with_content(Stream &strm,
                                                 bool close_connection,
                                                 const Request &req,
-                                                Response &res) {
-  return write_response_core(strm, close_connection, req, res, true);
+                                                Response &res, Error error) {
+  return write_response_core(strm, close_connection, req, res, true, error);
 }
 
 inline bool Server::write_response_core(Stream &strm, bool close_connection,
                                         const Request &req, Response &res,
-                                        bool need_apply_ranges) {
+                                        bool need_apply_ranges, Error error) {
   assert(res.status != -1);
 
   if (400 <= res.status && error_handler_ &&
@@ -7318,6 +7319,11 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   // Log
   if (access_logger_) { access_logger_(req, res); }
+
+  if ((error != Error::Success || !ret) && error_logger_) {
+    Error final_error = error != Error::Success ? error : Error::Write;
+    error_logger_(req, final_error);
+  }
 
   return ret;
 }
@@ -7892,7 +7898,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   if (!parse_request_line(line_reader.ptr(), req) ||
       !detail::read_headers(strm, req.headers)) {
     res.status = StatusCode::BadRequest_400;
-    return write_response(strm, close_connection, req, res);
+    return write_response(strm, close_connection, req, res, Error::Read);
   }
 
   // Check if the request URI doesn't exceed the limit
@@ -7900,7 +7906,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     Headers dummy;
     detail::read_headers(strm, dummy);
     res.status = StatusCode::UriTooLong_414;
-    return write_response(strm, close_connection, req, res);
+    return write_response(strm, close_connection, req, res, Error::Read);
   }
 
   if (req.get_header_value("Connection") == "close") {
@@ -7926,7 +7932,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     const auto &accept_header = req.get_header_value("Accept");
     if (!detail::parse_accept_header(accept_header, req.accept_content_types)) {
       res.status = StatusCode::BadRequest_400;
-      return write_response(strm, close_connection, req, res);
+      return write_response(strm, close_connection, req, res, Error::Success);
     }
   }
 
@@ -7934,7 +7940,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     const auto &range_header_value = req.get_header_value("Range");
     if (!detail::parse_range_header(range_header_value, req.ranges)) {
       res.status = StatusCode::RangeNotSatisfiable_416;
-      return write_response(strm, close_connection, req, res);
+      return write_response(strm, close_connection, req, res, Error::Success);
     }
   }
 
@@ -7953,7 +7959,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       break;
     default:
       connection_closed = true;
-      return write_response(strm, true, req, res);
+      return write_response(strm, true, req, res, Error::Success);
     }
   }
 
@@ -8014,7 +8020,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         res.content_length_ = 0;
         res.content_provider_ = nullptr;
         res.status = StatusCode::NotFound_404;
-        return write_response(strm, close_connection, req, res);
+        return write_response(strm, close_connection, req, res, Error::Success);
       }
 
       auto content_type = res.file_content_content_type_;
@@ -8036,14 +8042,20 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       res.content_length_ = 0;
       res.content_provider_ = nullptr;
       res.status = StatusCode::RangeNotSatisfiable_416;
-      return write_response(strm, close_connection, req, res);
+      return write_response(strm, close_connection, req, res, Error::Success);
     }
 
-    return write_response_with_content(strm, close_connection, req, res);
+    return write_response_with_content(strm, close_connection, req, res,
+                                       Error::Success);
   } else {
-    if (res.status == -1) { res.status = StatusCode::NotFound_404; }
-
-    return write_response(strm, close_connection, req, res);
+    if (res.status == -1) {
+      res.status = StatusCode::NotFound_404;
+      return write_response(strm, close_connection, req, res, Error::Success);
+    } else {
+      // Status was set by routing (e.g., read error), preserve it and log as
+      // read error
+      return write_response(strm, close_connection, req, res, Error::Read);
+    }
   }
 }
 

@@ -6092,7 +6092,7 @@ TEST_F(ServerTest, PreCompressionLogging) {
   });
 
   // Set up post-compression logger
-  svr_.set_access_logger([&](const Request &req, const Response &res) {
+  svr_.set_access_logger([&](const Request & /*req*/, const Response &res) {
     post_compression_body = res.body;
     post_compression_content_type = res.get_header_value("Content-Type");
     post_compression_content_encoding =
@@ -6134,11 +6134,12 @@ TEST_F(ServerTest, PreCompressionLoggingWithBrotli) {
   std::string pre_compression_body;
   std::string post_compression_body;
 
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
-    pre_compression_body = res.body;
-  });
+  svr_.set_pre_compression_logger(
+      [&](const Request & /*req*/, const Response &res) {
+        pre_compression_body = res.body;
+      });
 
-  svr_.set_access_logger([&](const Request &req, const Response &res) {
+  svr_.set_access_logger([&](const Request & /*req*/, const Response &res) {
     post_compression_body = res.body;
   });
 
@@ -6167,11 +6168,12 @@ TEST_F(ServerTest, PreCompressionLoggingWithoutCompression) {
   std::string pre_compression_body;
   std::string post_compression_body;
 
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
-    pre_compression_body = res.body;
-  });
+  svr_.set_pre_compression_logger(
+      [&](const Request & /*req*/, const Response &res) {
+        pre_compression_body = res.body;
+      });
 
-  svr_.set_access_logger([&](const Request &req, const Response &res) {
+  svr_.set_access_logger([&](const Request & /*req*/, const Response &res) {
     post_compression_body = res.body;
   });
 
@@ -6200,10 +6202,11 @@ TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
   bool pre_logger_called = false;
 
   // Set only pre-compression logger
-  svr_.set_pre_compression_logger([&](const Request &req, const Response &res) {
-    pre_compression_body = res.body;
-    pre_logger_called = true;
-  });
+  svr_.set_pre_compression_logger(
+      [&](const Request & /*req*/, const Response &res) {
+        pre_compression_body = res.body;
+        pre_logger_called = true;
+      });
 
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip");
@@ -6247,6 +6250,400 @@ TEST_F(ServerTest, ErrorLogging) {
   // This test demonstrates the client-side error scenario
 }
 
+TEST(ServerErrorLoggingTest, ErrorLoggingOnSocketClose) {
+  bool error_logger_called = false;
+  bool access_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  const int test_port = 8765; // Use a different port to avoid conflicts
+
+  httplib::Server svr;
+
+  // Set error logger
+  svr.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  // Set access logger to verify request processing
+  svr.set_access_logger([&](const Request & /*req*/, const Response & /*res*/) {
+    access_logger_called = true;
+  });
+
+  // Add a handler that returns a large response
+  svr.Get("/large", [](const Request &, Response &res) {
+    // Return a very large response that definitely takes time to send
+    std::string large_content(5 * 1024 * 1024, 'A'); // 5MB of data
+    res.set_content(large_content, "text/plain");
+  });
+
+  // Start server in a separate thread
+  auto server_thread =
+      std::thread([&]() { svr.listen("localhost", test_port); });
+
+  // Wait for server to start
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Create a raw socket connection to manually control disconnection
+  httplib::Error error;
+  auto sock = httplib::detail::create_client_socket(
+      "localhost", std::string(), test_port, AF_UNSPEC, false, false, nullptr,
+      5, 0, 0, 0, 0, 0, std::string(), error);
+
+  if (sock != INVALID_SOCKET) {
+    // Send HTTP request for large content
+    std::string request =
+        "GET /large HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    send(sock, request.c_str(), request.length(), 0);
+
+    // Read a small part of the response to ensure server starts sending
+    char buffer[1024];
+    std::this_thread::sleep_for(std::chrono::milliseconds(
+        100)); // Give server more time to start processing
+    recv(sock, buffer, sizeof(buffer), MSG_DONTWAIT); // Non-blocking read
+
+    // Close socket abruptly during transfer to trigger write error
+    httplib::detail::close_socket(sock);
+  }
+
+  // Give server time to detect the error and call error logger
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Stop the server
+  svr.stop();
+  server_thread.join();
+
+  // Verify that the request was processed (access logger called)
+  EXPECT_TRUE(access_logger_called);
+
+  // Verify that the server error logger was called
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_EQ("GET", error_request_method);
+  EXPECT_EQ("/large", error_request_path);
+  EXPECT_EQ(httplib::Error::Write, error_type);
+}
+
+TEST(ServerErrorLoggingTest, ErrorLoggingSimpleCase) {
+  bool error_logger_called = false;
+  httplib::Error error_type;
+
+  const int test_port = 8766; // Use a different port to avoid conflicts
+
+  httplib::Server svr;
+
+  // Set error logger
+  svr.set_error_logger([&](const Request & /*req*/, const Error &err) {
+    error_logger_called = true;
+    error_type = err;
+  });
+
+  // Add a handler that returns normal response
+  svr.Get("/test", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello", "text/plain");
+  });
+
+  // Start server in a separate thread
+  auto server_thread =
+      std::thread([&]() { svr.listen("localhost", test_port); });
+
+  // Wait for server to start
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Create normal client request (should NOT trigger error logger)
+  httplib::Client cli("localhost", test_port);
+  auto res = cli.Get("/test");
+
+  // Stop the server
+  svr.stop();
+  server_thread.join();
+
+  // Verify normal request does NOT call error logger
+  EXPECT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_FALSE(error_logger_called); // Error logger should NOT be called for
+                                     // successful requests
+}
+
+TEST(ServerErrorLoggingTest, ErrorLoggingOnPostContentInterruption) {
+  bool error_logger_called = false;
+  bool access_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  const int test_port = 8767; // Use a different port to avoid conflicts
+
+  httplib::Server svr;
+
+  // Set error logger
+  svr.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  // Set access logger to verify request processing started
+  svr.set_access_logger([&](const Request & /*req*/, const Response & /*res*/) {
+    access_logger_called = true;
+  });
+
+  // Add a POST handler that expects content
+  svr.Post("/upload", [](const Request &req, Response &res) {
+    res.set_content("Received: " + req.body, "text/plain");
+  });
+
+  // Start server in a separate thread
+  auto server_thread =
+      std::thread([&]() { svr.listen("localhost", test_port); });
+
+  // Wait for server to start
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Create a raw socket connection to manually control the POST request
+  httplib::Error error;
+  auto sock = httplib::detail::create_client_socket(
+      "localhost", std::string(), test_port, AF_UNSPEC, false, false, nullptr,
+      5, 0, 0, 0, 0, 0, std::string(), error);
+
+  if (sock != INVALID_SOCKET) {
+    // Send POST request headers with Content-Length but incomplete body
+    std::string large_content(1024 * 1024, 'A'); // 1MB of data
+    std::string headers =
+        "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
+        std::to_string(large_content.length()) +
+        "\r\nContent-Type: text/plain\r\n\r\n";
+    send(sock, headers.c_str(), headers.length(), 0);
+
+    // Send only partial content then close socket abruptly
+    std::string partial_content =
+        large_content.substr(0, 1024); // Send only 1KB out of 1MB
+    send(sock, partial_content.c_str(), partial_content.length(), 0);
+
+    // Wait a bit for server to start reading, then close socket abruptly
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    httplib::detail::close_socket(sock);
+  }
+
+  // Give server time to detect the error and call error logger
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Stop the server
+  svr.stop();
+  server_thread.join();
+
+  // Verify that the server error logger was called for read error
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_EQ("POST", error_request_method);
+  EXPECT_EQ("/upload", error_request_path);
+  EXPECT_EQ(httplib::Error::Read, error_type);
+}
+
+TEST(ServerErrorLoggingTest, ErrorLoggingOnMalformedMultipartBoundary) {
+  bool error_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  const int test_port = 8768; // Use a different port to avoid conflicts
+
+  httplib::Server svr;
+
+  // Set error logger
+  svr.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  // Add a POST handler for multipart data
+  svr.Post("/upload", [](const Request & /*req*/, Response &res) {
+    res.set_content("Upload received", "text/plain");
+  });
+
+  // Start server in a separate thread
+  auto server_thread =
+      std::thread([&]() { svr.listen("localhost", test_port); });
+
+  // Wait for server to start
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Create a raw socket connection to send malformed multipart request
+  httplib::Error error;
+  auto sock = httplib::detail::create_client_socket(
+      "localhost", std::string(), test_port, AF_UNSPEC, false, false, nullptr,
+      5, 0, 0, 0, 0, 0, std::string(), error);
+
+  if (sock != INVALID_SOCKET) {
+    // Send POST request with malformed Content-Type (missing boundary)
+    std::string malformed_request =
+        "POST /upload HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Type: multipart/form-data\r\n" // Missing boundary parameter
+        "Content-Length: 50\r\n"
+        "\r\n"
+        "--boundary\r\n"
+        "Content-Disposition: form-data; name=\"test\"\r\n"
+        "\r\n"
+        "value\r\n"
+        "--boundary--\r\n";
+
+    send(sock, malformed_request.c_str(), malformed_request.length(), 0);
+    httplib::detail::close_socket(sock);
+  }
+
+  // Give server time to process the malformed request and call error logger
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Stop the server
+  svr.stop();
+  server_thread.join();
+
+  // Verify that the server error logger was called for malformed multipart
+  // boundary
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_EQ("POST", error_request_method);
+  EXPECT_EQ("/upload", error_request_path);
+  EXPECT_EQ(httplib::Error::Read, error_type);
+}
+
+TEST(ServerErrorLoggingTest, ErrorLoggingOnInvalidMultipartData) {
+  bool error_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  const int test_port = 8769; // Use a different port to avoid conflicts
+
+  httplib::Server svr;
+
+  // Set error logger
+  svr.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  // Add a POST handler for multipart data
+  svr.Post("/upload", [](const Request & /*req*/, Response &res) {
+    res.set_content("Upload received", "text/plain");
+  });
+
+  // Start server in a separate thread
+  auto server_thread =
+      std::thread([&]() { svr.listen("localhost", test_port); });
+
+  // Wait for server to start
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Create a raw socket connection to send invalid multipart data
+  httplib::Error error;
+  auto sock = httplib::detail::create_client_socket(
+      "localhost", std::string(), test_port, AF_UNSPEC, false, false, nullptr,
+      5, 0, 0, 0, 0, 0, std::string(), error);
+
+  if (sock != INVALID_SOCKET) {
+    // Send POST request with valid boundary but invalid multipart structure
+    std::string invalid_multipart_request =
+        "POST /upload HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Type: multipart/form-data; boundary=test123\r\n"
+        "Content-Length: 40\r\n"
+        "\r\n"
+        "Invalid multipart data without proper format"; // Invalid multipart
+                                                        // structure
+
+    send(sock, invalid_multipart_request.c_str(),
+         invalid_multipart_request.length(), 0);
+    httplib::detail::close_socket(sock);
+  }
+
+  // Give server time to process the invalid multipart data and call error
+  // logger
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Stop the server
+  svr.stop();
+  server_thread.join();
+
+  // Verify that the server error logger was called for invalid multipart data
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_EQ("POST", error_request_method);
+  EXPECT_EQ("/upload", error_request_path);
+  EXPECT_EQ(httplib::Error::Read, error_type);
+}
+
+TEST(ServerErrorLoggingTest, ErrorLoggingOnUriTooLong) {
+  bool error_logger_called = false;
+  std::string error_request_method;
+  std::string error_request_path;
+  httplib::Error error_type;
+
+  const int test_port = 8770; // Use a different port to avoid conflicts
+
+  httplib::Server svr;
+
+  // Set error logger
+  svr.set_error_logger([&](const Request &req, const Error &err) {
+    error_logger_called = true;
+    error_request_method = req.method;
+    error_request_path = req.path;
+    error_type = err;
+  });
+
+  // Add a GET handler
+  svr.Get("/.*", [](const Request & /*req*/, Response &res) {
+    res.set_content("OK", "text/plain");
+  });
+
+  // Start server in a separate thread
+  auto server_thread =
+      std::thread([&]() { svr.listen("localhost", test_port); });
+
+  // Wait for server to start
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Create a raw socket connection to send a request with very long URI
+  httplib::Error error;
+  auto sock = httplib::detail::create_client_socket(
+      "localhost", std::string(), test_port, AF_UNSPEC, false, false, nullptr,
+      5, 0, 0, 0, 0, 0, std::string(), error);
+
+  if (sock != INVALID_SOCKET) {
+    // Send GET request with URI that exceeds CPPHTTPLIB_REQUEST_URI_MAX_LENGTH
+    // (8192)
+    std::string very_long_path(10000, 'a'); // 10KB path to exceed 8KB URI limit
+    std::string request =
+        "GET /" + very_long_path + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
+
+    send(sock, request.c_str(), request.length(), 0);
+
+    // Read the response to ensure server processed the request
+    char buffer[1024];
+    recv(sock, buffer, sizeof(buffer), 0);
+
+    httplib::detail::close_socket(sock);
+  }
+
+  // Give server time to process the long URI request and call error logger
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Stop the server
+  svr.stop();
+  server_thread.join();
+
+  // Verify that the server error logger was called for URI too long
+  EXPECT_TRUE(error_logger_called);
+  EXPECT_EQ("GET", error_request_method);
+  EXPECT_EQ(httplib::Error::Read, error_type);
+}
+
 TEST(ClientTest, ErrorLogging) {
   bool error_logger_called = false;
   std::string error_request_method;
@@ -6288,7 +6685,7 @@ TEST(ClientTest, ErrorLoggingTimeout) {
   httplib::Client cli("10.0.0.1", 80);   // Non-routable IP for timeout
   cli.set_connection_timeout(0, 100000); // 100ms timeout
 
-  cli.set_error_logger([&](const Request &req, const Error &err) {
+  cli.set_error_logger([&](const Request & /*req*/, const Error &err) {
     error_logger_called = true;
     error_type = err;
   });
@@ -6315,7 +6712,7 @@ TEST(ClientTest, ErrorLoggingSSL) {
   httplib::Client cli("https://invalid-ssl-host.example.com");
   cli.set_connection_timeout(2, 0);
 
-  cli.set_error_logger([&](const Request &req, const Error &err) {
+  cli.set_error_logger([&](const Request & /*req*/, const Error &err) {
     error_logger_called = true;
     error_type = err;
   });
@@ -6345,11 +6742,11 @@ TEST(ClientTest, AccessLoggerNotCalledOnError) {
   cli.set_connection_timeout(1, 0);
 
   // Set both loggers
-  cli.set_access_logger([&](const Request &req, const Response &res) {
+  cli.set_access_logger([&](const Request & /*req*/, const Response & /*res*/) {
     access_logger_called = true;
   });
 
-  cli.set_error_logger([&](const Request &req, const Error &err) {
+  cli.set_error_logger([&](const Request & /*req*/, const Error & /*err*/) {
     error_logger_called = true;
   });
 
