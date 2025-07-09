@@ -4886,8 +4886,22 @@ TEST_F(ServerTest, GetStreamedChunkedWithTrailer) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
-  EXPECT_EQ(std::string("DummyVal1"), res->get_header_value("Dummy1"));
-  EXPECT_EQ(std::string("DummyVal2"), res->get_header_value("Dummy2"));
+
+  EXPECT_TRUE(res->has_header("Trailer"));
+  EXPECT_EQ(1U, res->get_header_value_count("Trailer"));
+  EXPECT_EQ(std::string("Dummy1, Dummy2"), res->get_header_value("Trailer"));
+
+  // Trailers are now stored separately from headers (security fix)
+  EXPECT_EQ(2U, res->trailers.size());
+  EXPECT_TRUE(res->has_trailer("Dummy1"));
+  EXPECT_TRUE(res->has_trailer("Dummy2"));
+  EXPECT_FALSE(res->has_trailer("Dummy3"));
+  EXPECT_EQ(std::string("DummyVal1"), res->get_trailer_value("Dummy1"));
+  EXPECT_EQ(std::string("DummyVal2"), res->get_trailer_value("Dummy2"));
+
+  // Verify trailers are NOT in headers (security verification)
+  EXPECT_EQ(std::string(""), res->get_header_value("Dummy1"));
+  EXPECT_EQ(std::string(""), res->get_header_value("Dummy2"));
 }
 
 TEST_F(ServerTest, LargeChunkedPost) {
@@ -10566,4 +10580,55 @@ TEST(ClientInThreadTest, Issue2068) {
 
     t.join();
   }
+}
+
+TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
+  Server svr;
+
+  svr.Get("/", [](const Request &req, Response &res) {
+    EXPECT_EQ(2U, req.trailers.size());
+
+    EXPECT_FALSE(req.has_trailer("[invalid key...]"));
+
+    // Denied
+    EXPECT_FALSE(req.has_trailer("Content-Length"));
+    EXPECT_FALSE(req.has_trailer("X-Forwarded-For"));
+
+    // Accepted
+    EXPECT_TRUE(req.has_trailer("X-Hello"));
+    EXPECT_EQ(req.get_trailer_value("X-Hello"), "hello");
+
+    EXPECT_TRUE(req.has_trailer("X-World"));
+    EXPECT_EQ(req.get_trailer_value("X-World"), "world");
+
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Transfer-Encoding: chunked\r\n"
+                          "Trailer: X-Hello, X-World, X-AAA, X-BBB\r\n"
+                          "\r\n"
+                          "0\r\n"
+                          "Content-Length: 10\r\n"
+                          "Host: internal.local\r\n"
+                          "Content-Type: malicious/content\r\n"
+                          "Cookie: any\r\n"
+                          "Set-Cookie: any\r\n"
+                          "X-Forwarded-For: attacker.com\r\n"
+                          "X-Real-Ip: 1.1.1.1\r\n"
+                          "X-Hello: hello\r\n"
+                          "X-World: world\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res));
 }
