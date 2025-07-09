@@ -25,6 +25,13 @@
     "cpp-httplib doesn't support platforms where size_t is less than 64 bits."
 #endif
 
+#ifdef _WIN32
+#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0602
+#error                                                                         \
+    "cpp-httplib doesn't support Windows 8 or lower. Please use Windows 10 or later."
+#endif
+#endif
+
 /*
  * Configuration
  */
@@ -90,7 +97,7 @@
 #endif
 
 #ifndef CPPHTTPLIB_IDLE_INTERVAL_USECOND
-#ifdef _WIN32
+#ifdef _WIN64
 #define CPPHTTPLIB_IDLE_INTERVAL_USECOND 1000
 #else
 #define CPPHTTPLIB_IDLE_INTERVAL_USECOND 0
@@ -176,7 +183,7 @@
  * Headers
  */
 
-#ifdef _WIN32
+#ifdef _WIN64
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #endif //_CRT_SECURE_NO_WARNINGS
@@ -227,7 +234,7 @@ using nfds_t = unsigned long;
 using socket_t = SOCKET;
 using socklen_t = int;
 
-#else // not _WIN32
+#else // not _WIN64
 
 #include <arpa/inet.h>
 #if !defined(_AIX) && !defined(__MVS__)
@@ -258,7 +265,7 @@ using socket_t = int;
 #ifndef INVALID_SOCKET
 #define INVALID_SOCKET (-1)
 #endif
-#endif //_WIN32
+#endif //_WIN64
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -303,7 +310,7 @@ using socket_t = int;
        // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-#ifdef _WIN32
+#ifdef _WIN64
 #include <wincrypt.h>
 
 // these are defined in wincrypt.h and it breaks compilation if BoringSSL is
@@ -316,7 +323,7 @@ using socket_t = int;
 #ifdef _MSC_VER
 #pragma comment(lib, "crypt32.lib")
 #endif
-#endif // _WIN32
+#endif // _WIN64
 
 #if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
 #if TARGET_OS_OSX
@@ -329,7 +336,7 @@ using socket_t = int;
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
-#if defined(_WIN32) && defined(OPENSSL_USE_APPLINK)
+#if defined(_WIN64) && defined(OPENSSL_USE_APPLINK)
 #include <openssl/applink.c>
 #endif
 
@@ -2030,7 +2037,7 @@ namespace detail {
 inline bool set_socket_opt_impl(socket_t sock, int level, int optname,
                                 const void *optval, socklen_t optlen) {
   return setsockopt(sock, level, optname,
-#ifdef _WIN32
+#ifdef _WIN64
                     reinterpret_cast<const char *>(optval),
 #else
                     optval,
@@ -2044,7 +2051,7 @@ inline bool set_socket_opt(socket_t sock, int level, int optname, int optval) {
 
 inline bool set_socket_opt_time(socket_t sock, int level, int optname,
                                 time_t sec, time_t usec) {
-#ifdef _WIN32
+#ifdef _WIN64
   auto timeout = static_cast<uint32_t>(sec * 1000 + usec / 1000);
 #else
   timeval timeout;
@@ -2297,7 +2304,7 @@ make_basic_authentication_header(const std::string &username,
 
 namespace detail {
 
-#if defined(_WIN32)
+#if defined(_WIN64)
 inline std::wstring u8string_to_wstring(const char *s) {
   std::wstring ws;
   auto len = static_cast<int>(strlen(s));
@@ -2319,7 +2326,7 @@ struct FileStat {
   bool is_dir() const;
 
 private:
-#if defined(_WIN32)
+#if defined(_WIN64)
   struct _stat st_;
 #else
   struct stat st_;
@@ -2562,7 +2569,7 @@ public:
   const char *data() const;
 
 private:
-#if defined(_WIN32)
+#if defined(_WIN64)
   HANDLE hFile_ = NULL;
   HANDLE hMapping_ = NULL;
 #else
@@ -2783,7 +2790,7 @@ inline bool is_valid_path(const std::string &path) {
 }
 
 inline FileStat::FileStat(const std::string &path) {
-#if defined(_WIN32)
+#if defined(_WIN64)
   auto wpath = u8string_to_wstring(path.c_str());
   ret_ = _wstat(wpath.c_str(), &st_);
 #else
@@ -3032,17 +3039,12 @@ inline mmap::~mmap() { close(); }
 inline bool mmap::open(const char *path) {
   close();
 
-#if defined(_WIN32)
+#if defined(_WIN64)
   auto wpath = u8string_to_wstring(path);
   if (wpath.empty()) { return false; }
 
-#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                          OPEN_EXISTING, NULL);
-#else
-  hFile_ = ::CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
-                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-#endif
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
@@ -3058,12 +3060,8 @@ inline bool mmap::open(const char *path) {
   }
   size_ = static_cast<size_t>(size.QuadPart);
 
-#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
-#else
-  hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
-#endif
 
   // Special treatment for an empty file...
   if (hMapping_ == NULL && size_ == 0) {
@@ -3077,11 +3075,7 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
-#else
-  addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
-#endif
 
   if (addr_ == nullptr) {
     close();
@@ -3122,7 +3116,7 @@ inline const char *mmap::data() const {
 }
 
 inline void mmap::close() {
-#if defined(_WIN32)
+#if defined(_WIN64)
   if (addr_) {
     ::UnmapViewOfFile(addr_);
     addr_ = nullptr;
@@ -3153,7 +3147,7 @@ inline void mmap::close() {
   size_ = 0;
 }
 inline int close_socket(socket_t sock) {
-#ifdef _WIN32
+#ifdef _WIN64
   return closesocket(sock);
 #else
   return close(sock);
@@ -3176,7 +3170,7 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
 inline ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags) {
   return handle_EINTR([&]() {
     return recv(sock,
-#ifdef _WIN32
+#ifdef _WIN64
                 static_cast<char *>(ptr), static_cast<int>(size),
 #else
                 ptr, size,
@@ -3189,7 +3183,7 @@ inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
                            int flags) {
   return handle_EINTR([&]() {
     return send(sock,
-#ifdef _WIN32
+#ifdef _WIN64
                 static_cast<const char *>(ptr), static_cast<int>(size),
 #else
                 ptr, size,
@@ -3199,7 +3193,7 @@ inline ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
 }
 
 inline int poll_wrapper(struct pollfd *fds, nfds_t nfds, int timeout) {
-#ifdef _WIN32
+#ifdef _WIN64
   return ::WSAPoll(fds, nfds, timeout);
 #else
   return ::poll(fds, nfds, timeout);
@@ -3409,7 +3403,7 @@ inline bool process_client_socket(
 }
 
 inline int shutdown_socket(socket_t sock) {
-#ifdef _WIN32
+#ifdef _WIN64
   return shutdown(sock, SD_BOTH);
 #else
   return shutdown(sock, SHUT_RDWR);
@@ -3444,7 +3438,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
     return getaddrinfo(node, service, hints, res);
   }
 
-#ifdef _WIN32
+#ifdef _WIN64
   // Windows-specific implementation using GetAddrInfoEx with overlapped I/O
   OVERLAPPED overlapped = {0};
   HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -3777,7 +3771,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
     hints.ai_flags = socket_flags;
   }
 
-#if !defined(_WIN32) || defined(CPPHTTPLIB_HAVE_AFUNIX_H)
+#if !defined(_WIN64) || defined(CPPHTTPLIB_HAVE_AFUNIX_H)
   if (hints.ai_family == AF_UNIX) {
     const auto addrlen = host.length();
     if (addrlen > sizeof(sockaddr_un::sun_path)) { return INVALID_SOCKET; }
@@ -3801,14 +3795,14 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
           sizeof(addr) - sizeof(addr.sun_path) + addrlen);
 
 #ifndef SOCK_CLOEXEC
-#ifndef _WIN32
+#ifndef _WIN64
       fcntl(sock, F_SETFD, FD_CLOEXEC);
 #endif
 #endif
 
       if (socket_options) { socket_options(sock); }
 
-#ifdef _WIN32
+#ifdef _WIN64
       // Setting SO_REUSEADDR seems not to work well with AF_UNIX on windows, so
       // remove the option.
       detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 0);
@@ -3837,7 +3831,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
   for (auto rp = result; rp; rp = rp->ai_next) {
     // Create a socket
-#ifdef _WIN32
+#ifdef _WIN64
     auto sock =
         WSASocketW(rp->ai_family, rp->ai_socktype, rp->ai_protocol, nullptr, 0,
                    WSA_FLAG_NO_HANDLE_INHERIT | WSA_FLAG_OVERLAPPED);
@@ -3870,7 +3864,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #endif
     if (sock == INVALID_SOCKET) { continue; }
 
-#if !defined _WIN32 && !defined SOCK_CLOEXEC
+#if !defined _WIN64 && !defined SOCK_CLOEXEC
     if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
       close_socket(sock);
       continue;
@@ -3898,7 +3892,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 }
 
 inline void set_nonblocking(socket_t sock, bool nonblocking) {
-#ifdef _WIN32
+#ifdef _WIN64
   auto flags = nonblocking ? 1UL : 0UL;
   ioctlsocket(sock, FIONBIO, &flags);
 #else
@@ -3909,7 +3903,7 @@ inline void set_nonblocking(socket_t sock, bool nonblocking) {
 }
 
 inline bool is_connection_error() {
-#ifdef _WIN32
+#ifdef _WIN64
   return WSAGetLastError() != WSAEWOULDBLOCK;
 #else
   return errno != EINPROGRESS;
@@ -3943,7 +3937,7 @@ inline bool bind_ip_address(socket_t sock, const std::string &host) {
   return ret;
 }
 
-#if !defined _WIN32 && !defined ANDROID && !defined _AIX && !defined __MVS__
+#if !defined _WIN64 && !defined ANDROID && !defined _AIX && !defined __MVS__
 #define USE_IF2IP
 #endif
 
@@ -4082,7 +4076,7 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
 
   if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr),
                    &addr_len)) {
-#ifndef _WIN32
+#ifndef _WIN64
     if (addr.ss_family == AF_UNIX) {
 #if defined(__linux__)
       struct ucred ucred;
@@ -6098,7 +6092,7 @@ inline bool is_ssl_peer_could_be_closed(SSL *ssl, socket_t sock) {
          SSL_get_error(ssl, 0) == SSL_ERROR_ZERO_RETURN;
 }
 
-#ifdef _WIN32
+#ifdef _WIN64
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
 inline bool load_system_certs_on_windows(X509_STORE *store) {
@@ -6214,10 +6208,10 @@ inline bool load_system_certs_on_macos(X509_STORE *store) {
 
   return result;
 }
-#endif // _WIN32
+#endif // _WIN64
 #endif // CPPHTTPLIB_OPENSSL_SUPPORT
 
-#ifdef _WIN32
+#ifdef _WIN64
 class WSInit {
 public:
   WSInit() {
@@ -6733,7 +6727,7 @@ inline bool SocketStream::wait_writable() const {
 }
 
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
-#ifdef _WIN32
+#ifdef _WIN64
   size =
       (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #else
@@ -6781,7 +6775,7 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!wait_writable()) { return -1; }
 
-#if defined(_WIN32) && !defined(_WIN64)
+#if defined(_WIN64) && !defined(_WIN64)
   size =
       (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #endif
@@ -6944,7 +6938,7 @@ inline bool RegexMatcher::match(Request &request) const {
 inline Server::Server()
     : new_task_queue(
           [] { return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT); }) {
-#ifndef _WIN32
+#ifndef _WIN64
   signal(SIGPIPE, SIG_IGN);
 #endif
 }
@@ -7616,7 +7610,7 @@ inline bool Server::listen_internal() {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());
 
     while (svr_sock_ != INVALID_SOCKET) {
-#ifndef _WIN32
+#ifndef _WIN64
       if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
 #endif
         auto val = detail::select_read(svr_sock_, idle_interval_sec_,
@@ -7625,11 +7619,11 @@ inline bool Server::listen_internal() {
           task_queue->on_idle();
           continue;
         }
-#ifndef _WIN32
+#ifndef _WIN64
       }
 #endif
 
-#if defined _WIN32
+#if defined _WIN64
       // sockets connected via WASAccept inherit flags NO_HANDLE_INHERIT,
       // OVERLAPPED
       socket_t sock = WSAAccept(svr_sock_, nullptr, nullptr, nullptr, 0);
@@ -10114,7 +10108,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
       auto n = 1000;
-#ifdef _WIN32
+#ifdef _WIN64
       while (--n >= 0 && (err == SSL_ERROR_WANT_READ ||
                           (err == SSL_ERROR_SYSCALL &&
                            WSAGetLastError() == WSAETIMEDOUT))) {
@@ -10149,7 +10143,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
     if (ret < 0) {
       auto err = SSL_get_error(ssl_, ret);
       auto n = 1000;
-#ifdef _WIN32
+#ifdef _WIN64
       while (--n >= 0 && (err == SSL_ERROR_WANT_WRITE ||
                           (err == SSL_ERROR_SYSCALL &&
                            WSAGetLastError() == WSAETIMEDOUT))) {
@@ -10541,13 +10535,13 @@ inline bool SSLClient::load_certs() {
       }
     } else {
       auto loaded = false;
-#ifdef _WIN32
+#ifdef _WIN64
       loaded =
           detail::load_system_certs_on_windows(SSL_CTX_get_cert_store(ctx_));
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) &&                    \
     defined(TARGET_OS_OSX)
       loaded = detail::load_system_certs_on_macos(SSL_CTX_get_cert_store(ctx_));
-#endif // _WIN32
+#endif // _WIN64
       if (!loaded) { SSL_CTX_set_default_verify_paths(ctx_); }
     }
   });
