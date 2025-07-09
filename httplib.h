@@ -3218,6 +3218,23 @@ inline int poll_wrapper(struct pollfd *fds, nfds_t nfds, int timeout) {
 
 template <bool Read>
 inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
+#ifdef __APPLE__
+  if (sock >= FD_SETSIZE) { return -1; }
+
+  fd_set fds, *rfds, *wfds;
+  FD_ZERO(&fds);
+  FD_SET(sock, &fds);
+  rfds = (Read ? &fds : nullptr);
+  wfds = (Read ? nullptr : &fds);
+
+  timeval tv;
+  tv.tv_sec = static_cast<long>(sec);
+  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
+
+  return handle_EINTR([&]() {
+    return select(static_cast<int>(sock + 1), rfds, wfds, nullptr, &tv);
+  });
+#else
   struct pollfd pfd;
   pfd.fd = sock;
   pfd.events = (Read ? POLLIN : POLLOUT);
@@ -3225,6 +3242,7 @@ inline ssize_t select_impl(socket_t sock, time_t sec, time_t usec) {
   auto timeout = static_cast<int>(sec * 1000 + usec / 1000);
 
   return handle_EINTR([&]() { return poll_wrapper(&pfd, 1, timeout); });
+#endif
 }
 
 inline ssize_t select_read(socket_t sock, time_t sec, time_t usec) {
@@ -3237,6 +3255,36 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 
 inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
                                         time_t usec) {
+#ifdef __APPLE__
+  if (sock >= FD_SETSIZE) { return Error::Connection; }
+
+  fd_set fdsr, fdsw;
+  FD_ZERO(&fdsr);
+  FD_ZERO(&fdsw);
+  FD_SET(sock, &fdsr);
+  FD_SET(sock, &fdsw);
+
+  timeval tv;
+  tv.tv_sec = static_cast<long>(sec);
+  tv.tv_usec = static_cast<decltype(tv.tv_usec)>(usec);
+
+  auto ret = handle_EINTR([&]() {
+    return select(static_cast<int>(sock + 1), &fdsr, &fdsw, nullptr, &tv);
+  });
+
+  if (ret == 0) { return Error::ConnectionTimeout; }
+
+  if (ret > 0 && (FD_ISSET(sock, &fdsr) || FD_ISSET(sock, &fdsw))) {
+    auto error = 0;
+    socklen_t len = sizeof(error);
+    auto res = getsockopt(sock, SOL_SOCKET, SO_ERROR,
+                          reinterpret_cast<char *>(&error), &len);
+    auto successful = res >= 0 && !error;
+    return successful ? Error::Success : Error::Connection;
+  }
+
+  return Error::Connection;
+#else
   struct pollfd pfd_read;
   pfd_read.fd = sock;
   pfd_read.events = POLLIN | POLLOUT;
@@ -3258,6 +3306,7 @@ inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
   }
 
   return Error::Connection;
+#endif
 }
 
 inline bool is_socket_alive(socket_t sock) {
@@ -7893,6 +7942,16 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   Response res;
   res.version = "HTTP/1.1";
   res.headers = default_headers_;
+
+#ifdef __APPLE__
+  // Socket file descriptor exceeded FD_SETSIZE...
+  if (strm.socket() >= FD_SETSIZE) {
+    Headers dummy;
+    detail::read_headers(strm, dummy);
+    res.status = StatusCode::InternalServerError_500;
+    return write_response(strm, close_connection, req, res, Error::Read);
+  }
+#endif
 
   // Request line and headers
   if (!parse_request_line(line_reader.ptr(), req) ||
