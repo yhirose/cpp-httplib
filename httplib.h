@@ -25,6 +25,13 @@
     "cpp-httplib doesn't support platforms where size_t is less than 64 bits."
 #endif
 
+#ifdef _WIN32
+#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0602
+#error                                                                         \
+    "cpp-httplib doesn't support Windows 8 or lower. Please use Windows 10 or later."
+#endif
+#endif
+
 /*
  * Configuration
  */
@@ -3036,13 +3043,8 @@ inline bool mmap::open(const char *path) {
   auto wpath = u8string_to_wstring(path);
   if (wpath.empty()) { return false; }
 
-#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                          OPEN_EXISTING, NULL);
-#else
-  hFile_ = ::CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
-                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-#endif
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
@@ -3058,12 +3060,8 @@ inline bool mmap::open(const char *path) {
   }
   size_ = static_cast<size_t>(size.QuadPart);
 
-#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   hMapping_ =
       ::CreateFileMappingFromApp(hFile_, NULL, PAGE_READONLY, size_, NULL);
-#else
-  hMapping_ = ::CreateFileMappingW(hFile_, NULL, PAGE_READONLY, 0, 0, NULL);
-#endif
 
   // Special treatment for an empty file...
   if (hMapping_ == NULL && size_ == 0) {
@@ -3077,11 +3075,7 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-#if _WIN32_WINNT >= _WIN32_WINNT_WIN8
   addr_ = ::MapViewOfFileFromApp(hMapping_, FILE_MAP_READ, 0, 0);
-#else
-  addr_ = ::MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
-#endif
 
   if (addr_ == nullptr) {
     close();
