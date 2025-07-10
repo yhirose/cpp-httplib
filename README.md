@@ -990,6 +990,25 @@ auto res = cli.Get("/already%20encoded/path"); // Use pre-encoded paths
   - `true` (default): Automatically encodes spaces, plus signs, newlines, and other special characters
   - `false`: Sends paths as-is without encoding (useful for pre-encoded URLs)
 
+### Performance Note for Local Connections
+
+> [!WARNING]
+> On Windows systems with improperly configured IPv6 settings, using "localhost" as the hostname may cause significant connection delays (up to 2 seconds per request) due to DNS resolution issues. This affects both client and server operations. For better performance when connecting to local services, use "127.0.0.1" instead of "localhost".
+> 
+> See: https://github.com/yhirose/cpp-httplib/issues/366#issuecomment-593004264
+
+```cpp
+// May be slower on Windows due to DNS resolution delays
+httplib::Client cli("localhost", 8080);
+httplib::Server svr;
+svr.listen("localhost", 8080);
+
+// Faster alternative for local connections
+httplib::Client cli("127.0.0.1", 8080);
+httplib::Server svr;
+svr.listen("127.0.0.1", 8080);
+```
+
 Compression
 -----------
 
