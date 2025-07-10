@@ -1141,6 +1141,24 @@ Serving HTTP on 0.0.0.0 port 80 ...
 NOTE
 ----
 
+### Regular Expression Stack Overflow
+
+> [!CAUTION]
+> When using complex regex patterns in route handlers, be aware that certain patterns may cause stack overflow during pattern matching. This is a known issue with `std::regex` implementations and affects the `dispatch_request()` method.
+> 
+> ```cpp
+> // This pattern can cause stack overflow with large input
+> svr.Get(".*", handler);
+> ```
+> 
+> Consider using simpler patterns or path parameters to avoid this issue:
+> 
+> ```cpp
+> // Safer alternatives
+> svr.Get("/users/:id", handler);           // Path parameters
+> svr.Get(R"(/api/v\d+/.*)", handler);     // More specific patterns
+> ```
+
 ### g++
 
 g++ 4.8 and below cannot build this library since `<regex>` in the versions are [broken](https://stackoverflow.com/questions/12530406/is-gcc-4-8-or-earlier-buggy-about-regular-expressions).
