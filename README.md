@@ -1084,6 +1084,8 @@ cli.set_address_family(AF_UNIX);
 
 "my-socket.sock" can be a relative path or an absolute path. Your application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
 
+This library automatically sets the Host header to "localhost" for Unix socket connections, similar to curl's behavior:
+
 
 URI Encoding/Decoding Utilities
 -------------------------------

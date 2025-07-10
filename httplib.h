@@ -8844,7 +8844,11 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   }
 
   if (!req.has_header("Host")) {
-    if (is_ssl()) {
+    // For Unix socket connections, use "localhost" as Host header (similar to
+    // curl behavior)
+    if (address_family_ == AF_UNIX) {
+      req.set_header("Host", "localhost");
+    } else if (is_ssl()) {
       if (port_ == 443) {
         req.set_header("Host", host_);
       } else {
