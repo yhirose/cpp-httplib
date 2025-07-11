@@ -173,6 +173,48 @@ TEST_F(UnixSocketTest, abstract) {
 }
 #endif
 
+TEST_F(UnixSocketTest, HostHeaderAutoSet) {
+  httplib::Server svr;
+  std::string received_host_header;
+
+  svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
+    // Capture the Host header sent by the client
+    auto host_iter = req.headers.find("Host");
+    if (host_iter != req.headers.end()) {
+      received_host_header = host_iter->second;
+    }
+    res.set_content(content_, "text/plain");
+  });
+
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
+  }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+  ASSERT_TRUE(svr.is_running());
+
+  // Test that Host header is automatically set to "localhost" for Unix socket
+  // connections
+  httplib::Client cli{pathname_};
+  cli.set_address_family(AF_UNIX);
+  ASSERT_TRUE(cli.is_valid());
+
+  const auto &result = cli.Get(pattern_);
+  ASSERT_TRUE(result) << "error: " << result.error();
+
+  const auto &resp = result.value();
+  EXPECT_EQ(resp.status, StatusCode::OK_200);
+  EXPECT_EQ(resp.body, content_);
+
+  // Verify that Host header was automatically set to "localhost"
+  EXPECT_EQ(received_host_header, "localhost");
+}
+
 #ifndef _WIN32
 TEST(SocketStream, wait_writable_UNIX) {
   int fds[2];
