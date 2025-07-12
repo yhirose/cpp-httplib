@@ -18,10 +18,10 @@
 #error                                                                         \
     "cpp-httplib doesn't support 32-bit Windows. Please use a 64-bit compiler."
 #elif defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ < 8
-#error                                                                         \
+#warning                                                                       \
     "cpp-httplib doesn't support 32-bit platforms. Please use a 64-bit compiler."
 #elif defined(__SIZEOF_SIZE_T__) && __SIZEOF_SIZE_T__ < 8
-#error                                                                         \
+#warning                                                                       \
     "cpp-httplib doesn't support platforms where size_t is less than 64 bits."
 #endif
 

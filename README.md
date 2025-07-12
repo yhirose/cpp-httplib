@@ -871,7 +871,7 @@ auto res = cli.Post(
 httplib::Client cli(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
-auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
+auto res = cli.Get("/", [](size_t len, size_t total) {
   printf("%lld / %lld bytes => %d%% complete\n",
     len, total,
     (int)(len*100/total));
