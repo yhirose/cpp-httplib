@@ -18,6 +18,14 @@ project(
 
 cxx = meson.get_compiler('cpp')
 
+if cxx.sizeof('void *') != 8
+  if host_machine.system() == 'windows'
+    error('unsupported architecture: cpp-httplib doesn\'t support 32-bit Windows. Please use a 64-bit compiler.')
+  else
+    warning('cpp-httplib doesn\'t support 32-bit platforms. Please use a 64-bit compiler.')
+  endif
+endif
+
 # Check just in case downstream decides to edit the source
 # and add a project version
 version = meson.project_version()
