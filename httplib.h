@@ -8666,7 +8666,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
     this->set_path_encode(
-        false); //Disable path encoding, redirects should already be encoded
+        false); // Disable path encoding, redirects should already be encoded
     return detail::redirect(*this, req, res, path, location, error);
   }
 
@@ -8759,7 +8759,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   client.set_follow_location(
       true); // Enable redirects to handle multi-step redirects
   client.set_path_encode(
-      false); //Disable encoding, redirects should already be encoded
+      false); // Disable encoding, redirects should already be encoded
   client.set_compress(compress_);
   client.set_decompress(decompress_);
 
