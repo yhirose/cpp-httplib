@@ -5440,14 +5440,27 @@ inline bool parse_accept_header(const std::string &s,
         return;
       }
 
-      try {
-        accept_entry.quality = std::stod(quality_str);
-        // Check if quality is in valid range [0.0, 1.0]
-        if (accept_entry.quality < 0.0 || accept_entry.quality > 1.0) {
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+      {
+        std::istringstream iss(quality_str);
+        iss >> accept_entry.quality;
+
+        // Check if conversion was successful and entire string was consumed
+        if (iss.fail() || !iss.eof()) {
           has_invalid_entry = true;
           return;
         }
+      }
+#else
+      try {
+        accept_entry.quality = std::stod(quality_str);
       } catch (...) {
+        has_invalid_entry = true;
+        return;
+      }
+#endif
+      // Check if quality is in valid range [0.0, 1.0]
+      if (accept_entry.quality < 0.0 || accept_entry.quality > 1.0) {
         has_invalid_entry = true;
         return;
       }
