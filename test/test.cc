@@ -301,9 +301,8 @@ TEST(StartupTest, WSAStartup) {
 
 TEST(DecodePathTest, PercentCharacter) {
   EXPECT_EQ(
-      detail::decode_path(
-          R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)",
-          false),
+      decode_path_component(
+          R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)"),
       u8"descrip=Gastos áéíóúñÑ 6");
 }
 
@@ -313,7 +312,7 @@ TEST(DecodePathTest, PercentCharacterNUL) {
   expected.push_back('\0');
   expected.push_back('x');
 
-  EXPECT_EQ(detail::decode_path("x%00x", false), expected);
+  EXPECT_EQ(decode_path_component("x%00x"), expected);
 }
 
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
@@ -9940,6 +9939,49 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     EXPECT_EQ(StatusCode::OK_200, res->status);
     EXPECT_EQ("val&key2=val2", res->body);
   }
+}
+
+TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_redirect(R"(/hello?key=AByz09+~-._%20%26%3F%C3%BC%2B)");
+  });
+
+  svr.Get("/hello", [](const Request &req, Response &res) {
+    res.set_content(req.get_param_value("key"), "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("AByz09 ~-._ &?ü+", res->body);
+  }
+}
+
+TEST(RedirectTest, Issue2185) {
+  SSLClient client("github.com");
+  client.set_follow_location(true);
+
+  auto res = client.Get("/Coollab-Art/Coollab/releases/download/1.1.1_UI-Scale/"
+                        "Coollab-Windows.zip");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(9920427U, res->body.size());
 }
 
 TEST(VulnerabilityTest, CRLFInjection) {
