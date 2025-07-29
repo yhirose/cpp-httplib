@@ -5228,9 +5228,9 @@ inline std::string params_to_query_str(const Params &params) {
 
   for (auto it = params.begin(); it != params.end(); ++it) {
     if (it != params.begin()) { query += "&"; }
-    query += httplib::encode_query_component(it->first);
+    query += encode_query_component(it->first);
     query += "=";
-    query += httplib::encode_query_component(it->second);
+    query += encode_query_component(it->second);
   }
   return query;
 }
