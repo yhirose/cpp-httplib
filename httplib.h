@@ -8636,7 +8636,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (location.empty()) { return false; }
 
   thread_local const std::regex re(
-      R"((?:(https?):)?(?://(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+      R"((?:(https?):)?(?://(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(?:\?([^#]*))?(?:#.*)?)");
 
   std::smatch m;
   if (!std::regex_match(location, m, re)) { return false; }
@@ -8661,18 +8661,16 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  auto path = next_path + next_query;
+  if (!next_query.empty()) { detail::parse_query_text(next_query, req.params); }
 
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
-    this->set_path_encode(
-        false); // Disable path encoding, redirects should already be encoded
-    return detail::redirect(*this, req, res, path, location, error);
+    return detail::redirect(*this, req, res, next_path, location, error);
   }
 
   // Cross-host/scheme redirect - create new client with robust setup
   return create_redirect_client(next_scheme, next_host, next_port, req, res,
-                                path, location, error);
+                                next_path, location, error);
 }
 
 // New method for robust redirect client creation
@@ -8758,8 +8756,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   client.set_keep_alive(keep_alive_);
   client.set_follow_location(
       true); // Enable redirects to handle multi-step redirects
-  client.set_path_encode(
-      false); // Disable encoding, redirects should already be encoded
+  client.set_path_encode(path_encode_);
   client.set_compress(compress_);
   client.set_decompress(decompress_);
 
