@@ -9973,7 +9973,7 @@ TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(RedirectTest, Issue2185) {
+TEST(RedirectTest, Issue2185_Online) {
   SSLClient client("github.com");
   client.set_follow_location(true);
 
