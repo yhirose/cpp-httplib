@@ -2030,7 +2030,7 @@ inline size_t get_header_value_u64(const Headers &headers,
 inline size_t get_header_value_u64(const Headers &headers,
                                    const std::string &key, size_t def,
                                    size_t id) {
-  bool dummy = false;
+  auto dummy = false;
   return get_header_value_u64(headers, key, def, id, dummy);
 }
 
@@ -2301,15 +2301,19 @@ std::string hosted_at(const std::string &hostname);
 
 void hosted_at(const std::string &hostname, std::vector<std::string> &addrs);
 
+// JavaScript-style URL encoding/decoding functions
 std::string encode_uri_component(const std::string &value);
-
 std::string encode_uri(const std::string &value);
-
 std::string decode_uri_component(const std::string &value);
-
 std::string decode_uri(const std::string &value);
 
-std::string encode_query_param(const std::string &value);
+// RFC 3986 compliant URL component encoding/decoding functions
+std::string encode_path_component(const std::string &component);
+std::string decode_path_component(const std::string &component);
+std::string encode_query_component(const std::string &component,
+                                   bool space_as_plus = true);
+std::string decode_query_component(const std::string &component,
+                                   bool plus_as_space = true);
 
 std::string append_query_params(const std::string &path, const Params &params);
 
@@ -2351,8 +2355,6 @@ private:
 #endif
   int ret_ = -1;
 };
-
-std::string decode_path(const std::string &s, bool convert_plus_to_space);
 
 std::string trim_copy(const std::string &s);
 
@@ -2848,43 +2850,6 @@ inline std::string encode_path(const std::string &s) {
         result += s[i];
       }
       break;
-    }
-  }
-
-  return result;
-}
-
-inline std::string decode_path(const std::string &s,
-                               bool convert_plus_to_space) {
-  std::string result;
-
-  for (size_t i = 0; i < s.size(); i++) {
-    if (s[i] == '%' && i + 1 < s.size()) {
-      if (s[i + 1] == 'u') {
-        auto val = 0;
-        if (from_hex_to_i(s, i + 2, 4, val)) {
-          // 4 digits Unicode codes
-          char buff[4];
-          size_t len = to_utf8(val, buff);
-          if (len > 0) { result.append(buff, len); }
-          i += 5; // 'u0000'
-        } else {
-          result += s[i];
-        }
-      } else {
-        auto val = 0;
-        if (from_hex_to_i(s, i + 1, 2, val)) {
-          // 2 digits hex codes
-          result += static_cast<char>(val);
-          i += 2; // '00'
-        } else {
-          result += s[i];
-        }
-      }
-    } else if (convert_plus_to_space && s[i] == '+') {
-      result += ' ';
-    } else {
-      result += s[i];
     }
   }
 
@@ -4615,7 +4580,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
         case_ignore::equal(key, "Referer")) {
       fn(key, val);
     } else {
-      fn(key, decode_path(val, false));
+      fn(key, decode_path_component(val));
     }
 
     return true;
@@ -5263,9 +5228,9 @@ inline std::string params_to_query_str(const Params &params) {
 
   for (auto it = params.begin(); it != params.end(); ++it) {
     if (it != params.begin()) { query += "&"; }
-    query += it->first;
+    query += encode_query_component(it->first);
     query += "=";
-    query += httplib::encode_uri_component(it->second);
+    query += encode_query_component(it->second);
   }
   return query;
 }
@@ -5288,7 +5253,7 @@ inline void parse_query_text(const char *data, std::size_t size,
            });
 
     if (!key.empty()) {
-      params.emplace(decode_path(key, true), decode_path(val, true));
+      params.emplace(decode_query_component(key), decode_query_component(val));
     }
   });
 }
@@ -5611,7 +5576,7 @@ public:
 
                 std::smatch m2;
                 if (std::regex_match(it->second, m2, re_rfc5987_encoding)) {
-                  file_.filename = decode_path(m2[1], false); // override...
+                  file_.filename = decode_path_component(m2[1]); // override...
                 } else {
                   is_valid_ = false;
                   return false;
@@ -6517,9 +6482,154 @@ inline std::string decode_uri(const std::string &value) {
   return result;
 }
 
-[[deprecated("Use encode_uri_component instead")]]
-inline std::string encode_query_param(const std::string &value) {
-  return encode_uri_component(value);
+inline std::string encode_path_component(const std::string &component) {
+  std::string result;
+  result.reserve(component.size() * 3);
+
+  for (size_t i = 0; i < component.size(); i++) {
+    auto c = static_cast<unsigned char>(component[i]);
+
+    // Unreserved characters per RFC 3986: ALPHA / DIGIT / "-" / "." / "_" / "~"
+    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
+      result += static_cast<char>(c);
+    }
+    // Path-safe sub-delimiters: "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" /
+    // "," / ";" / "="
+    else if (c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' ||
+             c == ')' || c == '*' || c == '+' || c == ',' || c == ';' ||
+             c == '=') {
+      result += static_cast<char>(c);
+    }
+    // Colon is allowed in path segments except first segment
+    else if (c == ':') {
+      result += static_cast<char>(c);
+    }
+    // @ is allowed in path
+    else if (c == '@') {
+      result += static_cast<char>(c);
+    } else {
+      result += '%';
+      char hex[3];
+      snprintf(hex, sizeof(hex), "%02X", c);
+      result.append(hex, 2);
+    }
+  }
+  return result;
+}
+
+inline std::string decode_path_component(const std::string &component) {
+  std::string result;
+  result.reserve(component.size());
+
+  for (size_t i = 0; i < component.size(); i++) {
+    if (component[i] == '%' && i + 1 < component.size()) {
+      if (component[i + 1] == 'u') {
+        // Unicode %uXXXX encoding
+        auto val = 0;
+        if (detail::from_hex_to_i(component, i + 2, 4, val)) {
+          // 4 digits Unicode codes
+          char buff[4];
+          size_t len = detail::to_utf8(val, buff);
+          if (len > 0) { result.append(buff, len); }
+          i += 5; // 'u0000'
+        } else {
+          result += component[i];
+        }
+      } else {
+        // Standard %XX encoding
+        auto val = 0;
+        if (detail::from_hex_to_i(component, i + 1, 2, val)) {
+          // 2 digits hex codes
+          result += static_cast<char>(val);
+          i += 2; // 'XX'
+        } else {
+          result += component[i];
+        }
+      }
+    } else {
+      result += component[i];
+    }
+  }
+  return result;
+}
+
+inline std::string encode_query_component(const std::string &component,
+                                          bool space_as_plus) {
+  std::string result;
+  result.reserve(component.size() * 3);
+
+  for (size_t i = 0; i < component.size(); i++) {
+    auto c = static_cast<unsigned char>(component[i]);
+
+    // Unreserved characters per RFC 3986
+    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
+      result += static_cast<char>(c);
+    }
+    // Space handling
+    else if (c == ' ') {
+      if (space_as_plus) {
+        result += '+';
+      } else {
+        result += "%20";
+      }
+    }
+    // Plus sign handling
+    else if (c == '+') {
+      if (space_as_plus) {
+        result += "%2B";
+      } else {
+        result += static_cast<char>(c);
+      }
+    }
+    // Query-safe sub-delimiters (excluding & and = which are query delimiters)
+    else if (c == '!' || c == '$' || c == '\'' || c == '(' || c == ')' ||
+             c == '*' || c == ',' || c == ';') {
+      result += static_cast<char>(c);
+    }
+    // Colon and @ are allowed in query
+    else if (c == ':' || c == '@') {
+      result += static_cast<char>(c);
+    }
+    // Forward slash is allowed in query values
+    else if (c == '/') {
+      result += static_cast<char>(c);
+    }
+    // Question mark is allowed in query values (after first ?)
+    else if (c == '?') {
+      result += static_cast<char>(c);
+    } else {
+      result += '%';
+      char hex[3];
+      snprintf(hex, sizeof(hex), "%02X", c);
+      result.append(hex, 2);
+    }
+  }
+  return result;
+}
+
+inline std::string decode_query_component(const std::string &component,
+                                          bool plus_as_space) {
+  std::string result;
+  result.reserve(component.size());
+
+  for (size_t i = 0; i < component.size(); i++) {
+    if (component[i] == '%' && i + 2 < component.size()) {
+      std::string hex = component.substr(i + 1, 2);
+      char *end;
+      unsigned long value = std::strtoul(hex.c_str(), &end, 16);
+      if (end == hex.c_str() + 2) {
+        result += static_cast<char>(value);
+        i += 2;
+      } else {
+        result += component[i];
+      }
+    } else if (component[i] == '+' && plus_as_space) {
+      result += ' '; // + becomes space in form-urlencoded
+    } else {
+      result += component[i];
+    }
+  }
+  return result;
 }
 
 inline std::string append_query_params(const std::string &path,
@@ -7404,8 +7514,8 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     detail::divide(req.target, '?',
                    [&](const char *lhs_data, std::size_t lhs_size,
                        const char *rhs_data, std::size_t rhs_size) {
-                     req.path = detail::decode_path(
-                         std::string(lhs_data, lhs_size), false);
+                     req.path =
+                         decode_path_component(std::string(lhs_data, lhs_size));
                      detail::parse_query_text(rhs_data, rhs_size, req.params);
                    });
   }
@@ -8678,7 +8788,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  auto path = detail::decode_path(next_path, true) + next_query;
+  auto path = decode_query_component(next_path, true) + next_query;
 
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
@@ -8966,15 +9076,28 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   {
     detail::BufferStream bstrm;
 
-    const auto &path_with_query =
-        req.params.empty() ? req.path
-                           : append_query_params(req.path, req.params);
+    // Extract path and query from req.path
+    std::string path_part, query_part;
+    auto query_pos = req.path.find('?');
+    if (query_pos != std::string::npos) {
+      path_part = req.path.substr(0, query_pos);
+      query_part = req.path.substr(query_pos + 1);
+    } else {
+      path_part = req.path;
+      query_part = "";
+    }
 
-    const auto &path =
-        path_encode_ ? detail::encode_path(path_with_query) : path_with_query;
+    // Encode path and query
+    auto path_with_query =
+        path_encode_ ? detail::encode_path(path_part) : path_part;
 
-    detail::write_request_line(bstrm, req.method, path);
+    detail::parse_query_text(query_part, req.params);
+    if (!req.params.empty()) {
+      path_with_query = append_query_params(path_with_query, req.params);
+    }
 
+    // Write request line and headers
+    detail::write_request_line(bstrm, req.method, path_with_query);
     header_writer_(bstrm, req.headers);
 
     // Flush buffer
