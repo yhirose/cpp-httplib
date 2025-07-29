@@ -9972,6 +9972,7 @@ TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
   }
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(RedirectTest, Issue2185) {
   SSLClient client("github.com");
   client.set_follow_location(true);
@@ -9983,6 +9984,7 @@ TEST(RedirectTest, Issue2185) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(9920427U, res->body.size());
 }
+#endif
 
 TEST(VulnerabilityTest, CRLFInjection) {
   Server svr;
