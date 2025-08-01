@@ -111,10 +111,14 @@ option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build.
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
 # Defaults to static library
 option(BUILD_SHARED_LIBS "Build the library as a shared library instead of static. Has no effect if using header-only." OFF)
-if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
+if(BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
 	# Necessary for Windows if building shared libs
 	# See https://stackoverflow.com/a/40743080
 	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+if( CMAKE_SYSTEM_NAME MATCHES "Windows" AND ${CMAKE_SYSTEM_VERSION} VERSION_LESS "10.0.0")
+	message(SEND_ERROR "Windows ${CMAKE_SYSTEM_VERSION} or lower is not supported. Please use Windows 10 or later.")
 endif()
 
 # Set some variables that are used in-tree and while building based on our options
@@ -243,8 +247,8 @@ add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_11)
 
 target_include_directories(${PROJECT_NAME} SYSTEM ${_INTERFACE_OR_PUBLIC}
-    $<BUILD_INTERFACE:${_httplib_build_includedir}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+	$<BUILD_INTERFACE:${_httplib_build_includedir}>
+	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # Always require threads
@@ -340,6 +344,6 @@ if(HTTPLIB_INSTALL)
 endif()
 
 if(HTTPLIB_TEST)
-    include(CTest)
-    add_subdirectory(test)
+	include(CTest)
+	add_subdirectory(test)
 endif()
