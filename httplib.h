@@ -949,6 +949,10 @@ private:
 
 using Logger = std::function<void(const Request &, const Response &)>;
 
+// Forward declaration for Error type
+enum class Error;
+using ErrorLogger = std::function<void(const Error &, const Request *)>;
+
 using SocketOptions = std::function<void(socket_t sock)>;
 
 namespace detail {
@@ -1109,6 +1113,7 @@ public:
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
   Server &set_logger(Logger logger);
   Server &set_pre_compression_logger(Logger logger);
+  Server &set_error_logger(ErrorLogger error_logger);
 
   Server &set_address_family(int family);
   Server &set_tcp_nodelay(bool on);
@@ -1220,6 +1225,11 @@ private:
 
   virtual bool process_and_close_socket(socket_t sock);
 
+  void output_log(const Request &req, const Response &res) const;
+  void output_pre_compression_log(const Request &req,
+                                  const Response &res) const;
+  void output_error_log(const Error &err, const Request *req) const;
+
   std::atomic<bool> is_running_{false};
   std::atomic<bool> is_decommissioned{false};
 
@@ -1251,8 +1261,10 @@ private:
   HandlerWithResponse pre_request_handler_;
   Expect100ContinueHandler expect_100_continue_handler_;
 
+  mutable std::mutex logger_mutex_;
   Logger logger_;
   Logger pre_compression_logger_;
+  ErrorLogger error_logger_;
 
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
@@ -1281,6 +1293,22 @@ enum class Error {
   Compression,
   ConnectionTimeout,
   ProxyConnection,
+  ResourceExhaustion,
+  TooManyFormDataFiles,
+  ExceedMaxPayloadSize,
+  ExceedUriMaxLength,
+  ExceedMaxSocketDescriptorCount,
+  InvalidRequestLine,
+  InvalidHTTPMethod,
+  InvalidHTTPVersion,
+  InvalidHeaders,
+  MultipartParsing,
+  OpenFile,
+  Listen,
+  GetSockName,
+  UnsupportedAddressFamily,
+  HTTPParsing,
+  InvalidRangeHeader,
 
   // For internal use only
   SSLPeerCouldBeClosed_,
@@ -1525,6 +1553,7 @@ public:
 #endif
 
   void set_logger(Logger logger);
+  void set_error_logger(ErrorLogger error_logger);
 
 protected:
   struct Socket {
@@ -1556,6 +1585,9 @@ protected:
                                    Error &error) const;
 
   void copy_settings(const ClientImpl &rhs);
+
+  void output_log(const Request &req, const Response &res) const;
+  void output_error_log(const Error &err, const Request *req) const;
 
   // Socket endpoint information
   const std::string host_;
@@ -1641,7 +1673,9 @@ protected:
   std::function<SSLVerifierResponse(SSL *ssl)> server_certificate_verifier_;
 #endif
 
+  mutable std::mutex logger_mutex_;
   Logger logger_;
+  ErrorLogger error_logger_;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int last_ssl_error_ = 0;
@@ -1868,6 +1902,7 @@ public:
 #endif
 
   void set_logger(Logger logger);
+  void set_error_logger(ErrorLogger error_logger);
 
   // SSL
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -2199,6 +2234,7 @@ Server::set_idle_interval(const std::chrono::duration<Rep, Period> &duration) {
 inline std::string to_string(const Error error) {
   switch (error) {
   case Error::Success: return "Success (no error)";
+  case Error::Unknown: return "Unknown";
   case Error::Connection: return "Could not establish connection";
   case Error::BindIPAddress: return "Failed to bind IP address";
   case Error::Read: return "Failed to read connection";
@@ -2215,7 +2251,23 @@ inline std::string to_string(const Error error) {
   case Error::Compression: return "Compression failed";
   case Error::ConnectionTimeout: return "Connection timed out";
   case Error::ProxyConnection: return "Proxy connection failed";
-  case Error::Unknown: return "Unknown";
+  case Error::ResourceExhaustion: return "Resource exhaustion";
+  case Error::TooManyFormDataFiles: return "Too many form data files";
+  case Error::ExceedMaxPayloadSize: return "Exceeded maximum payload size";
+  case Error::ExceedUriMaxLength: return "Exceeded maximum URI length";
+  case Error::ExceedMaxSocketDescriptorCount:
+    return "Exceeded maximum socket descriptor count";
+  case Error::InvalidRequestLine: return "Invalid request line";
+  case Error::InvalidHTTPMethod: return "Invalid HTTP method";
+  case Error::InvalidHTTPVersion: return "Invalid HTTP version";
+  case Error::InvalidHeaders: return "Invalid headers";
+  case Error::MultipartParsing: return "Multipart parsing failed";
+  case Error::OpenFile: return "Failed to open file";
+  case Error::Listen: return "Failed to listen on socket";
+  case Error::GetSockName: return "Failed to get socket name";
+  case Error::UnsupportedAddressFamily: return "Unsupported address family";
+  case Error::HTTPParsing: return "HTTP parsing failed";
+  case Error::InvalidRangeHeader: return "Invalid Range header";
   default: break;
   }
 
@@ -7359,6 +7411,11 @@ inline Server &Server::set_logger(Logger logger) {
   return *this;
 }
 
+inline Server &Server::set_error_logger(ErrorLogger error_logger) {
+  error_logger_ = std::move(error_logger);
+  return *this;
+}
+
 inline Server &Server::set_pre_compression_logger(Logger logger) {
   pre_compression_logger_ = std::move(logger);
   return *this;
@@ -7498,9 +7555,15 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
       "GET",     "HEAD",    "POST",  "PUT",   "DELETE",
       "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
 
-  if (methods.find(req.method) == methods.end()) { return false; }
+  if (methods.find(req.method) == methods.end()) {
+    output_error_log(Error::InvalidHTTPMethod, &req);
+    return false;
+  }
 
-  if (req.version != "HTTP/1.1" && req.version != "HTTP/1.0") { return false; }
+  if (req.version != "HTTP/1.1" && req.version != "HTTP/1.0") {
+    output_error_log(Error::InvalidHTTPVersion, &req);
+    return false;
+  }
 
   {
     // Skip URL fragment
@@ -7607,7 +7670,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   }
 
   // Log
-  if (logger_) { logger_(req, res); }
+  output_log(req, res);
 
   return ret;
 }
@@ -7683,6 +7746,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           // Multipart FormData
           [&](const FormData &file) {
             if (count++ == CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT) {
+              output_error_log(Error::TooManyFormDataFiles, &req);
               return false;
             }
 
@@ -7712,6 +7776,7 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
     if (!content_type.find("application/x-www-form-urlencoded")) {
       if (req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
         res.status = StatusCode::PayloadTooLarge_413; // NOTE: should be 414?
+        output_error_log(Error::ExceedMaxPayloadSize, &req);
         return false;
       }
       detail::parse_query_text(req.body, req.params);
@@ -7740,6 +7805,7 @@ inline bool Server::read_content_core(
     std::string boundary;
     if (!detail::parse_multipart_boundary(content_type, boundary)) {
       res.status = StatusCode::BadRequest_400;
+      output_error_log(Error::MultipartParsing, &req);
       return false;
     }
 
@@ -7765,6 +7831,7 @@ inline bool Server::read_content_core(
   if (req.is_multipart_form_data()) {
     if (!multipart_form_data_parser.is_valid()) {
       res.status = StatusCode::BadRequest_400;
+      output_error_log(Error::MultipartParsing, &req);
       return false;
     }
   }
@@ -7794,7 +7861,10 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
           }
 
           auto mm = std::make_shared<detail::mmap>(path.c_str());
-          if (!mm->is_open()) { return false; }
+          if (!mm->is_open()) {
+            output_error_log(Error::OpenFile, &req);
+            return false;
+          }
 
           res.set_content_provider(
               mm->size(),
@@ -7810,6 +7880,8 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
           }
 
           return true;
+        } else {
+          output_error_log(Error::OpenFile, &req);
         }
       }
     }
@@ -7824,11 +7896,15 @@ Server::create_server_socket(const std::string &host, int port,
   return detail::create_socket(
       host, std::string(), port, address_family_, socket_flags, tcp_nodelay_,
       ipv6_v6only_, std::move(socket_options),
-      [](socket_t sock, struct addrinfo &ai, bool & /*quit*/) -> bool {
+      [&](socket_t sock, struct addrinfo &ai, bool & /*quit*/) -> bool {
         if (::bind(sock, ai.ai_addr, static_cast<socklen_t>(ai.ai_addrlen))) {
+          output_error_log(Error::BindIPAddress, nullptr);
           return false;
         }
-        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) { return false; }
+        if (::listen(sock, CPPHTTPLIB_LISTEN_BACKLOG)) {
+          output_error_log(Error::Listen, nullptr);
+          return false;
+        }
         return true;
       });
 }
@@ -7847,6 +7923,7 @@ inline int Server::bind_internal(const std::string &host, int port,
     socklen_t addr_len = sizeof(addr);
     if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&addr),
                     &addr_len) == -1) {
+      output_error_log(Error::GetSockName, nullptr);
       return -1;
     }
     if (addr.ss_family == AF_INET) {
@@ -7854,6 +7931,7 @@ inline int Server::bind_internal(const std::string &host, int port,
     } else if (addr.ss_family == AF_INET6) {
       return ntohs(reinterpret_cast<struct sockaddr_in6 *>(&addr)->sin6_port);
     } else {
+      output_error_log(Error::UnsupportedAddressFamily, nullptr);
       return -1;
     }
   } else {
@@ -7907,6 +7985,7 @@ inline bool Server::listen_internal() {
         if (svr_sock_ != INVALID_SOCKET) {
           detail::close_socket(svr_sock_);
           ret = false;
+          output_error_log(Error::Connection, nullptr);
         } else {
           ; // The server socket was closed by user.
         }
@@ -7920,6 +7999,7 @@ inline bool Server::listen_internal() {
 
       if (!task_queue->enqueue(
               [this, sock]() { process_and_close_socket(sock); })) {
+        output_error_log(Error::ResourceExhaustion, nullptr);
         detail::shutdown_socket(sock);
         detail::close_socket(sock);
       }
@@ -7949,13 +8029,17 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
     {
       ContentReader reader(
           [&](ContentReceiver receiver) {
-            return read_content_with_content_receiver(
+            auto result = read_content_with_content_receiver(
                 strm, req, res, std::move(receiver), nullptr, nullptr);
+            if (!result) { output_error_log(Error::Read, &req); }
+            return result;
           },
           [&](FormDataHeader header, ContentReceiver receiver) {
-            return read_content_with_content_receiver(strm, req, res, nullptr,
-                                                      std::move(header),
-                                                      std::move(receiver));
+            auto result = read_content_with_content_receiver(
+                strm, req, res, nullptr, std::move(header),
+                std::move(receiver));
+            if (!result) { output_error_log(Error::Read, &req); }
+            return result;
           });
 
       if (req.method == "POST") {
@@ -7986,7 +8070,10 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
     }
 
     // Read content into `req.body`
-    if (!read_content(strm, req, res)) { return false; }
+    if (!read_content(strm, req, res)) {
+      output_error_log(Error::Read, &req);
+      return false;
+    }
   }
 
   // Regular handler
@@ -8100,7 +8187,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
     }
 
     if (type != detail::EncodingType::None) {
-      if (pre_compression_logger_) { pre_compression_logger_(req, res); }
+      output_pre_compression_log(req, res);
 
       std::unique_ptr<detail::compressor> compressor;
       std::string content_encoding;
@@ -8184,14 +8271,22 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     Headers dummy;
     detail::read_headers(strm, dummy);
     res.status = StatusCode::InternalServerError_500;
+    output_error_log(Error::ExceedMaxSocketDescriptorCount, &req);
     return write_response(strm, close_connection, req, res);
   }
 #endif
 
   // Request line and headers
-  if (!parse_request_line(line_reader.ptr(), req) ||
-      !detail::read_headers(strm, req.headers)) {
+  if (!parse_request_line(line_reader.ptr(), req)) {
     res.status = StatusCode::BadRequest_400;
+    output_error_log(Error::InvalidRequestLine, &req);
+    return write_response(strm, close_connection, req, res);
+  }
+
+  // Request headers
+  if (!detail::read_headers(strm, req.headers)) {
+    res.status = StatusCode::BadRequest_400;
+    output_error_log(Error::InvalidHeaders, &req);
     return write_response(strm, close_connection, req, res);
   }
 
@@ -8200,6 +8295,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     Headers dummy;
     detail::read_headers(strm, dummy);
     res.status = StatusCode::UriTooLong_414;
+    output_error_log(Error::ExceedUriMaxLength, &req);
     return write_response(strm, close_connection, req, res);
   }
 
@@ -8226,6 +8322,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     const auto &accept_header = req.get_header_value("Accept");
     if (!detail::parse_accept_header(accept_header, req.accept_content_types)) {
       res.status = StatusCode::BadRequest_400;
+      output_error_log(Error::HTTPParsing, &req);
       return write_response(strm, close_connection, req, res);
     }
   }
@@ -8234,6 +8331,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     const auto &range_header_value = req.get_header_value("Range");
     if (!detail::parse_range_header(range_header_value, req.ranges)) {
       res.status = StatusCode::RangeNotSatisfiable_416;
+      output_error_log(Error::InvalidRangeHeader, &req);
       return write_response(strm, close_connection, req, res);
     }
   }
@@ -8314,6 +8412,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         res.content_length_ = 0;
         res.content_provider_ = nullptr;
         res.status = StatusCode::NotFound_404;
+        output_error_log(Error::OpenFile, &req);
         return write_response(strm, close_connection, req, res);
       }
 
@@ -8371,6 +8470,29 @@ inline bool Server::process_and_close_socket(socket_t sock) {
   detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return ret;
+}
+
+inline void Server::output_log(const Request &req, const Response &res) const {
+  if (logger_) {
+    std::lock_guard<std::mutex> guard(logger_mutex_);
+    logger_(req, res);
+  }
+}
+
+inline void Server::output_pre_compression_log(const Request &req,
+                                               const Response &res) const {
+  if (pre_compression_logger_) {
+    std::lock_guard<std::mutex> guard(logger_mutex_);
+    pre_compression_logger_(req, res);
+  }
+}
+
+inline void Server::output_error_log(const Error &err,
+                                     const Request *req) const {
+  if (error_logger_) {
+    std::lock_guard<std::mutex> guard(logger_mutex_);
+    error_logger_(err, req);
+  }
 }
 
 // HTTP client implementation
@@ -8451,6 +8573,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   server_certificate_verifier_ = rhs.server_certificate_verifier_;
 #endif
   logger_ = rhs.logger_;
+  error_logger_ = rhs.error_logger_;
 }
 
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
@@ -8593,7 +8716,10 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     }
 
     if (!is_alive) {
-      if (!create_and_connect_socket(socket_, error)) { return false; }
+      if (!create_and_connect_socket(socket_, error)) {
+        output_error_log(error, &req);
+        return false;
+      }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
       // TODO: refactoring
@@ -8603,11 +8729,15 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
           auto success = false;
           if (!scli.connect_with_proxy(socket_, req.start_time_, res, success,
                                        error)) {
+            if (!success) { output_error_log(error, &req); }
             return success;
           }
         }
 
-        if (!scli.initialize_ssl(socket_, error)) { return false; }
+        if (!scli.initialize_ssl(socket_, error)) {
+          output_error_log(error, &req);
+          return false;
+        }
       }
 #endif
     }
@@ -8653,7 +8783,10 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   });
 
   if (!ret) {
-    if (error == Error::Success) { error = Error::Unknown; }
+    if (error == Error::Success) {
+      error = Error::Unknown;
+      output_error_log(error, &req);
+    }
   }
 
   return ret;
@@ -8681,6 +8814,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
                                        Error &error) {
   if (req.path.empty()) {
     error = Error::Connection;
+    output_error_log(error, &req);
     return false;
   }
 
@@ -8756,6 +8890,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (req.redirect_count_ == 0) {
     error = Error::ExceedRedirectCount;
+    output_error_log(error, &req);
     return false;
   }
 
@@ -8859,6 +8994,7 @@ inline bool ClientImpl::create_redirect_client(
 #else
     // SSL not supported - set appropriate error
     error = Error::SSLConnection;
+    output_error_log(error, &req);
     return false;
 #endif
   } else {
@@ -8931,6 +9067,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
 
   // Copy logging and headers
   if (logger_) { client.set_logger(logger_); }
+  if (error_logger_) { client.set_error_logger(error_logger_); }
 
   // NOTE: DO NOT copy default_headers_ as they may contain stale Host headers
   // Each new client should generate its own headers based on its target host
@@ -9104,6 +9241,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     auto &data = bstrm.get_buffer();
     if (!detail::write_data(strm, data.data(), data.size())) {
       error = Error::Write;
+      output_error_log(error, &req);
       return false;
     }
   }
@@ -9122,18 +9260,21 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       size_t to_write = (std::min)(CPPHTTPLIB_SEND_BUFSIZ, body_size - written);
       if (!detail::write_data(strm, data + written, to_write)) {
         error = Error::Write;
+        output_error_log(error, &req);
         return false;
       }
       written += to_write;
 
       if (!req.upload_progress(written, body_size)) {
         error = Error::Canceled;
+        output_error_log(error, &req);
         return false;
       }
     }
   } else {
     if (!detail::write_data(strm, req.body.data(), req.body.size())) {
       error = Error::Write;
+      output_error_log(error, &req);
       return false;
     }
   }
@@ -9185,6 +9326,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
       while (ok && offset < content_length) {
         if (!content_provider(offset, content_length - offset, data_sink)) {
           error = Error::Canceled;
+          output_error_log(error, &req);
           return nullptr;
         }
       }
@@ -9195,6 +9337,7 @@ inline std::unique_ptr<Response> ClientImpl::send_with_content_provider(
                                  return true;
                                })) {
         error = Error::Compression;
+        output_error_log(error, &req);
         return nullptr;
       }
     }
@@ -9254,6 +9397,22 @@ ClientImpl::adjust_host_string(const std::string &host) const {
   return host;
 }
 
+inline void ClientImpl::output_log(const Request &req,
+                                   const Response &res) const {
+  if (logger_) {
+    std::lock_guard<std::mutex> guard(logger_mutex_);
+    logger_(req, res);
+  }
+}
+
+inline void ClientImpl::output_error_log(const Error &err,
+                                         const Request *req) const {
+  if (error_logger_) {
+    std::lock_guard<std::mutex> guard(logger_mutex_);
+    error_logger_(err, req);
+  }
+}
+
 inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                         Response &res, bool close_connection,
                                         Error &error) {
@@ -9266,6 +9425,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     if (!is_proxy_enabled) {
       if (detail::is_ssl_peer_could_be_closed(socket_.ssl, socket_.sock)) {
         error = Error::SSLPeerCouldBeClosed_;
+        output_error_log(error, &req);
         return false;
       }
     }
@@ -9276,6 +9436,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   if (!read_response_line(strm, req, res) ||
       !detail::read_headers(strm, res.headers)) {
     error = Error::Read;
+    output_error_log(error, &req);
     return false;
   }
 
@@ -9289,6 +9450,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {
         error = Error::Canceled;
+        output_error_log(error, &req);
         return false;
       }
     }
@@ -9299,7 +9461,10 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                   [&](const char *buf, size_t n, size_t off, size_t len) {
                     if (redirect) { return true; }
                     auto ret = req.content_receiver(buf, n, off, len);
-                    if (!ret) { error = Error::Canceled; }
+                    if (!ret) {
+                      error = Error::Canceled;
+                      output_error_log(error, &req);
+                    }
                     return ret;
                   })
             : static_cast<ContentReceiverWithProgress>(
@@ -9313,7 +9478,10 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     auto progress = [&](size_t current, size_t total) {
       if (!req.download_progress || redirect) { return true; }
       auto ret = req.download_progress(current, total);
-      if (!ret) { error = Error::Canceled; }
+      if (!ret) {
+        error = Error::Canceled;
+        output_error_log(error, &req);
+      }
       return ret;
     };
 
@@ -9322,6 +9490,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
         auto len = res.get_header_value_u64("Content-Length");
         if (len > res.body.max_size()) {
           error = Error::Read;
+          output_error_log(error, &req);
           return false;
         }
         res.body.reserve(static_cast<size_t>(len));
@@ -9334,13 +9503,14 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                 dummy_status, std::move(progress),
                                 std::move(out), decompress_)) {
         if (error != Error::Canceled) { error = Error::Read; }
+        output_error_log(error, &req);
         return false;
       }
     }
   }
 
   // Log
-  if (logger_) { logger_(req, res); }
+  output_log(req, res);
 
   return true;
 }
@@ -10244,6 +10414,10 @@ inline void ClientImpl::set_logger(Logger logger) {
   logger_ = std::move(logger);
 }
 
+inline void ClientImpl::set_error_logger(ErrorLogger error_logger) {
+  error_logger_ = std::move(error_logger);
+}
+
 /*
  * SSL Implementation
  */
@@ -10756,6 +10930,7 @@ inline bool SSLClient::connect_with_proxy(
         // Create a new socket for the authenticated CONNECT request
         if (!create_and_connect_socket(socket, error)) {
           success = false;
+          output_error_log(error, nullptr);
           return false;
         }
 
@@ -10793,6 +10968,7 @@ inline bool SSLClient::connect_with_proxy(
   // as the response of the request
   if (proxy_res.status != StatusCode::OK_200) {
     error = Error::ProxyConnection;
+    output_error_log(error, nullptr);
     res = std::move(proxy_res);
     // Thread-safe to close everything because we are assuming there are
     // no requests in flight
@@ -10845,6 +11021,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         if (server_certificate_verification_) {
           if (!load_certs()) {
             error = Error::SSLLoadingCerts;
+            output_error_log(error, nullptr);
             return false;
           }
           SSL_set_verify(ssl2, SSL_VERIFY_NONE, nullptr);
@@ -10854,6 +11031,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
                 socket.sock, ssl2, SSL_connect, connection_timeout_sec_,
                 connection_timeout_usec_, &last_ssl_error_)) {
           error = Error::SSLConnection;
+          output_error_log(error, nullptr);
           return false;
         }
 
@@ -10867,6 +11045,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           if (verification_status == SSLVerifierResponse::CertificateRejected) {
             last_openssl_error_ = ERR_get_error();
             error = Error::SSLServerVerification;
+            output_error_log(error, nullptr);
             return false;
           }
 
@@ -10876,6 +11055,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             if (verify_result_ != X509_V_OK) {
               last_openssl_error_ = static_cast<unsigned long>(verify_result_);
               error = Error::SSLServerVerification;
+              output_error_log(error, nullptr);
               return false;
             }
 
@@ -10885,6 +11065,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             if (server_cert == nullptr) {
               last_openssl_error_ = ERR_get_error();
               error = Error::SSLServerVerification;
+              output_error_log(error, nullptr);
               return false;
             }
 
@@ -10892,6 +11073,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
               if (!verify_host(server_cert)) {
                 last_openssl_error_ = X509_V_ERR_HOSTNAME_MISMATCH;
                 error = Error::SSLServerHostnameVerification;
+                output_error_log(error, nullptr);
                 return false;
               }
             }
@@ -11656,6 +11838,10 @@ inline void Client::set_server_certificate_verifier(
 
 inline void Client::set_logger(Logger logger) {
   cli_->set_logger(std::move(logger));
+}
+
+inline void Client::set_error_logger(ErrorLogger error_logger) {
+  cli_->set_error_logger(std::move(error_logger));
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
