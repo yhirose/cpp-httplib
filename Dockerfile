@@ -8,4 +8,6 @@ FROM scratch
 COPY --from=builder /build/server /server
 COPY docker/html/index.html /html/index.html
 EXPOSE 80
-CMD ["/server"]
+
+ENTRYPOINT ["/server"]
+CMD ["0.0.0.0", "80", "/", "/html"]
