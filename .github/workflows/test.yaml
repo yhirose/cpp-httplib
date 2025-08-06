@@ -148,7 +148,7 @@ jobs:
       run: vcpkg install gtest curl zlib brotli zstd
     - name: Install OpenSSL
       if: ${{ matrix.config.with_ssl }}
-      run: choco install openssl
+      run: choco install openssl --version 3.5.2 # workaround for chocolatey issue with the latest OpenSSL
     - name: Configure CMake ${{ matrix.config.name }}
       run: >
         cmake -B build -S .
