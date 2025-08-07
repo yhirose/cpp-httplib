@@ -18,8 +18,7 @@
 
 using namespace httplib;
 
-auto SERVER_NAME =
-    std::format("cpp-httplib-nginxish-server/{}", CPPHTTPLIB_VERSION);
+auto SERVER_NAME = std::format("cpp-httplib-server/{}", CPPHTTPLIB_VERSION);
 
 Server svr;
 
@@ -31,7 +30,7 @@ void signal_handler(int signal) {
   }
 }
 
-std::string get_nginx_time_format() {
+std::string get_time_format() {
   auto now = std::chrono::system_clock::now();
   auto time_t = std::chrono::system_clock::to_time_t(now);
 
@@ -40,7 +39,7 @@ std::string get_nginx_time_format() {
   return ss.str();
 }
 
-std::string get_nginx_error_time_format() {
+std::string get_error_time_format() {
   auto now = std::chrono::system_clock::now();
   auto time_t = std::chrono::system_clock::to_time_t(now);
 
@@ -77,7 +76,7 @@ void nginx_access_logger(const Request &req, const Response &res) {
   std::string remote_addr = get_client_ip(req);
   std::string remote_user =
       "-"; // cpp-httplib doesn't have built-in auth user tracking
-  std::string time_local = get_nginx_time_format();
+  std::string time_local = get_time_format();
   std::string request =
       std::format("{} {} {}", req.method, req.path, req.version);
   int status = res.status;
@@ -98,7 +97,7 @@ void nginx_access_logger(const Request &req, const Response &res) {
 // YYYY/MM/DD HH:MM:SS [level] message, client: client_ip, request: "request",
 // host: "host"
 void nginx_error_logger(const Error &err, const Request *req) {
-  std::string time_local = get_nginx_error_time_format();
+  std::string time_local = get_error_time_format();
   std::string level = "error";
 
   if (req) {
