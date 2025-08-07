@@ -117,8 +117,11 @@ if(BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
 	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-if( CMAKE_SYSTEM_NAME MATCHES "Windows" AND ${CMAKE_SYSTEM_VERSION} VERSION_LESS "10.0.0")
+if(CMAKE_SYSTEM_NAME MATCHES "Windows" AND ${CMAKE_SYSTEM_VERSION} VERSION_LESS "10.0.0")
 	message(SEND_ERROR "Windows ${CMAKE_SYSTEM_VERSION} or lower is not supported. Please use Windows 10 or later.")
+endif()
+if(CMAKE_SIZEOF_VOID_P LESS 8)
+	message(WARNING "Pointer size ${CMAKE_SIZEOF_VOID_P} is not supported. Please use a 64-bit compiler.")
 endif()
 
 # Set some variables that are used in-tree and while building based on our options
