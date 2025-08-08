@@ -15,6 +15,12 @@
  * Platform compatibility check
  */
 
+#if defined(_MSC_VER)
+#if defined(_WIN32) && !defined(_WIN64)
+#pragma message(                                                               \
+    "cpp-httplib doesn't support 32-bit Windows. Please use a 64-bit compiler.")
+#endif
+#else
 #if defined(_WIN32) && !defined(_WIN64)
 #warning                                                                       \
     "cpp-httplib doesn't support 32-bit Windows. Please use a 64-bit compiler."
@@ -24,6 +30,7 @@
 #elif defined(__SIZEOF_SIZE_T__) && __SIZEOF_SIZE_T__ < 8
 #warning                                                                       \
     "cpp-httplib doesn't support platforms where size_t is less than 64 bits."
+#endif
 #endif
 
 #ifdef _WIN32
