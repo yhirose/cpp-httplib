@@ -18,14 +18,14 @@
 
 using namespace httplib;
 
-auto SERVER_NAME = std::format("cpp-httplib-server/{}", CPPHTTPLIB_VERSION);
+const auto SERVER_NAME =
+    std::format("cpp-httplib-server/{}", CPPHTTPLIB_VERSION);
 
 Server svr;
 
 void signal_handler(int signal) {
   if (signal == SIGINT || signal == SIGTERM) {
-    std::cout << std::format("\nReceived signal, shutting down gracefully...")
-              << std::endl;
+    std::cout << "\nReceived signal, shutting down gracefully...\n";
     svr.stop();
   }
 }
@@ -73,17 +73,16 @@ std::string get_client_ip(const Request &req) {
 // $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent
 // "$http_referer" "$http_user_agent"
 void nginx_access_logger(const Request &req, const Response &res) {
-  std::string remote_addr = get_client_ip(req);
+  auto remote_addr = get_client_ip(req);
   std::string remote_user =
       "-"; // cpp-httplib doesn't have built-in auth user tracking
-  std::string time_local = get_time_format();
-  std::string request =
-      std::format("{} {} {}", req.method, req.path, req.version);
-  int status = res.status;
-  size_t body_bytes_sent = res.body.size();
-  std::string http_referer = req.get_header_value("Referer");
+  auto time_local = get_time_format();
+  auto request = std::format("{} {} {}", req.method, req.path, req.version);
+  auto status = res.status;
+  auto body_bytes_sent = res.body.size();
+  auto http_referer = req.get_header_value("Referer");
   if (http_referer.empty()) http_referer = "-";
-  std::string http_user_agent = req.get_header_value("User-Agent");
+  auto http_user_agent = req.get_header_value("User-Agent");
   if (http_user_agent.empty()) http_user_agent = "-";
 
   std::cout << std::format("{} - {} [{}] \"{}\" {} {} \"{}\" \"{}\"",
@@ -97,14 +96,14 @@ void nginx_access_logger(const Request &req, const Response &res) {
 // YYYY/MM/DD HH:MM:SS [level] message, client: client_ip, request: "request",
 // host: "host"
 void nginx_error_logger(const Error &err, const Request *req) {
-  std::string time_local = get_error_time_format();
+  auto time_local = get_error_time_format();
   std::string level = "error";
 
   if (req) {
-    std::string client_ip = get_client_ip(*req);
-    std::string request =
+    auto client_ip = get_client_ip(*req);
+    auto request =
         std::format("{} {} {}", req->method, req->path, req->version);
-    std::string host = req->get_header_value("Host");
+    auto host = req->get_header_value("Host");
     if (host.empty()) host = "-";
 
     std::cerr << std::format("{} [{}] {}, client: {}, request: "
@@ -120,38 +119,113 @@ void nginx_error_logger(const Error &err, const Request *req) {
 }
 
 void print_usage(const char *program_name) {
-  std::cout << std::format("Usage: {} <hostname> <port> <mount_point> "
-                           "<document_root_directory>",
-                           program_name)
+  std::cout << "Usage: " << program_name << " [OPTIONS]" << std::endl;
+  std::cout << std::endl;
+  std::cout << "Options:" << std::endl;
+  std::cout << "  --host <hostname>        Server hostname (default: localhost)"
             << std::endl;
-
-  std::cout << std::format("Example: {} localhost 8080 /var/www/html .",
-                           program_name)
+  std::cout << "  --port <port>            Server port (default: 8080)"
             << std::endl;
+  std::cout << "  --mount <mount:path>     Mount point and document root"
+            << std::endl;
+  std::cout << "                           Format: mount_point:document_root"
+            << std::endl;
+  std::cout << "                           (default: /:./html)" << std::endl;
+  std::cout << "  --version                Show version information"
+            << std::endl;
+  std::cout << "  --help                   Show this help message" << std::endl;
+  std::cout << std::endl;
+  std::cout << "Examples:" << std::endl;
+  std::cout << "  " << program_name
+            << " --host localhost --port 8080 --mount /:./html" << std::endl;
+  std::cout << "  " << program_name
+            << " --host 0.0.0.0 --port 3000 --mount /api:./api" << std::endl;
 }
 
-int main(int argc, char *argv[]) {
-  if (argc != 5) {
-    print_usage(argv[0]);
-    return 1;
+struct ServerConfig {
+  std::string hostname = "localhost";
+  int port = 8080;
+  std::string mount_point = "/";
+  std::string document_root = "./html";
+};
+
+enum class ParseResult { SUCCESS, HELP_REQUESTED, VERSION_REQUESTED, ERROR };
+
+ParseResult parse_command_line(int argc, char *argv[], ServerConfig &config) {
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+      print_usage(argv[0]);
+      return ParseResult::HELP_REQUESTED;
+    } else if (strcmp(argv[i], "--host") == 0) {
+      if (i + 1 >= argc) {
+        std::cerr << "Error: --host requires a hostname argument" << std::endl;
+        print_usage(argv[0]);
+        return ParseResult::ERROR;
+      }
+      config.hostname = argv[++i];
+    } else if (strcmp(argv[i], "--port") == 0) {
+      if (i + 1 >= argc) {
+        std::cerr << "Error: --port requires a port number argument"
+                  << std::endl;
+        print_usage(argv[0]);
+        return ParseResult::ERROR;
+      }
+      config.port = std::atoi(argv[++i]);
+      if (config.port <= 0 || config.port > 65535) {
+        std::cerr << "Error: Invalid port number. Must be between 1 and 65535"
+                  << std::endl;
+        return ParseResult::ERROR;
+      }
+    } else if (strcmp(argv[i], "--mount") == 0) {
+      if (i + 1 >= argc) {
+        std::cerr
+            << "Error: --mount requires mount_point:document_root argument"
+            << std::endl;
+        print_usage(argv[0]);
+        return ParseResult::ERROR;
+      }
+      std::string mount_arg = argv[++i];
+      auto colon_pos = mount_arg.find(':');
+      if (colon_pos == std::string::npos) {
+        std::cerr << "Error: --mount argument must be in format "
+                     "mount_point:document_root"
+                  << std::endl;
+        print_usage(argv[0]);
+        return ParseResult::ERROR;
+      }
+      config.mount_point = mount_arg.substr(0, colon_pos);
+      config.document_root = mount_arg.substr(colon_pos + 1);
+
+      if (config.mount_point.empty() || config.document_root.empty()) {
+        std::cerr
+            << "Error: Both mount_point and document_root must be non-empty"
+            << std::endl;
+        return ParseResult::ERROR;
+      }
+    } else if (strcmp(argv[i], "--version") == 0) {
+      std::cout << CPPHTTPLIB_VERSION << std::endl;
+      return ParseResult::VERSION_REQUESTED;
+    } else {
+      std::cerr << "Error: Unknown option '" << argv[i] << "'" << std::endl;
+      print_usage(argv[0]);
+      return ParseResult::ERROR;
+    }
   }
+  return ParseResult::SUCCESS;
+}
 
-  std::string hostname = argv[1];
-  auto port = std::atoi(argv[2]);
-  std::string mount_point = argv[3];
-  std::string document_root = argv[4];
-
+bool setup_server(Server &svr, const ServerConfig &config) {
   svr.set_logger(nginx_access_logger);
   svr.set_error_logger(nginx_error_logger);
 
-  auto ret = svr.set_mount_point(mount_point, document_root);
+  auto ret = svr.set_mount_point(config.mount_point, config.document_root);
   if (!ret) {
     std::cerr
         << std::format(
                "Error: Cannot mount '{}' to '{}'. Directory may not exist.",
-               mount_point, document_root)
+               config.mount_point, config.document_root)
         << std::endl;
-    return 1;
+    return false;
   }
 
   svr.set_file_extension_and_mimetype_mapping("html", "text/html");
@@ -191,16 +265,31 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
-  std::cout << std::format("Serving HTTP on {}:{}", hostname, port)
-            << std::endl;
-  std::cout << std::format("Mount point: {} -> {}", mount_point, document_root)
-            << std::endl;
-  std::cout << std::format("Press Ctrl+C to shutdown gracefully...")
-            << std::endl;
+  return true;
+}
 
-  ret = svr.listen(hostname, port);
+int main(int argc, char *argv[]) {
+  ServerConfig config;
 
-  std::cout << std::format("Server has been shut down.") << std::endl;
+  auto result = parse_command_line(argc, argv, config);
+  switch (result) {
+  case ParseResult::HELP_REQUESTED:
+  case ParseResult::VERSION_REQUESTED: return 0;
+  case ParseResult::ERROR: return 1;
+  case ParseResult::SUCCESS: break;
+  }
+
+  if (!setup_server(svr, config)) { return 1; }
+
+  std::cout << "Serving HTTP on " << config.hostname << ":" << config.port
+            << std::endl;
+  std::cout << "Mount point: " << config.mount_point << " -> "
+            << config.document_root << std::endl;
+  std::cout << "Press Ctrl+C to shutdown gracefully..." << std::endl;
+
+  auto ret = svr.listen(config.hostname, config.port);
+
+  std::cout << "Server has been shut down." << std::endl;
 
   return ret ? 0 : 1;
 }
