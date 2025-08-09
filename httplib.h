@@ -3078,8 +3078,24 @@ inline bool mmap::open(const char *path) {
   auto wpath = u8string_to_wstring(path);
   if (wpath.empty()) { return false; }
 
-  hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                         OPEN_EXISTING, NULL);
+  static std::once_flag create_file2_check_flag;
+  static bool has_CreateFile2 = false;
+
+  std::call_once(create_file2_check_flag, []() {
+    auto hKernel32 = GetModuleHandleW(L"kernel32.dll");
+    if (hKernel32) {
+      auto pCreateFile2 = GetProcAddress(hKernel32, "CreateFile2");
+      if (pCreateFile2) { has_CreateFile2 = true; }
+    }
+  });
+
+  if (has_CreateFile2) {
+    hFile_ = ::CreateFile2(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           OPEN_EXISTING, NULL);
+  } else {
+    hFile_ = ::CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  }
 
   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
 
