@@ -124,6 +124,22 @@ if(CMAKE_SIZEOF_VOID_P LESS 8)
 	message(WARNING "Pointer size ${CMAKE_SIZEOF_VOID_P} is not supported. Please use a 64-bit compiler.")
 endif()
 
+# check CreateFile2 for mingw
+INCLUDE(CheckCXXSourceCompiles)
+if(MINGW)
+	check_cxx_source_compiles("#include <windows.h>
+	#include <fileapi.h>
+	int main() {
+		HANDLE h = CreateFile2(L\"nul\", GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, NULL);
+		if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+		return 0;
+	}" HAVE_CREATEFILE2)
+
+	if(HAVE_CREATEFILE2)
+		add_compile_definitions(HAVE_CREATEFILE2)
+	endif()
+endif()
+
 # Set some variables that are used in-tree and while building based on our options
 set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})
 set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN ${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN})
