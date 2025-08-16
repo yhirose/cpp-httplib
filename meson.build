@@ -39,12 +39,12 @@ endif
 deps = [dependency('threads')]
 args = []
 
-openssl_dep = dependency('openssl', version: '>=3.0.0', required: get_option('cpp-httplib_openssl'))
+openssl_dep = dependency('openssl', version: '>=3.0.0', required: get_option('openssl'))
 if openssl_dep.found()
   deps += openssl_dep
   args += '-DCPPHTTPLIB_OPENSSL_SUPPORT'
   if host_machine.system() == 'darwin'
-    macosx_keychain_dep = dependency('appleframeworks', modules: ['CoreFoundation', 'Security'], required: get_option('cpp-httplib_macosx_keychain'))
+    macosx_keychain_dep = dependency('appleframeworks', modules: ['CoreFoundation', 'Security'], required: get_option('macosx_keychain'))
     if macosx_keychain_dep.found()
         deps += macosx_keychain_dep
         args += '-DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN'
@@ -52,15 +52,15 @@ if openssl_dep.found()
   endif
 endif
 
-zlib_dep = dependency('zlib', required: get_option('cpp-httplib_zlib'))
+zlib_dep = dependency('zlib', required: get_option('zlib'))
 if zlib_dep.found()
   deps += zlib_dep
   args += '-DCPPHTTPLIB_ZLIB_SUPPORT'
 endif
 
-brotli_deps = [dependency('libbrotlicommon', required: get_option('cpp-httplib_brotli'))]
-brotli_deps += dependency('libbrotlidec',    required: get_option('cpp-httplib_brotli'))
-brotli_deps += dependency('libbrotlienc',    required: get_option('cpp-httplib_brotli'))
+brotli_deps = [dependency('libbrotlicommon', required: get_option('brotli'))]
+brotli_deps += dependency('libbrotlidec',    required: get_option('brotli'))
+brotli_deps += dependency('libbrotlienc',    required: get_option('brotli'))
 
 brotli_found_all = true
 foreach brotli_dep : brotli_deps
@@ -74,7 +74,7 @@ if brotli_found_all
   args += '-DCPPHTTPLIB_BROTLI_SUPPORT'
 endif
 
-async_ns_opt = get_option('cpp-httplib_non_blocking_getaddrinfo')
+async_ns_opt = get_option('non_blocking_getaddrinfo')
 
 if host_machine.system() == 'windows'
   async_ns_dep = cxx.find_library('ws2_32', required: async_ns_opt)
@@ -91,7 +91,7 @@ endif
 
 cpp_httplib_dep = dependency('', required: false)
 
-if get_option('cpp-httplib_compile')
+if get_option('compile')
   python3 = find_program('python3')
 
   httplib_ch = custom_target(
@@ -135,6 +135,6 @@ endif
 
 meson.override_dependency('cpp-httplib', cpp_httplib_dep)
 
-if get_option('cpp-httplib_test')
+if get_option('test')
   subdir('test')
 endif
