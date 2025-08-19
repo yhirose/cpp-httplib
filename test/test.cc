@@ -5509,6 +5509,54 @@ TEST_F(ServerTest, PostContentReceiverGzip) {
   ASSERT_EQ("content", res->body);
 }
 
+TEST_F(ServerTest, PostRawDataContentReceiver) {
+  const char* raw_data = "raw content";
+  size_t data_length = strlen(raw_data);
+  std::string received_body;
+  
+  auto res = cli_.Post("/content_receiver", raw_data, data_length, "text/plain",
+                      [&received_body](const char* data, size_t len) {
+                        received_body.append(data, len);
+                        return true;
+                      });
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("raw content", received_body);
+}
+
+TEST_F(ServerTest, PostRawDataWithHeadersContentReceiver) {
+  const char* raw_data = "raw content with headers";
+  size_t data_length = strlen(raw_data);
+  std::string received_body;
+  Headers headers = {{"User-Agent", "test-agent"}};
+  
+  auto res = cli_.Post("/content_receiver", headers, raw_data, data_length, "text/plain",
+                      [&received_body](const char* data, size_t len) {
+                        received_body.append(data, len);
+                        return true;
+                      });
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ("raw content with headers", received_body);
+}
+
+TEST_F(ServerTest, PostBinaryDataContentReceiver) {
+  // Test with binary data containing null bytes
+  const char binary_data[] = {'H', 'e', 'l', 'l', 'o', 0x00, 0x01, 0x02, 'W', 'o', 'r', 'l', 'd'};
+  size_t data_length = sizeof(binary_data);
+  std::string received_body;
+  
+  auto res = cli_.Post("/content_receiver", binary_data, data_length, "application/octet-stream",
+                      [&received_body](const char* data, size_t len) {
+                        received_body.append(data, len);
+                        return true;
+                      });
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_EQ(data_length, received_body.size());
+  ASSERT_EQ(0, memcmp(binary_data, received_body.data(), data_length));
+}
+
 TEST_F(ServerTest, PutContentReceiver) {
   auto res = cli_.Put("/content_receiver", "content", "text/plain");
   ASSERT_TRUE(res);
