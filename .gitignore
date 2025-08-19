@@ -43,3 +43,9 @@ ipch
 .*
 !/.gitattributes
 !/.github
+
+# Temporary files
+*.o
+test_*
+minimal_test
+test_compile*
