@@ -1546,7 +1546,7 @@ public:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   void set_ca_cert_path(const std::string &ca_cert_file_path,
                         const std::string &ca_cert_dir_path = std::string());
-  void set_ca_cert_store(X509_STORE *ca_cert_store);
+  virtual void set_ca_cert_store(X509_STORE *ca_cert_store);
   X509_STORE *create_ca_cert_store(const char *ca_cert, std::size_t size) const;
 #endif
 
@@ -11857,7 +11857,7 @@ inline void Client::set_ca_cert_path(const std::string &ca_cert_file_path,
 
 inline void Client::set_ca_cert_store(X509_STORE *ca_cert_store) {
   if (is_ssl_) {
-    static_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
+    dynamic_cast<SSLClient &>(*cli_).set_ca_cert_store(ca_cert_store);
   } else {
     cli_->set_ca_cert_store(ca_cert_store);
   }
@@ -11869,13 +11869,13 @@ inline void Client::load_ca_cert_store(const char *ca_cert, std::size_t size) {
 
 inline long Client::get_openssl_verify_result() const {
   if (is_ssl_) {
-    return static_cast<SSLClient &>(*cli_).get_openssl_verify_result();
+    return dynamic_cast<SSLClient &>(*cli_).get_openssl_verify_result();
   }
   return -1; // NOTE: -1 doesn't match any of X509_V_ERR_???
 }
 
 inline SSL_CTX *Client::ssl_context() const {
-  if (is_ssl_) { return static_cast<SSLClient &>(*cli_).ssl_context(); }
+  if (is_ssl_) { return dynamic_cast<SSLClient &>(*cli_).ssl_context(); }
   return nullptr;
 }
 #endif
