@@ -10856,6 +10856,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
 }
 
 inline SSLClient::~SSLClient() {
+  if (ca_cert_store_) { X509_STORE_free(ca_cert_store_); }
   if (ctx_) { SSL_CTX_free(ctx_); }
   // Make sure to shut down SSL since shutdown_ssl will resolve to the
   // base function rather than the derived function once we get to the
@@ -10870,7 +10871,8 @@ inline void SSLClient::set_ca_cert_store(X509_STORE *ca_cert_store) {
     if (ctx_) {
       if (SSL_CTX_get_cert_store(ctx_) != ca_cert_store) {
         // Free memory allocated for old cert and use new store `ca_cert_store`
-        SSL_CTX_set_cert_store(ctx_, ca_cert_store);
+        SSL_CTX_set1_cert_store(ctx_, ca_cert_store);
+        ca_cert_store_ = ca_cert_store;
       }
     } else {
       X509_STORE_free(ca_cert_store);
