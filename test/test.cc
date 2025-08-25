@@ -3200,9 +3200,10 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("abcdefg", "text/plain");
              })
-        .Get("/custom",
+        .Get("/test-start-time",
              [&](const Request &req, Response &res) {
-               if (custom_fn) { custom_fn(req, res); }
+               EXPECT_NE(req.start_time_,
+                         std::chrono::steady_clock::time_point::min());
              })
         .Get("/with-range-customized-response",
              [&](const Request & /*req*/, Response &res) {
@@ -3598,7 +3599,6 @@ protected:
 #endif
   thread t_;
   std::vector<thread> request_threads_;
-  std::function<void(const Request &, Response &)> custom_fn;
 };
 
 TEST_F(ServerTest, GetMethod200) {
@@ -5806,10 +5806,7 @@ TEST_F(ServerTest, TooManyRedirect) {
 }
 
 TEST_F(ServerTest, StartTime) {
-  custom_fn = [](const Request &req, Response &res) {
-    EXPECT_NE(req.start_time_, std::chrono::steady_clock::time_point::min());
-  };
-  auto res = cli_.Get("/custom");
+  auto res = cli_.Get("/test-start-time");
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
