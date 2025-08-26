@@ -3200,6 +3200,11 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("abcdefg", "text/plain");
              })
+        .Get("/test-start-time",
+             [&](const Request &req, Response &res) {
+               EXPECT_NE(req.start_time_,
+                         std::chrono::steady_clock::time_point::min());
+             })
         .Get("/with-range-customized-response",
              [&](const Request & /*req*/, Response &res) {
                res.status = StatusCode::BadRequest_400;
@@ -5799,6 +5804,8 @@ TEST_F(ServerTest, TooManyRedirect) {
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
+
+TEST_F(ServerTest, StartTime) { auto res = cli_.Get("/test-start-time"); }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, Gzip) {
