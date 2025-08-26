@@ -5805,9 +5805,7 @@ TEST_F(ServerTest, TooManyRedirect) {
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
 
-TEST_F(ServerTest, StartTime) {
-  auto res = cli_.Get("/test-start-time");
-}
+TEST_F(ServerTest, StartTime) { auto res = cli_.Get("/test-start-time"); }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, Gzip) {
