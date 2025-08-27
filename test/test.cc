@@ -3201,7 +3201,7 @@ protected:
                res.set_content("abcdefg", "text/plain");
              })
         .Get("/test-start-time",
-             [&](const Request &req, Response &res) {
+             [&](const Request &req, Response & /*res*/) {
                EXPECT_NE(req.start_time_,
                          std::chrono::steady_clock::time_point::min());
              })
