@@ -10,4 +10,4 @@ COPY docker/html/index.html /html/index.html
 EXPOSE 80
 
 ENTRYPOINT ["/server"]
-CMD ["0.0.0.0", "80", "/", "/html"]
+CMD ["--host", "0.0.0.0", "--port", "80", "--mount", "/:./html"]
