@@ -7366,7 +7366,6 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
 }
-#endif
 
 TEST(SNI_AutoDetectionTest, SNI_Logic) {
   {
@@ -7409,6 +7408,7 @@ TEST(SNI_AutoDetectionTest, SNI_Logic) {
     }
   }
 }
+#endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
   Server svr;
