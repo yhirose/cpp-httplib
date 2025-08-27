@@ -7366,6 +7366,48 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
 }
+
+TEST(SNI_AutoDetectionTest, SNI_Logic) {
+  {
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+    ASSERT_TRUE(svr.is_valid());
+
+    svr.Get("/sni", [&](const Request &req, Response &res) {
+      std::string expected;
+      if (req.ssl) {
+        if (const char *sni =
+                SSL_get_servername(req.ssl, TLSEXT_NAMETYPE_host_name)) {
+          expected = sni;
+        }
+      }
+      EXPECT_EQ(expected, req.get_param_value("expected"));
+      res.set_content("ok", "text/plain");
+    });
+
+    auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+    auto se = detail::scope_exit([&] {
+      svr.stop();
+      listen_thread.join();
+      ASSERT_FALSE(svr.is_running());
+    });
+
+    svr.wait_until_ready();
+
+    {
+      SSLClient cli("localhost", PORT);
+      cli.enable_server_certificate_verification(false);
+      auto res = cli.Get("/sni?expected=localhost");
+      ASSERT_TRUE(res);
+    }
+
+    {
+      SSLClient cli("::1", PORT);
+      cli.enable_server_certificate_verification(false);
+      auto res = cli.Get("/sni?expected=");
+      ASSERT_TRUE(res);
+    }
+  }
+}
 #endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
