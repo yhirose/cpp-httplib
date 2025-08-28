@@ -3776,7 +3776,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   int wait_result =
       gai_suspend((const struct gaicb *const *)requests, 1, &timeout);
 
-  if (wait_result == 0) {
+  if (wait_result == 0 || wait_result == EAI_ALLDONE) {
     // Completed successfully, get the result
     int gai_result = gai_error(&request);
     if (gai_result == 0) {
