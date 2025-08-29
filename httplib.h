@@ -6385,13 +6385,16 @@ inline bool parse_www_authenticate(const Response &res,
         auto beg = std::sregex_iterator(s.begin(), s.end(), re);
         for (auto i = beg; i != std::sregex_iterator(); ++i) {
           const auto &m = *i;
+          // Ensure we have at least the expected capture groups
+          if (m.size() < 4) continue;
+          
           auto key = s.substr(static_cast<size_t>(m.position(1)),
                               static_cast<size_t>(m.length(1)));
-          auto val = m.length(2) > 0
-                         ? s.substr(static_cast<size_t>(m.position(2)),
+          auto val = (m.size() > 2 && m.length(2) > 0)
+                        ? s.substr(static_cast<size_t>(m.position(2)),
                                     static_cast<size_t>(m.length(2)))
-                         : s.substr(static_cast<size_t>(m.position(3)),
-                                    static_cast<size_t>(m.length(3)));
+                        : (m.size() > 3 ? s.substr(static_cast<size_t>(m.position(3)),
+                                                    static_cast<size_t>(m.length(3))) : "");
           auth[key] = val;
         }
         return true;
