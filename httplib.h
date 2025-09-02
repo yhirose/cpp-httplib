@@ -209,11 +209,11 @@ using ssize_t = __int64;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -258,7 +258,6 @@ using socklen_t = int;
 #ifdef __linux__
 #include <resolv.h>
 #endif
-#include <csignal>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
@@ -266,6 +265,8 @@ using socklen_t = int;
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#include <csignal>
 
 using socket_t = int;
 #ifndef INVALID_SOCKET
@@ -277,6 +278,10 @@ using socket_t = int;
 #include <TargetConditionals.h>
 #endif
 
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -285,9 +290,7 @@ using socket_t = int;
 #include <climits>
 #include <condition_variable>
 #include <cstring>
-#include <errno.h>
 #include <exception>
-#include <fcntl.h>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -300,7 +303,6 @@ using socket_t = int;
 #include <set>
 #include <sstream>
 #include <string>
-#include <sys/stat.h>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -5549,7 +5551,6 @@ public:
 
   bool parse(const char *buf, size_t n, const FormDataHeader &header_callback,
              const ContentReceiver &content_callback) {
-
     buf_append(buf, n);
 
     while (buf_size() > 0) {
@@ -7821,7 +7822,7 @@ inline bool Server::read_content_core(
   } else {
     out = [receiver, &req](const char *buf, size_t n, size_t /*off*/,
                            size_t len) {
-      if (len > req.body.size()) { req.body.resize(len); }
+      if (len > 0) { req.body.reserve(len); }
       return receiver(buf, n);
     };
   }
@@ -10748,7 +10749,6 @@ inline SSL_CTX *SSLServer::ssl_context() const { return ctx_; }
 
 inline void SSLServer::update_certs(X509 *cert, EVP_PKEY *private_key,
                                     X509_STORE *client_ca_cert_store) {
-
   std::lock_guard<std::mutex> guard(ctx_mutex_);
 
   SSL_CTX_use_certificate(ctx_, cert);
