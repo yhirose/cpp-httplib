@@ -209,11 +209,11 @@ using ssize_t = __int64;
 #endif // _MSC_VER
 
 #ifndef S_ISREG
-#define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
+#define S_ISREG(m) (((m)&S_IFREG) == S_IFREG)
 #endif // S_ISREG
 
 #ifndef S_ISDIR
-#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
+#define S_ISDIR(m) (((m)&S_IFDIR) == S_IFDIR)
 #endif // S_ISDIR
 
 #ifndef NOMINMAX
@@ -7819,8 +7819,11 @@ inline bool Server::read_content_core(
                                               multipart_receiver);
     };
   } else {
-    out = [receiver](const char *buf, size_t n, size_t /*off*/,
-                     size_t /*len*/) { return receiver(buf, n); };
+    out = [receiver, &req](const char *buf, size_t n, size_t /*off*/,
+                           size_t len) {
+      if (len > req.body.size()) { req.body.resize(len); }
+      return receiver(buf, n);
+    };
   }
 
   if (req.method == "DELETE" && !req.has_header("Content-Length")) {
@@ -11809,8 +11812,8 @@ inline void Client::set_follow_location(bool on) {
 
 inline void Client::set_path_encode(bool on) { cli_->set_path_encode(on); }
 
-[[deprecated("Use set_path_encode instead")]]
-inline void Client::set_url_encode(bool on) {
+[[deprecated("Use set_path_encode instead")]] inline void
+Client::set_url_encode(bool on) {
   cli_->set_path_encode(on);
 }
 
