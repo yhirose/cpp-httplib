@@ -3801,7 +3801,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
 
   struct GetAddrInfoState {
     std::mutex mutex{};
-    std::condition_variable result_cv;
+    std::condition_variable result_cv{};
     bool completed{false};
     int result{0};
     std::string node{};
