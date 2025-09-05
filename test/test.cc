@@ -1331,6 +1331,27 @@ TEST(RangeTest, FromHTTPBin_Online) {
   }
 }
 
+TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
+  auto host = "unresolvableaddress.local";
+  auto path = std::string{"/"};
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  auto port = 443;
+  SSLClient cli(host, port);
+#else
+  auto port = 80;
+  Client cli(host, port);
+#endif
+  cli.set_connection_timeout(1);
+
+  {
+    auto res = cli.Get(path);
+    ASSERT_FALSE(res);
+  }
+
+  std::this_thread::sleep_for(8s);
+}
+
 TEST(ConnectionErrorTest, InvalidHost) {
   auto host = "-abcde.com";
 
