@@ -3821,6 +3821,10 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   state->hints.ai_socktype = hints->ai_socktype;
   state->hints.ai_protocol = hints->ai_protocol;
   // The remaining fields of "hints" must be zeroed, so do not copy them.
+  assert(hints->ai_addrlen == 0);
+  assert(hints->ai_addr == nullptr);
+  assert(hints->ai_canonname == nullptr);
+  assert(hints->ai_next == nullptr);
 
   std::thread resolve_thread([=]() {
     auto thread_result = getaddrinfo(
