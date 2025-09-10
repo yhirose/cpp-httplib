@@ -3798,31 +3798,55 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   }
 #else
   // Fallback implementation using thread-based timeout for other Unix systems
-  std::mutex result_mutex;
-  std::condition_variable result_cv;
-  auto completed = false;
-  auto result = EAI_SYSTEM;
-  struct addrinfo *result_addrinfo = nullptr;
 
-  std::thread resolve_thread([&]() {
-    auto thread_result = getaddrinfo(node, service, hints, &result_addrinfo);
+  struct GetAddrInfoState {
+    std::mutex mutex{};
+    std::condition_variable result_cv{};
+    bool completed{false};
+    int result{0};
+    std::string node{};
+    std::string service{};
+    struct addrinfo hints {};
+    struct addrinfo *info{nullptr};
+  };
 
-    std::lock_guard<std::mutex> lock(result_mutex);
-    result = thread_result;
-    completed = true;
-    result_cv.notify_one();
+  // Allocate on the heap, so the resolver thread can keep using the data.
+  auto state = std::make_shared<GetAddrInfoState>();
+
+  state->result = EAI_SYSTEM;
+  state->node = node;
+  state->service = service;
+  state->hints.ai_flags = hints->ai_flags;
+  state->hints.ai_family = hints->ai_family;
+  state->hints.ai_socktype = hints->ai_socktype;
+  state->hints.ai_protocol = hints->ai_protocol;
+  // The remaining fields of "hints" must be zeroed, so do not copy them.
+  assert(hints->ai_addrlen == 0);
+  assert(hints->ai_addr == nullptr);
+  assert(hints->ai_canonname == nullptr);
+  assert(hints->ai_next == nullptr);
+
+  std::thread resolve_thread([=]() {
+    auto thread_result = getaddrinfo(
+        state->node.c_str(), state->service.c_str(), hints, &state->info);
+
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->result = thread_result;
+    state->completed = true;
+    state->result_cv.notify_one();
   });
 
   // Wait for completion or timeout
-  std::unique_lock<std::mutex> lock(result_mutex);
-  auto finished = result_cv.wait_for(lock, std::chrono::seconds(timeout_sec),
-                                     [&] { return completed; });
+  std::unique_lock<std::mutex> lock(state->mutex);
+  auto finished =
+      state->result_cv.wait_for(lock, std::chrono::seconds(timeout_sec),
+                                [&] { return state->completed; });
 
   if (finished) {
     // Operation completed within timeout
     resolve_thread.join();
-    *res = result_addrinfo;
-    return result;
+    *res = state->info;
+    return state->result;
   } else {
     // Timeout occurred
     resolve_thread.detach(); // Let the thread finish in background
