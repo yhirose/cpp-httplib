@@ -1349,7 +1349,7 @@ TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
     ASSERT_FALSE(res);
   }
 
-  std::this_thread::sleep_for(8s);
+  std::this_thread::sleep_for(std::chrono::seconds(8));
 }
 
 TEST(ConnectionErrorTest, InvalidHost) {
