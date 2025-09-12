@@ -10285,6 +10285,14 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   EXPECT_EQ(cli.port(), port);
 }
 
+TEST(UniversalClientImplHostTest, Ipv6LiteralAddressHost) {
+  std::string host  = "[::1]";
+  std::string ipV6TestURL = "http://" + host;
+
+  Client cli(ipV6TestURL);
+  EXPECT_EQ(cli.host(), host);
+}
+
 TEST(FileSystemTest, FileAndDirExistenceCheck) {
   auto file_path = "./www/dir/index.html";
   auto dir_path = "./www/dir";
