@@ -2239,7 +2239,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = std::thread([&]() { svr.listen("::1", 1234); });
+  auto th = std::thread([&]() { svr.listen("[::1]", 1234); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     th.join();
@@ -2374,7 +2374,7 @@ TEST(BindServerTest, DISABLED_BindDualStack) {
     EXPECT_EQ("Hello World!", res->body);
   }
   {
-    Client cli("::1", PORT);
+    Client cli("[::1]", PORT);
 
     auto res = cli.Get("/1");
     ASSERT_TRUE(res);
@@ -3650,7 +3650,7 @@ void performance_test(const char *host) {
 
 TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
 
-TEST(BenchmarkTest, v6) { performance_test("::1"); }
+TEST(BenchmarkTest, v6) { performance_test("[::1]"); }
 
 TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
@@ -4987,7 +4987,7 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
+  EXPECT_TRUE(res->body == "[::1]" || res->body == "127.0.0.1");
 }
 
 TEST_F(ServerTest, GetMethodLocalAddr) {
@@ -4995,7 +4995,7 @@ TEST_F(ServerTest, GetMethodLocalAddr) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_TRUE(res->body == std::string("::1:").append(to_string(PORT)) ||
+  EXPECT_TRUE(res->body == std::string("[::1]:").append(to_string(PORT)) ||
               res->body == std::string("127.0.0.1:").append(to_string(PORT)));
 }
 
@@ -7401,7 +7401,7 @@ TEST(SNI_AutoDetectionTest, SNI_Logic) {
     }
 
     {
-      SSLClient cli("::1", PORT);
+      SSLClient cli("[::1]", PORT);
       cli.enable_server_certificate_verification(false);
       auto res = cli.Get("/sni?expected=");
       ASSERT_TRUE(res);
