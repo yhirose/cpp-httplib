@@ -2239,7 +2239,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = std::thread([&]() { svr.listen("[::1]", 1234); });
+  auto th = std::thread([&]() { svr.listen("::1", 1234); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     th.join();
@@ -2374,7 +2374,7 @@ TEST(BindServerTest, DISABLED_BindDualStack) {
     EXPECT_EQ("Hello World!", res->body);
   }
   {
-    Client cli("[::1]", PORT);
+    Client cli("::1", PORT);
 
     auto res = cli.Get("/1");
     ASSERT_TRUE(res);
@@ -3650,7 +3650,7 @@ void performance_test(const char *host) {
 
 TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
 
-TEST(BenchmarkTest, v6) { performance_test("[::1]"); }
+TEST(BenchmarkTest, v6) { performance_test("::1"); }
 
 TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
