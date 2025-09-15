@@ -3800,31 +3800,18 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   // Fallback implementation using thread-based timeout for other Unix systems
 
   struct GetAddrInfoState {
-    std::mutex mutex{};
-    std::condition_variable result_cv{};
-    bool completed{false};
-    int result{0};
-    std::string node{};
-    std::string service{};
-    struct addrinfo hints {};
-    struct addrinfo *info{nullptr};
+    std::mutex mutex;
+    std::condition_variable result_cv;
+    bool completed = false;
+    int result = EAI_SYSTEM;
+    std::string node = node;
+    std::string service = service;
+    struct addrinfo hints = hints;
+    struct addrinfo *info = nullptr;
   };
 
   // Allocate on the heap, so the resolver thread can keep using the data.
   auto state = std::make_shared<GetAddrInfoState>();
-
-  state->result = EAI_SYSTEM;
-  state->node = node;
-  state->service = service;
-  state->hints.ai_flags = hints->ai_flags;
-  state->hints.ai_family = hints->ai_family;
-  state->hints.ai_socktype = hints->ai_socktype;
-  state->hints.ai_protocol = hints->ai_protocol;
-  // The remaining fields of "hints" must be zeroed, so do not copy them.
-  assert(hints->ai_addrlen == 0);
-  assert(hints->ai_addr == nullptr);
-  assert(hints->ai_canonname == nullptr);
-  assert(hints->ai_next == nullptr);
 
   std::thread resolve_thread([=]() {
     auto thread_result = getaddrinfo(
