@@ -7401,7 +7401,7 @@ TEST(SNI_AutoDetectionTest, SNI_Logic) {
     }
 
     {
-      SSLClient cli("[::1]", PORT);
+      SSLClient cli("::1", PORT);
       cli.enable_server_certificate_verification(false);
       auto res = cli.Get("/sni?expected=");
       ASSERT_TRUE(res);
@@ -10285,7 +10285,7 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   EXPECT_EQ(cli.port(), port);
 }
 
-TEST(UniversalClientImplHostTest, Ipv6LiteralAddressHost) {
+TEST(UniversalClientImplTest, Ipv6LiteralAddressHost) {
   std::string host  = "[::1]";
   std::string ipV6TestURL = "http://" + host;
 
