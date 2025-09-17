@@ -17,7 +17,7 @@ jobs:
         git config --global core.autocrlf false
         git config --global core.eol lf
     - name: checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
     - name: install brotli library on ubuntu
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt update && sudo apt-get install -y libbrotli-dev
@@ -32,7 +32,7 @@ jobs:
       run: cd test && make fuzz_test
     - name: setup msbuild on windows
       if: matrix.os == 'windows-latest'
-      uses: microsoft/setup-msbuild@v1.0.2
+      uses: microsoft/setup-msbuild@c26a08ba26249b81327e26f6ef381897b6a8754d # v1.0.2
     - name: make-windows
       if: matrix.os == 'windows-latest'
       run: |
@@ -55,7 +55,7 @@ jobs:
         git config --global core.autocrlf false
         git config --global core.eol lf
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
 
     - name: Install dependencies on Linux
       if: matrix.os == 'ubuntu-latest'
@@ -67,7 +67,7 @@ jobs:
 
     - name: Setup MSVC on Windows
       if: matrix.os == 'windows-latest'
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
     # It is necessary to remove MinGW and StrawberryPerl as they both provide
     # GCC. This causes issues because CMake prefers to use MSVC, while Meson
