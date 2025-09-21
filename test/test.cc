@@ -5008,7 +5008,7 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
+  EXPECT_TRUE(res->body == "[::1]" || res->body == "127.0.0.1");
 }
 
 TEST_F(ServerTest, GetMethodLocalAddr) {
@@ -5016,7 +5016,7 @@ TEST_F(ServerTest, GetMethodLocalAddr) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_TRUE(res->body == std::string("::1:").append(to_string(PORT)) ||
+  EXPECT_TRUE(res->body == std::string("[::1]:").append(to_string(PORT)) ||
               res->body == std::string("127.0.0.1:").append(to_string(PORT)));
 }
 
@@ -10304,6 +10304,14 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   Client cli(ipV6TestURL + ":" + std::to_string(port), CLIENT_CERT_FILE,
              CLIENT_PRIVATE_KEY_FILE);
   EXPECT_EQ(cli.port(), port);
+}
+
+TEST(UniversalClientImplTest, Ipv6LiteralAddressHost) {
+  std::string host  = "[::1]";
+  std::string ipV6TestURL = "http://" + host;
+
+  Client cli(ipV6TestURL);
+  EXPECT_EQ(cli.host(), host);
 }
 
 TEST(FileSystemTest, FileAndDirExistenceCheck) {
