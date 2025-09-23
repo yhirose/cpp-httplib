@@ -7881,6 +7881,44 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
             return false;
           }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+          // Value for HTTP response header ETag.
+          const std::string etag =
+              R"(")" + detail::SHA_512(mm->data()) + R"(")";
+          res.set_header("ETag", etag);
+
+          if (req.has_header("If-None-Match")) {
+            const std::string header_if_none_match =
+                req.get_header_value("If-None-Match");
+
+            /*
+             * Values of HTTP request header If-None-Match which are cached
+             * values of previous HTTP response header ETag.
+             */
+            std::set<std::string> etags;
+            detail::split(header_if_none_match.c_str(),
+                          header_if_none_match.c_str() +
+                              header_if_none_match.length(),
+                          ',', [&](const char *b, const char *e) {
+                            std::string etag(b, e);
+
+                            // Weak validation is not supported.
+                            if (etag.length() >= 2 && etag.at(0) == 'W' &&
+                                etag.at(1) == '/') {
+                              etag.erase(0, 2);
+                            }
+
+                            etags.insert(std::move(etag));
+                          });
+
+            if (etags.find("*") != etags.cend() ||
+                etags.find(etag) != etags.cend()) {
+              res.status = StatusCode::NotModified_304;
+              return true;
+            }
+          }
+#endif
+
           res.set_content_provider(
               mm->size(),
               detail::find_content_type(path, file_extension_and_mimetype_map_,
