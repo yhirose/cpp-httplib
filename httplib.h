@@ -7882,39 +7882,59 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
           }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-          // Value for HTTP response header ETag.
-          const std::string etag =
-              R"(")" + detail::SHA_512(mm->data()) + R"(")";
-          res.set_header("ETag", etag);
-
-          if (req.has_header("If-None-Match")) {
-            const std::string header_if_none_match =
-                req.get_header_value("If-None-Match");
+          /*
+           * The HTTP request header If-None-Match can be used with other
+           * methods where it has the meaning to only execute if the resource
+           * does not already exist but uploading does not matter here.
+           * HTTP response header ETag is only set where content is
+           * pulled and not pushed as those HTTP response bodies do not have to
+           * be related to the content.
+           */
+          if (req.method == "GET" || req.method == "HEAD") {
+            // Value for HTTP response header ETag.
+            const std::string etag =
+                R"(")" + detail::SHA_512(mm->data()) + R"(")";
+            /*
+             * Weak validation is not used.
+             * HTTP response header ETag must be set as if normal HTTP response
+             * was sent.
+             */
+            res.set_header("ETag", etag);
 
             /*
-             * Values of HTTP request header If-None-Match which are cached
-             * values of previous HTTP response header ETag.
+             * Semantic: If value exists, the server will send status code 304.
+             * * always results in status code 304.
              */
-            std::set<std::string> etags;
-            detail::split(header_if_none_match.c_str(),
-                          header_if_none_match.c_str() +
-                              header_if_none_match.length(),
-                          ',', [&](const char *b, const char *e) {
-                            std::string etag(b, e);
+            if (req.has_header("If-None-Match")) {
+              const std::string header_if_none_match =
+                  req.get_header_value("If-None-Match");
 
-                            // Weak validation is not supported.
-                            if (etag.length() >= 2 && etag.at(0) == 'W' &&
-                                etag.at(1) == '/') {
-                              etag.erase(0, 2);
-                            }
+              /*
+               * Values of HTTP request header If-None-Match which are cached
+               * values of previous HTTP response header ETag.
+               */
+              std::set<std::string> etags;
+              detail::split(header_if_none_match.c_str(),
+                            header_if_none_match.c_str() +
+                                header_if_none_match.length(),
+                            ',', [&](const char *b, const char *e) {
+                              std::string etag(b, e);
 
-                            etags.insert(std::move(etag));
-                          });
+                              // Weak validation is not used.
+                              if (etag.length() >= 2 && etag.at(0) == 'W' &&
+                                  etag.at(1) == '/') {
+                                etag.erase(0, 2);
+                              }
 
-            if (etags.find("*") != etags.cend() ||
-                etags.find(etag) != etags.cend()) {
-              res.status = StatusCode::NotModified_304;
-              return true;
+                              etags.insert(std::move(etag));
+                            });
+
+              if (etags.find("*") != etags.cend() ||
+                  etags.find(etag) != etags.cend()) {
+                res.status = StatusCode::NotModified_304;
+                res.body.clear();
+                return true;
+              }
             }
           }
 #endif

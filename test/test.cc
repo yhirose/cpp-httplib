@@ -10832,14 +10832,11 @@ TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(StaticFileSever, CacheValidation) {
   for (
-      const std::string header_if_none_match : {
-          R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-          R"("d", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-          R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "g")",
-          R"(*)",
-          R"("f", *)",
-          R"(*, "i")",
-      }) {
+      const std::string header_if_none_match :
+      {"*", R"("f", *)", R"(*, "i")",
+       R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
+       R"("d", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
+       R"(W/"db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "g")"}) {
     httplib::Server svr;
     svr.set_mount_point("/", "./www/");
 
