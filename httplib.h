@@ -7892,8 +7892,9 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
            */
           if (req.method == "GET" || req.method == "HEAD") {
             // Value for HTTP response header ETag.
+            const std::string file_data(mm->data(), mm->size());
             const std::string etag =
-                R"(")" + detail::SHA_512(mm->data()) + R"(")";
+                R"(")" + detail::SHA_512(file_data) + R"(")";
             /*
              * Weak validation is not used.
              * HTTP response header ETag must be set as if normal HTTP response
