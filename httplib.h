@@ -8510,8 +8510,8 @@ inline ClientImpl::ClientImpl(const std::string &host, int port)
 inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
-    : host_(adjust_host_string(detail::escape_abstract_namespace_unix_domain(host))), port_(port),
-      host_and_port_(host_ + ":" + std::to_string(port)),
+    : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
+      host_and_port_(adjust_host_string(host_) + ":" + std::to_string(port)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
@@ -9122,13 +9122,13 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       req.set_header("Host", "localhost");
     } else if (is_ssl()) {
       if (port_ == 443) {
-        req.set_header("Host", host_);
+        req.set_header("Host", adjust_host_string(host_));
       } else {
         req.set_header("Host", host_and_port_);
       }
     } else {
       if (port_ == 80) {
-        req.set_header("Host", host_);
+        req.set_header("Host", adjust_host_string(host_));
       } else {
         req.set_header("Host", host_and_port_);
       }

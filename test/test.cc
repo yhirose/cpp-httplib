@@ -4987,7 +4987,7 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_TRUE(res->body == "[::1]" || res->body == "127.0.0.1");
+  EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
 }
 
 TEST_F(ServerTest, GetMethodLocalAddr) {
@@ -4995,7 +4995,7 @@ TEST_F(ServerTest, GetMethodLocalAddr) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
-  EXPECT_TRUE(res->body == std::string("[::1]:").append(to_string(PORT)) ||
+  EXPECT_TRUE(res->body == std::string("::1:").append(to_string(PORT)) ||
               res->body == std::string("127.0.0.1:").append(to_string(PORT)));
 }
 
@@ -10285,12 +10285,41 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   EXPECT_EQ(cli.port(), port);
 }
 
-TEST(UniversalClientImplTest, Ipv6LiteralAddressHost) {
-  std::string host  = "[::1]";
-  std::string ipV6TestURL = "http://" + host;
+TEST(UniversalClientImplTest, Ipv6LiteralAddressHostDefaultPort) {
+  /*
+    When Java Servlet parses the request header host, it will split the IP and port. 
+    When using the default port (not passed by default), if there is no [] distinction, 
+    Java will use the last colon of IPv6 as the port delimiter, and Java parsing will report an error
+  */
+  httplib::Server svr;
+  svr.Get("/", [&](const httplib::Request & req, httplib::Response &res) {
+    res.status = httplib::StatusCode::OK_200;
+    res.set_content(req.get_header_value("Host", ""), "text/plain");
+  });
 
-  Client cli(ipV6TestURL);
-  EXPECT_EQ(cli.host(), host);
+  auto thread = std::thread([&]() { svr.listen("[::1]", 80); });
+  auto se = httplib::detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    httplib::Client cli("http://[::1]");
+    cli.set_keep_alive(true);
+
+    EXPECT_EQ(cli.socket(), INVALID_SOCKET);
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+
+    std::cout << "status:" << res->status << ", body:" << res->body << std::endl; 
+
+    EXPECT_EQ(httplib::StatusCode::OK_200, res->status);
+    EXPECT_EQ("[::1]", res->body);
+  }
 }
 
 TEST(FileSystemTest, FileAndDirExistenceCheck) {
