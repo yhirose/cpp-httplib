@@ -10315,8 +10315,6 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddressHostDefaultPort) {
     auto res = cli.Get("/");
     ASSERT_TRUE(res);
 
-    std::cout << "status:" << res->status << ", body:" << res->body << std::endl; 
-
     EXPECT_EQ(httplib::StatusCode::OK_200, res->status);
     EXPECT_EQ("[::1]", res->body);
   }
