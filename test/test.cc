@@ -10287,12 +10287,15 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
 
 TEST(UniversalClientImplTest, Ipv6LiteralAddressHostDefaultPort) {
   /*
-    When Java Servlet parses the request header host, it will split the IP and port. 
-    When using the default port (not passed by default), if there is no [] distinction, 
-    Java will use the last colon of IPv6 as the port delimiter, and Java parsing will report an error
+    When Java Servlet parses the request header host, 
+    it will split the IP and port. When using the default
+    port (not passed by default), if there is no []
+    distinction, Java will use the last colon of IPv6
+    as the port delimiter,and Java parsing will 
+    report an error.
   */
   httplib::Server svr;
-  svr.Get("/", [&](const httplib::Request & req, httplib::Response &res) {
+  svr.Get("/", [&](const httplib::Request &req, httplib::Response &res) {
     res.status = httplib::StatusCode::OK_200;
     res.set_content(req.get_header_value("Host", ""), "text/plain");
   });
