@@ -10306,6 +10306,44 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   EXPECT_EQ(cli.port(), port);
 }
 
+TEST(UniversalClientImplTest, Ipv6LiteralAddressHostDefaultPort) {
+  /*
+    When Java Servlet parses the request header host, 
+    it will split the IP and port. When using the default
+    port (not passed by default), if there is no []
+    distinction, Java will use the last colon of IPv6
+    as the port delimiter,and Java parsing will 
+    report an error.
+  */
+  httplib::Server svr;
+  svr.Get("/", [&](const httplib::Request &req, httplib::Response &res) {
+    res.status = httplib::StatusCode::OK_200;
+    res.set_content(req.get_header_value("Host", ""), "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen("[::1]", 80); });
+  auto se = httplib::detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    httplib::Client cli("http://[::1]");
+    cli.set_keep_alive(true);
+
+    EXPECT_EQ(cli.socket(), INVALID_SOCKET);
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+
+    EXPECT_EQ(httplib::StatusCode::OK_200, res->status);
+    EXPECT_EQ("[::1]", res->body);
+  }
+}
+
 TEST(FileSystemTest, FileAndDirExistenceCheck) {
   auto file_path = "./www/dir/index.html";
   auto dir_path = "./www/dir";

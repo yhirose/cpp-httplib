@@ -9133,13 +9133,13 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       req.set_header("Host", "localhost");
     } else if (is_ssl()) {
       if (port_ == 443) {
-        req.set_header("Host", host_);
+        req.set_header("Host", adjust_host_string(host_));
       } else {
         req.set_header("Host", host_and_port_);
       }
     } else {
       if (port_ == 80) {
-        req.set_header("Host", host_);
+        req.set_header("Host", adjust_host_string(host_));
       } else {
         req.set_header("Host", host_and_port_);
       }
