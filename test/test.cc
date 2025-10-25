@@ -8366,6 +8366,19 @@ TEST(SSLClientTest, Issue2004_Online) {
   EXPECT_EQ(body.substr(0, 15), "<!doctype html>");
 }
 
+TEST(SSLClientTest, ErrorReportingWhenInvalid) {
+  // Create SSLClient with invalid cert/key to make is_valid() return false
+  SSLClient cli("localhost", 8080, "nonexistent_cert.pem",
+                "nonexistent_key.pem");
+
+  // is_valid() should be false due to cert loading failure
+  ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+}
+
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
