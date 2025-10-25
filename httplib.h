@@ -3560,9 +3560,10 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
         ::WaitForSingleObject(event, static_cast<DWORD>(timeout_sec * 1000));
     if (wait_result == WAIT_TIMEOUT) {
 #ifdef __MINGW32__
-      typedef INT (WSAAPI *PFN_GETADDRINFOEXCANCEL)(HANDLE *CancelHandle);
-      auto wsdll = LoadLibraryW((wchar_t*) "ws2_32.lib");
-      PFN_GETADDRINFOEXCANCEL GetAddrInfoExCancel = (PFN_GETADDRINFOEXCANCEL) GetProcAddress(wsdll, "GetAddrInfoExCancel");
+      typedef INT(WSAAPI * PFN_GETADDRINFOEXCANCEL)(HANDLE * CancelHandle);
+      auto wsdll = LoadLibraryW((wchar_t *)"ws2_32.lib");
+      PFN_GETADDRINFOEXCANCEL GetAddrInfoExCancel =
+          (PFN_GETADDRINFOEXCANCEL)GetProcAddress(wsdll, "GetAddrInfoExCancel");
 
       if (cancel_handle) { GetAddrInfoExCancel(&cancel_handle); }
 #else
