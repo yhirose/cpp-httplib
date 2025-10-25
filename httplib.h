@@ -203,10 +203,12 @@
 #error Sorry, Visual Studio versions prior to 2015 are not supported
 #endif
 
-#pragma comment(lib, "ws2_32.lib")
-
 using ssize_t = __int64;
 #endif // _MSC_VER
+
+#if defined(_MSC_VER) || defined(__MINGW32__)
+#pragma comment(lib, "ws2_32.lib")
+#endif
 
 #ifndef S_ISREG
 #define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
@@ -3557,7 +3559,15 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
     auto wait_result =
         ::WaitForSingleObject(event, static_cast<DWORD>(timeout_sec * 1000));
     if (wait_result == WAIT_TIMEOUT) {
+#ifdef __MINGW32__
+      typedef INT (WSAAPI *PFN_GETADDRINFOEXCANCEL)(HANDLE *CancelHandle);
+      auto wsdll = LoadLibraryW((wchar_t*) "ws2_32.lib");
+      PFN_GETADDRINFOEXCANCEL GetAddrInfoExCancel = (PFN_GETADDRINFOEXCANCEL) GetProcAddress(wsdll, "GetAddrInfoExCancel");
+
+      if (cancel_handle) { GetAddrInfoExCancel(&cancel_handle); }
+#else
       if (cancel_handle) { ::GetAddrInfoExCancel(&cancel_handle); }
+#endif
       ::CloseHandle(event);
       return EAI_AGAIN;
     }
