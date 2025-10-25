@@ -10829,39 +10829,123 @@ TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
   ASSERT_TRUE(send_request(1, req, &res));
 }
 
+TEST(is_etag_enabled, getter_and_setter) {
+  httplib::Server svr;
+
+  EXPECT_FALSE(svr.get_is_etag_enabled());
+  svr.set_is_etag_enabled(true);
+  EXPECT_TRUE(svr.get_is_etag_enabled());
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(StaticFileSever, CacheValidation) {
-  for (
-      const std::string header_if_none_match :
-      {"*", R"("f", *)", R"(*, "i")",
-       R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-       R"("d", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-       R"(W/"db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "g")"}) {
-    httplib::Server svr;
-    svr.set_mount_point("/", "./www/");
+TEST(StaticFileSever, If_Match) {
+  /*
+   * 0: is_etag_enabled = false
+   * 1: is_etag_enabled = true
+   */
+  for (std::uint8_t i = 0; i < 2; ++i) {
+    for (
+        const std::string header_if_match :
+        {R"("wcupin")", "*", R"("r", *)", R"(*, "x")",
+         R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
+         R"("o", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
+         R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "a")"}) {
+      httplib::Server svr;
+      svr.set_mount_point("/", "./www/");
+      svr.set_is_etag_enabled(i == 1);
 
-    std::thread t = thread([&]() { svr.listen(HOST, PORT); });
-    auto se = detail::scope_exit([&] {
-      svr.stop();
-      t.join();
-      ASSERT_FALSE(svr.is_running());
-    });
+      std::thread t = thread([&]() { svr.listen(HOST, PORT); });
+      auto se = detail::scope_exit([&] {
+        svr.stop();
+        t.join();
+        ASSERT_FALSE(svr.is_running());
+      });
 
-    svr.wait_until_ready();
+      svr.wait_until_ready();
 
-    httplib::Client client(HOST, PORT);
-    const httplib::Result result =
-        client.Get("/file", Headers({{"If-None-Match", header_if_none_match}}));
+      httplib::Client client(HOST, PORT);
+      const httplib::Result result =
+          client.Get("/file", Headers({{"If-Match", header_if_match}}));
 
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result.error(), Error::Success);
-    EXPECT_EQ(result->status, StatusCode::NotModified_304);
+      ASSERT_NE(result, nullptr);
+      EXPECT_EQ(result.error(), Error::Success);
 
-    EXPECT_TRUE(result->has_header("ETag"));
-    EXPECT_EQ(
-        result->get_header_value("ETag"),
-        R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")");
-    EXPECT_TRUE(result->body.empty());
+      if (i == 0) {
+        EXPECT_EQ(result->status, StatusCode::OK_200);
+      } else if (i == 1) {
+        if (header_if_match == R"("wcupin")") {
+          EXPECT_EQ(result->status, StatusCode::PreconditionFailed_412);
+        } else {
+          EXPECT_EQ(result->status, StatusCode::OK_200);
+        }
+      }
+
+      if (i == 0) {
+        EXPECT_FALSE(result->has_header("ETag"));
+      } else if (i == 1) {
+        EXPECT_TRUE(result->has_header("ETag"));
+        EXPECT_EQ(
+            result->get_header_value("ETag"),
+            R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")");
+
+        if (header_if_match == R"("wcupin")") {
+          EXPECT_TRUE(result->body.empty());
+        }
+      }
+    }
+  }
+}
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(StaticFileSever, If_None_Match) {
+  /*
+   * 0: is_etag_enabled = false
+   * 1: is_etag_enabled = true
+   */
+  for (std::uint8_t i = 0; i < 2; ++i) {
+    for (
+        const std::string header_if_none_match :
+        {"*", R"("f", *)", R"(*, "i")",
+         R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
+         R"("d", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
+         R"(W/"db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "g")"}) {
+      httplib::Server svr;
+      svr.set_mount_point("/", "./www/");
+      svr.set_is_etag_enabled(i == 1);
+
+      std::thread t = thread([&]() { svr.listen(HOST, PORT); });
+      auto se = detail::scope_exit([&] {
+        svr.stop();
+        t.join();
+        ASSERT_FALSE(svr.is_running());
+      });
+
+      svr.wait_until_ready();
+
+      httplib::Client client(HOST, PORT);
+      const httplib::Result result = client.Get(
+          "/file", Headers({{"If-None-Match", header_if_none_match}}));
+
+      ASSERT_NE(result, nullptr);
+      EXPECT_EQ(result.error(), Error::Success);
+
+      if (i == 0) {
+        EXPECT_EQ(result->status, StatusCode::OK_200);
+      } else if (i == 1) {
+        EXPECT_EQ(result->status, StatusCode::NotModified_304);
+      }
+
+      if (i == 0) {
+        EXPECT_FALSE(result->has_header("ETag"));
+      } else if (i == 1) {
+        EXPECT_TRUE(result->has_header("ETag"));
+        EXPECT_EQ(
+            result->get_header_value("ETag"),
+            R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")");
+        EXPECT_TRUE(result->body.empty());
+      }
+    }
   }
 }
 #endif
