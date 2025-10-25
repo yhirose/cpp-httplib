@@ -10319,6 +10319,103 @@ TEST(FileSystemTest, FileAndDirExistenceCheck) {
   EXPECT_TRUE(stat_dir.is_dir());
 }
 
+TEST(MakeHostAndPortStringTest, VariousPatterns) {
+  // IPv4 with default HTTP port (80)
+  EXPECT_EQ("example.com",
+            detail::make_host_and_port_string("example.com", 80, false));
+
+  // IPv4 with default HTTPS port (443)
+  EXPECT_EQ("example.com",
+            detail::make_host_and_port_string("example.com", 443, true));
+
+  // IPv4 with non-default HTTP port
+  EXPECT_EQ("example.com:8080",
+            detail::make_host_and_port_string("example.com", 8080, false));
+
+  // IPv4 with non-default HTTPS port
+  EXPECT_EQ("example.com:8443",
+            detail::make_host_and_port_string("example.com", 8443, true));
+
+  // IPv6 with default HTTP port (80)
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("::1", 80, false));
+
+  // IPv6 with default HTTPS port (443)
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("::1", 443, true));
+
+  // IPv6 with non-default HTTP port
+  EXPECT_EQ("[::1]:8080",
+            detail::make_host_and_port_string("::1", 8080, false));
+
+  // IPv6 with non-default HTTPS port
+  EXPECT_EQ("[::1]:8443", detail::make_host_and_port_string("::1", 8443, true));
+
+  // IPv6 full address with default port
+  EXPECT_EQ("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]",
+            detail::make_host_and_port_string(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334", 443, true));
+
+  // IPv6 full address with non-default port
+  EXPECT_EQ("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:9000",
+            detail::make_host_and_port_string(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334", 9000, false));
+
+  // IPv6 localhost with non-default port
+  EXPECT_EQ("[::1]:3000",
+            detail::make_host_and_port_string("::1", 3000, false));
+
+  // IPv6 with zone ID (link-local address) with default port
+  EXPECT_EQ("[fe80::1%eth0]",
+            detail::make_host_and_port_string("fe80::1%eth0", 80, false));
+
+  // IPv6 with zone ID (link-local address) with non-default port
+  EXPECT_EQ("[fe80::1%eth0]:8080",
+            detail::make_host_and_port_string("fe80::1%eth0", 8080, false));
+
+  // Edge case: Port 443 with is_ssl=false (should add port)
+  EXPECT_EQ("example.com:443",
+            detail::make_host_and_port_string("example.com", 443, false));
+
+  // Edge case: Port 80 with is_ssl=true (should add port)
+  EXPECT_EQ("example.com:80",
+            detail::make_host_and_port_string("example.com", 80, true));
+
+  // IPv6 edge case: Port 443 with is_ssl=false (should add port)
+  EXPECT_EQ("[::1]:443", detail::make_host_and_port_string("::1", 443, false));
+
+  // IPv6 edge case: Port 80 with is_ssl=true (should add port)
+  EXPECT_EQ("[::1]:80", detail::make_host_and_port_string("::1", 80, true));
+
+  // Security fix: Already bracketed IPv6 should not get double brackets
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("[::1]", 80, false));
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("[::1]", 443, true));
+  EXPECT_EQ("[::1]:8080",
+            detail::make_host_and_port_string("[::1]", 8080, false));
+  EXPECT_EQ("[2001:db8::1]:8080",
+            detail::make_host_and_port_string("[2001:db8::1]", 8080, false));
+  EXPECT_EQ("[fe80::1%eth0]",
+            detail::make_host_and_port_string("[fe80::1%eth0]", 80, false));
+  EXPECT_EQ("[fe80::1%eth0]:8080",
+            detail::make_host_and_port_string("[fe80::1%eth0]", 8080, false));
+
+  // Edge case: Empty host (should return as-is)
+  EXPECT_EQ("", detail::make_host_and_port_string("", 80, false));
+
+  // Edge case: Colon in hostname (non-IPv6) - will be treated as IPv6
+  // This is a known limitation but shouldn't crash
+  EXPECT_EQ("[host:name]",
+            detail::make_host_and_port_string("host:name", 80, false));
+
+  // Port number edge cases (no validation, but should not crash)
+  EXPECT_EQ("example.com:0",
+            detail::make_host_and_port_string("example.com", 0, false));
+  EXPECT_EQ("example.com:-1",
+            detail::make_host_and_port_string("example.com", -1, false));
+  EXPECT_EQ("example.com:65535",
+            detail::make_host_and_port_string("example.com", 65535, false));
+  EXPECT_EQ("example.com:65536",
+            detail::make_host_and_port_string("example.com", 65536, false));
+}
+
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   Server svr;
 
