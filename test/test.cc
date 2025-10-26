@@ -10854,7 +10854,7 @@ TEST(StaticFileSever, If_Match) {
    */
   for (std::uint8_t i = 0; i < 2; ++i) {
     for (const std::string header_if_match : std::initializer_list<std::string>{
-             R"("wcupin")", "*", R"("r", *)", R"(*, "x")", etag,
+             R"("wcupin")", "  *  ", R"("r", *)", R"(*, "x")", etag,
              R"("o", )" + etag, etag + R"(, "a")"}) {
       httplib::Server svr;
       svr.set_mount_point("/", "./www/");
@@ -10918,8 +10918,8 @@ TEST(StaticFileSever, If_None_Match) {
    */
   for (std::uint8_t i = 0; i < 2; ++i) {
     for (const std::string header_if_none_match :
-         std::initializer_list<std::string>{"*", R"("f", *)", R"(*, "i")", etag,
-                                            R"("d", )" + etag,
+         std::initializer_list<std::string>{"  *  ", R"("f", *)", R"(*, "i")",
+                                            etag, R"("d", )" + etag,
                                             "W/" + etag + R"(, "g")"}) {
       httplib::Server svr;
       svr.set_mount_point("/", "./www/");

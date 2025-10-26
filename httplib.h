@@ -7941,6 +7941,8 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
                               header_value.c_str() + header_value.length(), ',',
                               [&](const char *b, const char *e) {
                                 std::string etag(b, e);
+                                etag.erase(0, etag.find_first_not_of(" \t"));
+                                etag.erase(etag.find_last_not_of(" \t") + 1);
 
                                 // Weak validation is not used in both cases.
                                 // However, do not remove W/ with HTTP request
