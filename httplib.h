@@ -11208,6 +11208,11 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     return true;
   }
 
+  if (ctx_ == nullptr) {
+    error = Error::SSLConnection;
+    last_openssl_error_ = ERR_get_error();
+  }
+
   shutdown_socket(socket);
   close_socket(socket);
   return false;

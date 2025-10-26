@@ -8380,6 +8380,48 @@ TEST(SSLClientTest, ErrorReportingWhenInvalid) {
   EXPECT_EQ(Error::SSLConnection, res.error());
 }
 
+TEST(SSLClientTest, Issue2251_SwappedClientCertAndKey) {
+  // Test for Issue #2251: SSL error not properly reported when client cert
+  // and key paths are swapped or mismatched
+  // This simulates the scenario where user accidentally swaps the cert and key
+  // files
+
+  // Using client cert file as private key and vice versa (completely wrong)
+  SSLClient cli("localhost", 8080, "client.key.pem", "client.cert.pem");
+
+  // Should fail validation due to cert/key mismatch
+  ASSERT_FALSE(cli.is_valid());
+
+  // Attempt to make a request should fail with proper error
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  // SSL error should be recorded in the Result object (this is the key fix for
+  // Issue #2251)
+  auto openssl_error = res.ssl_openssl_error();
+  EXPECT_NE(0u, openssl_error);
+}
+
+TEST(SSLClientTest, Issue2251_ClientCertFileNotMatchingKey) {
+  // Another variant: using valid file paths but with mismatched cert/key pair
+  // This tests the case where files exist but contain incompatible key material
+
+  // Using client cert with wrong key (cert2 key)
+  SSLClient cli("localhost", 8080, "client.cert.pem", "key.pem");
+
+  // Should fail validation
+  ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  // Must report error properly, not appear as success
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  // OpenSSL error should be captured in Result
+  EXPECT_NE(0u, res.ssl_openssl_error());
+}
+
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
