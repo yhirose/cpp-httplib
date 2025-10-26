@@ -10839,17 +10839,23 @@ TEST(is_etag_enabled, getter_and_setter) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(StaticFileSever, If_Match) {
+  detail::FileStat stat("./www/file");
+  ASSERT_GE(stat.ret_, 0);
+  auto mm = std::make_shared<detail::mmap>("./www/file");
+  ASSERT_TRUE(mm->is_open());
+
+  const std::string etag = R"(")" +
+                           detail::from_i_to_hex(stat.st_.st_mtim.tv_sec) +
+                           "-" + detail::from_i_to_hex(mm->size()) + R"(")";
+
   /*
    * 0: is_etag_enabled = false
    * 1: is_etag_enabled = true
    */
   for (std::uint8_t i = 0; i < 2; ++i) {
-    for (
-        const std::string header_if_match :
-        {R"("wcupin")", "*", R"("r", *)", R"(*, "x")",
-         R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-         R"("o", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-         R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "a")"}) {
+    for (const std::string header_if_match : std::initializer_list<std::string>{
+             R"("wcupin")", "*", R"("r", *)", R"(*, "x")", etag,
+             R"("o", )" + etag, etag + R"(, "a")"}) {
       httplib::Server svr;
       svr.set_mount_point("/", "./www/");
       svr.set_is_etag_enabled(i == 1);
@@ -10884,9 +10890,7 @@ TEST(StaticFileSever, If_Match) {
         EXPECT_FALSE(result->has_header("ETag"));
       } else if (i == 1) {
         EXPECT_TRUE(result->has_header("ETag"));
-        EXPECT_EQ(
-            result->get_header_value("ETag"),
-            R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")");
+        EXPECT_EQ(result->get_header_value("ETag"), etag);
 
         if (header_if_match == R"("wcupin")") {
           EXPECT_TRUE(result->body.empty());
@@ -10899,17 +10903,24 @@ TEST(StaticFileSever, If_Match) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(StaticFileSever, If_None_Match) {
+  detail::FileStat stat("./www/file");
+  ASSERT_GE(stat.ret_, 0);
+  auto mm = std::make_shared<detail::mmap>("./www/file");
+  ASSERT_TRUE(mm->is_open());
+
+  const std::string etag = R"(")" +
+                           detail::from_i_to_hex(stat.st_.st_mtim.tv_sec) +
+                           "-" + detail::from_i_to_hex(mm->size()) + R"(")";
+
   /*
    * 0: is_etag_enabled = false
    * 1: is_etag_enabled = true
    */
   for (std::uint8_t i = 0; i < 2; ++i) {
-    for (
-        const std::string header_if_none_match :
-        {"*", R"("f", *)", R"(*, "i")",
-         R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-         R"("d", "db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")",
-         R"(W/"db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b", "g")"}) {
+    for (const std::string header_if_none_match :
+         std::initializer_list<std::string>{"*", R"("f", *)", R"(*, "i")", etag,
+                                            R"("d", )" + etag,
+                                            "W/" + etag + R"(, "g")"}) {
       httplib::Server svr;
       svr.set_mount_point("/", "./www/");
       svr.set_is_etag_enabled(i == 1);
@@ -10940,9 +10951,7 @@ TEST(StaticFileSever, If_None_Match) {
         EXPECT_FALSE(result->has_header("ETag"));
       } else if (i == 1) {
         EXPECT_TRUE(result->has_header("ETag"));
-        EXPECT_EQ(
-            result->get_header_value("ETag"),
-            R"("db88b784d27f0b92b63f0b3b159ea6f049b178546d99ae95f6f7b57c678c61c2d4b50af4374e81a09e812c2c957a5353803cef4c34aa36fe937ae643cc86bb4b")");
+        EXPECT_EQ(result->get_header_value("ETag"), etag);
         EXPECT_TRUE(result->body.empty());
       }
     }

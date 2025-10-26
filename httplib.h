@@ -2408,7 +2408,6 @@ struct FileStat {
   bool is_file() const;
   bool is_dir() const;
 
-private:
 #if defined(_WIN32)
   struct _stat st_;
 #else
@@ -7893,7 +7892,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
           }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-          if (is_etag_enabled)
+          if (is_etag_enabled && stat.ret_ >= 0)
             /*
              * The HTTP request header If-Match and If-None-Match can be used
              * with other methods where they have the meaning to only execute if
@@ -7908,7 +7907,9 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
               // Value for HTTP response header ETag.
               const std::string file_data(mm->data(), mm->size());
               const std::string etag =
-                  R"(")" + detail::SHA_512(file_data) + R"(")";
+                  R"(")" + detail::from_i_to_hex(stat.st_.st_mtim.tv_sec) +
+                  "-" + detail::from_i_to_hex(mm->size()) + R"(")";
+
               /*
                * Weak validation is not used in both cases.
                * HTTP response header ETag must be set as if normal HTTP
@@ -7962,8 +7963,8 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
                     return true;
                   }
                 } else if (req.has_header("If-None-Match") &&
-                               etags.find("*") != etags.cend() ||
-                           etags.find(etag) != etags.cend()) {
+                           (etags.find("*") != etags.cend() ||
+                            etags.find(etag) != etags.cend())) {
                   res.status = StatusCode::NotModified_304;
                   res.body.clear();
                   return true;
