@@ -3100,21 +3100,20 @@ protected:
 #endif
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
-               auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
-               EXPECT_TRUE(req.has_header("REMOTE_PORT"));
-               EXPECT_EQ(req.remote_addr, req.get_header_value("REMOTE_ADDR"));
-               EXPECT_EQ(req.remote_port,
-                         std::stoi(req.get_header_value("REMOTE_PORT")));
-               res.set_content(remote_addr.c_str(), "text/plain");
+               ASSERT_FALSE(req.has_header("REMOTE_ADDR"));
+               ASSERT_FALSE(req.has_header("REMOTE_PORT"));
+               ASSERT_ANY_THROW(req.get_header_value("REMOTE_ADDR"));
+               ASSERT_ANY_THROW(req.get_header_value("REMOTE_PORT"));
+               res.set_content(req.remote_addr, "text/plain");
              })
         .Get("/local_addr",
              [&](const Request &req, Response &res) {
-               EXPECT_TRUE(req.has_header("LOCAL_PORT"));
-               EXPECT_TRUE(req.has_header("LOCAL_ADDR"));
-               auto local_addr = req.get_header_value("LOCAL_ADDR");
-               auto local_port = req.get_header_value("LOCAL_PORT");
-               EXPECT_EQ(req.local_addr, local_addr);
-               EXPECT_EQ(req.local_port, std::stoi(local_port));
+               ASSERT_FALSE(req.has_header("LOCAL_ADDR"));
+               ASSERT_FALSE(req.has_header("LOCAL_PORT"));
+               ASSERT_ANY_THROW(req.get_header_value("LOCAL_ADDR"));
+               ASSERT_ANY_THROW(req.get_header_value("LOCAL_PORT"));
+               auto local_addr = req.local_addr;
+               auto local_port = std::to_string(req.local_port);
                res.set_content(local_addr.append(":").append(local_port),
                                "text/plain");
              })
@@ -11207,4 +11206,241 @@ TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
 
   std::string res;
   ASSERT_TRUE(send_request(1, req, &res));
+}
+
+TEST(ForwardedHeadersTest, NoProxiesSetting) {
+  Server svr;
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For", "203.0.113.66"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "203.0.113.66");
+  EXPECT_TRUE(observed_remote_addr == "::1" || observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, NoForwardedHeaders) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "");
+  EXPECT_TRUE(observed_remote_addr == "::1" || observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66", "192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip",
+      {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip",
+                     {{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 198.51.100.24");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip",
+      {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "203.0.113.66");
+}
+
+TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip",
+      {{"X-Forwarded-For", " 198.51.100.23 , 203.0.113.66 , 192.0.2.45 "}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Header parser trims surrounding whitespace of the header value
+  EXPECT_EQ(observed_xff, "198.51.100.23 , 203.0.113.66 , 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }

@@ -48,32 +48,10 @@ std::string get_error_time_format() {
   return ss.str();
 }
 
-std::string get_client_ip(const Request &req) {
-  // Check for X-Forwarded-For header first (common in reverse proxy setups)
-  auto forwarded_for = req.get_header_value("X-Forwarded-For");
-  if (!forwarded_for.empty()) {
-    // Get the first IP if there are multiple
-    auto comma_pos = forwarded_for.find(',');
-    if (comma_pos != std::string::npos) {
-      return forwarded_for.substr(0, comma_pos);
-    }
-    return forwarded_for;
-  }
-
-  // Check for X-Real-IP header
-  auto real_ip = req.get_header_value("X-Real-IP");
-  if (!real_ip.empty()) { return real_ip; }
-
-  // Fallback to remote address (though cpp-httplib doesn't provide this
-  // directly) For demonstration, we'll use a placeholder
-  return "127.0.0.1";
-}
-
 // NGINX Combined log format:
 // $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent
 // "$http_referer" "$http_user_agent"
 void nginx_access_logger(const Request &req, const Response &res) {
-  auto remote_addr = get_client_ip(req);
   std::string remote_user =
       "-"; // cpp-httplib doesn't have built-in auth user tracking
   auto time_local = get_time_format();
@@ -86,7 +64,7 @@ void nginx_access_logger(const Request &req, const Response &res) {
   if (http_user_agent.empty()) http_user_agent = "-";
 
   std::cout << std::format("{} - {} [{}] \"{}\" {} {} \"{}\" \"{}\"",
-                           remote_addr, remote_user, time_local, request,
+                           req.remote_addr, remote_user, time_local, request,
                            status, body_bytes_sent, http_referer,
                            http_user_agent)
             << std::endl;
@@ -100,7 +78,6 @@ void nginx_error_logger(const Error &err, const Request *req) {
   std::string level = "error";
 
   if (req) {
-    auto client_ip = get_client_ip(*req);
     auto request =
         std::format("{} {} {}", req->method, req->path, req->version);
     auto host = req->get_header_value("Host");
@@ -108,8 +85,8 @@ void nginx_error_logger(const Error &err, const Request *req) {
 
     std::cerr << std::format("{} [{}] {}, client: {}, request: "
                              "\"{}\", host: \"{}\"",
-                             time_local, level, to_string(err), client_ip,
-                             request, host)
+                             time_local, level, to_string(err),
+                             req->remote_addr, request, host)
               << std::endl;
   } else {
     // If no request context, just log the error
@@ -131,6 +108,10 @@ void print_usage(const char *program_name) {
   std::cout << "                           Format: mount_point:document_root"
             << std::endl;
   std::cout << "                           (default: /:./html)" << std::endl;
+  std::cout << "  --trusted-proxy <ip>     Add trusted proxy IP address"
+            << std::endl;
+  std::cout << "                           (can be specified multiple times)"
+            << std::endl;
   std::cout << "  --version                Show version information"
             << std::endl;
   std::cout << "  --help                   Show this help message" << std::endl;
@@ -140,6 +121,9 @@ void print_usage(const char *program_name) {
             << " --host localhost --port 8080 --mount /:./html" << std::endl;
   std::cout << "  " << program_name
             << " --host 0.0.0.0 --port 3000 --mount /api:./api" << std::endl;
+  std::cout << "  " << program_name
+            << " --trusted-proxy 192.168.1.100 --trusted-proxy 10.0.0.1"
+            << std::endl;
 }
 
 struct ServerConfig {
@@ -147,6 +131,7 @@ struct ServerConfig {
   int port = 8080;
   std::string mount_point = "/";
   std::string document_root = "./html";
+  std::vector<std::string> trusted_proxies;
 };
 
 enum class ParseResult { SUCCESS, HELP_REQUESTED, VERSION_REQUESTED, ERROR };
@@ -205,6 +190,14 @@ ParseResult parse_command_line(int argc, char *argv[], ServerConfig &config) {
     } else if (strcmp(argv[i], "--version") == 0) {
       std::cout << CPPHTTPLIB_VERSION << std::endl;
       return ParseResult::VERSION_REQUESTED;
+    } else if (strcmp(argv[i], "--trusted-proxy") == 0) {
+      if (i + 1 >= argc) {
+        std::cerr << "Error: --trusted-proxy requires an IP address argument"
+                  << std::endl;
+        print_usage(argv[0]);
+        return ParseResult::ERROR;
+      }
+      config.trusted_proxies.push_back(argv[++i]);
     } else {
       std::cerr << "Error: Unknown option '" << argv[i] << "'" << std::endl;
       print_usage(argv[0]);
@@ -217,6 +210,11 @@ ParseResult parse_command_line(int argc, char *argv[], ServerConfig &config) {
 bool setup_server(Server &svr, const ServerConfig &config) {
   svr.set_logger(nginx_access_logger);
   svr.set_error_logger(nginx_error_logger);
+
+  // Set trusted proxies if specified
+  if (!config.trusted_proxies.empty()) {
+    svr.set_trusted_proxies(config.trusted_proxies);
+  }
 
   auto ret = svr.set_mount_point(config.mount_point, config.document_root);
   if (!ret) {
@@ -285,6 +283,16 @@ int main(int argc, char *argv[]) {
             << std::endl;
   std::cout << "Mount point: " << config.mount_point << " -> "
             << config.document_root << std::endl;
+
+  if (!config.trusted_proxies.empty()) {
+    std::cout << "Trusted proxies: ";
+    for (size_t i = 0; i < config.trusted_proxies.size(); ++i) {
+      if (i > 0) std::cout << ", ";
+      std::cout << config.trusted_proxies[i];
+    }
+    std::cout << std::endl;
+  }
+
   std::cout << "Press Ctrl+C to shutdown gracefully..." << std::endl;
 
   auto ret = svr.listen(config.hostname, config.port);
