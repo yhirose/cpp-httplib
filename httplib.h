@@ -165,12 +165,16 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+#if !defined(_SSIZE_T_DEFINED)
+
 #ifdef _WIN64
 using ssize_t = __int64;
 #else
 using ssize_t = long;
 #endif
 #endif // _MSC_VER
+
+#endif
 
 #ifndef S_ISREG
 #define S_ISREG(m) (((m) & S_IFREG) == S_IFREG)
@@ -9577,6 +9581,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
           }
 
           if (verification_status == SSLVerifierResponse::CertificateRejected) {
+              std::cerr << "verification_status == SSLVerifierResponse::CertificateRejected";
             error = Error::SSLServerVerification;
             return false;
           }
@@ -9585,6 +9590,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             verify_result_ = SSL_get_verify_result(ssl2);
 
             if (verify_result_ != X509_V_OK) {
+              std::cerr << "verify_result_ != X509_V_OK, ret: " << verify_result_ << std::endl;
               error = Error::SSLServerVerification;
               return false;
             }
@@ -9593,6 +9599,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
             auto se = detail::scope_exit([&] { X509_free(server_cert); });
 
             if (server_cert == nullptr) {
+              std::cerr << "server_cert == nullptr";
               error = Error::SSLServerVerification;
               return false;
             }
