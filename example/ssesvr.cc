@@ -14,11 +14,18 @@ class EventDispatcher {
 public:
   EventDispatcher() {}
 
-  void wait_event(DataSink *sink) {
+  bool wait_event(DataSink *sink) {
     unique_lock<mutex> lk(m_);
     int id = id_;
-    cv_.wait(lk, [&] { return cid_ == id; });
+
+    // Wait with timeout to prevent hanging if client disconnects
+    if (!cv_.wait_for(lk, std::chrono::seconds(5),
+                      [&] { return cid_ == id; })) {
+      return false; // Timeout occurred
+    }
+
     sink->write(message_.data(), message_.size());
+    return true;
   }
 
   void send_event(const string &message) {
@@ -71,8 +78,7 @@ int main(void) {
     cout << "connected to event1..." << endl;
     res.set_chunked_content_provider("text/event-stream",
                                      [&](size_t /*offset*/, DataSink &sink) {
-                                       ed.wait_event(&sink);
-                                       return true;
+                                       return ed.wait_event(&sink);
                                      });
   });
 
@@ -80,8 +86,7 @@ int main(void) {
     cout << "connected to event2..." << endl;
     res.set_chunked_content_provider("text/event-stream",
                                      [&](size_t /*offset*/, DataSink &sink) {
-                                       ed.wait_event(&sink);
-                                       return true;
+                                       return ed.wait_event(&sink);
                                      });
   });
 

@@ -11043,11 +11043,18 @@ class EventDispatcher {
 public:
   EventDispatcher() {}
 
-  void wait_event(DataSink *sink) {
+  bool wait_event(DataSink *sink) {
     unique_lock<mutex> lk(m_);
     int id = id_;
-    cv_.wait(lk, [&] { return cid_ == id; });
+
+    // Wait with timeout to prevent hanging if client disconnects
+    if (!cv_.wait_for(lk, std::chrono::seconds(5),
+                      [&] { return cid_ == id; })) {
+      return false; // Timeout occurred
+    }
+
     sink->write(message_.data(), message_.size());
+    return true;
   }
 
   void send_event(const string &message) {
@@ -11072,8 +11079,7 @@ TEST(ClientInThreadTest, Issue2068) {
   svr.Get("/event1", [&](const Request & /*req*/, Response &res) {
     res.set_chunked_content_provider("text/event-stream",
                                      [&](size_t /*offset*/, DataSink &sink) {
-                                       ed.wait_event(&sink);
-                                       return true;
+                                       return ed.wait_event(&sink);
                                      });
   });
 
@@ -11116,9 +11122,11 @@ TEST(ClientInThreadTest, Issue2068) {
     std::this_thread::sleep_for(std::chrono::seconds(2));
     stop = true;
     client->stop();
-    client.reset();
 
     t.join();
+
+    // Reset client after thread has finished
+    client.reset();
   }
 }
 
