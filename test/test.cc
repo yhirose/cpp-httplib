@@ -10306,17 +10306,24 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   EXPECT_EQ(cli.port(), port);
 }
 
-TEST(FileSystemTest, FileAndDirExistenceCheck) {
+TEST(FileSystemTest, FileStatTest) {
   auto file_path = "./www/dir/index.html";
   auto dir_path = "./www/dir";
 
   detail::FileStat stat_file(file_path);
   EXPECT_TRUE(stat_file.is_file());
   EXPECT_FALSE(stat_file.is_dir());
+  EXPECT_GT(stat_file.last_modified(), 0);
 
   detail::FileStat stat_dir(dir_path);
   EXPECT_FALSE(stat_dir.is_file());
   EXPECT_TRUE(stat_dir.is_dir());
+  EXPECT_GT(stat_dir.last_modified(), 0);
+
+  detail::FileStat stat_error("ranipsd");
+  EXPECT_FALSE(stat_error.is_file());
+  EXPECT_FALSE(stat_error.is_dir());
+  EXPECT_THROW(stat_error.last_modified(), std::runtime_error);
 }
 
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
@@ -10837,16 +10844,15 @@ TEST(is_etag_enabled, getter_and_setter) {
   EXPECT_TRUE(svr.get_is_etag_enabled());
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(StaticFileSever, If_Match) {
   detail::FileStat stat("./www/file");
-  ASSERT_GE(stat.ret_, 0);
+  ASSERT_TRUE(stat.is_file());
   auto mm = std::make_shared<detail::mmap>("./www/file");
   ASSERT_TRUE(mm->is_open());
 
   const std::string etag = R"(")" +
-                           detail::from_i_to_hex(stat.st_.st_mtim.tv_sec) +
-                           "-" + detail::from_i_to_hex(mm->size()) + R"(")";
+                           detail::from_i_to_hex(stat.last_modified()) + "-" +
+                           detail::from_i_to_hex(mm->size()) + R"(")";
 
   /*
    * 0: is_etag_enabled = false
@@ -10899,18 +10905,16 @@ TEST(StaticFileSever, If_Match) {
     }
   }
 }
-#endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(StaticFileSever, If_None_Match) {
   detail::FileStat stat("./www/file");
-  ASSERT_GE(stat.ret_, 0);
+  ASSERT_TRUE(stat.is_file());
   auto mm = std::make_shared<detail::mmap>("./www/file");
   ASSERT_TRUE(mm->is_open());
 
   const std::string etag = R"(")" +
-                           detail::from_i_to_hex(stat.st_.st_mtim.tv_sec) +
-                           "-" + detail::from_i_to_hex(mm->size()) + R"(")";
+                           detail::from_i_to_hex(stat.last_modified()) + "-" +
+                           detail::from_i_to_hex(mm->size()) + R"(")";
 
   /*
    * 0: is_etag_enabled = false
@@ -10957,4 +10961,3 @@ TEST(StaticFileSever, If_None_Match) {
     }
   }
 }
-#endif

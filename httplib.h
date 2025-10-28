@@ -2407,7 +2407,9 @@ struct FileStat {
   FileStat(const std::string &path);
   bool is_file() const;
   bool is_dir() const;
+  std::uint64_t last_modified() const;
 
+private:
 #if defined(_WIN32)
   struct _stat st_;
 #else
@@ -2882,6 +2884,17 @@ inline bool FileStat::is_file() const {
 }
 inline bool FileStat::is_dir() const {
   return ret_ >= 0 && S_ISDIR(st_.st_mode);
+}
+inline std::uint64_t FileStat::last_modified() const {
+  if (is_dir() || is_file()) {
+#if defined(_WIN32)
+    return st_.st_mtime;
+#else
+    return st_.st_mtim.tv_sec;
+#endif
+  } else {
+    throw std::runtime_error("Invalid directory or file.");
+  }
 }
 
 inline std::string encode_path(const std::string &s) {
@@ -7891,8 +7904,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
             return false;
           }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-          if (is_etag_enabled && stat.ret_ >= 0)
+          if (is_etag_enabled)
             /*
              * The HTTP request header If-Match and If-None-Match can be used
              * with other methods where they have the meaning to only execute if
@@ -7905,10 +7917,9 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
              */
             if (req.method == "GET" || req.method == "HEAD") {
               // Value for HTTP response header ETag.
-              const std::string file_data(mm->data(), mm->size());
               const std::string etag =
-                  R"(")" + detail::from_i_to_hex(stat.st_.st_mtim.tv_sec) +
-                  "-" + detail::from_i_to_hex(mm->size()) + R"(")";
+                  R"(")" + detail::from_i_to_hex(stat.last_modified()) + "-" +
+                  detail::from_i_to_hex(mm->size()) + R"(")";
 
               /*
                * Weak validation is not used in both cases.
@@ -7973,7 +7984,6 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
                 }
               }
             }
-#endif
 
           res.set_content_provider(
               mm->size(),
