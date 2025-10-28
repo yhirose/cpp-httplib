@@ -23,6 +23,8 @@ example/one_time_request
 !example/one_time_request.*
 example/server_and_client
 !example/server_and_client.*
+example/accept_header
+!example/accept_header.*
 example/*.pem
 test/httplib.cc
 test/httplib.h

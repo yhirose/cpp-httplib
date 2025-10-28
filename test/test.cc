@@ -196,7 +196,7 @@ TEST_F(UnixSocketTest, PeerPid) {
   std::string remote_port_val;
   svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
     res.set_content(content_, "text/plain");
-    remote_port_val = req.get_header_value("REMOTE_PORT");
+    remote_port_val = std::to_string(req.remote_port);
   });
 
   std::thread t{[&] {
@@ -11236,7 +11236,8 @@ TEST(ForwardedHeadersTest, NoProxiesSetting) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 
   EXPECT_EQ(observed_xff, "203.0.113.66");
-  EXPECT_TRUE(observed_remote_addr == "::1" || observed_remote_addr == "127.0.0.1");
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
 }
 
 TEST(ForwardedHeadersTest, NoForwardedHeaders) {
@@ -11269,7 +11270,8 @@ TEST(ForwardedHeadersTest, NoForwardedHeaders) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 
   EXPECT_EQ(observed_xff, "");
-  EXPECT_TRUE(observed_remote_addr == "::1" || observed_remote_addr == "127.0.0.1");
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
 }
 
 TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
@@ -11296,7 +11298,8 @@ TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
-  auto res = cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
+  auto res =
+      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -11330,8 +11333,7 @@ TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
 
   Client cli(HOST, PORT);
   auto res = cli.Get(
-      "/ip",
-      {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -11364,8 +11366,8 @@ TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
-  auto res = cli.Get("/ip",
-                     {{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
+  auto res =
+      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -11399,8 +11401,7 @@ TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
 
   Client cli(HOST, PORT);
   auto res = cli.Get(
-      "/ip",
-      {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -11433,9 +11434,8 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
-  auto res = cli.Get(
-      "/ip",
-      {{"X-Forwarded-For", " 198.51.100.23 , 203.0.113.66 , 192.0.2.45 "}});
+  auto res = cli.Get("/ip", {{"X-Forwarded-For",
+                              " 198.51.100.23 , 203.0.113.66 , 192.0.2.45 "}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
