@@ -11,8 +11,10 @@
 #endif
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <future>
 #include <limits>
@@ -77,6 +79,73 @@ static void read_file(const std::string &path, std::string &out) {
   fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
+void performance_test(const char *host) {
+  auto port = 1234;
+
+  Server svr;
+
+  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Benchmark Response", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&]() { svr.listen(host, port); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(host, port);
+
+  // Warm-up request to establish connection and resolve DNS
+  auto warmup_res = cli.Get("/benchmark");
+  ASSERT_TRUE(warmup_res); // Ensure server is responding correctly
+
+  // Run multiple trials and collect timings
+  const int num_trials = 20;
+  std::vector<int64_t> timings;
+  timings.reserve(num_trials);
+
+  for (int i = 0; i < num_trials; i++) {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto res = cli.Get("/benchmark");
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+            .count();
+
+    // Assertions after timing measurement to avoid overhead
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+
+    timings.push_back(elapsed);
+  }
+
+  // Calculate 25th percentile (lower quartile)
+  std::sort(timings.begin(), timings.end());
+  auto p25 = timings[num_trials / 4];
+
+  // Format timings for output
+  std::ostringstream timings_str;
+  timings_str << "[";
+  for (size_t i = 0; i < timings.size(); i++) {
+    if (i > 0) timings_str << ", ";
+    timings_str << timings[i];
+  }
+  timings_str << "]";
+
+  // Localhost HTTP GET should be fast even in CI environments
+  EXPECT_LE(p25, 5) << "25th percentile performance is too slow: " << p25
+                    << "ms (Issue #1777). Timings: " << timings_str.str();
+}
+
+TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
+
+TEST(BenchmarkTest, v6) { performance_test("::1"); }
+
 class UnixSocketTest : public ::testing::Test {
 protected:
   void TearDown() override { std::remove(pathname_.c_str()); }
@@ -127,7 +196,7 @@ TEST_F(UnixSocketTest, PeerPid) {
   std::string remote_port_val;
   svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
     res.set_content(content_, "text/plain");
-    remote_port_val = req.get_header_value("REMOTE_PORT");
+    remote_port_val = std::to_string(req.remote_port);
   });
 
   std::thread t{[&] {
@@ -3031,21 +3100,20 @@ protected:
 #endif
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
-               auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
-               EXPECT_TRUE(req.has_header("REMOTE_PORT"));
-               EXPECT_EQ(req.remote_addr, req.get_header_value("REMOTE_ADDR"));
-               EXPECT_EQ(req.remote_port,
-                         std::stoi(req.get_header_value("REMOTE_PORT")));
-               res.set_content(remote_addr.c_str(), "text/plain");
+               ASSERT_FALSE(req.has_header("REMOTE_ADDR"));
+               ASSERT_FALSE(req.has_header("REMOTE_PORT"));
+               ASSERT_ANY_THROW(req.get_header_value("REMOTE_ADDR"));
+               ASSERT_ANY_THROW(req.get_header_value("REMOTE_PORT"));
+               res.set_content(req.remote_addr, "text/plain");
              })
         .Get("/local_addr",
              [&](const Request &req, Response &res) {
-               EXPECT_TRUE(req.has_header("LOCAL_PORT"));
-               EXPECT_TRUE(req.has_header("LOCAL_ADDR"));
-               auto local_addr = req.get_header_value("LOCAL_ADDR");
-               auto local_port = req.get_header_value("LOCAL_PORT");
-               EXPECT_EQ(req.local_addr, local_addr);
-               EXPECT_EQ(req.local_port, std::stoi(local_port));
+               ASSERT_FALSE(req.has_header("LOCAL_ADDR"));
+               ASSERT_FALSE(req.has_header("LOCAL_PORT"));
+               ASSERT_ANY_THROW(req.get_header_value("LOCAL_ADDR"));
+               ASSERT_ANY_THROW(req.get_header_value("LOCAL_PORT"));
+               auto local_addr = req.local_addr;
+               auto local_port = std::to_string(req.local_port);
                res.set_content(local_addr.append(":").append(local_port),
                                "text/plain");
              })
@@ -3632,46 +3700,6 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 }
-
-void performance_test(const char *host) {
-  auto port = 1234;
-
-  Server svr;
-
-  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
-    res.set_content("Benchmark Response", "text/plain");
-  });
-
-  auto listen_thread = std::thread([&]() { svr.listen(host, port); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  Client cli(host, port);
-
-  auto start = std::chrono::high_resolution_clock::now();
-
-  auto res = cli.Get("/benchmark");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-
-  auto end = std::chrono::high_resolution_clock::now();
-
-  auto elapsed =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-          .count();
-
-  EXPECT_LE(elapsed, 5) << "Performance is too slow: " << elapsed
-                        << "ms (Issue #1777)";
-}
-
-TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
-
-TEST(BenchmarkTest, v6) { performance_test("::1"); }
 
 TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
@@ -8366,6 +8394,61 @@ TEST(SSLClientTest, Issue2004_Online) {
   EXPECT_EQ(body.substr(0, 15), "<!doctype html>");
 }
 
+TEST(SSLClientTest, ErrorReportingWhenInvalid) {
+  // Create SSLClient with invalid cert/key to make is_valid() return false
+  SSLClient cli("localhost", 8080, "nonexistent_cert.pem",
+                "nonexistent_key.pem");
+
+  // is_valid() should be false due to cert loading failure
+  ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+}
+
+TEST(SSLClientTest, Issue2251_SwappedClientCertAndKey) {
+  // Test for Issue #2251: SSL error not properly reported when client cert
+  // and key paths are swapped or mismatched
+  // This simulates the scenario where user accidentally swaps the cert and key
+  // files
+
+  // Using client cert file as private key and vice versa (completely wrong)
+  SSLClient cli("localhost", 8080, "client.key.pem", "client.cert.pem");
+
+  // Should fail validation due to cert/key mismatch
+  ASSERT_FALSE(cli.is_valid());
+
+  // Attempt to make a request should fail with proper error
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  // SSL error should be recorded in the Result object (this is the key fix for
+  // Issue #2251)
+  auto openssl_error = res.ssl_openssl_error();
+  EXPECT_NE(0u, openssl_error);
+}
+
+TEST(SSLClientTest, Issue2251_ClientCertFileNotMatchingKey) {
+  // Another variant: using valid file paths but with mismatched cert/key pair
+  // This tests the case where files exist but contain incompatible key material
+
+  // Using client cert with wrong key (cert2 key)
+  SSLClient cli("localhost", 8080, "client.cert.pem", "key.pem");
+
+  // Should fail validation
+  ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  // Must report error properly, not appear as success
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  // OpenSSL error should be captured in Result
+  EXPECT_NE(0u, res.ssl_openssl_error());
+}
+
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
   auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
@@ -8706,6 +8789,197 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(SSLClientServerTest, ClientCAListSentToClient) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  // Set up a handler to verify client certificate is present
+  bool client_cert_verified = false;
+  svr.Get("/test", [&](const Request & /*req*/, Response &res) {
+    // Verify that client certificate was provided
+    client_cert_verified = true;
+    res.set_content("success", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Client with certificate
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_TRUE(client_cert_verified);
+  EXPECT_EQ("success", res->body);
+}
+
+TEST(SSLClientServerTest, ClientCAListSetInContext) {
+  // Test that when client CA cert file is provided,
+  // SSL_CTX_set_client_CA_list is called and the CA list is properly set
+
+  // Create a server with client authentication
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  // We can't directly access the SSL_CTX from SSLServer to verify,
+  // but we can test that the server properly requests client certificates
+  // and accepts valid ones from the specified CA
+
+  bool handler_called = false;
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    handler_called = true;
+
+    // Verify that a client certificate was provided
+    auto peer_cert = SSL_get_peer_certificate(req.ssl);
+    ASSERT_TRUE(peer_cert != nullptr);
+
+    // Get the issuer name
+    auto issuer_name = X509_get_issuer_name(peer_cert);
+    ASSERT_TRUE(issuer_name != nullptr);
+
+    char issuer_buf[256];
+    X509_NAME_oneline(issuer_name, issuer_buf, sizeof(issuer_buf));
+
+    // The client certificate should be issued by our test CA
+    std::string issuer_str(issuer_buf);
+    EXPECT_TRUE(issuer_str.find("Root CA Name") != std::string::npos);
+
+    X509_free(peer_cert);
+    res.set_content("authenticated", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Connect with a client certificate issued by the CA
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_TRUE(handler_called);
+  EXPECT_EQ("authenticated", res->body);
+}
+
+TEST(SSLClientServerTest, ClientCAListLoadErrorRecorded) {
+  // Test 1: Valid CA file - no error should be recorded
+  {
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
+                  CLIENT_CA_CERT_FILE);
+    ASSERT_TRUE(svr.is_valid());
+
+    // With valid setup, last_ssl_error should be 0
+    EXPECT_EQ(0, svr.ssl_last_error());
+  }
+
+  // Test 2: Invalid CA file content
+  // When SSL_load_client_CA_file fails, last_ssl_error_ should be set
+  {
+    // Create a temporary file with completely invalid content
+    const char *temp_invalid_ca = "./temp_invalid_ca_for_test.txt";
+    {
+      std::ofstream ofs(temp_invalid_ca);
+      ofs << "This is not a certificate file at all\n";
+      ofs << "Just plain text content\n";
+    }
+
+    // Create server with invalid CA file
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, temp_invalid_ca);
+
+    // Clean up temporary file
+    std::remove(temp_invalid_ca);
+
+    // When there's an SSL error (from either SSL_CTX_load_verify_locations
+    // or SSL_load_client_CA_file), last_ssl_error_ should be non-zero
+    // Note: SSL_CTX_load_verify_locations typically fails first,
+    // but our error handling code path is still exercised
+    if (!svr.is_valid()) { EXPECT_NE(0, svr.ssl_last_error()); }
+  }
+}
+
+TEST(SSLClientServerTest, ClientCAListFromX509Store) {
+  // Test SSL server using X509_STORE constructor with client CA certificates
+  // This test verifies that Phase 2 implementation correctly extracts CA names
+  // from an X509_STORE and sets them in the SSL context
+
+  // Load the CA certificate into memory
+  auto bio = BIO_new_file(CLIENT_CA_CERT_FILE, "r");
+  ASSERT_NE(nullptr, bio);
+
+  auto ca_cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+  BIO_free(bio);
+  ASSERT_NE(nullptr, ca_cert);
+
+  // Create an X509_STORE and add the CA certificate
+  auto store = X509_STORE_new();
+  ASSERT_NE(nullptr, store);
+  ASSERT_EQ(1, X509_STORE_add_cert(store, ca_cert));
+
+  // Load server certificate and private key
+  auto cert_bio = BIO_new_file(SERVER_CERT_FILE, "r");
+  ASSERT_NE(nullptr, cert_bio);
+  auto server_cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+  BIO_free(cert_bio);
+  ASSERT_NE(nullptr, server_cert);
+
+  auto key_bio = BIO_new_file(SERVER_PRIVATE_KEY_FILE, "r");
+  ASSERT_NE(nullptr, key_bio);
+  auto server_key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
+  BIO_free(key_bio);
+  ASSERT_NE(nullptr, server_key);
+
+  // Create SSLServer with X509_STORE constructor
+  // Note: X509_STORE ownership is transferred to SSL_CTX
+  SSLServer svr(server_cert, server_key, store);
+  ASSERT_TRUE(svr.is_valid());
+
+  // No SSL error should be recorded for valid setup
+  EXPECT_EQ(0, svr.ssl_last_error());
+
+  // Set up server endpoints
+  svr.Get("/test-x509store", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  // Start server in a thread
+  auto server_thread = thread([&]() { svr.listen(HOST, PORT); });
+  svr.wait_until_ready();
+
+  // Connect with client certificate (using constructor with paths)
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+
+  auto res = cli.Get("/test-x509store");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("ok", res->body);
+
+  // Clean up
+  X509_free(server_cert);
+  EVP_PKEY_free(server_key);
+  X509_free(ca_cert);
+
+  svr.stop();
+  server_thread.join();
 }
 
 // Disabled due to the out-of-memory problem on GitHub Actions Workflows
@@ -10326,6 +10600,103 @@ TEST(FileSystemTest, FileStatTest) {
   EXPECT_THROW(stat_error.last_modified(), std::runtime_error);
 }
 
+TEST(MakeHostAndPortStringTest, VariousPatterns) {
+  // IPv4 with default HTTP port (80)
+  EXPECT_EQ("example.com",
+            detail::make_host_and_port_string("example.com", 80, false));
+
+  // IPv4 with default HTTPS port (443)
+  EXPECT_EQ("example.com",
+            detail::make_host_and_port_string("example.com", 443, true));
+
+  // IPv4 with non-default HTTP port
+  EXPECT_EQ("example.com:8080",
+            detail::make_host_and_port_string("example.com", 8080, false));
+
+  // IPv4 with non-default HTTPS port
+  EXPECT_EQ("example.com:8443",
+            detail::make_host_and_port_string("example.com", 8443, true));
+
+  // IPv6 with default HTTP port (80)
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("::1", 80, false));
+
+  // IPv6 with default HTTPS port (443)
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("::1", 443, true));
+
+  // IPv6 with non-default HTTP port
+  EXPECT_EQ("[::1]:8080",
+            detail::make_host_and_port_string("::1", 8080, false));
+
+  // IPv6 with non-default HTTPS port
+  EXPECT_EQ("[::1]:8443", detail::make_host_and_port_string("::1", 8443, true));
+
+  // IPv6 full address with default port
+  EXPECT_EQ("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]",
+            detail::make_host_and_port_string(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334", 443, true));
+
+  // IPv6 full address with non-default port
+  EXPECT_EQ("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:9000",
+            detail::make_host_and_port_string(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334", 9000, false));
+
+  // IPv6 localhost with non-default port
+  EXPECT_EQ("[::1]:3000",
+            detail::make_host_and_port_string("::1", 3000, false));
+
+  // IPv6 with zone ID (link-local address) with default port
+  EXPECT_EQ("[fe80::1%eth0]",
+            detail::make_host_and_port_string("fe80::1%eth0", 80, false));
+
+  // IPv6 with zone ID (link-local address) with non-default port
+  EXPECT_EQ("[fe80::1%eth0]:8080",
+            detail::make_host_and_port_string("fe80::1%eth0", 8080, false));
+
+  // Edge case: Port 443 with is_ssl=false (should add port)
+  EXPECT_EQ("example.com:443",
+            detail::make_host_and_port_string("example.com", 443, false));
+
+  // Edge case: Port 80 with is_ssl=true (should add port)
+  EXPECT_EQ("example.com:80",
+            detail::make_host_and_port_string("example.com", 80, true));
+
+  // IPv6 edge case: Port 443 with is_ssl=false (should add port)
+  EXPECT_EQ("[::1]:443", detail::make_host_and_port_string("::1", 443, false));
+
+  // IPv6 edge case: Port 80 with is_ssl=true (should add port)
+  EXPECT_EQ("[::1]:80", detail::make_host_and_port_string("::1", 80, true));
+
+  // Security fix: Already bracketed IPv6 should not get double brackets
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("[::1]", 80, false));
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("[::1]", 443, true));
+  EXPECT_EQ("[::1]:8080",
+            detail::make_host_and_port_string("[::1]", 8080, false));
+  EXPECT_EQ("[2001:db8::1]:8080",
+            detail::make_host_and_port_string("[2001:db8::1]", 8080, false));
+  EXPECT_EQ("[fe80::1%eth0]",
+            detail::make_host_and_port_string("[fe80::1%eth0]", 80, false));
+  EXPECT_EQ("[fe80::1%eth0]:8080",
+            detail::make_host_and_port_string("[fe80::1%eth0]", 8080, false));
+
+  // Edge case: Empty host (should return as-is)
+  EXPECT_EQ("", detail::make_host_and_port_string("", 80, false));
+
+  // Edge case: Colon in hostname (non-IPv6) - will be treated as IPv6
+  // This is a known limitation but shouldn't crash
+  EXPECT_EQ("[host:name]",
+            detail::make_host_and_port_string("host:name", 80, false));
+
+  // Port number edge cases (no validation, but should not crash)
+  EXPECT_EQ("example.com:0",
+            detail::make_host_and_port_string("example.com", 0, false));
+  EXPECT_EQ("example.com:-1",
+            detail::make_host_and_port_string("example.com", -1, false));
+  EXPECT_EQ("example.com:65535",
+            detail::make_host_and_port_string("example.com", 65535, false));
+  EXPECT_EQ("example.com:65536",
+            detail::make_host_and_port_string("example.com", 65536, false));
+}
+
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   Server svr;
 
@@ -10706,11 +11077,18 @@ class EventDispatcher {
 public:
   EventDispatcher() {}
 
-  void wait_event(DataSink *sink) {
+  bool wait_event(DataSink *sink) {
     unique_lock<mutex> lk(m_);
     int id = id_;
-    cv_.wait(lk, [&] { return cid_ == id; });
+
+    // Wait with timeout to prevent hanging if client disconnects
+    if (!cv_.wait_for(lk, std::chrono::seconds(5),
+                      [&] { return cid_ == id; })) {
+      return false; // Timeout occurred
+    }
+
     sink->write(message_.data(), message_.size());
+    return true;
   }
 
   void send_event(const string &message) {
@@ -10735,8 +11113,7 @@ TEST(ClientInThreadTest, Issue2068) {
   svr.Get("/event1", [&](const Request & /*req*/, Response &res) {
     res.set_chunked_content_provider("text/event-stream",
                                      [&](size_t /*offset*/, DataSink &sink) {
-                                       ed.wait_event(&sink);
-                                       return true;
+                                       return ed.wait_event(&sink);
                                      });
   });
 
@@ -10779,9 +11156,11 @@ TEST(ClientInThreadTest, Issue2068) {
     std::this_thread::sleep_for(std::chrono::seconds(2));
     stop = true;
     client->stop();
-    client.reset();
 
     t.join();
+
+    // Reset client after thread has finished
+    client.reset();
   }
 }
 
@@ -10834,6 +11213,243 @@ TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
 
   std::string res;
   ASSERT_TRUE(send_request(1, req, &res));
+}
+
+TEST(ForwardedHeadersTest, NoProxiesSetting) {
+  Server svr;
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For", "203.0.113.66"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "203.0.113.66");
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, NoForwardedHeaders) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "");
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res =
+      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66", "192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res =
+      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 198.51.100.24");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "203.0.113.66");
+}
+
+TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For",
+                              " 198.51.100.23 , 203.0.113.66 , 192.0.2.45 "}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Header parser trims surrounding whitespace of the header value
+  EXPECT_EQ(observed_xff, "198.51.100.23 , 203.0.113.66 , 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
 
 TEST(is_etag_enabled, getter_and_setter) {

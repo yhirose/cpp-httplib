@@ -1,16 +1,30 @@
 tags
 
+# Ignore executables (no extension) but not source files
 example/server
+!example/server.*
 example/client
+!example/client.*
 example/hello
+!example/hello.*
 example/simplecli
+!example/simplecli.*
 example/simplesvr
+!example/simplesvr.*
 example/benchmark
+!example/benchmark.*
 example/redirect
-example/sse*
+!example/redirect.*
+example/ssecli
+example/ssesvr
 example/upload
+!example/upload.*
 example/one_time_request
+!example/one_time_request.*
 example/server_and_client
+!example/server_and_client.*
+example/accept_header
+!example/accept_header.*
 example/*.pem
 test/httplib.cc
 test/httplib.h
