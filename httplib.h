@@ -7942,12 +7942,13 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
-      std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
+      const std::string sub_path =
+          "/" + req.path.substr(entry.mount_point.size());
       if (detail::is_valid_path(sub_path)) {
         auto path = entry.base_dir + sub_path;
         if (path.back() == '/') { path += "index.html"; }
 
-        detail::FileStat stat(path);
+        const detail::FileStat stat(path);
 
         if (stat.is_dir()) {
           res.set_redirect(sub_path + "/", StatusCode::MovedPermanently_301);
@@ -7965,7 +7966,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
             return false;
           }
 
-          if (is_etag_enabled)
+          if (is_etag_enabled) {
             /*
              * The HTTP request header If-Match and If-None-Match can be used
              * with other methods where they have the meaning to only execute if
@@ -8045,6 +8046,7 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
                 }
               }
             }
+          }
 
           res.set_content_provider(
               mm->size(),

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <future>
@@ -11460,8 +11461,8 @@ TEST(is_etag_enabled, getter_and_setter) {
   EXPECT_TRUE(svr.get_is_etag_enabled());
 }
 
-TEST(StaticFileSever, If_Match) {
-  detail::FileStat stat("./www/file");
+TEST(StaticFileSever, IfMatch) {
+  const detail::FileStat stat("./www/file");
   ASSERT_TRUE(stat.is_file());
   auto mm = std::make_shared<detail::mmap>("./www/file");
   ASSERT_TRUE(mm->is_open());
@@ -11475,7 +11476,8 @@ TEST(StaticFileSever, If_Match) {
    * 1: is_etag_enabled = true
    */
   for (std::uint8_t i = 0; i < 2; ++i) {
-    for (const std::string header_if_match : std::initializer_list<std::string>{
+    for (const std::string &header_if_match :
+         std::initializer_list<std::string>{
              R"("wcupin")", "  *  ", R"("r", *)", R"(*, "x")", etag,
              R"("o", )" + etag, etag + R"(, "a")"}) {
       httplib::Server svr;
@@ -11522,8 +11524,8 @@ TEST(StaticFileSever, If_Match) {
   }
 }
 
-TEST(StaticFileSever, If_None_Match) {
-  detail::FileStat stat("./www/file");
+TEST(StaticFileSever, IfNoneMatch) {
+  const detail::FileStat stat("./www/file");
   ASSERT_TRUE(stat.is_file());
   auto mm = std::make_shared<detail::mmap>("./www/file");
   ASSERT_TRUE(mm->is_open());
@@ -11537,7 +11539,7 @@ TEST(StaticFileSever, If_None_Match) {
    * 1: is_etag_enabled = true
    */
   for (std::uint8_t i = 0; i < 2; ++i) {
-    for (const std::string header_if_none_match :
+    for (const std::string &header_if_none_match :
          std::initializer_list<std::string>{"  *  ", R"("f", *)", R"(*, "i")",
                                             etag, R"("d", )" + etag,
                                             "W/" + etag + R"(, "g")"}) {
