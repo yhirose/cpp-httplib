@@ -4289,10 +4289,16 @@ TEST_F(ServerTest, TooLongRequest) {
   }
   request += "_NG";
 
+  auto start = std::chrono::high_resolution_clock::now();
   auto res = cli_.Get(request.c_str());
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
+  EXPECT_LE(elapsed, 100);
 }
 
 TEST_F(ServerTest, AlmostTooLongRequest) {
@@ -4363,10 +4369,16 @@ TEST_F(ServerTest, LongHeader) {
 }
 
 TEST_F(ServerTest, LongQueryValue) {
+  auto start = std::chrono::high_resolution_clock::now();
   auto res = cli_.Get(LONG_QUERY_URL.c_str());
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
+  EXPECT_LE(elapsed, 100);
 }
 
 TEST_F(ServerTest, TooLongQueryValue) {
