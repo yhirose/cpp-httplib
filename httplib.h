@@ -7691,6 +7691,9 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   std::string boundary;
   if (need_apply_ranges) { apply_ranges(req, res, content_type, boundary); }
 
+  // Don't leave connections open after errors
+  close_connection = close_connection || 400 <= res.status;
+
   // Prepare additional headers
   if (close_connection || req.get_header_value("Connection") == "close") {
     res.set_header("Connection", "close");
