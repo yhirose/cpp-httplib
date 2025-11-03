@@ -5932,9 +5932,8 @@ TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
   start = std::chrono::high_resolution_clock::now();
   auto resGet = cli_.send(get);
   end = std::chrono::high_resolution_clock::now();
-  elapsed =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-          .count();
+  elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+                .count();
 
   ASSERT_TRUE(resGet);
   EXPECT_EQ(StatusCode::OK_200, resGet->status);
