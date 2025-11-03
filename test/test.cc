@@ -5916,8 +5916,8 @@ TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
       std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
           .count();
 
-#ifndef _WIN32
   EXPECT_FALSE(ret);
+#ifndef _WIN32
   EXPECT_EQ(StatusCode::UriTooLong_414, resPost->status);
   EXPECT_EQ("close", resPost->get_header_value("Connection"));
 #endif
