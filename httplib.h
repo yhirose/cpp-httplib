@@ -7133,7 +7133,7 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 }
 
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
-  if (!wait_writable()) { return -1; }
+  if (!detail::is_socket_alive(sock_) || !wait_writable()) { return -1; }
 
 #if defined(_WIN32) && !defined(_WIN64)
   size =
@@ -8618,7 +8618,11 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_key_path)
     : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
       host_and_port_(detail::make_host_and_port_string(host_, port, is_ssl())),
-      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
+      client_cert_path_(client_cert_path), client_key_path_(client_key_path) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+}
 
 inline ClientImpl::~ClientImpl() {
   // Wait until all the requests in flight are handled.
@@ -9516,7 +9520,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                         Response &res, bool close_connection,
                                         Error &error) {
   // Send request
-  if (!write_request(strm, req, close_connection, error)) { return false; }
+  bool wrote = write_request(strm, req, close_connection, error);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if (is_ssl()) {
@@ -9538,6 +9542,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     output_error_log(error, &req);
     return false;
   }
+
+  if (!wrote) return false;
 
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&

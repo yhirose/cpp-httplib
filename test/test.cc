@@ -5898,6 +5898,48 @@ TEST_F(ServerTest, BadRequestLineCancelsKeepAlive) {
   EXPECT_FALSE(cli_.is_socket_open());
 }
 
+TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
+  Request post;
+  post.method = "POST";
+  post.path = "/post-large?q=" + LONG_QUERY_VALUE;
+  post.body = LARGE_DATA;
+
+  auto start = std::chrono::high_resolution_clock::now();
+
+  auto resPost = std::make_shared<Response>();
+  auto error = Error::Success;
+  cli_.set_keep_alive(true);
+  auto ret = cli_.send(post, *resPost, error);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
+
+  EXPECT_FALSE(ret);
+  EXPECT_EQ(StatusCode::UriTooLong_414, resPost->status);
+  EXPECT_EQ("close", resPost->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
+  EXPECT_LE(elapsed, 200);
+
+  // Send an extra GET request to ensure error recovery without hanging
+  Request get;
+  get.method = "GET";
+  get.path = "/hi";
+
+  start = std::chrono::high_resolution_clock::now();
+  auto resGet = cli_.send(get);
+  end = std::chrono::high_resolution_clock::now();
+  elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
+
+  ASSERT_TRUE(resGet);
+  EXPECT_EQ(StatusCode::OK_200, resGet->status);
+  EXPECT_EQ("Hello World!", resGet->body);
+  EXPECT_LE(elapsed, 100);
+}
+
 TEST_F(ServerTest, StartTime) { auto res = cli_.Get("/test-start-time"); }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
