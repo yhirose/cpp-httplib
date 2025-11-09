@@ -1,6 +1,6 @@
 #[[
 	Build options:
-	* BUILD_SHARED_LIBS (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
+	* Standard BUILD_SHARED_LIBS is supported and sets HTTPLIB_SHARED default value.
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
@@ -13,6 +13,7 @@
 	* HTTPLIB_USE_NON_BLOCKING_GETADDRINFO (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
+	* HTTPLIB_SHARED (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_TEST (default off)
 	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
 	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
@@ -109,12 +110,20 @@ option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system cer
 option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
-# Defaults to static library
-option(BUILD_SHARED_LIBS "Build the library as a shared library instead of static. Has no effect if using header-only." OFF)
-if(BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
-	# Necessary for Windows if building shared libs
-	# See https://stackoverflow.com/a/40743080
-	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+# Defaults to static library but respects standard BUILD_SHARED_LIBS if set
+include(CMakeDependentOption)
+cmake_dependent_option(HTTPLIB_SHARED "Build the library as a shared library instead of static. Has no effect if using header-only."
+	"${BUILD_SHARED_LIBS}" HTTPLIB_COMPILE OFF
+)
+if(HTTPLIB_SHARED)
+	set(HTTPLIB_LIB_TYPE SHARED)
+	if(WIN32)
+		# Necessary for Windows if building shared libs
+		# See https://stackoverflow.com/a/40743080
+		set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+	endif()
+else()
+	set(HTTPLIB_LIB_TYPE STATIC)
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -230,8 +239,7 @@ if(HTTPLIB_COMPILE)
 
 	# split.py puts output in "out"
 	set(_httplib_build_includedir "${CMAKE_CURRENT_BINARY_DIR}/out")
-	# This will automatically be either static or shared based on the value of BUILD_SHARED_LIBS
-	add_library(${PROJECT_NAME} "${_httplib_build_includedir}/httplib.cc")
+	add_library(${PROJECT_NAME} ${HTTPLIB_LIB_TYPE} "${_httplib_build_includedir}/httplib.cc")
 	target_sources(${PROJECT_NAME}
 		PUBLIC
 			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
