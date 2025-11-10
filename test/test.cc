@@ -3423,6 +3423,39 @@ protected:
                 EXPECT_EQ(req.body, LARGE_DATA);
                 res.set_content(req.body, "text/plain");
               })
+        .Post("/post-loopback",
+              [&](const Request &req, Response &res,
+                  ContentReader const &content_reader) {
+                std::string body;
+                content_reader([&](const char *data, size_t data_length) {
+                  body.append(data, data_length);
+                  return true;
+                });
+
+                res.set_content(body, "text/plain");
+              })
+        .Put("/put-loopback",
+             [&](const Request &req, Response &res,
+                 ContentReader const &content_reader) {
+               std::string body;
+               content_reader([&](const char *data, size_t data_length) {
+                 body.append(data, data_length);
+                 return true;
+               });
+
+               res.set_content(body, "text/plain");
+             })
+        .Patch("/patch-loopback",
+               [&](const Request &req, Response &res,
+                   ContentReader const &content_reader) {
+                 std::string body;
+                 content_reader([&](const char *data, size_t data_length) {
+                   body.append(data, data_length);
+                   return true;
+                 });
+
+                 res.set_content(body, "text/plain");
+               })
         .Put("/empty-no-content-type",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "");
@@ -5181,6 +5214,94 @@ TEST_F(ServerTest, PostWithContentProviderWithoutLengthAbort) {
 
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST_F(ServerTest, PostLoopBack) {
+  std::string body;
+  auto res = cli_.Post(
+      "/post-loopback", 9,
+      [](size_t /*offset*/, size_t length, DataSink &sink) {
+        EXPECT_EQ(9u, length);
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
+}
+
+TEST_F(ServerTest, PutLoopBack) {
+  std::string body;
+  auto res = cli_.Put(
+      "/put-loopback", 9,
+      [](size_t /*offset*/, size_t length, DataSink &sink) {
+        EXPECT_EQ(9u, length);
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
+}
+
+TEST_F(ServerTest, PatchLoopBack) {
+  std::string body;
+  auto res = cli_.Patch(
+      "/patch-loopback", 9,
+      [](size_t /*offset*/, size_t length, DataSink &sink) {
+        EXPECT_EQ(9u, length);
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
+}
+
+TEST_F(ServerTest, PostLoopBackWithoutRequestContentLength) {
+  std::string body;
+  auto res = cli_.Post(
+      "/post-loopback",
+      [](size_t /*offset*/, DataSink &sink) {
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        sink.done();
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
