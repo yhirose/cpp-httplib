@@ -44,9 +44,10 @@ httplib::Client cli("http://yhirose.github.io");
 // HTTPS
 httplib::Client cli("https://yhirose.github.io");
 
-auto res = cli.Get("/hi");
-res->status;
-res->body;
+if (auto res = cli.Get("/hi")) {
+  res->status;
+  res->body;
+}
 ```
 
 SSL Support
@@ -190,7 +191,7 @@ int main(void)
 }
 ```
 
-`Post`, `Put`, `Delete` and `Options` methods are also supported.
+`Post`, `Put`, `Patch`, `Delete` and `Options` methods are also supported.
 
 ### Bind a socket to multiple interfaces and any available port
 
@@ -851,6 +852,12 @@ auto res = cli.Post("/multipart", items);
 
 ```c++
 res = cli.Put("/resource/foo", "text", "text/plain");
+```
+
+### PATCH
+
+```c++
+res = cli.Patch("/resource/foo", "text", "text/plain");
 ```
 
 ### DELETE
