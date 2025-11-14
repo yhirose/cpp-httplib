@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <future>
@@ -10745,17 +10746,24 @@ TEST(UniversalClientImplTest, Ipv6LiteralAddress) {
   EXPECT_EQ(cli.port(), port);
 }
 
-TEST(FileSystemTest, FileAndDirExistenceCheck) {
+TEST(FileSystemTest, FileStatTest) {
   auto file_path = "./www/dir/index.html";
   auto dir_path = "./www/dir";
 
   detail::FileStat stat_file(file_path);
   EXPECT_TRUE(stat_file.is_file());
   EXPECT_FALSE(stat_file.is_dir());
+  EXPECT_GT(stat_file.last_modified(), 0);
 
   detail::FileStat stat_dir(dir_path);
   EXPECT_FALSE(stat_dir.is_file());
   EXPECT_TRUE(stat_dir.is_dir());
+  EXPECT_GT(stat_dir.last_modified(), 0);
+
+  detail::FileStat stat_error("ranipsd");
+  EXPECT_FALSE(stat_error.is_file());
+  EXPECT_FALSE(stat_error.is_dir());
+  EXPECT_THROW(stat_error.last_modified(), std::runtime_error);
 }
 
 TEST(MakeHostAndPortStringTest, VariousPatterns) {
@@ -11608,4 +11616,131 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   // Header parser trims surrounding whitespace of the header value
   EXPECT_EQ(observed_xff, "198.51.100.23 , 203.0.113.66 , 192.0.2.45");
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
+}
+
+TEST(is_etag_enabled, getter_and_setter) {
+  httplib::Server svr;
+
+  EXPECT_FALSE(svr.get_is_etag_enabled());
+  svr.set_is_etag_enabled(true);
+  EXPECT_TRUE(svr.get_is_etag_enabled());
+}
+
+TEST(StaticFileSever, IfMatch) {
+  const detail::FileStat stat("./www/file");
+  ASSERT_TRUE(stat.is_file());
+  auto mm = std::make_shared<detail::mmap>("./www/file");
+  ASSERT_TRUE(mm->is_open());
+
+  const std::string etag = R"(")" +
+                           detail::from_i_to_hex(stat.last_modified()) + "-" +
+                           detail::from_i_to_hex(mm->size()) + R"(")";
+
+  /*
+   * 0: is_etag_enabled = false
+   * 1: is_etag_enabled = true
+   */
+  for (std::uint8_t i = 0; i < 2; ++i) {
+    for (const std::string &header_if_match :
+         std::initializer_list<std::string>{
+             R"("wcupin")", "  *  ", R"("r", *)", R"(*, "x")", etag,
+             R"("o", )" + etag, etag + R"(, "a")"}) {
+      httplib::Server svr;
+      svr.set_mount_point("/", "./www/");
+      svr.set_is_etag_enabled(i == 1);
+
+      std::thread t = thread([&]() { svr.listen(HOST, PORT); });
+      auto se = detail::scope_exit([&] {
+        svr.stop();
+        t.join();
+        ASSERT_FALSE(svr.is_running());
+      });
+
+      svr.wait_until_ready();
+
+      httplib::Client client(HOST, PORT);
+      const httplib::Result result =
+          client.Get("/file", Headers({{"If-Match", header_if_match}}));
+
+      ASSERT_NE(result, nullptr);
+      EXPECT_EQ(result.error(), Error::Success);
+
+      if (i == 0) {
+        EXPECT_EQ(result->status, StatusCode::OK_200);
+      } else if (i == 1) {
+        if (header_if_match == R"("wcupin")") {
+          EXPECT_EQ(result->status, StatusCode::PreconditionFailed_412);
+        } else {
+          EXPECT_EQ(result->status, StatusCode::OK_200);
+        }
+      }
+
+      if (i == 0) {
+        EXPECT_FALSE(result->has_header("ETag"));
+      } else if (i == 1) {
+        EXPECT_TRUE(result->has_header("ETag"));
+        EXPECT_EQ(result->get_header_value("ETag"), etag);
+
+        if (header_if_match == R"("wcupin")") {
+          EXPECT_TRUE(result->body.empty());
+        }
+      }
+    }
+  }
+}
+
+TEST(StaticFileSever, IfNoneMatch) {
+  const detail::FileStat stat("./www/file");
+  ASSERT_TRUE(stat.is_file());
+  auto mm = std::make_shared<detail::mmap>("./www/file");
+  ASSERT_TRUE(mm->is_open());
+
+  const std::string etag = R"(")" +
+                           detail::from_i_to_hex(stat.last_modified()) + "-" +
+                           detail::from_i_to_hex(mm->size()) + R"(")";
+
+  /*
+   * 0: is_etag_enabled = false
+   * 1: is_etag_enabled = true
+   */
+  for (std::uint8_t i = 0; i < 2; ++i) {
+    for (const std::string &header_if_none_match :
+         std::initializer_list<std::string>{"  *  ", R"("f", *)", R"(*, "i")",
+                                            etag, R"("d", )" + etag,
+                                            "W/" + etag + R"(, "g")"}) {
+      httplib::Server svr;
+      svr.set_mount_point("/", "./www/");
+      svr.set_is_etag_enabled(i == 1);
+
+      std::thread t = thread([&]() { svr.listen(HOST, PORT); });
+      auto se = detail::scope_exit([&] {
+        svr.stop();
+        t.join();
+        ASSERT_FALSE(svr.is_running());
+      });
+
+      svr.wait_until_ready();
+
+      httplib::Client client(HOST, PORT);
+      const httplib::Result result = client.Get(
+          "/file", Headers({{"If-None-Match", header_if_none_match}}));
+
+      ASSERT_NE(result, nullptr);
+      EXPECT_EQ(result.error(), Error::Success);
+
+      if (i == 0) {
+        EXPECT_EQ(result->status, StatusCode::OK_200);
+      } else if (i == 1) {
+        EXPECT_EQ(result->status, StatusCode::NotModified_304);
+      }
+
+      if (i == 0) {
+        EXPECT_FALSE(result->has_header("ETag"));
+      } else if (i == 1) {
+        EXPECT_TRUE(result->has_header("ETag"));
+        EXPECT_EQ(result->get_header_value("ETag"), etag);
+        EXPECT_TRUE(result->body.empty());
+      }
+    }
+  }
 }
