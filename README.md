@@ -7,6 +7,27 @@ A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to set up. Just include the **httplib.h** file in your code!
 
+## Quick Start
+
+The repository includes two minimal examples in the `example/` directory:
+
+- `example/hello_world_server.cc`: starts a small HTTP server that serves `"Hello World!"` on `/hi`.
+- `example/hello_world_client.cc`: connects to `http://localhost:8080/hi` and prints the response body.
+
+A typical compile command with a C++11 compiler looks like:
+
+```bash
+g++ -std=c++11 -O2 -I . example/hello_world_server.cc -o hello_server
+g++ -std=c++11 -O2 -I . example/hello_world_client.cc -o hello_client
+
+
+Then:
+
+Run ./hello_server.
+
+In another terminal, run ./hello_client.
+
+You should see Hello World! printed from the client.
 > [!IMPORTANT]
 > This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
 
@@ -401,6 +422,8 @@ svr.Post("/form", [&](const auto& req, auto& res) {
 ```
 
 #### 'multipart/form-data' POST data
+> Note: the following example uses `std::ofstream`, so you need to `#include <fstream>`.
+
 
 ```cpp
 svr.Post("/multipart", [&](const Request& req, Response& res) {
