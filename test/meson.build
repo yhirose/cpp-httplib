@@ -108,9 +108,11 @@ subdir('www')
 subdir('www2'/'dir')
 subdir('www3'/'dir')
 
-# GoogleTest 1.13.0 requires C++14
+# New GoogleTest versions require new C++ standards
 test_options = []
-if gtest_dep.version().version_compare('>=1.13.0')
+if gtest_dep.version().version_compare('>=1.17.0')
+  test_options += 'cpp_std=c++17'
+elif gtest_dep.version().version_compare('>=1.13.0')
   test_options += 'cpp_std=c++14'
 endif
 

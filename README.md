@@ -44,9 +44,10 @@ httplib::Client cli("http://yhirose.github.io");
 // HTTPS
 httplib::Client cli("https://yhirose.github.io");
 
-auto res = cli.Get("/hi");
-res->status;
-res->body;
+if (auto res = cli.Get("/hi")) {
+  res->status;
+  res->body;
+}
 ```
 
 SSL Support
@@ -98,28 +99,28 @@ httplib::Client cli("https://example.com");
 auto res = cli.Get("/");
 if (!res) {
   // Check the error type
-  auto err = res.error();
+  const auto err = res.error();
 
   switch (err) {
     case httplib::Error::SSLConnection:
       std::cout << "SSL connection failed, SSL error: "
-                << res->ssl_error() << std::endl;
+                << res.ssl_error() << std::endl;
       break;
 
     case httplib::Error::SSLLoadingCerts:
       std::cout << "SSL cert loading failed, OpenSSL error: "
-                << std::hex << res->ssl_openssl_error() << std::endl;
+                << std::hex << res.ssl_openssl_error() << std::endl;
       break;
 
     case httplib::Error::SSLServerVerification:
       std::cout << "SSL verification failed" << std::endl;
 #if defined(_WIN32) && !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
       // On Windows with Schannel, check Windows certificate errors
-      std::cout << "  Windows error: 0x" << std::hex << res->wincrypt_error()
-                << ", chain status: 0x" << res->wincrypt_chain_error() << std::endl;
+      std::cout << "  Windows error: 0x" << std::hex << res.wincrypt_error()
+                << ", chain status: 0x" << res.wincrypt_chain_error() << std::endl;
 #else
       // On other platforms, check OpenSSL errors
-      std::cout << "  X509 error: " << res->ssl_openssl_error() << std::endl;
+      std::cout << "  X509 error: " << res.ssl_openssl_error() << std::endl;
 #endif
       break;
 
@@ -127,16 +128,15 @@ if (!res) {
       std::cout << "SSL hostname verification failed" << std::endl;
 #if defined(_WIN32) && !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
       // On Windows with Schannel, check Windows certificate errors
-      std::cout << "  Windows error: 0x" << std::hex << res->wincrypt_error() << std::endl;
+      std::cout << "  Windows error: 0x" << std::hex << res.wincrypt_error() << std::endl;
 #else
       // On other platforms, check OpenSSL errors
-      std::cout << "  X509 error: " << res->ssl_openssl_error() << std::endl;
+      std::cout << "  X509 error: " << res.ssl_openssl_error() << std::endl;
 #endif
       break;
 
     default:
       std::cout << "HTTP error: " << httplib::to_string(err) << std::endl;
-    }
   }
 }
 ```
@@ -150,16 +150,16 @@ if (!res) {
     std::cout << "Certificate verification failed!" << std::endl;
 
     // Check which backend reported the error
-    if (res->ssl_openssl_error() != 0) {
+    if (res.ssl_openssl_error() != 0) {
       // OpenSSL reported the error (Linux, macOS, or Windows with Schannel disabled)
-      std::cout << "OpenSSL error: " << res->ssl_openssl_error() << std::endl;
+      std::cout << "OpenSSL error: " << res.ssl_openssl_error() << std::endl;
     }
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #if defined(_WIN32) && !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
-    else if (res->wincrypt_error() != 0) {
+    else if (res.wincrypt_error() != 0) {
       // Windows Schannel reported the error
-      std::cout << "Windows error: 0x" << std::hex << res->wincrypt_error() << std::endl;
-      std::cout << "Chain status: 0x" << std::hex << res->wincrypt_chain_error() << std::endl;
+      std::cout << "Windows error: 0x" << std::hex << res.wincrypt_error() << std::endl;
+      std::cout << "Chain status: 0x" << std::hex << res.wincrypt_chain_error() << std::endl;
     }
 #endif
 #endif
@@ -260,7 +260,7 @@ int main(void)
 }
 ```
 
-`Post`, `Put`, `Delete` and `Options` methods are also supported.
+`Post`, `Put`, `Patch`, `Delete` and `Options` methods are also supported.
 
 ### Bind a socket to multiple interfaces and any available port
 
@@ -338,23 +338,47 @@ svr.set_file_request_handler([](const Request &req, Response &res) {
 
 ### Logging
 
+cpp-httplib provides separate logging capabilities for access logs and error logs, similar to web servers like Nginx and Apache.
+
+#### Access Logging
+
+Access loggers capture successful HTTP requests and responses:
+
 ```cpp
-svr.set_logger([](const auto& req, const auto& res) {
-  your_logger(req, res);
+svr.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+  std::cout << req.method << " " << req.path << " -> " << res.status << std::endl;
 });
 ```
 
-You can also set a pre-compression logger to capture request/response data before compression is applied. This is useful for debugging and monitoring purposes when you need to see the original, uncompressed response content:
+#### Pre-compression Logging
+
+You can also set a pre-compression logger to capture request/response data before compression is applied:
 
 ```cpp
-svr.set_pre_compression_logger([](const auto& req, const auto& res) {
+svr.set_pre_compression_logger([](const httplib::Request& req, const httplib::Response& res) {
   // Log before compression - res.body contains uncompressed content
   // Content-Encoding header is not yet set
   your_pre_compression_logger(req, res);
 });
 ```
 
-The pre-compression logger is only called when compression would be applied. For responses without compression, only the regular logger is called.
+The pre-compression logger is only called when compression would be applied. For responses without compression, only the access logger is called.
+
+#### Error Logging
+
+Error loggers capture failed requests and connection issues. Unlike access loggers, error loggers only receive the Error and Request information, as errors typically occur before a meaningful Response can be generated.
+
+```cpp
+svr.set_error_logger([](const httplib::Error& err, const httplib::Request* req) {
+  std::cerr << httplib::to_string(err) << " while processing request";
+  if (req) {
+    std::cerr << ", client: " << req->get_header_value("X-Forwarded-For")
+              << ", request: '" << req->method << " " << req->path << " " << req->version << "'"
+              << ", host: " << req->get_header_value("Host");
+  }
+  std::cerr << std::endl;
+});
+```
 
 ### Error handler
 
@@ -787,6 +811,51 @@ enum Error {
 };
 ```
 
+### Client Logging
+
+#### Access Logging
+
+```cpp
+cli.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::steady_clock::now() - start_time).count();
+  std::cout << "✓ " << req.method << " " << req.path
+            << " -> " << res.status << " (" << res.body.size() << " bytes, "
+            << duration << "ms)" << std::endl;
+});
+```
+
+#### Error Logging
+
+```cpp
+cli.set_error_logger([](const httplib::Error& err, const httplib::Request* req) {
+  std::cerr << "✗ ";
+  if (req) {
+    std::cerr << req->method << " " << req->path << " ";
+  }
+  std::cerr << "failed: " << httplib::to_string(err);
+
+  // Add specific guidance based on error type
+  switch (err) {
+    case httplib::Error::Connection:
+      std::cerr << " (verify server is running and reachable)";
+      break;
+    case httplib::Error::SSLConnection:
+      std::cerr << " (check SSL certificate and TLS configuration)";
+      break;
+    case httplib::Error::ConnectionTimeout:
+      std::cerr << " (increase timeout or check network latency)";
+      break;
+    case httplib::Error::Read:
+      std::cerr << " (server may have closed connection prematurely)";
+      break;
+    default:
+      break;
+  }
+  std::cerr << std::endl;
+});
+```
+
 ### GET with HTTP headers
 
 ```c++
@@ -852,6 +921,12 @@ auto res = cli.Post("/multipart", items);
 
 ```c++
 res = cli.Put("/resource/foo", "text", "text/plain");
+```
+
+### PATCH
+
+```c++
+res = cli.Patch("/resource/foo", "text", "text/plain");
 ```
 
 ### DELETE
@@ -940,7 +1015,7 @@ auto res = cli.Post(
 httplib::Client cli(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
-auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
+auto res = cli.Get("/", [](size_t len, size_t total) {
   printf("%lld / %lld bytes => %d%% complete\n",
     len, total,
     (int)(len*100/total));
@@ -1059,6 +1134,25 @@ auto res = cli.Get("/already%20encoded/path"); // Use pre-encoded paths
   - `true` (default): Automatically encodes spaces, plus signs, newlines, and other special characters
   - `false`: Sends paths as-is without encoding (useful for pre-encoded URLs)
 
+### Performance Note for Local Connections
+
+> [!WARNING]
+> On Windows systems with improperly configured IPv6 settings, using "localhost" as the hostname may cause significant connection delays (up to 2 seconds per request) due to DNS resolution issues. This affects both client and server operations. For better performance when connecting to local services, use "127.0.0.1" instead of "localhost".
+> 
+> See: https://github.com/yhirose/cpp-httplib/issues/366#issuecomment-593004264
+
+```cpp
+// May be slower on Windows due to DNS resolution delays
+httplib::Client cli("localhost", 8080);
+httplib::Server svr;
+svr.listen("localhost", 8080);
+
+// Faster alternative for local connections
+httplib::Client cli("127.0.0.1", 8080);
+httplib::Server svr;
+svr.listen("127.0.0.1", 8080);
+```
+
 Compression
 -----------
 
@@ -1133,6 +1227,8 @@ cli.set_address_family(AF_UNIX);
 ```
 
 "my-socket.sock" can be a relative path or an absolute path. Your application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
+
+This library automatically sets the Host header to "localhost" for Unix socket connections, similar to curl's behavior:
 
 
 URI Encoding/Decoding Utilities
@@ -1209,6 +1305,24 @@ Serving HTTP on 0.0.0.0 port 80 ...
 
 NOTE
 ----
+
+### Regular Expression Stack Overflow
+
+> [!CAUTION]
+> When using complex regex patterns in route handlers, be aware that certain patterns may cause stack overflow during pattern matching. This is a known issue with `std::regex` implementations and affects the `dispatch_request()` method.
+> 
+> ```cpp
+> // This pattern can cause stack overflow with large input
+> svr.Get(".*", handler);
+> ```
+> 
+> Consider using simpler patterns or path parameters to avoid this issue:
+> 
+> ```cpp
+> // Safer alternatives
+> svr.Get("/users/:id", handler);           // Path parameters
+> svr.Get(R"(/api/v\d+/.*)", handler);     // More specific patterns
+> ```
 
 ### g++
 

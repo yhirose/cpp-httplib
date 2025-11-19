@@ -1,6 +1,6 @@
 #[[
 	Build options:
-	* BUILD_SHARED_LIBS (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
+	* Standard BUILD_SHARED_LIBS is supported and sets HTTPLIB_SHARED default value.
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
@@ -14,6 +14,7 @@
 	* HTTPLIB_USE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
+	* HTTPLIB_SHARED (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_TEST (default off)
 	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
 	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
@@ -111,12 +112,34 @@ option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternativ
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
 option(HTTPLIB_USE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE "Enable automatic root certificates update on Windows." ON)
-# Defaults to static library
-option(BUILD_SHARED_LIBS "Build the library as a shared library instead of static. Has no effect if using header-only." OFF)
-if (BUILD_SHARED_LIBS AND WIN32 AND HTTPLIB_COMPILE)
-	# Necessary for Windows if building shared libs
-	# See https://stackoverflow.com/a/40743080
-	set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+# Defaults to static library but respects standard BUILD_SHARED_LIBS if set
+include(CMakeDependentOption)
+cmake_dependent_option(HTTPLIB_SHARED "Build the library as a shared library instead of static. Has no effect if using header-only."
+	"${BUILD_SHARED_LIBS}" HTTPLIB_COMPILE OFF
+)
+if(HTTPLIB_SHARED)
+	set(HTTPLIB_LIB_TYPE SHARED)
+	if(WIN32)
+		# Necessary for Windows if building shared libs
+		# See https://stackoverflow.com/a/40743080
+		set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+	endif()
+else()
+	set(HTTPLIB_LIB_TYPE STATIC)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+	if(CMAKE_SYSTEM_VERSION)
+		if(${CMAKE_SYSTEM_VERSION} VERSION_LESS "10.0.0")
+			message(SEND_ERROR "Windows ${CMAKE_SYSTEM_VERSION} or lower is not supported. Please use Windows 10 or later.")
+		endif()
+	else()
+		set(CMAKE_SYSTEM_VERSION "10.0.19041.0")
+		message(WARNING "The target is Windows but CMAKE_SYSTEM_VERSION is not set, the default system version is set to Windows 10.")
+	endif()
+endif()
+if(CMAKE_SIZEOF_VOID_P LESS 8)
+	message(WARNING "Pointer size ${CMAKE_SIZEOF_VOID_P} is not supported. Please use a 64-bit compiler.")
 endif()
 
 # Set some variables that are used in-tree and while building based on our options
@@ -218,8 +241,7 @@ if(HTTPLIB_COMPILE)
 
 	# split.py puts output in "out"
 	set(_httplib_build_includedir "${CMAKE_CURRENT_BINARY_DIR}/out")
-	# This will automatically be either static or shared based on the value of BUILD_SHARED_LIBS
-	add_library(${PROJECT_NAME} "${_httplib_build_includedir}/httplib.cc")
+	add_library(${PROJECT_NAME} ${HTTPLIB_LIB_TYPE} "${_httplib_build_includedir}/httplib.cc")
 	target_sources(${PROJECT_NAME}
 		PUBLIC
 			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
@@ -245,8 +267,8 @@ add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_11)
 
 target_include_directories(${PROJECT_NAME} SYSTEM ${_INTERFACE_OR_PUBLIC}
-    $<BUILD_INTERFACE:${_httplib_build_includedir}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+	$<BUILD_INTERFACE:${_httplib_build_includedir}>
+	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # Always require threads
@@ -343,6 +365,6 @@ if(HTTPLIB_INSTALL)
 endif()
 
 if(HTTPLIB_TEST)
-    include(CTest)
-    add_subdirectory(test)
+	include(CTest)
+	add_subdirectory(test)
 endif()

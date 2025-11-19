@@ -86,7 +86,9 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 	# Check if the target was already found by Pkgconf
 	if(TARGET PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
 		# ALIAS since we don't want the PkgConfig namespace on the Cmake library (for end-users)
-		add_library(Brotli::${_component_name} ALIAS PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
+		if (NOT TARGET Brotli::${_component_name})
+			add_library(Brotli::${_component_name} ALIAS PkgConfig::Brotli_${_component_name}${_brotli_stat_str})
+		endif()
 
 		# Tells HANDLE_COMPONENTS we found the component
 		set(Brotli_${_component_name}_FOUND TRUE)
@@ -139,7 +141,10 @@ foreach(_listvar "common;common" "decoder;dec" "encoder;enc")
 		# Tells HANDLE_COMPONENTS we found the component
 		set(Brotli_${_component_name}_FOUND TRUE)
 
-		add_library("Brotli::${_component_name}" UNKNOWN IMPORTED)
+		if (NOT TARGET Brotli::${_component_name})
+			add_library("Brotli::${_component_name}" UNKNOWN IMPORTED)
+		endif()
+		
 		# Attach the literal library and include dir to the IMPORTED target for the end-user
 		set_target_properties("Brotli::${_component_name}" PROPERTIES
 			INTERFACE_INCLUDE_DIRECTORIES "${Brotli_INCLUDE_DIR}"

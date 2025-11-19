@@ -11,8 +11,10 @@
 #endif
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <future>
 #include <limits>
@@ -77,6 +79,73 @@ static void read_file(const std::string &path, std::string &out) {
   fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
+void performance_test(const char *host) {
+  auto port = 1234;
+
+  Server svr;
+
+  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
+    res.set_content("Benchmark Response", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&]() { svr.listen(host, port); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(host, port);
+
+  // Warm-up request to establish connection and resolve DNS
+  auto warmup_res = cli.Get("/benchmark");
+  ASSERT_TRUE(warmup_res); // Ensure server is responding correctly
+
+  // Run multiple trials and collect timings
+  const int num_trials = 20;
+  std::vector<int64_t> timings;
+  timings.reserve(num_trials);
+
+  for (int i = 0; i < num_trials; i++) {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto res = cli.Get("/benchmark");
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+            .count();
+
+    // Assertions after timing measurement to avoid overhead
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+
+    timings.push_back(elapsed);
+  }
+
+  // Calculate 25th percentile (lower quartile)
+  std::sort(timings.begin(), timings.end());
+  auto p25 = timings[num_trials / 4];
+
+  // Format timings for output
+  std::ostringstream timings_str;
+  timings_str << "[";
+  for (size_t i = 0; i < timings.size(); i++) {
+    if (i > 0) timings_str << ", ";
+    timings_str << timings[i];
+  }
+  timings_str << "]";
+
+  // Localhost HTTP GET should be fast even in CI environments
+  EXPECT_LE(p25, 5) << "25th percentile performance is too slow: " << p25
+                    << "ms (Issue #1777). Timings: " << timings_str.str();
+}
+
+TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
+
+TEST(BenchmarkTest, v6) { performance_test("::1"); }
+
 class UnixSocketTest : public ::testing::Test {
 protected:
   void TearDown() override { std::remove(pathname_.c_str()); }
@@ -127,7 +196,7 @@ TEST_F(UnixSocketTest, PeerPid) {
   std::string remote_port_val;
   svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
     res.set_content(content_, "text/plain");
-    remote_port_val = req.get_header_value("REMOTE_PORT");
+    remote_port_val = std::to_string(req.remote_port);
   });
 
   std::thread t{[&] {
@@ -172,6 +241,48 @@ TEST_F(UnixSocketTest, abstract) {
   client_GET(abstract_addr);
 }
 #endif
+
+TEST_F(UnixSocketTest, HostHeaderAutoSet) {
+  httplib::Server svr;
+  std::string received_host_header;
+
+  svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
+    // Capture the Host header sent by the client
+    auto host_iter = req.headers.find("Host");
+    if (host_iter != req.headers.end()) {
+      received_host_header = host_iter->second;
+    }
+    res.set_content(content_, "text/plain");
+  });
+
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
+  }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+  ASSERT_TRUE(svr.is_running());
+
+  // Test that Host header is automatically set to "localhost" for Unix socket
+  // connections
+  httplib::Client cli{pathname_};
+  cli.set_address_family(AF_UNIX);
+  ASSERT_TRUE(cli.is_valid());
+
+  const auto &result = cli.Get(pattern_);
+  ASSERT_TRUE(result) << "error: " << result.error();
+
+  const auto &resp = result.value();
+  EXPECT_EQ(resp.status, StatusCode::OK_200);
+  EXPECT_EQ(resp.body, content_);
+
+  // Verify that Host header was automatically set to "localhost"
+  EXPECT_EQ(received_host_header, "localhost");
+}
 
 #ifndef _WIN32
 TEST(SocketStream, wait_writable_UNIX) {
@@ -259,9 +370,8 @@ TEST(StartupTest, WSAStartup) {
 
 TEST(DecodePathTest, PercentCharacter) {
   EXPECT_EQ(
-      detail::decode_path(
-          R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)",
-          false),
+      decode_path_component(
+          R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)"),
       u8"descrip=Gastos áéíóúñÑ 6");
 }
 
@@ -271,7 +381,7 @@ TEST(DecodePathTest, PercentCharacterNUL) {
   expected.push_back('\0');
   expected.push_back('x');
 
-  EXPECT_EQ(detail::decode_path("x%00x", false), expected);
+  EXPECT_EQ(decode_path_component("x%00x"), expected);
 }
 
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
@@ -1288,6 +1398,27 @@ TEST(RangeTest, FromHTTPBin_Online) {
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   }
+}
+
+TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
+  auto host = "unresolvableaddress.local";
+  auto path = std::string{"/"};
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  auto port = 443;
+  SSLClient cli(host, port);
+#else
+  auto port = 80;
+  Client cli(host, port);
+#endif
+  cli.set_connection_timeout(1);
+
+  {
+    auto res = cli.Get(path);
+    ASSERT_FALSE(res);
+  }
+
+  std::this_thread::sleep_for(std::chrono::seconds(8));
 }
 
 TEST(ConnectionErrorTest, InvalidHost) {
@@ -2969,21 +3100,20 @@ protected:
 #endif
         .Get("/remote_addr",
              [&](const Request &req, Response &res) {
-               auto remote_addr = req.headers.find("REMOTE_ADDR")->second;
-               EXPECT_TRUE(req.has_header("REMOTE_PORT"));
-               EXPECT_EQ(req.remote_addr, req.get_header_value("REMOTE_ADDR"));
-               EXPECT_EQ(req.remote_port,
-                         std::stoi(req.get_header_value("REMOTE_PORT")));
-               res.set_content(remote_addr.c_str(), "text/plain");
+               ASSERT_FALSE(req.has_header("REMOTE_ADDR"));
+               ASSERT_FALSE(req.has_header("REMOTE_PORT"));
+               ASSERT_ANY_THROW(req.get_header_value("REMOTE_ADDR"));
+               ASSERT_ANY_THROW(req.get_header_value("REMOTE_PORT"));
+               res.set_content(req.remote_addr, "text/plain");
              })
         .Get("/local_addr",
              [&](const Request &req, Response &res) {
-               EXPECT_TRUE(req.has_header("LOCAL_PORT"));
-               EXPECT_TRUE(req.has_header("LOCAL_ADDR"));
-               auto local_addr = req.get_header_value("LOCAL_ADDR");
-               auto local_port = req.get_header_value("LOCAL_PORT");
-               EXPECT_EQ(req.local_addr, local_addr);
-               EXPECT_EQ(req.local_port, std::stoi(local_port));
+               ASSERT_FALSE(req.has_header("LOCAL_ADDR"));
+               ASSERT_FALSE(req.has_header("LOCAL_PORT"));
+               ASSERT_ANY_THROW(req.get_header_value("LOCAL_ADDR"));
+               ASSERT_ANY_THROW(req.get_header_value("LOCAL_PORT"));
+               auto local_addr = req.local_addr;
+               auto local_port = std::to_string(req.local_port);
                res.set_content(local_addr.append(":").append(local_port),
                                "text/plain");
              })
@@ -3159,6 +3289,11 @@ protected:
              [&](const Request & /*req*/, Response &res) {
                res.set_content("abcdefg", "text/plain");
              })
+        .Get("/test-start-time",
+             [&](const Request &req, Response & /*res*/) {
+               EXPECT_NE(req.start_time_,
+                         std::chrono::steady_clock::time_point::min());
+             })
         .Get("/with-range-customized-response",
              [&](const Request & /*req*/, Response &res) {
                res.status = StatusCode::BadRequest_400;
@@ -3288,6 +3423,39 @@ protected:
                 EXPECT_EQ(req.body, LARGE_DATA);
                 res.set_content(req.body, "text/plain");
               })
+        .Post("/post-loopback",
+              [&](const Request &req, Response &res,
+                  ContentReader const &content_reader) {
+                std::string body;
+                content_reader([&](const char *data, size_t data_length) {
+                  body.append(data, data_length);
+                  return true;
+                });
+
+                res.set_content(body, "text/plain");
+              })
+        .Put("/put-loopback",
+             [&](const Request &req, Response &res,
+                 ContentReader const &content_reader) {
+               std::string body;
+               content_reader([&](const char *data, size_t data_length) {
+                 body.append(data, data_length);
+                 return true;
+               });
+
+               res.set_content(body, "text/plain");
+             })
+        .Patch("/patch-loopback",
+               [&](const Request &req, Response &res,
+                   ContentReader const &content_reader) {
+                 std::string body;
+                 content_reader([&](const char *data, size_t data_length) {
+                   body.append(data, data_length);
+                   return true;
+                 });
+
+                 res.set_content(body, "text/plain");
+               })
         .Put("/empty-no-content-type",
              [&](const Request &req, Response &res) {
                EXPECT_EQ(req.body, "");
@@ -3565,46 +3733,6 @@ TEST_F(ServerTest, GetMethod200) {
   EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 }
-
-void performance_test(const char *host) {
-  auto port = 1234;
-
-  Server svr;
-
-  svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
-    res.set_content("Benchmark Response", "text/plain");
-  });
-
-  auto listen_thread = std::thread([&]() { svr.listen(host, port); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  Client cli(host, port);
-
-  auto start = std::chrono::high_resolution_clock::now();
-
-  auto res = cli.Get("/benchmark");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-
-  auto end = std::chrono::high_resolution_clock::now();
-
-  auto elapsed =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-          .count();
-
-  EXPECT_LE(elapsed, 5) << "Performance is too slow: " << elapsed
-                        << "ms (Issue #1777)";
-}
-
-TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
-
-TEST(BenchmarkTest, v6) { performance_test("::1"); }
 
 TEST_F(ServerTest, GetEmptyFile) {
   auto res = cli_.Get("/empty_file");
@@ -4194,10 +4322,21 @@ TEST_F(ServerTest, TooLongRequest) {
   }
   request += "_NG";
 
+  auto start = std::chrono::high_resolution_clock::now();
+
+  cli_.set_keep_alive(true);
   auto res = cli_.Get(request.c_str());
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
+  EXPECT_LE(elapsed, 100);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
 }
 
 TEST_F(ServerTest, AlmostTooLongRequest) {
@@ -4268,10 +4407,21 @@ TEST_F(ServerTest, LongHeader) {
 }
 
 TEST_F(ServerTest, LongQueryValue) {
+  auto start = std::chrono::high_resolution_clock::now();
+
+  cli_.set_keep_alive(true);
   auto res = cli_.Get(LONG_QUERY_URL.c_str());
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
+  EXPECT_LE(elapsed, 100);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
 }
 
 TEST_F(ServerTest, TooLongQueryValue) {
@@ -4365,6 +4515,7 @@ TEST_F(ServerTest, HeaderCountExceedsLimit) {
   }
 
   // This should fail due to exceeding header count limit
+  cli_.set_keep_alive(true);
   auto res = cli_.Get("/hi", headers);
 
   // The request should either fail or return 400 Bad Request
@@ -4375,6 +4526,9 @@ TEST_F(ServerTest, HeaderCountExceedsLimit) {
     // Or the request should fail entirely
     EXPECT_FALSE(res);
   }
+
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
 }
 
 TEST_F(ServerTest, PercentEncoding) {
@@ -4429,6 +4583,7 @@ TEST_F(ServerTest, HeaderCountSecurityTest) {
   }
 
   // Try to POST with excessive headers
+  cli_.set_keep_alive(true);
   auto res = cli_.Post("/", attack_headers, "test_data", "text/plain");
 
   // Should either fail or return 400 Bad Request due to security limit
@@ -4439,6 +4594,9 @@ TEST_F(ServerTest, HeaderCountSecurityTest) {
     // Request failed, which is the expected behavior for DoS protection
     EXPECT_FALSE(res);
   }
+
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
 }
 
 TEST_F(ServerTest, MultipartFormData) {
@@ -4886,8 +5044,22 @@ TEST_F(ServerTest, GetStreamedChunkedWithTrailer) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
-  EXPECT_EQ(std::string("DummyVal1"), res->get_header_value("Dummy1"));
-  EXPECT_EQ(std::string("DummyVal2"), res->get_header_value("Dummy2"));
+
+  EXPECT_TRUE(res->has_header("Trailer"));
+  EXPECT_EQ(1U, res->get_header_value_count("Trailer"));
+  EXPECT_EQ(std::string("Dummy1, Dummy2"), res->get_header_value("Trailer"));
+
+  // Trailers are now stored separately from headers (security fix)
+  EXPECT_EQ(2U, res->trailers.size());
+  EXPECT_TRUE(res->has_trailer("Dummy1"));
+  EXPECT_TRUE(res->has_trailer("Dummy2"));
+  EXPECT_FALSE(res->has_trailer("Dummy3"));
+  EXPECT_EQ(std::string("DummyVal1"), res->get_trailer_value("Dummy1"));
+  EXPECT_EQ(std::string("DummyVal2"), res->get_trailer_value("Dummy2"));
+
+  // Verify trailers are NOT in headers (security verification)
+  EXPECT_EQ(std::string(""), res->get_header_value("Dummy1"));
+  EXPECT_EQ(std::string(""), res->get_header_value("Dummy2"));
 }
 
 TEST_F(ServerTest, LargeChunkedPost) {
@@ -5042,6 +5214,94 @@ TEST_F(ServerTest, PostWithContentProviderWithoutLengthAbort) {
 
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
+}
+
+TEST_F(ServerTest, PostLoopBack) {
+  std::string body;
+  auto res = cli_.Post(
+      "/post-loopback", 9,
+      [](size_t /*offset*/, size_t length, DataSink &sink) {
+        EXPECT_EQ(9u, length);
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
+}
+
+TEST_F(ServerTest, PutLoopBack) {
+  std::string body;
+  auto res = cli_.Put(
+      "/put-loopback", 9,
+      [](size_t /*offset*/, size_t length, DataSink &sink) {
+        EXPECT_EQ(9u, length);
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
+}
+
+TEST_F(ServerTest, PatchLoopBack) {
+  std::string body;
+  auto res = cli_.Patch(
+      "/patch-loopback", 9,
+      [](size_t /*offset*/, size_t length, DataSink &sink) {
+        EXPECT_EQ(9u, length);
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
+}
+
+TEST_F(ServerTest, PostLoopBackWithoutRequestContentLength) {
+  std::string body;
+  auto res = cli_.Post(
+      "/post-loopback",
+      [](size_t /*offset*/, DataSink &sink) {
+        sink.write("123", 3);
+        sink.write("456", 3);
+        sink.write("789", 3);
+        sink.done();
+        return true;
+      },
+      "text/plain",
+      [&body](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      });
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("123456789", body);
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -5744,6 +6004,22 @@ TEST_F(ServerTest, TooManyRedirect) {
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
+
+TEST_F(ServerTest, BadRequestLineCancelsKeepAlive) {
+  Request req;
+  req.method = "FOOBAR";
+  req.path = "/hi";
+
+  cli_.set_keep_alive(true);
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
+}
+
+TEST_F(ServerTest, StartTime) { auto res = cli_.Get("/test-start-time"); }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, Gzip) {
@@ -7304,6 +7580,48 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
   ASSERT_TRUE(result);
   EXPECT_EQ(200, result->status);
 }
+
+TEST(SNI_AutoDetectionTest, SNI_Logic) {
+  {
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+    ASSERT_TRUE(svr.is_valid());
+
+    svr.Get("/sni", [&](const Request &req, Response &res) {
+      std::string expected;
+      if (req.ssl) {
+        if (const char *sni =
+                SSL_get_servername(req.ssl, TLSEXT_NAMETYPE_host_name)) {
+          expected = sni;
+        }
+      }
+      EXPECT_EQ(expected, req.get_param_value("expected"));
+      res.set_content("ok", "text/plain");
+    });
+
+    auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+    auto se = detail::scope_exit([&] {
+      svr.stop();
+      listen_thread.join();
+      ASSERT_FALSE(svr.is_running());
+    });
+
+    svr.wait_until_ready();
+
+    {
+      SSLClient cli("localhost", PORT);
+      cli.enable_server_certificate_verification(false);
+      auto res = cli.Get("/sni?expected=localhost");
+      ASSERT_TRUE(res);
+    }
+
+    {
+      SSLClient cli("::1", PORT);
+      cli.enable_server_certificate_verification(false);
+      auto res = cli.Get("/sni?expected=");
+      ASSERT_TRUE(res);
+    }
+  }
+}
 #endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
@@ -7763,6 +8081,261 @@ TEST_F(PayloadMaxLengthTest, ExceedLimit) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST_F(PayloadMaxLengthTest, ChunkedEncodingSecurityTest) {
+  // Test chunked encoding with payload exceeding the 8-byte limit
+  std::string large_chunked_data(16, 'A'); // 16 bytes, exceeds 8-byte limit
+
+  auto res = cli_.Post("/test", large_chunked_data, "text/plain");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+}
+
+TEST_F(PayloadMaxLengthTest, ChunkedEncodingWithinLimit) {
+  // Test chunked encoding with payload within the 8-byte limit
+  std::string small_chunked_data(4, 'B'); // 4 bytes, within 8-byte limit
+
+  auto res = cli_.Post("/test", small_chunked_data, "text/plain");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(PayloadMaxLengthTest, RawSocketChunkedTest) {
+  // Test using send_request to send chunked data exceeding payload limit
+  std::string chunked_request = "POST /test HTTP/1.1\r\n"
+                                "Host: " +
+                                std::string(HOST) + ":" + std::to_string(PORT) +
+                                "\r\n"
+                                "Transfer-Encoding: chunked\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "a\r\n" // 10 bytes chunk (exceeds 8-byte limit)
+                                "0123456789\r\n"
+                                "0\r\n" // End chunk
+                                "\r\n";
+
+  std::string response;
+  bool result = send_request(1, chunked_request, &response);
+
+  if (!result) {
+    // If send_request fails, it might be because the server closed the
+    // connection due to payload limit enforcement, which is acceptable
+    SUCCEED()
+        << "Server rejected oversized chunked request (connection closed)";
+  } else {
+    // If we got a response, check if it's an error response or connection was
+    // closed early Short response length indicates connection was closed due to
+    // payload limit
+    if (response.length() <= 10) {
+      SUCCEED() << "Server closed connection for oversized chunked request";
+    } else {
+      // Check for error status codes
+      EXPECT_TRUE(response.find("413") != std::string::npos ||
+                  response.find("Payload Too Large") != std::string::npos ||
+                  response.find("400") != std::string::npos);
+    }
+  }
+}
+
+TEST_F(PayloadMaxLengthTest, NoContentLengthPayloadLimit) {
+  // Test request without Content-Length header exceeding payload limit
+  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
+                                               "Host: " +
+                                               std::string(HOST) + ":" +
+                                               std::to_string(PORT) +
+                                               "\r\n"
+                                               "Connection: close\r\n"
+                                               "\r\n";
+
+  // Add payload exceeding the 8-byte limit
+  std::string large_payload(16, 'X'); // 16 bytes, exceeds 8-byte limit
+  request_without_content_length += large_payload;
+
+  std::string response;
+  bool result = send_request(1, request_without_content_length, &response);
+
+  if (!result) {
+    // If send_request fails, server likely closed connection due to payload
+    // limit
+    SUCCEED() << "Server rejected oversized request without Content-Length "
+                 "(connection closed)";
+  } else {
+    // Check if server responded with error or closed connection early
+    if (response.length() <= 10) {
+      SUCCEED() << "Server closed connection for oversized request without "
+                   "Content-Length";
+    } else {
+      // Check for error status codes
+      EXPECT_TRUE(response.find("413") != std::string::npos ||
+                  response.find("Payload Too Large") != std::string::npos ||
+                  response.find("400") != std::string::npos);
+    }
+  }
+}
+
+TEST_F(PayloadMaxLengthTest, NoContentLengthWithinLimit) {
+  // Test request without Content-Length header within payload limit
+  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
+                                               "Host: " +
+                                               std::string(HOST) + ":" +
+                                               std::to_string(PORT) +
+                                               "\r\n"
+                                               "Connection: close\r\n"
+                                               "\r\n";
+
+  // Add payload within the 8-byte limit
+  std::string small_payload(4, 'Y'); // 4 bytes, within 8-byte limit
+  request_without_content_length += small_payload;
+
+  std::string response;
+  bool result = send_request(1, request_without_content_length, &response);
+
+  // For requests without Content-Length, the server may have different behavior
+  // The key is that it should not reject due to payload limit for small
+  // payloads
+  if (result) {
+    // Check for any HTTP response (success or error, but not connection closed)
+    if (response.length() > 10) {
+      SUCCEED()
+          << "Server processed request without Content-Length within limit";
+    } else {
+      // Short response might indicate connection closed, which is acceptable
+      SUCCEED() << "Server closed connection for request without "
+                   "Content-Length (acceptable behavior)";
+    }
+  } else {
+    // Connection failure might be due to protocol requirements
+    SUCCEED() << "Connection issue with request without Content-Length "
+                 "(environment-specific)";
+  }
+}
+
+class LargePayloadMaxLengthTest : public ::testing::Test {
+protected:
+  LargePayloadMaxLengthTest()
+      : cli_(HOST, PORT)
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+        ,
+        svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
+#endif
+  {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    cli_.enable_server_certificate_verification(false);
+#endif
+  }
+
+  virtual void SetUp() {
+    // Set 10MB payload limit
+    const size_t LARGE_PAYLOAD_LIMIT = 10 * 1024 * 1024; // 10MB
+    svr_.set_payload_max_length(LARGE_PAYLOAD_LIMIT);
+
+    svr_.Post("/test", [&](const Request & /*req*/, Response &res) {
+      res.set_content("Large payload test", "text/plain");
+    });
+
+    t_ = thread([&]() { ASSERT_TRUE(svr_.listen(HOST, PORT)); });
+    svr_.wait_until_ready();
+  }
+
+  virtual void TearDown() {
+    svr_.stop();
+    t_.join();
+  }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  SSLClient cli_;
+  SSLServer svr_;
+#else
+  Client cli_;
+  Server svr_;
+#endif
+  thread t_;
+};
+
+TEST_F(LargePayloadMaxLengthTest, ChunkedEncodingWithin10MB) {
+  // Test chunked encoding with payload within 10MB limit
+  std::string medium_payload(5 * 1024 * 1024,
+                             'A'); // 5MB payload, within 10MB limit
+
+  auto res = cli_.Post("/test", medium_payload, "application/octet-stream");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(LargePayloadMaxLengthTest, ChunkedEncodingExceeds10MB) {
+  // Test chunked encoding with payload exceeding 10MB limit
+  std::string large_payload(12 * 1024 * 1024,
+                            'B'); // 12MB payload, exceeds 10MB limit
+
+  auto res = cli_.Post("/test", large_payload, "application/octet-stream");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+}
+
+TEST_F(LargePayloadMaxLengthTest, NoContentLengthWithin10MB) {
+  // Test request without Content-Length header within 10MB limit
+  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
+                                               "Host: " +
+                                               std::string(HOST) + ":" +
+                                               std::to_string(PORT) +
+                                               "\r\n"
+                                               "Connection: close\r\n"
+                                               "\r\n";
+
+  // Add 1MB payload (within 10MB limit)
+  std::string medium_payload(1024 * 1024, 'C'); // 1MB payload
+  request_without_content_length += medium_payload;
+
+  std::string response;
+  bool result = send_request(5, request_without_content_length, &response);
+
+  if (result) {
+    // Should get a proper HTTP response for payloads within limit
+    if (response.length() > 10) {
+      SUCCEED() << "Server processed 1MB request without Content-Length within "
+                   "10MB limit";
+    } else {
+      SUCCEED() << "Server closed connection (acceptable behavior for no "
+                   "Content-Length)";
+    }
+  } else {
+    SUCCEED() << "Connection issue with 1MB payload (environment-specific)";
+  }
+}
+
+TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
+  // Test request without Content-Length header exceeding 10MB limit
+  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
+                                               "Host: " +
+                                               std::string(HOST) + ":" +
+                                               std::to_string(PORT) +
+                                               "\r\n"
+                                               "Connection: close\r\n"
+                                               "\r\n";
+
+  // Add 12MB payload (exceeds 10MB limit)
+  std::string large_payload(12 * 1024 * 1024, 'D'); // 12MB payload
+  request_without_content_length += large_payload;
+
+  std::string response;
+  bool result = send_request(10, request_without_content_length, &response);
+
+  if (!result) {
+    // Server should close connection due to payload limit
+    SUCCEED() << "Server rejected 12MB request without Content-Length "
+                 "(connection closed)";
+  } else {
+    // Check for error response
+    if (response.length() <= 10) {
+      SUCCEED()
+          << "Server closed connection for 12MB request exceeding 10MB limit";
+    } else {
+      EXPECT_TRUE(response.find("413") != std::string::npos ||
+                  response.find("Payload Too Large") != std::string::npos ||
+                  response.find("400") != std::string::npos);
+    }
+  }
+}
+
 TEST(HostAndPortPropertiesTest, NoSSL) {
   httplib::Client cli("www.google.com", 1234);
   ASSERT_EQ("www.google.com", cli.host());
@@ -7997,6 +8570,61 @@ TEST(SSLClientTest, Issue2004_Online) {
 
   auto body = res->body;
   EXPECT_EQ(body.substr(0, 15), "<!doctype html>");
+}
+
+TEST(SSLClientTest, ErrorReportingWhenInvalid) {
+  // Create SSLClient with invalid cert/key to make is_valid() return false
+  SSLClient cli("localhost", 8080, "nonexistent_cert.pem",
+                "nonexistent_key.pem");
+
+  // is_valid() should be false due to cert loading failure
+  ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+}
+
+TEST(SSLClientTest, Issue2251_SwappedClientCertAndKey) {
+  // Test for Issue #2251: SSL error not properly reported when client cert
+  // and key paths are swapped or mismatched
+  // This simulates the scenario where user accidentally swaps the cert and key
+  // files
+
+  // Using client cert file as private key and vice versa (completely wrong)
+  SSLClient cli("localhost", 8080, "client.key.pem", "client.cert.pem");
+
+  // Should fail validation due to cert/key mismatch
+  ASSERT_FALSE(cli.is_valid());
+
+  // Attempt to make a request should fail with proper error
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  // SSL error should be recorded in the Result object (this is the key fix for
+  // Issue #2251)
+  auto openssl_error = res.ssl_openssl_error();
+  EXPECT_NE(0u, openssl_error);
+}
+
+TEST(SSLClientTest, Issue2251_ClientCertFileNotMatchingKey) {
+  // Another variant: using valid file paths but with mismatched cert/key pair
+  // This tests the case where files exist but contain incompatible key material
+
+  // Using client cert with wrong key (cert2 key)
+  SSLClient cli("localhost", 8080, "client.cert.pem", "key.pem");
+
+  // Should fail validation
+  ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  // Must report error properly, not appear as success
+  EXPECT_EQ(Error::SSLConnection, res.error());
+
+  // OpenSSL error should be captured in Result
+  EXPECT_NE(0u, res.ssl_openssl_error());
 }
 
 #if 0
@@ -8346,6 +8974,197 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(SSLClientServerTest, ClientCAListSentToClient) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  // Set up a handler to verify client certificate is present
+  bool client_cert_verified = false;
+  svr.Get("/test", [&](const Request & /*req*/, Response &res) {
+    // Verify that client certificate was provided
+    client_cert_verified = true;
+    res.set_content("success", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Client with certificate
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_TRUE(client_cert_verified);
+  EXPECT_EQ("success", res->body);
+}
+
+TEST(SSLClientServerTest, ClientCAListSetInContext) {
+  // Test that when client CA cert file is provided,
+  // SSL_CTX_set_client_CA_list is called and the CA list is properly set
+
+  // Create a server with client authentication
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  // We can't directly access the SSL_CTX from SSLServer to verify,
+  // but we can test that the server properly requests client certificates
+  // and accepts valid ones from the specified CA
+
+  bool handler_called = false;
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    handler_called = true;
+
+    // Verify that a client certificate was provided
+    auto peer_cert = SSL_get_peer_certificate(req.ssl);
+    ASSERT_TRUE(peer_cert != nullptr);
+
+    // Get the issuer name
+    auto issuer_name = X509_get_issuer_name(peer_cert);
+    ASSERT_TRUE(issuer_name != nullptr);
+
+    char issuer_buf[256];
+    X509_NAME_oneline(issuer_name, issuer_buf, sizeof(issuer_buf));
+
+    // The client certificate should be issued by our test CA
+    std::string issuer_str(issuer_buf);
+    EXPECT_TRUE(issuer_str.find("Root CA Name") != std::string::npos);
+
+    X509_free(peer_cert);
+    res.set_content("authenticated", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Connect with a client certificate issued by the CA
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_TRUE(handler_called);
+  EXPECT_EQ("authenticated", res->body);
+}
+
+TEST(SSLClientServerTest, ClientCAListLoadErrorRecorded) {
+  // Test 1: Valid CA file - no error should be recorded
+  {
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
+                  CLIENT_CA_CERT_FILE);
+    ASSERT_TRUE(svr.is_valid());
+
+    // With valid setup, last_ssl_error should be 0
+    EXPECT_EQ(0, svr.ssl_last_error());
+  }
+
+  // Test 2: Invalid CA file content
+  // When SSL_load_client_CA_file fails, last_ssl_error_ should be set
+  {
+    // Create a temporary file with completely invalid content
+    const char *temp_invalid_ca = "./temp_invalid_ca_for_test.txt";
+    {
+      std::ofstream ofs(temp_invalid_ca);
+      ofs << "This is not a certificate file at all\n";
+      ofs << "Just plain text content\n";
+    }
+
+    // Create server with invalid CA file
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, temp_invalid_ca);
+
+    // Clean up temporary file
+    std::remove(temp_invalid_ca);
+
+    // When there's an SSL error (from either SSL_CTX_load_verify_locations
+    // or SSL_load_client_CA_file), last_ssl_error_ should be non-zero
+    // Note: SSL_CTX_load_verify_locations typically fails first,
+    // but our error handling code path is still exercised
+    if (!svr.is_valid()) { EXPECT_NE(0, svr.ssl_last_error()); }
+  }
+}
+
+TEST(SSLClientServerTest, ClientCAListFromX509Store) {
+  // Test SSL server using X509_STORE constructor with client CA certificates
+  // This test verifies that Phase 2 implementation correctly extracts CA names
+  // from an X509_STORE and sets them in the SSL context
+
+  // Load the CA certificate into memory
+  auto bio = BIO_new_file(CLIENT_CA_CERT_FILE, "r");
+  ASSERT_NE(nullptr, bio);
+
+  auto ca_cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+  BIO_free(bio);
+  ASSERT_NE(nullptr, ca_cert);
+
+  // Create an X509_STORE and add the CA certificate
+  auto store = X509_STORE_new();
+  ASSERT_NE(nullptr, store);
+  ASSERT_EQ(1, X509_STORE_add_cert(store, ca_cert));
+
+  // Load server certificate and private key
+  auto cert_bio = BIO_new_file(SERVER_CERT_FILE, "r");
+  ASSERT_NE(nullptr, cert_bio);
+  auto server_cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+  BIO_free(cert_bio);
+  ASSERT_NE(nullptr, server_cert);
+
+  auto key_bio = BIO_new_file(SERVER_PRIVATE_KEY_FILE, "r");
+  ASSERT_NE(nullptr, key_bio);
+  auto server_key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
+  BIO_free(key_bio);
+  ASSERT_NE(nullptr, server_key);
+
+  // Create SSLServer with X509_STORE constructor
+  // Note: X509_STORE ownership is transferred to SSL_CTX
+  SSLServer svr(server_cert, server_key, store);
+  ASSERT_TRUE(svr.is_valid());
+
+  // No SSL error should be recorded for valid setup
+  EXPECT_EQ(0, svr.ssl_last_error());
+
+  // Set up server endpoints
+  svr.Get("/test-x509store", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  // Start server in a thread
+  auto server_thread = thread([&]() { svr.listen(HOST, PORT); });
+  svr.wait_until_ready();
+
+  // Connect with client certificate (using constructor with paths)
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+
+  auto res = cli.Get("/test-x509store");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ("ok", res->body);
+
+  // Clean up
+  X509_free(server_cert);
+  EVP_PKEY_free(server_key);
+  X509_free(ca_cert);
+
+  svr.stop();
+  server_thread.join();
+}
+
 // Disabled due to the out-of-memory problem on GitHub Actions Workflows
 TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
 
@@ -8662,6 +9481,46 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
 
   Client cli("127.0.0.1", PORT);
   cli.set_ca_cert_path(SERVER_CERT2_FILE);
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/index");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(SSLClientRedirectTest, CertFile) {
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:1235/index");
+    ssl_svr1.stop();
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+    ssl_svr2.stop();
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", 1235)); });
+  auto se = detail::scope_exit([&] {
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
   cli.enable_server_certificate_verification(true);
   cli.set_follow_location(true);
   cli.set_connection_timeout(30);
@@ -9649,6 +10508,51 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   }
 }
 
+TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_redirect(R"(/hello?key=AByz09+~-._%20%26%3F%C3%BC%2B)");
+  });
+
+  svr.Get("/hello", [](const Request &req, Response &res) {
+    res.set_content(req.get_param_value("key"), "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("AByz09 ~-._ &?ü+", res->body);
+  }
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(RedirectTest, Issue2185_Online) {
+  SSLClient client("github.com");
+  client.set_follow_location(true);
+
+  auto res = client.Get("/Coollab-Art/Coollab/releases/download/1.1.1_UI-Scale/"
+                        "Coollab-Windows.zip");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(9920427U, res->body.size());
+}
+#endif
+
 TEST(VulnerabilityTest, CRLFInjection) {
   Server svr;
 
@@ -9870,6 +10774,103 @@ TEST(FileSystemTest, FileAndDirExistenceCheck) {
   detail::FileStat stat_dir(dir_path);
   EXPECT_FALSE(stat_dir.is_file());
   EXPECT_TRUE(stat_dir.is_dir());
+}
+
+TEST(MakeHostAndPortStringTest, VariousPatterns) {
+  // IPv4 with default HTTP port (80)
+  EXPECT_EQ("example.com",
+            detail::make_host_and_port_string("example.com", 80, false));
+
+  // IPv4 with default HTTPS port (443)
+  EXPECT_EQ("example.com",
+            detail::make_host_and_port_string("example.com", 443, true));
+
+  // IPv4 with non-default HTTP port
+  EXPECT_EQ("example.com:8080",
+            detail::make_host_and_port_string("example.com", 8080, false));
+
+  // IPv4 with non-default HTTPS port
+  EXPECT_EQ("example.com:8443",
+            detail::make_host_and_port_string("example.com", 8443, true));
+
+  // IPv6 with default HTTP port (80)
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("::1", 80, false));
+
+  // IPv6 with default HTTPS port (443)
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("::1", 443, true));
+
+  // IPv6 with non-default HTTP port
+  EXPECT_EQ("[::1]:8080",
+            detail::make_host_and_port_string("::1", 8080, false));
+
+  // IPv6 with non-default HTTPS port
+  EXPECT_EQ("[::1]:8443", detail::make_host_and_port_string("::1", 8443, true));
+
+  // IPv6 full address with default port
+  EXPECT_EQ("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]",
+            detail::make_host_and_port_string(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334", 443, true));
+
+  // IPv6 full address with non-default port
+  EXPECT_EQ("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:9000",
+            detail::make_host_and_port_string(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334", 9000, false));
+
+  // IPv6 localhost with non-default port
+  EXPECT_EQ("[::1]:3000",
+            detail::make_host_and_port_string("::1", 3000, false));
+
+  // IPv6 with zone ID (link-local address) with default port
+  EXPECT_EQ("[fe80::1%eth0]",
+            detail::make_host_and_port_string("fe80::1%eth0", 80, false));
+
+  // IPv6 with zone ID (link-local address) with non-default port
+  EXPECT_EQ("[fe80::1%eth0]:8080",
+            detail::make_host_and_port_string("fe80::1%eth0", 8080, false));
+
+  // Edge case: Port 443 with is_ssl=false (should add port)
+  EXPECT_EQ("example.com:443",
+            detail::make_host_and_port_string("example.com", 443, false));
+
+  // Edge case: Port 80 with is_ssl=true (should add port)
+  EXPECT_EQ("example.com:80",
+            detail::make_host_and_port_string("example.com", 80, true));
+
+  // IPv6 edge case: Port 443 with is_ssl=false (should add port)
+  EXPECT_EQ("[::1]:443", detail::make_host_and_port_string("::1", 443, false));
+
+  // IPv6 edge case: Port 80 with is_ssl=true (should add port)
+  EXPECT_EQ("[::1]:80", detail::make_host_and_port_string("::1", 80, true));
+
+  // Security fix: Already bracketed IPv6 should not get double brackets
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("[::1]", 80, false));
+  EXPECT_EQ("[::1]", detail::make_host_and_port_string("[::1]", 443, true));
+  EXPECT_EQ("[::1]:8080",
+            detail::make_host_and_port_string("[::1]", 8080, false));
+  EXPECT_EQ("[2001:db8::1]:8080",
+            detail::make_host_and_port_string("[2001:db8::1]", 8080, false));
+  EXPECT_EQ("[fe80::1%eth0]",
+            detail::make_host_and_port_string("[fe80::1%eth0]", 80, false));
+  EXPECT_EQ("[fe80::1%eth0]:8080",
+            detail::make_host_and_port_string("[fe80::1%eth0]", 8080, false));
+
+  // Edge case: Empty host (should return as-is)
+  EXPECT_EQ("", detail::make_host_and_port_string("", 80, false));
+
+  // Edge case: Colon in hostname (non-IPv6) - will be treated as IPv6
+  // This is a known limitation but shouldn't crash
+  EXPECT_EQ("[host:name]",
+            detail::make_host_and_port_string("host:name", 80, false));
+
+  // Port number edge cases (no validation, but should not crash)
+  EXPECT_EQ("example.com:0",
+            detail::make_host_and_port_string("example.com", 0, false));
+  EXPECT_EQ("example.com:-1",
+            detail::make_host_and_port_string("example.com", -1, false));
+  EXPECT_EQ("example.com:65535",
+            detail::make_host_and_port_string("example.com", 65535, false));
+  EXPECT_EQ("example.com:65536",
+            detail::make_host_and_port_string("example.com", 65536, false));
 }
 
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
@@ -10252,11 +11253,18 @@ class EventDispatcher {
 public:
   EventDispatcher() {}
 
-  void wait_event(DataSink *sink) {
+  bool wait_event(DataSink *sink) {
     unique_lock<mutex> lk(m_);
     int id = id_;
-    cv_.wait(lk, [&] { return cid_ == id; });
+
+    // Wait with timeout to prevent hanging if client disconnects
+    if (!cv_.wait_for(lk, std::chrono::seconds(5),
+                      [&] { return cid_ == id; })) {
+      return false; // Timeout occurred
+    }
+
     sink->write(message_.data(), message_.size());
+    return true;
   }
 
   void send_event(const string &message) {
@@ -10281,8 +11289,7 @@ TEST(ClientInThreadTest, Issue2068) {
   svr.Get("/event1", [&](const Request & /*req*/, Response &res) {
     res.set_chunked_content_provider("text/event-stream",
                                      [&](size_t /*offset*/, DataSink &sink) {
-                                       ed.wait_event(&sink);
-                                       return true;
+                                       return ed.wait_event(&sink);
                                      });
   });
 
@@ -10325,8 +11332,298 @@ TEST(ClientInThreadTest, Issue2068) {
     std::this_thread::sleep_for(std::chrono::seconds(2));
     stop = true;
     client->stop();
-    client.reset();
 
     t.join();
+
+    // Reset client after thread has finished
+    client.reset();
   }
+}
+
+TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
+  Server svr;
+
+  svr.Get("/", [](const Request &req, Response &res) {
+    EXPECT_EQ(2U, req.trailers.size());
+
+    EXPECT_FALSE(req.has_trailer("[invalid key...]"));
+
+    // Denied
+    EXPECT_FALSE(req.has_trailer("Content-Length"));
+    EXPECT_FALSE(req.has_trailer("X-Forwarded-For"));
+
+    // Accepted
+    EXPECT_TRUE(req.has_trailer("X-Hello"));
+    EXPECT_EQ(req.get_trailer_value("X-Hello"), "hello");
+
+    EXPECT_TRUE(req.has_trailer("X-World"));
+    EXPECT_EQ(req.get_trailer_value("X-World"), "world");
+
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Transfer-Encoding: chunked\r\n"
+                          "Trailer: X-Hello, X-World, X-AAA, X-BBB\r\n"
+                          "\r\n"
+                          "0\r\n"
+                          "Content-Length: 10\r\n"
+                          "Host: internal.local\r\n"
+                          "Content-Type: malicious/content\r\n"
+                          "Cookie: any\r\n"
+                          "Set-Cookie: any\r\n"
+                          "X-Forwarded-For: attacker.com\r\n"
+                          "X-Real-Ip: 1.1.1.1\r\n"
+                          "X-Hello: hello\r\n"
+                          "X-World: world\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res));
+}
+
+TEST(ForwardedHeadersTest, NoProxiesSetting) {
+  Server svr;
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For", "203.0.113.66"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "203.0.113.66");
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, NoForwardedHeaders) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "");
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res =
+      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
+  Server svr;
+
+  svr.set_trusted_proxies({"203.0.113.66", "192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res =
+      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 198.51.100.24");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
+TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "203.0.113.66");
+}
+
+TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  std::string observed_xff;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff = req.get_header_value("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For",
+                              " 198.51.100.23 , 203.0.113.66 , 192.0.2.45 "}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Header parser trims surrounding whitespace of the header value
+  EXPECT_EQ(observed_xff, "198.51.100.23 , 203.0.113.66 , 192.0.2.45");
+  EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
