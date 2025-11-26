@@ -257,6 +257,7 @@ using socklen_t = int;
 #include <netinet/in.h>
 #ifdef __linux__
 #include <resolv.h>
+#undef _res
 #endif
 #include <csignal>
 #include <netinet/tcp.h>
