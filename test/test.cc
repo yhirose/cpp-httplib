@@ -3424,7 +3424,7 @@ protected:
                 res.set_content(req.body, "text/plain");
               })
         .Post("/post-loopback",
-              [&](const Request &req, Response &res,
+              [&](const Request &, Response &res,
                   ContentReader const &content_reader) {
                 std::string body;
                 content_reader([&](const char *data, size_t data_length) {
@@ -3435,7 +3435,7 @@ protected:
                 res.set_content(body, "text/plain");
               })
         .Put("/put-loopback",
-             [&](const Request &req, Response &res,
+             [&](const Request &, Response &res,
                  ContentReader const &content_reader) {
                std::string body;
                content_reader([&](const char *data, size_t data_length) {
@@ -3446,7 +3446,7 @@ protected:
                res.set_content(body, "text/plain");
              })
         .Patch("/patch-loopback",
-               [&](const Request &req, Response &res,
+               [&](const Request &, Response &res,
                    ContentReader const &content_reader) {
                  std::string body;
                  content_reader([&](const char *data, size_t data_length) {
@@ -11608,4 +11608,74 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   // Header parser trims surrounding whitespace of the header value
   EXPECT_EQ(observed_xff, "198.51.100.23 , 203.0.113.66 , 192.0.2.45");
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
+}
+
+TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
+  Server svr;
+
+  svr.Post("/post", [&](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  svr.Put("/put", [&](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  svr.Patch("/patch", [&](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  svr.Delete("/delete", [&](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  std::string resp;
+
+  // POST without Content-Length
+  ASSERT_TRUE(send_request(5,
+                           "POST /post HTTP/1.1\r\n"
+                           "Host: localhost\r\n"
+                           "Connection: close\r\n"
+                           "\r\n",
+                           &resp));
+  EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
+
+  // PUT without Content-Length
+  resp.clear();
+  ASSERT_TRUE(send_request(5,
+                           "PUT /put HTTP/1.1\r\n"
+                           "Host: localhost\r\n"
+                           "Connection: close\r\n"
+                           "\r\n",
+                           &resp));
+  EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
+
+  // PATCH without Content-Length
+  resp.clear();
+  ASSERT_TRUE(send_request(5,
+                           "PATCH /patch HTTP/1.1\r\n"
+                           "Host: localhost\r\n"
+                           "Connection: close\r\n"
+                           "\r\n",
+                           &resp));
+  EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
+
+  // DELETE without Content-Length
+  resp.clear();
+  ASSERT_TRUE(send_request(5,
+                           "DELETE /delete HTTP/1.1\r\n"
+                           "Host: localhost\r\n"
+                           "Connection: close\r\n"
+                           "\r\n",
+                           &resp));
+  EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
 }

@@ -7932,7 +7932,11 @@ inline bool Server::read_content_core(
                      size_t /*len*/) { return receiver(buf, n); };
   }
 
-  if (req.method == "DELETE" && !req.has_header("Content-Length")) {
+  // RFC 7230 Section 3.3.3: If this is a request message and none of the above
+  // are true (no Transfer-Encoding and no Content-Length), then the message
+  // body length is zero (no message body is present).
+  if (!req.has_header("Content-Length") &&
+      !detail::is_chunked_transfer_encoding(req.headers)) {
     return true;
   }
 
