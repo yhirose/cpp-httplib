@@ -8,8 +8,8 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.27.0"
-#define CPPHTTPLIB_VERSION_NUM "0x001B00"
+#define CPPHTTPLIB_VERSION "0.28.0"
+#define CPPHTTPLIB_VERSION_NUM "0x001C00"
 
 /*
  * Platform compatibility check
