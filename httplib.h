@@ -873,6 +873,7 @@ class ThreadPool final : public TaskQueue {
 public:
   explicit ThreadPool(size_t n, size_t mqr = 0)
       : shutdown_(false), max_queued_requests_(mqr) {
+    threads_.reserve(n);
     while (n) {
       threads_.emplace_back(worker(*this));
       n--;
@@ -981,7 +982,7 @@ namespace detail {
 
 class MatcherBase {
 public:
-  MatcherBase(std::string pattern) : pattern_(pattern) {}
+  MatcherBase(std::string pattern) : pattern_(std::move(pattern)) {}
   virtual ~MatcherBase() = default;
 
   const std::string &pattern() const { return pattern_; }
