@@ -4687,7 +4687,6 @@ inline EncodingType encoding_type(const Request &req, const Response &res) {
 
   return EncodingType::None;
 }
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
 
 inline bool nocompressor::compress(const char *data, size_t data_length,
                                    bool /*last*/, Callback callback) {
@@ -4695,6 +4694,7 @@ inline bool nocompressor::compress(const char *data, size_t data_length,
   return callback(data, data_length);
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
 inline gzip_compressor::gzip_compressor() {
   std::memset(&strm_, 0, sizeof(strm_));
   strm_.zalloc = Z_NULL;
