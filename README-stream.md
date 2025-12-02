@@ -78,7 +78,7 @@ The `StreamHandle` struct provides direct control over streaming responses. It t
 ```cpp
 // Open a stream (takes ownership of socket)
 httplib::Client cli("http://localhost:8080");
-auto handle = cli.open_stream("/path");
+auto handle = cli.open_stream("GET", "/path");
 
 // Check validity
 if (handle.is_valid()) {
@@ -114,6 +114,8 @@ The `httplib.h` header provides a more ergonomic iterator-style API.
 #include "httplib.h"
 
 httplib::Client cli("http://localhost:8080");
+cli.set_follow_location(true);
+...
 
 // Simple GET
 auto result = httplib::stream::Get(cli, "/path");

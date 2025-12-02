@@ -1195,6 +1195,8 @@ Process large responses without loading everything into memory.
 
 ```c++
 httplib::Client cli("localhost", 8080);
+cli.set_follow_location(true);
+...
 
 auto result = httplib::stream::Get(cli, "/large-file");
 if (result) {
