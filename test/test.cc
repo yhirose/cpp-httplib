@@ -3198,6 +3198,33 @@ protected:
                      return true;
                    });
              })
+        .Get("/streamed-chunked-with-prohibited-trailer",
+             [&](const Request & /*req*/, Response &res) {
+               auto i = new int(0);
+               // Declare both a prohibited trailer (Content-Length) and an
+               // allowed one
+               res.set_header("Trailer", "Content-Length, X-Allowed");
+
+               res.set_chunked_content_provider(
+                   "text/plain",
+                   [i](size_t /*offset*/, DataSink &sink) {
+                     switch (*i) {
+                     case 0: sink.os << "123"; break;
+                     case 1: sink.os << "456"; break;
+                     case 2: sink.os << "789"; break;
+                     case 3: {
+                       sink.done_with_trailer(
+                           {{"Content-Length", "5"}, {"X-Allowed", "yes"}});
+                     } break;
+                     }
+                     (*i)++;
+                     return true;
+                   },
+                   [i](bool success) {
+                     EXPECT_TRUE(success);
+                     delete i;
+                   });
+             })
         .Get("/streamed-chunked2",
              [&](const Request & /*req*/, Response &res) {
                auto i = new int(0);
@@ -11686,3 +11713,754 @@ TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
                            &resp));
   EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
 }
+
+//==============================================================================
+// open_stream() Tests
+//==============================================================================
+
+inline std::string read_all(ClientImpl::StreamHandle &handle) {
+  std::string result;
+  char buf[8192];
+  ssize_t n;
+  while ((n = handle.read(buf, sizeof(buf))) > 0) {
+    result.append(buf, static_cast<size_t>(n));
+  }
+  return result;
+}
+
+// Mock stream for unit tests
+class MockStream : public Stream {
+public:
+  std::string data;
+  size_t pos = 0;
+  ssize_t error_after = -1; // -1 = no error
+
+  explicit MockStream(const std::string &d, ssize_t err = -1)
+      : data(d), error_after(err) {}
+  bool is_readable() const override { return true; }
+  bool wait_readable() const override { return true; }
+  bool wait_writable() const override { return true; }
+  ssize_t read(char *ptr, size_t size) override {
+    if (error_after >= 0 && pos >= static_cast<size_t>(error_after)) return -1;
+    if (pos >= data.size()) return 0;
+    size_t limit =
+        error_after >= 0 ? static_cast<size_t>(error_after) : data.size();
+    size_t to_read = std::min(size, std::min(data.size() - pos, limit - pos));
+    std::memcpy(ptr, data.data() + pos, to_read);
+    pos += to_read;
+    return static_cast<ssize_t>(to_read);
+  }
+  ssize_t write(const char *, size_t) override { return -1; }
+  void get_remote_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  void get_local_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  socket_t socket() const override { return INVALID_SOCKET; }
+  time_t duration() const override { return 0; }
+};
+
+TEST(StreamHandleTest, Basic) {
+  ClientImpl::StreamHandle handle;
+  EXPECT_FALSE(handle.is_valid());
+  handle.response = detail::make_unique<Response>();
+  handle.error = Error::Connection;
+  EXPECT_FALSE(handle.is_valid());
+  handle.error = Error::Success;
+  EXPECT_TRUE(handle.is_valid());
+}
+
+TEST(BodyReaderTest, Basic) {
+  MockStream stream("Hello, World!");
+  detail::BodyReader reader;
+  reader.stream = &stream;
+  reader.content_length = 13;
+  char buf[32];
+  EXPECT_EQ(13, reader.read(buf, sizeof(buf)));
+  EXPECT_EQ(0, reader.read(buf, sizeof(buf)));
+  EXPECT_TRUE(reader.eof);
+}
+
+TEST(BodyReaderTest, NoStream) {
+  detail::BodyReader reader;
+  char buf[32];
+  EXPECT_EQ(-1, reader.read(buf, sizeof(buf)));
+  EXPECT_EQ(Error::Connection, reader.last_error);
+}
+
+TEST(BodyReaderTest, Error) {
+  MockStream stream("Hello, World!", 5);
+  detail::BodyReader reader;
+  reader.stream = &stream;
+  reader.content_length = 13;
+  char buf[32];
+  EXPECT_EQ(5, reader.read(buf, sizeof(buf)));
+  EXPECT_EQ(-1, reader.read(buf, sizeof(buf)));
+  EXPECT_EQ(Error::Read, reader.last_error);
+}
+
+// Memory buffer mode removed: StreamHandle reads only from socket streams.
+// Mock-based StreamHandle tests relying on private internals are removed.
+
+class OpenStreamTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.Get("/hello", [](const Request &, Response &res) {
+      res.set_content("Hello World!", "text/plain");
+    });
+    svr_.Get("/large", [](const Request &, Response &res) {
+      res.set_content(std::string(10000, 'X'), "text/plain");
+    });
+    svr_.Get("/chunked", [](const Request &, Response &res) {
+      res.set_chunked_content_provider("text/plain",
+                                       [](size_t offset, DataSink &sink) {
+                                         if (offset < 15) {
+                                           sink.write("chunk", 5);
+                                           return true;
+                                         }
+                                         sink.done();
+                                         return true;
+                                       });
+    });
+    svr_.Get("/compressible", [](const Request &, Response &res) {
+      res.set_chunked_content_provider("text/plain", [](size_t offset,
+                                                        DataSink &sink) {
+        if (offset < 100 * 1024) {
+          std::string chunk(std::min(size_t(8192), 100 * 1024 - offset), 'A');
+          sink.write(chunk.data(), chunk.size());
+          return true;
+        }
+        sink.done();
+        return true;
+      });
+    });
+    svr_.Get("/streamed-chunked-with-prohibited-trailer",
+             [](const Request & /*req*/, Response &res) {
+               auto i = new int(0);
+               res.set_header("Trailer", "Content-Length, X-Allowed");
+               res.set_chunked_content_provider(
+                   "text/plain",
+                   [i](size_t /*offset*/, DataSink &sink) {
+                     switch (*i) {
+                     case 0: sink.os << "123"; break;
+                     case 1: sink.os << "456"; break;
+                     case 2: sink.os << "789"; break;
+                     case 3: {
+                       sink.done_with_trailer(
+                           {{"Content-Length", "5"}, {"X-Allowed", "yes"}});
+                     } break;
+                     }
+                     (*i)++;
+                     return true;
+                   },
+                   [i](bool success) {
+                     EXPECT_TRUE(success);
+                     delete i;
+                   });
+             });
+    // Echo headers endpoint for header-related tests
+    svr_.Get("/echo-headers", [](const Request &req, Response &res) {
+      std::string body;
+      for (const auto &h : req.headers) {
+        body.append(h.first);
+        body.push_back(':');
+        body.append(h.second);
+        body.push_back('\n');
+      }
+      res.set_content(body, "text/plain");
+    });
+    svr_.Post("/echo-headers", [](const Request &req, Response &res) {
+      std::string body;
+      for (const auto &h : req.headers) {
+        body.append(h.first);
+        body.push_back(':');
+        body.append(h.second);
+        body.push_back('\n');
+      }
+      res.set_content(body, "text/plain");
+    });
+    thread_ = std::thread([this]() { svr_.listen("127.0.0.1", 8787); });
+    svr_.wait_until_ready();
+  }
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) thread_.join();
+  }
+  Server svr_;
+  std::thread thread_;
+};
+
+TEST_F(OpenStreamTest, Basic) {
+  Client cli("127.0.0.1", 8787);
+  auto handle = cli.open_stream("GET", "/hello");
+  EXPECT_TRUE(handle.is_valid());
+  EXPECT_EQ("Hello World!", read_all(handle));
+}
+
+TEST_F(OpenStreamTest, SmallBuffer) {
+  Client cli("127.0.0.1", 8787);
+  auto handle = cli.open_stream("GET", "/hello");
+  std::string result;
+  char buf[4];
+  ssize_t n;
+  while ((n = handle.read(buf, sizeof(buf))) > 0)
+    result.append(buf, static_cast<size_t>(n));
+  EXPECT_EQ("Hello World!", result);
+}
+
+TEST_F(OpenStreamTest, DefaultHeaders) {
+  Client cli("127.0.0.1", 8787);
+
+  // open_stream GET should include Host, User-Agent and Accept-Encoding
+  {
+    auto handle = cli.open_stream("GET", "/echo-headers");
+    ASSERT_TRUE(handle.is_valid());
+    auto body = read_all(handle);
+    EXPECT_NE(body.find("Host:127.0.0.1:8787"), std::string::npos);
+    EXPECT_NE(body.find("User-Agent:cpp-httplib/" CPPHTTPLIB_VERSION),
+              std::string::npos);
+    EXPECT_NE(body.find("Accept-Encoding:"), std::string::npos);
+  }
+
+  // open_stream POST with body and no explicit content_type should NOT add
+  // text/plain Content-Type (behavior differs from non-streaming path), but
+  // should include Content-Length
+  {
+    auto handle = cli.open_stream("POST", "/echo-headers", {}, {}, "hello", "");
+    ASSERT_TRUE(handle.is_valid());
+    auto body = read_all(handle);
+    EXPECT_EQ(body.find("Content-Type: text/plain"), std::string::npos);
+    EXPECT_NE(body.find("Content-Length:5"), std::string::npos);
+  }
+
+  // open_stream POST with explicit Content-Type should preserve it
+  {
+    auto handle = cli.open_stream("POST", "/echo-headers", {},
+                                  {{"Content-Type", "application/custom"}},
+                                  "{}", "application/custom");
+    ASSERT_TRUE(handle.is_valid());
+    auto body = read_all(handle);
+    EXPECT_NE(body.find("Content-Type:application/custom"), std::string::npos);
+  }
+
+  // User-specified User-Agent must not be overwritten for stream API
+  {
+    auto handle = cli.open_stream("GET", "/echo-headers", {},
+                                  {{"User-Agent", "MyAgent/1.2"}});
+    ASSERT_TRUE(handle.is_valid());
+    auto body = read_all(handle);
+    EXPECT_NE(body.find("User-Agent:MyAgent/1.2"), std::string::npos);
+  }
+}
+
+TEST_F(OpenStreamTest, Large) {
+  Client cli("127.0.0.1", 8787);
+  auto handle = cli.open_stream("GET", "/large");
+  EXPECT_EQ(10000u, read_all(handle).size());
+}
+
+TEST_F(OpenStreamTest, ConnectionError) {
+  Client cli("127.0.0.1", 9999);
+  auto handle = cli.open_stream("GET", "/hello");
+  EXPECT_FALSE(handle.is_valid());
+}
+
+TEST_F(OpenStreamTest, Chunked) {
+  Client cli("127.0.0.1", 8787);
+  auto handle = cli.open_stream("GET", "/chunked");
+  EXPECT_TRUE(handle.response && handle.response->get_header_value(
+                                     "Transfer-Encoding") == "chunked");
+  EXPECT_EQ("chunkchunkchunk", read_all(handle));
+}
+
+TEST_F(OpenStreamTest, ProhibitedTrailersAreIgnored_Stream) {
+  Client cli("127.0.0.1", 8787);
+  auto handle =
+      cli.open_stream("GET", "/streamed-chunked-with-prohibited-trailer");
+  ASSERT_TRUE(handle.is_valid());
+
+  // Consume body to allow trailers to be received/parsed
+  auto body = read_all(handle);
+
+  // Explicitly parse trailers (ensure trailers are available for assertion)
+  handle.parse_trailers_if_needed();
+  EXPECT_EQ(std::string("123456789"), body);
+
+  // The response should include a Trailer header declaring both names
+  ASSERT_TRUE(handle.response);
+  EXPECT_TRUE(handle.response->has_header("Trailer"));
+  EXPECT_EQ(std::string("Content-Length, X-Allowed"),
+            handle.response->get_header_value("Trailer"));
+
+  // Prohibited trailer must not be present
+  EXPECT_FALSE(handle.response->has_trailer("Content-Length"));
+  // Allowed trailer should be present
+  EXPECT_TRUE(handle.response->has_trailer("X-Allowed"));
+  EXPECT_EQ(std::string("yes"),
+            handle.response->get_trailer_value("X-Allowed"));
+
+  // Verify trailers are NOT present as regular headers
+  EXPECT_EQ(std::string(""),
+            handle.response->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string(""), handle.response->get_header_value("X-Allowed"));
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST_F(OpenStreamTest, Gzip) {
+  Client cli("127.0.0.1", 8787);
+  auto handle = cli.open_stream("GET", "/compressible", {},
+                                {{"Accept-Encoding", "gzip"}});
+  EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
+  EXPECT_EQ(100u * 1024u, read_all(handle).size());
+}
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST_F(OpenStreamTest, Brotli) {
+  Client cli("127.0.0.1", 8787);
+  auto handle =
+      cli.open_stream("GET", "/compressible", {}, {{"Accept-Encoding", "br"}});
+  EXPECT_EQ("br", handle.response->get_header_value("Content-Encoding"));
+  EXPECT_EQ(100u * 1024u, read_all(handle).size());
+}
+#endif
+
+#ifdef CPPHTTPLIB_ZSTD_SUPPORT
+TEST_F(OpenStreamTest, Zstd) {
+  Client cli("127.0.0.1", 8787);
+  auto handle = cli.open_stream("GET", "/compressible", {},
+                                {{"Accept-Encoding", "zstd"}});
+  EXPECT_EQ("zstd", handle.response->get_header_value("Content-Encoding"));
+  EXPECT_EQ(100u * 1024u, read_all(handle).size());
+}
+#endif
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+class SSLOpenStreamTest : public ::testing::Test {
+protected:
+  SSLOpenStreamTest() : svr_("cert.pem", "key.pem") {}
+  void SetUp() override {
+    svr_.Get("/hello", [](const Request &, Response &res) {
+      res.set_content("Hello SSL World!", "text/plain");
+    });
+    svr_.Get("/chunked", [](const Request &, Response &res) {
+      res.set_chunked_content_provider("text/plain",
+                                       [](size_t offset, DataSink &sink) {
+                                         if (offset < 15) {
+                                           sink.write("chunk", 5);
+                                           return true;
+                                         }
+                                         sink.done();
+                                         return true;
+                                       });
+    });
+    svr_.Post("/echo", [](const Request &req, Response &res) {
+      res.set_content(req.body, req.get_header_value("Content-Type"));
+    });
+    svr_.Post("/chunked-response", [](const Request &req, Response &res) {
+      std::string body = req.body;
+      res.set_chunked_content_provider(
+          "text/plain", [body](size_t offset, DataSink &sink) {
+            if (offset < body.size()) {
+              sink.write(body.data() + offset, body.size() - offset);
+            }
+            sink.done();
+            return true;
+          });
+    });
+    thread_ = std::thread([this]() { svr_.listen("127.0.0.1", 8788); });
+    svr_.wait_until_ready();
+  }
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) thread_.join();
+  }
+  SSLServer svr_;
+  std::thread thread_;
+};
+
+TEST_F(SSLOpenStreamTest, Basic) {
+  SSLClient cli("127.0.0.1", 8788);
+  cli.enable_server_certificate_verification(false);
+  auto handle = cli.open_stream("GET", "/hello");
+  ASSERT_TRUE(handle.is_valid());
+  EXPECT_EQ("Hello SSL World!", read_all(handle));
+}
+
+TEST_F(SSLOpenStreamTest, Chunked) {
+  SSLClient cli("127.0.0.1", 8788);
+  cli.enable_server_certificate_verification(false);
+
+  auto handle = cli.open_stream("GET", "/chunked");
+
+  ASSERT_TRUE(handle.is_valid()) << "Error: " << static_cast<int>(handle.error);
+  EXPECT_TRUE(handle.response && handle.response->get_header_value(
+                                     "Transfer-Encoding") == "chunked");
+
+  auto body = read_all(handle);
+  EXPECT_EQ("chunkchunkchunk", body);
+}
+
+TEST_F(SSLOpenStreamTest, Post) {
+  SSLClient cli("127.0.0.1", 8788);
+  cli.enable_server_certificate_verification(false);
+
+  auto handle =
+      cli.open_stream("POST", "/echo", {}, {}, "Hello SSL POST", "text/plain");
+
+  ASSERT_TRUE(handle.is_valid()) << "Error: " << static_cast<int>(handle.error);
+  EXPECT_EQ(200, handle.response->status);
+
+  auto body = read_all(handle);
+  EXPECT_EQ("Hello SSL POST", body);
+}
+
+TEST_F(SSLOpenStreamTest, PostChunked) {
+  SSLClient cli("127.0.0.1", 8788);
+  cli.enable_server_certificate_verification(false);
+
+  auto handle = cli.open_stream("POST", "/chunked-response", {}, {},
+                                "Chunked SSL Data", "text/plain");
+
+  ASSERT_TRUE(handle.is_valid());
+  EXPECT_EQ(200, handle.response->status);
+
+  auto body = read_all(handle);
+  EXPECT_EQ("Chunked SSL Data", body);
+}
+#endif // CPPHTTPLIB_OPENSSL_SUPPORT
+
+//==============================================================================
+// Parity Tests: ensure streaming and non-streaming APIs produce identical
+// results for various scenarios.
+//==============================================================================
+
+TEST(ParityTest, GetVsOpenStream) {
+  Server svr;
+
+  const std::string path = "/parity";
+  const std::string content = "Parity test content: hello world";
+
+  svr.Get(path, [&](const Request & /*req*/, Response &res) {
+    res.set_content(content, "text/plain");
+  });
+
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  // Non-stream path
+  auto r1 = cli.Get(path);
+  ASSERT_TRUE(r1);
+  EXPECT_EQ(StatusCode::OK_200, r1->status);
+
+  // Stream path
+  auto h = cli.open_stream("GET", path);
+  ASSERT_TRUE(h.is_valid());
+
+  EXPECT_EQ(r1->body, read_all(h));
+}
+
+// Helper to compress data with provided compressor type T
+template <typename Compressor>
+static std::string compress_payload_for_parity(const std::string &in) {
+  std::string out;
+  Compressor compressor;
+  bool ok = compressor.compress(in.data(), in.size(), /*last=*/true,
+                                [&](const char *data, size_t n) {
+                                  out.append(data, n);
+                                  return true;
+                                });
+  EXPECT_TRUE(ok);
+  return out;
+}
+
+// Helper function for compression parity tests
+template <typename Compressor>
+static void test_compression_parity(const std::string &original,
+                                    const std::string &path,
+                                    const std::string &encoding) {
+  const std::string compressed =
+      compress_payload_for_parity<Compressor>(original);
+
+  Server svr;
+
+  svr.Get(path, [&](const Request & /*req*/, Response &res) {
+    res.set_content(compressed, "application/octet-stream");
+    res.set_header("Content-Encoding", encoding);
+  });
+
+  auto t = std::thread([&] { svr.listen("localhost", 1234); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", 1234);
+
+  // Non-streaming
+  {
+    auto res = cli.Get(path);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(original, res->body);
+  }
+
+  // Streaming
+  {
+    auto h = cli.open_stream("GET", path);
+    ASSERT_TRUE(h.is_valid());
+    EXPECT_EQ(original, read_all(h));
+  }
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST(ParityTest, Gzip) {
+  test_compression_parity<detail::gzip_compressor>(
+      "The quick brown fox jumps over the lazy dog", "/parity-gzip", "gzip");
+}
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST(ParityTest, Brotli) {
+  test_compression_parity<detail::brotli_compressor>(
+      "Hello, brotli parity test payload", "/parity-br", "br");
+}
+#endif
+
+#ifdef CPPHTTPLIB_ZSTD_SUPPORT
+TEST(ParityTest, Zstd) {
+  test_compression_parity<detail::zstd_compressor>(
+      "Zstandard parity test payload", "/parity-zstd", "zstd");
+}
+#endif
+
+//==============================================================================
+// New Stream API Tests
+//==============================================================================
+
+inline std::string read_body(httplib::stream::Result &result) {
+  std::string body;
+  while (result.next()) {
+    body.append(result.data(), result.size());
+  }
+  return body;
+}
+
+TEST(ClientConnectionTest, Basic) {
+  httplib::ClientConnection conn;
+  EXPECT_FALSE(conn.is_open());
+  conn.sock = 1;
+  EXPECT_TRUE(conn.is_open());
+  httplib::ClientConnection conn2(std::move(conn));
+  EXPECT_EQ(INVALID_SOCKET, conn.sock);
+  conn2.sock = INVALID_SOCKET;
+}
+
+// Unified test server for all stream::* tests
+class StreamApiTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.Get("/hello", [](const httplib::Request &, httplib::Response &res) {
+      res.set_content("Hello World!", "text/plain");
+    });
+    svr_.Get("/echo-params",
+             [](const httplib::Request &req, httplib::Response &res) {
+               std::string r;
+               for (const auto &p : req.params) {
+                 if (!r.empty()) r += "&";
+                 r += p.first + "=" + p.second;
+               }
+               res.set_content(r, "text/plain");
+             });
+    svr_.Post("/echo", [](const httplib::Request &req, httplib::Response &res) {
+      res.set_content(req.body, req.get_header_value("Content-Type"));
+    });
+    svr_.Post("/echo-headers",
+              [](const httplib::Request &req, httplib::Response &res) {
+                std::string r;
+                for (const auto &h : req.headers)
+                  r += h.first + ": " + h.second + "\n";
+                res.set_content(r, "text/plain");
+              });
+    svr_.Post("/echo-params",
+              [](const httplib::Request &req, httplib::Response &res) {
+                std::string r = "params:";
+                for (const auto &p : req.params)
+                  r += p.first + "=" + p.second + ";";
+                res.set_content(r + " body:" + req.body, "text/plain");
+              });
+    svr_.Post("/large", [](const httplib::Request &, httplib::Response &res) {
+      res.set_content(std::string(100 * 1024, 'X'), "application/octet-stream");
+    });
+    svr_.Put("/echo", [](const httplib::Request &req, httplib::Response &res) {
+      res.set_content("PUT:" + req.body, "text/plain");
+    });
+    svr_.Patch("/echo",
+               [](const httplib::Request &req, httplib::Response &res) {
+                 res.set_content("PATCH:" + req.body, "text/plain");
+               });
+    svr_.Delete(
+        "/resource", [](const httplib::Request &req, httplib::Response &res) {
+          res.set_content(req.body.empty() ? "Deleted" : "Deleted:" + req.body,
+                          "text/plain");
+        });
+    svr_.Get("/head-test",
+             [](const httplib::Request &, httplib::Response &res) {
+               res.set_content("body for HEAD", "text/plain");
+             });
+    svr_.Options("/options",
+                 [](const httplib::Request &, httplib::Response &res) {
+                   res.set_header("Allow", "GET, POST, PUT, DELETE, OPTIONS");
+                 });
+    thread_ = std::thread([this]() { svr_.listen("localhost", 8790); });
+    svr_.wait_until_ready();
+  }
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) thread_.join();
+  }
+  httplib::Server svr_;
+  std::thread thread_;
+};
+
+// stream::Get tests
+TEST_F(StreamApiTest, GetBasic) {
+  httplib::Client cli("localhost", 8790);
+  auto result = httplib::stream::Get(cli, "/hello");
+  ASSERT_TRUE(result.is_valid());
+  EXPECT_EQ(200, result.status());
+  EXPECT_EQ("Hello World!", read_body(result));
+}
+
+TEST_F(StreamApiTest, GetWithParams) {
+  httplib::Client cli("localhost", 8790);
+  httplib::Params params{{"foo", "bar"}};
+  auto result = httplib::stream::Get(cli, "/echo-params", params);
+  ASSERT_TRUE(result.is_valid());
+  EXPECT_TRUE(read_body(result).find("foo=bar") != std::string::npos);
+}
+
+TEST_F(StreamApiTest, GetConnectionError) {
+  httplib::Client cli("localhost", 9999);
+  EXPECT_FALSE(httplib::stream::Get(cli, "/hello").is_valid());
+}
+
+TEST_F(StreamApiTest, Get404) {
+  httplib::Client cli("localhost", 8790);
+  auto result = httplib::stream::Get(cli, "/nonexistent");
+  EXPECT_TRUE(result.is_valid());
+  EXPECT_EQ(404, result.status());
+}
+
+// stream::Post tests
+TEST_F(StreamApiTest, PostBasic) {
+  httplib::Client cli("localhost", 8790);
+  auto result = httplib::stream::Post(cli, "/echo", R"({"key":"value"})",
+                                      "application/json");
+  ASSERT_TRUE(result.is_valid());
+  EXPECT_EQ("application/json", result.get_header_value("Content-Type"));
+  EXPECT_EQ(R"({"key":"value"})", read_body(result));
+}
+
+TEST_F(StreamApiTest, PostWithHeaders) {
+  httplib::Client cli("localhost", 8790);
+  httplib::Headers headers{{"X-Custom", "value"}};
+  auto result = httplib::stream::Post(cli, "/echo-headers", headers, "body",
+                                      "text/plain");
+  EXPECT_TRUE(read_body(result).find("X-Custom: value") != std::string::npos);
+}
+
+TEST_F(StreamApiTest, PostWithParams) {
+  httplib::Client cli("localhost", 8790);
+  httplib::Params params{{"k", "v"}};
+  auto result =
+      httplib::stream::Post(cli, "/echo-params", params, "data", "text/plain");
+  auto body = read_body(result);
+  EXPECT_TRUE(body.find("k=v") != std::string::npos);
+  EXPECT_TRUE(body.find("body:data") != std::string::npos);
+}
+
+TEST_F(StreamApiTest, PostLarge) {
+  httplib::Client cli("localhost", 8790);
+  auto result = httplib::stream::Post(cli, "/large", "", "text/plain");
+  size_t total = 0;
+  while (result.next()) {
+    total += result.size();
+  }
+  EXPECT_EQ(100u * 1024u, total);
+}
+
+// stream::Put/Patch tests
+TEST_F(StreamApiTest, PutAndPatch) {
+  httplib::Client cli("localhost", 8790);
+  auto put = httplib::stream::Put(cli, "/echo", "test", "text/plain");
+  EXPECT_EQ("PUT:test", read_body(put));
+  auto patch = httplib::stream::Patch(cli, "/echo", "test", "text/plain");
+  EXPECT_EQ("PATCH:test", read_body(patch));
+}
+
+// stream::Delete tests
+TEST_F(StreamApiTest, Delete) {
+  httplib::Client cli("localhost", 8790);
+  auto del1 = httplib::stream::Delete(cli, "/resource");
+  EXPECT_EQ("Deleted", read_body(del1));
+  auto del2 = httplib::stream::Delete(cli, "/resource", "data", "text/plain");
+  EXPECT_EQ("Deleted:data", read_body(del2));
+}
+
+// stream::Head/Options tests
+TEST_F(StreamApiTest, HeadAndOptions) {
+  httplib::Client cli("localhost", 8790);
+  auto head = httplib::stream::Head(cli, "/head-test");
+  EXPECT_TRUE(head.is_valid());
+  EXPECT_FALSE(head.get_header_value("Content-Length").empty());
+
+  auto opts = httplib::stream::Options(cli, "/options");
+  EXPECT_EQ("GET, POST, PUT, DELETE, OPTIONS", opts.get_header_value("Allow"));
+}
+
+// SSL stream::* tests
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+class SSLStreamApiTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.Get("/hello", [](const httplib::Request &, httplib::Response &res) {
+      res.set_content("Hello SSL!", "text/plain");
+    });
+    svr_.Post("/echo", [](const httplib::Request &req, httplib::Response &res) {
+      res.set_content(req.body, "text/plain");
+    });
+    thread_ = std::thread([this]() { svr_.listen("127.0.0.1", 8803); });
+    svr_.wait_until_ready();
+  }
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) thread_.join();
+  }
+  httplib::SSLServer svr_{"cert.pem", "key.pem"};
+  std::thread thread_;
+};
+
+TEST_F(SSLStreamApiTest, GetAndPost) {
+  httplib::SSLClient cli("127.0.0.1", 8803);
+  cli.enable_server_certificate_verification(false);
+  auto get = httplib::stream::Get(cli, "/hello");
+  EXPECT_EQ("Hello SSL!", read_body(get));
+  auto post = httplib::stream::Post(cli, "/echo", "test", "text/plain");
+  EXPECT_EQ("test", read_body(post));
+}
+#endif

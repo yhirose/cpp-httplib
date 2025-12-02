@@ -16,7 +16,11 @@ example/benchmark
 example/redirect
 !example/redirect.*
 example/ssecli
+!example/ssecli.*
+example/ssecli-stream
+!example/ssecli-stream.*
 example/ssesvr
+!example/ssesvr.*
 example/upload
 !example/upload.*
 example/one_time_request

@@ -1188,6 +1188,31 @@ std::string decoded_component = httplib::decode_uri_component(encoded_component)
 
 Use `encode_uri()` for full URLs and `encode_uri_component()` for individual query parameters or path segments.
 
+Streaming API
+-------------
+
+Process large responses without loading everything into memory.
+
+```c++
+httplib::Client cli("localhost", 8080);
+
+auto result = httplib::stream::Get(cli, "/large-file");
+if (result) {
+  while (result.next()) {
+    process(result.data(), result.size());  // Process each chunk as it arrives
+  }
+}
+
+// Or read the entire body at once
+auto result2 = httplib::stream::Get(cli, "/file");
+if (result2) {
+  std::string body = result2.read_all();
+}
+```
+
+All HTTP methods are supported: `stream::Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`.
+
+See [README-stream.md](README-stream.md) for more details.
 
 Split httplib.h into .h and .cc
 -------------------------------
