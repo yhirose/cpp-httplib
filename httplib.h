@@ -838,6 +838,50 @@ struct Response {
   std::string file_content_content_type_;
 };
 
+enum class Error {
+  Success = 0,
+  Unknown,
+  Connection,
+  BindIPAddress,
+  Read,
+  Write,
+  ExceedRedirectCount,
+  Canceled,
+  SSLConnection,
+  SSLLoadingCerts,
+  SSLServerVerification,
+  SSLServerHostnameVerification,
+  UnsupportedMultipartBoundaryChars,
+  Compression,
+  ConnectionTimeout,
+  ProxyConnection,
+  ConnectionClosed,
+  Timeout,
+  ResourceExhaustion,
+  TooManyFormDataFiles,
+  ExceedMaxPayloadSize,
+  ExceedUriMaxLength,
+  ExceedMaxSocketDescriptorCount,
+  InvalidRequestLine,
+  InvalidHTTPMethod,
+  InvalidHTTPVersion,
+  InvalidHeaders,
+  MultipartParsing,
+  OpenFile,
+  Listen,
+  GetSockName,
+  UnsupportedAddressFamily,
+  HTTPParsing,
+  InvalidRangeHeader,
+
+  // For internal use only
+  SSLPeerCouldBeClosed_,
+};
+
+std::string to_string(Error error);
+
+std::ostream &operator<<(std::ostream &os, const Error &obj);
+
 class Stream {
 public:
   virtual ~Stream() = default;
@@ -856,6 +900,11 @@ public:
 
   ssize_t write(const char *ptr);
   ssize_t write(const std::string &s);
+
+  Error get_error() const { return error_; }
+
+protected:
+  Error error_ = Error::Success;
 };
 
 class TaskQueue {
@@ -1291,48 +1340,6 @@ private:
   std::function<ssize_t(Stream &, Headers &)> header_writer_ =
       detail::write_headers;
 };
-
-enum class Error {
-  Success = 0,
-  Unknown,
-  Connection,
-  BindIPAddress,
-  Read,
-  Write,
-  ExceedRedirectCount,
-  Canceled,
-  SSLConnection,
-  SSLLoadingCerts,
-  SSLServerVerification,
-  SSLServerHostnameVerification,
-  UnsupportedMultipartBoundaryChars,
-  Compression,
-  ConnectionTimeout,
-  ProxyConnection,
-  ResourceExhaustion,
-  TooManyFormDataFiles,
-  ExceedMaxPayloadSize,
-  ExceedUriMaxLength,
-  ExceedMaxSocketDescriptorCount,
-  InvalidRequestLine,
-  InvalidHTTPMethod,
-  InvalidHTTPVersion,
-  InvalidHeaders,
-  MultipartParsing,
-  OpenFile,
-  Listen,
-  GetSockName,
-  UnsupportedAddressFamily,
-  HTTPParsing,
-  InvalidRangeHeader,
-
-  // For internal use only
-  SSLPeerCouldBeClosed_,
-};
-
-std::string to_string(Error error);
-
-std::ostream &operator<<(std::ostream &os, const Error &obj);
 
 class Result {
 public:
@@ -2437,6 +2444,8 @@ inline std::string to_string(const Error error) {
   case Error::Compression: return "Compression failed";
   case Error::ConnectionTimeout: return "Connection timed out";
   case Error::ProxyConnection: return "Proxy connection failed";
+  case Error::ConnectionClosed: return "Connection closed by server";
+  case Error::Timeout: return "Read timeout";
   case Error::ResourceExhaustion: return "Resource exhaustion";
   case Error::TooManyFormDataFiles: return "Too many form data files";
   case Error::ExceedMaxPayloadSize: return "Exceeded maximum payload size";
@@ -7273,13 +7282,15 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
     auto n = stream->read(buf, to_read);
 
     if (n < 0) {
-      last_error = Error::Read;
+      last_error = stream->get_error();
+      if (last_error == Error::Success) { last_error = Error::Read; }
       eof = true;
       return n;
     }
     if (n == 0) {
       // Unexpected EOF before content_length
-      last_error = Error::Read;
+      last_error = stream->get_error();
+      if (last_error == Error::Success) { last_error = Error::Read; }
       eof = true;
       return 0;
     }
@@ -7296,7 +7307,8 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
   size_t chunk_total = 0;
   auto n = chunked_decoder->read_payload(buf, len, chunk_offset, chunk_total);
   if (n < 0) {
-    last_error = Error::Read;
+    last_error = stream->get_error();
+    if (last_error == Error::Success) { last_error = Error::Read; }
     eof = true;
     return n;
   }
@@ -7387,7 +7399,10 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
     }
   }
 
-  if (!wait_readable()) { return -1; }
+  if (!wait_readable()) {
+    error_ = Error::Timeout;
+    return -1;
+  }
 
   read_buff_off_ = 0;
   read_buff_content_size_ = 0;
@@ -7396,6 +7411,11 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
     auto n = read_socket(sock_, read_buff_.data(), read_buff_size_,
                          CPPHTTPLIB_RECV_FLAGS);
     if (n <= 0) {
+      if (n == 0) {
+        error_ = Error::ConnectionClosed;
+      } else {
+        error_ = Error::Read;
+      }
       return n;
     } else if (n <= static_cast<ssize_t>(size)) {
       memcpy(ptr, read_buff_.data(), static_cast<size_t>(n));
@@ -7407,7 +7427,15 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
       return static_cast<ssize_t>(size);
     }
   } else {
-    return read_socket(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS);
+    auto n = read_socket(sock_, ptr, size, CPPHTTPLIB_RECV_FLAGS);
+    if (n <= 0) {
+      if (n == 0) {
+        error_ = Error::ConnectionClosed;
+      } else {
+        error_ = Error::Read;
+      }
+    }
+    return n;
   }
 }
 
@@ -11435,7 +11463,9 @@ inline bool SSLSocketStream::wait_writable() const {
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
   if (SSL_pending(ssl_) > 0) {
-    return SSL_read(ssl_, ptr, static_cast<int>(size));
+    auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
+    if (ret == 0) { error_ = Error::ConnectionClosed; }
+    return ret;
   } else if (wait_readable()) {
     auto ret = SSL_read(ssl_, ptr, static_cast<int>(size));
     if (ret < 0) {
@@ -11460,9 +11490,12 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
         }
       }
       assert(ret < 0);
+    } else if (ret == 0) {
+      error_ = Error::ConnectionClosed;
     }
     return ret;
   } else {
+    error_ = Error::Timeout;
     return -1;
   }
 }

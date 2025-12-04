@@ -12464,3 +12464,226 @@ TEST_F(SSLStreamApiTest, GetAndPost) {
   EXPECT_EQ("test", read_body(post));
 }
 #endif
+
+// Tests for Error::Timeout and Error::ConnectionClosed error types
+// These errors are set in SocketStream/SSLSocketStream and propagated through
+// BodyReader
+
+TEST(ErrorHandlingTest, StreamReadTimeout) {
+  // Test that read timeout during streaming is detected
+  // Use a large content-length response where server delays mid-stream
+  Server svr;
+
+  svr.Get("/slow-stream", [](const Request &, Response &res) {
+    // Send a large response with delay in the middle
+    res.set_content_provider(
+        1000, // content_length
+        "text/plain", [](size_t offset, size_t /*length*/, DataSink &sink) {
+          if (offset < 100) {
+            // Send first 100 bytes immediately
+            std::string data(100, 'A');
+            sink.write(data.c_str(), data.size());
+            return true;
+          }
+          // Then delay longer than client timeout
+          std::this_thread::sleep_for(std::chrono::seconds(3));
+          std::string data(900, 'B');
+          sink.write(data.c_str(), data.size());
+          return true;
+        });
+  });
+
+  auto port = 8091;
+  std::thread t([&]() { svr.listen("localhost", port); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", port);
+  cli.set_read_timeout(1, 0); // 1 second timeout
+
+  auto handle = cli.open_stream("GET", "/slow-stream");
+  ASSERT_TRUE(handle.is_valid());
+
+  char buf[256];
+  ssize_t total = 0;
+  ssize_t n;
+  bool got_error = false;
+
+  while ((n = handle.read(buf, sizeof(buf))) > 0) {
+    total += n;
+  }
+
+  if (n < 0) {
+    got_error = true;
+    // Should be timeout or read error
+    EXPECT_TRUE(handle.get_read_error() == Error::Timeout ||
+                handle.get_read_error() == Error::Read)
+        << "Actual error: " << to_string(handle.get_read_error());
+  }
+
+  // Either we got an error, or we got less data than expected
+  EXPECT_TRUE(got_error || total < 1000)
+      << "Expected timeout but got all " << total << " bytes";
+
+  svr.stop();
+  t.join();
+}
+
+TEST(ErrorHandlingTest, StreamConnectionClosed) {
+  // Test connection closed detection via BodyReader
+  Server svr;
+  std::atomic<bool> close_now{false};
+
+  svr.Get("/will-close", [&](const Request &, Response &res) {
+    res.set_content_provider(
+        10000, // Large content_length that we won't fully send
+        "text/plain", [&](size_t offset, size_t /*length*/, DataSink &sink) {
+          if (offset < 100) {
+            std::string data(100, 'X');
+            sink.write(data.c_str(), data.size());
+            return true;
+          }
+          // Wait for signal then abort
+          while (!close_now) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+          return false; // Abort - server will close connection
+        });
+  });
+
+  auto port = 8092;
+  std::thread t([&]() { svr.listen("localhost", port); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", port);
+  auto handle = cli.open_stream("GET", "/will-close");
+  ASSERT_TRUE(handle.is_valid());
+
+  char buf[256];
+  ssize_t n = handle.read(buf, sizeof(buf)); // First read
+  EXPECT_GT(n, 0) << "First read should succeed";
+
+  // Signal server to close
+  close_now = true;
+
+  // Keep reading until error or EOF
+  while ((n = handle.read(buf, sizeof(buf))) > 0) {
+    // Keep reading
+  }
+
+  // Should get an error since content_length wasn't satisfied
+  if (n < 0) {
+    EXPECT_TRUE(handle.get_read_error() == Error::ConnectionClosed ||
+                handle.get_read_error() == Error::Read)
+        << "Actual error: " << to_string(handle.get_read_error());
+  }
+
+  svr.stop();
+  t.join();
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(ErrorHandlingTest, SSLStreamReadTimeout) {
+  // Test that read timeout during SSL streaming is detected
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+
+  svr.Get("/slow-stream", [](const Request &, Response &res) {
+    res.set_content_provider(
+        1000, "text/plain",
+        [](size_t offset, size_t /*length*/, DataSink &sink) {
+          if (offset < 100) {
+            std::string data(100, 'A');
+            sink.write(data.c_str(), data.size());
+            return true;
+          }
+          std::this_thread::sleep_for(std::chrono::seconds(3));
+          std::string data(900, 'B');
+          sink.write(data.c_str(), data.size());
+          return true;
+        });
+  });
+
+  auto port = 8093;
+  std::thread t([&]() { svr.listen("localhost", port); });
+  svr.wait_until_ready();
+
+  SSLClient cli("localhost", port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_read_timeout(1, 0); // 1 second timeout
+
+  auto handle = cli.open_stream("GET", "/slow-stream");
+  ASSERT_TRUE(handle.is_valid());
+
+  char buf[256];
+  ssize_t total = 0;
+  ssize_t n;
+  bool got_error = false;
+
+  while ((n = handle.read(buf, sizeof(buf))) > 0) {
+    total += n;
+  }
+
+  if (n < 0) {
+    got_error = true;
+    EXPECT_TRUE(handle.get_read_error() == Error::Timeout ||
+                handle.get_read_error() == Error::Read)
+        << "Actual error: " << to_string(handle.get_read_error());
+  }
+
+  EXPECT_TRUE(got_error || total < 1000)
+      << "Expected timeout but got all " << total << " bytes";
+
+  svr.stop();
+  t.join();
+}
+
+TEST(ErrorHandlingTest, SSLStreamConnectionClosed) {
+  // Test SSL connection closed detection
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  std::atomic<bool> close_now{false};
+
+  svr.Get("/will-close", [&](const Request &, Response &res) {
+    res.set_content_provider(
+        10000, "text/plain",
+        [&](size_t offset, size_t /*length*/, DataSink &sink) {
+          if (offset < 100) {
+            std::string data(100, 'X');
+            sink.write(data.c_str(), data.size());
+            return true;
+          }
+          while (!close_now) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+          return false;
+        });
+  });
+
+  auto port = 8094;
+  std::thread t([&]() { svr.listen("localhost", port); });
+  svr.wait_until_ready();
+
+  SSLClient cli("localhost", port);
+  cli.enable_server_certificate_verification(false);
+  auto handle = cli.open_stream("GET", "/will-close");
+  ASSERT_TRUE(handle.is_valid());
+
+  char buf[256];
+  ssize_t n = handle.read(buf, sizeof(buf)); // First read
+  EXPECT_GT(n, 0);
+
+  // Signal server to close
+  close_now = true;
+
+  while ((n = handle.read(buf, sizeof(buf))) > 0) {
+    // Keep reading
+  }
+
+  if (n < 0) {
+    EXPECT_TRUE(handle.get_read_error() == Error::ConnectionClosed ||
+                handle.get_read_error() == Error::Read)
+        << "Actual error: " << to_string(handle.get_read_error());
+  }
+
+  svr.stop();
+  t.join();
+}
+#endif

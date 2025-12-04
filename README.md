@@ -722,7 +722,7 @@ httplib::SSLClient cli("localhost");
 Here is the list of errors from `Result::error()`.
 
 ```c++
-enum Error {
+enum class Error {
   Success = 0,
   Unknown,
   Connection,
@@ -739,6 +739,24 @@ enum Error {
   Compression,
   ConnectionTimeout,
   ProxyConnection,
+  ConnectionClosed,
+  Timeout,
+  ResourceExhaustion,
+  TooManyFormDataFiles,
+  ExceedMaxPayloadSize,
+  ExceedUriMaxLength,
+  ExceedMaxSocketDescriptorCount,
+  InvalidRequestLine,
+  InvalidHTTPMethod,
+  InvalidHTTPVersion,
+  InvalidHeaders,
+  MultipartParsing,
+  OpenFile,
+  Listen,
+  GetSockName,
+  UnsupportedAddressFamily,
+  HTTPParsing,
+  InvalidRangeHeader,
 };
 ```
 
