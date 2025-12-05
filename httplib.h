@@ -8402,10 +8402,9 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             }
           }
 
-          // Handle If-Range for partial content requests (RFC 9110
-          // Section 13.1.5) If-Range is only evaluated when Range header is
-          // present. If the validator matches, serve partial content; otherwise
-          // serve full content.
+          // Handle If-Range for partial content requests (RFC 9110 Section 13.1.5).
+          // If-Range is only evaluated when Range header is present.
+          // If the validator matches, serve partial content; otherwise serve full content.
           if (!req.ranges.empty() && req.has_header("If-Range")) {
             auto if_range = req.get_header_value("If-Range");
             auto valid = false;
