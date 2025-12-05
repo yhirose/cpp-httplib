@@ -4,9 +4,11 @@
 
 #ifndef _WIN32
 #include <arpa/inet.h>
+#include <ctime>
 #include <curl/curl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #endif
 #include <gtest/gtest.h>
@@ -13101,6 +13103,120 @@ TEST(ETagTest, IfRangeWithMalformedETag) {
   ASSERT_TRUE(res2);
   EXPECT_EQ(200, res2->status);
   EXPECT_EQ(content, res2->body);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, ExtremeLargeDateValues) {
+  using namespace httplib;
+
+  const char *fname = "ims_extreme_date.txt";
+  const char *content = "ims-extreme-date";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8095); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8095);
+
+  auto res1 = cli.Get(std::string("/static/") + fname);
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+
+  // Extremely large year that may overflow date parsing routines.
+  Headers h_large_date = {
+      {"If-Modified-Since", "Sun, 01 Jan 99999 00:00:00 GMT"}};
+  auto res_bad = cli.Get(std::string("/static/") + fname, h_large_date);
+  ASSERT_TRUE(res_bad);
+  // Expect server to treat this as invalid/mismatch and return full content
+  EXPECT_EQ(200, res_bad->status);
+
+  // If-Range with extremely large date should be treated as mismatch -> full
+  // content (200)
+  Headers h_ifrange_large = {{"Range", "bytes=0-3"},
+                             {"If-Range", "Sun, 01 Jan 99999 00:00:00 GMT"}};
+  auto res_ifrange = cli.Get(std::string("/static/") + fname, h_ifrange_large);
+  ASSERT_TRUE(res_ifrange);
+  EXPECT_EQ(200, res_ifrange->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, NegativeFileModificationTime) {
+  using namespace httplib;
+
+  const char *fname = "ims_negative_mtime.txt";
+  const std::string content = "negative-mtime";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  // Try to set file mtime to a negative value. This may fail on some
+  // platforms/filesystems; if it fails, the test will still verify server
+  // behaves safely by performing a regular conditional request.
+#if defined(__APPLE__) || defined(__linux__)
+  bool set_negative = false;
+  do {
+    struct timeval times[2];
+    // access time: now
+    times[0].tv_sec = time(nullptr);
+    times[0].tv_usec = 0;
+    // modification time: negative (e.g., -1)
+    times[1].tv_sec = -1;
+    times[1].tv_usec = 0;
+    if (utimes(fname, times) == 0) { set_negative = true; }
+  } while (0);
+#else
+  bool set_negative = false;
+#endif
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8096); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8096);
+
+  auto res1 = cli.Get(std::string("/static/") + fname);
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  bool has_last_modified = res1->has_header("Last-Modified");
+  std::string last_modified;
+  if (has_last_modified) {
+    last_modified = res1->get_header_value("Last-Modified");
+  }
+
+  if (set_negative) {
+    // If we successfully set a negative mtime, ensure server returns a
+    // Last-Modified string (may be empty or normalized). Send If-Modified-Since
+    // with an old date and ensure server handles it without crash.
+    Headers h_old = {{"If-Modified-Since", "Sun, 01 Jan 1970 00:00:00 GMT"}};
+    auto res2 = cli.Get(std::string("/static/") + fname, h_old);
+    ASSERT_TRUE(res2);
+    // Behavior may vary; at minimum ensure server responds (200 or 304).
+    EXPECT_TRUE(res2->status == 200 || res2->status == 304);
+  } else {
+    // Could not set negative mtime on this platform; fall back to verifying
+    // that normal invalid/malformed dates are treated safely (non-304).
+    Headers h_bad_date = {
+        {"If-Modified-Since", "Sun, 01 Jan 99999 00:00:00 GMT"}};
+    auto res_bad = cli.Get(std::string("/static/") + fname, h_bad_date);
+    ASSERT_TRUE(res_bad);
+    EXPECT_EQ(200, res_bad->status);
+  }
 
   svr.stop();
   t.join();
