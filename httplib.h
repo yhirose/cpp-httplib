@@ -1011,17 +1011,6 @@ using ErrorLogger = std::function<void(const Error &, const Request *)>;
 
 using SocketOptions = std::function<void(socket_t sock)>;
 
-namespace detail {
-
-bool set_socket_opt_impl(socket_t sock, int level, int optname,
-                         const void *optval, socklen_t optlen);
-bool set_socket_opt(socket_t sock, int level, int optname, int opt);
-bool set_socket_opt_time(socket_t sock, int level, int optname, time_t sec,
-                         time_t usec);
-int close_socket(socket_t sock);
-
-} // namespace detail
-
 void default_socket_options(socket_t sock);
 
 const char *status_message(int status);
@@ -1102,10 +1091,9 @@ private:
   std::regex regex_;
 };
 
-ssize_t write_headers(Stream &strm, const Headers &headers);
+int close_socket(socket_t sock);
 
-std::string make_host_and_port_string(const std::string &host, int port,
-                                      bool is_ssl);
+ssize_t write_headers(Stream &strm, const Headers &headers);
 
 } // namespace detail
 
@@ -2608,6 +2596,9 @@ private:
 #endif
   int ret_ = -1;
 };
+
+std::string make_host_and_port_string(const std::string &host, int port,
+                                      bool is_ssl);
 
 std::string trim_copy(const std::string &s);
 
