@@ -2999,19 +2999,31 @@ inline std::string file_mtime_to_http_date(time_t mtime) {
 // Parse HTTP-date (RFC 7231) to time_t. Returns -1 on failure.
 inline time_t parse_http_date(const std::string &date_str) {
   struct tm tm_buf;
-  memset(&tm_buf, 0, sizeof(tm_buf));
 
-  // Try RFC 7231 preferred format: "Sun, 06 Nov 1994 08:49:37 GMT"
-  const char *p = strptime(date_str.c_str(), "%a, %d %b %Y %H:%M:%S", &tm_buf);
-  if (!p) {
-    // Try RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
-    p = strptime(date_str.c_str(), "%A, %d-%b-%y %H:%M:%S", &tm_buf);
+  // Create a classic locale object once for all parsing attempts
+  const std::locale classic_locale = std::locale::classic();
+
+  // Try to parse using std::get_time (C++11, cross-platform)
+  auto try_parse = [&](const char *fmt) -> bool {
+    std::istringstream ss(date_str);
+    ss.imbue(classic_locale);
+
+    memset(&tm_buf, 0, sizeof(tm_buf));
+    ss >> std::get_time(&tm_buf, fmt);
+
+    return !ss.fail();
+  };
+
+  // RFC 7231 preferred format: "Sun, 06 Nov 1994 08:49:37 GMT"
+  if (!try_parse("%a, %d %b %Y %H:%M:%S")) {
+    // RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
+    if (!try_parse("%A, %d-%b-%y %H:%M:%S")) {
+      // asctime format: "Sun Nov  6 08:49:37 1994"
+      if (!try_parse("%a %b %d %H:%M:%S %Y")) {
+        return static_cast<time_t>(-1);
+      }
+    }
   }
-  if (!p) {
-    // Try asctime format: "Sun Nov  6 08:49:37 1994"
-    p = strptime(date_str.c_str(), "%a %b %d %H:%M:%S %Y", &tm_buf);
-  }
-  if (!p) { return static_cast<time_t>(-1); }
 
 #ifdef _WIN32
   return _mkgmtime(&tm_buf);
