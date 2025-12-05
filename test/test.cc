@@ -12716,7 +12716,7 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
   EXPECT_FALSE(etag.empty());
 
   // Verify ETag format: W/"hex-hex"
-  ASSERT_GE(etag.length(), 3u);
+  ASSERT_GE(etag.length(), 5u);  // Minimum: W/""
   EXPECT_EQ('W', etag[0]);
   EXPECT_EQ('/', etag[1]);
   EXPECT_EQ('"', etag[2]);
