@@ -3005,7 +3005,7 @@ inline std::string file_mtime_to_http_date(time_t mtime) {
   return std::string(buf);
 }
 
-// Parse HTTP-date (RFC 7231) to time_t. Returns -1 on failure.
+// Parse HTTP-date (RFC 9110 Section 5.6.7) to time_t. Returns -1 on failure.
 inline time_t parse_http_date(const std::string &date_str) {
   struct tm tm_buf;
 
@@ -3023,7 +3023,7 @@ inline time_t parse_http_date(const std::string &date_str) {
     return !ss.fail();
   };
 
-  // RFC 7231 preferred format: "Sun, 06 Nov 1994 08:49:37 GMT"
+  // RFC 9110 preferred format (HTTP-date): "Sun, 06 Nov 1994 08:49:37 GMT"
   if (!try_parse("%a, %d %b %Y %H:%M:%S")) {
     // RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
     if (!try_parse("%A, %d-%b-%y %H:%M:%S")) {
