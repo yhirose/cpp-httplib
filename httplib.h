@@ -2976,8 +2976,8 @@ inline std::string from_i_to_hex(size_t n) {
 inline std::string compute_etag(const FileStat &fs) {
   if (!fs.is_file()) { return std::string(); }
 
-  time_t mtime_raw = fs.mtime();
-  size_t mtime = mtime_raw < 0 ? 0 : static_cast<size_t>(mtime_raw);
+  auto mtime_raw = fs.mtime();
+  auto mtime = mtime_raw < 0 ? 0 : static_cast<size_t>(mtime_raw);
   auto size = fs.size();
 
   return std::string("W/\"") + from_i_to_hex(mtime) + "-" +
@@ -8359,10 +8359,11 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
 
           // Compute and set weak ETag based on mtime+size.
           auto etag = detail::compute_etag(stat);
-          auto mtime = stat.mtime();
-          auto last_modified = detail::file_mtime_to_http_date(mtime);
-
           if (!etag.empty()) { res.set_header("ETag", etag); }
+
+          auto mtime = stat.mtime();
+
+          auto last_modified = detail::file_mtime_to_http_date(mtime);
           if (!last_modified.empty()) {
             res.set_header("Last-Modified", last_modified);
           }
@@ -8372,15 +8373,16 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
           // 2. If-Modified-Since is checked only when If-None-Match is absent
           if (req.has_header("If-None-Match")) {
             if (!etag.empty()) {
-              auto inm = req.get_header_value("If-None-Match");
-              bool matched = false;
+              auto val = req.get_header_value("If-None-Match");
+              auto matched = false;
+
               // NOTE: We use exact string matching here. This works correctly
               // because our server always generates weak ETags (W/"..."), and
               // clients typically send back the same ETag they received.
               // RFC 9110 Section 8.8.3.2 allows weak comparison for
               // If-None-Match, where W/"x" and "x" would match, but this
               // simplified implementation requires exact matches.
-              detail::split(inm.data(), inm.data() + inm.size(), ',',
+              detail::split(val.data(), val.data() + val.size(), ',',
                             [&](const char *b, const char *e) {
                               if (!matched) {
                                 auto tag = std::string(b, e);
@@ -8394,31 +8396,33 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
               }
             }
           } else if (req.has_header("If-Modified-Since")) {
-            auto ims = req.get_header_value("If-Modified-Since");
-            auto ims_time = detail::parse_http_date(ims);
-            if (ims_time != static_cast<time_t>(-1) && mtime <= ims_time) {
+            auto val = req.get_header_value("If-Modified-Since");
+            auto t = detail::parse_http_date(val);
+
+            if (t != static_cast<time_t>(-1) && mtime <= t) {
               res.status = StatusCode::NotModified_304;
               return true;
             }
           }
 
-          // Handle If-Range for partial content requests (RFC 9110 Section 13.1.5).
-          // If-Range is only evaluated when Range header is present.
-          // If the validator matches, serve partial content; otherwise serve full content.
+          // Handle If-Range for partial content requests (RFC 9110
+          // Section 13.1.5). If-Range is only evaluated when Range header is
+          // present. If the validator matches, serve partial content; otherwise
+          // serve full content.
           if (!req.ranges.empty() && req.has_header("If-Range")) {
-            auto if_range = req.get_header_value("If-Range");
+            auto val = req.get_header_value("If-Range");
             auto valid = false;
 
-            if (detail::is_strong_etag(if_range)) {
+            if (detail::is_strong_etag(val)) {
               // RFC 9110 Section 13.1.5: If-Range requires strong ETag
               // comparison.
-              valid = (!etag.empty() && if_range == etag);
-            } else if (detail::is_weak_etag(if_range)) {
+              valid = (!etag.empty() && val == etag);
+            } else if (detail::is_weak_etag(val)) {
               // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
               valid = false;
             } else {
               // HTTP-date comparison
-              auto if_range_time = detail::parse_http_date(if_range);
+              auto if_range_time = detail::parse_http_date(val);
               valid = (if_range_time != static_cast<time_t>(-1) &&
                        mtime <= if_range_time);
             }
