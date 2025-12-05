@@ -8359,7 +8359,7 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
 
           // Compute and set weak ETag based on mtime+size.
           auto etag = detail::compute_etag(stat);
-          auto mtime = static_cast<time_t>(stat.mtime());
+          auto mtime = stat.mtime();
           auto last_modified = detail::file_mtime_to_http_date(mtime);
 
           if (!etag.empty()) { res.set_header("ETag", etag); }
