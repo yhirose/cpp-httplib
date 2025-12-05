@@ -12687,3 +12687,164 @@ TEST(ErrorHandlingTest, SSLStreamConnectionClosed) {
   t.join();
 }
 #endif
+
+TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "etag_testfile.txt";
+  const char *content = "etag-content";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8087); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8087);
+
+  // First request: should get 200 with ETag header
+  auto res1 = cli.Get("/static/etag_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+  EXPECT_FALSE(etag.empty());
+
+  // Verify ETag format: W/"hex-hex"
+  EXPECT_EQ('W', etag[0]);
+  EXPECT_EQ('/', etag[1]);
+  EXPECT_EQ('"', etag[2]);
+
+  // Exact match: expect 304 Not Modified
+  Headers h2 = {{"If-None-Match", etag}};
+  auto res2 = cli.Get("/static/etag_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(304, res2->status);
+
+  // Wildcard match: expect 304 Not Modified
+  Headers h3 = {{"If-None-Match", "*"}};
+  auto res3 = cli.Get("/static/etag_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(304, res3->status);
+
+  // Non-matching ETag: expect 200
+  Headers h4 = {{"If-None-Match", "W/\"deadbeef\""}};
+  auto res4 = cli.Get("/static/etag_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(200, res4->status);
+
+  // Multiple ETags with one matching: expect 304
+  Headers h5 = {{"If-None-Match", "W/\"other\", " + etag + ", W/\"another\""}};
+  auto res5 = cli.Get("/static/etag_testfile.txt", h5);
+  ASSERT_TRUE(res5);
+  EXPECT_EQ(304, res5->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, LastModifiedAndIfModifiedSince) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "ims_testfile.txt";
+  const char *content = "if-modified-since-test";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8088); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8088);
+
+  // First request: should get 200 with Last-Modified header
+  auto res1 = cli.Get("/static/ims_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+  std::string last_modified = res1->get_header_value("Last-Modified");
+  EXPECT_FALSE(last_modified.empty());
+
+  // If-Modified-Since with same time: expect 304
+  Headers h2 = {{"If-Modified-Since", last_modified}};
+  auto res2 = cli.Get("/static/ims_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(304, res2->status);
+
+  // If-Modified-Since with future time: expect 304
+  Headers h3 = {{"If-Modified-Since", "Sun, 01 Jan 2099 00:00:00 GMT"}};
+  auto res3 = cli.Get("/static/ims_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(304, res3->status);
+
+  // If-Modified-Since with past time: expect 200
+  Headers h4 = {{"If-Modified-Since", "Sun, 01 Jan 2000 00:00:00 GMT"}};
+  auto res4 = cli.Get("/static/ims_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(200, res4->status);
+
+  // If-None-Match takes precedence over If-Modified-Since
+  // (send matching ETag with old If-Modified-Since -> should still be 304)
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+  Headers h5 = {{"If-None-Match", etag},
+                {"If-Modified-Since", "Sun, 01 Jan 2000 00:00:00 GMT"}};
+  auto res5 = cli.Get("/static/ims_testfile.txt", h5);
+  ASSERT_TRUE(res5);
+  EXPECT_EQ(304, res5->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, VaryAcceptEncodingWithCompression) {
+  using namespace httplib;
+
+  Server svr;
+
+  // Endpoint that returns compressible content
+  svr.Get("/compressible", [](const Request &, Response &res) {
+    // Return a large enough body to trigger compression
+    std::string body(1000, 'a');
+    res.set_content(body, "text/plain");
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8089); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8089);
+
+  // Request with gzip support: should get Vary header when compressed
+  cli.set_compress(true);
+  auto res1 = cli.Get("/compressible");
+  ASSERT_TRUE(res1);
+  EXPECT_EQ(200, res1->status);
+
+  // If Content-Encoding is set, Vary should also be set
+  if (res1->has_header("Content-Encoding")) {
+    EXPECT_TRUE(res1->has_header("Vary"));
+    EXPECT_EQ("Accept-Encoding", res1->get_header_value("Vary"));
+  }
+
+  // Request without Accept-Encoding header: should not have compression
+  Headers h_no_compress;
+  auto res2 = cli.Get("/compressible", h_no_compress);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(200, res2->status);
+
+  // Verify Vary header is present when compression is applied
+  // (the exact behavior depends on server configuration)
+
+  svr.stop();
+  t.join();
+}

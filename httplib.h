@@ -2593,6 +2593,8 @@ struct FileStat {
   FileStat(const std::string &path);
   bool is_file() const;
   bool is_dir() const;
+  size_t mtime() const;
+  size_t size() const;
 
 private:
 #if defined(_WIN32)
@@ -2971,6 +2973,53 @@ inline std::string from_i_to_hex(size_t n) {
   return ret;
 }
 
+inline std::string compute_etag(const FileStat &fs) {
+  if (!fs.is_file()) { return std::string(); }
+
+  size_t mtime = fs.mtime();
+  size_t size = fs.size();
+
+  return std::string("W/\"") + from_i_to_hex(mtime) + "-" +
+         from_i_to_hex(size) + "\"";
+}
+
+// Format time_t as HTTP-date (RFC 7231): "Sun, 06 Nov 1994 08:49:37 GMT"
+inline std::string file_mtime_to_http_date(time_t mtime) {
+  struct tm tm_buf;
+#ifdef _WIN32
+  gmtime_s(&tm_buf, &mtime);
+#else
+  gmtime_r(&mtime, &tm_buf);
+#endif
+  char buf[64];
+  strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm_buf);
+  return std::string(buf);
+}
+
+// Parse HTTP-date (RFC 7231) to time_t. Returns -1 on failure.
+inline time_t parse_http_date(const std::string &date_str) {
+  struct tm tm_buf;
+  memset(&tm_buf, 0, sizeof(tm_buf));
+
+  // Try RFC 7231 preferred format: "Sun, 06 Nov 1994 08:49:37 GMT"
+  const char *p = strptime(date_str.c_str(), "%a, %d %b %Y %H:%M:%S", &tm_buf);
+  if (!p) {
+    // Try RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
+    p = strptime(date_str.c_str(), "%A, %d-%b-%y %H:%M:%S", &tm_buf);
+  }
+  if (!p) {
+    // Try asctime format: "Sun Nov  6 08:49:37 1994"
+    p = strptime(date_str.c_str(), "%a %b %d %H:%M:%S %Y", &tm_buf);
+  }
+  if (!p) { return static_cast<time_t>(-1); }
+
+#ifdef _WIN32
+  return _mkgmtime(&tm_buf);
+#else
+  return timegm(&tm_buf);
+#endif
+}
+
 inline size_t to_utf8(int code, char *buff) {
   if (code < 0x0080) {
     buff[0] = static_cast<char>(code & 0x7F);
@@ -3088,6 +3137,14 @@ inline bool FileStat::is_file() const {
 }
 inline bool FileStat::is_dir() const {
   return ret_ >= 0 && S_ISDIR(st_.st_mode);
+}
+
+inline size_t FileStat::mtime() const {
+  return static_cast<size_t>(st_.st_mtime);
+}
+
+inline size_t FileStat::size() const {
+  return static_cast<size_t>(st_.st_size);
 }
 
 inline std::string encode_path(const std::string &s) {
@@ -8277,6 +8334,45 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
             res.set_header(kv.first, kv.second);
           }
 
+          // Compute and set weak ETag based on mtime+size.
+          auto etag = detail::compute_etag(stat);
+          auto mtime = static_cast<time_t>(stat.mtime());
+          auto last_modified = detail::file_mtime_to_http_date(mtime);
+
+          if (!etag.empty()) { res.set_header("ETag", etag); }
+          if (!last_modified.empty()) {
+            res.set_header("Last-Modified", last_modified);
+          }
+
+          // Handle conditional GET:
+          // 1. If-None-Match takes precedence (RFC 9110 Section 13.1.2)
+          // 2. If-Modified-Since is checked only when If-None-Match is absent
+          if (req.has_header("If-None-Match")) {
+            if (!etag.empty()) {
+              auto inm = req.get_header_value("If-None-Match");
+              bool matched = false;
+              detail::split(inm.data(), inm.data() + inm.size(), ',',
+                            [&](const char *b, const char *e) {
+                              if (!matched) {
+                                auto tag = std::string(b, e);
+                                matched = tag == "*" || tag == etag;
+                              }
+                            });
+
+              if (matched) {
+                res.status = StatusCode::NotModified_304;
+                return true;
+              }
+            }
+          } else if (req.has_header("If-Modified-Since")) {
+            auto ims = req.get_header_value("If-Modified-Since");
+            auto ims_time = detail::parse_http_date(ims);
+            if (ims_time != static_cast<time_t>(-1) && mtime <= ims_time) {
+              res.status = StatusCode::NotModified_304;
+              return true;
+            }
+          }
+
           auto mm = std::make_shared<detail::mmap>(path.c_str());
           if (!mm->is_open()) {
             output_error_log(Error::OpenFile, &req);
@@ -8573,10 +8669,13 @@ inline void Server::apply_ranges(const Request &req, Response &res,
           res.set_header("Transfer-Encoding", "chunked");
           if (type == detail::EncodingType::Gzip) {
             res.set_header("Content-Encoding", "gzip");
+            res.set_header("Vary", "Accept-Encoding");
           } else if (type == detail::EncodingType::Brotli) {
             res.set_header("Content-Encoding", "br");
+            res.set_header("Vary", "Accept-Encoding");
           } else if (type == detail::EncodingType::Zstd) {
             res.set_header("Content-Encoding", "zstd");
+            res.set_header("Vary", "Accept-Encoding");
           }
         }
       }
@@ -8635,6 +8734,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
                                  })) {
           res.body.swap(compressed);
           res.set_header("Content-Encoding", content_encoding);
+          res.set_header("Vary", "Accept-Encoding");
         }
       }
     }
