@@ -1258,6 +1258,10 @@ private:
 
   bool routing(Request &req, Response &res, Stream &strm);
   bool handle_file_request(Request &req, Response &res);
+  bool check_if_not_modified(const Request &req, Response &res,
+                             const std::string &etag, time_t mtime) const;
+  bool check_if_range(Request &req, const std::string &etag,
+                      time_t mtime) const;
   bool dispatch_request(Request &req, Response &res,
                         const Handlers &handlers) const;
   bool dispatch_request_for_content_reader(
@@ -8357,7 +8361,6 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             res.set_header(kv.first, kv.second);
           }
 
-          // Compute and set weak ETag based on mtime+size.
           auto etag = detail::compute_etag(stat);
           if (!etag.empty()) { res.set_header("ETag", etag); }
 
@@ -8368,70 +8371,9 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             res.set_header("Last-Modified", last_modified);
           }
 
-          // Handle conditional GET:
-          // 1. If-None-Match takes precedence (RFC 9110 Section 13.1.2)
-          // 2. If-Modified-Since is checked only when If-None-Match is absent
-          if (req.has_header("If-None-Match")) {
-            if (!etag.empty()) {
-              auto val = req.get_header_value("If-None-Match");
-              auto matched = false;
+          if (check_if_not_modified(req, res, etag, mtime)) { return true; }
 
-              // NOTE: We use exact string matching here. This works correctly
-              // because our server always generates weak ETags (W/"..."), and
-              // clients typically send back the same ETag they received.
-              // RFC 9110 Section 8.8.3.2 allows weak comparison for
-              // If-None-Match, where W/"x" and "x" would match, but this
-              // simplified implementation requires exact matches.
-              detail::split(val.data(), val.data() + val.size(), ',',
-                            [&](const char *b, const char *e) {
-                              if (!matched) {
-                                auto tag = std::string(b, e);
-                                matched = tag == "*" || tag == etag;
-                              }
-                            });
-
-              if (matched) {
-                res.status = StatusCode::NotModified_304;
-                return true;
-              }
-            }
-          } else if (req.has_header("If-Modified-Since")) {
-            auto val = req.get_header_value("If-Modified-Since");
-            auto t = detail::parse_http_date(val);
-
-            if (t != static_cast<time_t>(-1) && mtime <= t) {
-              res.status = StatusCode::NotModified_304;
-              return true;
-            }
-          }
-
-          // Handle If-Range for partial content requests (RFC 9110
-          // Section 13.1.5). If-Range is only evaluated when Range header is
-          // present. If the validator matches, serve partial content; otherwise
-          // serve full content.
-          if (!req.ranges.empty() && req.has_header("If-Range")) {
-            auto val = req.get_header_value("If-Range");
-            auto valid = false;
-
-            if (detail::is_strong_etag(val)) {
-              // RFC 9110 Section 13.1.5: If-Range requires strong ETag
-              // comparison.
-              valid = (!etag.empty() && val == etag);
-            } else if (detail::is_weak_etag(val)) {
-              // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
-              valid = false;
-            } else {
-              // HTTP-date comparison
-              auto if_range_time = detail::parse_http_date(val);
-              valid = (if_range_time != static_cast<time_t>(-1) &&
-                       mtime <= if_range_time);
-            }
-
-            if (!valid) {
-              // Validator doesn't match: ignore Range and serve full content
-              req.ranges.clear();
-            }
-          }
+          check_if_range(req, etag, mtime);
 
           auto mm = std::make_shared<detail::mmap>(path.c_str());
           if (!mm->is_open()) {
@@ -8460,6 +8402,81 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
     }
   }
   return false;
+}
+
+inline bool Server::check_if_not_modified(const Request &req, Response &res,
+                                          const std::string &etag,
+                                          time_t mtime) const {
+  // Handle conditional GET:
+  // 1. If-None-Match takes precedence (RFC 9110 Section 13.1.2)
+  // 2. If-Modified-Since is checked only when If-None-Match is absent
+  if (req.has_header("If-None-Match")) {
+    if (!etag.empty()) {
+      auto val = req.get_header_value("If-None-Match");
+      auto matched = false;
+
+      // NOTE: We use exact string matching here. This works correctly
+      // because our server always generates weak ETags (W/"..."), and
+      // clients typically send back the same ETag they received.
+      // RFC 9110 Section 8.8.3.2 allows weak comparison for
+      // If-None-Match, where W/"x" and "x" would match, but this
+      // simplified implementation requires exact matches.
+      detail::split(val.data(), val.data() + val.size(), ',',
+                    [&](const char *b, const char *e) {
+                      if (!matched) {
+                        auto tag = std::string(b, e);
+                        matched = tag == "*" || tag == etag;
+                      }
+                    });
+
+      if (matched) {
+        res.status = StatusCode::NotModified_304;
+        return true;
+      }
+    }
+  } else if (req.has_header("If-Modified-Since")) {
+    auto val = req.get_header_value("If-Modified-Since");
+    auto t = detail::parse_http_date(val);
+
+    if (t != static_cast<time_t>(-1) && mtime <= t) {
+      res.status = StatusCode::NotModified_304;
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool Server::check_if_range(Request &req, const std::string &etag,
+                                   time_t mtime) const {
+  // Handle If-Range for partial content requests (RFC 9110
+  // Section 13.1.5). If-Range is only evaluated when Range header is
+  // present. If the validator matches, serve partial content; otherwise
+  // serve full content.
+  if (!req.ranges.empty() && req.has_header("If-Range")) {
+    auto val = req.get_header_value("If-Range");
+    auto valid = false;
+
+    if (detail::is_strong_etag(val)) {
+      // RFC 9110 Section 13.1.5: If-Range requires strong ETag
+      // comparison.
+      valid = (!etag.empty() && val == etag);
+    } else if (detail::is_weak_etag(val)) {
+      // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
+      valid = false;
+    } else {
+      // HTTP-date comparison
+      auto if_range_time = detail::parse_http_date(val);
+      valid =
+          (if_range_time != static_cast<time_t>(-1) && mtime <= if_range_time);
+    }
+
+    if (!valid) {
+      // Validator doesn't match: ignore Range and serve full content
+      req.ranges.clear();
+      return false;
+    }
+  }
+  return true;
 }
 
 inline socket_t
