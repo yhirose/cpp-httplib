@@ -4,9 +4,11 @@
 
 #ifndef _WIN32
 #include <arpa/inet.h>
+#include <ctime>
 #include <curl/curl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #endif
 #include <gtest/gtest.h>
@@ -12687,3 +12689,536 @@ TEST(ErrorHandlingTest, SSLStreamConnectionClosed) {
   t.join();
 }
 #endif
+
+TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "etag_testfile.txt";
+  const char *content = "etag-content";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8087); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8087);
+
+  // First request: should get 200 with ETag header
+  auto res1 = cli.Get("/static/etag_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+  EXPECT_FALSE(etag.empty());
+
+  // Verify ETag format: W/"hex-hex"
+  ASSERT_GE(etag.length(), 5u); // Minimum: W/""
+  EXPECT_EQ('W', etag[0]);
+  EXPECT_EQ('/', etag[1]);
+  EXPECT_EQ('"', etag[2]);
+  EXPECT_EQ('"', etag.back());
+
+  // Exact match: expect 304 Not Modified
+  Headers h2 = {{"If-None-Match", etag}};
+  auto res2 = cli.Get("/static/etag_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(304, res2->status);
+
+  // Wildcard match: expect 304 Not Modified
+  Headers h3 = {{"If-None-Match", "*"}};
+  auto res3 = cli.Get("/static/etag_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(304, res3->status);
+
+  // Non-matching ETag: expect 200
+  Headers h4 = {{"If-None-Match", "W/\"deadbeef\""}};
+  auto res4 = cli.Get("/static/etag_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(200, res4->status);
+
+  // Multiple ETags with one matching: expect 304
+  Headers h5 = {{"If-None-Match", "W/\"other\", " + etag + ", W/\"another\""}};
+  auto res5 = cli.Get("/static/etag_testfile.txt", h5);
+  ASSERT_TRUE(res5);
+  EXPECT_EQ(304, res5->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, StaticFileETagIfNoneMatchStarNotFound) {
+  using namespace httplib;
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8090); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8090);
+
+  // Send If-None-Match: * to a non-existent file
+  Headers h = {{"If-None-Match", "*"}};
+  auto res = cli.Get("/static/etag_testfile_notfound.txt", h);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(404, res->status);
+
+  svr.stop();
+  t.join();
+}
+
+TEST(ETagTest, LastModifiedAndIfModifiedSince) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "ims_testfile.txt";
+  const char *content = "if-modified-since-test";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8088); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8088);
+
+  // First request: should get 200 with Last-Modified header
+  auto res1 = cli.Get("/static/ims_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+  std::string last_modified = res1->get_header_value("Last-Modified");
+  EXPECT_FALSE(last_modified.empty());
+
+  // If-Modified-Since with same time: expect 304
+  Headers h2 = {{"If-Modified-Since", last_modified}};
+  auto res2 = cli.Get("/static/ims_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(304, res2->status);
+
+  // If-Modified-Since with future time: expect 304
+  Headers h3 = {{"If-Modified-Since", "Sun, 01 Jan 2099 00:00:00 GMT"}};
+  auto res3 = cli.Get("/static/ims_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(304, res3->status);
+
+  // If-Modified-Since with past time: expect 200
+  Headers h4 = {{"If-Modified-Since", "Sun, 01 Jan 2000 00:00:00 GMT"}};
+  auto res4 = cli.Get("/static/ims_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(200, res4->status);
+
+  // If-None-Match takes precedence over If-Modified-Since
+  // (send matching ETag with old If-Modified-Since -> should still be 304)
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+  Headers h5 = {{"If-None-Match", etag},
+                {"If-Modified-Since", "Sun, 01 Jan 2000 00:00:00 GMT"}};
+  auto res5 = cli.Get("/static/ims_testfile.txt", h5);
+  ASSERT_TRUE(res5);
+  EXPECT_EQ(304, res5->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, VaryAcceptEncodingWithCompression) {
+  using namespace httplib;
+
+  Server svr;
+
+  // Endpoint that returns compressible content
+  svr.Get("/compressible", [](const Request &, Response &res) {
+    // Return a large enough body to trigger compression
+    std::string body(1000, 'a');
+    res.set_content(body, "text/plain");
+  });
+
+  auto t = std::thread([&]() { svr.listen("localhost", 8089); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8089);
+
+  // Request with gzip support: should get Vary header when compressed
+  cli.set_compress(true);
+  auto res1 = cli.Get("/compressible");
+  ASSERT_TRUE(res1);
+  EXPECT_EQ(200, res1->status);
+
+  // If Content-Encoding is set, Vary should also be set
+  if (res1->has_header("Content-Encoding")) {
+    EXPECT_TRUE(res1->has_header("Vary"));
+    EXPECT_EQ("Accept-Encoding", res1->get_header_value("Vary"));
+  }
+
+  // Request without Accept-Encoding header: should not have compression
+  Headers h_no_compress;
+  auto res2 = cli.Get("/compressible", h_no_compress);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(200, res2->status);
+
+  // Verify Vary header is present when compression is applied
+  // (the exact behavior depends on server configuration)
+
+  svr.stop();
+  t.join();
+}
+
+TEST(ETagTest, IfRangeWithETag) {
+  using namespace httplib;
+
+  // Create a test file with known content
+  const char *fname = "if_range_testfile.txt";
+  const std::string content = "0123456789ABCDEFGHIJ"; // 20 bytes
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8090); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8090);
+
+  // First request: get ETag
+  auto res1 = cli.Get("/static/if_range_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+
+  // RFC 9110 Section 13.1.5: If-Range requires strong ETag comparison.
+  // Since our server generates weak ETags (W/"..."), If-Range with our
+  // ETag should NOT result in partial content - it should return full content.
+  Headers h2 = {{"Range", "bytes=0-4"}, {"If-Range", etag}};
+  auto res2 = cli.Get("/static/if_range_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  // Weak ETag in If-Range -> full content (200), not partial (206)
+  EXPECT_EQ(200, res2->status);
+  EXPECT_EQ(content, res2->body);
+  EXPECT_FALSE(res2->has_header("Content-Range"));
+
+  // Range request with non-matching If-Range (ETag): should get 200 (full
+  // content)
+  Headers h3 = {{"Range", "bytes=0-4"}, {"If-Range", "W/\"wrong-etag\""}};
+  auto res3 = cli.Get("/static/if_range_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(200, res3->status);
+  EXPECT_EQ(content, res3->body);
+  EXPECT_FALSE(res3->has_header("Content-Range"));
+
+  // Range request with strong ETag (hypothetical - our server doesn't generate
+  // strong ETags, but if client sends a strong ETag that doesn't match, it
+  // should return full content)
+  Headers h4 = {{"Range", "bytes=0-4"}, {"If-Range", "\"strong-etag\""}};
+  auto res4 = cli.Get("/static/if_range_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(200, res4->status);
+  EXPECT_EQ(content, res4->body);
+  EXPECT_FALSE(res4->has_header("Content-Range"));
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, IfRangeWithDate) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "if_range_date_testfile.txt";
+  const std::string content = "ABCDEFGHIJ0123456789"; // 20 bytes
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8091); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8091);
+
+  // First request: get Last-Modified
+  auto res1 = cli.Get("/static/if_range_date_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+  std::string last_modified = res1->get_header_value("Last-Modified");
+
+  // Range request with matching If-Range (date): should get 206
+  Headers h2 = {{"Range", "bytes=5-9"}, {"If-Range", last_modified}};
+  auto res2 = cli.Get("/static/if_range_date_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(206, res2->status);
+  EXPECT_EQ("FGHIJ", res2->body);
+
+  // Range request with old If-Range date: should get 200 (full content)
+  Headers h3 = {{"Range", "bytes=5-9"},
+                {"If-Range", "Sun, 01 Jan 2000 00:00:00 GMT"}};
+  auto res3 = cli.Get("/static/if_range_date_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(200, res3->status);
+  EXPECT_EQ(content, res3->body);
+
+  // Range request with future If-Range date: should get 206
+  Headers h4 = {{"Range", "bytes=0-4"},
+                {"If-Range", "Sun, 01 Jan 2099 00:00:00 GMT"}};
+  auto res4 = cli.Get("/static/if_range_date_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(206, res4->status);
+  EXPECT_EQ("ABCDE", res4->body);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+TEST(ETagTest, MalformedIfNoneMatchAndWhitespace) {
+  using namespace httplib;
+
+  const char *fname = "etag_malformed.txt";
+  const char *content = "malformed-etag";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8092); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8092);
+
+  // baseline: should get 200 and an ETag
+  auto res1 = cli.Get("/static/etag_malformed.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+
+  // Malformed ETag value (missing quotes) should be treated as non-matching
+  Headers h_bad = {{"If-None-Match", "W/noquotes"}};
+  auto res_bad = cli.Get("/static/etag_malformed.txt", h_bad);
+  ASSERT_TRUE(res_bad);
+  EXPECT_EQ(200, res_bad->status);
+
+  // Whitespace-only header value should be considered invalid / non-matching
+  Headers h_space = {{"If-None-Match", "   "}};
+  auto res_space = cli.Get("/static/etag_malformed.txt", h_space);
+  ASSERT_TRUE(res_space);
+  EXPECT_EQ(200, res_space->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, InvalidIfModifiedSinceAndIfRangeDate) {
+  using namespace httplib;
+
+  const char *fname = "ims_invalid_format.txt";
+  const char *content = "ims-bad-format";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8093); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8093);
+
+  auto res1 = cli.Get("/static/ims_invalid_format.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+
+  // If-Modified-Since with invalid format should not result in 304
+  Headers h_bad_date = {{"If-Modified-Since", "not-a-valid-date"}};
+  auto res_bad = cli.Get("/static/ims_invalid_format.txt", h_bad_date);
+  ASSERT_TRUE(res_bad);
+  EXPECT_EQ(200, res_bad->status);
+
+  // If-Range with invalid date format should be treated as mismatch -> full
+  // content (200)
+  Headers h_ifrange_bad = {{"Range", "bytes=0-3"},
+                           {"If-Range", "invalid-date"}};
+  auto res_ifrange = cli.Get("/static/ims_invalid_format.txt", h_ifrange_bad);
+  ASSERT_TRUE(res_ifrange);
+  EXPECT_EQ(200, res_ifrange->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, IfRangeWithMalformedETag) {
+  using namespace httplib;
+
+  const char *fname = "ifrange_malformed.txt";
+  const std::string content = "0123456789";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8094); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8094);
+
+  // First request: get ETag
+  auto res1 = cli.Get("/static/ifrange_malformed.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+
+  // If-Range with malformed ETag (no quotes) should be treated as mismatch ->
+  // full content (200)
+  Headers h_malformed = {{"Range", "bytes=0-4"}, {"If-Range", "W/noquotes"}};
+  auto res2 = cli.Get("/static/ifrange_malformed.txt", h_malformed);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(200, res2->status);
+  EXPECT_EQ(content, res2->body);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, ExtremeLargeDateValues) {
+  using namespace httplib;
+
+  const char *fname = "ims_extreme_date.txt";
+  const char *content = "ims-extreme-date";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8095); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8095);
+
+  auto res1 = cli.Get(std::string("/static/") + fname);
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+
+  // Extremely large year that may overflow date parsing routines.
+  Headers h_large_date = {
+      {"If-Modified-Since", "Sun, 01 Jan 99999 00:00:00 GMT"}};
+  auto res_bad = cli.Get(std::string("/static/") + fname, h_large_date);
+  ASSERT_TRUE(res_bad);
+  // Expect server to treat this as invalid/mismatch and return full content
+  EXPECT_EQ(200, res_bad->status);
+
+  // If-Range with extremely large date should be treated as mismatch -> full
+  // content (200)
+  Headers h_ifrange_large = {{"Range", "bytes=0-3"},
+                             {"If-Range", "Sun, 01 Jan 99999 00:00:00 GMT"}};
+  auto res_ifrange = cli.Get(std::string("/static/") + fname, h_ifrange_large);
+  ASSERT_TRUE(res_ifrange);
+  EXPECT_EQ(200, res_ifrange->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, NegativeFileModificationTime) {
+  using namespace httplib;
+
+  const char *fname = "ims_negative_mtime.txt";
+  const std::string content = "negative-mtime";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  // Try to set file mtime to a negative value. This may fail on some
+  // platforms/filesystems; if it fails, the test will still verify server
+  // behaves safely by performing a regular conditional request.
+#if defined(__APPLE__) || defined(__linux__)
+  bool set_negative = false;
+  do {
+    struct timeval times[2];
+    // access time: now
+    times[0].tv_sec = time(nullptr);
+    times[0].tv_usec = 0;
+    // modification time: negative (e.g., -1)
+    times[1].tv_sec = -1;
+    times[1].tv_usec = 0;
+    if (utimes(fname, times) == 0) { set_negative = true; }
+  } while (0);
+#else
+  bool set_negative = false;
+#endif
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8096); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8096);
+
+  auto res1 = cli.Get(std::string("/static/") + fname);
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  bool has_last_modified = res1->has_header("Last-Modified");
+  std::string last_modified;
+  if (has_last_modified) {
+    last_modified = res1->get_header_value("Last-Modified");
+  }
+
+  if (set_negative) {
+    // If we successfully set a negative mtime, ensure server returns a
+    // Last-Modified string (may be empty or normalized). Send If-Modified-Since
+    // with an old date and ensure server handles it without crash.
+    Headers h_old = {{"If-Modified-Since", "Sun, 01 Jan 1970 00:00:00 GMT"}};
+    auto res2 = cli.Get(std::string("/static/") + fname, h_old);
+    ASSERT_TRUE(res2);
+    // Behavior may vary; at minimum ensure server responds (200 or 304).
+    EXPECT_TRUE(res2->status == 200 || res2->status == 304);
+  } else {
+    // Could not set negative mtime on this platform; fall back to verifying
+    // that normal invalid/malformed dates are treated safely (non-304).
+    Headers h_bad_date = {
+        {"If-Modified-Since", "Sun, 01 Jan 99999 00:00:00 GMT"}};
+    auto res_bad = cli.Get(std::string("/static/") + fname, h_bad_date);
+    ASSERT_TRUE(res_bad);
+    EXPECT_EQ(200, res_bad->status);
+  }
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}

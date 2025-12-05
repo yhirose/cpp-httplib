@@ -1011,17 +1011,6 @@ using ErrorLogger = std::function<void(const Error &, const Request *)>;
 
 using SocketOptions = std::function<void(socket_t sock)>;
 
-namespace detail {
-
-bool set_socket_opt_impl(socket_t sock, int level, int optname,
-                         const void *optval, socklen_t optlen);
-bool set_socket_opt(socket_t sock, int level, int optname, int opt);
-bool set_socket_opt_time(socket_t sock, int level, int optname, time_t sec,
-                         time_t usec);
-int close_socket(socket_t sock);
-
-} // namespace detail
-
 void default_socket_options(socket_t sock);
 
 const char *status_message(int status);
@@ -1102,10 +1091,9 @@ private:
   std::regex regex_;
 };
 
-ssize_t write_headers(Stream &strm, const Headers &headers);
+int close_socket(socket_t sock);
 
-std::string make_host_and_port_string(const std::string &host, int port,
-                                      bool is_ssl);
+ssize_t write_headers(Stream &strm, const Headers &headers);
 
 } // namespace detail
 
@@ -1257,7 +1245,11 @@ private:
   bool listen_internal();
 
   bool routing(Request &req, Response &res, Stream &strm);
-  bool handle_file_request(const Request &req, Response &res);
+  bool handle_file_request(Request &req, Response &res);
+  bool check_if_not_modified(const Request &req, Response &res,
+                             const std::string &etag, time_t mtime) const;
+  bool check_if_range(Request &req, const std::string &etag,
+                      time_t mtime) const;
   bool dispatch_request(Request &req, Response &res,
                         const Handlers &handlers) const;
   bool dispatch_request_for_content_reader(
@@ -2593,6 +2585,8 @@ struct FileStat {
   FileStat(const std::string &path);
   bool is_file() const;
   bool is_dir() const;
+  time_t mtime() const;
+  size_t size() const;
 
 private:
 #if defined(_WIN32)
@@ -2602,6 +2596,9 @@ private:
 #endif
   int ret_ = -1;
 };
+
+std::string make_host_and_port_string(const std::string &host, int port,
+                                      bool is_ssl);
 
 std::string trim_copy(const std::string &s);
 
@@ -2971,6 +2968,90 @@ inline std::string from_i_to_hex(size_t n) {
   return ret;
 }
 
+inline std::string compute_etag(const FileStat &fs) {
+  if (!fs.is_file()) { return std::string(); }
+
+  // If mtime cannot be determined (negative value indicates an error
+  // or sentinel), do not generate an ETag. Returning a neutral / fixed
+  // value like 0 could collide with a real file that legitimately has
+  // mtime == 0 (epoch) and lead to misleading validators.
+  auto mtime_raw = fs.mtime();
+  if (mtime_raw < 0) { return std::string(); }
+
+  auto mtime = static_cast<size_t>(mtime_raw);
+  auto size = fs.size();
+
+  return std::string("W/\"") + from_i_to_hex(mtime) + "-" +
+         from_i_to_hex(size) + "\"";
+}
+
+// Format time_t as HTTP-date (RFC 9110 Section 5.6.7): "Sun, 06 Nov 1994
+// 08:49:37 GMT" This implementation is defensive: it validates `mtime`, checks
+// return values from `gmtime_r`/`gmtime_s`, and ensures `strftime` succeeds.
+inline std::string file_mtime_to_http_date(time_t mtime) {
+  if (mtime < 0) { return std::string(); }
+
+  struct tm tm_buf;
+#ifdef _WIN32
+  if (gmtime_s(&tm_buf, &mtime) != 0) { return std::string(); }
+#else
+  if (gmtime_r(&mtime, &tm_buf) == nullptr) { return std::string(); }
+#endif
+  char buf[64];
+  if (strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm_buf) == 0) {
+    return std::string();
+  }
+
+  return std::string(buf);
+}
+
+// Parse HTTP-date (RFC 9110 Section 5.6.7) to time_t. Returns -1 on failure.
+inline time_t parse_http_date(const std::string &date_str) {
+  struct tm tm_buf;
+
+  // Create a classic locale object once for all parsing attempts
+  const std::locale classic_locale = std::locale::classic();
+
+  // Try to parse using std::get_time (C++11, cross-platform)
+  auto try_parse = [&](const char *fmt) -> bool {
+    std::istringstream ss(date_str);
+    ss.imbue(classic_locale);
+
+    memset(&tm_buf, 0, sizeof(tm_buf));
+    ss >> std::get_time(&tm_buf, fmt);
+
+    return !ss.fail();
+  };
+
+  // RFC 9110 preferred format (HTTP-date): "Sun, 06 Nov 1994 08:49:37 GMT"
+  if (!try_parse("%a, %d %b %Y %H:%M:%S")) {
+    // RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
+    if (!try_parse("%A, %d-%b-%y %H:%M:%S")) {
+      // asctime format: "Sun Nov  6 08:49:37 1994"
+      if (!try_parse("%a %b %d %H:%M:%S %Y")) {
+        return static_cast<time_t>(-1);
+      }
+    }
+  }
+
+#ifdef _WIN32
+  return _mkgmtime(&tm_buf);
+#else
+  return timegm(&tm_buf);
+#endif
+}
+
+inline bool is_weak_etag(const std::string &s) {
+  // Check if the string is a weak ETag (starts with 'W/"')
+  return s.size() > 3 && s[0] == 'W' && s[1] == '/' && s[2] == '"';
+}
+
+inline bool is_strong_etag(const std::string &s) {
+  // Check if the string is a strong ETag (starts and ends with '"', at least 2
+  // chars)
+  return s.size() >= 2 && s[0] == '"' && s.back() == '"';
+}
+
 inline size_t to_utf8(int code, char *buff) {
   if (code < 0x0080) {
     buff[0] = static_cast<char>(code & 0x7F);
@@ -3088,6 +3169,15 @@ inline bool FileStat::is_file() const {
 }
 inline bool FileStat::is_dir() const {
   return ret_ >= 0 && S_ISDIR(st_.st_mode);
+}
+
+inline time_t FileStat::mtime() const {
+  return ret_ >= 0 ? static_cast<time_t>(st_.st_mtime)
+                   : static_cast<time_t>(-1);
+}
+
+inline size_t FileStat::size() const {
+  return ret_ >= 0 ? static_cast<size_t>(st_.st_size) : 0;
 }
 
 inline std::string encode_path(const std::string &s) {
@@ -3343,6 +3433,42 @@ inline void split(const char *b, const char *e, char d, size_t m,
     auto r = trim(b, e, beg, i);
     if (r.first < r.second) { fn(&b[r.first], &b[r.second]); }
   }
+}
+
+inline bool split_find(const char *b, const char *e, char d, size_t m,
+                       std::function<bool(const char *, const char *)> fn) {
+  size_t i = 0;
+  size_t beg = 0;
+  size_t count = 1;
+
+  while (e ? (b + i < e) : (b[i] != '\0')) {
+    if (b[i] == d && count < m) {
+      auto r = trim(b, e, beg, i);
+      if (r.first < r.second) {
+        auto found = fn(&b[r.first], &b[r.second]);
+        if (found) { return true; }
+      }
+      beg = i + 1;
+      count++;
+    }
+    i++;
+  }
+
+  if (i) {
+    auto r = trim(b, e, beg, i);
+    if (r.first < r.second) {
+      auto found = fn(&b[r.first], &b[r.second]);
+      if (found) { return true; }
+    }
+  }
+
+  return false;
+}
+
+inline bool split_find(const char *b, const char *e, char d,
+                       std::function<bool(const char *, const char *)> fn) {
+  return split_find(b, e, d, (std::numeric_limits<size_t>::max)(),
+                    std::move(fn));
 }
 
 inline stream_line_reader::stream_line_reader(Stream &strm, char *fixed_buffer,
@@ -8256,7 +8382,7 @@ inline bool Server::read_content_core(
   return true;
 }
 
-inline bool Server::handle_file_request(const Request &req, Response &res) {
+inline bool Server::handle_file_request(Request &req, Response &res) {
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
@@ -8276,6 +8402,20 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
           for (const auto &kv : entry.headers) {
             res.set_header(kv.first, kv.second);
           }
+
+          auto etag = detail::compute_etag(stat);
+          if (!etag.empty()) { res.set_header("ETag", etag); }
+
+          auto mtime = stat.mtime();
+
+          auto last_modified = detail::file_mtime_to_http_date(mtime);
+          if (!last_modified.empty()) {
+            res.set_header("Last-Modified", last_modified);
+          }
+
+          if (check_if_not_modified(req, res, etag, mtime)) { return true; }
+
+          check_if_range(req, etag, mtime);
 
           auto mm = std::make_shared<detail::mmap>(path.c_str());
           if (!mm->is_open()) {
@@ -8304,6 +8444,79 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
     }
   }
   return false;
+}
+
+inline bool Server::check_if_not_modified(const Request &req, Response &res,
+                                          const std::string &etag,
+                                          time_t mtime) const {
+  // Handle conditional GET:
+  // 1. If-None-Match takes precedence (RFC 9110 Section 13.1.2)
+  // 2. If-Modified-Since is checked only when If-None-Match is absent
+  if (req.has_header("If-None-Match")) {
+    if (!etag.empty()) {
+      auto val = req.get_header_value("If-None-Match");
+
+      // NOTE: We use exact string matching here. This works correctly
+      // because our server always generates weak ETags (W/"..."), and
+      // clients typically send back the same ETag they received.
+      // RFC 9110 Section 8.8.3.2 allows weak comparison for
+      // If-None-Match, where W/"x" and "x" would match, but this
+      // simplified implementation requires exact matches.
+      auto ret = detail::split_find(val.data(), val.data() + val.size(), ',',
+                                    [&](const char *b, const char *e) {
+                                      return std::equal(b, e, "*") ||
+                                             std::equal(b, e, etag.begin());
+                                    });
+
+      if (ret) {
+        res.status = StatusCode::NotModified_304;
+        return true;
+      }
+    }
+  } else if (req.has_header("If-Modified-Since")) {
+    auto val = req.get_header_value("If-Modified-Since");
+    auto t = detail::parse_http_date(val);
+
+    if (t != static_cast<time_t>(-1) && mtime <= t) {
+      res.status = StatusCode::NotModified_304;
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool Server::check_if_range(Request &req, const std::string &etag,
+                                   time_t mtime) const {
+  // Handle If-Range for partial content requests (RFC 9110
+  // Section 13.1.5). If-Range is only evaluated when Range header is
+  // present. If the validator matches, serve partial content; otherwise
+  // serve full content.
+  if (!req.ranges.empty() && req.has_header("If-Range")) {
+    auto val = req.get_header_value("If-Range");
+
+    auto is_valid_range = [&]() {
+      if (detail::is_strong_etag(val)) {
+        // RFC 9110 Section 13.1.5: If-Range requires strong ETag
+        // comparison.
+        return (!etag.empty() && val == etag);
+      } else if (detail::is_weak_etag(val)) {
+        // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
+        return false;
+      } else {
+        // HTTP-date comparison
+        auto t = detail::parse_http_date(val);
+        return (t != static_cast<time_t>(-1) && mtime <= t);
+      }
+    };
+
+    if (!is_valid_range()) {
+      // Validator doesn't match: ignore Range and serve full content
+      req.ranges.clear();
+      return false;
+    }
+  }
+
+  return true;
 }
 
 inline socket_t
@@ -8573,10 +8786,13 @@ inline void Server::apply_ranges(const Request &req, Response &res,
           res.set_header("Transfer-Encoding", "chunked");
           if (type == detail::EncodingType::Gzip) {
             res.set_header("Content-Encoding", "gzip");
+            res.set_header("Vary", "Accept-Encoding");
           } else if (type == detail::EncodingType::Brotli) {
             res.set_header("Content-Encoding", "br");
+            res.set_header("Vary", "Accept-Encoding");
           } else if (type == detail::EncodingType::Zstd) {
             res.set_header("Content-Encoding", "zstd");
+            res.set_header("Vary", "Accept-Encoding");
           }
         }
       }
@@ -8635,6 +8851,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
                                  })) {
           res.body.swap(compressed);
           res.set_header("Content-Encoding", content_encoding);
+          res.set_header("Vary", "Accept-Encoding");
         }
       }
     }
