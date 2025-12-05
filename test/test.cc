@@ -12697,6 +12697,7 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
   {
     std::ofstream ofs(fname);
     ofs << content;
+    ASSERT_TRUE(ofs.good());
   }
 
   Server svr;
@@ -12719,6 +12720,7 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
   EXPECT_EQ('W', etag[0]);
   EXPECT_EQ('/', etag[1]);
   EXPECT_EQ('"', etag[2]);
+  EXPECT_EQ('"', etag.back());
 
   // Exact match: expect 304 Not Modified
   Headers h2 = {{"If-None-Match", etag}};
@@ -12758,6 +12760,7 @@ TEST(ETagTest, LastModifiedAndIfModifiedSince) {
   {
     std::ofstream ofs(fname);
     ofs << content;
+    ASSERT_TRUE(ofs.good());
   }
 
   Server svr;
@@ -12859,6 +12862,7 @@ TEST(ETagTest, IfRangeWithETag) {
   {
     std::ofstream ofs(fname);
     ofs << content;
+    ASSERT_TRUE(ofs.good());
   }
 
   Server svr;
@@ -12919,6 +12923,7 @@ TEST(ETagTest, IfRangeWithDate) {
   {
     std::ofstream ofs(fname);
     ofs << content;
+    ASSERT_TRUE(ofs.good());
   }
 
   Server svr;
