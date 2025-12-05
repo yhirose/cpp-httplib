@@ -2937,7 +2937,7 @@ inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 namespace detail {
 
 inline bool is_hex(char c, int &v) {
-  if (0x20 <= c && isdigit(c)) {
+  if (isdigit(c)) {
     v = c - '0';
     return true;
   } else if ('A' <= c && c <= 'F') {
