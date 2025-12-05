@@ -8473,12 +8473,8 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
       // simplified implementation requires exact matches.
       auto ret = detail::split_find(val.data(), val.data() + val.size(), ',',
                                     [&](const char *b, const char *e) {
-                                      auto len = static_cast<size_t>(e - b);
-                                      if (len == 1 && *b == '*') return true;
-                                      if (len == etag.size() &&
-                                          std::equal(b, e, etag.begin()))
-                                        return true;
-                                      return false;
+                                      return std::equal(b, e, "*") ||
+                                             std::equal(b, e, etag.begin());
                                     });
 
       if (ret) {

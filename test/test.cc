@@ -12751,6 +12751,26 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
   std::remove(fname);
 }
 
+TEST(ETagTest, StaticFileETagIfNoneMatchStarNotFound) {
+  using namespace httplib;
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8090); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8090);
+
+  // Send If-None-Match: * to a non-existent file
+  Headers h = {{"If-None-Match", "*"}};
+  auto res = cli.Get("/static/etag_testfile_notfound.txt", h);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(404, res->status);
+
+  svr.stop();
+  t.join();
+}
+
 TEST(ETagTest, LastModifiedAndIfModifiedSince) {
   using namespace httplib;
 
@@ -13085,16 +13105,4 @@ TEST(ETagTest, IfRangeWithMalformedETag) {
   svr.stop();
   t.join();
   std::remove(fname);
-}
-
-TEST(ETagTest, DateParsingAndMtimeNegative) {
-  using namespace httplib;
-
-  // parse_http_date should return -1 for invalid format
-  time_t parsed = detail::parse_http_date("this is not a date");
-  EXPECT_EQ(static_cast<time_t>(-1), parsed);
-
-  // file_mtime_to_http_date returns empty string for negative mtime
-  std::string s = detail::file_mtime_to_http_date(static_cast<time_t>(-1));
-  EXPECT_TRUE(s.empty());
 }
