@@ -3167,7 +3167,7 @@ inline bool FileStat::is_dir() const {
 }
 
 inline time_t FileStat::mtime() const {
-  return ret_ >= 0 ? static_cast<time_t>(st_.st_mtime) : 0;
+  return ret_ >= 0 ? static_cast<time_t>(st_.st_mtime) : static_cast<time_t>(-1);
 }
 
 inline size_t FileStat::size() const {
