@@ -3037,13 +3037,13 @@ inline time_t parse_http_date(const std::string &date_str) {
 #endif
 }
 
-// Check if the string is a weak ETag (starts with 'W/"')
 inline bool is_weak_etag(const std::string &s) {
+  // Check if the string is a weak ETag (starts with 'W/"')
   return s.size() > 3 && s[0] == 'W' && s[1] == '/' && s[2] == '"';
 }
 
-// Check if the string is a strong ETag (starts with '"' but not 'W/"')
 inline bool is_strong_etag(const std::string &s) {
+  // Check if the string is a strong ETag (starts with '"' but not 'W/"')
   return !s.empty() && s[0] == '"';
 }
 
@@ -3427,6 +3427,42 @@ inline void split(const char *b, const char *e, char d, size_t m,
     auto r = trim(b, e, beg, i);
     if (r.first < r.second) { fn(&b[r.first], &b[r.second]); }
   }
+}
+
+inline bool split_find(const char *b, const char *e, char d, size_t m,
+                       std::function<bool(const char *, const char *)> fn) {
+  size_t i = 0;
+  size_t beg = 0;
+  size_t count = 1;
+
+  while (e ? (b + i < e) : (b[i] != '\0')) {
+    if (b[i] == d && count < m) {
+      auto r = trim(b, e, beg, i);
+      if (r.first < r.second) {
+        auto found = fn(&b[r.first], &b[r.second]);
+        if (found) { return true; }
+      }
+      beg = i + 1;
+      count++;
+    }
+    i++;
+  }
+
+  if (i) {
+    auto r = trim(b, e, beg, i);
+    if (r.first < r.second) {
+      auto found = fn(&b[r.first], &b[r.second]);
+      if (found) { return true; }
+    }
+  }
+
+  return false;
+}
+
+inline bool split_find(const char *b, const char *e, char d,
+                       std::function<bool(const char *, const char *)> fn) {
+  return split_find(b, e, d, (std::numeric_limits<size_t>::max)(),
+                    std::move(fn));
 }
 
 inline stream_line_reader::stream_line_reader(Stream &strm, char *fixed_buffer,
@@ -8413,7 +8449,6 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
   if (req.has_header("If-None-Match")) {
     if (!etag.empty()) {
       auto val = req.get_header_value("If-None-Match");
-      auto matched = false;
 
       // NOTE: We use exact string matching here. This works correctly
       // because our server always generates weak ETags (W/"..."), and
@@ -8421,15 +8456,13 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
       // RFC 9110 Section 8.8.3.2 allows weak comparison for
       // If-None-Match, where W/"x" and "x" would match, but this
       // simplified implementation requires exact matches.
-      detail::split(val.data(), val.data() + val.size(), ',',
-                    [&](const char *b, const char *e) {
-                      if (!matched) {
-                        auto tag = std::string(b, e);
-                        matched = tag == "*" || tag == etag;
-                      }
-                    });
+      auto ret = detail::split_find(val.data(), val.data() + val.size(), ',',
+                                    [&](const char *b, const char *e) {
+                                      auto tag = std::string(b, e);
+                                      return tag == "*" || tag == etag;
+                                    });
 
-      if (matched) {
+      if (ret) {
         res.status = StatusCode::NotModified_304;
         return true;
       }
@@ -8454,28 +8487,29 @@ inline bool Server::check_if_range(Request &req, const std::string &etag,
   // serve full content.
   if (!req.ranges.empty() && req.has_header("If-Range")) {
     auto val = req.get_header_value("If-Range");
-    auto valid = false;
 
-    if (detail::is_strong_etag(val)) {
-      // RFC 9110 Section 13.1.5: If-Range requires strong ETag
-      // comparison.
-      valid = (!etag.empty() && val == etag);
-    } else if (detail::is_weak_etag(val)) {
-      // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
-      valid = false;
-    } else {
-      // HTTP-date comparison
-      auto if_range_time = detail::parse_http_date(val);
-      valid =
-          (if_range_time != static_cast<time_t>(-1) && mtime <= if_range_time);
-    }
+    auto is_valid_range = [&]() {
+      if (detail::is_strong_etag(val)) {
+        // RFC 9110 Section 13.1.5: If-Range requires strong ETag
+        // comparison.
+        return (!etag.empty() && val == etag);
+      } else if (detail::is_weak_etag(val)) {
+        // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
+        return false;
+      } else {
+        // HTTP-date comparison
+        auto t = detail::parse_http_date(val);
+        return (t != static_cast<time_t>(-1) && mtime <= t);
+      }
+    };
 
-    if (!valid) {
+    if (!is_valid_range()) {
       // Validator doesn't match: ignore Range and serve full content
       req.ranges.clear();
       return false;
     }
   }
+
   return true;
 }
 
