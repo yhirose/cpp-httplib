@@ -2976,7 +2976,8 @@ inline std::string from_i_to_hex(size_t n) {
 inline std::string compute_etag(const FileStat &fs) {
   if (!fs.is_file()) { return std::string(); }
 
-  auto mtime = static_cast<size_t>(fs.mtime());
+  time_t mtime_raw = fs.mtime();
+  size_t mtime = mtime_raw < 0 ? 0 : static_cast<size_t>(mtime_raw);
   auto size = fs.size();
 
   return std::string("W/\"") + from_i_to_hex(mtime) + "-" +
