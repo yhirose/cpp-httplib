@@ -2980,24 +2980,37 @@ inline std::string from_i_to_hex(size_t n) {
 inline std::string compute_etag(const FileStat &fs) {
   if (!fs.is_file()) { return std::string(); }
 
+  // If mtime cannot be determined (negative value indicates an error
+  // or sentinel), do not generate an ETag. Returning a neutral / fixed
+  // value like 0 could collide with a real file that legitimately has
+  // mtime == 0 (epoch) and lead to misleading validators.
   auto mtime_raw = fs.mtime();
-  auto mtime = mtime_raw < 0 ? 0 : static_cast<size_t>(mtime_raw);
+  if (mtime_raw < 0) { return std::string(); }
+
+  auto mtime = static_cast<size_t>(mtime_raw);
   auto size = fs.size();
 
   return std::string("W/\"") + from_i_to_hex(mtime) + "-" +
          from_i_to_hex(size) + "\"";
 }
 
-// Format time_t as HTTP-date (RFC 7231): "Sun, 06 Nov 1994 08:49:37 GMT"
+// Format time_t as HTTP-date (RFC 9110 Section 5.6.7): "Sun, 06 Nov 1994
+// 08:49:37 GMT" This implementation is defensive: it validates `mtime`, checks
+// return values from `gmtime_r`/`gmtime_s`, and ensures `strftime` succeeds.
 inline std::string file_mtime_to_http_date(time_t mtime) {
+  if (mtime < 0) { return std::string(); }
+
   struct tm tm_buf;
 #ifdef _WIN32
-  gmtime_s(&tm_buf, &mtime);
+  if (gmtime_s(&tm_buf, &mtime) != 0) { return std::string(); }
 #else
-  gmtime_r(&mtime, &tm_buf);
+  if (gmtime_r(&mtime, &tm_buf) == nullptr) { return std::string(); }
 #endif
   char buf[64];
-  strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm_buf);
+  if (strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm_buf) == 0) {
+    return std::string();
+  }
+
   return std::string(buf);
 }
 
@@ -3043,7 +3056,8 @@ inline bool is_weak_etag(const std::string &s) {
 }
 
 inline bool is_strong_etag(const std::string &s) {
-  // Check if the string is a strong ETag (starts and ends with '"', at least 2 chars)
+  // Check if the string is a strong ETag (starts and ends with '"', at least 2
+  // chars)
   return s.size() >= 2 && s[0] == '"' && s.back() == '"';
 }
 
@@ -3167,7 +3181,8 @@ inline bool FileStat::is_dir() const {
 }
 
 inline time_t FileStat::mtime() const {
-  return ret_ >= 0 ? static_cast<time_t>(st_.st_mtime) : static_cast<time_t>(-1);
+  return ret_ >= 0 ? static_cast<time_t>(st_.st_mtime)
+                   : static_cast<time_t>(-1);
 }
 
 inline size_t FileStat::size() const {
@@ -8460,7 +8475,9 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
                                     [&](const char *b, const char *e) {
                                       auto len = static_cast<size_t>(e - b);
                                       if (len == 1 && *b == '*') return true;
-                                      if (len == etag.size() && std::equal(b, e, etag.begin())) return true;
+                                      if (len == etag.size() &&
+                                          std::equal(b, e, etag.begin()))
+                                        return true;
                                       return false;
                                     });
 

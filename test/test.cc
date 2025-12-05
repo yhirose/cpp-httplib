@@ -12716,7 +12716,7 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
   EXPECT_FALSE(etag.empty());
 
   // Verify ETag format: W/"hex-hex"
-  ASSERT_GE(etag.length(), 5u);  // Minimum: W/""
+  ASSERT_GE(etag.length(), 5u); // Minimum: W/""
   EXPECT_EQ('W', etag[0]);
   EXPECT_EQ('/', etag[1]);
   EXPECT_EQ('"', etag[2]);
@@ -12966,4 +12966,135 @@ TEST(ETagTest, IfRangeWithDate) {
   svr.stop();
   t.join();
   std::remove(fname);
+}
+TEST(ETagTest, MalformedIfNoneMatchAndWhitespace) {
+  using namespace httplib;
+
+  const char *fname = "etag_malformed.txt";
+  const char *content = "malformed-etag";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8092); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8092);
+
+  // baseline: should get 200 and an ETag
+  auto res1 = cli.Get("/static/etag_malformed.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+
+  // Malformed ETag value (missing quotes) should be treated as non-matching
+  Headers h_bad = {{"If-None-Match", "W/noquotes"}};
+  auto res_bad = cli.Get("/static/etag_malformed.txt", h_bad);
+  ASSERT_TRUE(res_bad);
+  EXPECT_EQ(200, res_bad->status);
+
+  // Whitespace-only header value should be considered invalid / non-matching
+  Headers h_space = {{"If-None-Match", "   "}};
+  auto res_space = cli.Get("/static/etag_malformed.txt", h_space);
+  ASSERT_TRUE(res_space);
+  EXPECT_EQ(200, res_space->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, InvalidIfModifiedSinceAndIfRangeDate) {
+  using namespace httplib;
+
+  const char *fname = "ims_invalid_format.txt";
+  const char *content = "ims-bad-format";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8093); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8093);
+
+  auto res1 = cli.Get("/static/ims_invalid_format.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+
+  // If-Modified-Since with invalid format should not result in 304
+  Headers h_bad_date = {{"If-Modified-Since", "not-a-valid-date"}};
+  auto res_bad = cli.Get("/static/ims_invalid_format.txt", h_bad_date);
+  ASSERT_TRUE(res_bad);
+  EXPECT_EQ(200, res_bad->status);
+
+  // If-Range with invalid date format should be treated as mismatch -> full
+  // content (200)
+  Headers h_ifrange_bad = {{"Range", "bytes=0-3"},
+                           {"If-Range", "invalid-date"}};
+  auto res_ifrange = cli.Get("/static/ims_invalid_format.txt", h_ifrange_bad);
+  ASSERT_TRUE(res_ifrange);
+  EXPECT_EQ(200, res_ifrange->status);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, IfRangeWithMalformedETag) {
+  using namespace httplib;
+
+  const char *fname = "ifrange_malformed.txt";
+  const std::string content = "0123456789";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8094); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8094);
+
+  // First request: get ETag
+  auto res1 = cli.Get("/static/ifrange_malformed.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+
+  // If-Range with malformed ETag (no quotes) should be treated as mismatch ->
+  // full content (200)
+  Headers h_malformed = {{"Range", "bytes=0-4"}, {"If-Range", "W/noquotes"}};
+  auto res2 = cli.Get("/static/ifrange_malformed.txt", h_malformed);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(200, res2->status);
+  EXPECT_EQ(content, res2->body);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, DateParsingAndMtimeNegative) {
+  using namespace httplib;
+
+  // parse_http_date should return -1 for invalid format
+  time_t parsed = detail::parse_http_date("this is not a date");
+  EXPECT_EQ(static_cast<time_t>(-1), parsed);
+
+  // file_mtime_to_http_date returns empty string for negative mtime
+  std::string s = detail::file_mtime_to_http_date(static_cast<time_t>(-1));
+  EXPECT_TRUE(s.empty());
 }
