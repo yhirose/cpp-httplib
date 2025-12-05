@@ -12875,13 +12875,16 @@ TEST(ETagTest, IfRangeWithETag) {
   ASSERT_TRUE(res1->has_header("ETag"));
   std::string etag = res1->get_header_value("ETag");
 
-  // Range request with matching If-Range (ETag): should get 206
+  // RFC 9110 Section 13.1.5: If-Range requires strong ETag comparison.
+  // Since our server generates weak ETags (W/"..."), If-Range with our
+  // ETag should NOT result in partial content - it should return full content.
   Headers h2 = {{"Range", "bytes=0-4"}, {"If-Range", etag}};
   auto res2 = cli.Get("/static/if_range_testfile.txt", h2);
   ASSERT_TRUE(res2);
-  EXPECT_EQ(206, res2->status);
-  EXPECT_EQ("01234", res2->body);
-  EXPECT_TRUE(res2->has_header("Content-Range"));
+  // Weak ETag in If-Range -> full content (200), not partial (206)
+  EXPECT_EQ(200, res2->status);
+  EXPECT_EQ(content, res2->body);
+  EXPECT_FALSE(res2->has_header("Content-Range"));
 
   // Range request with non-matching If-Range (ETag): should get 200 (full
   // content)
@@ -12891,6 +12894,16 @@ TEST(ETagTest, IfRangeWithETag) {
   EXPECT_EQ(200, res3->status);
   EXPECT_EQ(content, res3->body);
   EXPECT_FALSE(res3->has_header("Content-Range"));
+
+  // Range request with strong ETag (hypothetical - our server doesn't generate
+  // strong ETags, but if client sends a strong ETag that doesn't match, it
+  // should return full content)
+  Headers h4 = {{"Range", "bytes=0-4"}, {"If-Range", "\"strong-etag\""}};
+  auto res4 = cli.Get("/static/if_range_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(200, res4->status);
+  EXPECT_EQ(content, res4->body);
+  EXPECT_FALSE(res4->has_header("Content-Range"));
 
   svr.stop();
   t.join();

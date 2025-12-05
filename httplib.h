@@ -3032,10 +3032,14 @@ inline time_t parse_http_date(const std::string &date_str) {
 #endif
 }
 
-// Check if the string is an ETag (starts with '"' or 'W/"')
-inline bool is_etag(const std::string &s) {
-  return !s.empty() &&
-         (s[0] == '"' || (s.size() > 2 && s[0] == 'W' && s[1] == '/'));
+// Check if the string is a weak ETag (starts with 'W/"')
+inline bool is_weak_etag(const std::string &s) {
+  return s.size() > 3 && s[0] == 'W' && s[1] == '/' && s[2] == '"';
+}
+
+// Check if the string is a strong ETag (starts with '"' but not 'W/"')
+inline bool is_strong_etag(const std::string &s) {
+  return !s.empty() && s[0] == '"';
 }
 
 inline size_t to_utf8(int code, char *buff) {
@@ -8399,9 +8403,13 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             auto if_range = req.get_header_value("If-Range");
             auto valid = false;
 
-            if (detail::is_etag(if_range)) {
-              // ETag comparison (weak comparison for If-Range per RFC 9110)
+            if (detail::is_strong_etag(if_range)) {
+              // RFC 9110 Section 13.1.5: If-Range requires strong ETag
+              // comparison.
               valid = (!etag.empty() && if_range == etag);
+            } else if (detail::is_weak_etag(if_range)) {
+              // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
+              valid = false;
             } else {
               // HTTP-date comparison
               auto if_range_time = detail::parse_http_date(if_range);
