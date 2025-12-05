@@ -1257,7 +1257,7 @@ private:
   bool listen_internal();
 
   bool routing(Request &req, Response &res, Stream &strm);
-  bool handle_file_request(const Request &req, Response &res);
+  bool handle_file_request(Request &req, Response &res);
   bool dispatch_request(Request &req, Response &res,
                         const Handlers &handlers) const;
   bool dispatch_request_for_content_reader(
@@ -3018,6 +3018,12 @@ inline time_t parse_http_date(const std::string &date_str) {
 #else
   return timegm(&tm_buf);
 #endif
+}
+
+// Check if the string is an ETag (starts with '"' or 'W/"')
+inline bool is_etag(const std::string &s) {
+  return !s.empty() &&
+         (s[0] == '"' || (s.size() > 2 && s[0] == 'W' && s[1] == '/'));
 }
 
 inline size_t to_utf8(int code, char *buff) {
@@ -8313,7 +8319,7 @@ inline bool Server::read_content_core(
   return true;
 }
 
-inline bool Server::handle_file_request(const Request &req, Response &res) {
+inline bool Server::handle_file_request(Request &req, Response &res) {
   for (const auto &entry : base_dirs_) {
     // Prefix match
     if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
@@ -8370,6 +8376,30 @@ inline bool Server::handle_file_request(const Request &req, Response &res) {
             if (ims_time != static_cast<time_t>(-1) && mtime <= ims_time) {
               res.status = StatusCode::NotModified_304;
               return true;
+            }
+          }
+
+          // Handle If-Range for partial content requests (RFC 9110
+          // Section 13.1.5) If-Range is only evaluated when Range header is
+          // present. If the validator matches, serve partial content; otherwise
+          // serve full content.
+          if (!req.ranges.empty() && req.has_header("If-Range")) {
+            auto if_range = req.get_header_value("If-Range");
+            auto valid = false;
+
+            if (detail::is_etag(if_range)) {
+              // ETag comparison (weak comparison for If-Range per RFC 9110)
+              valid = (!etag.empty() && if_range == etag);
+            } else {
+              // HTTP-date comparison
+              auto if_range_time = detail::parse_http_date(if_range);
+              valid = (if_range_time != static_cast<time_t>(-1) &&
+                       mtime <= if_range_time);
+            }
+
+            if (!valid) {
+              // Validator doesn't match: ignore Range and serve full content
+              req.ranges.clear();
             }
           }
 

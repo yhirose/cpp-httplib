@@ -12848,3 +12848,103 @@ TEST(ETagTest, VaryAcceptEncodingWithCompression) {
   svr.stop();
   t.join();
 }
+
+TEST(ETagTest, IfRangeWithETag) {
+  using namespace httplib;
+
+  // Create a test file with known content
+  const char *fname = "if_range_testfile.txt";
+  const std::string content = "0123456789ABCDEFGHIJ"; // 20 bytes
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8090); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8090);
+
+  // First request: get ETag
+  auto res1 = cli.Get("/static/if_range_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+
+  // Range request with matching If-Range (ETag): should get 206
+  Headers h2 = {{"Range", "bytes=0-4"}, {"If-Range", etag}};
+  auto res2 = cli.Get("/static/if_range_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(206, res2->status);
+  EXPECT_EQ("01234", res2->body);
+  EXPECT_TRUE(res2->has_header("Content-Range"));
+
+  // Range request with non-matching If-Range (ETag): should get 200 (full
+  // content)
+  Headers h3 = {{"Range", "bytes=0-4"}, {"If-Range", "W/\"wrong-etag\""}};
+  auto res3 = cli.Get("/static/if_range_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(200, res3->status);
+  EXPECT_EQ(content, res3->body);
+  EXPECT_FALSE(res3->has_header("Content-Range"));
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
+TEST(ETagTest, IfRangeWithDate) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "if_range_date_testfile.txt";
+  const std::string content = "ABCDEFGHIJ0123456789"; // 20 bytes
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", 8091); });
+  svr.wait_until_ready();
+
+  Client cli("localhost", 8091);
+
+  // First request: get Last-Modified
+  auto res1 = cli.Get("/static/if_range_date_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("Last-Modified"));
+  std::string last_modified = res1->get_header_value("Last-Modified");
+
+  // Range request with matching If-Range (date): should get 206
+  Headers h2 = {{"Range", "bytes=5-9"}, {"If-Range", last_modified}};
+  auto res2 = cli.Get("/static/if_range_date_testfile.txt", h2);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(206, res2->status);
+  EXPECT_EQ("FGHIJ", res2->body);
+
+  // Range request with old If-Range date: should get 200 (full content)
+  Headers h3 = {{"Range", "bytes=5-9"},
+                {"If-Range", "Sun, 01 Jan 2000 00:00:00 GMT"}};
+  auto res3 = cli.Get("/static/if_range_date_testfile.txt", h3);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(200, res3->status);
+  EXPECT_EQ(content, res3->body);
+
+  // Range request with future If-Range date: should get 206
+  Headers h4 = {{"Range", "bytes=0-4"},
+                {"If-Range", "Sun, 01 Jan 2099 00:00:00 GMT"}};
+  auto res4 = cli.Get("/static/if_range_date_testfile.txt", h4);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(206, res4->status);
+  EXPECT_EQ("ABCDE", res4->body);
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
