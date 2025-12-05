@@ -2593,7 +2593,7 @@ struct FileStat {
   FileStat(const std::string &path);
   bool is_file() const;
   bool is_dir() const;
-  size_t mtime() const;
+  time_t mtime() const;
   size_t size() const;
 
 private:
