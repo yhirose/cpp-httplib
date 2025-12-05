@@ -3158,11 +3158,11 @@ inline bool FileStat::is_dir() const {
 }
 
 inline size_t FileStat::mtime() const {
-  return static_cast<size_t>(st_.st_mtime);
+  return ret_ >= 0 ? static_cast<size_t>(st_.st_mtime) : 0;
 }
 
 inline size_t FileStat::size() const {
-  return static_cast<size_t>(st_.st_size);
+  return ret_ >= 0 ? static_cast<size_t>(st_.st_size) : 0;
 }
 
 inline std::string encode_path(const std::string &s) {
