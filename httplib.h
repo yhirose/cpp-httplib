@@ -2976,8 +2976,8 @@ inline std::string from_i_to_hex(size_t n) {
 inline std::string compute_etag(const FileStat &fs) {
   if (!fs.is_file()) { return std::string(); }
 
-  size_t mtime = fs.mtime();
-  size_t size = fs.size();
+  auto mtime = static_cast<size_t>(fs.mtime());
+  auto size = fs.size();
 
   return std::string("W/\"") + from_i_to_hex(mtime) + "-" +
          from_i_to_hex(size) + "\"";
@@ -3161,8 +3161,8 @@ inline bool FileStat::is_dir() const {
   return ret_ >= 0 && S_ISDIR(st_.st_mode);
 }
 
-inline size_t FileStat::mtime() const {
-  return ret_ >= 0 ? static_cast<size_t>(st_.st_mtime) : 0;
+inline time_t FileStat::mtime() const {
+  return ret_ >= 0 ? static_cast<time_t>(st_.st_mtime) : 0;
 }
 
 inline size_t FileStat::size() const {
@@ -8373,6 +8373,12 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             if (!etag.empty()) {
               auto inm = req.get_header_value("If-None-Match");
               bool matched = false;
+              // NOTE: We use exact string matching here. This works correctly
+              // because our server always generates weak ETags (W/"..."), and
+              // clients typically send back the same ETag they received.
+              // RFC 9110 Section 8.8.3.2 allows weak comparison for
+              // If-None-Match, where W/"x" and "x" would match, but this
+              // simplified implementation requires exact matches.
               detail::split(inm.data(), inm.data() + inm.size(), ',',
                             [&](const char *b, const char *e) {
                               if (!matched) {
