@@ -3043,8 +3043,8 @@ inline bool is_weak_etag(const std::string &s) {
 }
 
 inline bool is_strong_etag(const std::string &s) {
-  // Check if the string is a strong ETag (starts with '"' but not 'W/"')
-  return !s.empty() && s[0] == '"';
+  // Check if the string is a strong ETag (starts and ends with '"', at least 2 chars)
+  return s.size() >= 2 && s[0] == '"' && s.back() == '"';
 }
 
 inline size_t to_utf8(int code, char *buff) {
