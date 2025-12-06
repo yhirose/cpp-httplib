@@ -7598,7 +7598,7 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 }
 
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
-  if (!wait_writable()) { return -1; }
+  if (!detail::is_socket_alive(sock_) || !wait_writable()) { return -1; }
 
 #if defined(_WIN32) && !defined(_WIN64)
   size =
@@ -10454,7 +10454,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                         Response &res, bool close_connection,
                                         Error &error) {
   // Send request
-  if (!write_request(strm, req, close_connection, error)) { return false; }
+  bool wrote = write_request(strm, req, close_connection, error);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if (is_ssl()) {
@@ -10476,6 +10476,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     output_error_log(error, &req);
     return false;
   }
+
+  if (!wrote) return false;
 
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&
