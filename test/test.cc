@@ -399,6 +399,38 @@ TEST(EncodeQueryParamTest, ParseReservedCharactersTest) {
             "%3B%2C%2F%3F%3A%40%26%3D%2B%24");
 }
 
+TEST(ClientQueryOrder, PreserveOrder) {
+  // This test reproduces Issue #2259: client may reorder query parameters
+  // when sending a GET request. The expected behavior is that the client
+  // preserves the original query string order when the caller supplied it
+  // as part of the path.
+  Server svr;
+  svr.Get("/", [&](const Request &req, Response &res) {
+    // Echo back the raw target so the test can assert ordering
+    res.set_content(req.target, "text/plain");
+  });
+
+  std::thread t{[&] { svr.listen(HOST, PORT); }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  ASSERT_TRUE(cli.is_valid());
+
+  const std::string original = "/?z=1&y=2&x=3&c=7&b=8&a=9";
+  auto res = cli.Get(original);
+  ASSERT_TRUE(res);
+
+  // Expect the echoed target to exactly match the original path (order
+  // preserved)
+  EXPECT_EQ(res->body, original);
+}
+
 TEST(EncodeQueryParamTest, TestUTF8Characters) {
   string chineseCharacters = u8"中国語";
   string russianCharacters = u8"дом";

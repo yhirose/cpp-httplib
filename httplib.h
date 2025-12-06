@@ -5717,6 +5717,38 @@ inline void parse_query_text(const std::string &s, Params &params) {
   parse_query_text(s.data(), s.size(), params);
 }
 
+// Normalize a query string by decoding and re-encoding each key/value pair
+// while preserving the original parameter order. This avoids double-encoding
+// and ensures consistent encoding without reordering (unlike Params which
+// uses std::multimap and sorts keys).
+inline std::string normalize_query_string(const std::string &query) {
+  std::string result;
+  split(query.data(), query.data() + query.size(), '&',
+        [&](const char *b, const char *e) {
+          std::string key;
+          std::string val;
+          divide(b, static_cast<std::size_t>(e - b), '=',
+                 [&](const char *lhs_data, std::size_t lhs_size,
+                     const char *rhs_data, std::size_t rhs_size) {
+                   key.assign(lhs_data, lhs_size);
+                   val.assign(rhs_data, rhs_size);
+                 });
+
+          if (!key.empty()) {
+            auto dec_key = decode_query_component(key);
+            auto dec_val = decode_query_component(val);
+
+            if (!result.empty()) { result += '&'; }
+            result += encode_query_component(dec_key);
+            if (!val.empty() || std::find(b, e, '=') != e) {
+              result += '=';
+              result += encode_query_component(dec_val);
+            }
+          }
+        });
+  return result;
+}
+
 inline bool parse_multipart_boundary(const std::string &content_type,
                                      std::string &boundary) {
   auto boundary_keyword = "boundary=";
@@ -10204,13 +10236,32 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       query_part = "";
     }
 
-    // Encode path and query
+    // Encode path part. If the original `req.path` already contained a
+    // query component, preserve its raw query string (including parameter
+    // order) instead of reparsing and reassembling it which may reorder
+    // parameters due to container ordering (e.g. `Params` uses
+    // `std::multimap`). When there is no query in `req.path`, fall back to
+    // building a query from `req.params` so existing callers that pass
+    // `Params` continue to work.
     auto path_with_query =
         path_encode_ ? detail::encode_path(path_part) : path_part;
 
-    detail::parse_query_text(query_part, req.params);
-    if (!req.params.empty()) {
-      path_with_query = append_query_params(path_with_query, req.params);
+    if (!query_part.empty()) {
+      // Normalize the query string (decode then re-encode) while preserving
+      // the original parameter order.
+      auto normalized = detail::normalize_query_string(query_part);
+      if (!normalized.empty()) { path_with_query += '?' + normalized; }
+
+      // Still populate req.params for handlers/users who read them.
+      detail::parse_query_text(query_part, req.params);
+    } else {
+      // No query in path; parse any query_part (empty) and append params
+      // from `req.params` when present (preserves prior behavior for
+      // callers who provide Params separately).
+      detail::parse_query_text(query_part, req.params);
+      if (!req.params.empty()) {
+        path_with_query = append_query_params(path_with_query, req.params);
+      }
     }
 
     // Write request line and headers
