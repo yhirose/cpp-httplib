@@ -1280,6 +1280,38 @@ Build C++ Modules
 
 If using CMake, it is possible to build this as a C++20 module using the `HTTPLIB_BUILD_MODULES` option (which requires `HTTPLIB_COMPILE` to be enabled).
 
+#### Server (Multi-threaded)
+```cpp
+import httplib;
+
+using httplib::Request;
+using httplib::Response;
+using httplib::SSLServer;
+
+SSLServer svr;
+
+svr.Get("/hi", []([[maybe_unused]] const Request&, Response& res) -> void {
+  res.set_content("Hello World!", "text/plain");
+});
+
+svr.listen("0.0.0.0", 8080);
+```
+
+#### Client
+```cpp
+import httplib;
+
+using httplib::Client;
+using httplib::Result
+
+Client cli("https://yhirose.github.io");
+
+if (Result res = cli.Get("/hi")) {
+  res->status;
+  res->body;
+}
+```
+
 Dockerfile for Static HTTP Server
 ---------------------------------
 
