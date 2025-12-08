@@ -1302,7 +1302,7 @@ svr.listen("0.0.0.0", 8080);
 import httplib;
 
 using httplib::Client;
-using httplib::Result
+using httplib::Result;
 
 Client cli("https://yhirose.github.io");
 
