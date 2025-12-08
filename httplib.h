@@ -7364,7 +7364,14 @@ inline Server::Server()
 #endif
 }
 
-inline Server::~Server() = default;
+inline Server::~Server()
+{
+  if (new_task_queue)
+  {
+    delete new_task_queue;
+    new_task_queue = nullptr;
+  }
+}
 
 inline std::unique_ptr<detail::MatcherBase>
 Server::make_matcher(const std::string &pattern) {
