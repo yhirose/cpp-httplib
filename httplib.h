@@ -4107,7 +4107,7 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
       } else if (ifa->ifa_addr->sa_family == AF_INET6) {
         auto sa = reinterpret_cast<struct sockaddr_in6 *>(ifa->ifa_addr);
         if (!IN6_IS_ADDR_LINKLOCAL(&sa->sin6_addr)) {
-          char buf[INET6_ADDRSTRLEN] = {};
+          char buf[INET6_ADDRSTRLEN] = {0};
           if (inet_ntop(AF_INET6, &sa->sin6_addr, buf, INET6_ADDRSTRLEN)) {
             // equivalent to mac's IN6_IS_ADDR_UNIQUE_LOCAL
             auto s6_addr_head = sa->sin6_addr.s6_addr[0];
@@ -4726,7 +4726,7 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
 }
 
 inline bool read_headers(Stream &strm, Headers &headers) {
-  const auto bufsiz = 2048;
+  const auto bufsiz = 20480;
   char buf[bufsiz];
   stream_line_reader line_reader(strm, buf, bufsiz);
 
