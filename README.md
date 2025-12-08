@@ -1275,6 +1275,11 @@ $ ./split.py
 Wrote out/httplib.h and out/httplib.cc
 ```
 
+Build C++ Modules
+-----------------
+
+If using CMake, it is possible to build this as a C++20 module using the `HTTPLIB_BUILD_MODULES` option (which requires `HTTPLIB_COMPILE` to be enabled).
+
 Dockerfile for Static HTTP Server
 ---------------------------------
 

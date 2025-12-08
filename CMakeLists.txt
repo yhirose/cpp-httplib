@@ -110,6 +110,7 @@ option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system cer
 option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
+option(HTTPLIB_BUILD_MODULES "Build httplib modules (requires HTTPLIB_COMPILE to be ON)." OFF)
 # Defaults to static library but respects standard BUILD_SHARED_LIBS if set
 include(CMakeDependentOption)
 cmake_dependent_option(HTTPLIB_SHARED "Build the library as a shared library instead of static. Has no effect if using header-only."
@@ -369,4 +370,11 @@ endif()
 if(HTTPLIB_TEST)
 	include(CTest)
 	add_subdirectory(test)
+endif()
+
+if(HTTPLIB_BUILD_MODULES)
+	if(NOT HTTPLIB_COMPILE)
+		message(FATAL_ERROR "HTTPLIB_BUILD_MODULES requires HTTPLIB_COMPILE to be ON.")
+	endif()
+	add_subdirectory(modules)
 endif()
