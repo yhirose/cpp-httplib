@@ -1290,7 +1290,7 @@ using httplib::SSLServer;
 
 SSLServer svr;
 
-svr.Get("/hi", []([[maybe_unused]] const Request&, Response& res) -> void {
+svr.Get("/hi", []([[maybe_unused]] const Request& req, Response& res) -> void {
   res.set_content("Hello World!", "text/plain");
 });
 
