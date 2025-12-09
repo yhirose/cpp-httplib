@@ -9206,7 +9206,8 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
     : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
-      host_and_port_(detail::make_host_and_port_string(host_, port, is_ssl())),
+      host_and_port_(
+          detail::make_host_and_port_string(host_, port, ClientImpl::is_ssl())),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
