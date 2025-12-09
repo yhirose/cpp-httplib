@@ -6835,7 +6835,7 @@ class ContentProviderAdapter {
 public:
   explicit ContentProviderAdapter(
       ContentProviderWithoutLength &&content_provider)
-      : content_provider_(content_provider) {}
+      : content_provider_(std::move(content_provider)) {}
 
   bool operator()(size_t offset, size_t, DataSink &sink) {
     return content_provider_(offset, sink);
