@@ -1371,7 +1371,7 @@ TEST_F(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 
 TEST(RangeTest, FromHTTPBin_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/range/32"};
 #else
   auto host = "nghttp2.org";
@@ -1473,7 +1473,7 @@ TEST(ConnectionErrorTest, InvalidHost) {
 }
 
 TEST(ConnectionErrorTest, InvalidHost2) {
-  auto host = "httpbin.org/";
+  auto host = "httpcan.org/";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
@@ -1488,7 +1488,7 @@ TEST(ConnectionErrorTest, InvalidHost2) {
 }
 
 TEST(ConnectionErrorTest, InvalidHostCheckResultErrorToString) {
-  auto host = "httpbin.org/";
+  auto host = "httpcan.org/";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   SSLClient cli(host);
@@ -1545,7 +1545,7 @@ TEST(ConnectionErrorTest, Timeout_Online) {
 
 TEST(CancelTest, NoCancel_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/range/32"};
 #else
   auto host = "nghttp2.org";
@@ -1569,7 +1569,7 @@ TEST(CancelTest, NoCancel_Online) {
 
 TEST(CancelTest, WithCancelSmallPayload_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/range/32"};
 #else
   auto host = "nghttp2.org";
@@ -1592,7 +1592,7 @@ TEST(CancelTest, WithCancelSmallPayload_Online) {
 
 TEST(CancelTest, WithCancelLargePayload_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/range/65536"};
 #else
   auto host = "nghttp2.org";
@@ -1941,7 +1941,7 @@ static std::string remove_whitespace(const std::string &input) {
 
 TEST(BaseAuthTest, FromHTTPWatch_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/basic-auth/hello/world"};
 #else
   auto host = "nghttp2.org";
@@ -1998,7 +1998,7 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(DigestAuthTest, FromHTTPWatch_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto unauth_path = std::string{"/digest-auth/auth/hello/world"};
   auto paths = std::vector<std::string>{
       "/digest-auth/auth/hello/world/MD5",
@@ -2044,14 +2044,12 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
       EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     }
 
-    // NOTE: Until httpbin.org fixes issue #46, the following test is commented
-    // out. Please see https://httpbin.org/digest-auth/auth/hello/world
-    // cli.set_digest_auth("bad", "world");
-    // for (const auto& path : paths) {
-    //   auto res = cli.Get(path.c_str());
-    //   ASSERT_TRUE(res);
-    //   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
-    // }
+    cli.set_digest_auth("bad", "world");
+    for (const auto &path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+    }
   }
 }
 #endif
@@ -7924,7 +7922,7 @@ TEST(GetWithParametersTest, GetWithParameters2) {
 
 TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/range/32"};
 #else
   auto host = "nghttp2.org";
@@ -8440,7 +8438,7 @@ TEST(SSLClientTest, UpdateCAStore) {
 
 TEST(SSLClientTest, ServerNameIndication_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpbin.org";
+  auto host = "httpcan.org";
   auto path = std::string{"/get"};
 #else
   auto host = "nghttp2.org";
@@ -8684,7 +8682,7 @@ TEST(SSLClientTest, Issue2251_ClientCertFileNotMatchingKey) {
 
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
-  auto cli = std::make_shared<httplib::Client>("https://httpbin.org");
+  auto cli = std::make_shared<httplib::Client>("https://httpcan.org");
   ASSERT_TRUE(cli != nullptr);
 
   cli->set_address_family(AF_INET6);

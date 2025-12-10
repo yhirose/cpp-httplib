@@ -1012,7 +1012,7 @@ cli.set_proxy_bearer_token_auth("pass");
 ### Range
 
 ```cpp
-httplib::Client cli("httpbin.org");
+httplib::Client cli("httpcan.org");
 
 auto res = cli.Get("/range/32", {
   httplib::make_range_header({{1, 10}}) // 'Range: bytes=1-10'
