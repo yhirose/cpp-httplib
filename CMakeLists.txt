@@ -11,6 +11,7 @@
 	* HTTPLIB_REQUIRE_ZSTD (default off)
 	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
 	* HTTPLIB_USE_NON_BLOCKING_GETADDRINFO (default on)
+	* HTTPLIB_USE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_SHARED (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
@@ -110,6 +111,7 @@ option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system cer
 option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
+option(HTTPLIB_USE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE "Enable automatic root certificates update on Windows." ON)
 # Defaults to static library but respects standard BUILD_SHARED_LIBS if set
 include(CMakeDependentOption)
 cmake_dependent_option(HTTPLIB_SHARED "Build the library as a shared library instead of static. Has no effect if using header-only."
@@ -296,6 +298,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
 	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
 	$<$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>
+	$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HTTPLIB_USE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE}>>>:CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE>
 )
 
 # CMake configuration files installation directory
