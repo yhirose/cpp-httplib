@@ -182,7 +182,6 @@ template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
         "/digest-auth/auth/hello/world/MD5",
         "/digest-auth/auth/hello/world/SHA-256",
         "/digest-auth/auth/hello/world/SHA-512",
-        // "/digest-auth/auth-int/hello/world/MD5",
     };
 
     cli.set_digest_auth("hello", "world");

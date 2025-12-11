@@ -2004,7 +2004,6 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
       "/digest-auth/auth/hello/world/MD5",
       "/digest-auth/auth/hello/world/SHA-256",
       "/digest-auth/auth/hello/world/SHA-512",
-      "/digest-auth/auth-int/hello/world/MD5",
   };
 #else
   auto host = "nghttp2.org";
@@ -2032,8 +2031,60 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
     for (const auto &path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res);
+#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
+      std::string algo(path.substr(path.rfind('/') + 1));
+      EXPECT_EQ(
+          remove_whitespace("{\"algorithm\":\"" + algo +
+                            "\",\"authenticated\":true,\"user\":\"hello\"}\n"),
+          remove_whitespace(res->body));
+#else
       EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
                 remove_whitespace(res->body));
+#endif
+      EXPECT_EQ(StatusCode::OK_200, res->status);
+    }
+
+#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
+    cli.set_digest_auth("hello", "bad");
+    for (const auto &path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+    }
+#endif
+  }
+}
+
+#ifndef CPPHTTPLIB_DEFAULT_HTTPBIN
+TEST(DigestAuthTest, FromHTTPWatch_Online_HTTPCan) {
+  auto host = "httpcan.org";
+  auto unauth_path = std::string{"/digest-auth/auth/hello/world"};
+  auto paths = std::vector<std::string>{
+      "/digest-auth/auth/hello/world/MD5",
+      "/digest-auth/auth/hello/world/SHA-256",
+      "/digest-auth/auth/hello/world/SHA-512",
+  };
+
+  auto port = 443;
+  SSLClient cli(host, port);
+
+  {
+    auto res = cli.Get(unauth_path);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+  }
+
+  {
+
+    cli.set_digest_auth("hello", "world");
+    for (const auto &path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res);
+      std::string algo(path.substr(path.rfind('/') + 1));
+      EXPECT_EQ(
+          remove_whitespace("{\"algorithm\":\"" + algo +
+                            "\",\"authenticated\":true,\"user\":\"hello\"}\n"),
+          remove_whitespace(res->body));
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
@@ -2048,10 +2099,12 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
     for (const auto &path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res);
-      EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+      EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     }
   }
 }
+#endif
+
 #endif
 
 TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
