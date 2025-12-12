@@ -29,6 +29,7 @@ jobs:
         git
         libbrotli-dev
         libssl-dev
+        libzstd-dev
         meson
         pkg-config
         python3
