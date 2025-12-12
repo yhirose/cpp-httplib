@@ -153,13 +153,13 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
 }
 
 TEST(BaseAuthTest, NoSSL) {
-  Client cli("httpbin.org");
+  Client cli("httpcan.org");
   BaseAuthTestFromHTTPWatch(cli);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(BaseAuthTest, SSL) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("httpcan.org");
   BaseAuthTestFromHTTPWatch(cli);
 }
 #endif
@@ -182,15 +182,17 @@ template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
         "/digest-auth/auth/hello/world/MD5",
         "/digest-auth/auth/hello/world/SHA-256",
         "/digest-auth/auth/hello/world/SHA-512",
-        "/digest-auth/auth-int/hello/world/MD5",
     };
 
     cli.set_digest_auth("hello", "world");
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
-                normalizeJson(res->body));
+      std::string algo(path.substr(path.rfind('/') + 1));
+      EXPECT_EQ(
+          normalizeJson("{\"algorithm\":\"" + algo +
+                        "\",\"authenticated\":true,\"user\":\"hello\"}\n"),
+          normalizeJson(res->body));
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
@@ -201,24 +203,22 @@ template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
       EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     }
 
-    // NOTE: Until httpbin.org fixes issue #46, the following test is commented
-    // out. Please see https://httpbin.org/digest-auth/auth/hello/world
-    // cli.set_digest_auth("bad", "world");
-    // for (auto path : paths) {
-    //   auto res = cli.Get(path.c_str());
-    //   ASSERT_TRUE(res != nullptr);
-    //   EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
-    // }
+    cli.set_digest_auth("bad", "world");
+    for (auto path : paths) {
+      auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res != nullptr);
+      EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+    }
   }
 }
 
 TEST(DigestAuthTest, SSL) {
-  SSLClient cli("httpbin.org");
+  SSLClient cli("httpcan.org");
   DigestAuthTestFromHTTPWatch(cli);
 }
 
 TEST(DigestAuthTest, NoSSL) {
-  Client cli("httpbin.org");
+  Client cli("httpcan.org");
   DigestAuthTestFromHTTPWatch(cli);
 }
 #endif
