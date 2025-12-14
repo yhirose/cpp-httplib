@@ -5,6 +5,7 @@
 option('openssl', type: 'feature', value: 'auto', description: 'Enable OpenSSL support')
 option('zlib',    type: 'feature', value: 'auto', description: 'Enable zlib support')
 option('brotli',  type: 'feature', value: 'auto', description: 'Enable Brotli support')
+option('zstd',    type: 'feature', value: 'auto', description: 'Enable zstd support')
 option('macosx_keychain', type: 'feature', value: 'auto', description: 'Enable loading certs from the Keychain on Apple devices')
 option('non_blocking_getaddrinfo', type: 'feature', value: 'auto', description: 'Enable asynchronous name lookup')
 option('compile', type: 'boolean', value: false,  description: 'Split the header into a compilable header & source file (requires python3)')

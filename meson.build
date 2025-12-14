@@ -74,6 +74,12 @@ if brotli_found_all
   args += '-DCPPHTTPLIB_BROTLI_SUPPORT'
 endif
 
+zstd_dep = dependency('libzstd', required: get_option('zstd'))
+if zstd_dep.found()
+  deps += zstd_dep
+  args += '-DCPPHTTPLIB_ZSTD_SUPPORT'
+endif
+
 async_ns_opt = get_option('non_blocking_getaddrinfo')
 
 if host_machine.system() == 'windows'
