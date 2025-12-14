@@ -5941,7 +5941,7 @@ inline bool parse_accept_header(const std::string &s,
       return;
     }
 
-    entries.push_back(accept_entry);
+    entries.push_back(std::move(accept_entry));
   });
 
   // Return false if any invalid entry was found
@@ -5958,8 +5958,8 @@ inline bool parse_accept_header(const std::string &s,
 
   // Extract sorted media types
   content_types.reserve(entries.size());
-  for (const auto &entry : entries) {
-    content_types.push_back(entry.media_type);
+  for (auto &entry : entries) {
+    content_types.push_back(std::move(entry.media_type));
   }
 
   return true;
