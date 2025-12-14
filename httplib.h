@@ -6822,7 +6822,7 @@ inline bool parse_www_authenticate(const Response &res,
                                     static_cast<size_t>(m.length(2)))
                          : s.substr(static_cast<size_t>(m.position(3)),
                                     static_cast<size_t>(m.length(3)));
-          auth[key] = val;
+          auth[std::move(key)] = std::move(val);
         }
         return true;
       }
