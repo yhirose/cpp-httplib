@@ -1206,8 +1206,8 @@ std::string decoded_component = httplib::decode_uri_component(encoded_component)
 
 Use `encode_uri()` for full URLs and `encode_uri_component()` for individual query parameters or path segments.
 
-Streaming API
--------------
+Stream API
+----------
 
 Process large responses without loading everything into memory.
 
@@ -1233,6 +1233,28 @@ if (result2) {
 All HTTP methods are supported: `stream::Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`.
 
 See [README-stream.md](README-stream.md) for more details.
+
+SSE Client
+----------
+
+```cpp
+#include <httplib.h>
+
+int main() {
+    httplib::Client cli("http://localhost:8080");
+    httplib::sse::SSEClient sse(cli, "/events");
+
+    sse.on_message([](const httplib::sse::SSEMessage &msg) {
+        std::cout << "Event: " << msg.event << std::endl;
+        std::cout << "Data: " << msg.data << std::endl;
+    });
+
+    sse.start();  // Blocking, with auto-reconnect
+    return 0;
+}
+```
+
+See [README-sse.md](README-sse.md) for more details.
 
 Split httplib.h into .h and .cc
 -------------------------------

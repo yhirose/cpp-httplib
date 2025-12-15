@@ -2756,6 +2756,656 @@ bool is_field_value(const std::string &s);
 
 } // namespace detail
 
+namespace stream {
+
+class Result {
+public:
+  Result() : chunk_size_(8192) {}
+
+  explicit Result(ClientImpl::StreamHandle &&handle, size_t chunk_size = 8192)
+      : handle_(std::move(handle)), chunk_size_(chunk_size) {}
+
+  Result(Result &&other) noexcept
+      : handle_(std::move(other.handle_)), buffer_(std::move(other.buffer_)),
+        current_size_(other.current_size_), chunk_size_(other.chunk_size_),
+        finished_(other.finished_) {
+    other.current_size_ = 0;
+    other.finished_ = true;
+  }
+
+  Result &operator=(Result &&other) noexcept {
+    if (this != &other) {
+      handle_ = std::move(other.handle_);
+      buffer_ = std::move(other.buffer_);
+      current_size_ = other.current_size_;
+      chunk_size_ = other.chunk_size_;
+      finished_ = other.finished_;
+      other.current_size_ = 0;
+      other.finished_ = true;
+    }
+    return *this;
+  }
+
+  Result(const Result &) = delete;
+  Result &operator=(const Result &) = delete;
+
+  // Check if the result is valid (connection succeeded and response received)
+  bool is_valid() const { return handle_.is_valid(); }
+  explicit operator bool() const { return is_valid(); }
+
+  // Response status code
+  int status() const {
+    return handle_.response ? handle_.response->status : -1;
+  }
+
+  // Response headers
+  const Headers &headers() const {
+    static const Headers empty_headers;
+    return handle_.response ? handle_.response->headers : empty_headers;
+  }
+
+  std::string get_header_value(const std::string &key,
+                               const char *def = "") const {
+    return handle_.response ? handle_.response->get_header_value(key, def)
+                            : def;
+  }
+
+  bool has_header(const std::string &key) const {
+    return handle_.response ? handle_.response->has_header(key) : false;
+  }
+
+  // Error information
+  Error error() const { return handle_.error; }
+  Error read_error() const { return handle_.get_read_error(); }
+  bool has_read_error() const { return handle_.has_read_error(); }
+
+  // Streaming iteration API
+  // Call next() to read the next chunk, then access data via data()/size()
+  // Returns true if data was read, false when stream is exhausted
+  bool next() {
+    if (!handle_.is_valid() || finished_) { return false; }
+
+    if (buffer_.size() < chunk_size_) { buffer_.resize(chunk_size_); }
+
+    ssize_t n = handle_.read(&buffer_[0], chunk_size_);
+    if (n > 0) {
+      current_size_ = static_cast<size_t>(n);
+      return true;
+    }
+
+    current_size_ = 0;
+    finished_ = true;
+    return false;
+  }
+
+  // Pointer to current chunk data (valid after next() returns true)
+  const char *data() const { return buffer_.data(); }
+
+  // Size of current chunk (valid after next() returns true)
+  size_t size() const { return current_size_; }
+
+  // Convenience method: read all remaining data into a string
+  std::string read_all() {
+    std::string result;
+    while (next()) {
+      result.append(data(), size());
+    }
+    return result;
+  }
+
+private:
+  ClientImpl::StreamHandle handle_;
+  std::string buffer_;
+  size_t current_size_ = 0;
+  size_t chunk_size_;
+  bool finished_ = false;
+};
+
+// GET
+template <typename ClientType>
+inline Result Get(ClientType &cli, const std::string &path,
+                  size_t chunk_size = 8192) {
+  return Result{cli.open_stream("GET", path), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Get(ClientType &cli, const std::string &path,
+                  const Headers &headers, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("GET", path, {}, headers), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Get(ClientType &cli, const std::string &path,
+                  const Params &params, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("GET", path, params), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Get(ClientType &cli, const std::string &path,
+                  const Params &params, const Headers &headers,
+                  size_t chunk_size = 8192) {
+  return Result{cli.open_stream("GET", path, params, headers), chunk_size};
+}
+
+// POST
+template <typename ClientType>
+inline Result Post(ClientType &cli, const std::string &path,
+                   const std::string &body, const std::string &content_type,
+                   size_t chunk_size = 8192) {
+  return Result{cli.open_stream("POST", path, {}, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Post(ClientType &cli, const std::string &path,
+                   const Headers &headers, const std::string &body,
+                   const std::string &content_type, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("POST", path, {}, headers, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Post(ClientType &cli, const std::string &path,
+                   const Params &params, const std::string &body,
+                   const std::string &content_type, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("POST", path, params, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Post(ClientType &cli, const std::string &path,
+                   const Params &params, const Headers &headers,
+                   const std::string &body, const std::string &content_type,
+                   size_t chunk_size = 8192) {
+  return Result{
+      cli.open_stream("POST", path, params, headers, body, content_type),
+      chunk_size};
+}
+
+// PUT
+template <typename ClientType>
+inline Result Put(ClientType &cli, const std::string &path,
+                  const std::string &body, const std::string &content_type,
+                  size_t chunk_size = 8192) {
+  return Result{cli.open_stream("PUT", path, {}, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Put(ClientType &cli, const std::string &path,
+                  const Headers &headers, const std::string &body,
+                  const std::string &content_type, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("PUT", path, {}, headers, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Put(ClientType &cli, const std::string &path,
+                  const Params &params, const std::string &body,
+                  const std::string &content_type, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("PUT", path, params, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Put(ClientType &cli, const std::string &path,
+                  const Params &params, const Headers &headers,
+                  const std::string &body, const std::string &content_type,
+                  size_t chunk_size = 8192) {
+  return Result{
+      cli.open_stream("PUT", path, params, headers, body, content_type),
+      chunk_size};
+}
+
+// PATCH
+template <typename ClientType>
+inline Result Patch(ClientType &cli, const std::string &path,
+                    const std::string &body, const std::string &content_type,
+                    size_t chunk_size = 8192) {
+  return Result{cli.open_stream("PATCH", path, {}, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Patch(ClientType &cli, const std::string &path,
+                    const Headers &headers, const std::string &body,
+                    const std::string &content_type, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("PATCH", path, {}, headers, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Patch(ClientType &cli, const std::string &path,
+                    const Params &params, const std::string &body,
+                    const std::string &content_type, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("PATCH", path, params, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Patch(ClientType &cli, const std::string &path,
+                    const Params &params, const Headers &headers,
+                    const std::string &body, const std::string &content_type,
+                    size_t chunk_size = 8192) {
+  return Result{
+      cli.open_stream("PATCH", path, params, headers, body, content_type),
+      chunk_size};
+}
+
+// DELETE
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     size_t chunk_size = 8192) {
+  return Result{cli.open_stream("DELETE", path), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const Headers &headers, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("DELETE", path, {}, headers), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const std::string &body, const std::string &content_type,
+                     size_t chunk_size = 8192) {
+  return Result{cli.open_stream("DELETE", path, {}, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const Headers &headers, const std::string &body,
+                     const std::string &content_type,
+                     size_t chunk_size = 8192) {
+  return Result{
+      cli.open_stream("DELETE", path, {}, headers, body, content_type),
+      chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const Params &params, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("DELETE", path, params), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const Params &params, const Headers &headers,
+                     size_t chunk_size = 8192) {
+  return Result{cli.open_stream("DELETE", path, params, headers), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const Params &params, const std::string &body,
+                     const std::string &content_type,
+                     size_t chunk_size = 8192) {
+  return Result{cli.open_stream("DELETE", path, params, {}, body, content_type),
+                chunk_size};
+}
+
+template <typename ClientType>
+inline Result Delete(ClientType &cli, const std::string &path,
+                     const Params &params, const Headers &headers,
+                     const std::string &body, const std::string &content_type,
+                     size_t chunk_size = 8192) {
+  return Result{
+      cli.open_stream("DELETE", path, params, headers, body, content_type),
+      chunk_size};
+}
+
+// HEAD
+template <typename ClientType>
+inline Result Head(ClientType &cli, const std::string &path,
+                   size_t chunk_size = 8192) {
+  return Result{cli.open_stream("HEAD", path), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Head(ClientType &cli, const std::string &path,
+                   const Headers &headers, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("HEAD", path, {}, headers), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Head(ClientType &cli, const std::string &path,
+                   const Params &params, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("HEAD", path, params), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Head(ClientType &cli, const std::string &path,
+                   const Params &params, const Headers &headers,
+                   size_t chunk_size = 8192) {
+  return Result{cli.open_stream("HEAD", path, params, headers), chunk_size};
+}
+
+// OPTIONS
+template <typename ClientType>
+inline Result Options(ClientType &cli, const std::string &path,
+                      size_t chunk_size = 8192) {
+  return Result{cli.open_stream("OPTIONS", path), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Options(ClientType &cli, const std::string &path,
+                      const Headers &headers, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("OPTIONS", path, {}, headers), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Options(ClientType &cli, const std::string &path,
+                      const Params &params, size_t chunk_size = 8192) {
+  return Result{cli.open_stream("OPTIONS", path, params), chunk_size};
+}
+
+template <typename ClientType>
+inline Result Options(ClientType &cli, const std::string &path,
+                      const Params &params, const Headers &headers,
+                      size_t chunk_size = 8192) {
+  return Result{cli.open_stream("OPTIONS", path, params, headers), chunk_size};
+}
+
+} // namespace stream
+
+namespace sse {
+
+struct SSEMessage {
+  std::string event; // Event type (default: "message")
+  std::string data;  // Event payload
+  std::string id;    // Event ID for Last-Event-ID header
+
+  SSEMessage() : event("message") {}
+
+  void clear() {
+    event = "message";
+    data.clear();
+    id.clear();
+  }
+};
+
+class SSEClient {
+public:
+  using MessageHandler = std::function<void(const SSEMessage &)>;
+  using ErrorHandler = std::function<void(Error)>;
+  using OpenHandler = std::function<void()>;
+
+  SSEClient(Client &client, const std::string &path)
+      : client_(client), path_(path) {}
+
+  SSEClient(Client &client, const std::string &path, const Headers &headers)
+      : client_(client), path_(path), headers_(headers) {}
+
+  ~SSEClient() { stop(); }
+
+  SSEClient(const SSEClient &) = delete;
+  SSEClient &operator=(const SSEClient &) = delete;
+
+  // Event handlers
+  SSEClient &on_message(MessageHandler handler) {
+    on_message_ = std::move(handler);
+    return *this;
+  }
+
+  SSEClient &on_event(const std::string &type, MessageHandler handler) {
+    event_handlers_[type] = std::move(handler);
+    return *this;
+  }
+
+  SSEClient &on_open(OpenHandler handler) {
+    on_open_ = std::move(handler);
+    return *this;
+  }
+
+  SSEClient &on_error(ErrorHandler handler) {
+    on_error_ = std::move(handler);
+    return *this;
+  }
+
+  SSEClient &set_reconnect_interval(int ms) {
+    reconnect_interval_ms_ = ms;
+    return *this;
+  }
+
+  SSEClient &set_max_reconnect_attempts(int n) {
+    max_reconnect_attempts_ = n;
+    return *this;
+  }
+
+  // State accessors
+  bool is_connected() const { return connected_.load(); }
+  const std::string &last_event_id() const { return last_event_id_; }
+
+  // Blocking start - runs event loop with auto-reconnect
+  void start() {
+    running_.store(true);
+    run_event_loop();
+  }
+
+  // Non-blocking start - runs in background thread
+  void start_async() {
+    running_.store(true);
+    async_thread_ = std::thread([this]() { run_event_loop(); });
+  }
+
+  // Stop the client (thread-safe)
+  void stop() {
+    running_.store(false);
+    client_.stop(); // Cancel any pending operations
+    if (async_thread_.joinable()) { async_thread_.join(); }
+  }
+
+private:
+  // Parse a single SSE field line
+  // Returns true if this line ends an event (blank line)
+  bool parse_sse_line(const std::string &line, SSEMessage &msg, int &retry_ms) {
+    // Blank line signals end of event
+    if (line.empty() || line == "\r") { return true; }
+
+    // Lines starting with ':' are comments (ignored)
+    if (!line.empty() && line[0] == ':') { return false; }
+
+    // Find the colon separator
+    auto colon_pos = line.find(':');
+    if (colon_pos == std::string::npos) {
+      // Line with no colon is treated as field name with empty value
+      return false;
+    }
+
+    auto field = line.substr(0, colon_pos);
+    std::string value;
+
+    // Value starts after colon, skip optional single space
+    if (colon_pos + 1 < line.size()) {
+      auto value_start = colon_pos + 1;
+      if (line[value_start] == ' ') { value_start++; }
+      value = line.substr(value_start);
+      // Remove trailing \r if present
+      if (!value.empty() && value.back() == '\r') { value.pop_back(); }
+    }
+
+    // Handle known fields
+    if (field == "event") {
+      msg.event = value;
+    } else if (field == "data") {
+      // Multiple data lines are concatenated with newlines
+      if (!msg.data.empty()) { msg.data += "\n"; }
+      msg.data += value;
+    } else if (field == "id") {
+      // Empty id is valid (clears the last event ID)
+      msg.id = value;
+    } else if (field == "retry") {
+      // Parse retry interval in milliseconds
+      try {
+        retry_ms = std::stoi(value);
+      } catch (...) {
+        // Invalid retry value, ignore
+      }
+    }
+    // Unknown fields are ignored per SSE spec
+
+    return false;
+  }
+
+  // Main event loop with auto-reconnect
+  void run_event_loop() {
+    auto reconnect_count = 0;
+
+    while (running_.load()) {
+      // Build headers, including Last-Event-ID if we have one
+      auto request_headers = headers_;
+      if (!last_event_id_.empty()) {
+        request_headers.emplace("Last-Event-ID", last_event_id_);
+      }
+
+      // Open streaming connection
+      auto result = stream::Get(client_, path_, request_headers);
+
+      // Connection error handling
+      if (!result) {
+        connected_.store(false);
+        if (on_error_) { on_error_(result.error()); }
+
+        if (!should_reconnect(reconnect_count)) { break; }
+        wait_for_reconnect();
+        reconnect_count++;
+        continue;
+      }
+
+      if (result.status() != 200) {
+        connected_.store(false);
+        // For certain errors, don't reconnect
+        if (result.status() == 204 || // No Content - server wants us to stop
+            result.status() == 404 || // Not Found
+            result.status() == 401 || // Unauthorized
+            result.status() == 403) { // Forbidden
+          if (on_error_) { on_error_(Error::Connection); }
+          break;
+        }
+
+        if (on_error_) { on_error_(Error::Connection); }
+
+        if (!should_reconnect(reconnect_count)) { break; }
+        wait_for_reconnect();
+        reconnect_count++;
+        continue;
+      }
+
+      // Connection successful
+      connected_.store(true);
+      reconnect_count = 0;
+      if (on_open_) { on_open_(); }
+
+      // Event receiving loop
+      std::string buffer;
+      SSEMessage current_msg;
+
+      while (running_.load() && result.next()) {
+        buffer.append(result.data(), result.size());
+
+        // Process complete lines in the buffer
+        size_t line_start = 0;
+        size_t newline_pos;
+
+        while ((newline_pos = buffer.find('\n', line_start)) !=
+               std::string::npos) {
+          auto line = buffer.substr(line_start, newline_pos - line_start);
+          line_start = newline_pos + 1;
+
+          // Parse the line and check if event is complete
+          auto event_complete =
+              parse_sse_line(line, current_msg, reconnect_interval_ms_);
+
+          if (event_complete && !current_msg.data.empty()) {
+            // Update last_event_id for reconnection
+            if (!current_msg.id.empty()) { last_event_id_ = current_msg.id; }
+
+            // Dispatch event to appropriate handler
+            dispatch_event(current_msg);
+
+            current_msg.clear();
+          }
+        }
+
+        // Keep unprocessed data in buffer
+        buffer.erase(0, line_start);
+      }
+
+      // Connection ended
+      connected_.store(false);
+
+      if (!running_.load()) { break; }
+
+      // Check for read errors
+      if (result.has_read_error()) {
+        if (on_error_) { on_error_(result.read_error()); }
+      }
+
+      if (!should_reconnect(reconnect_count)) { break; }
+      wait_for_reconnect();
+      reconnect_count++;
+    }
+
+    connected_.store(false);
+  }
+
+  // Dispatch event to appropriate handler
+  void dispatch_event(const SSEMessage &msg) {
+    // Check for specific event type handler first
+    auto it = event_handlers_.find(msg.event);
+    if (it != event_handlers_.end()) {
+      it->second(msg);
+      return;
+    }
+
+    // Fall back to generic message handler
+    if (on_message_) { on_message_(msg); }
+  }
+
+  // Check if we should attempt to reconnect
+  bool should_reconnect(int count) const {
+    if (!running_.load()) { return false; }
+    if (max_reconnect_attempts_ == 0) { return true; } // unlimited
+    return count < max_reconnect_attempts_;
+  }
+
+  // Wait for reconnect interval
+  void wait_for_reconnect() {
+    // Use small increments to check running_ flag frequently
+    auto waited = 0;
+    while (running_.load() && waited < reconnect_interval_ms_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      waited += 100;
+    }
+  }
+
+  // Client and path
+  Client &client_;
+  std::string path_;
+  Headers headers_;
+
+  // Callbacks
+  MessageHandler on_message_;
+  std::map<std::string, MessageHandler> event_handlers_;
+  OpenHandler on_open_;
+  ErrorHandler on_error_;
+
+  // Configuration
+  int reconnect_interval_ms_ = 3000;
+  int max_reconnect_attempts_ = 0; // 0 = unlimited
+
+  // State
+  std::atomic<bool> running_{false};
+  std::atomic<bool> connected_{false};
+  std::string last_event_id_;
+
+  // Async support
+  std::thread async_thread_;
+};
+
+} // namespace sse
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -13249,375 +13899,6 @@ inline SSL_CTX *Client::ssl_context() const {
 
 // ----------------------------------------------------------------------------
 
-/*
- * C++11/14/17 Streaming API
- *
- * This section provides iterator-style streaming functionality for C++11/14/17.
- * For C++20 and later, a coroutine-based API with range-for syntax is
- * available.
- *
- * Usage:
- *   httplib::Client cli("example.com");
- *   auto result = httplib::stream::Get(cli, "/large-file");
- *   if (result) {
- *     while (result.next()) {
- *       process(result.data(), result.size());
- *     }
- *   }
- */
-
-namespace stream {
-
-class Result {
-public:
-  Result() : chunk_size_(8192) {}
-
-  explicit Result(ClientImpl::StreamHandle &&handle, size_t chunk_size = 8192)
-      : handle_(std::move(handle)), chunk_size_(chunk_size) {}
-
-  Result(Result &&other) noexcept
-      : handle_(std::move(other.handle_)), buffer_(std::move(other.buffer_)),
-        current_size_(other.current_size_), chunk_size_(other.chunk_size_),
-        finished_(other.finished_) {
-    other.current_size_ = 0;
-    other.finished_ = true;
-  }
-
-  Result &operator=(Result &&other) noexcept {
-    if (this != &other) {
-      handle_ = std::move(other.handle_);
-      buffer_ = std::move(other.buffer_);
-      current_size_ = other.current_size_;
-      chunk_size_ = other.chunk_size_;
-      finished_ = other.finished_;
-      other.current_size_ = 0;
-      other.finished_ = true;
-    }
-    return *this;
-  }
-
-  Result(const Result &) = delete;
-  Result &operator=(const Result &) = delete;
-
-  // Check if the result is valid (connection succeeded and response received)
-  bool is_valid() const { return handle_.is_valid(); }
-  explicit operator bool() const { return is_valid(); }
-
-  // Response status code
-  int status() const {
-    return handle_.response ? handle_.response->status : -1;
-  }
-
-  // Response headers
-  const Headers &headers() const {
-    static const Headers empty_headers;
-    return handle_.response ? handle_.response->headers : empty_headers;
-  }
-
-  std::string get_header_value(const std::string &key,
-                               const char *def = "") const {
-    return handle_.response ? handle_.response->get_header_value(key, def)
-                            : def;
-  }
-
-  bool has_header(const std::string &key) const {
-    return handle_.response ? handle_.response->has_header(key) : false;
-  }
-
-  // Error information
-  Error error() const { return handle_.error; }
-  Error read_error() const { return handle_.get_read_error(); }
-  bool has_read_error() const { return handle_.has_read_error(); }
-
-  // Streaming iteration API
-  // Call next() to read the next chunk, then access data via data()/size()
-  // Returns true if data was read, false when stream is exhausted
-  bool next() {
-    if (!handle_.is_valid() || finished_) { return false; }
-
-    if (buffer_.size() < chunk_size_) { buffer_.resize(chunk_size_); }
-
-    ssize_t n = handle_.read(&buffer_[0], chunk_size_);
-    if (n > 0) {
-      current_size_ = static_cast<size_t>(n);
-      return true;
-    }
-
-    current_size_ = 0;
-    finished_ = true;
-    return false;
-  }
-
-  // Pointer to current chunk data (valid after next() returns true)
-  const char *data() const { return buffer_.data(); }
-
-  // Size of current chunk (valid after next() returns true)
-  size_t size() const { return current_size_; }
-
-  // Convenience method: read all remaining data into a string
-  std::string read_all() {
-    std::string result;
-    while (next()) {
-      result.append(data(), size());
-    }
-    return result;
-  }
-
-private:
-  ClientImpl::StreamHandle handle_;
-  std::string buffer_;
-  size_t current_size_ = 0;
-  size_t chunk_size_;
-  bool finished_ = false;
-};
-
-// GET
-template <typename ClientType>
-inline Result Get(ClientType &cli, const std::string &path,
-                  size_t chunk_size = 8192) {
-  return Result{cli.open_stream("GET", path), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Get(ClientType &cli, const std::string &path,
-                  const Headers &headers, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("GET", path, {}, headers), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Get(ClientType &cli, const std::string &path,
-                  const Params &params, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("GET", path, params), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Get(ClientType &cli, const std::string &path,
-                  const Params &params, const Headers &headers,
-                  size_t chunk_size = 8192) {
-  return Result{cli.open_stream("GET", path, params, headers), chunk_size};
-}
-
-// POST
-template <typename ClientType>
-inline Result Post(ClientType &cli, const std::string &path,
-                   const std::string &body, const std::string &content_type,
-                   size_t chunk_size = 8192) {
-  return Result{cli.open_stream("POST", path, {}, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Post(ClientType &cli, const std::string &path,
-                   const Headers &headers, const std::string &body,
-                   const std::string &content_type, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("POST", path, {}, headers, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Post(ClientType &cli, const std::string &path,
-                   const Params &params, const std::string &body,
-                   const std::string &content_type, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("POST", path, params, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Post(ClientType &cli, const std::string &path,
-                   const Params &params, const Headers &headers,
-                   const std::string &body, const std::string &content_type,
-                   size_t chunk_size = 8192) {
-  return Result{
-      cli.open_stream("POST", path, params, headers, body, content_type),
-      chunk_size};
-}
-
-// PUT
-template <typename ClientType>
-inline Result Put(ClientType &cli, const std::string &path,
-                  const std::string &body, const std::string &content_type,
-                  size_t chunk_size = 8192) {
-  return Result{cli.open_stream("PUT", path, {}, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Put(ClientType &cli, const std::string &path,
-                  const Headers &headers, const std::string &body,
-                  const std::string &content_type, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("PUT", path, {}, headers, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Put(ClientType &cli, const std::string &path,
-                  const Params &params, const std::string &body,
-                  const std::string &content_type, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("PUT", path, params, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Put(ClientType &cli, const std::string &path,
-                  const Params &params, const Headers &headers,
-                  const std::string &body, const std::string &content_type,
-                  size_t chunk_size = 8192) {
-  return Result{
-      cli.open_stream("PUT", path, params, headers, body, content_type),
-      chunk_size};
-}
-
-// PATCH
-template <typename ClientType>
-inline Result Patch(ClientType &cli, const std::string &path,
-                    const std::string &body, const std::string &content_type,
-                    size_t chunk_size = 8192) {
-  return Result{cli.open_stream("PATCH", path, {}, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Patch(ClientType &cli, const std::string &path,
-                    const Headers &headers, const std::string &body,
-                    const std::string &content_type, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("PATCH", path, {}, headers, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Patch(ClientType &cli, const std::string &path,
-                    const Params &params, const std::string &body,
-                    const std::string &content_type, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("PATCH", path, params, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Patch(ClientType &cli, const std::string &path,
-                    const Params &params, const Headers &headers,
-                    const std::string &body, const std::string &content_type,
-                    size_t chunk_size = 8192) {
-  return Result{
-      cli.open_stream("PATCH", path, params, headers, body, content_type),
-      chunk_size};
-}
-
-// DELETE
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     size_t chunk_size = 8192) {
-  return Result{cli.open_stream("DELETE", path), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const Headers &headers, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("DELETE", path, {}, headers), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const std::string &body, const std::string &content_type,
-                     size_t chunk_size = 8192) {
-  return Result{cli.open_stream("DELETE", path, {}, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const Headers &headers, const std::string &body,
-                     const std::string &content_type,
-                     size_t chunk_size = 8192) {
-  return Result{
-      cli.open_stream("DELETE", path, {}, headers, body, content_type),
-      chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const Params &params, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("DELETE", path, params), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const Params &params, const Headers &headers,
-                     size_t chunk_size = 8192) {
-  return Result{cli.open_stream("DELETE", path, params, headers), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const Params &params, const std::string &body,
-                     const std::string &content_type,
-                     size_t chunk_size = 8192) {
-  return Result{cli.open_stream("DELETE", path, params, {}, body, content_type),
-                chunk_size};
-}
-
-template <typename ClientType>
-inline Result Delete(ClientType &cli, const std::string &path,
-                     const Params &params, const Headers &headers,
-                     const std::string &body, const std::string &content_type,
-                     size_t chunk_size = 8192) {
-  return Result{
-      cli.open_stream("DELETE", path, params, headers, body, content_type),
-      chunk_size};
-}
-
-// HEAD
-template <typename ClientType>
-inline Result Head(ClientType &cli, const std::string &path,
-                   size_t chunk_size = 8192) {
-  return Result{cli.open_stream("HEAD", path), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Head(ClientType &cli, const std::string &path,
-                   const Headers &headers, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("HEAD", path, {}, headers), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Head(ClientType &cli, const std::string &path,
-                   const Params &params, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("HEAD", path, params), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Head(ClientType &cli, const std::string &path,
-                   const Params &params, const Headers &headers,
-                   size_t chunk_size = 8192) {
-  return Result{cli.open_stream("HEAD", path, params, headers), chunk_size};
-}
-
-// OPTIONS
-template <typename ClientType>
-inline Result Options(ClientType &cli, const std::string &path,
-                      size_t chunk_size = 8192) {
-  return Result{cli.open_stream("OPTIONS", path), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Options(ClientType &cli, const std::string &path,
-                      const Headers &headers, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("OPTIONS", path, {}, headers), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Options(ClientType &cli, const std::string &path,
-                      const Params &params, size_t chunk_size = 8192) {
-  return Result{cli.open_stream("OPTIONS", path, params), chunk_size};
-}
-
-template <typename ClientType>
-inline Result Options(ClientType &cli, const std::string &path,
-                      const Params &params, const Headers &headers,
-                      size_t chunk_size = 8192) {
-  return Result{cli.open_stream("OPTIONS", path, params, headers), chunk_size};
-}
-
-} // namespace stream
 } // namespace httplib
 
 #endif // CPPHTTPLIB_HTTPLIB_H
