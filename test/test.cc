@@ -13845,7 +13845,12 @@ TEST_F(SSEIntegrationTest, MaxReconnectAttempts) {
   // Should not have taken too long (max 2 attempts * 50ms + overhead)
   auto duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+#ifdef _WIN32
+  // Windows is much slower for socket connection failures
+  EXPECT_LT(duration.count(), 7000);
+#else
   EXPECT_LT(duration.count(), 1000);
+#endif
 }
 
 // Test: Multi-line data in integration
