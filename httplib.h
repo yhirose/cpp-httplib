@@ -10578,7 +10578,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
   }
 
   if (300 < res.status && res.status < 400 && follow_location_) {
-    req = req_save;
+    req = std::move(req_save);
     ret = redirect(req, res, error);
   }
 
