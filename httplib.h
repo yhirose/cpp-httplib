@@ -6157,8 +6157,8 @@ inline bool redirect(T &cli, Request &req, Response &res,
 
   auto ret = cli.send(new_req, new_res, error);
   if (ret) {
-    req = new_req;
-    res = new_res;
+    req = std::move(new_req);
+    res = std::move(new_res);
 
     if (res.location.empty()) { res.location = location; }
   }
@@ -10554,7 +10554,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     auto req2 = req;
     req2.path = "http://" + host_and_port_ + req.path;
     ret = process_request(strm, req2, res, close_connection, error);
-    req = req2;
+    req = std::move(req2);
     req.path = req_save.path;
   } else {
     ret = process_request(strm, req, res, close_connection, error);
@@ -10606,7 +10606,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
         Response new_res;
 
         ret = send(new_req, new_res, error);
-        if (ret) { res = new_res; }
+        if (ret) { res = std::move(new_res); }
       }
     }
   }
