@@ -10924,6 +10924,18 @@ TEST(MakeHostAndPortStringTest, VariousPatterns) {
             detail::make_host_and_port_string("example.com", 65536, false));
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(SSLClientHostHeaderTest, Issue2301) {
+  httplib::SSLClient cli("roblox.com", 443);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+#endif
+
 TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   Server svr;
 

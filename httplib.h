@@ -1751,7 +1751,7 @@ protected:
   // Socket endpoint information
   const std::string host_;
   const int port_;
-  const std::string host_and_port_;
+  std::string host_and_port_;
 
   // Current open socket
   Socket socket_;
@@ -9874,8 +9874,7 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
     : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
-      host_and_port_(
-          detail::make_host_and_port_string(host_, port, ClientImpl::is_ssl())),
+      host_and_port_(detail::make_host_and_port_string(host_, port, false)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
@@ -12696,6 +12695,8 @@ inline SSLClient::SSLClient(const std::string &host, int port,
                             const std::string &client_key_path,
                             const std::string &private_key_password)
     : ClientImpl(host, port, client_cert_path, client_key_path) {
+  host_and_port_ = detail::make_host_and_port_string(host_, port_, true);
+
   ctx_ = SSL_CTX_new(TLS_client_method());
 
   SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
@@ -12727,6 +12728,8 @@ inline SSLClient::SSLClient(const std::string &host, int port,
                             X509 *client_cert, EVP_PKEY *client_key,
                             const std::string &private_key_password)
     : ClientImpl(host, port) {
+  host_and_port_ = detail::make_host_and_port_string(host_, port_, true);
+
   ctx_ = SSL_CTX_new(TLS_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
