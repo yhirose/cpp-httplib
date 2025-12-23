@@ -1751,7 +1751,6 @@ protected:
   // Socket endpoint information
   const std::string host_;
   const int port_;
-  std::string host_and_port_;
 
   // Current open socket
   Socket socket_;
@@ -8425,19 +8424,22 @@ inline bool RegexMatcher::match(Request &request) const {
   return std::regex_match(request.path, request.matches, regex_);
 }
 
-inline std::string make_host_and_port_string(const std::string &host, int port,
-                                             bool is_ssl) {
-  std::string result;
-
+// Enclose IPv6 address in brackets if needed
+inline std::string prepare_host_string(const std::string &host) {
   // Enclose IPv6 address in brackets (but not if already enclosed)
   if (host.find(':') == std::string::npos ||
       (!host.empty() && host[0] == '[')) {
     // IPv4, hostname, or already bracketed IPv6
-    result = host;
+    return host;
   } else {
     // IPv6 address without brackets
-    result = "[" + host + "]";
+    return "[" + host + "]";
   }
+}
+
+inline std::string make_host_and_port_string(const std::string &host, int port,
+                                             bool is_ssl) {
+  auto result = prepare_host_string(host);
 
   // Append port if not default
   if ((!is_ssl && port == 80) || (is_ssl && port == 443)) {
@@ -8447,6 +8449,12 @@ inline std::string make_host_and_port_string(const std::string &host, int port,
   }
 
   return result;
+}
+
+// Create "host:port" string always including port number (for CONNECT method)
+inline std::string
+make_host_and_port_string_always_port(const std::string &host, int port) {
+  return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
 } // namespace detail
@@ -9874,7 +9882,6 @@ inline ClientImpl::ClientImpl(const std::string &host, int port,
                               const std::string &client_cert_path,
                               const std::string &client_key_path)
     : host_(detail::escape_abstract_namespace_unix_domain(host)), port_(port),
-      host_and_port_(detail::make_host_and_port_string(host_, port, false)),
       client_cert_path_(client_cert_path), client_key_path_(client_key_path) {}
 
 inline ClientImpl::~ClientImpl() {
@@ -10211,7 +10218,8 @@ inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
     if (address_family_ == AF_UNIX) {
       r.headers.emplace("Host", "localhost");
     } else {
-      r.headers.emplace("Host", host_and_port_);
+      r.headers.emplace(
+          "Host", detail::make_host_and_port_string(host_, port_, is_ssl()));
     }
   }
 
@@ -10551,7 +10559,9 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   if (!is_ssl() && !proxy_host_.empty() && proxy_port_ != -1) {
     auto req2 = req;
-    req2.path = "http://" + host_and_port_ + req.path;
+    req2.path = "http://" +
+                detail::make_host_and_port_string(host_, port_, false) +
+                req.path;
     ret = process_request(strm, req2, res, close_connection, error);
     req = std::move(req2);
     req.path = req_save.path;
@@ -12695,8 +12705,6 @@ inline SSLClient::SSLClient(const std::string &host, int port,
                             const std::string &client_key_path,
                             const std::string &private_key_password)
     : ClientImpl(host, port, client_cert_path, client_key_path) {
-  host_and_port_ = detail::make_host_and_port_string(host_, port_, true);
-
   ctx_ = SSL_CTX_new(TLS_client_method());
 
   SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
@@ -12728,8 +12736,6 @@ inline SSLClient::SSLClient(const std::string &host, int port,
                             X509 *client_cert, EVP_PKEY *client_key,
                             const std::string &private_key_password)
     : ClientImpl(host, port) {
-  host_and_port_ = detail::make_host_and_port_string(host_, port_, true);
-
   ctx_ = SSL_CTX_new(TLS_client_method());
 
   detail::split(&host_[0], &host_[host_.size()], '.',
@@ -12811,7 +12817,8 @@ inline bool SSLClient::connect_with_proxy(
           start_time, [&](Stream &strm) {
             Request req2;
             req2.method = "CONNECT";
-            req2.path = host_and_port_;
+            req2.path =
+                detail::make_host_and_port_string_always_port(host_, port_);
             if (max_timeout_msec_ > 0) {
               req2.start_time_ = std::chrono::steady_clock::now();
             }
@@ -12851,7 +12858,8 @@ inline bool SSLClient::connect_with_proxy(
                 start_time, [&](Stream &strm) {
                   Request req3;
                   req3.method = "CONNECT";
-                  req3.path = host_and_port_;
+                  req3.path = detail::make_host_and_port_string_always_port(
+                      host_, port_);
                   req3.headers.insert(detail::make_digest_authentication_header(
                       req3, auth, 1, detail::random_string(10),
                       proxy_digest_auth_username_, proxy_digest_auth_password_,
