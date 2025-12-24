@@ -185,6 +185,8 @@ elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
 	set(HTTPLIB_IS_USING_BROTLI ${Brotli_FOUND})
 endif()
 
+# NOTE: When using cpp-httplib as a subproject (e.g., via FetchContent), the zstd::libzstd target may not be visible in the parent project scope.
+# If you encounter a "target not found" error, see https://github.com/yhirose/cpp-httplib/issues/2313 for a workaround.
 if(HTTPLIB_REQUIRE_ZSTD)
 	find_package(zstd)
 	if(NOT zstd_FOUND)
