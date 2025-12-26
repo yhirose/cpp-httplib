@@ -82,15 +82,13 @@ static void read_file(const std::string &path, std::string &out) {
 }
 
 void performance_test(const char *host) {
-  auto port = 1234;
-
   Server svr;
 
   svr.Get("/benchmark", [&](const Request & /*req*/, Response &res) {
     res.set_content("Benchmark Response", "text/plain");
   });
 
-  auto listen_thread = std::thread([&]() { svr.listen(host, port); });
+  auto listen_thread = std::thread([&]() { svr.listen(host, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     listen_thread.join();
@@ -99,7 +97,7 @@ void performance_test(const char *host) {
 
   svr.wait_until_ready();
 
-  Client cli(host, port);
+  Client cli(host, PORT);
 
   // Warm-up request to establish connection and resolve DNS
   auto warmup_res = cli.Get("/benchmark");
@@ -2235,7 +2233,7 @@ TEST(ReceiveSignals, Signal) {
   int port = 0;
   auto thread = std::thread([&]() {
     setupSignalHandlers();
-    port = svr.bind_to_any_port("localhost");
+    port = svr.bind_to_any_port(HOST);
     svr.listen_after_bind();
   });
   auto se = detail::scope_exit([&] {
@@ -2261,7 +2259,7 @@ TEST(RedirectToDifferentPort, Redirect) {
 
   int svr1_port = 0;
   auto thread1 = std::thread([&]() {
-    svr1_port = svr1.bind_to_any_port("localhost");
+    svr1_port = svr1.bind_to_any_port(HOST);
     svr1.listen_after_bind();
   });
 
@@ -2272,7 +2270,7 @@ TEST(RedirectToDifferentPort, Redirect) {
 
   int svr2_port = 0;
   auto thread2 = std::thread([&]() {
-    svr2_port = svr2.bind_to_any_port("localhost");
+    svr2_port = svr2.bind_to_any_port(HOST);
     svr2.listen_after_bind();
   });
   auto se = detail::scope_exit([&] {
@@ -9616,7 +9614,7 @@ TEST(MultipartFormDataTest, LargeData) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto t = std::thread([&]() { svr.listen(HOST, 8080); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -12247,7 +12245,7 @@ static void test_compression_parity(const std::string &original,
     res.set_header("Content-Encoding", encoding);
   });
 
-  auto t = std::thread([&] { svr.listen("localhost", 1234); });
+  auto t = std::thread([&] { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -12256,7 +12254,7 @@ static void test_compression_parity(const std::string &original,
 
   svr.wait_until_ready();
 
-  Client cli("localhost", 1234);
+  Client cli(HOST, PORT);
 
   // Non-streaming
   {
@@ -12373,7 +12371,7 @@ protected:
                  [](const httplib::Request &, httplib::Response &res) {
                    res.set_header("Allow", "GET, POST, PUT, DELETE, OPTIONS");
                  });
-    thread_ = std::thread([this]() { svr_.listen("localhost", 8790); });
+    thread_ = std::thread([this]() { svr_.listen(HOST, PORT); });
     svr_.wait_until_ready();
   }
   void TearDown() override {
@@ -12386,7 +12384,7 @@ protected:
 
 // stream::Get tests
 TEST_F(StreamApiTest, GetBasic) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto result = httplib::stream::Get(cli, "/hello");
   ASSERT_TRUE(result.is_valid());
   EXPECT_EQ(200, result.status());
@@ -12394,7 +12392,7 @@ TEST_F(StreamApiTest, GetBasic) {
 }
 
 TEST_F(StreamApiTest, GetWithParams) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   httplib::Params params{{"foo", "bar"}};
   auto result = httplib::stream::Get(cli, "/echo-params", params);
   ASSERT_TRUE(result.is_valid());
@@ -12402,12 +12400,12 @@ TEST_F(StreamApiTest, GetWithParams) {
 }
 
 TEST_F(StreamApiTest, GetConnectionError) {
-  httplib::Client cli("localhost", 9999);
+  httplib::Client cli(HOST, 9999);
   EXPECT_FALSE(httplib::stream::Get(cli, "/hello").is_valid());
 }
 
 TEST_F(StreamApiTest, Get404) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto result = httplib::stream::Get(cli, "/nonexistent");
   EXPECT_TRUE(result.is_valid());
   EXPECT_EQ(404, result.status());
@@ -12415,7 +12413,7 @@ TEST_F(StreamApiTest, Get404) {
 
 // stream::Post tests
 TEST_F(StreamApiTest, PostBasic) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto result = httplib::stream::Post(cli, "/echo", R"({"key":"value"})",
                                       "application/json");
   ASSERT_TRUE(result.is_valid());
@@ -12424,7 +12422,7 @@ TEST_F(StreamApiTest, PostBasic) {
 }
 
 TEST_F(StreamApiTest, PostWithHeaders) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   httplib::Headers headers{{"X-Custom", "value"}};
   auto result = httplib::stream::Post(cli, "/echo-headers", headers, "body",
                                       "text/plain");
@@ -12432,7 +12430,7 @@ TEST_F(StreamApiTest, PostWithHeaders) {
 }
 
 TEST_F(StreamApiTest, PostWithParams) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   httplib::Params params{{"k", "v"}};
   auto result =
       httplib::stream::Post(cli, "/echo-params", params, "data", "text/plain");
@@ -12442,7 +12440,7 @@ TEST_F(StreamApiTest, PostWithParams) {
 }
 
 TEST_F(StreamApiTest, PostLarge) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto result = httplib::stream::Post(cli, "/large", "", "text/plain");
   size_t total = 0;
   while (result.next()) {
@@ -12453,7 +12451,7 @@ TEST_F(StreamApiTest, PostLarge) {
 
 // stream::Put/Patch tests
 TEST_F(StreamApiTest, PutAndPatch) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto put = httplib::stream::Put(cli, "/echo", "test", "text/plain");
   EXPECT_EQ("PUT:test", read_body(put));
   auto patch = httplib::stream::Patch(cli, "/echo", "test", "text/plain");
@@ -12462,7 +12460,7 @@ TEST_F(StreamApiTest, PutAndPatch) {
 
 // stream::Delete tests
 TEST_F(StreamApiTest, Delete) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto del1 = httplib::stream::Delete(cli, "/resource");
   EXPECT_EQ("Deleted", read_body(del1));
   auto del2 = httplib::stream::Delete(cli, "/resource", "data", "text/plain");
@@ -12471,7 +12469,7 @@ TEST_F(StreamApiTest, Delete) {
 
 // stream::Head/Options tests
 TEST_F(StreamApiTest, HeadAndOptions) {
-  httplib::Client cli("localhost", 8790);
+  httplib::Client cli(HOST, PORT);
   auto head = httplib::stream::Head(cli, "/head-test");
   EXPECT_TRUE(head.is_valid());
   EXPECT_FALSE(head.get_header_value("Content-Length").empty());
@@ -12749,10 +12747,10 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8087); });
+  auto t = std::thread([&]() { svr.listen("localhost", PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8087);
+  Client cli(HOST, PORT);
 
   // First request: should get 200 with ETag header
   auto res1 = cli.Get("/static/etag_testfile.txt");
@@ -12803,10 +12801,10 @@ TEST(ETagTest, StaticFileETagIfNoneMatchStarNotFound) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8090); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8090);
+  Client cli(HOST, PORT);
 
   // Send If-None-Match: * to a non-existent file
   Headers h = {{"If-None-Match", "*"}};
@@ -12832,10 +12830,10 @@ TEST(ETagTest, LastModifiedAndIfModifiedSince) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8088); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8088);
+  Client cli(HOST, PORT);
 
   // First request: should get 200 with Last-Modified header
   auto res1 = cli.Get("/static/ims_testfile.txt");
@@ -12890,10 +12888,10 @@ TEST(ETagTest, VaryAcceptEncodingWithCompression) {
     res.set_content(body, "text/plain");
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8089); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8089);
+  Client cli(HOST, PORT);
 
   // Request with gzip support: should get Vary header when compressed
   cli.set_compress(true);
@@ -12934,10 +12932,10 @@ TEST(ETagTest, IfRangeWithETag) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8090); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8090);
+  Client cli(HOST, PORT);
 
   // First request: get ETag
   auto res1 = cli.Get("/static/if_range_testfile.txt");
@@ -12995,10 +12993,10 @@ TEST(ETagTest, IfRangeWithDate) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8091); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8091);
+  Client cli(HOST, PORT);
 
   // First request: get Last-Modified
   auto res1 = cli.Get("/static/if_range_date_testfile.txt");
@@ -13047,10 +13045,10 @@ TEST(ETagTest, MalformedIfNoneMatchAndWhitespace) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8092); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8092);
+  Client cli(HOST, PORT);
 
   // baseline: should get 200 and an ETag
   auto res1 = cli.Get("/static/etag_malformed.txt");
@@ -13088,10 +13086,10 @@ TEST(ETagTest, InvalidIfModifiedSinceAndIfRangeDate) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8093); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8093);
+  Client cli(HOST, PORT);
 
   auto res1 = cli.Get("/static/ims_invalid_format.txt");
   ASSERT_TRUE(res1);
@@ -13130,10 +13128,10 @@ TEST(ETagTest, IfRangeWithMalformedETag) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8094); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8094);
+  Client cli(HOST, PORT);
 
   // First request: get ETag
   auto res1 = cli.Get("/static/ifrange_malformed.txt");
@@ -13167,10 +13165,10 @@ TEST(ETagTest, ExtremeLargeDateValues) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8095); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8095);
+  Client cli(HOST, PORT);
 
   auto res1 = cli.Get(std::string("/static/") + fname);
   ASSERT_TRUE(res1);
@@ -13230,10 +13228,10 @@ TEST(ETagTest, NegativeFileModificationTime) {
 
   Server svr;
   svr.set_mount_point("/static", ".");
-  auto t = std::thread([&]() { svr.listen("localhost", 8096); });
+  auto t = std::thread([&]() { svr.listen(HOST, PORT); });
   svr.wait_until_ready();
 
-  Client cli("localhost", 8096);
+  Client cli(HOST, PORT);
 
   auto res1 = cli.Get(std::string("/static/") + fname);
   ASSERT_TRUE(res1);
@@ -13559,7 +13557,7 @@ protected:
   }
 
   void start_server() {
-    port_ = server_->bind_to_any_port("localhost");
+    port_ = server_->bind_to_any_port(HOST);
     server_thread_ = std::thread([this]() { server_->listen_after_bind(); });
 
     // Wait for server to start
