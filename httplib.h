@@ -9646,6 +9646,10 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
   Request req;
   req.start_time_ = std::chrono::steady_clock::now();
+  req.remote_addr = remote_addr;
+  req.remote_port = remote_port;
+  req.local_addr = local_addr;
+  req.local_port = local_port;
 
   Response res;
   res.version = "HTTP/1.1";

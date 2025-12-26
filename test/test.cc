@@ -6843,6 +6843,29 @@ TEST(ServerRequestParsingTest, InvalidSpaceInURL) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
+TEST(ServerRequestParsingTest, RemoteAddrSetOnBadRequest) {
+  Server svr;
+
+  svr.set_error_handler([&](const Request &req, Response & /*res*/) {
+    EXPECT_TRUE(!req.remote_addr.empty());
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Send an invalid request line to trigger Bad Request
+  const std::string bad_req = "BADMETHOD / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+  std::string out;
+  ASSERT_TRUE(send_request(5, bad_req, &out));
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
 TEST(ServerRequestParsingTest, InvalidFieldValueContains_CR_LF_NUL) {
   std::string out;
   std::string request(
