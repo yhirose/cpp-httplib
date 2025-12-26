@@ -8957,7 +8957,16 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           strm, req, res,
           // Regular
           [&](const char *buf, size_t n) {
-            if (req.body.size() + n > req.body.max_size()) { return false; }
+            // Prevent arithmetic overflow when checking sizes.
+            // Avoid computing (req.body.size() + n) directly because
+            // adding two unsigned `size_t` values can wrap around and
+            // produce a small result instead of indicating overflow.
+            // Instead, check using subtraction: ensure `n` does not
+            // exceed the remaining capacity `max_size() - size()`.
+            if (req.body.size() >= req.body.max_size() ||
+                n > req.body.max_size() - req.body.size()) {
+              return false;
+            }
             req.body.append(buf, n);
             return true;
           },
