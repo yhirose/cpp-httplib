@@ -7,87 +7,136 @@
 
 module;
 
-#include "../httplib.h"
+/*
+ * Include all headers in httplib.h, to prevent them from being re-exported
+ * in the export block.
+ */
+
+#ifdef _WIN32
+
+#include <io.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#if defined(__has_include)
+#if __has_include(<afunix.h>)
+// afunix.h uses types declared in winsock2.h, so has to be included after it.
+#include <afunix.h>
+#endif
+#endif
+
+#else // not _WIN32
+
+#include <arpa/inet.h>
+#if !defined(_AIX) && !defined(__MVS__)
+#include <ifaddrs.h>
+#endif
+#ifdef __MVS__
+#include <strings.h>
+#endif
+#include <net/if.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#ifdef __linux__
+#include <resolv.h>
+#endif
+#include <csignal>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+#endif //_WIN32
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cassert>
+#include <cctype>
+#include <climits>
+#include <condition_variable>
+#include <cstring>
+#include <errno.h>
+#include <exception>
+#include <fcntl.h>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <list>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <random>
+#include <regex>
+#include <set>
+#include <sstream>
+#include <string>
+#include <sys/stat.h>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+
+#if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO) ||                        \
+    defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#if TARGET_OS_MAC
+#include <CFNetwork/CFHost.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO or
+       // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef _WIN32
+#include <wincrypt.h>
+#endif // _WIN32
+
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#if TARGET_OS_MAC
+#include <Security/Security.h>
+#endif
+#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
+
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+
+#if defined(_WIN32) && defined(OPENSSL_USE_APPLINK)
+#include <openssl/applink.c>
+#endif
+
+#include <iostream>
+#include <sstream>
+
+#endif // CPPHTTPLIB_OPENSSL_SUPPORT
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+#include <zlib.h>
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+#include <brotli/decode.h>
+#include <brotli/encode.h>
+#endif
+
+#ifdef CPPHTTPLIB_ZSTD_SUPPORT
+#include <zstd.h>
+#endif
 
 export module httplib;
 
-export namespace httplib {
-    using httplib::SSLVerifierResponse;
-    using httplib::StatusCode;
-    using httplib::Headers;
-    using httplib::Params;
-    using httplib::Match;
-    using httplib::DownloadProgress;
-    using httplib::UploadProgress;
-    using httplib::Response;
-    using httplib::ResponseHandler;
-    using httplib::FormData;
-    using httplib::FormField;
-    using httplib::FormFields;
-    using httplib::FormFiles;
-    using httplib::MultipartFormData;
-    using httplib::UploadFormData;
-    using httplib::UploadFormDataItems;
-    using httplib::DataSink;
-    using httplib::ContentProvider;
-    using httplib::ContentProviderWithoutLength;
-    using httplib::ContentProviderResourceReleaser;
-    using httplib::FormDataProvider;
-    using httplib::FormDataProviderItems;
-    using httplib::ContentReceiverWithProgress;
-    using httplib::ContentReceiver;
-    using httplib::FormDataHeader;
-    using httplib::ContentReader;
-    using httplib::Range;
-    using httplib::Ranges;
-    using httplib::Request;
-    using httplib::Response;
-    using httplib::Error;
-    using httplib::to_string;
-    using httplib::operator<<;
-    using httplib::Stream;
-    using httplib::TaskQueue;
-    using httplib::ThreadPool;
-    using httplib::Logger;
-    using httplib::ErrorLogger;
-    using httplib::SocketOptions;
-    using httplib::default_socket_options;
-    using httplib::status_message;
-    using httplib::get_bearer_token_auth;
-    using httplib::Server;
-    using httplib::Result;
-    using httplib::ClientConnection;
-    using httplib::ClientImpl;
-    using httplib::Client;
-
-    #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    using httplib::SSLServer;
-    using httplib::SSLClient;
-    #endif
-
-    using httplib::hosted_at;
-    using httplib::encode_uri_component;
-    using httplib::encode_uri;
-    using httplib::decode_uri_component;
-    using httplib::decode_uri;
-    using httplib::encode_path_component;
-    using httplib::decode_path_component;
-    using httplib::encode_query_component;
-    using httplib::decode_query_component;
-    using httplib::append_query_params;
-    using httplib::make_range_header;
-    using httplib::make_basic_authentication_header;
-
-    using httplib::get_client_ip;
-
-    namespace stream {
-        using httplib::stream::Result;
-        using httplib::stream::Get;
-        using httplib::stream::Post;
-        using httplib::stream::Put;
-        using httplib::stream::Patch;
-        using httplib::stream::Delete;
-        using httplib::stream::Head;
-        using httplib::stream::Options;
-    }
+/*
+ * Directly export the symbols in httplib.h. This is not the most elegant approach,
+ * but it will have to do until we figure out how to use a script to do it.
+ */
+export {
+    #include "../httplib.h"
 }
