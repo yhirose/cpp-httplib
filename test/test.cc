@@ -11769,11 +11769,11 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   svr.wait_until_ready();
 
   std::string raw_req =
-    "GET /ip HTTP/1.1\r\n"
-    "Host: localhost\r\n"
-    "X-Forwarded-For:  198.51.100.23 , 203.0.113.66 , 192.0.2.45 \r\n"
-    "Connection: close\r\n"
-    "\r\n";
+      "GET /ip HTTP/1.1\r\n"
+      "Host: localhost\r\n"
+      "X-Forwarded-For:  198.51.100.23 , 203.0.113.66 , 192.0.2.45 \r\n"
+      "Connection: close\r\n"
+      "\r\n";
 
   std::string out;
   ASSERT_TRUE(send_request(5, raw_req, &out));
@@ -13158,12 +13158,11 @@ TEST(ETagTest, MalformedIfNoneMatchAndWhitespace) {
   EXPECT_EQ(200, res_bad->status);
 
   // Whitespace-only header value should be considered invalid / non-matching
-  std::string raw_req =
-    "GET /static/etag_malformed.txt HTTP/1.1\r\n"
-    "Host: localhost\r\n"
-    "If-None-Match:   \r\n"
-    "Connection: close\r\n"
-    "\r\n";
+  std::string raw_req = "GET /static/etag_malformed.txt HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "If-None-Match:   \r\n"
+                        "Connection: close\r\n"
+                        "\r\n";
 
   std::string out;
   ASSERT_TRUE(send_request(5, raw_req, &out));
