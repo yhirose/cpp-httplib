@@ -44,7 +44,7 @@ if openssl_dep.found()
   deps += openssl_dep
   args += '-DCPPHTTPLIB_OPENSSL_SUPPORT'
   if host_machine.system() == 'darwin'
-    macosx_keychain_dep = dependency('appleframeworks', modules: ['CoreFoundation', 'Security'], required: get_option('macosx_keychain'))
+    macosx_keychain_dep = dependency('appleframeworks', modules: ['CFNetwork', 'CoreFoundation', 'Security'], required: get_option('macosx_keychain'))
     if macosx_keychain_dep.found()
         deps += macosx_keychain_dep
         args += '-DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN'
@@ -85,7 +85,7 @@ async_ns_opt = get_option('non_blocking_getaddrinfo')
 if host_machine.system() == 'windows'
   async_ns_dep = cxx.find_library('ws2_32', required: async_ns_opt)
 elif host_machine.system() == 'darwin'
-  async_ns_dep = dependency('appleframeworks', modules: ['CFNetwork'], required: async_ns_opt)
+  async_ns_dep = dependency('appleframeworks', modules: ['CFNetwork', 'CoreFoundation'], required: async_ns_opt)
 else
   async_ns_dep = cxx.find_library('anl', required: async_ns_opt)
 endif
