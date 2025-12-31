@@ -10674,18 +10674,11 @@ TEST(VulnerabilityTest, CRLFInjection) {
 TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
   auto server_thread = std::thread([] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
-    int on = 1;
-    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
-#ifdef _WIN32
-                 reinterpret_cast<const char *>(&on),
-#else
-                 &on,
-#endif
-                 sizeof(on));
+    default_socket_options(srv);
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT);
+    addr.sin_port = htons(PORT + 1);
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
     ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
     ::listen(srv, 1);
@@ -10694,16 +10687,7 @@ TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
     socklen_t cli_len = sizeof(cli_addr);
     auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
 
-    struct timeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-    ::setsockopt(cli, SOL_SOCKET, SO_RCVTIMEO,
-#ifdef _WIN32
-                 reinterpret_cast<const char *>(&tv),
-#else
-                 &tv,
-#endif
-                 sizeof(tv));
+    detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 1, 0);
 
     std::string buf_all;
     char buf[2048];
@@ -10731,22 +10715,21 @@ TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
       }
     }
 
-    ::close(cli);
-    ::close(srv);
+    detail::close_socket(cli);
+    detail::close_socket(srv);
   });
 
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  auto cli = httplib::Client("127.0.0.1", PORT);
+  auto cli = Client("127.0.0.1", PORT + 1);
 
-  auto headers = httplib::Headers{
+  auto headers = Headers{
       {"A", "B\r\n\r\nGET /pwned HTTP/1.1\r\nHost: 127.0.0.1:1234\r\n\r\n"},
       {"Connection", "keep-alive"}};
 
   auto res = cli.Get("/hi", headers);
   EXPECT_FALSE(res);
-
-  if (res) { EXPECT_EQ(httplib::Error::InvalidHeaders, res.error()); }
+  EXPECT_EQ(Error::InvalidHeaders, res.error());
 
   server_thread.join();
 }
