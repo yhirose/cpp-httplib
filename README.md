@@ -1350,7 +1350,7 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 License
 -------
 
-MIT license (© 2025 Yuji Hirose)
+MIT license (© 2026 Yuji Hirose)
 
 Special Thanks To
 -----------------

@@ -1,7 +1,7 @@
 //
 //  ssecli-stream.cc
 //
-//  Copyright (c) 2025 Yuji Hirose. All rights reserved.
+//  Copyright (c) 2026 Yuji Hirose. All rights reserved.
 //  MIT License
 //
 //  SSE (Server-Sent Events) client example using Streaming API
