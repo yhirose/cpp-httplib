@@ -142,8 +142,6 @@ void performance_test(const char *host) {
                     << "ms (Issue #1777). Timings: " << timings_str.str();
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-
 TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
 
 TEST(BenchmarkTest, v6) { performance_test("::1"); }
