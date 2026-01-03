@@ -14086,3 +14086,18 @@ TEST_F(SSEIntegrationTest, LastEventIdSentOnReconnect) {
     EXPECT_EQ(received_last_event_ids[1], "event-0");
   }
 }
+
+TEST(Issue2318Test, EmptyHostString) {
+  {
+    httplib::Client cli_empty("", PORT);
+    auto res = cli_empty.Get("/");
+    ASSERT_FALSE(res);
+    EXPECT_EQ(httplib::Error::Connection, res.error());
+  }
+  {
+    httplib::Client cli("   ", PORT);
+    auto res = cli.Get("/");
+    ASSERT_FALSE(res);
+    EXPECT_EQ(httplib::Error::Connection, res.error());
+  }
+}
