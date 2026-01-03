@@ -144,8 +144,8 @@ jobs:
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: Clean vcpkg cache for different configurations
       run: |
-        if exist "$env:VCPKG_ROOT\installed" rmdir /s /q "$env:VCPKG_ROOT\installed"
-        if exist "$env:VCPKG_ROOT\packages" rmdir /s /q "$env:VCPKG_ROOT\packages"
+        if (Test-Path "$env:VCPKG_ROOT\installed") { Remove-Item -Recurse -Force "$env:VCPKG_ROOT\installed" }
+        if (Test-Path "$env:VCPKG_ROOT\packages") { Remove-Item -Recurse -Force "$env:VCPKG_ROOT\packages" }
       shell: pwsh
     - name: Setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
