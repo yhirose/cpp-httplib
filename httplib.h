@@ -1374,6 +1374,10 @@ public:
   int ssl_error() const { return ssl_error_; }
   // OpenSSL Error
   unsigned long ssl_openssl_error() const { return ssl_openssl_error_; }
+#ifdef _WIN32
+  // WinCrypt Error
+  unsigned long wincrypt_error() const { return wincrypt_error_; }
+#endif
 #endif
 
   // Request Headers
@@ -1392,6 +1396,9 @@ private:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   int ssl_error_ = 0;
   unsigned long ssl_openssl_error_ = 0;
+#ifdef _WIN32
+  unsigned long wincrypt_error_ = 0;
+#endif
 #endif
 };
 
@@ -7271,7 +7278,11 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
   // Setup chain parameters
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
+#ifdef CERT_CHAIN_PARA_HAS_EXTRA_FIELDS
   chain_para.dwUrlRetrievalTimeout = static_cast<DWORD>(timeout_sec * 1000);
+#else
+  (void)timeout_sec;
+#endif
 
   // Build certificate chain with revocation checking
   PCCERT_CHAIN_CONTEXT chain_context = nullptr;
