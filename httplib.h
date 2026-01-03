@@ -13219,9 +13219,10 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
               }
             }
 
-#ifdef _WIN32
-            // Additional Windows Schannel verification (optional, enabled by
-            // default) This provides real-time certificate validation with
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+            // Additional Windows Schannel verification
+            // This provides real-time certificate validation with
             // Windows Update integration
             if (enable_windows_cert_verification_) {
               if (!verify_peer_cert_with_windows(server_cert, error)) {
