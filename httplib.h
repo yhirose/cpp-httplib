@@ -7278,7 +7278,8 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
   // Setup chain parameters
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
-#ifdef CERT_CHAIN_PARA_HAS_EXTRA_FIELDS
+#if defined(_WIN32) && _WIN32_WINNT >= 0x0600
+  // dwUrlRetrievalTimeout is available on Windows Vista and later
   chain_para.dwUrlRetrievalTimeout = static_cast<DWORD>(timeout_sec * 1000);
 #else
   (void)timeout_sec;
@@ -7308,7 +7309,9 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
   // Verify SSL policy
   SSL_EXTRA_CERT_CHAIN_POLICY_PARA extra_policy_para = {};
   extra_policy_para.cbSize = sizeof(extra_policy_para);
+#ifdef AUTHTYPE_SERVER
   extra_policy_para.dwAuthType = AUTHTYPE_SERVER;
+#endif
 
   std::wstring whost;
   if (verify_hostname) {
@@ -7318,7 +7321,11 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
 
   CERT_CHAIN_POLICY_PARA policy_para = {};
   policy_para.cbSize = sizeof(policy_para);
+#ifdef CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS
   policy_para.dwFlags = CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS;
+#else
+  policy_para.dwFlags = 0;
+#endif
   policy_para.pvExtraPolicyPara = &extra_policy_para;
 
   CERT_CHAIN_POLICY_STATUS policy_status = {};
