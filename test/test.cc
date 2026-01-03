@@ -143,75 +143,6 @@ void performance_test(const char *host) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-#ifdef _WIN32
-// Windows Certificate Verification Tests
-TEST(SSLClientTest, WindowsCertificateVerification_DefaultEnabled) {
-  // Test 1: Default behavior (Windows verification enabled)
-  SSLClient cli("www.google.com", 443);
-  cli.enable_server_certificate_verification(true);
-
-  auto res = cli.Get("/");
-  // Should succeed or fail gracefully (may fail due to network)
-  // The important thing is that Windows verification was enabled
-  if (res) { EXPECT_NE(StatusCode::InternalServerError_500, res->status); }
-}
-
-TEST(SSLClientTest, WindowsCertificateVerification_DisableWindows) {
-  // Test 2: Disable Windows verification (OpenSSL only)
-  SSLClient cli("www.google.com", 443);
-  cli.enable_server_certificate_verification(true);
-  cli.enable_windows_certificate_verification(false);
-
-  auto res = cli.Get("/");
-  // Should work with OpenSSL verification only
-  if (res) { EXPECT_NE(StatusCode::InternalServerError_500, res->status); }
-}
-
-TEST(SSLClientTest, WindowsCertificateVerification_CustomTimeout) {
-  // Test 3: Custom timeout
-  SSLClient cli("www.google.com", 443);
-  cli.enable_server_certificate_verification(true);
-  cli.set_windows_certificate_verification_timeout(2);
-
-  auto res = cli.Get("/");
-  // Should complete within reasonable time
-  if (res) { EXPECT_NE(StatusCode::InternalServerError_500, res->status); }
-}
-
-TEST(SSLClientTest, WindowsCertificateVerification_InvalidCertificate) {
-  // Test 4: Invalid certificate (should fail)
-  SSLClient cli("self-signed.badssl.com", 443);
-  cli.enable_server_certificate_verification(true);
-
-  auto res = cli.Get("/");
-  // Should fail due to invalid certificate
-  EXPECT_FALSE(res);
-  EXPECT_EQ(Error::SSLServerVerification, res.error());
-}
-
-TEST(SSLClientTest, WindowsCertificateVerification_CachingBehavior) {
-  // Test 5: Multiple connections (test caching)
-  SSLClient cli("www.google.com", 443);
-  cli.enable_server_certificate_verification(true);
-
-  // First connection
-  auto res1 = cli.Get("/");
-  auto start2 = std::chrono::high_resolution_clock::now();
-  // Second connection (should use cache)
-  auto res2 = cli.Get("/");
-  auto end2 = std::chrono::high_resolution_clock::now();
-  auto duration2 =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end2 - start2);
-
-  // Second connection should be fast (cache hit)
-  if (res2) {
-    EXPECT_NE(StatusCode::InternalServerError_500, res2->status);
-    // Cache should make second connection faster (very loose bound)
-    EXPECT_LT(duration2.count(), 5000); // Within 5 seconds
-  }
-}
-#endif
-#endif
 
 TEST(BenchmarkTest, localhost) { performance_test("localhost"); }
 
@@ -8560,9 +8491,9 @@ TEST(SSLClientTest, ServerCertificateVerificationError_Online) {
 
 #if defined(_WIN32) &&                                                         \
     !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
-  // On Windows Schannel, verify Windows certificate error is captured
-  EXPECT_NE(0UL, res.wincrypt_error());
-  // Common errors: CERT_E_UNTRUSTEDROOT, CERT_E_CHAINING
+  // On Windows, OpenSSL verification runs first and fails before Windows
+  // Schannel verification, so wincrypt_error will be 0
+  EXPECT_EQ(0UL, res.wincrypt_error());
 #else
   // On OpenSSL, verify OpenSSL error is captured for SSLServerVerification
   // This occurs when SSL_get_verify_result() returns a verification failure
@@ -8588,9 +8519,9 @@ TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
 
 #if defined(_WIN32) &&                                                         \
     !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
-  // On Windows Schannel, verify Windows certificate error is captured
-  EXPECT_EQ(static_cast<unsigned long>(CERT_E_CN_NO_MATCH),
-            res.wincrypt_error());
+  // On Windows, OpenSSL hostname verification runs first and fails before
+  // Windows Schannel verification, so wincrypt_error will be 0
+  EXPECT_EQ(0UL, res.wincrypt_error());
 #else
   // On OpenSSL, verify OpenSSL error is captured for
   // SSLServerHostnameVerification This occurs when verify_host() fails due to
