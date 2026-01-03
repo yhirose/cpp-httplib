@@ -2213,7 +2213,8 @@ private:
   bool verify_host_with_common_name(X509 *server_cert) const;
   bool check_host_name(const char *pattern, size_t pattern_len) const;
 
-#ifdef _WIN32
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
   bool verify_peer_cert_with_windows(X509 *server_cert, Error &error);
 #endif
 
@@ -13424,7 +13425,8 @@ inline bool SSLClient::check_host_name(const char *pattern,
 }
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
 inline bool SSLClient::verify_peer_cert_with_windows(X509 *server_cert,
                                                      Error &error) {
   if (!server_cert) { return false; }
