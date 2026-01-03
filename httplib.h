@@ -7278,12 +7278,14 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
   // Setup chain parameters
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
-#if defined(_WIN32) && _WIN32_WINNT >= 0x0600
-  // dwUrlRetrievalTimeout is available on Windows Vista and later
-  chain_para.dwUrlRetrievalTimeout = static_cast<DWORD>(timeout_sec * 1000);
-#else
+
+  // Note: dwUrlRetrievalTimeout is not available in all Windows SDK versions.
+  // In newer SDKs (10.0.26100+), this field doesn't exist in CERT_CHAIN_PARA.
+  // We cannot reliably set the timeout across all SDK versions, so we rely on
+  // the Windows API default timeout (typically 10-15 seconds for CAPI
+  // operations). The timeout_sec parameter is kept for API compatibility and
+  // future use.
   (void)timeout_sec;
-#endif
 
   // Build certificate chain with revocation checking
   PCCERT_CHAIN_CONTEXT chain_context = nullptr;
