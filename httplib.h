@@ -2213,9 +2213,11 @@ private:
   bool verify_host_with_common_name(X509 *server_cert) const;
   bool check_host_name(const char *pattern, size_t pattern_len) const;
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #if defined(_WIN32) &&                                                         \
     !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
   bool verify_peer_cert_with_windows(X509 *server_cert, Error &error);
+#endif
 #endif
 
   SSL_CTX *ctx_;
@@ -13426,6 +13428,7 @@ inline bool SSLClient::check_host_name(const char *pattern,
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #if defined(_WIN32) &&                                                         \
     !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
 inline bool SSLClient::verify_peer_cert_with_windows(X509 *server_cert,
@@ -13496,7 +13499,9 @@ inline bool SSLClient::verify_peer_cert_with_windows(X509 *server_cert,
 
   return is_valid;
 }
-#endif
+#endif // _WIN32 &&
+       // !CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+#endif // CPPHTTPLIB_OPENSSL_SUPPORT
 
 // Universal client implementation
 inline Client::Client(const std::string &scheme_host_port)
