@@ -2083,6 +2083,11 @@ public:
   void enable_server_hostname_verification(bool enabled);
   void set_server_certificate_verifier(
       std::function<SSLVerifierResponse(SSL *ssl)> verifier);
+
+#ifdef _WIN32
+  void enable_windows_certificate_verification(bool enabled);
+  void set_windows_certificate_verification_timeout(time_t sec);
+#endif
 #endif
 
   void set_logger(Logger logger);
@@ -2171,6 +2176,11 @@ public:
 
   SSL_CTX *ssl_context() const;
 
+#ifdef _WIN32
+  void enable_windows_certificate_verification(bool enabled);
+  void set_windows_certificate_verification_timeout(time_t sec);
+#endif
+
 private:
   bool create_and_connect_socket(Socket &socket, Error &error) override;
   bool ensure_socket_connection(Socket &socket, Error &error) override;
@@ -2196,6 +2206,10 @@ private:
   bool verify_host_with_common_name(X509 *server_cert) const;
   bool check_host_name(const char *pattern, size_t pattern_len) const;
 
+#ifdef _WIN32
+  bool verify_peer_cert_with_windows(X509 *server_cert, Error &error);
+#endif
+
   SSL_CTX *ctx_;
   std::mutex ctx_mutex_;
   std::once_flag initialize_cert_;
@@ -2203,6 +2217,24 @@ private:
   std::vector<std::string> host_components_;
 
   long verify_result_ = 0;
+
+#ifdef _WIN32
+  bool enable_windows_cert_verification_ = true;
+  time_t windows_cert_verification_timeout_sec_ = 5;
+  unsigned long last_wincrypt_error_ = 0;
+  unsigned long last_wincrypt_chain_error_ = 0;
+
+  // Cache for certificate verification results to improve performance
+  struct CertVerificationCache {
+    std::string cert_fingerprint;
+    bool is_valid;
+    unsigned long wincrypt_error;
+    unsigned long chain_error;
+    std::chrono::steady_clock::time_point timestamp;
+  };
+  mutable std::mutex cert_cache_mutex_;
+  mutable std::map<std::string, CertVerificationCache> cert_cache_;
+#endif
 
   friend class ClientImpl;
 };
@@ -7155,8 +7187,9 @@ inline bool is_ssl_peer_could_be_closed(SSL *ssl, socket_t sock) {
 #ifdef _WIN32
 // NOTE: This code came up with the following stackoverflow post:
 // https://stackoverflow.com/questions/9507184/can-openssl-on-windows-use-the-system-certificate-store
-inline bool load_system_certs_on_windows(X509_STORE *store) {
-  auto hStore = CertOpenSystemStoreW((HCRYPTPROV_LEGACY)NULL, L"ROOT");
+inline bool add_windows_certs_to_x509_store(X509_STORE *store,
+                                            const wchar_t *store_name) {
+  auto hStore = CertOpenSystemStoreW((HCRYPTPROV_LEGACY)NULL, store_name);
   if (!hStore) { return false; }
 
   auto result = false;
@@ -7179,6 +7212,121 @@ inline bool load_system_certs_on_windows(X509_STORE *store) {
 
   return result;
 }
+
+inline bool load_system_certs_on_windows(X509_STORE *store) {
+  return add_windows_certs_to_x509_store(store, L"ROOT") |
+         add_windows_certs_to_x509_store(store, L"CA");
+}
+
+// Get certificate fingerprint for caching purposes
+inline std::string get_cert_fingerprint(X509 *cert) {
+  unsigned char md[EVP_MAX_MD_SIZE];
+  unsigned int md_size = 0;
+
+  if (!X509_digest(cert, EVP_sha256(), md, &md_size)) { return ""; }
+
+  std::string fingerprint;
+  fingerprint.reserve(md_size * 2);
+  for (unsigned int i = 0; i < md_size; ++i) {
+    char buf[3];
+    snprintf(buf, sizeof(buf), "%02x", md[i]);
+    fingerprint += buf;
+  }
+
+  return fingerprint;
+}
+
+// Verify certificate using Windows CertGetCertificateChain API
+// This provides real-time certificate validation with Windows Update
+// integration
+inline bool verify_cert_with_windows_schannel(X509 *server_cert,
+                                              const std::string &hostname,
+                                              bool verify_hostname,
+                                              time_t timeout_sec,
+                                              unsigned long &out_wincrypt_error,
+                                              unsigned long &out_chain_error) {
+  if (!server_cert) { return false; }
+
+  out_wincrypt_error = 0;
+  out_chain_error = 0;
+
+  // Convert OpenSSL certificate to DER format
+  auto der_len = i2d_X509(server_cert, nullptr);
+  if (der_len < 0) { return false; }
+
+  std::vector<unsigned char> der_cert(der_len);
+  auto der_cert_data = der_cert.data();
+  if (i2d_X509(server_cert, &der_cert_data) < 0) { return false; }
+
+  // Create Windows certificate context
+  auto cert_context = CertCreateCertificateContext(
+      X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, der_cert.data(),
+      static_cast<DWORD>(der_cert.size()));
+
+  if (!cert_context) { return false; }
+
+  auto cert_guard =
+      detail::scope_exit([&] { CertFreeCertificateContext(cert_context); });
+
+  // Setup chain parameters
+  CERT_CHAIN_PARA chain_para = {};
+  chain_para.cbSize = sizeof(chain_para);
+  chain_para.dwUrlRetrievalTimeout = static_cast<DWORD>(timeout_sec * 1000);
+
+  // Build certificate chain with revocation checking
+  PCCERT_CHAIN_CONTEXT chain_context = nullptr;
+  auto chain_result = CertGetCertificateChain(
+      nullptr, cert_context, nullptr, cert_context->hCertStore, &chain_para,
+      CERT_CHAIN_CACHE_END_CERT | CERT_CHAIN_REVOCATION_CHECK_END_CERT |
+          CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
+      nullptr, &chain_context);
+
+  if (!chain_result || !chain_context) { return false; }
+
+  auto chain_guard =
+      detail::scope_exit([&] { CertFreeCertificateChain(chain_context); });
+
+  // Capture chain trust status for diagnostic information
+  out_chain_error = chain_context->TrustStatus.dwErrorStatus;
+
+  // Check if chain has errors
+  if (chain_context->TrustStatus.dwErrorStatus != CERT_TRUST_NO_ERROR) {
+    return false;
+  }
+
+  // Verify SSL policy
+  SSL_EXTRA_CERT_CHAIN_POLICY_PARA extra_policy_para = {};
+  extra_policy_para.cbSize = sizeof(extra_policy_para);
+  extra_policy_para.dwAuthType = AUTHTYPE_SERVER;
+
+  std::wstring whost;
+  if (verify_hostname) {
+    whost = detail::u8string_to_wstring(hostname.c_str());
+    extra_policy_para.pwszServerName = const_cast<wchar_t *>(whost.c_str());
+  }
+
+  CERT_CHAIN_POLICY_PARA policy_para = {};
+  policy_para.cbSize = sizeof(policy_para);
+  policy_para.dwFlags = CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS;
+  policy_para.pvExtraPolicyPara = &extra_policy_para;
+
+  CERT_CHAIN_POLICY_STATUS policy_status = {};
+  policy_status.cbSize = sizeof(policy_status);
+
+  if (!CertVerifyCertificateChainPolicy(CERT_CHAIN_POLICY_SSL, chain_context,
+                                        &policy_para, &policy_status)) {
+    out_wincrypt_error = GetLastError();
+    return false;
+  }
+
+  if (policy_status.dwError != 0) {
+    out_wincrypt_error = policy_status.dwError;
+    return false;
+  }
+
+  return true;
+}
+
 #elif defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) && TARGET_OS_MAC
 template <typename T>
 using CFObjectPtr =
@@ -12834,6 +12982,17 @@ inline long SSLClient::get_openssl_verify_result() const {
 
 inline SSL_CTX *SSLClient::ssl_context() const { return ctx_; }
 
+#ifdef _WIN32
+inline void SSLClient::enable_windows_certificate_verification(bool enabled) {
+  enable_windows_cert_verification_ = enabled;
+}
+
+inline void
+SSLClient::set_windows_certificate_verification_timeout(time_t sec) {
+  windows_cert_verification_timeout_sec_ = sec;
+}
+#endif
+
 inline bool SSLClient::create_and_connect_socket(Socket &socket, Error &error) {
   if (!is_valid()) {
     error = Error::SSLConnection;
@@ -13033,6 +13192,17 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
                 return false;
               }
             }
+
+#ifdef _WIN32
+            // Additional Windows Schannel verification (optional, enabled by
+            // default) This provides real-time certificate validation with
+            // Windows Update integration
+            if (enable_windows_cert_verification_) {
+              if (!verify_peer_cert_with_windows(server_cert, error)) {
+                return false;
+              }
+            }
+#endif
           }
         }
 
@@ -13226,6 +13396,77 @@ inline bool SSLClient::check_host_name(const char *pattern,
   }
 
   return true;
+}
+#endif
+
+#ifdef _WIN32
+inline bool SSLClient::verify_peer_cert_with_windows(X509 *server_cert,
+                                                     Error &error) {
+  if (!server_cert) { return false; }
+
+  // Get certificate fingerprint for caching
+  auto fingerprint = detail::get_cert_fingerprint(server_cert);
+  if (fingerprint.empty()) { return false; }
+
+  // Check cache first (with 5-minute validity)
+  {
+    std::lock_guard<std::mutex> lock(cert_cache_mutex_);
+    auto it = cert_cache_.find(fingerprint);
+    if (it != cert_cache_.end()) {
+      auto age = std::chrono::steady_clock::now() - it->second.timestamp;
+      if (age < std::chrono::minutes(5)) {
+        // Cache hit - return cached result
+        if (!it->second.is_valid) {
+          error = Error::SSLServerVerification;
+          last_wincrypt_error_ = it->second.wincrypt_error;
+          last_wincrypt_chain_error_ = it->second.chain_error;
+        }
+        return it->second.is_valid;
+      }
+      // Cache expired, remove it
+      cert_cache_.erase(it);
+    }
+  }
+
+  // Perform Windows Schannel verification
+  unsigned long wincrypt_error = 0;
+  unsigned long chain_error = 0;
+  bool is_valid = detail::verify_cert_with_windows_schannel(
+      server_cert, host_, server_hostname_verification_,
+      windows_cert_verification_timeout_sec_, wincrypt_error, chain_error);
+
+  // Store error information
+  last_wincrypt_error_ = wincrypt_error;
+  last_wincrypt_chain_error_ = chain_error;
+
+  // Update cache
+  {
+    std::lock_guard<std::mutex> lock(cert_cache_mutex_);
+    CertVerificationCache cache_entry;
+    cache_entry.cert_fingerprint = fingerprint;
+    cache_entry.is_valid = is_valid;
+    cache_entry.wincrypt_error = wincrypt_error;
+    cache_entry.chain_error = chain_error;
+    cache_entry.timestamp = std::chrono::steady_clock::now();
+    cert_cache_[fingerprint] = cache_entry;
+
+    // Limit cache size to prevent memory growth
+    if (cert_cache_.size() > 100) {
+      // Remove oldest entry
+      auto oldest = cert_cache_.begin();
+      for (auto it = cert_cache_.begin(); it != cert_cache_.end(); ++it) {
+        if (it->second.timestamp < oldest->second.timestamp) { oldest = it; }
+      }
+      cert_cache_.erase(oldest);
+    }
+  }
+
+  if (!is_valid) {
+    error = Error::SSLServerVerification;
+    output_error_log(error, nullptr);
+  }
+
+  return is_valid;
 }
 #endif
 
@@ -13906,6 +14147,22 @@ inline void Client::set_server_certificate_verifier(
     std::function<SSLVerifierResponse(SSL *ssl)> verifier) {
   cli_->set_server_certificate_verifier(verifier);
 }
+
+#ifdef _WIN32
+inline void Client::enable_windows_certificate_verification(bool enabled) {
+  if (is_ssl_) {
+    static_cast<SSLClient &>(*cli_).enable_windows_certificate_verification(
+        enabled);
+  }
+}
+
+inline void Client::set_windows_certificate_verification_timeout(time_t sec) {
+  if (is_ssl_) {
+    static_cast<SSLClient &>(*cli_)
+        .set_windows_certificate_verification_timeout(sec);
+  }
+}
+#endif
 #endif
 
 inline void Client::set_logger(Logger logger) {
