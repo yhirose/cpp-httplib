@@ -142,6 +142,11 @@ jobs:
         script: |
           core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+    - name: Clean vcpkg cache for different configurations
+      run: |
+        if exist "$env:VCPKG_ROOT\installed" rmdir /s /q "$env:VCPKG_ROOT\installed"
+        if exist "$env:VCPKG_ROOT\packages" rmdir /s /q "$env:VCPKG_ROOT\packages"
+      shell: pwsh
     - name: Setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
     - name: Install vcpkg dependencies
@@ -168,4 +173,4 @@ jobs:
 
     env:
       VCPKG_ROOT: "C:/vcpkg"
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+      VCPKG_BINARY_SOURCES: "clear"

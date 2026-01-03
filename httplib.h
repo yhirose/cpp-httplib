@@ -7295,7 +7295,10 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
           CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
       nullptr, &chain_context);
 
-  if (!chain_result || !chain_context) { return false; }
+  if (!chain_result || !chain_context) {
+    out_wincrypt_error = GetLastError();
+    return false;
+  }
 
   auto chain_guard =
       detail::scope_exit([&] { CertFreeCertificateChain(chain_context); });
@@ -7305,6 +7308,8 @@ inline bool verify_cert_with_windows_schannel(X509 *server_cert,
 
   // Check if chain has errors
   if (chain_context->TrustStatus.dwErrorStatus != CERT_TRUST_NO_ERROR) {
+    // Set wincrypt_error to the chain trust error
+    out_wincrypt_error = chain_context->TrustStatus.dwErrorStatus;
     return false;
   }
 
