@@ -205,7 +205,10 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+#ifndef _SSIZE_T_DEFINED
 using ssize_t = __int64;
+#define _SSIZE_T_DEFINED
+#endif
 #endif // _MSC_VER
 
 #ifndef S_ISREG
