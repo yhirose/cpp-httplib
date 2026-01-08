@@ -6178,8 +6178,10 @@ inline std::string params_to_query_str(const Params &params) {
   for (auto it = params.begin(); it != params.end(); ++it) {
     if (it != params.begin()) { query += '&'; }
     query += encode_query_component(it->first);
-    query += '=';
-    query += encode_query_component(it->second);
+    if (!it->second.empty()) {
+      query += '=';
+      query += encode_query_component(it->second);
+    }
   }
   return query;
 }
