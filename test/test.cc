@@ -372,7 +372,7 @@ TEST(DecodePathTest, PercentCharacter) {
   EXPECT_EQ(
       decode_path_component(
           R"(descrip=Gastos%20%C3%A1%C3%A9%C3%AD%C3%B3%C3%BA%C3%B1%C3%91%206)"),
-      u8"descrip=Gastos áéíóúñÑ 6");
+      reinterpret_cast<const char*>(u8"descrip=Gastos áéíóúñÑ 6"));
 }
 
 TEST(DecodePathTest, PercentCharacterNUL) {
@@ -430,9 +430,9 @@ TEST(ClientQueryOrder, PreserveOrder) {
 }
 
 TEST(EncodeQueryParamTest, TestUTF8Characters) {
-  string chineseCharacters = u8"中国語";
-  string russianCharacters = u8"дом";
-  string brazilianCharacters = u8"óculos";
+  string chineseCharacters = reinterpret_cast<const char*>(u8"中国語");
+  string russianCharacters = reinterpret_cast<const char*>(u8"дом");
+  string brazilianCharacters = reinterpret_cast<const char*>(u8"óculos");
 
   EXPECT_EQ(httplib::encode_uri_component(chineseCharacters),
             "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
@@ -457,9 +457,9 @@ TEST(EncodeUriComponentTest, ParseReservedCharactersTest) {
 }
 
 TEST(EncodeUriComponentTest, TestUTF8Characters) {
-  string chineseCharacters = u8"中国語";
-  string russianCharacters = u8"дом";
-  string brazilianCharacters = u8"óculos";
+  string chineseCharacters = reinterpret_cast<const char*>(u8"中国語");
+  string russianCharacters = reinterpret_cast<const char*>(u8"дом");
+  string brazilianCharacters = reinterpret_cast<const char*>(u8"óculos");
 
   EXPECT_EQ(httplib::encode_uri_component(chineseCharacters),
             "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
@@ -491,9 +491,9 @@ TEST(EncodeUriTest, ParseReservedCharactersTest) {
 }
 
 TEST(EncodeUriTest, TestUTF8Characters) {
-  string chineseCharacters = u8"中国語";
-  string russianCharacters = u8"дом";
-  string brazilianCharacters = u8"óculos";
+  string chineseCharacters = reinterpret_cast<const char*>(u8"中国語");
+  string russianCharacters = reinterpret_cast<const char*>(u8"дом");
+  string brazilianCharacters = reinterpret_cast<const char*>(u8"óculos");
 
   EXPECT_EQ(httplib::encode_uri(chineseCharacters),
             "%E4%B8%AD%E5%9B%BD%E8%AA%9E");
@@ -538,9 +538,9 @@ TEST(DecodeUriComponentTest, TestUTF8Characters) {
   string encodedRussian = "%D0%B4%D0%BE%D0%BC";
   string encodedBrazilian = "%C3%B3culos";
 
-  EXPECT_EQ(httplib::decode_uri_component(encodedChinese), u8"中国語");
-  EXPECT_EQ(httplib::decode_uri_component(encodedRussian), u8"дом");
-  EXPECT_EQ(httplib::decode_uri_component(encodedBrazilian), u8"óculos");
+  EXPECT_EQ(httplib::decode_uri_component(encodedChinese), reinterpret_cast<const char*>(u8"中国語"));
+  EXPECT_EQ(httplib::decode_uri_component(encodedRussian), reinterpret_cast<const char*>(u8"дом"));
+  EXPECT_EQ(httplib::decode_uri_component(encodedBrazilian), reinterpret_cast<const char*>(u8"óculos"));
 }
 
 TEST(DecodeUriComponentTest, TestPathComponentDecoding) {
@@ -567,9 +567,9 @@ TEST(DecodeUriTest, TestUTF8Characters) {
   string encodedRussian = "%D0%B4%D0%BE%D0%BC";
   string encodedBrazilian = "%C3%B3culos";
 
-  EXPECT_EQ(httplib::decode_uri(encodedChinese), u8"中国語");
-  EXPECT_EQ(httplib::decode_uri(encodedRussian), u8"дом");
-  EXPECT_EQ(httplib::decode_uri(encodedBrazilian), u8"óculos");
+  EXPECT_EQ(httplib::decode_uri(encodedChinese), reinterpret_cast<const char*>(u8"中国語"));
+  EXPECT_EQ(httplib::decode_uri(encodedRussian), reinterpret_cast<const char*>(u8"дом"));
+  EXPECT_EQ(httplib::decode_uri(encodedBrazilian), reinterpret_cast<const char*>(u8"óculos"));
 }
 
 TEST(DecodeUriTest, TestCompleteUri) {
@@ -7422,10 +7422,10 @@ TEST(MountTest, MultibytesPathName) {
 
   Client cli("localhost", PORT);
 
-  auto res = cli.Get(u8"/日本語Dir/日本語File.txt");
+  auto res = cli.Get(reinterpret_cast<const char*>(u8"/日本語Dir/日本語File.txt"));
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(u8"日本語コンテンツ", res->body);
+  EXPECT_EQ(reinterpret_cast<const char*>(u8"日本語コンテンツ"), res->body);
 }
 
 TEST(KeepAliveTest, ReadTimeout) {
