@@ -9091,7 +9091,8 @@ inline bool Server::read_content_core(
         ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
         if (n > 0) {
           // There is data, so read it with payload limit enforcement
-          auto result = detail::read_content_without_length(strm, payload_max_length_, out);
+          auto result = detail::read_content_without_length(
+              strm, payload_max_length_, out);
           if (result == detail::ReadContentResult::PayloadTooLarge) {
             res.status = StatusCode::PayloadTooLarge_413;
             return false;
