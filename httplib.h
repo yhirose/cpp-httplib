@@ -9078,22 +9078,28 @@ inline bool Server::read_content_core(
   // oversized request and fail early (causing connection close). For SSL
   // builds we cannot reliably peek the decrypted application bytes, so keep
   // the original behaviour.
-#if !defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(_WIN32)
+#if !defined(CPPHTTPLIB_OPENSSL_SUPPORT)
   if (!req.has_header("Content-Length") &&
       !detail::is_chunked_transfer_encoding(req.headers)) {
-    socket_t s = strm.socket();
-    if (s != INVALID_SOCKET) {
-      // Peek up to payload_max_length_ + 1 bytes. If more than
-      // payload_max_length_ bytes are pending, reject the request.
-      size_t to_peek =
-          (payload_max_length_ > 0)
-              ? (std::min)(payload_max_length_ + 1, static_cast<size_t>(4096))
-              : 1;
-      std::vector<char> peekbuf(to_peek);
-      ssize_t n = ::recv(s, peekbuf.data(), to_peek, MSG_PEEK);
-      if (n > 0 && static_cast<size_t>(n) > payload_max_length_) {
-        // Indicate failure so connection will be closed.
-        return false;
+    // Only peek if payload_max_length is set to a finite value
+    if (payload_max_length_ > 0 &&
+        payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
+      socket_t s = strm.socket();
+      if (s != INVALID_SOCKET) {
+        // Peek to check if there is any pending data
+        char peekbuf[1];
+        ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
+        if (n > 0) {
+          // There is data, so read it with payload limit enforcement
+          auto result = detail::read_content_without_length(strm, payload_max_length_, out);
+          if (result == detail::ReadContentResult::PayloadTooLarge) {
+            res.status = StatusCode::PayloadTooLarge_413;
+            return false;
+          } else if (result != detail::ReadContentResult::Success) {
+            return false;
+          }
+          return true;
+        }
       }
     }
     return true;
