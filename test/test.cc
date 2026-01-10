@@ -14101,3 +14101,52 @@ TEST(Issue2318Test, EmptyHostString) {
     EXPECT_EQ(httplib::Error::Connection, res.error());
   }
 }
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST(ZipBombProtectionTest, DecompressedSizeExceedsLimit) {
+  Server svr;
+
+  // Set a small payload limit (1KB)
+  svr.set_payload_max_length(1024);
+
+  svr.Post("/test", [&](const Request &req, Response &res) {
+    res.set_content("Body size: " + std::to_string(req.body.size()),
+                    "text/plain");
+  });
+
+  auto listen_thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+
+  svr.wait_until_ready();
+
+  // Create data that compresses well but exceeds limit when decompressed
+  // 8KB of repeated null bytes compresses to a very small size
+  std::string original_data(8 * 1024, '\0');
+
+  // Compress the data using gzip
+  std::string compressed_data;
+  detail::gzip_compressor compressor;
+  compressor.compress(original_data.data(), original_data.size(), true,
+                      [&](const char *data, size_t size) {
+                        compressed_data.append(data, size);
+                        return true;
+                      });
+
+  // Verify compression worked (compressed should be much smaller)
+  ASSERT_LT(compressed_data.size(), original_data.size());
+  ASSERT_LT(compressed_data.size(), 1024u); // Compressed fits in limit
+
+  // Send compressed data with Content-Encoding: gzip
+  Client cli(HOST, PORT);
+  Headers headers = {{"Content-Encoding", "gzip"}};
+  auto res =
+      cli.Post("/test", headers, compressed_data, "application/octet-stream");
+
+  // Server should reject because decompressed size (8KB) exceeds limit (1KB)
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+}
+#endif
