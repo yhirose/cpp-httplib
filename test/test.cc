@@ -10709,7 +10709,15 @@ TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
         }
 
         std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello";
-        ::send(cli, resp.c_str(), resp.size(), 0);
+
+        ::send(cli,
+#ifdef _WIN32
+               static_cast<const char *>(resp.c_str()),
+               static_cast<int>(resp.size()),
+#else
+               resp.c_str(), resp.size(),
+#endif
+               0);
 
         buf_all.erase(0, pos + 4);
       }
