@@ -200,3 +200,37 @@ jobs:
     env:
       VCPKG_ROOT: "C:/vcpkg"
       VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+  gentoo:
+    runs-on: ubuntu-latest
+    container:
+      image: gentoo/stage3:latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Sync portage tree
+        run: emerge-webrsync
+      - name: Setup binary packages
+        run: getuto
+      - name: Install libraries
+        run: |
+          emerge --noreplace --getbinpkg \
+            dev-build/meson app-arch/brotli virtual/zlib app-arch/zstd \
+            dev-libs/openssl dev-cpp/gtest net-misc/curl
+      - name: Build and run tests
+        run: |
+          mkdir build
+          cd build
+          meson setup -Dtest=true -Dtls=enabled -Dzlib=enabled -Dbrotli=enabled -Dzstd=enabled .. .
+          # Emulate sandbox. Real sandbox doesn't work in unprivileged docker
+          echo > /etc/resolv.conf
+          GTEST_FILTER="-*.*_Online" meson test
+      - name: Test log
+        if: always()
+        working-directory: build
+        run: cat meson-logs/testlog.txt
