@@ -11017,7 +11017,7 @@ TEST(MakeHostAndPortStringTest, VariousPatterns) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(SSLClientHostHeaderTest, Issue2301) {
+TEST(SSLClientHostHeaderTest, Issue2301_Online) {
   httplib::SSLClient cli("roblox.com", 443);
   cli.set_follow_location(true);
 
