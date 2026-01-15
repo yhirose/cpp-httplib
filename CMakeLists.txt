@@ -5,6 +5,7 @@
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZSTD_IF_AVAILABLE (default on)
+	* HTTPLIB_BUILD_MODULES (default off)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
@@ -110,7 +111,15 @@ option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system cer
 option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
-option(HTTPLIB_BUILD_MODULES "Build httplib modules (requires HTTPLIB_COMPILE to be ON)." OFF)
+# C++20 modules support requires CMake 3.28 or later
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+	option(HTTPLIB_BUILD_MODULES "Build httplib modules (requires HTTPLIB_COMPILE to be ON)." OFF)
+else()
+	set(HTTPLIB_BUILD_MODULES OFF CACHE INTERNAL "Build httplib modules disabled (requires CMake 3.28+)" FORCE)
+	if(DEFINED CACHE{HTTPLIB_BUILD_MODULES} AND HTTPLIB_BUILD_MODULES)
+		message(WARNING "HTTPLIB_BUILD_MODULES requires CMake 3.28 or later. Current version is ${CMAKE_VERSION}. Modules support has been disabled.")
+	endif()
+endif()
 # Defaults to static library but respects standard BUILD_SHARED_LIBS if set
 include(CMakeDependentOption)
 cmake_dependent_option(HTTPLIB_SHARED "Build the library as a shared library instead of static. Has no effect if using header-only."
@@ -251,12 +260,9 @@ if(HTTPLIB_COMPILE)
 	)
 	
 	# Add C++20 module support if requested
-	if(HTTPLIB_BUILD_MODULES)
-		target_sources(${PROJECT_NAME}
-			PUBLIC
-				FILE_SET CXX_MODULES FILES
-					"${_httplib_build_includedir}/httplib.cppm"
-		)
+	# Include from separate file to prevent parse errors on older CMake versions
+	if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+		include(cmake/modules.cmake)
 	endif()
 	
 	set_target_properties(${PROJECT_NAME}
@@ -385,10 +391,8 @@ if(HTTPLIB_INSTALL)
 	include(CPack)
 endif()
 
-if(HTTPLIB_BUILD_MODULES)
-	if(NOT HTTPLIB_COMPILE)
-		message(FATAL_ERROR "HTTPLIB_BUILD_MODULES requires HTTPLIB_COMPILE to be ON.")
-	endif()
+if(HTTPLIB_BUILD_MODULES AND NOT HTTPLIB_COMPILE)
+	message(FATAL_ERROR "HTTPLIB_BUILD_MODULES requires HTTPLIB_COMPILE to be ON.")
 endif()
 
 if(HTTPLIB_TEST)
