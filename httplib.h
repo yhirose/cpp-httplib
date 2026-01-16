@@ -4833,7 +4833,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
                        bool ipv6_v6only, SocketOptions socket_options,
                        BindOrConnect bind_or_connect, time_t timeout_sec = 0) {
   // Get address info
-  const char *node = nullptr;
+  const char *node = "";
   struct addrinfo hints;
   struct addrinfo *result;
 
