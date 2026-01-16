@@ -4788,9 +4788,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
 
   // Allocate on the heap, so the resolver thread can keep using the data.
   auto state = std::make_shared<GetAddrInfoState>();
-  if (node) {
-    state->node = node;
-  }
+  if (node) { state->node = node; }
   state->service = service;
   state->hints = *hints;
 
