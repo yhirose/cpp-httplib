@@ -11191,7 +11191,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                         Response &res, bool close_connection,
                                         Error &error) {
   // Send request
-  if (!write_request(strm, req, close_connection, error)) { return false; }
+  auto write_request_success =
+      write_request(strm, req, close_connection, error);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if (is_ssl()) {
@@ -11209,10 +11210,12 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   // Receive response and headers
   if (!read_response_line(strm, req, res) ||
       !detail::read_headers(strm, res.headers)) {
-    error = Error::Read;
+    if (write_request_success) { error = Error::Read; }
     output_error_log(error, &req);
     return false;
   }
+
+  if (!write_request_success) { return false; }
 
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&
