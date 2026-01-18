@@ -11025,15 +11025,24 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   // request bodies to avoid interfering with normal small requests and
   // reduce side-effects. Poll briefly (up to 50ms) for an early response.
 #if defined(_WIN32)
-  if (req.body.size() > (1u << 20)) { // > 1MB
+  if (req.body.size() > (1u << 20) &&
+      req.path.size() >
+          CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) { // > 1MB && long URI
     auto start = std::chrono::high_resolution_clock::now();
     const auto max_wait_ms = 50;
     for (;;) {
-      if (strm.is_readable()) { return false; }
       auto sock = strm.socket();
+      // Prefer socket-level readiness to avoid SSL_pending() false-positives
+      // from SSL internals. If the underlying socket is readable, assume an
+      // early response may be present.
       if (sock != INVALID_SOCKET && detail::select_read(sock, 0, 0) > 0) {
         return false;
       }
+      // Fallback to stream-level check for non-socket streams or when the
+      // socket isn't reporting readable. Avoid using `is_readable()` for
+      // SSL, since `SSL_pending()` may report buffered records that do not
+      // indicate a complete application-level response yet.
+      if (!is_ssl() && strm.is_readable()) { return false; }
       auto now = std::chrono::high_resolution_clock::now();
       auto elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(now - start)
