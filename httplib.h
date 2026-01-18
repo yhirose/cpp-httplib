@@ -286,6 +286,7 @@ using socket_t = int;
 #include <atomic>
 #include <cassert>
 #include <cctype>
+#include <chrono>
 #include <climits>
 #include <condition_variable>
 #include <cstring>
@@ -11014,6 +11015,44 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
+  // After sending request line and headers, wait briefly for an early server
+  // response (e.g. 4xx) and avoid sending a potentially large request body
+  // unnecessarily. This workaround is only enabled on Windows because Unix
+  // platforms surface write errors (EPIPE) earlier; on Windows kernel send
+  // buffering can accept large writes even when the peer already responded.
+  // Check the stream first (which covers SSL via `is_readable()`), then
+  // fall back to select on the socket. Only perform the wait for very large
+  // request bodies to avoid interfering with normal small requests and
+  // reduce side-effects. Poll briefly (up to 50ms) for an early response.
+#if defined(_WIN32)
+  if (req.body.size() > (1u << 20) &&
+      req.path.size() >
+          CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) { // > 1MB && long URI
+    auto start = std::chrono::high_resolution_clock::now();
+    const auto max_wait_ms = 50;
+    for (;;) {
+      auto sock = strm.socket();
+      // Prefer socket-level readiness to avoid SSL_pending() false-positives
+      // from SSL internals. If the underlying socket is readable, assume an
+      // early response may be present.
+      if (sock != INVALID_SOCKET && detail::select_read(sock, 0, 0) > 0) {
+        return false;
+      }
+      // Fallback to stream-level check for non-socket streams or when the
+      // socket isn't reporting readable. Avoid using `is_readable()` for
+      // SSL, since `SSL_pending()` may report buffered records that do not
+      // indicate a complete application-level response yet.
+      if (!is_ssl() && strm.is_readable()) { return false; }
+      auto now = std::chrono::high_resolution_clock::now();
+      auto elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - start)
+              .count();
+      if (elapsed >= max_wait_ms) { break; }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+#endif
+
   // Body
   if (req.body.empty()) {
     return write_content_with_provider(strm, req, error);
@@ -11191,7 +11230,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                         Response &res, bool close_connection,
                                         Error &error) {
   // Send request
-  if (!write_request(strm, req, close_connection, error)) { return false; }
+  auto write_request_success =
+      write_request(strm, req, close_connection, error);
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   if (is_ssl()) {
@@ -11209,10 +11249,12 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   // Receive response and headers
   if (!read_response_line(strm, req, res) ||
       !detail::read_headers(strm, res.headers)) {
-    error = Error::Read;
+    if (write_request_success) { error = Error::Read; }
     output_error_log(error, &req);
     return false;
   }
+
+  if (!write_request_success) { return false; }
 
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&

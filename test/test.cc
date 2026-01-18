@@ -6567,6 +6567,53 @@ TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
   EXPECT_EQ(test_content, pre_compression_body);
 }
 
+TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
+  {
+    Request req;
+    req.method = "POST";
+    req.path = "/post-large?q=" + LONG_QUERY_VALUE;
+    req.body = LARGE_DATA;
+
+    Response res;
+    auto error = Error::Success;
+
+    auto start = std::chrono::high_resolution_clock::now();
+    cli_.set_keep_alive(true);
+    auto ret = cli_.send(req, res, error);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+            .count();
+
+    EXPECT_FALSE(ret);
+    EXPECT_EQ(StatusCode::UriTooLong_414, res.status);
+    EXPECT_EQ("close", res.get_header_value("Connection"));
+    EXPECT_FALSE(cli_.is_socket_open());
+    EXPECT_LE(elapsed, 200);
+  }
+
+  {
+    // Send an extra GET request to ensure error recovery without hanging
+    Request req;
+    req.method = "GET";
+    req.path = "/hi";
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto res = cli_.send(req);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+            .count();
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("Hello World!", res->body);
+    EXPECT_LE(elapsed, 100);
+  }
+}
+
 TEST(ZstdDecompressor, ChunkedDecompression) {
   std::string data;
   for (size_t i = 0; i < 32 * 1024; ++i) {
