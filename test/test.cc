@@ -6569,9 +6569,32 @@ TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
 
 TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
   {
+    // Test with Expect: 100-continue header - success case
+    // Server returns 100 Continue, client sends body, server returns 200 OK
+    Request req;
+    req.method = "POST";
+    req.path = "/post-large";
+    req.set_header("Expect", "100-continue");
+    req.body = LARGE_DATA;
+
+    Response res;
+    auto error = Error::Success;
+
+    cli_.set_keep_alive(true);
+    auto ret = cli_.send(req, res, error);
+
+    EXPECT_TRUE(ret);
+    EXPECT_EQ(StatusCode::OK_200, res.status);
+    EXPECT_EQ(LARGE_DATA, res.body);
+  }
+
+  {
+    // Test with Expect: 100-continue header - error case
+    // Client should not send the body when server returns an error
     Request req;
     req.method = "POST";
     req.path = "/post-large?q=" + LONG_QUERY_VALUE;
+    req.set_header("Expect", "100-continue");
     req.body = LARGE_DATA;
 
     Response res;
@@ -6586,7 +6609,8 @@ TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
             .count();
 
-    EXPECT_FALSE(ret);
+    // With Expect: 100-continue, request completes successfully but with error
+    EXPECT_TRUE(ret);
     EXPECT_EQ(StatusCode::UriTooLong_414, res.status);
     EXPECT_EQ("close", res.get_header_value("Connection"));
     EXPECT_FALSE(cli_.is_socket_open());
