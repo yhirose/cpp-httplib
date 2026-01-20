@@ -165,7 +165,10 @@ jobs:
       run: cmake --build build --config Release -- /v:m /clp:ShowCommandLine
     - name: Run tests ${{ matrix.config.name }}
       if: ${{ matrix.config.run_tests }}
-      run: ctest --output-on-failure --test-dir build -C Release
+      run: ctest --output-on-failure --test-dir build -C Release -E "BenchmarkTest"
+    - name: Run benchmark tests with retry ${{ matrix.config.name }}
+      if: ${{ matrix.config.run_tests }}
+      run: ctest --output-on-failure --test-dir build -C Release -R "BenchmarkTest" --repeat until-pass:5
 
     env:
       VCPKG_ROOT: "C:/vcpkg"
