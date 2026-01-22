@@ -13095,7 +13095,7 @@ inline bool SSLClient::load_certs() {
         last_openssl_error_ = ERR_get_error();
         ret = false;
       }
-    } else {
+    } else if (!ca_cert_store_) {
       auto loaded = false;
 #ifdef _WIN32
       loaded =
