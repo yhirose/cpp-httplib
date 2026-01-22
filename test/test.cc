@@ -8717,6 +8717,31 @@ TEST(SSLClientTest, WildcardHostNameMatch_Online) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(SSLClientTest, WildcardHostNameMatchCase_Online) {
+  SSLClient cli("wWw.YouTube.Com");
+
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.enable_server_certificate_verification(true);
+  cli.enable_server_hostname_verification(true);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(SSLClientTest, HostNameMatchCase_Online) {
+  SSLClient cli("gOoGlE.COm");
+
+  cli.enable_server_certificate_verification(true);
+  cli.enable_server_hostname_verification(true);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST(SSLClientTest, Issue2004_Online) {
   Client client("https://google.com");
   client.set_follow_location(true);
