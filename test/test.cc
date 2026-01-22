@@ -9682,6 +9682,27 @@ TEST(SSLClientRedirectTest, CertFile) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+// Test that set_ca_cert_store() skips system certs (consistent with
+// set_ca_cert_path behavior). When a custom cert store is set, only those certs
+// should be trusted - system certs should NOT be loaded.
+TEST(SSLClientTest, SetCaCertStoreSkipsSystemCerts_Online) {
+  // Load a specific cert that is NOT a system CA cert
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+
+  SSLClient cli("google.com");
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+
+  // This should FAIL because:
+  // 1. We loaded only SERVER_CERT2 (a test cert, not a CA for google.com)
+  // 2. System certs should NOT be loaded when custom store is set
+  // If system certs WERE loaded, this would succeed
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+}
+
 TEST(MultipartFormDataTest, LargeData) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 
