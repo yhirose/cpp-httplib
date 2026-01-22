@@ -75,21 +75,32 @@ jobs:
       (github.event_name == 'pull_request'  &&
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    strategy:
+      matrix:
+        tls_backend: [openssl, mbedtls]
+    name: ubuntu (${{ matrix.tls_backend }})
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: install libraries
+      - name: install common libraries
         run: |
-          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y libc6-dev${{ matrix.config.arch_suffix }} libstdc++-13-dev${{ matrix.config.arch_suffix }} \
-            libssl-dev${{ matrix.config.arch_suffix }} libcurl4-openssl-dev${{ matrix.config.arch_suffix }} \
-            zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }} \
-            libzstd-dev${{ matrix.config.arch_suffix }}
-      - name: build and run tests
-        run: cd test && make EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}"
+          sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
+      - name: install OpenSSL
+        if: matrix.tls_backend == 'openssl'
+        run: sudo apt-get install -y libssl-dev
+      - name: install Mbed TLS
+        if: matrix.tls_backend == 'mbedtls'
+        run: sudo apt-get install -y libmbedtls-dev
+      - name: build and run tests (OpenSSL)
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make
+      - name: build and run tests (Mbed TLS)
+        if: matrix.tls_backend == 'mbedtls'
+        run: cd test && make test_split_mbedtls && make test_mbedtls && ./test_mbedtls
       - name: run fuzz test target
-        run: cd test && make EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}" fuzz_test
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make fuzz_test
 
   macos:
     runs-on: macos-latest
@@ -98,12 +109,24 @@ jobs:
       (github.event_name == 'pull_request'  &&
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
+    strategy:
+      matrix:
+        tls_backend: [openssl, mbedtls]
+    name: macos (${{ matrix.tls_backend }})
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: build and run tests
+      - name: install Mbed TLS
+        if: matrix.tls_backend == 'mbedtls'
+        run: brew install mbedtls@3
+      - name: build and run tests (OpenSSL)
+        if: matrix.tls_backend == 'openssl'
         run: cd test && make
+      - name: build and run tests (Mbed TLS)
+        if: matrix.tls_backend == 'mbedtls'
+        run: cd test && make test_split_mbedtls && make test_mbedtls && ./test_mbedtls
       - name: run fuzz test target
+        if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
 
   windows:

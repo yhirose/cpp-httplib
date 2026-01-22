@@ -26,7 +26,7 @@ TEST(ProxyTest, NoSSLBasic) {
   ProxyTest(cli, true);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLBasic) {
   SSLClient cli("nghttp2.org");
   ProxyTest(cli, true);
@@ -51,7 +51,7 @@ void RedirectProxyText(T &cli, const char *path, bool basic) {
   if (basic) {
     cli.set_proxy_basic_auth("hello", "world");
   } else {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli.set_proxy_digest_auth("hello", "world");
 #endif
   }
@@ -67,7 +67,7 @@ TEST(RedirectTest, HTTPBinNoSSLBasic) {
   RedirectProxyText(cli, "/httpbin/redirect/2", true);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, HTTPBinNoSSLDigest) {
   Client cli("nghttp2.org");
   RedirectProxyText(cli, "/httpbin/redirect/2", false);
@@ -84,7 +84,7 @@ TEST(RedirectTest, HTTPBinSSLDigest) {
 }
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, YouTubeNoSSLBasic) {
   Client cli("youtube.com");
   RedirectProxyText(cli, "/", true);
@@ -157,7 +157,7 @@ TEST(BaseAuthTest, NoSSL) {
   BaseAuthTestFromHTTPWatch(cli);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(BaseAuthTest, SSL) {
   SSLClient cli("httpcan.org");
   BaseAuthTestFromHTTPWatch(cli);
@@ -166,7 +166,7 @@ TEST(BaseAuthTest, SSL) {
 
 // ----------------------------------------------------------------------------
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
   cli.set_proxy("localhost", 3129);
   cli.set_proxy_digest_auth("hello", "world");
@@ -230,13 +230,13 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
   if (basic) {
     cli.set_proxy_basic_auth("hello", "world");
   } else {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli.set_proxy_digest_auth("hello", "world");
 #endif
   }
 
   cli.set_follow_location(true);
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   cli.set_digest_auth("hello", "world");
 #endif
 
@@ -274,7 +274,7 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
   }
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, NoSSLWithBasic) {
   Client cli("nghttp2.org");
   KeepAliveTest(cli, true);
