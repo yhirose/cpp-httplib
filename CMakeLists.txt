@@ -185,10 +185,11 @@ elseif(HTTPLIB_USE_BROTLI_IF_AVAILABLE)
 	set(HTTPLIB_IS_USING_BROTLI ${Brotli_FOUND})
 endif()
 
-# NOTE: When using cpp-httplib as a subproject (e.g., via FetchContent), the zstd::libzstd target may not be visible in the parent project scope.
-# If you encounter a "target not found" error, see https://github.com/yhirose/cpp-httplib/issues/2313 for a workaround.
+# NOTE:
+# zstd < 1.5.6 does not provide the CMake imported target `zstd::libzstd`.
+# Older versions must be consumed via their pkg-config file.
 if(HTTPLIB_REQUIRE_ZSTD)
-	find_package(zstd)
+	find_package(zstd 1.5.6 CONFIG)
 	if(NOT zstd_FOUND)
 		find_package(PkgConfig REQUIRED)
 		pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
@@ -196,7 +197,7 @@ if(HTTPLIB_REQUIRE_ZSTD)
 	endif()
 	set(HTTPLIB_IS_USING_ZSTD TRUE)
 elseif(HTTPLIB_USE_ZSTD_IF_AVAILABLE)
-	find_package(zstd QUIET)
+	find_package(zstd 1.5.6 CONFIG QUIET)
 	if(NOT zstd_FOUND)
 		find_package(PkgConfig QUIET)
 		if(PKG_CONFIG_FOUND)
