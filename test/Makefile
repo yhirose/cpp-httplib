@@ -38,6 +38,7 @@ endif
 
 TEST_ARGS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
 TEST_ARGS_MBEDTLS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(MBEDTLS_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
+TEST_ARGS_NO_TLS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
 
 # By default, use standalone_fuzz_target_runner.
 # This runner does no fuzzing, but simply executes the inputs
@@ -110,6 +111,14 @@ test_mbedtls : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 test_split_mbedtls : test.cc ../httplib.h httplib.cc Makefile cert.pem
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_MBEDTLS)
 
+# No TLS
+test_no_tls : test.cc include_httplib.cc ../httplib.h Makefile
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS_NO_TLS)
+	@file $@
+
+test_split_no_tls : test.cc ../httplib.h httplib.cc Makefile
+	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_NO_TLS)
+
 check_abi:
 	@./check-shared-library-abi-compatibility.sh
 
@@ -163,5 +172,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_proxy test_proxy_mbedtls server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
 
