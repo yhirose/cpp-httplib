@@ -1475,6 +1475,7 @@ struct ChunkedDecoder;
 
 struct BodyReader {
   Stream *stream = nullptr;
+  bool has_content_length = false;
   size_t content_length = 0;
   size_t bytes_read = 0;
   bool chunked = false;
@@ -5707,6 +5708,7 @@ inline bool read_content_with_length(Stream &strm, size_t len,
 
   detail::BodyReader br;
   br.stream = &strm;
+  br.has_content_length = true;
   br.content_length = len;
   br.chunked = false;
   br.bytes_read = 0;
@@ -8125,13 +8127,13 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
 
   if (!chunked) {
     // Content-Length based reading
-    if (bytes_read >= content_length) {
+    if (has_content_length && bytes_read >= content_length) {
       eof = true;
       return 0;
     }
 
     auto remaining = content_length - bytes_read;
-    auto to_read = (std::min)(len, remaining);
+    auto to_read = has_content_length ? (std::min)(len, remaining) : len;
     auto n = stream->read(buf, to_read);
 
     if (n < 0) {
@@ -8148,8 +8150,11 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
       return 0;
     }
 
-    bytes_read += static_cast<size_t>(n);
-    if (bytes_read >= content_length) { eof = true; }
+    if (has_content_length)
+    {
+      bytes_read += static_cast<size_t>(n);
+      if (bytes_read >= content_length) { eof = true; }
+    }
     return n;
   }
 
@@ -10447,6 +10452,7 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
 
   auto content_length_str = handle.response->get_header_value("Content-Length");
   if (!content_length_str.empty()) {
+    handle.body_reader_.has_content_length = true;
     handle.body_reader_.content_length =
         static_cast<size_t>(std::stoull(content_length_str));
   }
