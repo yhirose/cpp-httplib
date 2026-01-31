@@ -1,0 +1,20 @@
+name: No Exceptions Test
+
+on: [push, pull_request]
+
+jobs:
+  test-no-exceptions:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libssl-dev zlib1g-dev libcurl4-openssl-dev libbrotli-dev libzstd-dev
+
+    - name: Run tests with CPPHTTPLIB_NO_EXCEPTIONS
+      run: |
+        cd test && make EXTRA_CXXFLAGS="-fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS"

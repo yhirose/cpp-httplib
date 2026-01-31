@@ -82,7 +82,13 @@ FormData &get_file_value(std::vector<FormData> &items, const char *key) {
 
 static void read_file(const std::string &path, std::string &out) {
   std::ifstream fs(path, std::ios_base::binary);
-  if (!fs) throw std::runtime_error("File not found: " + path);
+  if (!fs) {
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+    return;
+#else
+    throw std::runtime_error("File not found: " + path);
+#endif
+  }
   fs.seekg(0, std::ios_base::end);
   auto size = fs.tellg();
   fs.seekg(0);
@@ -3144,16 +3150,20 @@ protected:
              [&](const Request &req, Response &res) {
                ASSERT_FALSE(req.has_header("REMOTE_ADDR"));
                ASSERT_FALSE(req.has_header("REMOTE_PORT"));
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
                ASSERT_ANY_THROW(req.get_header_value("REMOTE_ADDR"));
                ASSERT_ANY_THROW(req.get_header_value("REMOTE_PORT"));
+#endif
                res.set_content(req.remote_addr, "text/plain");
              })
         .Get("/local_addr",
              [&](const Request &req, Response &res) {
                ASSERT_FALSE(req.has_header("LOCAL_ADDR"));
                ASSERT_FALSE(req.has_header("LOCAL_PORT"));
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
                ASSERT_ANY_THROW(req.get_header_value("LOCAL_ADDR"));
                ASSERT_ANY_THROW(req.get_header_value("LOCAL_PORT"));
+#endif
                auto local_addr = req.local_addr;
                auto local_port = std::to_string(req.local_port);
                res.set_content(local_addr.append(":").append(local_port),
@@ -7054,6 +7064,7 @@ TEST(ServerStopTest, ListenFailure) {
   t.join();
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ServerStopTest, Decommision) {
   Server svr;
 
@@ -7099,6 +7110,7 @@ TEST(ServerStopTest, Decommision) {
     }
   }
 }
+#endif
 
 // Helper function for string body upload progress tests
 template <typename SetupHandler, typename ClientCall>
@@ -10587,7 +10599,11 @@ TEST(TaskQueueTest, IncreaseAtomicInteger) {
     EXPECT_TRUE(queued);
   }
 
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  task_queue->shutdown();
+#else
   EXPECT_NO_THROW(task_queue->shutdown());
+#endif
   EXPECT_EQ(number_of_tasks, count.load());
 }
 
@@ -10606,7 +10622,11 @@ TEST(TaskQueueTest, IncreaseAtomicIntegerWithQueueLimit) {
     }
   }
 
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  task_queue->shutdown();
+#else
   EXPECT_NO_THROW(task_queue->shutdown());
+#endif
   EXPECT_EQ(queued_count, count.load());
   EXPECT_TRUE(queued_count <= number_of_tasks);
   EXPECT_TRUE(queued_count >= qlimit);
@@ -10672,7 +10692,11 @@ TEST(TaskQueueTest, MaxQueuedRequests) {
     EXPECT_TRUE(queued);
   }
 
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  task_queue->shutdown();
+#else
   EXPECT_NO_THROW(task_queue->shutdown());
+#endif
 }
 
 TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
@@ -13541,11 +13565,18 @@ protected:
       msg.id = value;
     } else if (field == "retry") {
       // Parse retry interval in milliseconds
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+      {
+        std::istringstream iss(value);
+        iss >> retry_ms;
+      }
+#else
       try {
         retry_ms = std::stoi(value);
       } catch (...) {
         // Invalid retry value, ignore
       }
+#endif
     }
     // Unknown fields are ignored per SSE spec
 

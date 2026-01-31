@@ -3261,11 +3261,18 @@ private:
       msg.id = value;
     } else if (field == "retry") {
       // Parse retry interval in milliseconds
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+      {
+        std::istringstream iss(value);
+        iss >> retry_ms;
+      }
+#else
       try {
         retry_ms = std::stoi(value);
       } catch (...) {
         // Invalid retry value, ignore
       }
+#endif
     }
     // Unknown fields are ignored per SSE spec
 
