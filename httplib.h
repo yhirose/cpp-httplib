@@ -305,6 +305,7 @@ using socket_t = int;
 #include <chrono>
 #include <climits>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <errno.h>
 #include <exception>
@@ -322,6 +323,7 @@ using socket_t = int;
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <system_error>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -510,6 +512,69 @@ private:
   std::function<void(void)> exit_function;
   bool execute_on_destruction;
 };
+
+// Simple from_chars implementation for integer and double types (C++17
+// substitute)
+template <typename T> struct from_chars_result {
+  const char *ptr;
+  std::errc ec;
+};
+
+template <typename T>
+inline from_chars_result<T> from_chars(const char *first, const char *last,
+                                       T &value, int base = 10) {
+  value = 0;
+  const char *p = first;
+  bool negative = false;
+
+  if (p != last && *p == '-') {
+    negative = true;
+    ++p;
+  }
+  if (p == last) { return {first, std::errc::invalid_argument}; }
+
+  T result = 0;
+  for (; p != last; ++p) {
+    char c = *p;
+    int digit = -1;
+    if ('0' <= c && c <= '9') {
+      digit = c - '0';
+    } else if ('a' <= c && c <= 'z') {
+      digit = c - 'a' + 10;
+    } else if ('A' <= c && c <= 'Z') {
+      digit = c - 'A' + 10;
+    } else {
+      break;
+    }
+
+    if (digit < 0 || digit >= base) { break; }
+    if (result > ((std::numeric_limits<T>::max)() - digit) / base) {
+      return {p, std::errc::result_out_of_range};
+    }
+    result = result * base + digit;
+  }
+
+  if (p == first || (negative && p == first + 1)) {
+    return {first, std::errc::invalid_argument};
+  }
+
+  value = negative ? -result : result;
+  return {p, std::errc{}};
+}
+
+// from_chars for double (simple wrapper for strtod)
+inline from_chars_result<double> from_chars(const char *first, const char *last,
+                                            double &value) {
+  std::string s(first, last);
+  char *endptr = nullptr;
+  errno = 0;
+  value = std::strtod(s.c_str(), &endptr);
+  if (endptr == s.c_str()) { return {first, std::errc::invalid_argument}; }
+  if (errno == ERANGE) {
+    return {first + (endptr - s.c_str()), std::errc::result_out_of_range};
+  }
+  return {first + (endptr - s.c_str()), std::errc{}};
+}
 
 } // namespace detail
 
@@ -3261,18 +3326,12 @@ private:
       msg.id = value;
     } else if (field == "retry") {
       // Parse retry interval in milliseconds
-#ifdef CPPHTTPLIB_NO_EXCEPTIONS
       {
-        std::istringstream iss(value);
-        iss >> retry_ms;
+        int v = 0;
+        auto res =
+            detail::from_chars(value.data(), value.data() + value.size(), v);
+        if (res.ec == std::errc{}) { retry_ms = v; }
       }
-#else
-      try {
-        retry_ms = std::stoi(value);
-      } catch (...) {
-        // Invalid retry value, ignore
-      }
-#endif
     }
     // Unknown fields are ignored per SSE spec
 
@@ -6335,10 +6394,20 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
         return;
       }
 
-      const auto first =
-          static_cast<ssize_t>(lhs.empty() ? -1 : std::stoll(lhs));
-      const auto last =
-          static_cast<ssize_t>(rhs.empty() ? -1 : std::stoll(rhs));
+      ssize_t first = -1;
+      if (!lhs.empty()) {
+        ssize_t v;
+        auto res = detail::from_chars(lhs.data(), lhs.data() + lhs.size(), v);
+        if (res.ec == std::errc{}) { first = v; }
+      }
+
+      ssize_t last = -1;
+      if (!rhs.empty()) {
+        ssize_t v;
+        auto res = detail::from_chars(rhs.data(), rhs.data() + rhs.size(), v);
+        if (res.ec == std::errc{}) { last = v; }
+      }
+
       if ((first == -1 && last == -1) ||
           (first != -1 && last != -1 && first > last)) {
         all_valid_ranges = false;
@@ -6413,25 +6482,17 @@ inline bool parse_accept_header(const std::string &s,
         return;
       }
 
-#ifdef CPPHTTPLIB_NO_EXCEPTIONS
       {
-        std::istringstream iss(quality_str);
-        iss >> accept_entry.quality;
-
-        // Check if conversion was successful and entire string was consumed
-        if (iss.fail() || !iss.eof()) {
+        double v = 0.0;
+        auto res = detail::from_chars(
+            quality_str.data(), quality_str.data() + quality_str.size(), v);
+        if (res.ec == std::errc{}) {
+          accept_entry.quality = v;
+        } else {
           has_invalid_entry = true;
           return;
         }
       }
-#else
-      try {
-        accept_entry.quality = std::stod(quality_str);
-      } catch (...) {
-        has_invalid_entry = true;
-        return;
-      }
-#endif
       // Check if quality is in valid range [0.0, 1.0]
       if (accept_entry.quality < 0.0 || accept_entry.quality > 1.0) {
         has_invalid_entry = true;
@@ -13376,8 +13437,10 @@ inline bool SSLClient::check_host_name(const char *pattern,
           partial_match = true;
         } else if (h.size() >= prefix_length) {
           partial_match =
-              std::equal(p.begin(), p.begin() + prefix_length, h.begin(),
-                         [](const char ca, const char cb) {
+              std::equal(p.begin(),
+                         p.begin() + static_cast<std::string::difference_type>(
+                                         prefix_length),
+                         h.begin(), [](const char ca, const char cb) {
                            return httplib::detail::case_ignore::to_lower(ca) ==
                                   httplib::detail::case_ignore::to_lower(cb);
                          });
