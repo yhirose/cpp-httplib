@@ -5,6 +5,7 @@
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZSTD_IF_AVAILABLE (default on)
+	* HTTPLIB_BUILD_MODULES (default off)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
@@ -110,6 +111,15 @@ option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system cer
 option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
+# C++20 modules support requires CMake 3.28 or later
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+	option(HTTPLIB_BUILD_MODULES "Build httplib modules (requires HTTPLIB_COMPILE to be ON)." OFF)
+else()
+	set(HTTPLIB_BUILD_MODULES OFF CACHE INTERNAL "Build httplib modules disabled (requires CMake 3.28+)" FORCE)
+	if(DEFINED CACHE{HTTPLIB_BUILD_MODULES} AND HTTPLIB_BUILD_MODULES)
+		message(WARNING "HTTPLIB_BUILD_MODULES requires CMake 3.28 or later. Current version is ${CMAKE_VERSION}. Modules support has been disabled.")
+	endif()
+endif()
 # Defaults to static library but respects standard BUILD_SHARED_LIBS if set
 include(CMakeDependentOption)
 cmake_dependent_option(HTTPLIB_SHARED "Build the library as a shared library instead of static. Has no effect if using header-only."
@@ -248,6 +258,13 @@ if(HTTPLIB_COMPILE)
 			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
 			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/httplib.h>
 	)
+	
+	# Add C++20 module support if requested
+	# Include from separate file to prevent parse errors on older CMake versions
+	if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+		include(cmake/modules.cmake)
+	endif()
+	
 	set_target_properties(${PROJECT_NAME}
 		PROPERTIES
 			VERSION ${${PROJECT_NAME}_VERSION}
@@ -264,8 +281,12 @@ endif()
 # Only useful if building in-tree, versus using it from an installation.
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-# Require C++11
-target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_11)
+# Require C++11, or C++20 if modules are enabled
+if(HTTPLIB_BUILD_MODULES)
+	target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_20)
+else()
+	target_compile_features(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC} cxx_std_11)
+endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM ${_INTERFACE_OR_PUBLIC}
 	$<BUILD_INTERFACE:${_httplib_build_includedir}>
@@ -337,7 +358,11 @@ if(HTTPLIB_INSTALL)
 	# Creates the export httplibTargets.cmake
 	# This is strictly what holds compilation requirements
 	# and linkage information (doesn't find deps though).
-	install(TARGETS ${PROJECT_NAME} EXPORT httplibTargets)
+	if(HTTPLIB_BUILD_MODULES)
+		install(TARGETS ${PROJECT_NAME} EXPORT httplibTargets FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/httplib/modules CXX_MODULES_BMI DESTINATION ${CMAKE_INSTALL_LIBDIR}/httplib/modules)
+	else()
+		install(TARGETS ${PROJECT_NAME} EXPORT httplibTargets)
+	endif()
 
 	install(FILES "${_httplib_build_includedir}/httplib.h" TYPE INCLUDE)
 
@@ -364,6 +389,10 @@ if(HTTPLIB_INSTALL)
 	install(FILES "LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/${PROJECT_NAME}")
 
 	include(CPack)
+endif()
+
+if(HTTPLIB_BUILD_MODULES AND NOT HTTPLIB_COMPILE)
+	message(FATAL_ERROR "HTTPLIB_BUILD_MODULES requires HTTPLIB_COMPILE to be ON.")
 endif()
 
 if(HTTPLIB_TEST)
