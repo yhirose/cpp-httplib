@@ -79,7 +79,7 @@ def main() -> None:
                         fm.write(line)
             
             fm.write("\nexport module httplib;\n\n")
-            fm.write("export {\n")
+            fm.write("export extern \"C++\" {\n")
             fm.write(f"{' ' * 4}#include \"httplib.h\"\n")
             fm.write("}\n")
             
