@@ -97,10 +97,13 @@ cli.enable_server_hostname_verification(false);
 
 ### SSL Error Handling
 
-When SSL operations fail, cpp-httplib provides detailed error information through two separate error fields:
+When SSL operations fail, cpp-httplib provides detailed error information through `ssl_error()` and `ssl_backend_error()`:
+
+- `ssl_error()` - Returns the TLS-level error code (e.g., `SSL_ERROR_SSL` for OpenSSL)
+- `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL, return value for Mbed TLS)
 
 ```c++
-#define CPPHTTPLIB_OPENSSL_SUPPORT
+#define CPPHTTPLIB_OPENSSL_SUPPORT  // or CPPHTTPLIB_MBEDTLS_SUPPORT
 #include "path/to/httplib.h"
 
 httplib::Client cli("https://example.com");
@@ -117,24 +120,68 @@ if (!res) {
       break;
 
     case httplib::Error::SSLLoadingCerts:
-      std::cout << "SSL cert loading failed, OpenSSL error: "
-                << std::hex << res.ssl_openssl_error() << std::endl;
+      std::cout << "SSL cert loading failed, backend error: "
+                << std::hex << res.ssl_backend_error() << std::endl;
       break;
 
     case httplib::Error::SSLServerVerification:
-      std::cout << "SSL verification failed, X509 error: "
-                << res.ssl_openssl_error() << std::endl;
+      std::cout << "SSL verification failed, verify error: "
+                << res.ssl_backend_error() << std::endl;
       break;
 
     case httplib::Error::SSLServerHostnameVerification:
-      std::cout << "SSL hostname verification failed, X509 error: "
-                << res.ssl_openssl_error() << std::endl;
+      std::cout << "SSL hostname verification failed, verify error: "
+                << res.ssl_backend_error() << std::endl;
       break;
 
     default:
       std::cout << "HTTP error: " << httplib::to_string(err) << std::endl;
   }
 }
+```
+
+### Custom Certificate Verification
+
+You can set a custom verification callback using `tls::VerifyCallback`:
+
+```c++
+httplib::Client cli("https://example.com");
+
+cli.set_server_certificate_verifier(
+    [](const httplib::tls::VerifyContext &ctx) -> bool {
+      std::cout << "Subject CN: " << ctx.subject_cn() << std::endl;
+      std::cout << "Issuer: " << ctx.issuer_name() << std::endl;
+      std::cout << "Depth: " << ctx.depth << std::endl;
+      std::cout << "Pre-verified: " << ctx.preverify_ok << std::endl;
+
+      // Inspect SANs (Subject Alternative Names)
+      for (const auto &san : ctx.sans()) {
+        std::cout << "SAN: " << san.value << std::endl;
+      }
+
+      // Return true to accept, false to reject
+      return ctx.preverify_ok;
+    });
+```
+
+### Peer Certificate Inspection
+
+On the server side, you can inspect the client's peer certificate from a request handler:
+
+```c++
+httplib::SSLServer svr("./cert.pem", "./key.pem",
+                       "./client-ca-cert.pem");
+
+svr.Get("/", [](const httplib::Request &req, httplib::Response &res) {
+  auto cert = req.peer_cert();
+  if (cert) {
+    std::cout << "Client CN: " << cert.subject_cn() << std::endl;
+    std::cout << "Serial: " << cert.serial() << std::endl;
+  }
+
+  auto sni = req.sni();
+  std::cout << "SNI: " << sni << std::endl;
+});
 ```
 
 Server
