@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""This script splits httplib.h into .h, .cc, and .cppm parts."""
+"""This script splits httplib.h into .h and .cc parts."""
 
 import os
 import sys
@@ -48,40 +48,13 @@ def main() -> None:
 
         os.makedirs(args.out, exist_ok=True)
 
-        # Find the Headers and Declaration comment markers
-        headers_start: int = -1
-        declaration_start: int = -1
-        for i, line in enumerate(lines):
-            if ' * Headers' in line:
-                headers_start = i - 1  # Include the /* line
-            elif ' * Declaration' in line:
-                declaration_start = i - 1  # Stop before the /* line
-                break
-
         in_implementation: bool = False
         cc_out: str = args.out + source_name
-        cppm_out: str = args.out + f"/{lib_name}.cppm"
         
-        with open(h_out, 'w') as fh, open(cc_out, 'w') as fc, open(cppm_out, 'w') as fm:
+        with open(h_out, 'w') as fh, open(cc_out, 'w') as fc:
             # Write source file
             fc.write("#include \"httplib.h\"\n")
             fc.write("namespace httplib {\n")
-            
-            # Write module file
-            fm.write("module;\n\n")
-            
-            # Write global module fragment (from Headers to Declaration comment)
-            # Filter out 'using' declarations to avoid conflicts
-            if headers_start >= 0 and declaration_start >= 0:
-                for i in range(headers_start, declaration_start):
-                    line: str = lines[i]
-                    if 'using' not in line:
-                        fm.write(line)
-            
-            fm.write("\nexport module httplib;\n\n")
-            fm.write("export extern \"C++\" {\n")
-            fm.write(f"{' ' * 4}#include \"httplib.h\"\n")
-            fm.write("}\n")
             
             # Process lines for header and source split
             for line in lines:
@@ -95,9 +68,9 @@ def main() -> None:
             
             fc.write("} // namespace httplib\n")
 
-        print(f"Wrote {h_out}, {cc_out}, and {cppm_out}")
+        print(f"Wrote {h_out} and {cc_out}")
     else:
-        print(f"{h_out}, {cc_out}, and module files are up to date")
+        print(f"{h_out} and {cc_out} are up to date")
 
 
 if __name__ == "__main__":

@@ -250,6 +250,22 @@ if(HTTPLIB_COMPILE)
 		message(FATAL_ERROR "Failed when trying to split cpp-httplib with the Python script.\n${_httplib_split_error}")
 	endif()
 
+	# If building modules, also generate the module file
+	if(HTTPLIB_BUILD_MODULES)
+		# Put the generate_module script into the build dir
+		configure_file(generate_module.py "${CMAKE_CURRENT_BINARY_DIR}/generate_module.py"
+			COPYONLY
+		)
+		# Generate the module file
+		execute_process(COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/generate_module.py"
+			WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+			ERROR_VARIABLE _httplib_module_error
+		)
+		if(_httplib_module_error)
+			message(FATAL_ERROR "Failed when trying to generate cpp-httplib module with the Python script.\n${_httplib_module_error}")
+		endif()
+	endif()
+
 	# split.py puts output in "out"
 	set(_httplib_build_includedir "${CMAKE_CURRENT_BINARY_DIR}/out")
 	add_library(${PROJECT_NAME} ${HTTPLIB_LIB_TYPE} "${_httplib_build_includedir}/httplib.cc")
