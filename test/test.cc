@@ -9985,6 +9985,7 @@ TEST(SSLClientRedirectTest, CertFile) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
 // Test that set_ca_cert_store() skips system certs (consistent with
 // set_ca_cert_path behavior). When a custom cert store is set, only those certs
 // should be trusted - system certs should NOT be loaded.
@@ -10994,6 +10995,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     EXPECT_EQ("val&key2=val2", res->body);
   }
 }
+#endif
 
 TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
   Server svr;
