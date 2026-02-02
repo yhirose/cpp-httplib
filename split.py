@@ -7,15 +7,14 @@ import sys
 from argparse import ArgumentParser, Namespace
 from typing import List
 
+BORDER: str = '// ----------------------------------------------------------------------------'
 
 def main() -> None:
     """Main entry point for the script."""
-    BORDER: str = '// ----------------------------------------------------------------------------'
 
     args_parser: ArgumentParser = ArgumentParser(description=__doc__)
     args_parser.add_argument(
-        "-e", "--extension", help="extension of the implementation file (default: cc)",
-        default="cc"
+        "-e", "--extension", help="extension of the implementation file (default: cc)", default="cc"
     )
     args_parser.add_argument(
         "-o", "--out", help="where to write the files (default: out)", default="out"
@@ -25,14 +24,14 @@ def main() -> None:
     cur_dir: str = os.path.dirname(sys.argv[0])
     if not cur_dir:
         cur_dir = '.'
-    lib_name: str = 'httplib'
+    lib_name: str = "httplib"
     header_name: str = f"/{lib_name}.h"
     source_name: str = f"/{lib_name}.{args.extension}"
     # get the input file
-    in_file: str = cur_dir + header_name
+    in_file: str = f"{cur_dir}{header_name}"
     # get the output file
-    h_out: str = args.out + header_name
-    cc_out: str = args.out + source_name
+    h_out: str = f"{args.out}{header_name}"
+    cc_out: str = f"{args.out}{source_name}"
 
     # if the modification time of the out file is after the in file,
     # don't split (as it is already finished)
@@ -51,18 +50,23 @@ def main() -> None:
 
         in_implementation: bool = False
         cc_out: str = args.out + source_name
+        
         with open(h_out, 'w') as fh, open(cc_out, 'w') as fc:
-            fc.write('#include "httplib.h"\n')
-            fc.write('namespace httplib {\n')
+            # Write source file
+            fc.write("#include \"httplib.h\"\n")
+            fc.write("namespace httplib {\n")
+            
+            # Process lines for header and source split
             for line in lines:
                 is_border_line: bool = BORDER in line
                 if is_border_line:
                     in_implementation: bool = not in_implementation
                 elif in_implementation:
-                    fc.write(line.replace('inline ', ''))
+                    fc.write(line.replace("inline ", ""))
                 else:
                     fh.write(line)
-            fc.write('} // namespace httplib\n')
+            
+            fc.write("} // namespace httplib\n")
 
         print(f"Wrote {h_out} and {cc_out}")
     else:
