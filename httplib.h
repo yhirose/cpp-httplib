@@ -8,8 +8,8 @@
 #ifndef CPPHTTPLIB_HTTPLIB_H
 #define CPPHTTPLIB_HTTPLIB_H
 
-#define CPPHTTPLIB_VERSION "0.30.1"
-#define CPPHTTPLIB_VERSION_NUM "0x001E01"
+#define CPPHTTPLIB_VERSION "0.30.2"
+#define CPPHTTPLIB_VERSION_NUM "0x001E02"
 
 /*
  * Platform compatibility check
@@ -13002,6 +13002,67 @@ inline ClientConnection::~ClientConnection() {
     sock = INVALID_SOCKET;
   }
 }
+
+inline bool SSLClient::verify_host_with_common_name(X509 *server_cert) const {
+  const auto subject_name = X509_get_subject_name(server_cert);
+
+  if (subject_name != nullptr) {
+    char name[BUFSIZ];
+    auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
+                                              name, sizeof(name));
+
+    if (name_len != -1) {
+      return check_host_name(name, static_cast<size_t>(name_len));
+    }
+  }
+
+  return false;
+}
+
+inline bool SSLClient::check_host_name(const char *pattern,
+                                       size_t pattern_len) const {
+  // Exact match (case-insensitive)
+  if (host_.size() == pattern_len &&
+      detail::case_ignore::equal(host_, std::string(pattern, pattern_len))) {
+    return true;
+  }
+
+  // Wildcard match
+  // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
+  std::vector<std::string> pattern_components;
+  detail::split(&pattern[0], &pattern[pattern_len], '.',
+                [&](const char *b, const char *e) {
+                  pattern_components.emplace_back(b, e);
+                });
+
+  if (host_components_.size() != pattern_components.size()) { return false; }
+
+  auto itr = pattern_components.begin();
+  for (const auto &h : host_components_) {
+    auto &p = *itr;
+    if (!httplib::detail::case_ignore::equal(p, h) && p != "*") {
+      bool partial_match = false;
+      if (!p.empty() && p[p.size() - 1] == '*') {
+        const auto prefix_length = p.size() - 1;
+        if (prefix_length == 0) {
+          partial_match = true;
+        } else if (h.size() >= prefix_length) {
+          partial_match =
+              std::equal(p.begin(), p.begin() + prefix_length, h.begin(),
+                         [](const char ca, const char cb) {
+                           return httplib::detail::case_ignore::to_lower(ca) ==
+                                  httplib::detail::case_ignore::to_lower(cb);
+                         });
+        }
+      }
+      if (!partial_match) { return false; }
+    }
+    ++itr;
+  }
+
+  return true;
+}
+#endif
 
 // Universal client implementation
 inline Client::Client(const std::string &scheme_host_port)
