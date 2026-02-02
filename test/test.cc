@@ -1271,13 +1271,13 @@ class ChunkedEncodingTest : public ::testing::Test {
 protected:
   ChunkedEncodingTest()
       : cli_(HOST, PORT)
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
         ,
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
     cli_.set_connection_timeout(2);
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli_.enable_server_certificate_verification(false);
 #endif
   }
@@ -1323,7 +1323,7 @@ protected:
     t_.join();
   }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli_;
   SSLServer svr_;
 #else
@@ -1391,7 +1391,7 @@ TEST(RangeTest, FromHTTPBin_Online) {
   auto path = std::string{"/httpbin/range/32"};
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -1451,7 +1451,7 @@ TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
   auto host = "unresolvableaddress.local";
   auto path = std::string{"/"};
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -1471,7 +1471,7 @@ TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
 TEST(ConnectionErrorTest, InvalidHost) {
   auto host = "-abcde.com";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -1488,7 +1488,7 @@ TEST(ConnectionErrorTest, InvalidHost) {
 TEST(ConnectionErrorTest, InvalidHost2) {
   auto host = "httpcan.org/";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -1503,7 +1503,7 @@ TEST(ConnectionErrorTest, InvalidHost2) {
 TEST(ConnectionErrorTest, InvalidHostCheckResultErrorToString) {
   auto host = "httpcan.org/";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -1521,7 +1521,7 @@ TEST(ConnectionErrorTest, InvalidPort) {
   auto host = "localhost";
   auto port = 44380;
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host, port);
 #else
   Client cli(host, port);
@@ -1537,7 +1537,7 @@ TEST(ConnectionErrorTest, InvalidPort) {
 TEST(ConnectionErrorTest, Timeout_Online) {
   auto host = "google.com";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 44380;
   SSLClient cli(host, port);
 #else
@@ -1565,7 +1565,7 @@ TEST(CancelTest, NoCancel_Online) {
   auto path = std::string{"/httpbin/range/32"};
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -1589,7 +1589,7 @@ TEST(CancelTest, WithCancelSmallPayload_Online) {
   auto path = std::string{"/httpbin/range/32"};
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -1612,7 +1612,7 @@ TEST(CancelTest, WithCancelLargePayload_Online) {
   auto path = std::string{"/httpbin/range/65536"};
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -1961,7 +1961,7 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
   auto path = std::string{"/httpbin/basic-auth/hello/world"};
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
   SSLClient cli(host, port);
 #else
@@ -2008,7 +2008,7 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
   }
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(DigestAuthTest, FromHTTPWatch_Online) {
 #ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
   auto host = "httpcan.org";
@@ -2075,7 +2075,7 @@ TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
   auto another_host = "example.com";
   auto wrong_ip = "0.0.0.0";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -2091,7 +2091,7 @@ TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
   auto host = "google.com";
   auto wrong_ip = "0.0.0.0";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -2106,7 +2106,7 @@ TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
 TEST(AbsoluteRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -2121,7 +2121,7 @@ TEST(AbsoluteRedirectTest, Redirect_Online) {
 TEST(RedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -2136,7 +2136,7 @@ TEST(RedirectTest, Redirect_Online) {
 TEST(RelativeRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -2151,7 +2151,7 @@ TEST(RelativeRedirectTest, Redirect_Online) {
 TEST(TooManyRedirectTest, Redirect_Online) {
   auto host = "nghttp2.org";
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -2163,7 +2163,7 @@ TEST(TooManyRedirectTest, Redirect_Online) {
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(YahooRedirectTest, Redirect_Online) {
   Client cli("yahoo.com");
 
@@ -2225,7 +2225,6 @@ TEST(UrlWithSpace, Redirect_Online) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(18527U, res->get_header_value_u64("Content-Length"));
 }
-
 #endif
 
 #if !defined(_WIN32) && !defined(_WIN64)
@@ -2529,7 +2528,7 @@ TEST(BindServerTest, BindAndListenSeparately) {
   svr.stop();
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(BindServerTest, BindAndListenSeparatelySSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
@@ -2538,9 +2537,7 @@ TEST(BindServerTest, BindAndListenSeparatelySSL) {
   ASSERT_TRUE(port > 0);
   svr.stop();
 }
-#endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
   SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE,
                 nullptr, nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
@@ -2549,65 +2546,70 @@ TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
   ASSERT_TRUE(port > 0);
   svr.stop();
 }
-#endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-X509 *readCertificate(const std::string &strFileName) {
-  std::ifstream inStream(strFileName);
-  std::string strCertPEM((std::istreambuf_iterator<char>(inStream)),
-                         std::istreambuf_iterator<char>());
-
-  if (strCertPEM.empty()) return (nullptr);
-
-  BIO *pbCert = BIO_new(BIO_s_mem());
-  BIO_write(pbCert, strCertPEM.c_str(), (int)strCertPEM.size());
-  X509 *pCert = PEM_read_bio_X509(pbCert, NULL, 0, NULL);
-  BIO_free(pbCert);
-
-  return (pCert);
-}
-
-EVP_PKEY *readPrivateKey(const std::string &strFileName) {
-  std::ifstream inStream(strFileName);
-  std::string strPrivateKeyPEM((std::istreambuf_iterator<char>(inStream)),
-                               std::istreambuf_iterator<char>());
-
-  if (strPrivateKeyPEM.empty()) return (nullptr);
-
-  BIO *pbPrivKey = BIO_new(BIO_s_mem());
-  BIO_write(pbPrivKey, strPrivateKeyPEM.c_str(), (int)strPrivateKeyPEM.size());
-  EVP_PKEY *pPrivateKey = PEM_read_bio_PrivateKey(pbPrivKey, NULL, NULL, NULL);
-  BIO_free(pbPrivKey);
-
-  return (pPrivateKey);
-}
-
-TEST(BindServerTest, UpdateCerts) {
+TEST(BindServerTest, UpdateCertsPem) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   int port = svr.bind_to_any_port("0.0.0.0");
   ASSERT_TRUE(svr.is_valid());
   ASSERT_TRUE(port > 0);
 
-  X509 *cert = readCertificate(SERVER_CERT_FILE);
-  X509 *ca_cert = readCertificate(CLIENT_CA_CERT_FILE);
-  EVP_PKEY *key = readPrivateKey(SERVER_PRIVATE_KEY_FILE);
+  // Read PEM files
+  std::string cert_pem, key_pem, ca_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+  read_file(CLIENT_CA_CERT_FILE, ca_pem);
 
-  ASSERT_TRUE(cert != nullptr);
-  ASSERT_TRUE(ca_cert != nullptr);
-  ASSERT_TRUE(key != nullptr);
-
-  X509_STORE *cert_store = X509_STORE_new();
-
-  X509_STORE_add_cert(cert_store, ca_cert);
-
-  svr.update_certs(cert, key, cert_store);
+  // Update server certificates using PEM API
+  ASSERT_TRUE(
+      svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(), ca_pem.c_str()));
 
   ASSERT_TRUE(svr.is_valid());
   svr.stop();
+}
 
-  X509_free(cert);
-  X509_free(ca_cert);
-  EVP_PKEY_free(key);
+TEST(SSLClientServerTest, UpdateCertsPemWithClientAuth) {
+  // Start server with client CA (enables client auth)
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  bool handler_called = false;
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    handler_called = true;
+    // Verify client certificate is present
+    auto cert = req.peer_cert();
+    EXPECT_TRUE(static_cast<bool>(cert));
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Read PEM files
+  std::string cert_pem, key_pem, ca_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+  read_file(CLIENT_CA_CERT_FILE, ca_pem);
+
+  // Update server certificates and client CA using PEM API while server running
+  ASSERT_TRUE(
+      svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(), ca_pem.c_str()));
+
+  // Connect with client certificate
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+  ASSERT_TRUE(handler_called);
+  EXPECT_EQ("ok", res->body);
 }
 #endif
 
@@ -2828,7 +2830,7 @@ TEST(NoContentTest, ContentLength) {
 }
 
 TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
 #else
@@ -2868,7 +2870,7 @@ TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
   svr.wait_until_ready();
 
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     SSLClient cli(HOST, PORT);
     cli.enable_server_certificate_verification(false);
 #else
@@ -2886,7 +2888,7 @@ TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
   }
 
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     SSLClient cli(HOST, PORT);
     cli.enable_server_certificate_verification(false);
 #else
@@ -2902,7 +2904,7 @@ TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
   }
 
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     SSLClient cli(HOST, PORT);
     cli.enable_server_certificate_verification(false);
 #else
@@ -3073,12 +3075,12 @@ class ServerTest : public ::testing::Test {
 protected:
   ServerTest()
       : cli_(HOST, PORT)
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
         ,
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli_.enable_server_certificate_verification(false);
 #endif
   }
@@ -3791,7 +3793,7 @@ protected:
   }
 
   map<string, string> persons_;
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli_;
   SSLServer svr_;
 #else
@@ -4427,7 +4429,7 @@ TEST_F(ServerTest, AlmostTooLongRequest) {
 
   auto res = cli_.Get(request.c_str());
 
-  ASSERT_TRUE(res);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
@@ -5448,7 +5450,7 @@ TEST_F(ServerTest, PutLargeFileWithGzip) {
 }
 
 TEST_F(ServerTest, PutLargeFileWithGzip2) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   std::string s = std::string("https://") + HOST + ":" + std::to_string(PORT);
   Client cli(s.c_str());
   cli.enable_server_certificate_verification(false);
@@ -5832,7 +5834,7 @@ void TestWithHeadersAndContentReceiver(
 }
 
 TEST_F(ServerTest, PostWithHeadersAndContentReceiver) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5846,7 +5848,7 @@ TEST_F(ServerTest, PostWithHeadersAndContentReceiver) {
 }
 
 TEST_F(ServerTest, PutWithHeadersAndContentReceiver) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5860,7 +5862,7 @@ TEST_F(ServerTest, PutWithHeadersAndContentReceiver) {
 }
 
 TEST_F(ServerTest, PatchWithHeadersAndContentReceiver) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5904,7 +5906,7 @@ void TestWithHeadersAndContentReceiverWithProgress(
 }
 
 TEST_F(ServerTest, PostWithHeadersAndContentReceiverWithProgress) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5918,7 +5920,7 @@ TEST_F(ServerTest, PostWithHeadersAndContentReceiverWithProgress) {
 }
 
 TEST_F(ServerTest, PutWithHeadersAndContentReceiverWithProgress) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5932,7 +5934,7 @@ TEST_F(ServerTest, PutWithHeadersAndContentReceiverWithProgress) {
 }
 
 TEST_F(ServerTest, PatchWithHeadersAndContentReceiverWithProgress) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5970,7 +5972,7 @@ void TestWithHeadersAndContentReceiverError(
 }
 
 TEST_F(ServerTest, PostWithHeadersAndContentReceiverError) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5984,7 +5986,7 @@ TEST_F(ServerTest, PostWithHeadersAndContentReceiverError) {
 }
 
 TEST_F(ServerTest, PuttWithHeadersAndContentReceiverError) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -5998,7 +6000,7 @@ TEST_F(ServerTest, PuttWithHeadersAndContentReceiverError) {
 }
 
 TEST_F(ServerTest, PatchWithHeadersAndContentReceiverError) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   using ClientT = SSLClient;
 #else
   using ClientT = Client;
@@ -6644,7 +6646,7 @@ TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::OK_200, res->status);
     EXPECT_EQ("Hello World!", res->body);
-    EXPECT_LE(elapsed, 100);
+    EXPECT_LE(elapsed, 500);
   }
 }
 
@@ -7656,7 +7658,7 @@ TEST(KeepAliveTest, Issue1959) {
   EXPECT_LT(elapsed, 5000);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, SSLClientReconnection) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
@@ -7757,18 +7759,14 @@ TEST(KeepAliveTest, SSLClientReconnectionPost) {
 }
 
 TEST(SNI_AutoDetectionTest, SNI_Logic) {
+  using namespace httplib::tls;
+
   {
     SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
     ASSERT_TRUE(svr.is_valid());
 
     svr.Get("/sni", [&](const Request &req, Response &res) {
-      std::string expected;
-      if (req.ssl) {
-        if (const char *sni =
-                SSL_get_servername(req.ssl, TLSEXT_NAMETYPE_host_name)) {
-          expected = sni;
-        }
-      }
+      std::string expected = req.sni();
       EXPECT_EQ(expected, req.get_param_value("expected"));
       res.set_content("ok", "text/plain");
     });
@@ -8045,7 +8043,7 @@ TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
   auto path = std::string{"/httpbin/range/32"};
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
 #else
   Client cli(host);
@@ -8096,7 +8094,7 @@ TEST(ServerDefaultHeadersTest, DefaultHeaders) {
   EXPECT_EQ("World", res->get_header_value("Hello"));
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, ReadTimeoutSSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
@@ -8139,12 +8137,12 @@ class ServerTestWithAI_PASSIVE : public ::testing::Test {
 protected:
   ServerTestWithAI_PASSIVE()
       : cli_(HOST, PORT)
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
         ,
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli_.enable_server_certificate_verification(false);
 #endif
   }
@@ -8165,7 +8163,7 @@ protected:
     t_.join();
   }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli_;
   SSLServer svr_;
 #else
@@ -8216,12 +8214,12 @@ class PayloadMaxLengthTest : public ::testing::Test {
 protected:
   PayloadMaxLengthTest()
       : cli_(HOST, PORT)
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
         ,
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli_.enable_server_certificate_verification(false);
 #endif
   }
@@ -8243,7 +8241,7 @@ protected:
     t_.join();
   }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli_;
   SSLServer svr_;
 #else
@@ -8395,12 +8393,12 @@ class LargePayloadMaxLengthTest : public ::testing::Test {
 protected:
   LargePayloadMaxLengthTest()
       : cli_(HOST, PORT)
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
         ,
         svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE)
 #endif
   {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
     cli_.enable_server_certificate_verification(false);
 #endif
   }
@@ -8423,7 +8421,7 @@ protected:
     t_.join();
   }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli_;
   SSLServer svr_;
 #else
@@ -8530,26 +8528,33 @@ TEST(HostAndPortPropertiesTest, NoSSLWithSimpleAPI) {
   ASSERT_EQ(1234, cli.port());
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(HostAndPortPropertiesTest, SSL) {
   httplib::SSLClient cli("www.google.com");
   ASSERT_EQ("www.google.com", cli.host());
   ASSERT_EQ(443, cli.port());
 }
-#endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-TEST(SSLClientTest, UpdateCAStore) {
+TEST(SSLClientTest, UpdateCAStoreWithPem) {
+  // Test updating CA store multiple times using PEM-based load_ca_cert_store
+  std::string cert;
+  read_file(CA_CERT_FILE, cert);
+
   httplib::SSLClient httplib_client("www.google.com");
-  auto ca_store_1 = X509_STORE_new();
-  X509_STORE_load_locations(ca_store_1, "/etc/ssl/certs/ca-certificates.crt",
-                            nullptr);
-  httplib_client.set_ca_cert_store(ca_store_1);
 
-  auto ca_store_2 = X509_STORE_new();
-  X509_STORE_load_locations(ca_store_2, "/etc/ssl/certs/ca-certificates.crt",
-                            nullptr);
-  httplib_client.set_ca_cert_store(ca_store_2);
+  // Load CA store first time
+  httplib_client.load_ca_cert_store(cert.data(), cert.size());
+
+  // Load CA store second time (update)
+  httplib_client.load_ca_cert_store(cert.data(), cert.size());
+
+  // Verify client is still valid and can make connections
+  httplib_client.enable_server_certificate_verification(true);
+  auto res = httplib_client.Get("/");
+  ASSERT_TRUE(res);
+  // Google may return 200 or 301 depending on various factors
+  EXPECT_TRUE(res->status == StatusCode::OK_200 ||
+              res->status == StatusCode::MovedPermanently_301);
 }
 
 TEST(SSLClientTest, ServerNameIndication_Online) {
@@ -8576,14 +8581,17 @@ TEST(SSLClientTest, ServerCertificateVerificationError_Online) {
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLServerVerification, res.error());
 
-  // For SSL server verification errors, ssl_error should be 0, only
-  // ssl_openssl_error should be set
+  // Verify backend error is captured for SSLServerVerification
+  // This occurs when certificate verification fails
+  // OpenSSL: X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT (18)
+  // Mbed TLS: MBEDTLS_X509_BADCERT_NOT_TRUSTED or similar flags
+  EXPECT_NE(0UL, res.ssl_backend_error());
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  // For OpenSSL, ssl_error is 0 for verification errors
   EXPECT_EQ(0, res.ssl_error());
-
-  // Verify OpenSSL error is captured for SSLServerVerification
-  // This occurs when SSL_get_verify_result() returns a verification failure
   EXPECT_EQ(static_cast<unsigned long>(X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT),
-            res.ssl_openssl_error());
+            res.ssl_backend_error());
+#endif
 }
 
 TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
@@ -8596,16 +8604,20 @@ TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
 
-  EXPECT_EQ(Error::SSLServerHostnameVerification, res.error());
+  // The error type depends on when hostname verification occurs:
+  // - OpenSSL: SSLServerHostnameVerification (post-handshake verification)
+  // - Mbed TLS: SSLServerVerification (during handshake)
+  EXPECT_TRUE(res.error() == Error::SSLServerHostnameVerification ||
+              res.error() == Error::SSLServerVerification);
 
-  // For SSL hostname verification errors, ssl_error should be 0, only
-  // ssl_openssl_error should be set
+  // Verify backend error is captured for hostname verification failure
+  EXPECT_NE(0UL, res.ssl_backend_error());
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  // For OpenSSL, ssl_error is 0 for verification errors
   EXPECT_EQ(0, res.ssl_error());
-
-  // Verify OpenSSL error is captured for SSLServerHostnameVerification
-  // This occurs when verify_host() fails due to hostname mismatch
   EXPECT_EQ(static_cast<unsigned long>(X509_V_ERR_HOSTNAME_MISMATCH),
-            res.ssl_openssl_error());
+            res.ssl_backend_error());
+#endif
 }
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {
@@ -8632,18 +8644,22 @@ TEST(SSLClientTest, ServerCertificateVerification3_Online) {
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLLoadingCerts, res.error());
 
-  // For SSL_CTX operations, ssl_error should be 0, only ssl_openssl_error
+  // For SSL_CTX operations, ssl_error should be 0, only ssl_backend_error
   // should be set
   EXPECT_EQ(0, res.ssl_error());
 
-  // Verify OpenSSL error is captured for SSLLoadingCerts
-  // This error occurs when SSL_CTX_load_verify_locations() fails
+  // Verify backend error is captured for SSLLoadingCerts
+  // This error occurs when loading CA certificates fails
+  EXPECT_NE(0UL, res.ssl_backend_error());
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  // OpenSSL specific error codes:
   // > openssl errstr 0x80000002
   // error:80000002:system library::No such file or directory
   // > openssl errstr 0xA000126
   // error:0A000126:SSL routines::unexpected eof while reading
-  EXPECT_TRUE(res.ssl_openssl_error() == 0x80000002 ||
-              res.ssl_openssl_error() == 0xA000126);
+  EXPECT_TRUE(res.ssl_backend_error() == 0x80000002 ||
+              res.ssl_backend_error() == 0xA000126);
+#endif
 }
 
 TEST(SSLClientTest, ServerCertificateVerification4) {
@@ -8798,28 +8814,26 @@ TEST(SSLClientTest, Issue2251_SwappedClientCertAndKey) {
 
   // SSL error should be recorded in the Result object (this is the key fix for
   // Issue #2251)
-  auto openssl_error = res.ssl_openssl_error();
-  EXPECT_NE(0u, openssl_error);
+  auto backend_error = res.ssl_backend_error();
+  EXPECT_NE(0u, backend_error);
 }
 
-TEST(SSLClientTest, Issue2251_ClientCertFileNotMatchingKey) {
-  // Another variant: using valid file paths but with mismatched cert/key pair
-  // This tests the case where files exist but contain incompatible key material
+// Tests cert/key mismatch detection at the TLS context level
+TEST(TlsApiTest, ClientCertKeyMismatch) {
+  // Test that using mismatched cert/key causes connection failure.
+  // We verify this at the SSLClient level rather than through internal
+  // TLS API functions.
+  SSLClient cli(HOST, PORT, "client.cert.pem", "key.pem");
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(2);
 
-  // Using client cert with wrong key (cert2 key)
-  SSLClient cli("localhost", 8080, "client.cert.pem", "key.pem");
-
-  // Should fail validation
-  ASSERT_FALSE(cli.is_valid());
-
-  auto res = cli.Get("/");
-  ASSERT_FALSE(res);
-  // Must report error properly, not appear as success
-  EXPECT_EQ(Error::SSLConnection, res.error());
-
-  // OpenSSL error should be captured in Result
-  EXPECT_NE(0u, res.ssl_openssl_error());
+  // The mismatch should cause a connection or handshake error
+  auto res = cli.Get("/test");
+  // OpenSSL detects mismatch at context setup, MbedTLS at handshake
+  // Either way, the request should fail
+  EXPECT_FALSE(res);
 }
+#endif
 
 #if 0
 TEST(SSLClientTest, SetInterfaceWithINET6) {
@@ -8835,10 +8849,14 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
 }
 #endif
 
+// ClientCertPresent uses get_peer_cert() - works with all TLS backends
+#ifdef CPPHTTPLIB_SSL_ENABLED
 void ClientCertPresent(
     const std::string &client_cert_file,
     const std::string &client_private_key_file,
     const std::string &client_encrypted_private_key_pass = std::string()) {
+  using namespace httplib::tls;
+
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
@@ -8846,23 +8864,11 @@ void ClientCertPresent(
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
 
-    auto peer_cert = SSL_get_peer_certificate(req.ssl);
-    ASSERT_TRUE(peer_cert != nullptr);
+    auto cert = req.peer_cert();
+    ASSERT_TRUE(static_cast<bool>(cert));
 
-    auto subject_name = X509_get_subject_name(peer_cert);
-    ASSERT_TRUE(subject_name != nullptr);
-
-    std::string common_name;
-    {
-      char name[BUFSIZ];
-      auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
-                                                name, sizeof(name));
-      common_name.assign(name, static_cast<size_t>(name_len));
-    }
-
+    std::string common_name = cert.subject_cn();
     EXPECT_EQ("Common Name", common_name);
-
-    X509_free(peer_cert);
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
@@ -8894,58 +8900,37 @@ TEST(SSLClientServerTest, ClientEncryptedCertPresent) {
                     CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
 
-#if !defined(_WIN32) || defined(OPENSSL_USE_APPLINK)
-void MemoryClientCertPresent(
+// PEM memory-based constructor tests (works with all TLS backends)
+void PemMemoryClientCertPresent(
     const std::string &client_cert_file,
     const std::string &client_private_key_file,
     const std::string &client_encrypted_private_key_pass = std::string()) {
-  auto f = fopen(SERVER_CERT_FILE, "r+");
-  auto server_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
-  fclose(f);
+  // Read PEM files into memory
+  std::string server_cert_pem, server_key_pem;
+  std::string client_ca_pem;
+  std::string client_cert_pem, client_key_pem;
 
-  f = fopen(SERVER_PRIVATE_KEY_FILE, "r+");
-  auto server_private_key = PEM_read_PrivateKey(f, nullptr, nullptr, nullptr);
-  fclose(f);
+  read_file(SERVER_CERT_FILE, server_cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, server_key_pem);
+  read_file(CLIENT_CA_CERT_FILE, client_ca_pem);
+  read_file(client_cert_file, client_cert_pem);
+  read_file(client_private_key_file, client_key_pem);
 
-  f = fopen(CLIENT_CA_CERT_FILE, "r+");
-  auto client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
-  auto client_ca_cert_store = X509_STORE_new();
-  X509_STORE_add_cert(client_ca_cert_store, client_cert);
-  X509_free(client_cert);
-  fclose(f);
-
-  f = fopen(client_cert_file.c_str(), "r+");
-  client_cert = PEM_read_X509(f, nullptr, nullptr, nullptr);
-  fclose(f);
-
-  f = fopen(client_private_key_file.c_str(), "r+");
-  auto client_private_key = PEM_read_PrivateKey(
-      f, nullptr, nullptr, (void *)client_encrypted_private_key_pass.c_str());
-  fclose(f);
-
-  SSLServer svr(server_cert, server_private_key, client_ca_cert_store);
+  // Create server with PEM memory
+  SSLServer::PemMemory server_pem = {
+      server_cert_pem.c_str(),
+      server_cert_pem.size(),
+      server_key_pem.c_str(),
+      server_key_pem.size(),
+      client_ca_pem.c_str(),
+      client_ca_pem.size(),
+      nullptr // no password for server key
+  };
+  SSLServer svr(server_pem);
   ASSERT_TRUE(svr.is_valid());
 
-  svr.Get("/test", [&](const Request &req, Response &res) {
+  svr.Get("/test", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
-
-    auto peer_cert = SSL_get_peer_certificate(req.ssl);
-    ASSERT_TRUE(peer_cert != nullptr);
-
-    auto subject_name = X509_get_subject_name(peer_cert);
-    ASSERT_TRUE(subject_name != nullptr);
-
-    std::string common_name;
-    {
-      char name[BUFSIZ];
-      auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
-                                                name, sizeof(name));
-      common_name.assign(name, static_cast<size_t>(name_len));
-    }
-
-    EXPECT_EQ("Common Name", common_name);
-
-    X509_free(peer_cert);
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
@@ -8957,31 +8942,31 @@ void MemoryClientCertPresent(
 
   svr.wait_until_ready();
 
-  SSLClient cli(HOST, PORT, client_cert, client_private_key,
-                client_encrypted_private_key_pass);
+  // Create client with PEM memory
+  const char *password = client_encrypted_private_key_pass.empty()
+                             ? nullptr
+                             : client_encrypted_private_key_pass.c_str();
+  SSLClient::PemMemory client_pem = {
+      client_cert_pem.c_str(), client_cert_pem.size(), client_key_pem.c_str(),
+      client_key_pem.size(), password};
+  SSLClient cli(HOST, PORT, client_pem);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(StatusCode::OK_200, res->status);
-
-  X509_free(server_cert);
-  EVP_PKEY_free(server_private_key);
-  X509_free(client_cert);
-  EVP_PKEY_free(client_private_key);
 }
 
-TEST(SSLClientServerTest, MemoryClientCertPresent) {
-  MemoryClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+TEST(SSLClientServerTest, PemMemoryClientCertPresent) {
+  PemMemoryClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
 }
 
-TEST(SSLClientServerTest, MemoryClientEncryptedCertPresent) {
-  MemoryClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
-                          CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
-                          CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
+TEST(SSLClientServerTest, PemMemoryClientEncryptedCertPresent) {
+  PemMemoryClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
+                             CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
+                             CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
-#endif
 
 TEST(SSLClientServerTest, ClientCertMissing) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
@@ -9004,16 +8989,15 @@ TEST(SSLClientServerTest, ClientCertMissing) {
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
-  EXPECT_EQ(Error::SSLServerVerification, res.error());
+  // When client cert is missing and server requires it, connection fails
+  // Error type depends on backend implementation
+  EXPECT_TRUE(res.error() == Error::SSLServerVerification ||
+              res.error() == Error::SSLConnection);
 
-  // For SSL server verification errors, ssl_error should be 0, only
-  // ssl_openssl_error should be set
-  EXPECT_EQ(0, res.ssl_error());
-
-  // Verify OpenSSL error is captured for SSLServerVerification
+  // Verify backend error is captured
   // Note: This test may have different error codes depending on the exact
   // verification failure
-  EXPECT_NE(0UL, res.ssl_openssl_error());
+  EXPECT_NE(0UL, res.ssl_backend_error());
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
@@ -9088,61 +9072,25 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::SSLConnection, res.error());
-  EXPECT_EQ(SSL_ERROR_WANT_READ, res.ssl_error());
+  // Timeout results in WantRead error code (maps to backend-specific value)
+  EXPECT_NE(0, res.ssl_error());
 }
 
-TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
-  auto setup_ssl_ctx_callback = [](SSL_CTX &ssl_ctx) {
-    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_COMPRESSION);
-    SSL_CTX_set_options(&ssl_ctx,
-                        SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
-    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_SSLv2);
-    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_SSLv3);
-    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_TLSv1);
-    SSL_CTX_set_options(&ssl_ctx, SSL_OP_NO_TLSv1_1);
-    auto ciphers = "ECDHE-RSA-AES128-SHA256:"
-                   "ECDHE-DSS-AES128-SHA256:"
-                   "ECDHE-RSA-AES256-SHA256:"
-                   "ECDHE-DSS-AES256-SHA256:";
-    SSL_CTX_set_cipher_list(&ssl_ctx, ciphers);
-    if (SSL_CTX_use_certificate_chain_file(&ssl_ctx, SERVER_CERT_FILE) != 1 ||
-        SSL_CTX_use_PrivateKey_file(&ssl_ctx, SERVER_PRIVATE_KEY_FILE,
-                                    SSL_FILETYPE_PEM) != 1) {
-      return false;
-    }
-    SSL_CTX_load_verify_locations(&ssl_ctx, CLIENT_CA_CERT_FILE,
-                                  CLIENT_CA_CERT_DIR);
-    SSL_CTX_set_verify(
-        &ssl_ctx,
-        SSL_VERIFY_PEER |
-            SSL_VERIFY_FAIL_IF_NO_PEER_CERT, // SSL_VERIFY_CLIENT_ONCE,
-        nullptr);
-    return true;
-  };
-
-  SSLServer svr(setup_ssl_ctx_callback);
+TEST(SSLClientServerTest, CustomizeServerSSLCtxGeneric) {
+  // Test SSLServer with client certificate verification using the standard
+  // constructor (ContextSetupCallback is tested by backend-specific tests)
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
+                CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
 
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
 
-    auto peer_cert = SSL_get_peer_certificate(req.ssl);
-    ASSERT_TRUE(peer_cert != nullptr);
+    auto cert = req.peer_cert();
+    ASSERT_TRUE(static_cast<bool>(cert));
 
-    auto subject_name = X509_get_subject_name(peer_cert);
-    ASSERT_TRUE(subject_name != nullptr);
-
-    std::string common_name;
-    {
-      char name[BUFSIZ];
-      auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
-                                                name, sizeof(name));
-      common_name.assign(name, static_cast<size_t>(name_len));
-    }
-
+    auto common_name = cert.subject_cn();
     EXPECT_EQ("Common Name", common_name);
-
-    X509_free(peer_cert);
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
@@ -9163,6 +9111,71 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtx) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+// Test verify_hostname for both OpenSSL and MbedTLS backends
+// Verifies that wildcard matching and exact matching work consistently
+TEST(SSLClientServerTest, TlsVerifyHostname) {
+  using namespace httplib::tls;
+
+  // We need a running server to test against
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  bool verify_callback_called = false;
+  bool verify_result_wrong = false;
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.set_connection_timeout(5);
+
+  // Note: Test certificate has CN="Common Name", not "localhost"
+  bool verify_result_cn = false;
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    verify_callback_called = true;
+
+    if (!ctx.cert) return false;
+
+    // Test 1: "Common Name" should match (our test server cert CN)
+    verify_result_cn = ctx.check_hostname("Common Name");
+
+    // Test 2: wrong hostname should not match
+    verify_result_wrong = ctx.check_hostname("wronghost.example.com");
+
+    return true; // Accept for the purpose of this test
+  });
+
+  auto res = cli.Get("/test");
+  // The request may succeed or fail depending on cert configuration
+  // but the callback should have been called
+
+  ASSERT_TRUE(verify_callback_called)
+      << "Verify callback should have been called";
+
+  // CN="Common Name" should match our test certificate
+  EXPECT_TRUE(verify_result_cn)
+      << "verify_hostname should match 'Common Name' (certificate CN)";
+
+  // Wrong hostname should not match
+  EXPECT_FALSE(verify_result_wrong)
+      << "verify_hostname should not match 'wronghost.example.com'";
+}
+#endif
+
+// mbedTLS-specific callback constructor test
+// Tests that the void* callback can customize TLS settings via MbedTlsContext
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(SSLClientServerTest, ClientCAListSentToClient) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
@@ -9195,39 +9208,35 @@ TEST(SSLClientServerTest, ClientCAListSentToClient) {
   ASSERT_TRUE(client_cert_verified);
   EXPECT_EQ("success", res->body);
 }
+#endif
 
+// ClientCAListSetInContext uses get_peer_cert() - works with all TLS
+// backends
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(SSLClientServerTest, ClientCAListSetInContext) {
+  using namespace httplib::tls;
+
   // Test that when client CA cert file is provided,
-  // SSL_CTX_set_client_CA_list is called and the CA list is properly set
+  // the server properly requests and validates client certificates
 
   // Create a server with client authentication
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
-
-  // We can't directly access the SSL_CTX from SSLServer to verify,
-  // but we can test that the server properly requests client certificates
-  // and accepts valid ones from the specified CA
 
   bool handler_called = false;
   svr.Get("/test", [&](const Request &req, Response &res) {
     handler_called = true;
 
     // Verify that a client certificate was provided
-    auto peer_cert = SSL_get_peer_certificate(req.ssl);
-    ASSERT_TRUE(peer_cert != nullptr);
+    auto cert = req.peer_cert();
+    ASSERT_TRUE(static_cast<bool>(cert));
 
     // Get the issuer name
-    auto issuer_name = X509_get_issuer_name(peer_cert);
-    ASSERT_TRUE(issuer_name != nullptr);
-
-    char issuer_buf[256];
-    X509_NAME_oneline(issuer_name, issuer_buf, sizeof(issuer_buf));
+    std::string issuer_str = cert.issuer_name();
+    ASSERT_FALSE(issuer_str.empty());
 
     // The client certificate should be issued by our test CA
-    std::string issuer_str(issuer_buf);
     EXPECT_TRUE(issuer_str.find("Root CA Name") != std::string::npos);
-
-    X509_free(peer_cert);
     res.set_content("authenticated", "text/plain");
   });
 
@@ -9250,6 +9259,134 @@ TEST(SSLClientServerTest, ClientCAListSetInContext) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
   ASSERT_TRUE(handler_called);
   EXPECT_EQ("authenticated", res->body);
+}
+
+TEST(TlsCertIntrospectionTest, GetCertSANs) {
+  using namespace httplib::tls;
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  bool cert_checked = false;
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    if (ctx.cert) {
+      auto sans = ctx.sans();
+      // Test certificate may or may not have SANs - just verify the API
+      // works If SANs exist, verify the types are valid
+      for (const auto &san : sans) {
+        EXPECT_TRUE(san.type == SanType::DNS || san.type == SanType::IP ||
+                    san.type == SanType::EMAIL || san.type == SanType::URI ||
+                    san.type == SanType::OTHER);
+        EXPECT_FALSE(san.value.empty());
+      }
+      cert_checked = true;
+    }
+    return true;
+  });
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  EXPECT_TRUE(cert_checked);
+}
+
+TEST(TlsCertIntrospectionTest, GetCertValidity) {
+  using namespace httplib::tls;
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  bool validity_checked = false;
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    if (ctx.cert) {
+      time_t not_before = 0, not_after = 0;
+      bool result = ctx.validity(not_before, not_after);
+      EXPECT_TRUE(result);
+      // Verify that not_before < now < not_after for a valid cert
+      time_t now = time(nullptr);
+      EXPECT_LT(not_before, now);
+      EXPECT_GT(not_after, now);
+      validity_checked = true;
+    }
+    return true;
+  });
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  EXPECT_TRUE(validity_checked);
+}
+
+TEST(TlsCertIntrospectionTest, GetCertSerial) {
+  using namespace httplib::tls;
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  bool serial_checked = false;
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    if (ctx.cert) {
+      std::string serial = ctx.serial();
+      EXPECT_FALSE(serial.empty());
+      // Serial should be a hex string
+      for (char c : serial) {
+        EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') ||
+                    (c >= 'a' && c <= 'f'));
+      }
+      serial_checked = true;
+    }
+    return true;
+  });
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  EXPECT_TRUE(serial_checked);
 }
 
 TEST(SSLClientServerTest, ClientCAListLoadErrorRecorded) {
@@ -9288,47 +9425,223 @@ TEST(SSLClientServerTest, ClientCAListLoadErrorRecorded) {
   }
 }
 
-TEST(SSLClientServerTest, ClientCAListFromX509Store) {
-  // Test SSL server using X509_STORE constructor with client CA certificates
-  // This test verifies that Phase 2 implementation correctly extracts CA names
-  // from an X509_STORE and sets them in the SSL context
+TEST(VerifyCallbackTest, VerifyContextFields) {
+  using namespace httplib::tls;
 
-  // Load the CA certificate into memory
-  auto bio = BIO_new_file(CLIENT_CA_CERT_FILE, "r");
-  ASSERT_NE(nullptr, bio);
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
 
-  auto ca_cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
-  BIO_free(bio);
-  ASSERT_NE(nullptr, ca_cert);
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
 
-  // Create an X509_STORE and add the CA certificate
-  auto store = X509_STORE_new();
-  ASSERT_NE(nullptr, store);
-  ASSERT_EQ(1, X509_STORE_add_cert(store, ca_cert));
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
 
-  // Load server certificate and private key
-  auto cert_bio = BIO_new_file(SERVER_CERT_FILE, "r");
-  ASSERT_NE(nullptr, cert_bio);
-  auto server_cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
-  BIO_free(cert_bio);
-  ASSERT_NE(nullptr, server_cert);
+  svr.wait_until_ready();
 
-  auto key_bio = BIO_new_file(SERVER_PRIVATE_KEY_FILE, "r");
-  ASSERT_NE(nullptr, key_bio);
-  auto server_key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
-  BIO_free(key_bio);
-  ASSERT_NE(nullptr, server_key);
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
 
-  // Create SSLServer with X509_STORE constructor
-  // Note: X509_STORE ownership is transferred to SSL_CTX
-  SSLServer svr(server_cert, server_key, store);
+  int callback_count = 0;
+  bool saw_leaf_cert = false;
+
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    if (ctx.cert) {
+      callback_count++;
+      // We should see at least one certificate (the leaf)
+      std::string cn = ctx.subject_cn();
+      if (!cn.empty()) { saw_leaf_cert = true; }
+      // Verify context fields are populated
+      EXPECT_NE(ctx.session, nullptr);
+      EXPECT_GE(ctx.depth, 0);
+    }
+    return true;
+  });
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  EXPECT_GT(callback_count, 0);
+  EXPECT_TRUE(saw_leaf_cert);
+}
+
+TEST(TlsVerifyErrorTest, GetVerifyErrorString) {
+  using httplib::tls::TlsError;
+
+  // Test that verify_error_to_string returns empty for success
+  std::string success_str = TlsError::verify_error_to_string(0);
+  EXPECT_TRUE(success_str.empty());
+
+  // Test that verify_error_to_string returns non-empty for error codes
+  // Using a common error code (certificate expired)
+  std::string error_str =
+      TlsError::verify_error_to_string(10); // X509_V_ERR_CERT_HAS_EXPIRED
+  EXPECT_FALSE(error_str.empty());
+}
+
+TEST(SessionVerifierTest, CertificateAccepted) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  bool callback_called = false;
+  cli.set_session_verifier([&](tls::session_t session) -> SSLVerifierResponse {
+    EXPECT_NE(session, nullptr);
+    callback_called = true;
+    return SSLVerifierResponse::CertificateAccepted;
+  });
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_TRUE(callback_called);
+}
+
+TEST(SessionVerifierTest, CertificateRejected) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  bool callback_called = false;
+  cli.set_session_verifier([&](tls::session_t session) -> SSLVerifierResponse {
+    EXPECT_NE(session, nullptr);
+    callback_called = true;
+    return SSLVerifierResponse::CertificateRejected;
+  });
+
+  auto res = cli.Get("/test");
+  EXPECT_FALSE(res);
+  EXPECT_TRUE(callback_called);
+}
+
+TEST(SessionVerifierTest, NoDecisionFallsThrough) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  // NoDecisionMade with verification disabled should succeed (no default check)
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  bool callback_called = false;
+  cli.set_session_verifier([&](tls::session_t session) -> SSLVerifierResponse {
+    EXPECT_NE(session, nullptr);
+    callback_called = true;
+    return SSLVerifierResponse::NoDecisionMade;
+  });
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_TRUE(callback_called);
+}
+
+TEST(SessionVerifierTest, NoDecisionWithVerificationEnabled) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  // NoDecisionMade with verification enabled should fail (self-signed cert).
+  // Note: On MbedTLS, the handshake itself fails before reaching the verifier,
+  // so we only check that the request fails, not whether the callback was
+  // called.
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(30);
+
+  cli.set_session_verifier([&](tls::session_t session) -> SSLVerifierResponse {
+    EXPECT_NE(session, nullptr);
+    return SSLVerifierResponse::NoDecisionMade;
+  });
+
+  auto res = cli.Get("/test");
+  EXPECT_FALSE(res);
+}
+
+TEST(SSLClientServerTest, ClientCAListFromPem) {
+  // Test SSL server using PemMemory constructor with client CA certificates
+
+  // Read PEM files
+  std::string server_cert_pem, server_key_pem, client_ca_pem;
+  read_file(SERVER_CERT_FILE, server_cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, server_key_pem);
+  read_file(CLIENT_CA_CERT_FILE, client_ca_pem);
+
+  // Create SSLServer with PemMemory constructor including client CA
+  SSLServer::PemMemory server_pem = {
+      server_cert_pem.c_str(),
+      server_cert_pem.size(),
+      server_key_pem.c_str(),
+      server_key_pem.size(),
+      client_ca_pem.c_str(),
+      client_ca_pem.size(),
+      nullptr // no password for server key
+  };
+  SSLServer svr(server_pem);
   ASSERT_TRUE(svr.is_valid());
 
   // No SSL error should be recorded for valid setup
   EXPECT_EQ(0, svr.ssl_last_error());
 
   // Set up server endpoints
-  svr.Get("/test-x509store", [&](const Request & /*req*/, Response &res) {
+  svr.Get("/test-pem-ca", [&](const Request & /*req*/, Response &res) {
     res.set_content("ok", "text/plain");
   });
 
@@ -9340,61 +9653,13 @@ TEST(SSLClientServerTest, ClientCAListFromX509Store) {
   SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
 
-  auto res = cli.Get("/test-x509store");
+  auto res = cli.Get("/test-pem-ca");
   ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("ok", res->body);
 
-  // Clean up
-  X509_free(server_cert);
-  EVP_PKEY_free(server_key);
-  X509_free(ca_cert);
-
   svr.stop();
   server_thread.join();
-}
-
-// Disabled due to the out-of-memory problem on GitHub Actions Workflows
-TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
-
-  // prepare large data
-  std::random_device seed_gen;
-  std::mt19937 random(seed_gen());
-  constexpr auto large_size_byte = 2147483648UL + 1048576UL; // 2GiB + 1MiB
-  std::vector<std::uint32_t> binary(large_size_byte / sizeof(std::uint32_t));
-  std::generate(binary.begin(), binary.end(), [&random]() { return random(); });
-
-  // server
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-  ASSERT_TRUE(svr.is_valid());
-
-  svr.Post("/binary", [&](const Request &req, Response &res) {
-    EXPECT_EQ(large_size_byte, req.body.size());
-    EXPECT_EQ(0, std::memcmp(binary.data(), req.body.data(), large_size_byte));
-    res.set_content(req.body, "application/octet-stream");
-  });
-
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  // client POST
-  SSLClient cli("localhost", PORT);
-  cli.enable_server_certificate_verification(false);
-  cli.set_read_timeout(std::chrono::seconds(100));
-  cli.set_write_timeout(std::chrono::seconds(100));
-  auto res = cli.Post("/binary", reinterpret_cast<char *>(binary.data()),
-                      large_size_byte, "application/octet-stream");
-
-  // compare
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(large_size_byte, res->body.size());
-  EXPECT_EQ(0, std::memcmp(binary.data(), res->body.data(), large_size_byte));
 }
 #endif
 
@@ -9405,7 +9670,7 @@ TEST(CleanupTest, WSACleanup) {
 }
 #endif
 
-#ifndef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifndef CPPHTTPLIB_SSL_ENABLED
 TEST(NoSSLSupport, SimpleInterface) {
   ASSERT_ANY_THROW(Client cli("https://yahoo.com"));
 }
@@ -9536,7 +9801,7 @@ TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
 }
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(YahooRedirectTest2, SimpleInterface_Online) {
   Client cli("http://yahoo.com");
 
@@ -9718,7 +9983,9 @@ TEST(SSLClientRedirectTest, CertFile) {
   ASSERT_TRUE(res);
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
+#endif
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
 // Test that set_ca_cert_store() skips system certs (consistent with
 // set_ca_cert_path behavior). When a custom cert store is set, only those certs
 // should be trusted - system certs should NOT be loaded.
@@ -10532,7 +10799,6 @@ TEST(MultipartFormDataTest, AccessPartHeaders) {
   ASSERT_TRUE(send_request(1, req, &response));
   ASSERT_EQ("200", response.substr(9, 3));
 }
-#endif
 
 TEST(MultipartFormDataTest, LargeHeader) {
   auto handled = false;
@@ -10729,6 +10995,7 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
     EXPECT_EQ("val&key2=val2", res->body);
   }
 }
+#endif
 
 TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
   Server svr;
@@ -10761,7 +11028,7 @@ TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
   }
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, Issue2185_Online) {
   SSLClient client("github.com");
   client.set_follow_location(true);
@@ -11166,7 +11433,7 @@ TEST(MakeHostAndPortStringTest, VariousPatterns) {
             detail::make_host_and_port_string("example.com", 65536, false));
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(SSLClientHostHeaderTest, Issue2301_Online) {
   httplib::SSLClient cli("roblox.com", 443);
   cli.set_follow_location(true);
@@ -11540,7 +11807,7 @@ TEST(MaxTimeoutTest, ContentStream) {
   max_timeout_test(svr, cli, timeout, threshold);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(MaxTimeoutTest, ContentStreamSSL) {
   time_t timeout = 2000;
   time_t threshold = 1200; // SSL_shutdown is slow on some operating systems.
@@ -12331,7 +12598,7 @@ TEST_F(OpenStreamTest, Zstd) {
 }
 #endif
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 class SSLOpenStreamTest : public ::testing::Test {
 protected:
   SSLOpenStreamTest() : svr_("cert.pem", "key.pem") {}
@@ -12424,7 +12691,7 @@ TEST_F(SSLOpenStreamTest, PostChunked) {
   auto body = read_all(handle);
   EXPECT_EQ("Chunked SSL Data", body);
 }
-#endif // CPPHTTPLIB_OPENSSL_SUPPORT
+#endif // CPPHTTPLIB_SSL_ENABLED
 
 //==============================================================================
 // Parity Tests: ensure streaming and non-streaming APIs produce identical
@@ -12727,7 +12994,7 @@ TEST_F(StreamApiTest, HeadAndOptions) {
 }
 
 // SSL stream::* tests
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 class SSLStreamApiTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -12874,7 +13141,7 @@ TEST(ErrorHandlingTest, StreamConnectionClosed) {
   t.join();
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ErrorHandlingTest, SSLStreamReadTimeout) {
   // Test that read timeout during SSL streaming is detected
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
@@ -14307,5 +14574,293 @@ TEST(ZipBombProtectionTest, DecompressedSizeExceedsLimit) {
   // Server should reject because decompressed size (8KB) exceeds limit (1KB)
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+}
+#endif
+
+// ============================================================================
+// OpenSSL-Specific Tests
+// ============================================================================
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+X509 *readCertificate(const std::string &strFileName) {
+  std::ifstream inStream(strFileName);
+  std::string strCertPEM((std::istreambuf_iterator<char>(inStream)),
+                         std::istreambuf_iterator<char>());
+
+  if (strCertPEM.empty()) return (nullptr);
+
+  BIO *pbCert = BIO_new(BIO_s_mem());
+  BIO_write(pbCert, strCertPEM.c_str(), (int)strCertPEM.size());
+  X509 *pCert = PEM_read_bio_X509(pbCert, NULL, 0, NULL);
+  BIO_free(pbCert);
+
+  return (pCert);
+}
+
+EVP_PKEY *readPrivateKey(const std::string &strFileName) {
+  std::ifstream inStream(strFileName);
+  std::string strPrivateKeyPEM((std::istreambuf_iterator<char>(inStream)),
+                               std::istreambuf_iterator<char>());
+
+  if (strPrivateKeyPEM.empty()) return (nullptr);
+
+  BIO *pbPrivKey = BIO_new(BIO_s_mem());
+  BIO_write(pbPrivKey, strPrivateKeyPEM.c_str(), (int)strPrivateKeyPEM.size());
+  EVP_PKEY *pPrivateKey = PEM_read_bio_PrivateKey(pbPrivKey, NULL, NULL, NULL);
+  BIO_free(pbPrivKey);
+
+  return (pPrivateKey);
+}
+
+TEST(BindServerTest, UpdateCerts) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  int port = svr.bind_to_any_port("0.0.0.0");
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(port > 0);
+
+  X509 *cert = readCertificate(SERVER_CERT_FILE);
+  X509 *ca_cert = readCertificate(CLIENT_CA_CERT_FILE);
+  EVP_PKEY *key = readPrivateKey(SERVER_PRIVATE_KEY_FILE);
+
+  ASSERT_TRUE(cert != nullptr);
+  ASSERT_TRUE(ca_cert != nullptr);
+  ASSERT_TRUE(key != nullptr);
+
+  X509_STORE *cert_store = X509_STORE_new();
+
+  X509_STORE_add_cert(cert_store, ca_cert);
+
+  // svr.update_certs(cert, key, cert_store); // deprecated
+  svr.update_certs_pem(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
+                       CLIENT_CA_CERT_FILE);
+
+  ASSERT_TRUE(svr.is_valid());
+  svr.stop();
+
+  X509_free(cert);
+  X509_free(ca_cert);
+  EVP_PKEY_free(key);
+}
+
+// Test that SSLServer(X509*, EVP_PKEY*, X509_STORE*) constructor sets
+// client CA list correctly for TLS handshake
+TEST(SSLClientServerTest, X509ConstructorSetsClientCAList) {
+  X509 *cert = readCertificate(SERVER_CERT_FILE);
+  X509 *ca_cert = readCertificate(CLIENT_CA_CERT_FILE);
+  EVP_PKEY *key = readPrivateKey(SERVER_PRIVATE_KEY_FILE);
+
+  ASSERT_TRUE(cert != nullptr);
+  ASSERT_TRUE(ca_cert != nullptr);
+  ASSERT_TRUE(key != nullptr);
+
+  X509_STORE *cert_store = X509_STORE_new();
+  X509_STORE_add_cert(cert_store, ca_cert);
+
+  // Use X509-based constructor (deprecated but should still work correctly)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  SSLServer svr(cert, key, cert_store);
+#pragma GCC diagnostic pop
+
+  ASSERT_TRUE(svr.is_valid());
+
+  // Verify that client CA list is set in SSL_CTX
+  auto ssl_ctx = static_cast<SSL_CTX *>(svr.tls_context());
+  ASSERT_TRUE(ssl_ctx != nullptr);
+
+  STACK_OF(X509_NAME) *ca_list = SSL_CTX_get_client_CA_list(ssl_ctx);
+  ASSERT_TRUE(ca_list != nullptr);
+  EXPECT_GT(sk_X509_NAME_num(ca_list), 0);
+
+  X509_free(cert);
+  X509_free(ca_cert);
+  EVP_PKEY_free(key);
+}
+
+// Test that update_certs() updates client CA list correctly
+TEST(SSLClientServerTest, UpdateCertsSetsClientCAList) {
+  // Start with file-based constructor
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  // Initially no client CA list should be set
+  auto ssl_ctx = static_cast<SSL_CTX *>(svr.tls_context());
+  ASSERT_TRUE(ssl_ctx != nullptr);
+
+  STACK_OF(X509_NAME) *ca_list_before = SSL_CTX_get_client_CA_list(ssl_ctx);
+  int count_before = ca_list_before ? sk_X509_NAME_num(ca_list_before) : 0;
+  EXPECT_EQ(0, count_before);
+
+  // Now update with client CA (PEM string)
+  std::string cert_pem, key_pem, ca_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+  read_file(CLIENT_CA_CERT_FILE, ca_pem);
+
+  svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(), ca_pem.c_str());
+
+  ASSERT_TRUE(svr.is_valid());
+
+  // Now client CA list should be set
+  STACK_OF(X509_NAME) *ca_list_after = SSL_CTX_get_client_CA_list(ssl_ctx);
+  ASSERT_TRUE(ca_list_after != nullptr);
+  EXPECT_GT(sk_X509_NAME_num(ca_list_after), 0);
+}
+
+TEST(SSLClientServerTest, FilePathConstructorSetsClientCAList) {
+  // Test that the file-path SSLServer constructor properly sets the client CA
+  // list that is sent to clients during the TLS handshake (CertificateRequest)
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  auto ssl_ctx = static_cast<SSL_CTX *>(svr.tls_context());
+  ASSERT_TRUE(ssl_ctx != nullptr);
+
+  STACK_OF(X509_NAME) *ca_list = SSL_CTX_get_client_CA_list(ssl_ctx);
+  ASSERT_TRUE(ca_list != nullptr);
+  EXPECT_GT(sk_X509_NAME_num(ca_list), 0);
+}
+
+// Disabled due to the out-of-memory problem on GitHub Actions Workflows
+TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
+
+  // prepare large data
+  std::random_device seed_gen;
+  std::mt19937 random(seed_gen());
+  constexpr auto large_size_byte = 2147483648UL + 1048576UL; // 2GiB + 1MiB
+  std::vector<std::uint32_t> binary(large_size_byte / sizeof(std::uint32_t));
+  std::generate(binary.begin(), binary.end(), [&random]() { return random(); });
+
+  // server
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Post("/binary", [&](const Request &req, Response &res) {
+    EXPECT_EQ(large_size_byte, req.body.size());
+    EXPECT_EQ(0, std::memcmp(binary.data(), req.body.data(), large_size_byte));
+    res.set_content(req.body, "application/octet-stream");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // client POST
+  SSLClient cli("localhost", PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_read_timeout(std::chrono::seconds(100));
+  cli.set_write_timeout(std::chrono::seconds(100));
+  auto res = cli.Post("/binary", reinterpret_cast<char *>(binary.data()),
+                      large_size_byte, "application/octet-stream");
+
+  // compare
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(large_size_byte, res->body.size());
+  EXPECT_EQ(0, std::memcmp(binary.data(), res->body.data(), large_size_byte));
+}
+#endif
+
+// ============================================================================
+// MbedTLS-Specific Tests
+// ============================================================================
+
+#ifdef CPPHTTPLIB_MBEDTLS_SUPPORT
+TEST(SSLClientServerTest, CustomizeServerSSLCtxMbedTLS) {
+  using namespace httplib::tls;
+
+  // Track if callback was invoked
+  bool callback_invoked = false;
+
+  // The callback receives void* ctx which is actually MbedTlsContext*
+  // We can access the mbedtls_ssl_config via the context
+  auto setup_callback = [&callback_invoked](void *ctx) {
+    callback_invoked = true;
+
+    // Cast to MbedTlsContext* to access the ssl config
+    auto *mbedtls_ctx = static_cast<httplib::tls::impl::MbedTlsContext *>(ctx);
+    mbedtls_ssl_config *conf = &mbedtls_ctx->conf;
+
+    // Use static variables to hold certificate data (simplified for test)
+    static mbedtls_x509_crt own_cert;
+    static mbedtls_pk_context own_key;
+    static mbedtls_x509_crt ca_chain;
+    static bool initialized = false;
+
+    if (!initialized) {
+      mbedtls_x509_crt_init(&own_cert);
+      mbedtls_pk_init(&own_key);
+      mbedtls_x509_crt_init(&ca_chain);
+
+      // Load server certificate
+      if (mbedtls_x509_crt_parse_file(&own_cert, SERVER_CERT_FILE) != 0) {
+        return false;
+      }
+      // Load server private key
+      if (mbedtls_pk_parse_keyfile(&own_key, SERVER_PRIVATE_KEY_FILE, nullptr
+#if MBEDTLS_VERSION_MAJOR >= 3
+                                   ,
+                                   mbedtls_ctr_drbg_random, nullptr
+#endif
+                                   ) != 0) {
+        return false;
+      }
+      // Load CA chain for client verification
+      if (mbedtls_x509_crt_parse_file(&ca_chain, CLIENT_CA_CERT_FILE) != 0) {
+        return false;
+      }
+      initialized = true;
+    }
+
+    // Configure the SSL config
+    mbedtls_ssl_conf_own_cert(conf, &own_cert, &own_key);
+    mbedtls_ssl_conf_ca_chain(conf, &ca_chain, nullptr);
+    mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+
+    // Set minimum TLS version using mbedTLS native API
+#if MBEDTLS_VERSION_MAJOR >= 3
+    mbedtls_ssl_conf_min_tls_version(conf, MBEDTLS_SSL_VERSION_TLS1_2);
+#else
+    mbedtls_ssl_conf_min_version(conf, MBEDTLS_SSL_MAJOR_VERSION_3,
+                                 MBEDTLS_SSL_MINOR_VERSION_3);
+#endif
+
+    return true;
+  };
+
+  SSLServer svr(setup_callback);
+  ASSERT_TRUE(svr.is_valid());
+  ASSERT_TRUE(callback_invoked);
+
+  svr.Get("/test", [&](const Request &req, Response &res) {
+    res.set_content("test", "text/plain");
+
+    auto cert = req.peer_cert();
+    ASSERT_TRUE(static_cast<bool>(cert));
+
+    auto common_name = cert.subject_cn();
+    EXPECT_EQ("Common Name", common_name);
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 #endif

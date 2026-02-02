@@ -1,38 +1,44 @@
 CXX = clang++
 CXXFLAGS = -g -std=c++11 -I. -Wall -Wextra -Wtype-limits -Wconversion -Wshadow $(EXTRA_CXXFLAGS) -DCPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO # -fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS -fsanitize=address
 
-PREFIX ?= $(shell brew --prefix)
-
-OPENSSL_DIR = $(PREFIX)/opt/openssl@3
-OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
-
 ifneq ($(OS), Windows_NT)
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S), Darwin)
+		PREFIX ?= $(shell brew --prefix)
+		OPENSSL_DIR = $(PREFIX)/opt/openssl@3
+		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
 		OPENSSL_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
+		MBEDTLS_DIR ?= $(shell brew --prefix mbedtls@3)
+		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -lmbedcrypto
+		MBEDTLS_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
+	else
+		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -lssl -lcrypto
+		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -lmbedcrypto
 	endif
 endif
 
 ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 
-BROTLI_DIR = $(PREFIX)/opt/brotli
-BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
-
-ZSTD_DIR = $(PREFIX)/opt/zstd
-ZSTD_SUPPORT = -DCPPHTTPLIB_ZSTD_SUPPORT -I$(ZSTD_DIR)/include -L$(ZSTD_DIR)/lib -lzstd
-
-LIBS = -lpthread -lcurl
 ifneq ($(OS), Windows_NT)
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S), Darwin)
-		LIBS += -framework CoreFoundation -framework CFNetwork
-	endif
-	ifneq ($(UNAME_S), Darwin)
-		LIBS += -lanl
+		# macOS: use Homebrew paths for brotli and zstd
+		BROTLI_DIR = $(PREFIX)/opt/brotli
+		BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
+		ZSTD_DIR = $(PREFIX)/opt/zstd
+		ZSTD_SUPPORT = -DCPPHTTPLIB_ZSTD_SUPPORT -I$(ZSTD_DIR)/include -L$(ZSTD_DIR)/lib -lzstd
+		LIBS = -lpthread -lcurl -framework CoreFoundation -framework CFNetwork
+	else
+		# Linux: use system paths
+		BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -lbrotlicommon -lbrotlienc -lbrotlidec
+		ZSTD_SUPPORT = -DCPPHTTPLIB_ZSTD_SUPPORT -lzstd
+		LIBS = -lpthread -lcurl -lanl
 	endif
 endif
 
 TEST_ARGS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
+TEST_ARGS_MBEDTLS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(MBEDTLS_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
+TEST_ARGS_NO_TLS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
 
 # By default, use standalone_fuzz_target_runner.
 # This runner does no fuzzing, but simply executes the inputs
@@ -69,6 +75,25 @@ proxy : test_proxy
 	cd proxy && docker compose down; \
 	exit $$exit_code
 
+proxy_mbedtls : test_proxy_mbedtls
+	@echo "Starting proxy server..."
+	cd proxy && \
+	docker compose up -d
+	@echo "Waiting for proxy to be ready..."
+	@until nc -z localhost 3128 && nc -z localhost 3129; do sleep 1; done
+	@echo "Proxy servers are ready, waiting additional 5 seconds for full startup..."
+	@sleep 5
+	@echo "Checking proxy server status..."
+	@cd proxy && docker compose ps
+	@echo "Checking proxy server logs..."
+	@cd proxy && docker compose logs --tail=20
+	@echo "Running proxy tests (Mbed TLS)..."
+	./test_proxy_mbedtls; \
+	exit_code=$$?; \
+	echo "Stopping proxy server..."; \
+	cd proxy && docker compose down; \
+	exit $$exit_code
+
 test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS)
 	@file $@
@@ -77,6 +102,22 @@ test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 # link the split httplib.h, so there is normally no need to execute it.
 test_split : test.cc ../httplib.h httplib.cc Makefile cert.pem
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS)
+
+# Mbed TLS backend targets
+test_mbedtls : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS_MBEDTLS)
+	@file $@
+
+test_split_mbedtls : test.cc ../httplib.h httplib.cc Makefile cert.pem
+	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_MBEDTLS)
+
+# No TLS
+test_no_tls : test.cc include_httplib.cc ../httplib.h Makefile
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS_NO_TLS)
+	@file $@
+
+test_split_no_tls : test.cc ../httplib.h httplib.cc Makefile
+	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_NO_TLS)
 
 check_abi:
 	@./check-shared-library-abi-compatibility.sh
@@ -106,6 +147,9 @@ style_check: $(STYLE_CHECK_FILES)
 test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS)
 
+test_proxy_mbedtls : test_proxy.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS_MBEDTLS)
+
 # Runs server_fuzzer.cc based on value of $(LIB_FUZZING_ENGINE).
 # Usage: make fuzz_test LIB_FUZZING_ENGINE=/path/to/libFuzzer
 fuzz_test: server_fuzzer
@@ -128,5 +172,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_proxy server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
 

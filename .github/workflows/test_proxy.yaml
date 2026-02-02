@@ -6,15 +6,28 @@ jobs:
   test-proxy:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    
+    strategy:
+      matrix:
+        tls_backend: [openssl, mbedtls]
+    name: proxy (${{ matrix.tls_backend }})
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Install dependencies
+    - uses: actions/checkout@v4
+
+    - name: Install common dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libssl-dev zlib1g-dev libcurl4-openssl-dev libbrotli-dev libzstd-dev netcat-openbsd
-        
-    - name: Run proxy tests
-      run: |
-        cd test && make proxy
+        sudo apt-get install -y build-essential zlib1g-dev libcurl4-openssl-dev libbrotli-dev libzstd-dev netcat-openbsd
+    - name: Install OpenSSL
+      if: matrix.tls_backend == 'openssl'
+      run: sudo apt-get install -y libssl-dev
+    - name: Install Mbed TLS
+      if: matrix.tls_backend == 'mbedtls'
+      run: sudo apt-get install -y libmbedtls-dev
+
+    - name: Run proxy tests (OpenSSL)
+      if: matrix.tls_backend == 'openssl'
+      run: cd test && make proxy
+    - name: Run proxy tests (Mbed TLS)
+      if: matrix.tls_backend == 'mbedtls'
+      run: cd test && make proxy_mbedtls

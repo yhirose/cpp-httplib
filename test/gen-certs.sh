@@ -14,5 +14,5 @@ openssl genrsa 2048 > client.key.pem
 openssl req -new -batch -config test.conf -key client.key.pem | openssl x509 -days 370 -req -CA rootCA.cert.pem -CAkey rootCA.key.pem -CAcreateserial > client.cert.pem
 openssl genrsa -passout pass:test123! 2048 > key_encrypted.pem
 openssl req -new -batch -config test.conf -key key_encrypted.pem | openssl x509 -days 3650 -req -signkey key_encrypted.pem > cert_encrypted.pem
-openssl genrsa -aes256 -passout pass:test012! 2048 > client_encrypted.key.pem
+openssl genrsa 2048 | openssl pkcs8 -topk8 -v1 PBE-SHA1-3DES -passout pass:test012! -out client_encrypted.key.pem
 openssl req -new -batch -config test.conf -key client_encrypted.key.pem -passin pass:test012! | openssl x509 -days 370 -req -CA rootCA.cert.pem -CAkey rootCA.key.pem -CAcreateserial > client_encrypted.cert.pem

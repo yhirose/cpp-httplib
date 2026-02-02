@@ -50,19 +50,28 @@ if (auto res = cli.Get("/hi")) {
 }
 ```
 
-SSL Support
------------
+SSL/TLS Support
+---------------
 
-SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
+cpp-httplib supports multiple TLS backends through an abstraction layer:
+
+| Backend | Define | Libraries |
+| :------ | :----- | :-------- |
+| OpenSSL | `CPPHTTPLIB_OPENSSL_SUPPORT` | `libssl`, `libcrypto` |
+| Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` |
 
 > [!NOTE]
-> cpp-httplib currently supports only version 3.0 or later. Please see [this page](https://www.openssl.org/policies/releasestrat.html) to get more information.
+> OpenSSL 3.0 or later is required. Please see [this page](https://www.openssl.org/policies/releasestrat.html) for more information.
+
+> [!NOTE]
+> Mbed TLS 2.x and 3.x are supported. The library automatically detects the version and uses the appropriate API.
 
 > [!TIP]
-> For macOS: cpp-httplib now can use system certs with `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`. `CoreFoundation` and `Security` should be linked with `-framework`.
+> For macOS: cpp-httplib can use system certs with `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`. `CoreFoundation` and `Security` should be linked with `-framework`.
 
 ```c++
-#define CPPHTTPLIB_OPENSSL_SUPPORT
+// Use either OpenSSL or Mbed TLS
+#define CPPHTTPLIB_OPENSSL_SUPPORT   // or CPPHTTPLIB_MBEDTLS_SUPPORT
 #include "path/to/httplib.h"
 
 // Server

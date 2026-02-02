@@ -30,7 +30,7 @@ int main(void) {
   } else {
     cout << "error code: " << res.error() << std::endl;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-    auto result = cli.get_openssl_verify_result();
+    auto result = cli.get_verify_result();
     if (result) {
       cout << "verify error: " << X509_verify_cert_error_string(result) << endl;
     }
