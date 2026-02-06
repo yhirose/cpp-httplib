@@ -8538,14 +8538,14 @@ TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
 // the client side. The client should stop reading after a reasonable limit,
 // similar to the server-side set_payload_max_length protection.
 TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
-  constexpr size_t MALICIOUS_DATA_SIZE = 10 * 1024 * 1024; // 10MB from server
-  constexpr size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024;    // 2MB safety limit
+  constexpr size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024; // 2MB safety limit
 
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
 
   auto server_thread = std::thread([] {
+    constexpr size_t MALICIOUS_DATA_SIZE = 10 * 1024 * 1024; // 10MB from server
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
     default_socket_options(srv);
     detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
