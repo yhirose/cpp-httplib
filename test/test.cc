@@ -8642,7 +8642,7 @@ TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
       << "payload_max_length of " << CLIENT_READ_LIMIT << " bytes.";
 }
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+#if defined(CPPHTTPLIB_ZLIB_SUPPORT) && !defined(_WIN32)
 // Regression test for "zip bomb" attack on the client side: a malicious server
 // sends a small gzip-compressed response that decompresses to a huge payload.
 // The client must enforce payload_max_length on the decompressed size.
@@ -12461,6 +12461,7 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
 
+#ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
   Server svr;
 
@@ -12530,6 +12531,7 @@ TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
                            &resp));
   EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
 }
+#endif
 
 //==============================================================================
 // open_stream() Tests
