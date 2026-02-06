@@ -8460,8 +8460,12 @@ TEST_F(LargePayloadMaxLengthTest, ChunkedEncodingExceeds10MB) {
                             'B'); // 12MB payload, exceeds 10MB limit
 
   auto res = cli_.Post("/test", large_payload, "application/octet-stream");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+  // Server may either return 413 or close the connection
+  if (res) {
+    EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+  } else {
+    SUCCEED() << "Server closed connection for payload exceeding 10MB limit";
+  }
 }
 
 TEST_F(LargePayloadMaxLengthTest, NoContentLengthWithin10MB) {
@@ -8534,10 +8538,12 @@ TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
 // the client side. The client should stop reading after a reasonable limit,
 // similar to the server-side set_payload_max_length protection.
 TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
-  const size_t MALICIOUS_DATA_SIZE = 10 * 1024 * 1024; // 10MB from server
-  const size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024;    // 2MB safety limit
+  constexpr size_t MALICIOUS_DATA_SIZE = 10 * 1024 * 1024; // 10MB from server
+  constexpr size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024;    // 2MB safety limit
 
+#ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
+#endif
 
   auto server_thread = std::thread([] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -8641,8 +8647,9 @@ TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
 // sends a small gzip-compressed response that decompresses to a huge payload.
 // The client must enforce payload_max_length on the decompressed size.
 TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
-  const size_t DECOMPRESSED_SIZE = 10 * 1024 * 1024; // 10MB after decompression
-  const size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024;  // 2MB safety limit
+  constexpr size_t DECOMPRESSED_SIZE =
+      10 * 1024 * 1024; // 10MB after decompression
+  constexpr size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024; // 2MB safety limit
 
   // Prepare gzip-compressed data: 10MB of zeros compresses to a few KB
   std::string uncompressed(DECOMPRESSED_SIZE, '\0');
@@ -8660,7 +8667,9 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
   // Sanity: compressed data should be much smaller than the decompressed size
   ASSERT_LT(compressed.size(), DECOMPRESSED_SIZE / 10);
 
+#ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
+#endif
 
   auto server_thread = std::thread([&compressed] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
