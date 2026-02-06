@@ -147,7 +147,7 @@
 #endif
 
 #ifndef CPPHTTPLIB_PAYLOAD_MAX_LENGTH
-#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH ((std::numeric_limits<size_t>::max)())
+#define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (100 * 1024 * 1024) // 100MB
 #endif
 
 #ifndef CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH
@@ -1622,7 +1622,9 @@ struct ChunkedDecoder;
 
 struct BodyReader {
   Stream *stream = nullptr;
+  bool has_content_length = false;
   size_t content_length = 0;
+  size_t payload_max_length = (std::numeric_limits<size_t>::max)();
   size_t bytes_read = 0;
   bool chunked = false;
   bool eof = false;
@@ -1692,6 +1694,7 @@ public:
     std::unique_ptr<detail::decompressor> decompressor_;
     std::string decompress_buffer_;
     size_t decompress_offset_ = 0;
+    size_t decompressed_bytes_read_ = 0;
   };
 
   // clang-format off
@@ -1848,6 +1851,8 @@ public:
 
   void set_decompress(bool on);
 
+  void set_payload_max_length(size_t length);
+
   void set_interface(const std::string &intf);
 
   void set_proxy(const std::string &host, int port);
@@ -1949,6 +1954,8 @@ protected:
 
   bool compress_ = false;
   bool decompress_ = true;
+
+  size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
 
   std::string interface_;
 
@@ -2224,6 +2231,8 @@ public:
   void set_compress(bool on);
 
   void set_decompress(bool on);
+
+  void set_payload_max_length(size_t length);
 
   void set_interface(const std::string &intf);
 
@@ -5960,14 +5969,23 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   return true;
 }
 
-inline bool read_content_with_length(Stream &strm, size_t len,
-                                     DownloadProgress progress,
-                                     ContentReceiverWithProgress out) {
+enum class ReadContentResult {
+  Success,         // Successfully read the content
+  PayloadTooLarge, // The content exceeds the specified payload limit
+  Error            // An error occurred while reading the content
+};
+
+inline ReadContentResult read_content_with_length(
+    Stream &strm, size_t len, DownloadProgress progress,
+    ContentReceiverWithProgress out,
+    size_t payload_max_length = (std::numeric_limits<size_t>::max)()) {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
 
   detail::BodyReader br;
   br.stream = &strm;
+  br.has_content_length = true;
   br.content_length = len;
+  br.payload_max_length = payload_max_length;
   br.chunked = false;
   br.bytes_read = 0;
   br.last_error = Error::Success;
@@ -5977,35 +5995,26 @@ inline bool read_content_with_length(Stream &strm, size_t len,
     auto read_len = static_cast<size_t>(len - r);
     auto to_read = (std::min)(read_len, CPPHTTPLIB_RECV_BUFSIZ);
     auto n = detail::read_body_content(&strm, br, buf, to_read);
-    if (n <= 0) { return false; }
+    if (n <= 0) {
+      // Check if it was a payload size error
+      if (br.last_error == Error::Read && br.bytes_read > payload_max_length) {
+        return ReadContentResult::PayloadTooLarge;
+      }
+      return ReadContentResult::Error;
+    }
 
-    if (!out(buf, static_cast<size_t>(n), r, len)) { return false; }
+    if (!out(buf, static_cast<size_t>(n), r, len)) {
+      return ReadContentResult::Error;
+    }
     r += static_cast<size_t>(n);
 
     if (progress) {
-      if (!progress(r, len)) { return false; }
+      if (!progress(r, len)) { return ReadContentResult::Error; }
     }
   }
 
-  return true;
+  return ReadContentResult::Success;
 }
-
-inline void skip_content_with_length(Stream &strm, size_t len) {
-  char buf[CPPHTTPLIB_RECV_BUFSIZ];
-  size_t r = 0;
-  while (r < len) {
-    auto read_len = static_cast<size_t>(len - r);
-    auto n = strm.read(buf, (std::min)(read_len, CPPHTTPLIB_RECV_BUFSIZ));
-    if (n <= 0) { return; }
-    r += static_cast<size_t>(n);
-  }
-}
-
-enum class ReadContentResult {
-  Success,         // Successfully read the content
-  PayloadTooLarge, // The content exceeds the specified payload limit
-  Error            // An error occurred while reading the content
-};
 
 inline ReadContentResult
 read_content_without_length(Stream &strm, size_t payload_max_length,
@@ -6152,12 +6161,13 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 
           if (is_invalid_value) {
             ret = false;
-          } else if (len > payload_max_length) {
-            exceed_payload_max_length = true;
-            skip_content_with_length(strm, len);
-            ret = false;
           } else if (len > 0) {
-            ret = read_content_with_length(strm, len, std::move(progress), out);
+            auto result = read_content_with_length(
+                strm, len, std::move(progress), out, payload_max_length);
+            ret = (result == ReadContentResult::Success);
+            if (result == ReadContentResult::PayloadTooLarge) {
+              exceed_payload_max_length = true;
+            }
           }
         }
 
@@ -8478,13 +8488,13 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
 
   if (!chunked) {
     // Content-Length based reading
-    if (bytes_read >= content_length) {
+    if (has_content_length && bytes_read >= content_length) {
       eof = true;
       return 0;
     }
 
     auto remaining = content_length - bytes_read;
-    auto to_read = (std::min)(len, remaining);
+    auto to_read = has_content_length ? (std::min)(len, remaining) : len;
     auto n = stream->read(buf, to_read);
 
     if (n < 0) {
@@ -8502,7 +8512,12 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
     }
 
     bytes_read += static_cast<size_t>(n);
-    if (bytes_read >= content_length) { eof = true; }
+    if (has_content_length && bytes_read >= content_length) { eof = true; }
+    if (bytes_read > payload_max_length) {
+      last_error = Error::Read;
+      eof = true;
+      return -1;
+    }
     return n;
   }
 
@@ -8526,6 +8541,11 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
   }
 
   bytes_read += static_cast<size_t>(n);
+  if (bytes_read > payload_max_length) {
+    last_error = Error::Read;
+    eof = true;
+    return -1;
+  }
   return n;
 }
 
@@ -9682,7 +9702,7 @@ inline bool Server::read_content_core(
   // oversized request and fail early (causing connection close). For SSL
   // builds we cannot reliably peek the decrypted application bytes, so keep
   // the original behaviour.
-#if !defined(CPPHTTPLIB_TLS_ENABLED)
+#if !defined(CPPHTTPLIB_SSL_ENABLED)
   if (!req.has_header("Content-Length") &&
       !detail::is_chunked_transfer_encoding(req.headers)) {
     // Only peek if payload_max_length is set to a finite value
@@ -10572,6 +10592,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   socket_options_ = rhs.socket_options_;
   compress_ = rhs.compress_;
   decompress_ = rhs.decompress_;
+  payload_max_length_ = rhs.payload_max_length_;
   interface_ = rhs.interface_;
   proxy_host_ = rhs.proxy_host_;
   proxy_port_ = rhs.proxy_port_;
@@ -10999,9 +11020,11 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
   }
 
   handle.body_reader_.stream = handle.stream_;
+  handle.body_reader_.payload_max_length = payload_max_length_;
 
   auto content_length_str = handle.response->get_header_value("Content-Length");
   if (!content_length_str.empty()) {
+    handle.body_reader_.has_content_length = true;
     handle.body_reader_.content_length =
         static_cast<size_t>(std::stoull(content_length_str));
   }
@@ -11049,6 +11072,7 @@ inline ssize_t ClientImpl::StreamHandle::read_with_decompression(char *buf,
     auto to_copy = (std::min)(len, available);
     std::memcpy(buf, decompress_buffer_.data() + decompress_offset_, to_copy);
     decompress_offset_ += to_copy;
+    decompressed_bytes_read_ += to_copy;
     return static_cast<ssize_t>(to_copy);
   }
 
@@ -11064,12 +11088,16 @@ inline ssize_t ClientImpl::StreamHandle::read_with_decompression(char *buf,
 
     if (n <= 0) { return n; }
 
-    bool decompress_ok =
-        decompressor_->decompress(compressed_buf, static_cast<size_t>(n),
-                                  [this](const char *data, size_t data_len) {
-                                    decompress_buffer_.append(data, data_len);
-                                    return true;
-                                  });
+    bool decompress_ok = decompressor_->decompress(
+        compressed_buf, static_cast<size_t>(n),
+        [this](const char *data, size_t data_len) {
+          decompress_buffer_.append(data, data_len);
+          auto limit = body_reader_.payload_max_length;
+          if (decompressed_bytes_read_ + decompress_buffer_.size() > limit) {
+            return false;
+          }
+          return true;
+        });
 
     if (!decompress_ok) {
       body_reader_.last_error = Error::Read;
@@ -11082,6 +11110,7 @@ inline ssize_t ClientImpl::StreamHandle::read_with_decompression(char *buf,
   auto to_copy = (std::min)(len, decompress_buffer_.size());
   std::memcpy(buf, decompress_buffer_.data(), to_copy);
   decompress_offset_ = to_copy;
+  decompressed_bytes_read_ += to_copy;
   return static_cast<ssize_t>(to_copy);
 }
 
@@ -11920,6 +11949,11 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                   [&](const char *buf, size_t n, size_t /*off*/,
                       size_t /*len*/) {
                     assert(res.body.size() + n <= res.body.max_size());
+                    if (payload_max_length_ > 0 &&
+                        (res.body.size() >= payload_max_length_ ||
+                         n > payload_max_length_ - res.body.size())) {
+                      return false;
+                    }
                     res.body.append(buf, n);
                     return true;
                   });
@@ -11948,9 +11982,9 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
     if (res.status != StatusCode::NotModified_304) {
       int dummy_status;
-      if (!detail::read_content(strm, res, (std::numeric_limits<size_t>::max)(),
-                                dummy_status, std::move(progress),
-                                std::move(out), decompress_)) {
+      if (!detail::read_content(strm, res, payload_max_length_, dummy_status,
+                                std::move(progress), std::move(out),
+                                decompress_)) {
         if (error != Error::Canceled) { error = Error::Read; }
         output_error_log(error, &req);
         return false;
@@ -12897,6 +12931,10 @@ inline void ClientImpl::set_compress(bool on) { compress_ = on; }
 
 inline void ClientImpl::set_decompress(bool on) { decompress_ = on; }
 
+inline void ClientImpl::set_payload_max_length(size_t length) {
+  payload_max_length_ = length;
+}
+
 inline void ClientImpl::set_interface(const std::string &intf) {
   interface_ = intf;
 }
@@ -13639,6 +13677,10 @@ inline void Client::set_url_encode(bool on) {
 inline void Client::set_compress(bool on) { cli_->set_compress(on); }
 
 inline void Client::set_decompress(bool on) { cli_->set_decompress(on); }
+
+inline void Client::set_payload_max_length(size_t length) {
+  cli_->set_payload_max_length(length);
+}
 
 inline void Client::set_interface(const std::string &intf) {
   cli_->set_interface(intf);
