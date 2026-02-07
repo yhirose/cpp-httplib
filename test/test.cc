@@ -8651,7 +8651,7 @@ TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
   signal(SIGPIPE, SIG_IGN);
 #endif
 
-  auto server_thread = std::thread([] {
+  auto server_thread = std::thread([DATA_SIZE] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
     default_socket_options(srv);
     detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
