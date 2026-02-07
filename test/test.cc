@@ -8712,6 +8712,10 @@ TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
         total_sent += static_cast<size_t>(sent);
       }
 
+      ::shutdown(cli, SHUT_WR);
+      // Drain until the client closes its end, ensuring all data is delivered
+      char drain[1024];
+      while (::recv(cli, drain, sizeof(drain), 0) > 0) {}
       detail::close_socket(cli);
     }
     detail::close_socket(srv);
