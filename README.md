@@ -1167,7 +1167,7 @@ svr.listen("127.0.0.1", 8080);
 Payload Limit
 -------------
 
-The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time.
+The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely.
 
 Compression
 -----------

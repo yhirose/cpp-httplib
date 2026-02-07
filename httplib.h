@@ -5997,7 +5997,7 @@ inline ReadContentResult read_content_with_length(
     auto n = detail::read_body_content(&strm, br, buf, to_read);
     if (n <= 0) {
       // Check if it was a payload size error
-      if (br.last_error == Error::Read && br.bytes_read > payload_max_length) {
+      if (br.last_error == Error::ExceedMaxPayloadSize) {
         return ReadContentResult::PayloadTooLarge;
       }
       return ReadContentResult::Error;
@@ -8493,8 +8493,11 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
       return 0;
     }
 
-    auto remaining = content_length - bytes_read;
-    auto to_read = has_content_length ? (std::min)(len, remaining) : len;
+    auto to_read = len;
+    if (has_content_length) {
+      auto remaining = content_length - bytes_read;
+      to_read = (std::min)(len, remaining);
+    }
     auto n = stream->read(buf, to_read);
 
     if (n < 0) {
@@ -8513,8 +8516,8 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
 
     bytes_read += static_cast<size_t>(n);
     if (has_content_length && bytes_read >= content_length) { eof = true; }
-    if (bytes_read > payload_max_length) {
-      last_error = Error::Read;
+    if (payload_max_length > 0 && bytes_read > payload_max_length) {
+      last_error = Error::ExceedMaxPayloadSize;
       eof = true;
       return -1;
     }
@@ -8541,8 +8544,8 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
   }
 
   bytes_read += static_cast<size_t>(n);
-  if (bytes_read > payload_max_length) {
-    last_error = Error::Read;
+  if (payload_max_length > 0 && bytes_read > payload_max_length) {
+    last_error = Error::ExceedMaxPayloadSize;
     eof = true;
     return -1;
   }
