@@ -2267,6 +2267,11 @@ public:
 
   tls::ctx_t tls_context() const;
 
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  void enable_windows_certificate_verification(bool enabled);
+#endif
+
 private:
   bool is_ssl_ = false;
 #endif
@@ -2384,6 +2389,11 @@ public:
 
   tls::ctx_t tls_context() const { return ctx_; }
 
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  void enable_windows_certificate_verification(bool enabled);
+#endif
+
 private:
   bool create_and_connect_socket(Socket &socket, Error &error) override;
   bool ensure_socket_connection(Socket &socket, Error &error) override;
@@ -2411,6 +2421,11 @@ private:
   long verify_result_ = 0;
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  bool enable_windows_cert_verification_ = true;
+#endif
 
   friend class ClientImpl;
 
@@ -3680,6 +3695,7 @@ std::string get_cert_issuer_name(cert_t cert);
 bool get_cert_sans(cert_t cert, std::vector<SanEntry> &sans);
 bool get_cert_validity(cert_t cert, time_t &not_before, time_t &not_after);
 std::string get_cert_serial(cert_t cert);
+bool get_cert_der(cert_t cert, std::vector<unsigned char> &der);
 const char *get_sni(const_session_t session);
 
 // CA store management
@@ -7735,6 +7751,96 @@ inline bool match_hostname(const std::string &pattern,
 
   return true;
 }
+
+#ifdef _WIN32
+// Verify certificate using Windows CertGetCertificateChain API.
+// This provides real-time certificate validation with Windows Update
+// integration, independent of the TLS backend (OpenSSL or MbedTLS).
+inline bool verify_cert_with_windows_schannel(
+    const std::vector<unsigned char> &der_cert, const std::string &hostname,
+    bool verify_hostname, unsigned long &out_error) {
+  if (der_cert.empty()) { return false; }
+
+  out_error = 0;
+
+  // Create Windows certificate context from DER data
+  auto cert_context = CertCreateCertificateContext(
+      X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, der_cert.data(),
+      static_cast<DWORD>(der_cert.size()));
+
+  if (!cert_context) {
+    out_error = GetLastError();
+    return false;
+  }
+
+  auto cert_guard =
+      scope_exit([&] { CertFreeCertificateContext(cert_context); });
+
+  // Setup chain parameters
+  CERT_CHAIN_PARA chain_para = {};
+  chain_para.cbSize = sizeof(chain_para);
+
+  // Build certificate chain with revocation checking
+  PCCERT_CHAIN_CONTEXT chain_context = nullptr;
+  auto chain_result = CertGetCertificateChain(
+      nullptr, cert_context, nullptr, cert_context->hCertStore, &chain_para,
+      CERT_CHAIN_CACHE_END_CERT | CERT_CHAIN_REVOCATION_CHECK_END_CERT |
+          CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
+      nullptr, &chain_context);
+
+  if (!chain_result || !chain_context) {
+    out_error = GetLastError();
+    return false;
+  }
+
+  auto chain_guard =
+      scope_exit([&] { CertFreeCertificateChain(chain_context); });
+
+  // Check if chain has errors
+  if (chain_context->TrustStatus.dwErrorStatus != CERT_TRUST_NO_ERROR) {
+    out_error = chain_context->TrustStatus.dwErrorStatus;
+    return false;
+  }
+
+  // Verify SSL policy
+  SSL_EXTRA_CERT_CHAIN_POLICY_PARA extra_policy_para = {};
+  extra_policy_para.cbSize = sizeof(extra_policy_para);
+#ifdef AUTHTYPE_SERVER
+  extra_policy_para.dwAuthType = AUTHTYPE_SERVER;
+#endif
+
+  std::wstring whost;
+  if (verify_hostname) {
+    whost = u8string_to_wstring(hostname.c_str());
+    extra_policy_para.pwszServerName = const_cast<wchar_t *>(whost.c_str());
+  }
+
+  CERT_CHAIN_POLICY_PARA policy_para = {};
+  policy_para.cbSize = sizeof(policy_para);
+#ifdef CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS
+  policy_para.dwFlags = CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS;
+#else
+  policy_para.dwFlags = 0;
+#endif
+  policy_para.pvExtraPolicyPara = &extra_policy_para;
+
+  CERT_CHAIN_POLICY_STATUS policy_status = {};
+  policy_status.cbSize = sizeof(policy_status);
+
+  if (!CertVerifyCertificateChainPolicy(CERT_CHAIN_POLICY_SSL, chain_context,
+                                        &policy_para, &policy_status)) {
+    out_error = GetLastError();
+    return false;
+  }
+
+  if (policy_status.dwError != 0) {
+    out_error = policy_status.dwError;
+    return false;
+  }
+
+  return true;
+}
+#endif // _WIN32
 
 } // namespace detail
 #endif // CPPHTTPLIB_SSL_ENABLED
@@ -14100,6 +14206,13 @@ inline void SSLClient::set_session_verifier(
   session_verifier_ = std::move(verifier);
 }
 
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+inline void SSLClient::enable_windows_certificate_verification(bool enabled) {
+  enable_windows_cert_verification_ = enabled;
+}
+#endif
+
 inline void SSLClient::load_ca_cert_store(const char *ca_cert,
                                           std::size_t size) {
   if (ctx_ && ca_cert && size > 0) {
@@ -14251,6 +14364,26 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         return false;
       }
     }
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+    // Additional Windows Schannel verification.
+    // This provides real-time certificate validation with Windows Update
+    // integration, working with both OpenSSL and MbedTLS backends.
+    if (enable_windows_cert_verification_) {
+      std::vector<unsigned char> der;
+      if (get_cert_der(server_cert, der)) {
+        unsigned long wincrypt_error = 0;
+        if (!detail::verify_cert_with_windows_schannel(
+                der, host_, server_hostname_verification_, wincrypt_error)) {
+          last_backend_error_ = wincrypt_error;
+          error = Error::SSLServerVerification;
+          output_error_log(error, nullptr);
+          return false;
+        }
+      }
+    }
+#endif
   }
 
   success = true;
@@ -14275,6 +14408,16 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
 inline void Client::enable_server_hostname_verification(bool enabled) {
   cli_->enable_server_hostname_verification(enabled);
 }
+
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+inline void Client::enable_windows_certificate_verification(bool enabled) {
+  if (is_ssl_) {
+    static_cast<SSLClient &>(*cli_).enable_windows_certificate_verification(
+        enabled);
+  }
+}
+#endif
 
 inline void Client::set_ca_cert_path(const std::string &ca_cert_file_path,
                                      const std::string &ca_cert_dir_path) {
@@ -14729,25 +14872,28 @@ inline bool load_system_certs(ctx_t ctx) {
   auto ssl_ctx = static_cast<SSL_CTX *>(ctx);
 
 #ifdef _WIN32
-  // Windows: Load from system certificate store
+  // Windows: Load from system certificate store (ROOT and CA)
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) return false;
 
-  auto hStore = CertOpenSystemStoreW(NULL, L"ROOT");
-  if (!hStore) return false;
-
   bool loaded_any = false;
-  PCCERT_CONTEXT pContext = nullptr;
-  while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
-         nullptr) {
-    const unsigned char *data = pContext->pbCertEncoded;
-    auto x509 = d2i_X509(nullptr, &data, pContext->cbCertEncoded);
-    if (x509) {
-      if (X509_STORE_add_cert(store, x509) == 1) { loaded_any = true; }
-      X509_free(x509);
+  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
+  for (auto store_name : store_names) {
+    auto hStore = CertOpenSystemStoreW(NULL, store_name);
+    if (!hStore) continue;
+
+    PCCERT_CONTEXT pContext = nullptr;
+    while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
+           nullptr) {
+      const unsigned char *data = pContext->pbCertEncoded;
+      auto x509 = d2i_X509(nullptr, &data, pContext->cbCertEncoded);
+      if (x509) {
+        if (X509_STORE_add_cert(store, x509) == 1) { loaded_any = true; }
+        X509_free(x509);
+      }
     }
+    CertCloseStore(hStore, 0);
   }
-  CertCloseStore(hStore, 0);
   return loaded_any;
 
 #elif defined(__APPLE__)
@@ -15286,6 +15432,17 @@ inline std::string get_cert_serial(cert_t cert) {
   std::string result(hex);
   OPENSSL_free(hex);
   return result;
+}
+
+inline bool get_cert_der(cert_t cert, std::vector<unsigned char> &der) {
+  if (!cert) return false;
+  auto x509 = static_cast<X509 *>(cert);
+  auto len = i2d_X509(x509, nullptr);
+  if (len < 0) return false;
+  der.resize(static_cast<size_t>(len));
+  auto p = der.data();
+  i2d_X509(x509, &p);
+  return true;
 }
 
 inline const char *get_sni(const_session_t session) {
@@ -16136,17 +16293,20 @@ inline bool load_system_certs(ctx_t ctx) {
   bool loaded = false;
 
 #ifdef _WIN32
-  // Load from Windows certificate store
-  HCERTSTORE hStore = CertOpenSystemStoreW(0, L"ROOT");
-  if (hStore) {
-    PCCERT_CONTEXT pContext = nullptr;
-    while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
-           nullptr) {
-      int ret = mbedtls_x509_crt_parse_der(
-          &mctx->ca_chain, pContext->pbCertEncoded, pContext->cbCertEncoded);
-      if (ret == 0) { loaded = true; }
+  // Load from Windows certificate store (ROOT and CA)
+  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
+  for (auto store_name : store_names) {
+    HCERTSTORE hStore = CertOpenSystemStoreW(0, store_name);
+    if (hStore) {
+      PCCERT_CONTEXT pContext = nullptr;
+      while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
+             nullptr) {
+        int ret = mbedtls_x509_crt_parse_der(
+            &mctx->ca_chain, pContext->pbCertEncoded, pContext->cbCertEncoded);
+        if (ret == 0) { loaded = true; }
+      }
+      CertCloseStore(hStore, 0);
     }
-    CertCloseStore(hStore, 0);
   }
 #elif defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
   // Load from macOS Keychain
@@ -16784,6 +16944,14 @@ inline std::string get_cert_serial(cert_t cert) {
     result += hex;
   }
   return result;
+}
+
+inline bool get_cert_der(cert_t cert, std::vector<unsigned char> &der) {
+  if (!cert) return false;
+  auto crt = static_cast<mbedtls_x509_crt *>(cert);
+  if (!crt->raw.p || crt->raw.len == 0) return false;
+  der.assign(crt->raw.p, crt->raw.p + crt->raw.len);
+  return true;
 }
 
 inline const char *get_sni(const_session_t session) {

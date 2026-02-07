@@ -8645,13 +8645,13 @@ TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
 // Verify that set_payload_max_length(0) means "no limit" and allows reading
 // the entire response body without truncation.
 TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
-  constexpr size_t DATA_SIZE = 4 * 1024 * 1024; // 4MB from server
+  static constexpr size_t DATA_SIZE = 4 * 1024 * 1024; // 4MB from server
 
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
 
-  auto server_thread = std::thread([DATA_SIZE] {
+  auto server_thread = std::thread([] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
     default_socket_options(srv);
     detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
@@ -8956,8 +8956,13 @@ TEST(SSLClientTest, ServerCertificateVerificationError_Online) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   // For OpenSSL, ssl_error is 0 for verification errors
   EXPECT_EQ(0, res.ssl_error());
+#if !defined(_WIN32) ||                                                        \
+    defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  // On non-Windows or when Windows Schannel is disabled, the error comes
+  // from OpenSSL's verification
   EXPECT_EQ(static_cast<unsigned long>(X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT),
             res.ssl_backend_error());
+#endif
 #endif
 }
 
@@ -8982,10 +8987,35 @@ TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   // For OpenSSL, ssl_error is 0 for verification errors
   EXPECT_EQ(0, res.ssl_error());
+#if !defined(_WIN32) ||                                                        \
+    defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+  // On non-Windows or when Windows Schannel is disabled, the error comes
+  // from OpenSSL's hostname verification
   EXPECT_EQ(static_cast<unsigned long>(X509_V_ERR_HOSTNAME_MISMATCH),
             res.ssl_backend_error());
 #endif
+#endif
 }
+
+#if defined(_WIN32) && defined(CPPHTTPLIB_SSL_ENABLED) &&                      \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+TEST(SSLClientTest, WindowsCertificateVerification_DefaultEnabled) {
+  SSLClient cli("www.google.com", 443);
+  cli.enable_server_certificate_verification(true);
+
+  auto res = cli.Get("/");
+  if (res) { EXPECT_NE(StatusCode::InternalServerError_500, res->status); }
+}
+
+TEST(SSLClientTest, WindowsCertificateVerification_Disabled) {
+  SSLClient cli("www.google.com", 443);
+  cli.enable_server_certificate_verification(true);
+  cli.enable_windows_certificate_verification(false);
+
+  auto res = cli.Get("/");
+  if (res) { EXPECT_NE(StatusCode::InternalServerError_500, res->status); }
+}
+#endif
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {
   Client cli("https://google.com");
