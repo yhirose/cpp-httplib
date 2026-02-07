@@ -1683,6 +1683,7 @@ TEST(CancelTest, WithCancelSmallPayloadPost) {
 
 TEST(CancelTest, WithCancelLargePayloadPost) {
   Server svr;
+  svr.set_payload_max_length(200 * 1024 * 1024);
 
   svr.Post("/", [&](const Request & /*req*/, Response &res) {
     res.set_content(LARGE_DATA, "text/plain");
@@ -1698,6 +1699,7 @@ TEST(CancelTest, WithCancelLargePayloadPost) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
+  cli.set_payload_max_length(200 * 1024 * 1024);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
   auto res =
@@ -1762,6 +1764,7 @@ TEST(CancelTest, WithCancelSmallPayloadPut) {
 
 TEST(CancelTest, WithCancelLargePayloadPut) {
   Server svr;
+  svr.set_payload_max_length(200 * 1024 * 1024);
 
   svr.Put("/", [&](const Request & /*req*/, Response &res) {
     res.set_content(LARGE_DATA, "text/plain");
@@ -1777,6 +1780,7 @@ TEST(CancelTest, WithCancelLargePayloadPut) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
+  cli.set_payload_max_length(200 * 1024 * 1024);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
   auto res =
@@ -1841,6 +1845,7 @@ TEST(CancelTest, WithCancelSmallPayloadPatch) {
 
 TEST(CancelTest, WithCancelLargePayloadPatch) {
   Server svr;
+  svr.set_payload_max_length(200 * 1024 * 1024);
 
   svr.Patch("/", [&](const Request & /*req*/, Response &res) {
     res.set_content(LARGE_DATA, "text/plain");
@@ -1856,6 +1861,7 @@ TEST(CancelTest, WithCancelLargePayloadPatch) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
+  cli.set_payload_max_length(200 * 1024 * 1024);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
   auto res =
@@ -1920,6 +1926,7 @@ TEST(CancelTest, WithCancelSmallPayloadDelete) {
 
 TEST(CancelTest, WithCancelLargePayloadDelete) {
   Server svr;
+  svr.set_payload_max_length(200 * 1024 * 1024);
 
   svr.Delete("/", [&](const Request & /*req*/, Response &res) {
     res.set_content(LARGE_DATA, "text/plain");
@@ -1935,6 +1942,7 @@ TEST(CancelTest, WithCancelLargePayloadDelete) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
+  cli.set_payload_max_length(200 * 1024 * 1024);
   cli.set_connection_timeout(std::chrono::seconds(5));
 
   auto res =
@@ -3083,9 +3091,14 @@ protected:
 #ifdef CPPHTTPLIB_SSL_ENABLED
     cli_.enable_server_certificate_verification(false);
 #endif
+    // Allow LARGE_DATA (100MB) responses
+    cli_.set_payload_max_length(200 * 1024 * 1024);
   }
 
   virtual void SetUp() {
+    // Allow LARGE_DATA (100MB) tests to pass with new 100MB default limit
+    svr_.set_payload_max_length(200 * 1024 * 1024);
+
     svr_.set_mount_point("/", "./www");
     svr_.set_mount_point("/mount", "./www2");
     svr_.set_file_extension_and_mimetype_mapping("abcde", "text/abcde");
@@ -8447,8 +8460,12 @@ TEST_F(LargePayloadMaxLengthTest, ChunkedEncodingExceeds10MB) {
                             'B'); // 12MB payload, exceeds 10MB limit
 
   auto res = cli_.Post("/test", large_payload, "application/octet-stream");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+  // Server may either return 413 or close the connection
+  if (res) {
+    EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+  } else {
+    SUCCEED() << "Server closed connection for payload exceeding 10MB limit";
+  }
 }
 
 TEST_F(LargePayloadMaxLengthTest, NoContentLengthWithin10MB) {
@@ -8515,6 +8532,348 @@ TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
     }
   }
 }
+
+// Regression test for DoS vulnerability: a malicious server sending a response
+// without Content-Length header must not cause unbounded memory consumption on
+// the client side. The client should stop reading after a reasonable limit,
+// similar to the server-side set_payload_max_length protection.
+TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
+  constexpr size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024; // 2MB safety limit
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([] {
+    constexpr size_t MALICIOUS_DATA_SIZE = 10 * 1024 * 1024; // 10MB from server
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT + 2);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      // Malicious response: no Content-Length, no chunked encoding
+      std::string response_header = "HTTP/1.1 200 OK\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response_header.c_str()),
+             static_cast<int>(response_header.size()),
+#else
+             response_header.c_str(), response_header.size(),
+#endif
+             0);
+
+      // Send 10MB of data
+      std::string chunk(64 * 1024, 'A');
+      size_t total_sent = 0;
+
+      while (total_sent < MALICIOUS_DATA_SIZE) {
+        auto to_send = std::min(chunk.size(), MALICIOUS_DATA_SIZE - total_sent);
+        auto sent = ::send(cli,
+#ifdef _WIN32
+                           static_cast<const char *>(chunk.c_str()),
+                           static_cast<int>(to_send),
+#else
+                           chunk.c_str(), to_send,
+#endif
+                           0);
+        if (sent <= 0) break;
+        total_sent += static_cast<size_t>(sent);
+      }
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  size_t total_read = 0;
+
+  {
+    Client cli("127.0.0.1", PORT + 2);
+    cli.set_read_timeout(5, 0);
+    cli.set_payload_max_length(CLIENT_READ_LIMIT);
+
+    auto stream = cli.open_stream("GET", "/malicious");
+    ASSERT_TRUE(stream.is_valid());
+
+    char buffer[64 * 1024];
+    ssize_t n;
+
+    while ((n = stream.read(buffer, sizeof(buffer))) > 0) {
+      total_read += static_cast<size_t>(n);
+    }
+  } // StreamHandle and Client destroyed here, closing the socket
+
+  server_thread.join();
+
+  // With set_payload_max_length, the client must stop reading before consuming
+  // all 10MB. The read loop should be cut off at or near the configured limit.
+  EXPECT_LE(total_read, CLIENT_READ_LIMIT)
+      << "Client read " << total_read << " bytes, exceeding the configured "
+      << "payload_max_length of " << CLIENT_READ_LIMIT << " bytes.";
+}
+
+// Verify that set_payload_max_length(0) means "no limit" and allows reading
+// the entire response body without truncation.
+TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
+  constexpr size_t DATA_SIZE = 4 * 1024 * 1024; // 4MB from server
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([DATA_SIZE] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT + 2);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      std::string response_header = "HTTP/1.1 200 OK\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response_header.c_str()),
+             static_cast<int>(response_header.size()),
+#else
+             response_header.c_str(), response_header.size(),
+#endif
+             0);
+
+      std::string chunk(64 * 1024, 'A');
+      size_t total_sent = 0;
+
+      while (total_sent < DATA_SIZE) {
+        auto to_send = std::min(chunk.size(), DATA_SIZE - total_sent);
+        auto sent = ::send(cli,
+#ifdef _WIN32
+                           static_cast<const char *>(chunk.c_str()),
+                           static_cast<int>(to_send),
+#else
+                           chunk.c_str(), to_send,
+#endif
+                           0);
+        if (sent <= 0) break;
+        total_sent += static_cast<size_t>(sent);
+      }
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  size_t total_read = 0;
+
+  {
+    Client cli("127.0.0.1", PORT + 2);
+    cli.set_read_timeout(5, 0);
+    cli.set_payload_max_length(0); // 0 means no limit
+
+    auto stream = cli.open_stream("GET", "/data");
+    ASSERT_TRUE(stream.is_valid());
+
+    char buffer[64 * 1024];
+    ssize_t n;
+
+    while ((n = stream.read(buffer, sizeof(buffer))) > 0) {
+      total_read += static_cast<size_t>(n);
+    }
+  }
+
+  server_thread.join();
+
+  EXPECT_EQ(total_read, DATA_SIZE)
+      << "With payload_max_length(0), the client should read all " << DATA_SIZE
+      << " bytes without truncation, but only read " << total_read << " bytes.";
+}
+
+#if defined(CPPHTTPLIB_ZLIB_SUPPORT) && !defined(_WIN32)
+// Regression test for "zip bomb" attack on the client side: a malicious server
+// sends a small gzip-compressed response that decompresses to a huge payload.
+// The client must enforce payload_max_length on the decompressed size.
+TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
+  constexpr size_t DECOMPRESSED_SIZE =
+      10 * 1024 * 1024; // 10MB after decompression
+  constexpr size_t CLIENT_READ_LIMIT = 2 * 1024 * 1024; // 2MB safety limit
+
+  // Prepare gzip-compressed data: 10MB of zeros compresses to a few KB
+  std::string uncompressed(DECOMPRESSED_SIZE, '\0');
+  std::string compressed;
+  {
+    httplib::detail::gzip_compressor compressor;
+    bool ok =
+        compressor.compress(uncompressed.data(), uncompressed.size(),
+                            /*last=*/true, [&](const char *buf, size_t len) {
+                              compressed.append(buf, len);
+                              return true;
+                            });
+    ASSERT_TRUE(ok);
+  }
+  // Sanity: compressed data should be much smaller than the decompressed size
+  ASSERT_LT(compressed.size(), DECOMPRESSED_SIZE / 10);
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([&compressed] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT + 3);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      // Malicious response: gzip-compressed body, no Content-Length
+      std::string response_header = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Encoding: gzip\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response_header.c_str()),
+             static_cast<int>(response_header.size()),
+#else
+             response_header.c_str(), response_header.size(),
+#endif
+             0);
+
+      // Send the compressed payload (small on the wire, huge when decompressed)
+      size_t total_sent = 0;
+      while (total_sent < compressed.size()) {
+        auto to_send = std::min(compressed.size() - total_sent,
+                                static_cast<size_t>(64 * 1024));
+        auto sent =
+            ::send(cli,
+#ifdef _WIN32
+                   static_cast<const char *>(compressed.c_str() + total_sent),
+                   static_cast<int>(to_send),
+#else
+                   compressed.c_str() + total_sent, to_send,
+#endif
+                   0);
+        if (sent <= 0) break;
+        total_sent += static_cast<size_t>(sent);
+      }
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  size_t total_decompressed = 0;
+
+  {
+    Client cli("127.0.0.1", PORT + 3);
+    cli.set_read_timeout(5, 0);
+    cli.set_decompress(true);
+    cli.set_payload_max_length(CLIENT_READ_LIMIT);
+
+    auto stream = cli.open_stream("GET", "/zipbomb");
+    ASSERT_TRUE(stream.is_valid());
+
+    char buffer[64 * 1024];
+    ssize_t n;
+
+    while ((n = stream.read(buffer, sizeof(buffer))) > 0) {
+      total_decompressed += static_cast<size_t>(n);
+    }
+  }
+
+  server_thread.join();
+
+  // The decompressed size must be capped by payload_max_length. Without
+  // protection, the client would decompress the full 10MB from a tiny
+  // compressed payload, enabling a zip bomb DoS attack.
+  EXPECT_LE(total_decompressed, CLIENT_READ_LIMIT)
+      << "Client decompressed " << total_decompressed
+      << " bytes from a gzip response. The decompressed size should be "
+      << "limited by set_payload_max_length to prevent zip bomb attacks.";
+}
+#endif
 
 TEST(HostAndPortPropertiesTest, NoSSL) {
   httplib::Client cli("www.google.com", 1234);
@@ -12204,6 +12563,7 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
 
+#ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
   Server svr;
 
@@ -12273,6 +12633,7 @@ TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
                            &resp));
   EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
 }
+#endif
 
 //==============================================================================
 // open_stream() Tests

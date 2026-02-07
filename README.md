@@ -958,6 +958,12 @@ cli.set_write_timeout(5, 0); // 5 seconds
 cli.set_max_timeout(5000); // 5 seconds
 ```
 
+### Set maximum payload length for reading a response body
+
+```c++
+cli.set_payload_max_length(1024 * 1024 * 512); // 512MB
+```
+
 ### Receive content with a content receiver
 
 ```c++
@@ -1157,6 +1163,11 @@ httplib::Client cli("127.0.0.1", 8080);
 httplib::Server svr;
 svr.listen("127.0.0.1", 8080);
 ```
+
+Payload Limit
+-------------
+
+The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely.
 
 Compression
 -----------
