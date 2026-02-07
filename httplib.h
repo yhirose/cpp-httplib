@@ -1624,7 +1624,7 @@ struct BodyReader {
   Stream *stream = nullptr;
   bool has_content_length = false;
   size_t content_length = 0;
-  size_t payload_max_length = 0;
+  size_t payload_max_length = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
   size_t bytes_read = 0;
   bool chunked = false;
   bool eof = false;
