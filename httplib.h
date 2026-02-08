@@ -14370,7 +14370,10 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     // Additional Windows Schannel verification.
     // This provides real-time certificate validation with Windows Update
     // integration, working with both OpenSSL and MbedTLS backends.
-    if (enable_windows_cert_verification_) {
+    // Skip when a custom CA cert is specified, as the Windows certificate
+    // store would not know about user-provided CA certificates.
+    if (enable_windows_cert_verification_ && ca_cert_file_path_.empty() &&
+        ca_cert_dir_path_.empty() && ca_cert_pem_.empty()) {
       std::vector<unsigned char> der;
       if (get_cert_der(server_cert, der)) {
         unsigned long wincrypt_error = 0;
