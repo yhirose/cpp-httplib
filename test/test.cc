@@ -13730,6 +13730,76 @@ TEST(ETagTest, StaticFileETagIfNoneMatchStarNotFound) {
   t.join();
 }
 
+TEST(ETagTest, IfNoneMatchBoundaryCheck) {
+  using namespace httplib;
+
+  // Create a test file
+  const char *fname = "etag_boundary_testfile.txt";
+  const char *content = "boundary-test";
+  {
+    std::ofstream ofs(fname);
+    ofs << content;
+    ASSERT_TRUE(ofs.good());
+  }
+
+  Server svr;
+  svr.set_mount_point("/static", ".");
+  auto t = std::thread([&]() { svr.listen("localhost", PORT); });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  // Get the actual ETag
+  auto res1 = cli.Get("/static/etag_boundary_testfile.txt");
+  ASSERT_TRUE(res1);
+  ASSERT_EQ(200, res1->status);
+  ASSERT_TRUE(res1->has_header("ETag"));
+  std::string etag = res1->get_header_value("ETag");
+
+  // Test 1: Very long ETag value (longer than actual ETag)
+  // Should NOT match and return 200 (not trigger out-of-bounds read)
+  Headers h1 = {{"If-None-Match", "W/"
+                                  "\"very-long-etag-value-that-is-much-longer-"
+                                  "than-the-actual-etag-value\""}};
+  auto res2 = cli.Get("/static/etag_boundary_testfile.txt", h1);
+  ASSERT_TRUE(res2);
+  EXPECT_EQ(200, res2->status); // Should not match
+
+  // Test 2: Long string followed by wildcard
+  // Should match on "*" and return 304 (without out-of-bounds read on the long
+  // string)
+  Headers h2 = {{"If-None-Match", "W/\"another-very-long-value\", *"}};
+  auto res3 = cli.Get("/static/etag_boundary_testfile.txt", h2);
+  ASSERT_TRUE(res3);
+  EXPECT_EQ(304, res3->status); // Should match on "*"
+
+  // Test 3: Wildcard followed by long string
+  // Should match on "*" immediately and return 304
+  Headers h3 = {{"If-None-Match", "*, W/\"long-value-after-wildcard\""}};
+  auto res4 = cli.Get("/static/etag_boundary_testfile.txt", h3);
+  ASSERT_TRUE(res4);
+  EXPECT_EQ(304, res4->status); // Should match on "*"
+
+  // Test 4: Multiple long non-matching values
+  // Should NOT match and return 200 (test that all comparisons are safe)
+  Headers h4 = {{"If-None-Match", "W/\"first-long-non-matching-value\", "
+                                  "W/\"second-long-non-matching-value\", "
+                                  "W/\"third-long-non-matching-value\""}};
+  auto res5 = cli.Get("/static/etag_boundary_testfile.txt", h4);
+  ASSERT_TRUE(res5);
+  EXPECT_EQ(200, res5->status); // Should not match
+
+  // Test 5: Single character that is not "*" (edge case)
+  Headers h5 = {{"If-None-Match", "X"}};
+  auto res6 = cli.Get("/static/etag_boundary_testfile.txt", h5);
+  ASSERT_TRUE(res6);
+  EXPECT_EQ(200, res6->status); // Should not match
+
+  svr.stop();
+  t.join();
+  std::remove(fname);
+}
+
 TEST(ETagTest, LastModifiedAndIfModifiedSince) {
   using namespace httplib;
 
