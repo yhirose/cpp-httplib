@@ -9943,8 +9943,9 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
       // simplified implementation requires exact matches.
       auto ret = detail::split_find(val.data(), val.data() + val.size(), ',',
                                     [&](const char *b, const char *e) {
-                                      return std::equal(b, e, "*") ||
-                                             std::equal(b, e, etag.begin());
+				      std::string_view seg(b,
+                                          static_cast<size_t>(e - b));
+                                      return seg == "*" || seg == etag;
                                     });
 
       if (ret) {
