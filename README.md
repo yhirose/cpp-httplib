@@ -92,6 +92,27 @@ cli.enable_server_certificate_verification(false);
 cli.enable_server_hostname_verification(false);
 ```
 
+### Windows Certificate Verification
+
+On Windows, cpp-httplib automatically performs additional certificate verification using the Windows certificate store via CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`). This works with both OpenSSL and Mbed TLS backends, providing:
+
+- Real-time certificate validation integrated with Windows Update
+- Certificate revocation checking
+- SSL/TLS policy verification using the system certificate store (ROOT and CA)
+
+This feature is enabled by default and can be controlled at runtime:
+
+```c++
+// Disable Windows certificate verification (use only OpenSSL/Mbed TLS verification)
+cli.enable_windows_certificate_verification(false);
+```
+
+To disable this feature at compile time, define:
+
+```c++
+#define CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+```
+
 > [!NOTE]
 > When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
