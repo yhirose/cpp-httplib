@@ -15106,6 +15106,7 @@ TEST(BindServerTest, UpdateCerts) {
   ASSERT_TRUE(svr.is_valid());
   svr.stop();
 
+  X509_STORE_free(cert_store);
   X509_free(cert);
   X509_free(ca_cert);
   EVP_PKEY_free(key);
