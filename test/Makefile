@@ -54,7 +54,7 @@ STYLE_CHECK_FILES = $(filter-out httplib.h httplib.cc, \
 	$(wildcard example/*.h example/*.cc fuzzing/*.h fuzzing/*.cc *.h *.cc ../httplib.h))
 
 all : test test_split
-	./test
+	LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test
 
 proxy : test_proxy
 	@echo "Starting proxy server..."
