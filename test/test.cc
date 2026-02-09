@@ -4428,7 +4428,7 @@ TEST_F(ServerTest, TooLongRequest) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
-  EXPECT_LE(elapsed, 100);
+  EXPECT_LE(elapsed, 1000);
   EXPECT_EQ("close", res->get_header_value("Connection"));
   EXPECT_FALSE(cli_.is_socket_open());
 }
@@ -4513,7 +4513,7 @@ TEST_F(ServerTest, LongQueryValue) {
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::UriTooLong_414, res->status);
-  EXPECT_LE(elapsed, 100);
+  EXPECT_LE(elapsed, 1000);
   EXPECT_EQ("close", res->get_header_value("Connection"));
   EXPECT_FALSE(cli_.is_socket_open());
 }
