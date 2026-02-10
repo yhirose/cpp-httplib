@@ -4776,15 +4776,14 @@ inline bool
 process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
                            size_t keep_alive_max_count,
                            time_t keep_alive_timeout_sec, T callback) {
-  assert(keep_alive_max_count > 0);
   auto ret = false;
   auto count = keep_alive_max_count;
-  while (count > 0 && keep_alive(svr_sock, sock, keep_alive_timeout_sec)) {
+  while (keep_alive(svr_sock, sock, keep_alive_timeout_sec)) {
     auto close_connection = count == 1;
     auto connection_closed = false;
     ret = callback(close_connection, connection_closed);
-    if (!ret || connection_closed) { break; }
-    count--;
+    if (!ret || connection_closed || close_connection) { break; }
+    if (count > 0) { count--; }
   }
   return ret;
 }
@@ -9634,8 +9633,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   } else {
     std::string s = "timeout=";
     s += std::to_string(keep_alive_timeout_sec_);
-    s += ", max=";
-    s += std::to_string(keep_alive_max_count_);
+    if (keep_alive_max_count_ > 0) {
+      s += ", max=";
+      s += std::to_string(keep_alive_max_count_);
+    }
     res.set_header("Keep-Alive", s);
   }
 
