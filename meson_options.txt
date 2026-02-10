@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-option('openssl', type: 'feature', value: 'auto', description: 'Enable OpenSSL support')
+option('tls',     type: 'feature', description: 'Enable TLS support')
+option('tls_backend', type: 'combo', choices: ['openssl', 'mbedtls'], value: 'openssl', description: 'Which TLS library to use')
 option('zlib',    type: 'feature', value: 'auto', description: 'Enable zlib support')
 option('brotli',  type: 'feature', value: 'auto', description: 'Enable Brotli support')
 option('zstd',    type: 'feature', value: 'auto', description: 'Enable zstd support')
@@ -12,6 +13,7 @@ option('compile', type: 'boolean', value: false,  description: 'Split the header
 option('test',    type: 'boolean', value: false,  description: 'Build tests')
 
 # Old option names
+option('openssl', type: 'feature', deprecated: 'tls')
 option('cpp-httplib_openssl', type: 'feature', deprecated: 'openssl')
 option('cpp-httplib_zlib',    type: 'feature', deprecated: 'zlib')
 option('cpp-httplib_brotli',  type: 'feature', deprecated: 'brotli')
