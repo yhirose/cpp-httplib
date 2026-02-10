@@ -15459,20 +15459,20 @@ inline bool get_cert_validity(cert_t cert, time_t &not_before,
   if (!epoch) return false;
 
   if (!ASN1_TIME_set(epoch, 0)) {
-      ASN1_TIME_free(epoch);
-      return false;
+    ASN1_TIME_free(epoch);
+    return false;
   }
   int pday, psec;
 
   if (!ASN1_TIME_diff(&pday, &psec, epoch, nb)) {
-      ASN1_TIME_free(epoch);
-      return false;
+    ASN1_TIME_free(epoch);
+    return false;
   }
   not_before = 86400 * (time_t)pday + psec;
 
   if (!ASN1_TIME_diff(&pday, &psec, epoch, na)) {
-      ASN1_TIME_free(epoch);
-      return false;
+    ASN1_TIME_free(epoch);
+    return false;
   }
   not_after = 86400 * (time_t)pday + psec;
 
