@@ -6,11 +6,11 @@ list:
     @just --list --unsorted
 
 openssl:
-    @(cd test && make test && ./test)
+    @(cd test && make test && LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test)
     @(cd test && make proxy)
 
 mbedtls:
-    @(cd test && make test_mbedtls && ./test_mbedtls)
+    @(cd test && make test_mbedtls && LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test_mbedtls)
     @(cd test && make proxy_mbedtls)
 
 fuzz:
