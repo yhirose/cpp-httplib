@@ -8902,7 +8902,7 @@ TEST(HostAndPortPropertiesTest, SSL) {
   ASSERT_EQ(443, cli.port());
 }
 
-TEST(SSLClientTest, UpdateCAStoreWithPem) {
+TEST(SSLClientTest, UpdateCAStoreWithPem_Online) {
   // Test updating CA store multiple times using PEM-based load_ca_cert_store
   std::string cert;
   read_file(CA_CERT_FILE, cert);
