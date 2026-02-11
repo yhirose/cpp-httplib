@@ -9869,20 +9869,25 @@ inline bool Server::read_content_core(
         payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
       socket_t s = strm.socket();
       if (s != INVALID_SOCKET) {
-        // Peek to check if there is any pending data
-        char peekbuf[1];
-        ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
-        if (n > 0) {
-          // There is data, so read it with payload limit enforcement
-          auto result = detail::read_content_without_length(
-              strm, payload_max_length_, out);
-          if (result == detail::ReadContentResult::PayloadTooLarge) {
-            res.status = StatusCode::PayloadTooLarge_413;
-            return false;
-          } else if (result != detail::ReadContentResult::Success) {
-            return false;
+        // Use a non-blocking check to see if there is any pending data.
+        // A blocking recv(MSG_PEEK) would deadlock when the client is
+        // waiting for the response (e.g. POST with Connection: close and
+        // no body).
+        if (detail::select_read(s, 0, 0) > 0) {
+          char peekbuf[1];
+          ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
+          if (n > 0) {
+            // There is data, so read it with payload limit enforcement
+            auto result = detail::read_content_without_length(
+                strm, payload_max_length_, out);
+            if (result == detail::ReadContentResult::PayloadTooLarge) {
+              res.status = StatusCode::PayloadTooLarge_413;
+              return false;
+            } else if (result != detail::ReadContentResult::Success) {
+              return false;
+            }
+            return true;
           }
-          return true;
         }
       }
     }
