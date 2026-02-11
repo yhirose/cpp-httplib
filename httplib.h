@@ -9158,6 +9158,8 @@ inline bool SSLSocketStream::wait_writable() const {
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
+  constexpr size_t max_int = static_cast<size_t>((std::numeric_limits<int>::max)());
+  if (size > max_int) size = max_int;
   if (tls::pending(session_) > 0) {
     tls::TlsError err;
     auto ret = tls::read(session_, ptr, size, err);
@@ -12143,7 +12145,9 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
     if (res.status != StatusCode::NotModified_304) {
       int dummy_status;
-      if (!detail::read_content(strm, res, payload_max_length_, dummy_status,
+      size_t max_length = req.content_receiver ? (std::numeric_limits<size_t>::max)() : payload_max_length_;
+
+      if (!detail::read_content(strm, res, max_length, dummy_status,
                                 std::move(progress), std::move(out),
                                 decompress_)) {
         if (error != Error::Canceled) { error = Error::Read; }
