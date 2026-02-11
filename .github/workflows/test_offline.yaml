@@ -14,11 +14,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  GTEST_FILTER: "-*.*_Online"
+
 jobs:
-  gentoo:
+  ubuntu:
     runs-on: ubuntu-latest
-    container:
-      image: gentoo/stage3:latest
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request'  &&
@@ -26,51 +27,32 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     strategy:
       matrix:
-        tls_backend:
-          - name: openssl
-            meson_tls: enabled
-            meson_backend: openssl
-            packages: dev-libs/openssl
-          - name: mbedtls
-            meson_tls: enabled
-            meson_backend: mbedtls
-            packages: net-libs/mbedtls
-          - name: no-tls
-            meson_tls: disabled
-            meson_backend: openssl
-            packages:
-    name: gentoo (${{ matrix.tls_backend.name }})
+        tls_backend: [openssl, mbedtls, no-tls]
+    name: ubuntu (${{ matrix.tls_backend }})
     steps:
-      - name: Checkout
+      - name: checkout
         uses: actions/checkout@v4
-      - name: Sync portage tree
-        run: emerge-webrsync
-      - name: Setup binary packages
-        run: getuto
-      - name: Install common libraries
+      - name: install common libraries
         run: |
-          emerge --noreplace --getbinpkg \
-            dev-build/meson app-arch/brotli virtual/zlib app-arch/zstd \
-            dev-cpp/gtest net-misc/curl
-      - name: Install TLS library
-        if: matrix.tls_backend.packages != ''
-        run: emerge --noreplace --getbinpkg ${{ matrix.tls_backend.packages }}
-      - name: Build and run offline tests
-        run: |
-          mkdir build
-          cd build
-          meson setup \
-            -Dtest=true \
-            -Dtls=${{ matrix.tls_backend.meson_tls }} \
-            -Dtls_backend=${{ matrix.tls_backend.meson_backend }} \
-            -Dzlib=enabled \
-            -Dbrotli=enabled \
-            -Dzstd=enabled \
-            .. .
-          # Emulate sandbox. Real sandbox doesn't work in unprivileged docker
-          echo > /etc/resolv.conf
-          GTEST_FILTER="-*.*_Online" meson test
-      - name: Test log
-        if: always()
-        working-directory: build
-        run: cat meson-logs/testlog.txt
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
+      - name: install OpenSSL
+        if: matrix.tls_backend == 'openssl'
+        run: sudo apt-get install -y libssl-dev
+      - name: install Mbed TLS
+        if: matrix.tls_backend == 'mbedtls'
+        run: sudo apt-get install -y libmbedtls-dev
+      - name: build and run tests (OpenSSL)
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+      - name: build and run tests (Mbed TLS)
+        if: matrix.tls_backend == 'mbedtls'
+        run: cd test && make test_split_mbedtls && make test_mbedtls && ./test_mbedtls
+      - name: build and run tests (No TLS)
+        if: matrix.tls_backend == 'no-tls'
+        run: cd test && make test_no_tls && ./test_no_tls
+      - name: run fuzz test target
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make fuzz_test
