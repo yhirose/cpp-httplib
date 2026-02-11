@@ -9869,20 +9869,19 @@ inline bool Server::read_content_core(
         payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
       socket_t s = strm.socket();
       if (s != INVALID_SOCKET) {
-        // Peek to check if there is any pending data
-        char peekbuf[1];
-        ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
-        if (n > 0) {
-          // There is data, so read it with payload limit enforcement
-          auto result = detail::read_content_without_length(
-              strm, payload_max_length_, out);
-          if (result == detail::ReadContentResult::PayloadTooLarge) {
-            res.status = StatusCode::PayloadTooLarge_413;
-            return false;
-          } else if (result != detail::ReadContentResult::Success) {
+        // Wait briefly to see if client will send data (non-blocking check)
+        // Use a 1-second timeout to detect data without blocking indefinitely
+        auto ready = detail::select_read(s, 1, 0); // 1 second
+        if (ready > 0) {
+          // Data is available, peek to confirm
+          char peekbuf[1];
+          ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
+          if (n > 0) {
+            // Client is sending a body without Content-Length or Transfer-Encoding.
+            // This violates RFC 7230 Section 3.3.3. Reject the request.
+            res.status = StatusCode::BadRequest_400;
             return false;
           }
-          return true;
         }
       }
     }
