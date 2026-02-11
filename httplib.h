@@ -9869,9 +9869,11 @@ inline bool Server::read_content_core(
         payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
       socket_t s = strm.socket();
       if (s != INVALID_SOCKET) {
-        // Wait briefly to see if client will send data (non-blocking check)
-        // Use a 1-second timeout to detect data without blocking indefinitely
-        auto ready = detail::select_read(s, 1, 0); // 1 second
+        // Wait up to 1 second to detect if client sends a body despite missing
+        // Content-Length/Transfer-Encoding headers (RFC 7230 violation).
+        // Timeout prevents indefinite blocking while allowing detection of
+        // non-compliant clients that send bodies.
+        auto ready = detail::select_read(s, 1, 0);
         if (ready > 0) {
           // Data is available, peek to confirm
           char peekbuf[1];
