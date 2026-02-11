@@ -1,0 +1,76 @@
+name: test_offline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      test_linux:
+        description: 'Test on Linux'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  gentoo:
+    runs-on: ubuntu-latest
+    container:
+      image: gentoo/stage3:latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    strategy:
+      matrix:
+        tls_backend:
+          - name: openssl
+            meson_tls: enabled
+            meson_backend: openssl
+            packages: dev-libs/openssl
+          - name: mbedtls
+            meson_tls: enabled
+            meson_backend: mbedtls
+            packages: net-libs/mbedtls
+          - name: no-tls
+            meson_tls: disabled
+            meson_backend: openssl
+            packages:
+    name: gentoo (${{ matrix.tls_backend.name }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Sync portage tree
+        run: emerge-webrsync
+      - name: Setup binary packages
+        run: getuto
+      - name: Install common libraries
+        run: |
+          emerge --noreplace --getbinpkg \
+            dev-build/meson app-arch/brotli virtual/zlib app-arch/zstd \
+            dev-cpp/gtest net-misc/curl
+      - name: Install TLS library
+        if: matrix.tls_backend.packages != ''
+        run: emerge --noreplace --getbinpkg ${{ matrix.tls_backend.packages }}
+      - name: Build and run offline tests
+        run: |
+          mkdir build
+          cd build
+          meson setup \
+            -Dtest=true \
+            -Dtls=${{ matrix.tls_backend.meson_tls }} \
+            -Dtls_backend=${{ matrix.tls_backend.meson_backend }} \
+            -Dzlib=enabled \
+            -Dbrotli=enabled \
+            -Dzstd=enabled \
+            .. .
+          # Emulate sandbox. Real sandbox doesn't work in unprivileged docker
+          echo > /etc/resolv.conf
+          GTEST_FILTER="-*.*_Online" meson test
+      - name: Test log
+        if: always()
+        working-directory: build
+        run: cat meson-logs/testlog.txt
