@@ -14739,7 +14739,8 @@ inline std::string x509_store_to_pem(X509_STORE *store) {
   std::string pem;
   auto objs = X509_STORE_get0_objects(store);
   if (!objs) return {};
-  for (int i = 0; i < sk_X509_OBJECT_num(objs); i++) {
+  const int count = sk_X509_OBJECT_num(objs);
+  for (int i = 0; i < count; i++) {
     auto obj = sk_X509_OBJECT_value(objs, i);
     if (X509_OBJECT_get_type(obj) == X509_LU_X509) {
       auto cert = X509_OBJECT_get0_X509(obj);
@@ -14806,7 +14807,8 @@ inline STACK_OF(X509_NAME) *
     return nullptr;
   }
 
-  for (int i = 0; i < sk_X509_OBJECT_num(objs); i++) {
+  const int count = sk_X509_OBJECT_num(objs);
+  for (int i = 0; i < count; i++) {
     auto obj = sk_X509_OBJECT_value(objs, i);
     if (X509_OBJECT_get_type(obj) == X509_LU_X509) {
       auto cert = X509_OBJECT_get0_X509(obj);
@@ -15566,7 +15568,7 @@ inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
   auto objs = X509_STORE_get0_objects(store);
   if (!objs) { return 0; }
 
-  int count = sk_X509_OBJECT_num(objs);
+  const int count = sk_X509_OBJECT_num(objs);
   for (int i = 0; i < count; i++) {
     auto obj = sk_X509_OBJECT_value(objs, i);
     if (!obj) { continue; }
@@ -15593,7 +15595,7 @@ inline std::vector<std::string> get_ca_names(ctx_t ctx) {
   auto objs = X509_STORE_get0_objects(store);
   if (!objs) { return names; }
 
-  int count = sk_X509_OBJECT_num(objs);
+  const int count = sk_X509_OBJECT_num(objs);
   for (int i = 0; i < count; i++) {
     auto obj = sk_X509_OBJECT_value(objs, i);
     if (!obj) { continue; }
