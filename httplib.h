@@ -15461,18 +15461,20 @@ inline bool get_cert_validity(cert_t cert, time_t &not_before,
   auto na = X509_get0_notAfter(x509);
   if (!nb || !na) return false;
 
-  // Convert ASN1_TIME to time_t
-  struct tm tm_nb = {}, tm_na = {};
-  if (ASN1_TIME_to_tm(nb, &tm_nb) != 1) return false;
-  if (ASN1_TIME_to_tm(na, &tm_na) != 1) return false;
+  ASN1_TIME *epoch = ASN1_TIME_new();
+  if (!epoch) return false;
+  auto se = detail::scope_exit([&] { ASN1_TIME_free(epoch); });
 
-#ifdef _WIN32
-  not_before = _mkgmtime(&tm_nb);
-  not_after = _mkgmtime(&tm_na);
-#else
-  not_before = timegm(&tm_nb);
-  not_after = timegm(&tm_na);
-#endif
+  if (!ASN1_TIME_set(epoch, 0)) return false;
+
+  int pday, psec;
+
+  if (!ASN1_TIME_diff(&pday, &psec, epoch, nb)) return false;
+  not_before = 86400 * (time_t)pday + psec;
+
+  if (!ASN1_TIME_diff(&pday, &psec, epoch, na)) return false;
+  not_after = 86400 * (time_t)pday + psec;
+
   return true;
 }
 
