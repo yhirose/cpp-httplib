@@ -42,6 +42,8 @@ jobs:
       - name: install Mbed TLS
         if: matrix.tls_backend == 'mbedtls'
         run: sudo apt-get install -y libmbedtls-dev
+      - name: disable network
+        run: sudo sh -c 'echo > /etc/resolv.conf'
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
         run: cd test && make
