@@ -9855,40 +9855,39 @@ inline bool Server::read_content_core(
   // are true (no Transfer-Encoding and no Content-Length), then the message
   // body length is zero (no message body is present).
   //
-  // For non-SSL builds, peek into the socket to detect clients that send a
-  // body without a Content-Length header (raw HTTP over TCP). If there is
-  // pending data that exceeds the configured payload limit, treat this as an
-  // oversized request and fail early (causing connection close). For SSL
-  // builds we cannot reliably peek the decrypted application bytes, so keep
-  // the original behaviour.
+  // For non-SSL builds, detect clients that send a body without a
+  // Content-Length header (raw HTTP over TCP). Check both the stream's
+  // internal read buffer (data already read from the socket during header
+  // parsing) and the socket itself for pending data. If data is found and
+  // exceeds the configured payload limit, reject with 413.
+  // For SSL builds we cannot reliably peek the decrypted application bytes,
+  // so keep the original behaviour.
 #if !defined(CPPHTTPLIB_SSL_ENABLED)
   if (!req.has_header("Content-Length") &&
       !detail::is_chunked_transfer_encoding(req.headers)) {
-    // Only peek if payload_max_length is set to a finite value
+    // Only check if payload_max_length is set to a finite value
     if (payload_max_length_ > 0 &&
         payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
-      socket_t s = strm.socket();
-      if (s != INVALID_SOCKET) {
-        // Use a non-blocking check to see if there is any pending data.
-        // A blocking recv(MSG_PEEK) would deadlock when the client is
-        // waiting for the response (e.g. POST with Connection: close and
-        // no body).
-        if (detail::select_read(s, 0, 0) > 0) {
-          char peekbuf[1];
-          ssize_t n = ::recv(s, peekbuf, 1, MSG_PEEK);
-          if (n > 0) {
-            // There is data, so read it with payload limit enforcement
-            auto result = detail::read_content_without_length(
-                strm, payload_max_length_, out);
-            if (result == detail::ReadContentResult::PayloadTooLarge) {
-              res.status = StatusCode::PayloadTooLarge_413;
-              return false;
-            } else if (result != detail::ReadContentResult::Success) {
-              return false;
-            }
-            return true;
-          }
+      // Check if there is data already buffered in the stream (read during
+      // header parsing) or pending on the socket. Use a non-blocking socket
+      // check to avoid deadlock when the client sends no body.
+      bool has_data = strm.is_readable();
+      if (!has_data) {
+        socket_t s = strm.socket();
+        if (s != INVALID_SOCKET) {
+          has_data = detail::select_read(s, 0, 0) > 0;
         }
+      }
+      if (has_data) {
+        auto result =
+            detail::read_content_without_length(strm, payload_max_length_, out);
+        if (result == detail::ReadContentResult::PayloadTooLarge) {
+          res.status = StatusCode::PayloadTooLarge_413;
+          return false;
+        } else if (result != detail::ReadContentResult::Success) {
+          return false;
+        }
+        return true;
       }
     }
     return true;
