@@ -40,7 +40,13 @@ jobs:
         if: matrix.tls_backend == 'openssl'
         run: sudo apt-get install -y libssl-dev
       - name: disable network
-        run: sudo sh -c 'echo > /etc/resolv.conf'
+        run: |
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo iptables -A OUTPUT -j REJECT
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo ip6tables -A OUTPUT -j REJECT
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
         run: cd test && make
