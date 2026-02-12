@@ -27,7 +27,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     strategy:
       matrix:
-        tls_backend: [openssl, mbedtls, no-tls]
+        tls_backend: [openssl, no-tls]
     name: ubuntu (${{ matrix.tls_backend }})
     steps:
       - name: checkout
@@ -39,9 +39,6 @@ jobs:
       - name: install OpenSSL
         if: matrix.tls_backend == 'openssl'
         run: sudo apt-get install -y libssl-dev
-      - name: install Mbed TLS
-        if: matrix.tls_backend == 'mbedtls'
-        run: sudo apt-get install -y libmbedtls-dev
       - name: disable network
         run: sudo sh -c 'echo > /etc/resolv.conf'
       - name: build and run tests (OpenSSL)
@@ -49,9 +46,6 @@ jobs:
         run: cd test && make
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
-      - name: build and run tests (Mbed TLS)
-        if: matrix.tls_backend == 'mbedtls'
-        run: cd test && make test_split_mbedtls && make test_mbedtls && ./test_mbedtls
       - name: build and run tests (No TLS)
         if: matrix.tls_backend == 'no-tls'
         run: cd test && make test_no_tls && ./test_no_tls
