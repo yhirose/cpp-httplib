@@ -1956,6 +1956,7 @@ protected:
   bool decompress_ = true;
 
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+  bool has_payload_max_length_ = false;
 
   std::string interface_;
 
@@ -10758,6 +10759,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   compress_ = rhs.compress_;
   decompress_ = rhs.decompress_;
   payload_max_length_ = rhs.payload_max_length_;
+  has_payload_max_length_ = rhs.has_payload_max_length_;
   interface_ = rhs.interface_;
   proxy_host_ = rhs.proxy_host_;
   proxy_port_ = rhs.proxy_port_;
@@ -12147,7 +12149,10 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
     if (res.status != StatusCode::NotModified_304) {
       int dummy_status;
-      if (!detail::read_content(strm, res, payload_max_length_, dummy_status,
+      auto max_length = (!has_payload_max_length_ && req.content_receiver)
+                            ? (std::numeric_limits<size_t>::max)()
+                            : payload_max_length_;
+      if (!detail::read_content(strm, res, max_length, dummy_status,
                                 std::move(progress), std::move(out),
                                 decompress_)) {
         if (error != Error::Canceled) { error = Error::Read; }
@@ -13098,6 +13103,7 @@ inline void ClientImpl::set_decompress(bool on) { decompress_ = on; }
 
 inline void ClientImpl::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
+  has_payload_max_length_ = true;
 }
 
 inline void ClientImpl::set_interface(const std::string &intf) {
@@ -15257,6 +15263,9 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
   }
 
   auto ssl = static_cast<SSL *>(session);
+  constexpr auto max_len =
+      static_cast<size_t>((std::numeric_limits<int>::max)());
+  if (len > max_len) { len = max_len; }
   auto ret = SSL_read(ssl, buf, static_cast<int>(len));
 
   if (ret > 0) {

@@ -8752,6 +8752,339 @@ TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
       << " bytes without truncation, but only read " << total_read << " bytes.";
 }
 
+// Verify that content_receiver bypasses the default payload_max_length,
+// allowing streaming downloads larger than 100MB without requiring an explicit
+// set_payload_max_length call.
+TEST(ClientVulnerabilityTest, ContentReceiverBypassesDefaultPayloadMaxLength) {
+  static constexpr size_t DATA_SIZE = 200 * 1024 * 1024; // 200MB from server
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT + 2);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      // Response with Content-Length larger than default 100MB limit
+      auto content_length = std::to_string(DATA_SIZE);
+      std::string response_header = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Length: " +
+                                    content_length +
+                                    "\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response_header.c_str()),
+             static_cast<int>(response_header.size()),
+#else
+             response_header.c_str(), response_header.size(),
+#endif
+             0);
+
+      std::string chunk(64 * 1024, 'A');
+      size_t total_sent = 0;
+
+      while (total_sent < DATA_SIZE) {
+        auto to_send = std::min(chunk.size(), DATA_SIZE - total_sent);
+        auto sent = ::send(cli,
+#ifdef _WIN32
+                           static_cast<const char *>(chunk.c_str()),
+                           static_cast<int>(to_send),
+#else
+                           chunk.c_str(), to_send,
+#endif
+                           0);
+        if (sent <= 0) break;
+        total_sent += static_cast<size_t>(sent);
+      }
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  size_t total_received = 0;
+
+  {
+    Client cli("127.0.0.1", PORT + 2);
+    cli.set_read_timeout(10, 0);
+    // Do NOT call set_payload_max_length — use the default 100MB limit
+
+    auto res =
+        cli.Get("/large", [&](const char * /*data*/, size_t data_length) {
+          total_received += data_length;
+          return true;
+        });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  server_thread.join();
+
+  EXPECT_EQ(total_received, DATA_SIZE)
+      << "With content_receiver, the client should read all " << DATA_SIZE
+      << " bytes despite the default 100MB payload_max_length, but only read "
+      << total_received << " bytes.";
+}
+
+// Verify that an explicit set_payload_max_length smaller than the response is
+// enforced even when a content_receiver is used.
+TEST(ClientVulnerabilityTest,
+     ContentReceiverRespectsExplicitPayloadMaxLength150MB) {
+  static constexpr size_t DATA_SIZE = 200 * 1024 * 1024; // 200MB from server
+  static constexpr size_t EXPLICIT_LIMIT = 150 * 1024 * 1024; // 150MB limit
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT + 2);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      auto content_length = std::to_string(DATA_SIZE);
+      std::string response_header = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Length: " +
+                                    content_length +
+                                    "\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response_header.c_str()),
+             static_cast<int>(response_header.size()),
+#else
+             response_header.c_str(), response_header.size(),
+#endif
+             0);
+
+      std::string chunk(64 * 1024, 'A');
+      size_t total_sent = 0;
+
+      while (total_sent < DATA_SIZE) {
+        auto to_send = std::min(chunk.size(), DATA_SIZE - total_sent);
+        auto sent = ::send(cli,
+#ifdef _WIN32
+                           static_cast<const char *>(chunk.c_str()),
+                           static_cast<int>(to_send),
+#else
+                           chunk.c_str(), to_send,
+#endif
+                           0);
+        if (sent <= 0) break;
+        total_sent += static_cast<size_t>(sent);
+      }
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  size_t total_received = 0;
+
+  {
+    Client cli("127.0.0.1", PORT + 2);
+    cli.set_read_timeout(10, 0);
+    cli.set_payload_max_length(EXPLICIT_LIMIT); // Explicit 150MB limit
+
+    auto res =
+        cli.Get("/large", [&](const char * /*data*/, size_t data_length) {
+          total_received += data_length;
+          return true;
+        });
+
+    // Should fail because 200MB exceeds the explicit 150MB limit
+    EXPECT_FALSE(res);
+  }
+
+  server_thread.join();
+
+  EXPECT_LE(total_received, EXPLICIT_LIMIT)
+      << "Client with content_receiver should respect the explicit "
+      << "payload_max_length of " << EXPLICIT_LIMIT << " bytes, but read "
+      << total_received << " bytes.";
+}
+
+// Verify that an explicit set_payload_max_length larger than the response
+// allows the content_receiver to read all data successfully.
+TEST(ClientVulnerabilityTest,
+     ContentReceiverRespectsExplicitPayloadMaxLength250MB) {
+  static constexpr size_t DATA_SIZE = 200 * 1024 * 1024; // 200MB from server
+  static constexpr size_t EXPLICIT_LIMIT = 250 * 1024 * 1024; // 250MB limit
+
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT + 2);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      auto content_length = std::to_string(DATA_SIZE);
+      std::string response_header = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Length: " +
+                                    content_length +
+                                    "\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response_header.c_str()),
+             static_cast<int>(response_header.size()),
+#else
+             response_header.c_str(), response_header.size(),
+#endif
+             0);
+
+      std::string chunk(64 * 1024, 'A');
+      size_t total_sent = 0;
+
+      while (total_sent < DATA_SIZE) {
+        auto to_send = std::min(chunk.size(), DATA_SIZE - total_sent);
+        auto sent = ::send(cli,
+#ifdef _WIN32
+                           static_cast<const char *>(chunk.c_str()),
+                           static_cast<int>(to_send),
+#else
+                           chunk.c_str(), to_send,
+#endif
+                           0);
+        if (sent <= 0) break;
+        total_sent += static_cast<size_t>(sent);
+      }
+
+#ifdef _WIN32
+      ::shutdown(cli, SD_SEND);
+#else
+      ::shutdown(cli, SHUT_WR);
+#endif
+      char drain[1024];
+      while (::recv(cli, drain, sizeof(drain), 0) > 0) {}
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  size_t total_received = 0;
+
+  {
+    Client cli("127.0.0.1", PORT + 2);
+    cli.set_read_timeout(10, 0);
+    cli.set_payload_max_length(EXPLICIT_LIMIT); // Explicit 250MB limit
+
+    auto res =
+        cli.Get("/large", [&](const char * /*data*/, size_t data_length) {
+          total_received += data_length;
+          return true;
+        });
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  server_thread.join();
+
+  EXPECT_EQ(total_received, DATA_SIZE)
+      << "With explicit payload_max_length of " << EXPLICIT_LIMIT
+      << " bytes (larger than " << DATA_SIZE
+      << " bytes response), content_receiver should read all data, but only "
+         "read "
+      << total_received << " bytes.";
+}
+
 #if defined(CPPHTTPLIB_ZLIB_SUPPORT) && !defined(_WIN32)
 // Regression test for "zip bomb" attack on the client side: a malicious server
 // sends a small gzip-compressed response that decompresses to a huge payload.
