@@ -55,3 +55,8 @@ jobs:
       - name: build and run tests (No TLS)
         if: matrix.tls_backend == 'no-tls'
         run: cd test && make test_no_tls && ./test_no_tls
+      - name: restore network
+        if: always()
+        run: |
+          sudo iptables -F OUTPUT
+          sudo ip6tables -F OUTPUT
