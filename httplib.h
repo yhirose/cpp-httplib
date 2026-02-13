@@ -15341,7 +15341,7 @@ inline bool get_cert_sans(cert_t cert, std::vector<SanEntry> &sans) {
   if (!names) return true; // No SANs is valid
 
   auto count = sk_GENERAL_NAME_num(names);
-  for (int i = 0; i < count; i++) {
+  for (decltype(count) i = 0; i < count; i++) {
     auto gen = sk_GENERAL_NAME_value(names, i);
     if (!gen) continue;
 
