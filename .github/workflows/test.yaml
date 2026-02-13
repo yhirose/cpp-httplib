@@ -182,7 +182,14 @@ jobs:
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: Setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
+    - name: Cache vcpkg packages
+      id: vcpkg-cache
+      uses: actions/cache@v4
+      with:
+        path: C:/vcpkg/installed
+        key: vcpkg-installed-windows-gtest-curl-zlib-brotli-zstd
     - name: Install vcpkg dependencies
+      if: steps.vcpkg-cache.outputs.cache-hit != 'true'
       run: vcpkg install gtest curl zlib brotli zstd
     - name: Install OpenSSL
       if: ${{ matrix.config.with_ssl }}
