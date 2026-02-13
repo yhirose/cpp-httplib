@@ -4600,7 +4600,8 @@ inline int poll_wrapper(struct pollfd *fds, nfds_t nfds, int timeout) {
 #endif
 }
 
-inline ssize_t select_impl(socket_t sock, short events, time_t sec, time_t usec) {
+inline ssize_t select_impl(socket_t sock, short events, time_t sec,
+                           time_t usec) {
   struct pollfd pfd;
   pfd.fd = sock;
   pfd.events = events;
