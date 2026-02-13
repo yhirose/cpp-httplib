@@ -9114,29 +9114,31 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
   signal(SIGPIPE, SIG_IGN);
 #endif
 
-  auto server_thread = std::thread([&compressed] {
-    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
-    default_socket_options(srv);
-    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
-    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+  // Set up the listening socket in the main thread so the server is guaranteed
+  // to be ready before the client connects (eliminates race condition).
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+  detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+  detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 3);
-    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(PORT + 3);
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
-    int opt = 1;
-    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+  int opt = 1;
+  ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
 #ifdef _WIN32
-                 reinterpret_cast<const char *>(&opt),
+               reinterpret_cast<const char *>(&opt),
 #else
-                 &opt,
+               &opt,
 #endif
-                 sizeof(opt));
+               sizeof(opt));
 
-    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
-    ::listen(srv, 1);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 1));
 
+  auto server_thread = std::thread([&compressed, srv] {
     sockaddr_in cli_addr{};
     socklen_t cli_len = sizeof(cli_addr);
     auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
@@ -9180,10 +9182,12 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
 
       detail::close_socket(cli);
     }
-    detail::close_socket(srv);
   });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  auto se = detail::scope_exit([&] {
+    detail::close_socket(srv);
+    server_thread.join();
+  });
 
   size_t total_decompressed = 0;
 
@@ -9203,8 +9207,6 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
       total_decompressed += static_cast<size_t>(n);
     }
   }
-
-  server_thread.join();
 
   // The decompressed size must be capped by payload_max_length. Without
   // protection, the client would decompress the full 10MB from a tiny
