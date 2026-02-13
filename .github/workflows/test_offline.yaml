@@ -49,12 +49,12 @@ jobs:
           sudo ip6tables -A OUTPUT -j REJECT
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
-        run: cd test && make
+        run: cd test && make test_split && make test_openssl_parallel
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (No TLS)
         if: matrix.tls_backend == 'no-tls'
-        run: cd test && make test_no_tls && ./test_no_tls
+        run: cd test && make test_no_tls_parallel
       - name: restore network
         if: always()
         run: |
