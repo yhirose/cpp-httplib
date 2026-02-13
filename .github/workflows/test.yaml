@@ -94,12 +94,12 @@ jobs:
         run: sudo apt-get install -y libmbedtls-dev
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
-        run: cd test && make
+        run: cd test && make test_split && make test_openssl_parallel
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
-        run: cd test && make test_split_mbedtls && make test_mbedtls && ./test_mbedtls
+        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
       - name: run fuzz test target
         if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
@@ -123,12 +123,12 @@ jobs:
         run: brew install mbedtls@3
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
-        run: cd test && make
+        run: cd test && make test_split && make test_openssl_parallel
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
-        run: cd test && make test_split_mbedtls && make test_mbedtls && ./test_mbedtls
+        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
       - name: run fuzz test target
         if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
@@ -171,7 +171,14 @@ jobs:
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
     - name: Setup msbuild on windows
       uses: microsoft/setup-msbuild@v2
+    - name: Cache vcpkg packages
+      id: vcpkg-cache
+      uses: actions/cache@v4
+      with:
+        path: C:/vcpkg/installed
+        key: vcpkg-installed-windows-gtest-curl-zlib-brotli-zstd
     - name: Install vcpkg dependencies
+      if: steps.vcpkg-cache.outputs.cache-hit != 'true'
       run: vcpkg install gtest curl zlib brotli zstd
     - name: Install OpenSSL
       if: ${{ matrix.config.with_ssl }}
@@ -192,7 +199,34 @@ jobs:
       run: cmake --build build --config Release -- /v:m /clp:ShowCommandLine
     - name: Run tests ${{ matrix.config.name }}
       if: ${{ matrix.config.run_tests }}
-      run: ctest --output-on-failure --test-dir build -C Release -E "BenchmarkTest"
+      shell: pwsh
+      working-directory: build/test
+      run: |
+        $shards = 4
+        $procs = @()
+        for ($i = 0; $i -lt $shards; $i++) {
+          $log = "shard_${i}.log"
+          $procs += Start-Process -FilePath ./Release/httplib-test.exe `
+            -ArgumentList "--gtest_color=yes","--gtest_filter=${{ github.event.inputs.gtest_filter || '*' }}-*BenchmarkTest*" `
+            -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError "${log}.err" `
+            -Environment @{ GTEST_TOTAL_SHARDS="$shards"; GTEST_SHARD_INDEX="$i" }
+        }
+        $procs | Wait-Process
+        $failed = $false
+        for ($i = 0; $i -lt $shards; $i++) {
+          $log = "shard_${i}.log"
+          if (Select-String -Path $log -Pattern "\[  PASSED  \]" -Quiet) {
+            $passed = (Select-String -Path $log -Pattern "\[  PASSED  \]").Line
+            Write-Host "Shard ${i}: $passed"
+          } else {
+            Write-Host "=== Shard $i FAILED ==="
+            Get-Content $log
+            if (Test-Path "${log}.err") { Get-Content "${log}.err" }
+            $failed = $true
+          }
+        }
+        if ($failed) { exit 1 }
+        Write-Host "All shards passed."
     - name: Run benchmark tests with retry ${{ matrix.config.name }}
       if: ${{ matrix.config.run_tests }}
       run: ctest --output-on-failure --test-dir build -C Release -R "BenchmarkTest" --repeat until-pass:5

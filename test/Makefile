@@ -56,6 +56,42 @@ STYLE_CHECK_FILES = $(filter-out httplib.h httplib.cc, \
 all : test test_split
 	LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test
 
+SHARDS ?= 4
+
+define run_parallel
+	@echo "Running $(1) with $(SHARDS) shards in parallel..."
+	@fail=0; \
+	for i in $$(seq 0 $$(($(SHARDS) - 1))); do \
+	  GTEST_TOTAL_SHARDS=$(SHARDS) GTEST_SHARD_INDEX=$$i \
+	  LSAN_OPTIONS=suppressions=lsan_suppressions.txt \
+	  ./$(1) --gtest_color=yes > $(1)_shard_$$i.log 2>&1 & \
+	done; \
+	wait; \
+	for i in $$(seq 0 $$(($(SHARDS) - 1))); do \
+	  if ! grep -q "\[  PASSED  \]" $(1)_shard_$$i.log; then \
+	    echo "=== Shard $$i FAILED ==="; \
+	    cat $(1)_shard_$$i.log; \
+	    fail=1; \
+	  else \
+	    passed=$$(grep "\[  PASSED  \]" $(1)_shard_$$i.log); \
+	    echo "Shard $$i: $$passed"; \
+	  fi; \
+	done; \
+	if [ $$fail -ne 0 ]; then exit 1; fi; \
+	echo "All shards passed."
+endef
+
+.PHONY: test_openssl_parallel test_mbedtls_parallel test_no_tls_parallel
+
+test_openssl_parallel : test
+	$(call run_parallel,test)
+
+test_mbedtls_parallel : test_mbedtls
+	$(call run_parallel,test_mbedtls)
+
+test_no_tls_parallel : test_no_tls
+	$(call run_parallel,test_no_tls)
+
 proxy : test_proxy
 	@echo "Starting proxy server..."
 	cd proxy && \
@@ -172,5 +208,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log
 

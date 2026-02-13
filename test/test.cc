@@ -55,7 +55,13 @@ using namespace std;
 using namespace httplib;
 
 const char *HOST = "localhost";
-const int PORT = 1234;
+
+static int get_base_port() {
+  const char *shard = getenv("GTEST_SHARD_INDEX");
+  return shard ? 11234 + std::atoi(shard) * 100 : 1234;
+}
+
+const int PORT = get_base_port();
 
 const string LONG_QUERY_VALUE = string(25000, '@');
 const string LONG_QUERY_URL = "/long-query-value?key=" + LONG_QUERY_VALUE;
@@ -178,7 +184,12 @@ protected:
     EXPECT_EQ(resp.body, content_);
   }
 
-  const std::string pathname_{"./httplib-server.sock"};
+  static std::string make_sock_path() {
+    const char *shard = getenv("GTEST_SHARD_INDEX");
+    return shard ? std::string("./httplib-server-") + shard + ".sock"
+                 : "./httplib-server.sock";
+  }
+  const std::string pathname_{make_sock_path()};
   const std::string pattern_{"/hi"};
   const std::string content_{"Hello World!"};
 };
@@ -2370,28 +2381,32 @@ TEST(RedirectFromPageWithContent, Redirect) {
 TEST(RedirectFromPageWithContentIP6, Redirect) {
   Server svr;
 
+  auto port_str = std::to_string(PORT);
+  auto redirect_url = "http://[::1]:" + port_str + "/2";
+  auto expected_host = "[::1]:" + port_str;
+
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
     res.set_content("___", "text/plain");
     // res.set_redirect("/2");
-    res.set_redirect("http://[::1]:1234/2");
+    res.set_redirect(redirect_url);
   });
 
   svr.Get("/2", [&](const Request &req, Response &res) {
     auto host_header = req.headers.find("Host");
     ASSERT_TRUE(host_header != req.headers.end());
-    EXPECT_EQ("[::1]:1234", host_header->second);
+    EXPECT_EQ(expected_host, host_header->second);
 
     res.set_content("Hello World!", "text/plain");
   });
 
-  auto th = std::thread([&]() { svr.listen("::1", 1234); });
+  auto th = std::thread([&]() { svr.listen("::1", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     th.join();
     ASSERT_FALSE(svr.is_running());
   });
 
-  // When IPV6 support isn't available svr.listen("::1", 1234) never
+  // When IPV6 support isn't available svr.listen("::1", PORT) never
   // actually starts anything, so the condition !svr.is_running() will
   // always remain true, and the loop never stops.
   // This basically counts how many milliseconds have passed since the
@@ -2403,7 +2418,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
   }
 
   {
-    Client cli("http://[::1]:1234");
+    Client cli("::1", PORT);
     cli.set_follow_location(true);
 
     std::string body;
@@ -2418,7 +2433,7 @@ TEST(RedirectFromPageWithContentIP6, Redirect) {
   }
 
   {
-    Client cli("http://[::1]:1234");
+    Client cli("::1", PORT);
 
     std::string body;
     auto res = cli.Get("/1", [&](const char *data, size_t data_length) {
@@ -10471,7 +10486,8 @@ TEST(ClientImplMethods, GetSocketTest) {
     res.status = StatusCode::OK_200;
   });
 
-  auto thread = std::thread([&]() { svr.listen("127.0.0.1", 3333); });
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     thread.join();
@@ -10481,7 +10497,7 @@ TEST(ClientImplMethods, GetSocketTest) {
   svr.wait_until_ready();
 
   {
-    httplib::Client cli("http://127.0.0.1:3333");
+    httplib::Client cli("127.0.0.1", port);
     cli.set_keep_alive(true);
 
     // Use the behavior of cpp-httplib of opening the connection
@@ -10640,10 +10656,13 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface_Online) {
 }
 
 TEST(HttpToHttpsRedirectTest, CertFile) {
+  auto ssl_port = PORT + 1;
+
   Server svr;
   ASSERT_TRUE(svr.is_valid());
   svr.Get("/index", [&](const Request &, Response &res) {
-    res.set_redirect("https://127.0.0.1:1235/index");
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
     svr.stop();
   });
 
@@ -10655,7 +10674,8 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
-  thread t2 = thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", 1235)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr.listen("127.0.0.1", ssl_port)); });
   auto se = detail::scope_exit([&] {
     t2.join();
     t.join();
@@ -10677,10 +10697,13 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
 }
 
 TEST(SSLClientRedirectTest, CertFile) {
+  auto ssl_port = PORT + 1;
+
   SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(ssl_svr1.is_valid());
   ssl_svr1.Get("/index", [&](const Request &, Response &res) {
-    res.set_redirect("https://127.0.0.1:1235/index");
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
     ssl_svr1.stop();
   });
 
@@ -10693,7 +10716,7 @@ TEST(SSLClientRedirectTest, CertFile) {
 
   thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
   thread t2 =
-      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", 1235)); });
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
   auto se = detail::scope_exit([&] {
     t2.join();
     t.join();
@@ -10774,7 +10797,8 @@ TEST(MultipartFormDataTest, LargeData) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen(HOST, 8080); });
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -10788,7 +10812,7 @@ TEST(MultipartFormDataTest, LargeData) {
     std::stringstream buffer;
     buffer << data;
 
-    Client cli("https://localhost:8080");
+    SSLClient cli(HOST, port);
     cli.enable_server_certificate_verification(false);
 
     UploadFormDataItems items{
@@ -10921,7 +10945,8 @@ TEST(MultipartFormDataTest, DataProviderItems) {
     EXPECT_EQ(items[3].content_type, "");
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto port = svr.bind_to_any_port("localhost");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -10931,7 +10956,7 @@ TEST(MultipartFormDataTest, DataProviderItems) {
   svr.wait_until_ready();
 
   {
-    Client cli("https://localhost:8080");
+    SSLClient cli("localhost", port);
     cli.enable_server_certificate_verification(false);
 
     UploadFormDataItems items{
@@ -11122,7 +11147,8 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto port = svr.bind_to_any_port("localhost");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -11136,7 +11162,7 @@ TEST(MultipartFormDataTest, PostCustomBoundary) {
     std::stringstream buffer;
     buffer << data;
 
-    Client cli("https://localhost:8080");
+    SSLClient cli("localhost", port);
     cli.enable_server_certificate_verification(false);
 
     UploadFormDataItems items{
@@ -11205,7 +11231,8 @@ TEST(MultipartFormDataTest, PutFormData) {
     }
   });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto port = svr.bind_to_any_port("localhost");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -11219,7 +11246,7 @@ TEST(MultipartFormDataTest, PutFormData) {
     std::stringstream buffer;
     buffer << data;
 
-    Client cli("https://localhost:8080");
+    SSLClient cli("localhost", port);
     cli.enable_server_certificate_verification(false);
 
     UploadFormDataItems items{
@@ -11269,7 +11296,8 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
             }
           });
 
-  auto t = std::thread([&]() { svr.listen("localhost", 8080); });
+  auto port = svr.bind_to_any_port("localhost");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -11283,7 +11311,7 @@ TEST(MultipartFormDataTest, PutFormDataCustomBoundary) {
     std::stringstream buffer;
     buffer << data;
 
-    Client cli("https://localhost:8080");
+    SSLClient cli("localhost", port);
     cli.enable_server_certificate_verification(false);
 
     UploadFormDataItems items{
@@ -13176,7 +13204,8 @@ protected:
       }
       res.set_content(body, "text/plain");
     });
-    thread_ = std::thread([this]() { svr_.listen("127.0.0.1", 8787); });
+    port_ = svr_.bind_to_any_port("127.0.0.1");
+    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
     svr_.wait_until_ready();
   }
   void TearDown() override {
@@ -13185,17 +13214,18 @@ protected:
   }
   Server svr_;
   std::thread thread_;
+  int port_ = 0;
 };
 
 TEST_F(OpenStreamTest, Basic) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/hello");
   EXPECT_TRUE(handle.is_valid());
   EXPECT_EQ("Hello World!", read_all(handle));
 }
 
 TEST_F(OpenStreamTest, SmallBuffer) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/hello");
   std::string result;
   char buf[4];
@@ -13206,14 +13236,15 @@ TEST_F(OpenStreamTest, SmallBuffer) {
 }
 
 TEST_F(OpenStreamTest, DefaultHeaders) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
 
   // open_stream GET should include Host, User-Agent and Accept-Encoding
   {
     auto handle = cli.open_stream("GET", "/echo-headers");
     ASSERT_TRUE(handle.is_valid());
     auto body = read_all(handle);
-    EXPECT_NE(body.find("Host:127.0.0.1:8787"), std::string::npos);
+    EXPECT_NE(body.find("Host:127.0.0.1:" + std::to_string(port_)),
+              std::string::npos);
     EXPECT_NE(body.find("User-Agent:cpp-httplib/" CPPHTTPLIB_VERSION),
               std::string::npos);
     EXPECT_NE(body.find("Accept-Encoding:"), std::string::npos);
@@ -13251,7 +13282,7 @@ TEST_F(OpenStreamTest, DefaultHeaders) {
 }
 
 TEST_F(OpenStreamTest, Large) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/large");
   EXPECT_EQ(10000u, read_all(handle).size());
 }
@@ -13263,7 +13294,7 @@ TEST_F(OpenStreamTest, ConnectionError) {
 }
 
 TEST_F(OpenStreamTest, Chunked) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/chunked");
   EXPECT_TRUE(handle.response && handle.response->get_header_value(
                                      "Transfer-Encoding") == "chunked");
@@ -13271,7 +13302,7 @@ TEST_F(OpenStreamTest, Chunked) {
 }
 
 TEST_F(OpenStreamTest, ProhibitedTrailersAreIgnored_Stream) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle =
       cli.open_stream("GET", "/streamed-chunked-with-prohibited-trailer");
   ASSERT_TRUE(handle.is_valid());
@@ -13304,7 +13335,7 @@ TEST_F(OpenStreamTest, ProhibitedTrailersAreIgnored_Stream) {
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(OpenStreamTest, Gzip) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/compressible", {},
                                 {{"Accept-Encoding", "gzip"}});
   EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
@@ -13314,7 +13345,7 @@ TEST_F(OpenStreamTest, Gzip) {
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST_F(OpenStreamTest, Brotli) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle =
       cli.open_stream("GET", "/compressible", {}, {{"Accept-Encoding", "br"}});
   EXPECT_EQ("br", handle.response->get_header_value("Content-Encoding"));
@@ -13324,7 +13355,7 @@ TEST_F(OpenStreamTest, Brotli) {
 
 #ifdef CPPHTTPLIB_ZSTD_SUPPORT
 TEST_F(OpenStreamTest, Zstd) {
-  Client cli("127.0.0.1", 8787);
+  Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/compressible", {},
                                 {{"Accept-Encoding", "zstd"}});
   EXPECT_EQ("zstd", handle.response->get_header_value("Content-Encoding"));
@@ -13365,7 +13396,8 @@ protected:
             return true;
           });
     });
-    thread_ = std::thread([this]() { svr_.listen("127.0.0.1", 8788); });
+    port_ = svr_.bind_to_any_port("127.0.0.1");
+    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
     svr_.wait_until_ready();
   }
   void TearDown() override {
@@ -13374,10 +13406,11 @@ protected:
   }
   SSLServer svr_;
   std::thread thread_;
+  int port_ = 0;
 };
 
 TEST_F(SSLOpenStreamTest, Basic) {
-  SSLClient cli("127.0.0.1", 8788);
+  SSLClient cli("127.0.0.1", port_);
   cli.enable_server_certificate_verification(false);
   auto handle = cli.open_stream("GET", "/hello");
   ASSERT_TRUE(handle.is_valid());
@@ -13385,7 +13418,7 @@ TEST_F(SSLOpenStreamTest, Basic) {
 }
 
 TEST_F(SSLOpenStreamTest, Chunked) {
-  SSLClient cli("127.0.0.1", 8788);
+  SSLClient cli("127.0.0.1", port_);
   cli.enable_server_certificate_verification(false);
 
   auto handle = cli.open_stream("GET", "/chunked");
@@ -13399,7 +13432,7 @@ TEST_F(SSLOpenStreamTest, Chunked) {
 }
 
 TEST_F(SSLOpenStreamTest, Post) {
-  SSLClient cli("127.0.0.1", 8788);
+  SSLClient cli("127.0.0.1", port_);
   cli.enable_server_certificate_verification(false);
 
   auto handle =
@@ -13413,7 +13446,7 @@ TEST_F(SSLOpenStreamTest, Post) {
 }
 
 TEST_F(SSLOpenStreamTest, PostChunked) {
-  SSLClient cli("127.0.0.1", 8788);
+  SSLClient cli("127.0.0.1", port_);
   cli.enable_server_certificate_verification(false);
 
   auto handle = cli.open_stream("POST", "/chunked-response", {}, {},
@@ -13738,7 +13771,8 @@ protected:
     svr_.Post("/echo", [](const httplib::Request &req, httplib::Response &res) {
       res.set_content(req.body, "text/plain");
     });
-    thread_ = std::thread([this]() { svr_.listen("127.0.0.1", 8803); });
+    port_ = svr_.bind_to_any_port("127.0.0.1");
+    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
     svr_.wait_until_ready();
   }
   void TearDown() override {
@@ -13747,10 +13781,11 @@ protected:
   }
   httplib::SSLServer svr_{"cert.pem", "key.pem"};
   std::thread thread_;
+  int port_ = 0;
 };
 
 TEST_F(SSLStreamApiTest, GetAndPost) {
-  httplib::SSLClient cli("127.0.0.1", 8803);
+  httplib::SSLClient cli("127.0.0.1", port_);
   cli.enable_server_certificate_verification(false);
   auto get = httplib::stream::Get(cli, "/hello");
   EXPECT_EQ("Hello SSL!", read_body(get));

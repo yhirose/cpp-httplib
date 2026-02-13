@@ -17,4 +17,4 @@ jobs:
 
     - name: Run tests with CPPHTTPLIB_NO_EXCEPTIONS
       run: |
-        cd test && make EXTRA_CXXFLAGS="-fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS"
+        cd test && make test_split EXTRA_CXXFLAGS="-fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS" && make test_openssl_parallel EXTRA_CXXFLAGS="-fno-exceptions -DCPPHTTPLIB_NO_EXCEPTIONS"
