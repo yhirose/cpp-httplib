@@ -155,7 +155,18 @@ jobs:
           compiled: true
           run_tests: false
           name: compiled
-    name: windows ${{ matrix.config.name }}
+        shard: [0, 1, 2, 3]
+        exclude:
+        - config:
+            compiled: true
+          shard: 1
+        - config:
+            compiled: true
+          shard: 2
+        - config:
+            compiled: true
+          shard: 3
+    name: windows ${{ matrix.config.name }} (shard ${{ matrix.shard }})
     steps:
     - name: Prepare Git for Checkout on Windows
       run: |
@@ -192,9 +203,14 @@ jobs:
       run: cmake --build build --config Release -- /v:m /clp:ShowCommandLine
     - name: Run tests ${{ matrix.config.name }}
       if: ${{ matrix.config.run_tests }}
-      run: ctest --output-on-failure --test-dir build -C Release -E "BenchmarkTest" -j 4
+      working-directory: build/test
+      run: Release/httplib-test.exe --gtest_color=yes
+      env:
+        GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}-*BenchmarkTest*
+        GTEST_TOTAL_SHARDS: 4
+        GTEST_SHARD_INDEX: ${{ matrix.shard }}
     - name: Run benchmark tests with retry ${{ matrix.config.name }}
-      if: ${{ matrix.config.run_tests }}
+      if: ${{ matrix.config.run_tests && matrix.shard == 0 }}
       run: ctest --output-on-failure --test-dir build -C Release -R "BenchmarkTest" --repeat until-pass:5
 
     env:
