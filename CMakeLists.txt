@@ -354,7 +354,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:zstd::libzstd>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
-		$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:MbedTLS::mbedx509>
+		$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:MbedTLS::tfpsacrypto>
 )
 
 # Set the definitions to enable optional features
