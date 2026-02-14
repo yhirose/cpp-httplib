@@ -1344,6 +1344,47 @@ int main() {
 
 See [README-sse.md](README-sse.md) for more details.
 
+WebSocket
+---------
+
+```cpp
+// Server
+httplib::Server svr;
+
+svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws) {
+    httplib::ws::Message msg;
+    while (ws.read(msg)) {
+        if (msg.is_text()) {
+            ws.send("Echo: " + msg.data);
+        }
+    }
+});
+
+svr.listen("localhost", 8080);
+```
+
+```cpp
+// Client
+httplib::ws::WebSocketClient ws("ws://localhost:8080/ws");
+
+if (ws.connect()) {
+    ws.send("Hello, WebSocket!");
+
+    std::string msg;
+    if (ws.read(msg)) {
+        std::cout << "Received: " << msg << std::endl;
+    }
+
+    ws.close();
+}
+```
+
+SSL is also supported via `wss://` scheme (e.g. `WebSocketClient("wss://example.com/ws")`). Subprotocol negotiation (`Sec-WebSocket-Protocol`) is supported via `SubProtocolSelector` callback.
+
+> **Note:** WebSocket connections occupy a thread for their entire lifetime. If you plan to handle many simultaneous WebSocket connections, increase the thread pool size via `svr.new_task_queue`.
+
+See [README-websocket.md](README-websocket.md) for more details.
+
 Split httplib.h into .h and .cc
 -------------------------------
 

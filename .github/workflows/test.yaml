@@ -103,6 +103,9 @@ jobs:
       - name: run fuzz test target
         if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
+      - name: build and run WebSocket heartbeat test
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make test_websocket_heartbeat && ./test_websocket_heartbeat
 
   macos:
     runs-on: macos-latest
@@ -132,6 +135,9 @@ jobs:
       - name: run fuzz test target
         if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
+      - name: build and run WebSocket heartbeat test
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make test_websocket_heartbeat && ./test_websocket_heartbeat
 
   windows:
     runs-on: windows-latest
