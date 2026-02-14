@@ -106,6 +106,8 @@ jobs:
       - name: build and run WebSocket heartbeat test
         if: matrix.tls_backend == 'openssl'
         run: cd test && make test_websocket_heartbeat && ./test_websocket_heartbeat
+      - name: build and run ThreadPool test
+        run: cd test && make test_thread_pool && ./test_thread_pool
 
   macos:
     runs-on: macos-latest
@@ -138,6 +140,8 @@ jobs:
       - name: build and run WebSocket heartbeat test
         if: matrix.tls_backend == 'openssl'
         run: cd test && make test_websocket_heartbeat && ./test_websocket_heartbeat
+      - name: build and run ThreadPool test
+        run: cd test && make test_thread_pool && ./test_thread_pool
 
   windows:
     runs-on: windows-latest
