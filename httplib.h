@@ -9356,7 +9356,15 @@ inline void ThreadPool::shutdown() {
   for (auto &t : threads_) {
     if (t.joinable()) { t.join(); }
   }
-  for (auto &t : dynamic_threads_) {
+
+  // Move dynamic_threads_ to a local list under the lock to avoid racing
+  // with worker threads that call move_to_finished() concurrently.
+  std::list<std::thread> remaining_dynamic;
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    remaining_dynamic = std::move(dynamic_threads_);
+  }
+  for (auto &t : remaining_dynamic) {
     if (t.joinable()) { t.join(); }
   }
 
