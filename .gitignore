@@ -29,6 +29,8 @@ example/server_and_client
 !example/server_and_client.*
 example/accept_header
 !example/accept_header.*
+example/wsecho
+!example/wsecho.*
 example/*.pem
 test/httplib.cc
 test/httplib.h
@@ -41,6 +43,8 @@ test/test_proxy_mbedtls
 test/test_split
 test/test_split_mbedtls
 test/test_split_no_tls
+test/test_websocket_heartbeat
+test/test_thread_pool
 test/test.xcodeproj/xcuser*
 test/test.xcodeproj/*/xcuser*
 test/*.o

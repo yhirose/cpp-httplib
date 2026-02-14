@@ -4627,15 +4627,9 @@ TEST_F(ServerTest, HeaderCountExceedsLimit) {
   cli_.set_keep_alive(true);
   auto res = cli_.Get("/hi", headers);
 
-  // The request should either fail or return 400 Bad Request
-  if (res) {
-    // If we get a response, it should be 400 Bad Request
-    EXPECT_EQ(StatusCode::BadRequest_400, res->status);
-  } else {
-    // Or the request should fail entirely
-    EXPECT_FALSE(res);
-  }
-
+  // The server should respond with 400 Bad Request
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ("close", res->get_header_value("Connection"));
   EXPECT_FALSE(cli_.is_socket_open());
 }
@@ -15702,5 +15696,765 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtxMbedTLS) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res);
   ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+#endif
+
+// WebSocket Tests
+
+TEST(WebSocketTest, RSVBitsMustBeZero) {
+  // RFC 6455 Section 5.2: RSV1, RSV2, RSV3 MUST be 0 unless an extension
+  // defining the meaning of these bits has been negotiated.
+  auto make_frame = [](uint8_t first_byte) {
+    std::string frame;
+    frame += static_cast<char>(first_byte); // FIN + RSV + opcode
+    frame += static_cast<char>(0x05);       // mask=0, payload_len=5
+    frame += "Hello";
+    return frame;
+  };
+
+  // RSV1 set (0x40)
+  {
+    detail::BufferStream strm;
+    strm.write(make_frame(0x81 | 0x40).data(), 8); // FIN + RSV1 + Text
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // RSV2 set (0x20)
+  {
+    detail::BufferStream strm;
+    strm.write(make_frame(0x81 | 0x20).data(), 8); // FIN + RSV2 + Text
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // RSV3 set (0x10)
+  {
+    detail::BufferStream strm;
+    strm.write(make_frame(0x81 | 0x10).data(), 8); // FIN + RSV3 + Text
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // No RSV bits set - should succeed
+  {
+    detail::BufferStream strm;
+    strm.write(make_frame(0x81).data(), 8); // FIN + Text, no RSV
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_TRUE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                               false, 1024));
+    EXPECT_EQ(ws::Opcode::Text, opcode);
+    EXPECT_EQ("Hello", payload);
+    EXPECT_TRUE(fin);
+  }
+}
+
+TEST(WebSocketTest, ControlFrameValidation) {
+  // RFC 6455 Section 5.5: control frames MUST have FIN=1 and
+  // payload length <= 125.
+
+  // Ping with FIN=0 - must be rejected
+  {
+    detail::BufferStream strm;
+    std::string frame;
+    frame += static_cast<char>(0x09); // FIN=0, opcode=Ping
+    frame += static_cast<char>(0x00); // mask=0, payload_len=0
+    strm.write(frame.data(), frame.size());
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // Close with FIN=0 - must be rejected
+  {
+    detail::BufferStream strm;
+    std::string frame;
+    frame += static_cast<char>(0x08); // FIN=0, opcode=Close
+    frame += static_cast<char>(0x00); // mask=0, payload_len=0
+    strm.write(frame.data(), frame.size());
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // Ping with payload_len=126 (extended length) - must be rejected
+  {
+    detail::BufferStream strm;
+    std::string frame;
+    frame += static_cast<char>(0x89); // FIN=1, opcode=Ping
+    frame += static_cast<char>(126);  // payload_len=126 (>125)
+    frame += static_cast<char>(0x00); // extended length high byte
+    frame += static_cast<char>(126);  // extended length low byte
+    frame += std::string(126, 'x');
+    strm.write(frame.data(), frame.size());
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // Ping with FIN=1 and payload_len=125 - should succeed
+  {
+    detail::BufferStream strm;
+    std::string frame;
+    frame += static_cast<char>(0x89); // FIN=1, opcode=Ping
+    frame += static_cast<char>(125);  // payload_len=125
+    frame += std::string(125, 'x');
+    strm.write(frame.data(), frame.size());
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_TRUE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                               false, 1024));
+    EXPECT_EQ(ws::Opcode::Ping, opcode);
+    EXPECT_EQ(125u, payload.size());
+    EXPECT_TRUE(fin);
+  }
+}
+
+TEST(WebSocketTest, PayloadLength64BitMSBMustBeZero) {
+  // RFC 6455 Section 5.2: the most significant bit of a 64-bit payload
+  // length MUST be 0.
+
+  // MSB set - must be rejected
+  {
+    detail::BufferStream strm;
+    std::string frame;
+    frame += static_cast<char>(0x81); // FIN=1, opcode=Text
+    frame += static_cast<char>(127);  // 64-bit extended length
+    frame += static_cast<char>(0x80); // MSB set (invalid)
+    frame += std::string(7, '\0');    // remaining 7 bytes of length
+    strm.write(frame.data(), frame.size());
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                                false, 1024));
+  }
+
+  // MSB clear - should pass length parsing (will be rejected by max_len,
+  // but that's a different check; use a small length to verify)
+  {
+    detail::BufferStream strm;
+    std::string frame;
+    frame += static_cast<char>(0x81); // FIN=1, opcode=Text
+    frame += static_cast<char>(127);  // 64-bit extended length
+    frame += std::string(7, '\0');    // high bytes = 0
+    frame += static_cast<char>(0x03); // length = 3
+    frame += "abc";
+    strm.write(frame.data(), frame.size());
+    ws::Opcode opcode;
+    std::string payload;
+    bool fin;
+    EXPECT_TRUE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                               false, 1024));
+    EXPECT_EQ(ws::Opcode::Text, opcode);
+    EXPECT_EQ("abc", payload);
+  }
+}
+
+TEST(WebSocketTest, InvalidUTF8TextFrame) {
+  // RFC 6455 Section 5.6: text frames must contain valid UTF-8.
+
+  // Valid UTF-8
+  EXPECT_TRUE(ws::impl::is_valid_utf8("Hello"));
+  EXPECT_TRUE(ws::impl::is_valid_utf8("\xC3\xA9"));         // é (U+00E9)
+  EXPECT_TRUE(ws::impl::is_valid_utf8("\xE3\x81\x82"));     // あ (U+3042)
+  EXPECT_TRUE(ws::impl::is_valid_utf8("\xF0\x9F\x98\x80")); // 😀 (U+1F600)
+  EXPECT_TRUE(ws::impl::is_valid_utf8(""));
+
+  // Invalid UTF-8
+  EXPECT_FALSE(ws::impl::is_valid_utf8("\x80"));     // Invalid start byte
+  EXPECT_FALSE(ws::impl::is_valid_utf8("\xC3\x28")); // Bad continuation
+  EXPECT_FALSE(ws::impl::is_valid_utf8("\xC0\xAF")); // Overlong encoding
+  EXPECT_FALSE(
+      ws::impl::is_valid_utf8("\xED\xA0\x80")); // Surrogate half U+D800
+  EXPECT_FALSE(ws::impl::is_valid_utf8("\xF4\x90\x80\x80")); // Beyond U+10FFFF
+}
+
+TEST(WebSocketTest, ConnectAndDisconnect) {
+  Server svr;
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+  ASSERT_TRUE(client.connect());
+  EXPECT_TRUE(client.is_open());
+  client.close();
+  EXPECT_FALSE(client.is_open());
+
+  svr.stop();
+  t.join();
+}
+
+TEST(WebSocketTest, ValidURL) {
+  ws::WebSocketClient ws1("ws://localhost:8080/path");
+  EXPECT_TRUE(ws1.is_valid());
+
+  ws::WebSocketClient ws2("ws://example.com/path");
+  EXPECT_TRUE(ws2.is_valid());
+
+  ws::WebSocketClient ws3("ws://example.com:9090/path/to/endpoint");
+  EXPECT_TRUE(ws3.is_valid());
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  ws::WebSocketClient wss1("wss://example.com/path");
+  EXPECT_TRUE(wss1.is_valid());
+
+  ws::WebSocketClient wss2("wss://example.com:443/path");
+  EXPECT_TRUE(wss2.is_valid());
+#endif
+}
+
+TEST(WebSocketTest, InvalidURL) {
+  // No scheme
+  ws::WebSocketClient ws1("localhost:8080/path");
+  EXPECT_FALSE(ws1.is_valid());
+
+  // No path
+  ws::WebSocketClient ws2("ws://localhost:8080");
+  EXPECT_FALSE(ws2.is_valid());
+
+  // Empty string
+  ws::WebSocketClient ws3("");
+  EXPECT_FALSE(ws3.is_valid());
+
+  // Missing host
+  ws::WebSocketClient ws4("ws://:8080/path");
+  EXPECT_FALSE(ws4.is_valid());
+}
+
+TEST(WebSocketTest, UnsupportedScheme) {
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  ws::WebSocketClient ws1("http://localhost:8080/path");
+  EXPECT_FALSE(ws1.is_valid());
+
+  ws::WebSocketClient ws2("https://localhost:8080/path");
+  EXPECT_FALSE(ws2.is_valid());
+
+  ws::WebSocketClient ws3("ftp://localhost:8080/path");
+  EXPECT_FALSE(ws3.is_valid());
+#else
+  EXPECT_THROW(ws::WebSocketClient("http://localhost:8080/path"),
+               std::invalid_argument);
+
+  EXPECT_THROW(ws::WebSocketClient("ftp://localhost:8080/path"),
+               std::invalid_argument);
+#endif
+}
+
+TEST(WebSocketTest, ConnectWhenInvalid) {
+  ws::WebSocketClient ws("not a valid url");
+  EXPECT_FALSE(ws.is_valid());
+  EXPECT_FALSE(ws.connect());
+}
+
+TEST(WebSocketTest, DefaultPort) {
+  ws::WebSocketClient ws1("ws://example.com/path");
+  EXPECT_TRUE(ws1.is_valid());
+  // ws:// defaults to port 80 (verified by successful parse)
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  ws::WebSocketClient ws2("wss://example.com/path");
+  EXPECT_TRUE(ws2.is_valid());
+  // wss:// defaults to port 443 (verified by successful parse)
+#endif
+}
+
+TEST(WebSocketTest, IPv6LiteralAddress) {
+  ws::WebSocketClient ws1("ws://[::1]:8080/path");
+  EXPECT_TRUE(ws1.is_valid());
+
+  ws::WebSocketClient ws2("ws://[fe80::1]:3000/ws");
+  EXPECT_TRUE(ws2.is_valid());
+}
+
+TEST(WebSocketTest, ComplexPath) {
+  ws::WebSocketClient ws1("ws://localhost:8080/path/to/endpoint");
+  EXPECT_TRUE(ws1.is_valid());
+
+  ws::WebSocketClient ws2("ws://localhost:8080/");
+  EXPECT_TRUE(ws2.is_valid());
+}
+
+class WebSocketIntegrationTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    server_ = httplib::detail::make_unique<Server>();
+    setup_server();
+    start_server();
+  }
+
+  void TearDown() override {
+    server_->stop();
+    if (server_thread_.joinable()) { server_thread_.join(); }
+  }
+
+  void setup_server() {
+    server_->WebSocket("/ws-echo", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      ws::ReadResult ret;
+      while ((ret = ws.read(msg))) {
+        if (ret == ws::Binary) {
+          ws.send(msg.data(), msg.size());
+        } else {
+          ws.send(msg);
+        }
+      }
+    });
+
+    server_->WebSocket("/ws-echo-string",
+                       [](const Request &, ws::WebSocket &ws) {
+                         std::string msg;
+                         while (ws.read(msg)) {
+                           ws.send("echo: " + msg);
+                         }
+                       });
+
+    server_->WebSocket(
+        "/ws-request-info", [](const Request &req, ws::WebSocket &ws) {
+          // Echo back request metadata
+          ws.send("path:" + req.path);
+          ws.send("header:" + req.get_header_value("X-Test-Header"));
+          std::string msg;
+          while (ws.read(msg)) {}
+        });
+
+    server_->WebSocket("/ws-close", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      ws.read(msg); // wait for a message
+      ws.close();
+    });
+
+    server_->WebSocket("/ws-close-status",
+                       [](const Request &, ws::WebSocket &ws) {
+                         std::string msg;
+                         ws.read(msg); // wait for a message
+                         ws.close(ws::CloseStatus::GoingAway, "shutting down");
+                       });
+
+    server_->WebSocket(
+        "/ws-subprotocol",
+        [](const Request &, ws::WebSocket &ws) {
+          std::string msg;
+          while (ws.read(msg)) {
+            ws.send(msg);
+          }
+        },
+        [](const std::vector<std::string> &protocols) -> std::string {
+          for (const auto &p : protocols) {
+            if (p == "graphql-ws") { return p; }
+          }
+          return "";
+        });
+  }
+
+  void start_server() {
+    port_ = server_->bind_to_any_port(HOST);
+    server_thread_ = std::thread([this]() { server_->listen_after_bind(); });
+    server_->wait_until_ready();
+  }
+
+  std::unique_ptr<Server> server_;
+  std::thread server_thread_;
+  int port_ = 0;
+};
+
+TEST_F(WebSocketIntegrationTest, TextEcho) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.is_open());
+
+  ASSERT_TRUE(client.send("Hello WebSocket"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("Hello WebSocket", msg);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, BinaryEcho) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  std::string binary_data = {'\x00', '\x01', '\x02', '\xFF', '\xFE'};
+  ASSERT_TRUE(client.send(binary_data.data(), binary_data.size()));
+
+  std::string msg;
+  EXPECT_EQ(ws::Binary, client.read(msg));
+  EXPECT_EQ(binary_data, msg);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, MultipleMessages) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  for (int i = 0; i < 10; i++) {
+    auto text = "message " + std::to_string(i);
+    ASSERT_TRUE(client.send(text));
+    std::string msg;
+    ASSERT_TRUE(client.read(msg));
+    EXPECT_EQ(text, msg);
+  }
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, CloseHandshake) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-close");
+  ASSERT_TRUE(client.connect());
+
+  // Send a message to trigger the server to close
+  ASSERT_TRUE(client.send("trigger close"));
+
+  // The server will close, so read should return false
+  std::string msg;
+  EXPECT_FALSE(client.read(msg));
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST_F(WebSocketIntegrationTest, LargeMessage) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  // 128KB message
+  std::string large_data(128 * 1024, 'X');
+  ASSERT_TRUE(client.send(large_data));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ(large_data, msg);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, ConcurrentSend) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  const int num_threads = 4;
+  std::vector<std::thread> threads;
+  std::atomic<int> send_count{0};
+
+  for (int t = 0; t < num_threads; t++) {
+    threads.emplace_back([&client, &send_count, t]() {
+      for (int i = 0; i < 5; i++) {
+        auto text = "thread" + std::to_string(t) + "_msg" + std::to_string(i);
+        if (client.send(text)) { send_count++; }
+      }
+    });
+  }
+
+  for (auto &th : threads) {
+    th.join();
+  }
+
+  int received = 0;
+  std::string msg;
+  while (received < send_count.load()) {
+    if (!client.read(msg)) { break; }
+    received++;
+  }
+  EXPECT_EQ(send_count.load(), received);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, ReadString) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo-string");
+  ASSERT_TRUE(client.connect());
+
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("echo: hello", msg);
+
+  ASSERT_TRUE(client.send("world"));
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("echo: world", msg);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, RequestAccess) {
+  Headers headers = {{"X-Test-Header", "test-value"}};
+  ws::WebSocketClient client(
+      "ws://localhost:" + std::to_string(port_) + "/ws-request-info", headers);
+  ASSERT_TRUE(client.connect());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("path:/ws-request-info", msg);
+
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("header:test-value", msg);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, ReadTimeout) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.set_read_timeout(1, 0); // 1 second
+  ASSERT_TRUE(client.connect());
+
+  // Don't send anything — server echo handler waits for a message,
+  // so read() should time out and return false.
+  std::string msg;
+  EXPECT_FALSE(client.read(msg));
+}
+
+TEST_F(WebSocketIntegrationTest, MaxPayloadExceeded) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.set_read_timeout(5, 0);
+  ASSERT_TRUE(client.connect());
+
+  // Send a message exceeding CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (16MB).
+  // The server should reject it and close the connection.
+  std::string oversized(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1, 'A');
+  client.send(oversized);
+
+  // The server's read() should have failed due to payload limit,
+  // so our read() should return false (connection closed).
+  std::string msg;
+  EXPECT_FALSE(client.read(msg));
+}
+
+TEST_F(WebSocketIntegrationTest, MaxPayloadAtLimit) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.set_read_timeout(10, 0);
+  ASSERT_TRUE(client.connect());
+
+  // Send a message exactly at CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (16MB).
+  // This should succeed.
+  std::string at_limit(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH, 'B');
+  ASSERT_TRUE(client.send(at_limit));
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ(at_limit.size(), msg.size());
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, ConnectToInvalidPath) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/nonexistent");
+  EXPECT_FALSE(client.connect());
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST_F(WebSocketIntegrationTest, EmptyMessage) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  ASSERT_TRUE(client.send(""));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("", msg);
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, Reconnect) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+
+  // First connection
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("first"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("first", msg);
+  client.close();
+  EXPECT_FALSE(client.is_open());
+
+  // Reconnect using the same client object
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.is_open());
+  ASSERT_TRUE(client.send("second"));
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("second", msg);
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, CloseWithStatus) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-close-status");
+  ASSERT_TRUE(client.connect());
+
+  // Trigger the server to close with GoingAway status
+  ASSERT_TRUE(client.send("trigger"));
+
+  // read() should return false after receiving the close frame
+  std::string msg;
+  EXPECT_FALSE(client.read(msg));
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST_F(WebSocketIntegrationTest, ClientCloseWithStatus) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  client.close(ws::CloseStatus::GoingAway, "client leaving");
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST_F(WebSocketIntegrationTest, SubProtocolNegotiation) {
+  Headers headers = {{"Sec-WebSocket-Protocol", "mqtt, graphql-ws"}};
+  ws::WebSocketClient client(
+      "ws://localhost:" + std::to_string(port_) + "/ws-subprotocol", headers);
+  ASSERT_TRUE(client.connect());
+
+  // Server should have selected graphql-ws
+  EXPECT_EQ("graphql-ws", client.subprotocol());
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, SubProtocolNoMatch) {
+  Headers headers = {{"Sec-WebSocket-Protocol", "mqtt, wamp"}};
+  ws::WebSocketClient client(
+      "ws://localhost:" + std::to_string(port_) + "/ws-subprotocol", headers);
+  ASSERT_TRUE(client.connect());
+
+  // Server should not have selected any subprotocol
+  EXPECT_TRUE(client.subprotocol().empty());
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, SubProtocolNotRequested) {
+  // Connect without requesting any subprotocol
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-subprotocol");
+  ASSERT_TRUE(client.connect());
+
+  EXPECT_TRUE(client.subprotocol().empty());
+
+  client.close();
+}
+
+TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
+  Server svr;
+
+  svr.set_pre_routing_handler([](const Request &req, Response &res) {
+    if (!req.has_header("Authorization")) {
+      res.status = StatusCode::Unauthorized_401;
+      res.set_content("Unauthorized", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  // Without Authorization header - should be rejected before upgrade
+  ws::WebSocketClient client1("ws://localhost:" + std::to_string(port) + "/ws");
+  EXPECT_FALSE(client1.connect());
+
+  // With Authorization header - should succeed
+  Headers headers = {{"Authorization", "Bearer token123"}};
+  ws::WebSocketClient client2("ws://localhost:" + std::to_string(port) + "/ws",
+                              headers);
+  ASSERT_TRUE(client2.connect());
+  ASSERT_TRUE(client2.send("hello"));
+  std::string msg;
+  ASSERT_TRUE(client2.read(msg));
+  EXPECT_EQ("hello", msg);
+  client2.close();
+
+  svr.stop();
+  t.join();
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+class WebSocketSSLIntegrationTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    server_ = httplib::detail::make_unique<SSLServer>(SERVER_CERT_FILE,
+                                                      SERVER_PRIVATE_KEY_FILE);
+    server_->WebSocket("/ws-echo", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      ws::ReadResult ret;
+      while ((ret = ws.read(msg))) {
+        if (ret == ws::Binary) {
+          ws.send(msg.data(), msg.size());
+        } else {
+          ws.send(msg);
+        }
+      }
+    });
+    port_ = server_->bind_to_any_port(HOST);
+    server_thread_ = std::thread([this]() { server_->listen_after_bind(); });
+    server_->wait_until_ready();
+  }
+
+  void TearDown() override {
+    server_->stop();
+    if (server_thread_.joinable()) { server_thread_.join(); }
+  }
+
+  std::unique_ptr<SSLServer> server_;
+  std::thread server_thread_;
+  int port_ = 0;
+};
+
+TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
+  ws::WebSocketClient client("wss://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.enable_server_certificate_verification(false);
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.is_open());
+
+  ASSERT_TRUE(client.send("Hello WSS"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("Hello WSS", msg);
+
+  client.close();
 }
 #endif

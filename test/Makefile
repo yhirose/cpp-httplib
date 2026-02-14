@@ -155,6 +155,10 @@ test_no_tls : test.cc include_httplib.cc ../httplib.h Makefile
 test_split_no_tls : test.cc ../httplib.h httplib.cc Makefile
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_NO_TLS)
 
+# ThreadPool unit tests (no TLS, no compression needed)
+test_thread_pool : test_thread_pool.cc ../httplib.h Makefile
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test_thread_pool.cc gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include -lpthread
+
 check_abi:
 	@./check-shared-library-abi-compatibility.sh
 
@@ -179,6 +183,10 @@ style_check: $(STYLE_CHECK_FILES)
 	else \
 		echo "All files are properly formatted."; \
 	fi
+
+test_websocket_heartbeat : test_websocket_heartbeat.cc ../httplib.h Makefile
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test_websocket_heartbeat.cc $(TEST_ARGS)
+	@file $@
 
 test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS)

@@ -711,20 +711,24 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 
 ### Default thread pool support
 
-`ThreadPool` is used as the **default** task queue, with a default thread count of 8 or `std::thread::hardware_concurrency() - 1`, whichever is greater. You can change it with `CPPHTTPLIB_THREAD_POOL_COUNT`.
+`ThreadPool` is used as the **default** task queue, with dynamic scaling support. By default, it maintains a base thread count of 8 or `std::thread::hardware_concurrency() - 1` (whichever is greater), and can scale up to 4x that count under load. You can change these with `CPPHTTPLIB_THREAD_POOL_COUNT` and `CPPHTTPLIB_THREAD_POOL_MAX_COUNT`.
 
-If you want to set the thread count at runtime, there is no convenient way... But here is how.
+When all threads are busy and a new task arrives, a temporary thread is spawned (up to the maximum). When a dynamic thread finishes its task and the queue is empty, or after an idle timeout, it exits automatically. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
+
+If you want to set the thread counts at runtime:
 
 ```cpp
-svr.new_task_queue = [] { return new ThreadPool(12); };
+svr.new_task_queue = [] { return new ThreadPool(/*base_threads=*/8, /*max_threads=*/64); };
 ```
+
+#### Max queued requests
 
 You can also provide an optional parameter to limit the maximum number
 of pending requests, i.e. requests `accept()`ed by the listener but
 still waiting to be serviced by worker threads.
 
 ```cpp
-svr.new_task_queue = [] { return new ThreadPool(/*num_threads=*/12, /*max_queued_requests=*/18); };
+svr.new_task_queue = [] { return new ThreadPool(/*base_threads=*/12, /*max_threads=*/0, /*max_queued_requests=*/18); };
 ```
 
 Default limit is 0 (unlimited). Once the limit is reached, the listener
@@ -1343,6 +1347,47 @@ int main() {
 ```
 
 See [README-sse.md](README-sse.md) for more details.
+
+WebSocket
+---------
+
+```cpp
+// Server
+httplib::Server svr;
+
+svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws) {
+    httplib::ws::Message msg;
+    while (ws.read(msg)) {
+        if (msg.is_text()) {
+            ws.send("Echo: " + msg.data);
+        }
+    }
+});
+
+svr.listen("localhost", 8080);
+```
+
+```cpp
+// Client
+httplib::ws::WebSocketClient ws("ws://localhost:8080/ws");
+
+if (ws.connect()) {
+    ws.send("Hello, WebSocket!");
+
+    std::string msg;
+    if (ws.read(msg)) {
+        std::cout << "Received: " << msg << std::endl;
+    }
+
+    ws.close();
+}
+```
+
+SSL is also supported via `wss://` scheme (e.g. `WebSocketClient("wss://example.com/ws")`). Subprotocol negotiation (`Sec-WebSocket-Protocol`) is supported via `SubProtocolSelector` callback.
+
+> **Note:** WebSocket connections occupy a thread for their entire lifetime. If you plan to handle many simultaneous WebSocket connections, consider using a dynamic thread pool: `svr.new_task_queue = [] { return new ThreadPool(8, 64); };`
+
+See [README-websocket.md](README-websocket.md) for more details.
 
 Split httplib.h into .h and .cc
 -------------------------------
