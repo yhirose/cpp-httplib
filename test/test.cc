@@ -4627,15 +4627,9 @@ TEST_F(ServerTest, HeaderCountExceedsLimit) {
   cli_.set_keep_alive(true);
   auto res = cli_.Get("/hi", headers);
 
-  // The request should either fail or return 400 Bad Request
-  if (res) {
-    // If we get a response, it should be 400 Bad Request
-    EXPECT_EQ(StatusCode::BadRequest_400, res->status);
-  } else {
-    // Or the request should fail entirely
-    EXPECT_FALSE(res);
-  }
-
+  // The server should respond with 400 Bad Request
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ("close", res->get_header_value("Connection"));
   EXPECT_FALSE(cli_.is_socket_open());
 }
