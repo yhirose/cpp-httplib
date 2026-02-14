@@ -11216,6 +11216,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
                                          "Sec-WebSocket-Accept: " +
                                          accept_key + "\r\n";
         if (!selected_subprotocol.empty()) {
+          if (!detail::fields::is_field_value(selected_subprotocol)) {
+            return false;
+          }
           handshake_response +=
               "Sec-WebSocket-Protocol: " + selected_subprotocol + "\r\n";
         }
