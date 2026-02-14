@@ -28,6 +28,15 @@ no_tls_parallel:
 fuzz:
     @(cd test && make fuzz_test)
 
+proxy:
+    @(cd test && make proxy)
+
+websocket_heartbeat:
+    @(cd test && make test_websocket_heartbeat && ./test_websocket_heartbeat)
+
+thread_pool:
+    @(cd test && make test_thread_pool && ./test_thread_pool)
+
 build:
     @(cd test && make test_split)
     @(cd test && make test_split_mbedtls)

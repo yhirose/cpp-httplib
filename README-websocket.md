@@ -355,21 +355,21 @@ if (ws.connect()) {
 
 ## Threading Model
 
-WebSocket connections share the same thread pool as HTTP requests. Each WebSocket connection occupies one thread for its entire lifetime. The default thread pool size is `CPPHTTPLIB_THREAD_POOL_COUNT` (8).
+WebSocket connections share the same thread pool as HTTP requests. Each WebSocket connection occupies one thread for its entire lifetime.
 
-This means that if you have 8 simultaneous WebSocket connections with the default settings, **no more HTTP requests can be processed** until a WebSocket connection closes and frees up a thread.
+The default thread pool uses dynamic scaling: it maintains a base thread count of `CPPHTTPLIB_THREAD_POOL_COUNT` (8 or `std::thread::hardware_concurrency() - 1`, whichever is greater) and can scale up to 4x that count under load (`CPPHTTPLIB_THREAD_POOL_MAX_COUNT`). When all base threads are busy, temporary threads are spawned automatically up to the maximum. These dynamic threads exit after an idle timeout (`CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`, default 3 seconds).
 
-If your application uses WebSocket, you should increase the thread pool size:
+This dynamic scaling helps accommodate WebSocket connections alongside HTTP requests. However, if you expect many simultaneous WebSocket connections, you should configure the thread pool accordingly:
 
 ```cpp
 httplib::Server svr;
 
 svr.new_task_queue = [] {
-  return new httplib::ThreadPool(128); // Increase from default 8
+  return new httplib::ThreadPool(/*base_threads=*/8, /*max_threads=*/128);
 };
 ```
 
-Choose a size that accounts for both your expected HTTP load and the maximum number of simultaneous WebSocket connections.
+Choose sizes that account for both your expected HTTP load and the maximum number of simultaneous WebSocket connections.
 
 ## Protocol
 
