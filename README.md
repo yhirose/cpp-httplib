@@ -9,12 +9,13 @@ It's extremely easy to set up. Just include the **httplib.h** file in your code!
 > [!IMPORTANT]
 > This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
 
-## Features
+## Main Features
 
 - HTTP Server/Client
-- TLS support (OpenSSL, MbedTLS)
-- WebSocket
-- Content compression (gzip, Brotli, zstd)
+- SSL/TLS support (OpenSSL, MbedTLS)
+- [Stream API](README-stream.md)
+- [Server-Sent Events](README-sse.md)
+- [WebSocket](README-websocket.md)
 
 ## Simple examples
 
