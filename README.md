@@ -1,5 +1,4 @@
-cpp-httplib
-===========
+# cpp-httplib
 
 [![](https://github.com/yhirose/cpp-httplib/workflows/test/badge.svg)](https://github.com/yhirose/cpp-httplib/actions)
 
@@ -10,10 +9,16 @@ It's extremely easy to set up. Just include the **httplib.h** file in your code!
 > [!IMPORTANT]
 > This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
 
-Simple examples
----------------
+## Features
 
-#### Server (Multi-threaded)
+- HTTP Server/Client
+- TLS support (OpenSSL, MbedTLS)
+- WebSocket
+- Content compression (gzip, Brotli, zstd)
+
+## Simple examples
+
+### Server
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -32,7 +37,7 @@ svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
 svr.listen("0.0.0.0", 8080);
 ```
 
-#### Client
+### Client
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -50,8 +55,7 @@ if (auto res = cli.Get("/hi")) {
 }
 ```
 
-SSL/TLS Support
----------------
+## SSL/TLS Support
 
 cpp-httplib supports multiple TLS backends through an abstraction layer:
 
@@ -91,30 +95,6 @@ cli.enable_server_certificate_verification(false);
 // Disable host verification
 cli.enable_server_hostname_verification(false);
 ```
-
-### Windows Certificate Verification
-
-On Windows, cpp-httplib automatically performs additional certificate verification using the Windows certificate store via CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`). This works with both OpenSSL and Mbed TLS backends, providing:
-
-- Real-time certificate validation integrated with Windows Update
-- Certificate revocation checking
-- SSL/TLS policy verification using the system certificate store (ROOT and CA)
-
-This feature is enabled by default and can be controlled at runtime:
-
-```c++
-// Disable Windows certificate verification (use only OpenSSL/Mbed TLS verification)
-cli.enable_windows_certificate_verification(false);
-```
-
-To disable this feature at compile time, define:
-
-```c++
-#define CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-```
-
-> [!NOTE]
-> When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
 
 ### SSL Error Handling
 
@@ -205,8 +185,31 @@ svr.Get("/", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
-Server
-------
+### Windows Certificate Verification
+
+On Windows, cpp-httplib automatically performs additional certificate verification using the Windows certificate store via CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`). This works with both OpenSSL and Mbed TLS backends, providing:
+
+- Real-time certificate validation integrated with Windows Update
+- Certificate revocation checking
+- SSL/TLS policy verification using the system certificate store (ROOT and CA)
+
+This feature is enabled by default and can be controlled at runtime:
+
+```c++
+// Disable Windows certificate verification (use only OpenSSL/Mbed TLS verification)
+cli.enable_windows_certificate_verification(false);
+```
+
+To disable this feature at compile time, define:
+
+```c++
+#define CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+```
+
+> [!NOTE]
+> When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
+
+## Server
 
 ```c++
 #include <httplib.h>
@@ -764,8 +767,7 @@ svr.new_task_queue = [] {
 };
 ```
 
-Client
-------
+## Client
 
 ```c++
 #include <httplib.h>
@@ -894,11 +896,15 @@ httplib::Headers headers = {
 };
 auto res = cli.Get("/hi", headers);
 ```
+
 or
+
 ```c++
 auto res = cli.Get("/hi", {{"Hello", "World!"}});
 ```
+
 or
+
 ```c++
 cli.set_default_headers({
   { "Hello", "World!" }
@@ -1189,23 +1195,21 @@ httplib::Server svr;
 svr.listen("127.0.0.1", 8080);
 ```
 
-Payload Limit
--------------
+## Payload Limit
 
 The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely.
 
-Compression
------------
+## Compression
 
 The server can apply compression to the following MIME type contents:
 
-  * all text types except text/event-stream
-  * image/svg+xml
-  * application/javascript
-  * application/json
-  * application/xml
-  * application/protobuf
-  * application/xhtml+xml
+- all text types except text/event-stream
+- image/svg+xml
+- application/javascript
+- application/json
+- application/xml
+- application/protobuf
+- application/xhtml+xml
 
 ### Zlib Support
 
@@ -1298,8 +1302,7 @@ std::string decoded_component = httplib::decode_uri_component(encoded_component)
 
 Use `encode_uri()` for full URLs and `encode_uri_component()` for individual query parameters or path segments.
 
-Stream API
-----------
+## Stream API
 
 Process large responses without loading everything into memory.
 
@@ -1326,8 +1329,7 @@ All HTTP methods are supported: `stream::Get`, `Post`, `Put`, `Patch`, `Delete`,
 
 See [README-stream.md](README-stream.md) for more details.
 
-SSE Client
-----------
+## SSE Client
 
 ```cpp
 #include <httplib.h>
@@ -1348,8 +1350,7 @@ int main() {
 
 See [README-sse.md](README-sse.md) for more details.
 
-WebSocket
----------
+## WebSocket
 
 ```cpp
 // Server
@@ -1389,8 +1390,7 @@ SSL is also supported via `wss://` scheme (e.g. `WebSocketClient("wss://example.
 
 See [README-websocket.md](README-websocket.md) for more details.
 
-Split httplib.h into .h and .cc
--------------------------------
+## Split httplib.h into .h and .cc
 
 ```console
 $ ./split.py -h
@@ -1408,8 +1408,7 @@ $ ./split.py
 Wrote out/httplib.h and out/httplib.cc
 ```
 
-Dockerfile for Static HTTP Server
----------------------------------
+## Dockerfile for Static HTTP Server
 
 Dockerfile for static HTTP server is available. Port number of this HTTP server is 80, and it serves static files from `/html` directory in the container.
 
@@ -1480,12 +1479,10 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 > [!NOTE]
 > Windows 8 or lower, Visual Studio 2015 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
 
-License
--------
+## License
 
 MIT license (© 2026 Yuji Hirose)
 
-Special Thanks To
------------------
+## Special Thanks To
 
 [These folks](https://github.com/yhirose/cpp-httplib/graphs/contributors) made great contributions to polish this library to totally another level from a simple toy!
