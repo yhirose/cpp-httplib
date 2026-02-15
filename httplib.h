@@ -439,10 +439,30 @@ using socket_t = int;
 
 #endif // CPPHTTPLIB_MBEDTLS_SUPPORT
 
+#ifdef CPPHTTPLIB_WOLFSSL_SUPPORT
+#include <wolfssl/openssl/x509v3.h>
+#include <wolfssl/options.h>
+#include <wolfssl/ssl.h>
+#include <wolfssl/wolfcrypt/hash.h>
+#include <wolfssl/wolfcrypt/md5.h>
+#include <wolfssl/wolfcrypt/sha256.h>
+#include <wolfssl/wolfcrypt/sha512.h>
+#ifdef _WIN32
+#include <wincrypt.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "crypt32.lib")
+#endif
+#endif // _WIN32
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#if TARGET_OS_MAC
+#include <Security/Security.h>
+#endif
+#endif // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+#endif // CPPHTTPLIB_WOLFSSL_SUPPORT
+
 // Define CPPHTTPLIB_SSL_ENABLED if any SSL backend is available
-// This simplifies conditional compilation when adding new backends (e.g.,
-// wolfSSL)
-#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) || defined(CPPHTTPLIB_MBEDTLS_SUPPORT)
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                     \
+    defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
 #define CPPHTTPLIB_SSL_ENABLED
 #endif
 
@@ -3017,6 +3037,30 @@ struct MbedTlsContext {
 
   MbedTlsContext(const MbedTlsContext &) = delete;
   MbedTlsContext &operator=(const MbedTlsContext &) = delete;
+};
+
+} // namespace impl
+} // namespace tls
+#endif
+
+#ifdef CPPHTTPLIB_WOLFSSL_SUPPORT
+namespace tls {
+namespace impl {
+
+// wolfSSL context wrapper (holds WOLFSSL_CTX and related state).
+// This struct is accessible via tls::impl for use in SSL context
+// setup callbacks (cast ctx_t to tls::impl::WolfSSLContext*).
+struct WolfSSLContext {
+  WOLFSSL_CTX *ctx = nullptr;
+  bool is_server = false;
+  bool verify_client = false;
+  bool has_verify_callback = false;
+
+  WolfSSLContext();
+  ~WolfSSLContext();
+
+  WolfSSLContext(const WolfSSLContext &) = delete;
+  WolfSSLContext &operator=(const WolfSSLContext &) = delete;
 };
 
 } // namespace impl
@@ -8200,6 +8244,39 @@ inline std::string SHA_512(const std::string &s) {
   mbedtls_sha512_ret(reinterpret_cast<const unsigned char *>(s.c_str()),
                      s.size(), hash, 0);
 #endif
+  return hash_to_hex(hash);
+}
+#elif defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+namespace {
+template <size_t N>
+inline std::string hash_to_hex(const unsigned char (&hash)[N]) {
+  std::stringstream ss;
+  for (size_t i = 0; i < N; ++i) {
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << static_cast<unsigned int>(hash[i]);
+  }
+  return ss.str();
+}
+} // namespace
+
+inline std::string MD5(const std::string &s) {
+  unsigned char hash[WC_MD5_DIGEST_SIZE];
+  wc_Md5Hash(reinterpret_cast<const unsigned char *>(s.c_str()),
+             static_cast<word32>(s.size()), hash);
+  return hash_to_hex(hash);
+}
+
+inline std::string SHA_256(const std::string &s) {
+  unsigned char hash[WC_SHA256_DIGEST_SIZE];
+  wc_Sha256Hash(reinterpret_cast<const unsigned char *>(s.c_str()),
+                static_cast<word32>(s.size()), hash);
+  return hash_to_hex(hash);
+}
+
+inline std::string SHA_512(const std::string &s) {
+  unsigned char hash[WC_SHA512_DIGEST_SIZE];
+  wc_Sha512Hash(reinterpret_cast<const unsigned char *>(s.c_str()),
+                static_cast<word32>(s.size()), hash);
   return hash_to_hex(hash);
 }
 #endif
@@ -15078,11 +15155,11 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 
   bool is_ip = detail::is_ip_address(host_);
 
-#ifdef CPPHTTPLIB_MBEDTLS_SUPPORT
-  // MbedTLS needs explicit verification mode (OpenSSL uses SSL_VERIFY_NONE
-  // by default and performs all verification post-handshake).
+#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+  // MbedTLS/wolfSSL need explicit verification mode (OpenSSL uses
+  // SSL_VERIFY_NONE by default and performs all verification post-handshake).
   // For IP addresses with verification enabled, use OPTIONAL mode since
-  // MbedTLS requires hostname for VERIFY_REQUIRED.
+  // these backends require hostname for strict verification.
   if (is_ip && server_certificate_verification_) {
     set_verify_client(ctx_, false);
   } else {
@@ -17232,6 +17309,18 @@ inline bool set_client_cert_pem(ctx_t ctx, const char *cert, const char *key,
     return false;
   }
 
+  // Verify that the certificate and private key match
+#ifdef CPPHTTPLIB_MBEDTLS_V3
+  ret = mbedtls_pk_check_pair(&mctx->own_cert.pk, &mctx->own_key,
+                              mbedtls_ctr_drbg_random, &mctx->ctr_drbg);
+#else
+  ret = mbedtls_pk_check_pair(&mctx->own_cert.pk, &mctx->own_key);
+#endif
+  if (ret != 0) {
+    impl::mbedtls_last_error() = ret;
+    return false;
+  }
+
   ret = mbedtls_ssl_conf_own_cert(&mctx->conf, &mctx->own_cert, &mctx->own_key);
   if (ret != 0) {
     impl::mbedtls_last_error() = ret;
@@ -17259,6 +17348,18 @@ inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
                                  mbedtls_ctr_drbg_random, &mctx->ctr_drbg);
 #else
   ret = mbedtls_pk_parse_keyfile(&mctx->own_key, key_path, password);
+#endif
+  if (ret != 0) {
+    impl::mbedtls_last_error() = ret;
+    return false;
+  }
+
+  // Verify that the certificate and private key match
+#ifdef CPPHTTPLIB_MBEDTLS_V3
+  ret = mbedtls_pk_check_pair(&mctx->own_cert.pk, &mctx->own_key,
+                              mbedtls_ctr_drbg_random, &mctx->ctr_drbg);
+#else
+  ret = mbedtls_pk_check_pair(&mctx->own_cert.pk, &mctx->own_key);
 #endif
   if (ret != 0) {
     impl::mbedtls_last_error() = ret;
@@ -18025,6 +18126,1193 @@ inline std::string verify_error_string(long error_code) {
 } // namespace tls
 
 #endif // CPPHTTPLIB_MBEDTLS_SUPPORT
+
+/*
+ * Group 10: TLS abstraction layer - wolfSSL backend
+ */
+
+/*
+ * wolfSSL Backend Implementation
+ */
+
+#ifdef CPPHTTPLIB_WOLFSSL_SUPPORT
+namespace tls {
+
+namespace impl {
+
+// wolfSSL session wrapper
+struct WolfSSLSession {
+  WOLFSSL *ssl = nullptr;
+  socket_t sock = INVALID_SOCKET;
+  std::string hostname;     // For client: set via set_sni
+  std::string sni_hostname; // For server: received from client via SNI callback
+
+  WolfSSLSession() = default;
+
+  ~WolfSSLSession() {
+    if (ssl) { wolfSSL_free(ssl); }
+  }
+
+  WolfSSLSession(const WolfSSLSession &) = delete;
+  WolfSSLSession &operator=(const WolfSSLSession &) = delete;
+};
+
+// Thread-local error code accessor for wolfSSL
+inline uint64_t &wolfssl_last_error() {
+  static thread_local uint64_t err = 0;
+  return err;
+}
+
+// Helper to map wolfSSL error to ErrorCode.
+// ssl_error is the value from wolfSSL_get_error().
+// raw_ret is the raw return value from the wolfSSL call (for low-level error).
+inline ErrorCode map_wolfssl_error(WOLFSSL *ssl, int ssl_error,
+                                   int &out_errno) {
+  switch (ssl_error) {
+  case SSL_ERROR_NONE: return ErrorCode::Success;
+  case SSL_ERROR_WANT_READ: return ErrorCode::WantRead;
+  case SSL_ERROR_WANT_WRITE: return ErrorCode::WantWrite;
+  case SSL_ERROR_ZERO_RETURN: return ErrorCode::PeerClosed;
+  case SSL_ERROR_SYSCALL: out_errno = errno; return ErrorCode::SyscallError;
+  default:
+    if (ssl) {
+      // wolfSSL stores the low-level error code as a negative value.
+      // DOMAIN_NAME_MISMATCH (-322) indicates hostname verification failure.
+      int low_err = ssl_error; // wolfSSL_get_error returns the low-level code
+      if (low_err == DOMAIN_NAME_MISMATCH) {
+        return ErrorCode::HostnameMismatch;
+      }
+      // Check verify result to distinguish cert verification from generic SSL
+      // errors.
+      long vr = wolfSSL_get_verify_result(ssl);
+      if (vr != 0) { return ErrorCode::CertVerifyFailed; }
+    }
+    return ErrorCode::Fatal;
+  }
+}
+
+// WolfSSLContext constructor/destructor implementations
+inline WolfSSLContext::WolfSSLContext() { wolfSSL_Init(); }
+
+inline WolfSSLContext::~WolfSSLContext() {
+  if (ctx) { wolfSSL_CTX_free(ctx); }
+}
+
+// Thread-local storage for SNI captured during handshake
+inline std::string &wolfssl_pending_sni() {
+  static thread_local std::string sni;
+  return sni;
+}
+
+// SNI callback for wolfSSL server to capture client's SNI hostname
+inline int wolfssl_sni_callback(WOLFSSL *ssl, int *ret, void *exArg) {
+  (void)ret;
+  (void)exArg;
+
+  void *name_data = nullptr;
+  unsigned short name_len =
+      wolfSSL_SNI_GetRequest(ssl, WOLFSSL_SNI_HOST_NAME, &name_data);
+
+  if (name_data && name_len > 0) {
+    wolfssl_pending_sni().assign(static_cast<const char *>(name_data),
+                                 name_len);
+  } else {
+    wolfssl_pending_sni().clear();
+  }
+  return 0; // Continue regardless
+}
+
+// wolfSSL verify callback wrapper
+inline int wolfssl_verify_callback(int preverify_ok,
+                                   WOLFSSL_X509_STORE_CTX *x509_ctx) {
+  auto &callback = get_verify_callback();
+  if (!callback) { return preverify_ok; }
+
+  WOLFSSL_X509 *cert = wolfSSL_X509_STORE_CTX_get_current_cert(x509_ctx);
+  int depth = wolfSSL_X509_STORE_CTX_get_error_depth(x509_ctx);
+  int err = wolfSSL_X509_STORE_CTX_get_error(x509_ctx);
+
+  // Get the WOLFSSL object from the X509_STORE_CTX
+  WOLFSSL *ssl = static_cast<WOLFSSL *>(wolfSSL_X509_STORE_CTX_get_ex_data(
+      x509_ctx, wolfSSL_get_ex_data_X509_STORE_CTX_idx()));
+
+  VerifyContext verify_ctx;
+  verify_ctx.session = static_cast<session_t>(ssl);
+  verify_ctx.cert = static_cast<cert_t>(cert);
+  verify_ctx.depth = depth;
+  verify_ctx.preverify_ok = (preverify_ok != 0);
+  verify_ctx.error_code = static_cast<long>(err);
+
+  if (err != 0) {
+    verify_ctx.error_string = wolfSSL_X509_verify_cert_error_string(err);
+  } else {
+    verify_ctx.error_string = nullptr;
+  }
+
+  bool accepted = callback(verify_ctx);
+  return accepted ? 1 : 0;
+}
+
+// Check if a string is an IPv4 address
+inline bool is_ipv4_address(const std::string &str) {
+  int dots = 0;
+  for (char c : str) {
+    if (c == '.') {
+      dots++;
+    } else if (!isdigit(static_cast<unsigned char>(c))) {
+      return false;
+    }
+  }
+  return dots == 3;
+}
+
+// Parse IPv4 address string to bytes
+inline bool parse_ipv4(const std::string &str, unsigned char *out) {
+  int parts[4];
+  if (sscanf(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
+             &parts[3]) != 4) {
+    return false;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (parts[i] < 0 || parts[i] > 255) return false;
+    out[i] = static_cast<unsigned char>(parts[i]);
+  }
+  return true;
+}
+
+} // namespace impl
+
+inline ctx_t create_client_context() {
+  auto ctx = new (std::nothrow) impl::WolfSSLContext();
+  if (!ctx) { return nullptr; }
+
+  ctx->is_server = false;
+
+  WOLFSSL_METHOD *method = wolfTLSv1_2_client_method();
+  if (!method) {
+    delete ctx;
+    return nullptr;
+  }
+
+  ctx->ctx = wolfSSL_CTX_new(method);
+  if (!ctx->ctx) {
+    delete ctx;
+    return nullptr;
+  }
+
+  // Default: verify peer certificate
+  wolfSSL_CTX_set_verify(ctx->ctx, SSL_VERIFY_PEER, nullptr);
+
+  return static_cast<ctx_t>(ctx);
+}
+
+inline ctx_t create_server_context() {
+  auto ctx = new (std::nothrow) impl::WolfSSLContext();
+  if (!ctx) { return nullptr; }
+
+  ctx->is_server = true;
+
+  WOLFSSL_METHOD *method = wolfTLSv1_2_server_method();
+  if (!method) {
+    delete ctx;
+    return nullptr;
+  }
+
+  ctx->ctx = wolfSSL_CTX_new(method);
+  if (!ctx->ctx) {
+    delete ctx;
+    return nullptr;
+  }
+
+  // Default: don't verify client
+  wolfSSL_CTX_set_verify(ctx->ctx, SSL_VERIFY_NONE, nullptr);
+
+  // Enable SNI on server
+  wolfSSL_CTX_SNI_SetOptions(ctx->ctx, WOLFSSL_SNI_HOST_NAME,
+                             WOLFSSL_SNI_CONTINUE_ON_MISMATCH);
+
+  return static_cast<ctx_t>(ctx);
+}
+
+inline void free_context(ctx_t ctx) {
+  if (ctx) { delete static_cast<impl::WolfSSLContext *>(ctx); }
+}
+
+inline bool set_min_version(ctx_t ctx, Version version) {
+  if (!ctx) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  int min_ver = WOLFSSL_TLSV1_2;
+  if (version >= Version::TLS1_3) { min_ver = WOLFSSL_TLSV1_3; }
+
+  return wolfSSL_CTX_SetMinVersion(wctx->ctx, min_ver) == WOLFSSL_SUCCESS;
+}
+
+inline bool load_ca_pem(ctx_t ctx, const char *pem, size_t len) {
+  if (!ctx || !pem) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  int ret = wolfSSL_CTX_load_verify_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(pem),
+      static_cast<long>(len), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+  return true;
+}
+
+inline bool load_ca_file(ctx_t ctx, const char *file_path) {
+  if (!ctx || !file_path) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, file_path, nullptr);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+  return true;
+}
+
+inline bool load_ca_dir(ctx_t ctx, const char *dir_path) {
+  if (!ctx || !dir_path) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, nullptr, dir_path);
+  // wolfSSL may fail if the directory doesn't contain properly hashed certs.
+  // Unlike OpenSSL which lazily loads certs from directories, wolfSSL scans
+  // immediately. Return true even on failure since the CA file may have
+  // already been loaded, matching OpenSSL's lenient behavior.
+  (void)ret;
+  return true;
+}
+
+inline bool load_system_certs(ctx_t ctx) {
+  if (!ctx) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+  bool loaded = false;
+
+#ifdef _WIN32
+  // Load from Windows certificate store
+  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
+  for (auto store_name : store_names) {
+    HCERTSTORE hStore = CertOpenSystemStoreW(0, store_name);
+    if (hStore) {
+      PCCERT_CONTEXT pContext = nullptr;
+      while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
+             nullptr) {
+        int ret = wolfSSL_CTX_load_verify_buffer(
+            wctx->ctx, pContext->pbCertEncoded,
+            static_cast<long>(pContext->cbCertEncoded), SSL_FILETYPE_ASN1);
+        if (ret == SSL_SUCCESS) { loaded = true; }
+      }
+      CertCloseStore(hStore, 0);
+    }
+  }
+#elif defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+  // Load from macOS Keychain
+  CFArrayRef certs = nullptr;
+  OSStatus status = SecTrustCopyAnchorCertificates(&certs);
+  if (status == errSecSuccess && certs) {
+    CFIndex count = CFArrayGetCount(certs);
+    for (CFIndex i = 0; i < count; i++) {
+      SecCertificateRef cert =
+          (SecCertificateRef)CFArrayGetValueAtIndex(certs, i);
+      CFDataRef data = SecCertificateCopyData(cert);
+      if (data) {
+        int ret = wolfSSL_CTX_load_verify_buffer(
+            wctx->ctx, CFDataGetBytePtr(data),
+            static_cast<long>(CFDataGetLength(data)), SSL_FILETYPE_ASN1);
+        if (ret == SSL_SUCCESS) { loaded = true; }
+        CFRelease(data);
+      }
+    }
+    CFRelease(certs);
+  }
+#else
+  // Try common CA certificate locations on Linux/Unix
+  static const char *ca_paths[] = {
+      "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
+      "/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
+      "/etc/ssl/ca-bundle.pem",             // OpenSUSE
+      "/etc/pki/tls/cacert.pem",            // OpenELEC
+      "/etc/ssl/cert.pem",                  // Alpine, FreeBSD
+      nullptr};
+
+  for (const char **path = ca_paths; *path; ++path) {
+    int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, *path, nullptr);
+    if (ret == SSL_SUCCESS) {
+      loaded = true;
+      break;
+    }
+  }
+
+  // Also try the CA directory
+  if (!loaded) {
+    static const char *ca_dirs[] = {"/etc/ssl/certs",     // Debian/Ubuntu
+                                    "/etc/pki/tls/certs", // RHEL/CentOS
+                                    "/usr/share/ca-certificates", nullptr};
+
+    for (const char **dir = ca_dirs; *dir; ++dir) {
+      int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, nullptr, *dir);
+      if (ret == SSL_SUCCESS) {
+        loaded = true;
+        break;
+      }
+    }
+  }
+#endif
+
+  return loaded;
+}
+
+inline bool set_client_cert_pem(ctx_t ctx, const char *cert, const char *key,
+                                const char *password) {
+  if (!ctx || !cert || !key) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  // Load certificate
+  int ret = wolfSSL_CTX_use_certificate_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(cert),
+      static_cast<long>(strlen(cert)), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  // Set password callback if password is provided
+  if (password) {
+    wolfSSL_CTX_set_default_passwd_cb_userdata(wctx->ctx,
+                                               const_cast<char *>(password));
+    wolfSSL_CTX_set_default_passwd_cb(
+        wctx->ctx,
+        [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
+          auto *pwd = static_cast<const char *>(userdata);
+          if (!pwd) return 0;
+          auto len = static_cast<int>(strlen(pwd));
+          if (len > size) len = size;
+          memcpy(buf, pwd, static_cast<size_t>(len));
+          return len;
+        });
+  }
+
+  // Load private key
+  ret = wolfSSL_CTX_use_PrivateKey_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(key),
+      static_cast<long>(strlen(key)), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  // Verify that the certificate and private key match
+  return wolfSSL_CTX_check_private_key(wctx->ctx) == SSL_SUCCESS;
+}
+
+inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
+                                 const char *key_path, const char *password) {
+  if (!ctx || !cert_path || !key_path) { return false; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  // Load certificate file
+  int ret =
+      wolfSSL_CTX_use_certificate_file(wctx->ctx, cert_path, SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  // Set password callback if password is provided
+  if (password) {
+    wolfSSL_CTX_set_default_passwd_cb_userdata(wctx->ctx,
+                                               const_cast<char *>(password));
+    wolfSSL_CTX_set_default_passwd_cb(
+        wctx->ctx,
+        [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
+          auto *pwd = static_cast<const char *>(userdata);
+          if (!pwd) return 0;
+          auto len = static_cast<int>(strlen(pwd));
+          if (len > size) len = size;
+          memcpy(buf, pwd, static_cast<size_t>(len));
+          return len;
+        });
+  }
+
+  // Load private key file
+  ret = wolfSSL_CTX_use_PrivateKey_file(wctx->ctx, key_path, SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  // Verify that the certificate and private key match
+  return wolfSSL_CTX_check_private_key(wctx->ctx) == SSL_SUCCESS;
+}
+
+inline void set_verify_client(ctx_t ctx, bool require) {
+  if (!ctx) { return; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+  wctx->verify_client = require;
+  if (require) {
+    wolfSSL_CTX_set_verify(
+        wctx->ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+        wctx->has_verify_callback ? impl::wolfssl_verify_callback : nullptr);
+  } else {
+    if (wctx->has_verify_callback) {
+      wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
+                             impl::wolfssl_verify_callback);
+    } else {
+      wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_NONE, nullptr);
+    }
+  }
+}
+
+inline session_t create_session(ctx_t ctx, socket_t sock) {
+  if (!ctx || sock == INVALID_SOCKET) { return nullptr; }
+  auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  auto session = new (std::nothrow) impl::WolfSSLSession();
+  if (!session) { return nullptr; }
+
+  session->sock = sock;
+  session->ssl = wolfSSL_new(wctx->ctx);
+  if (!session->ssl) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    delete session;
+    return nullptr;
+  }
+
+  wolfSSL_set_fd(session->ssl, static_cast<int>(sock));
+
+  // Set up SNI callback for server
+  if (wctx->is_server) {
+    wolfSSL_CTX_set_servername_callback(wctx->ctx, impl::wolfssl_sni_callback);
+  }
+
+  return static_cast<session_t>(session);
+}
+
+inline void free_session(session_t session) {
+  if (session) { delete static_cast<impl::WolfSSLSession *>(session); }
+}
+
+inline bool set_sni(session_t session, const char *hostname) {
+  if (!session || !hostname) { return false; }
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+
+  int ret = wolfSSL_UseSNI(wsession->ssl, WOLFSSL_SNI_HOST_NAME, hostname,
+                           static_cast<word16>(strlen(hostname)));
+  if (ret != WOLFSSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  // Also set hostname for verification
+  wolfSSL_check_domain_name(wsession->ssl, hostname);
+
+  wsession->hostname = hostname;
+  return true;
+}
+
+inline bool set_hostname(session_t session, const char *hostname) {
+  // In wolfSSL, set_hostname also sets up hostname verification
+  return set_sni(session, hostname);
+}
+
+inline TlsError connect(session_t session) {
+  TlsError err;
+  if (!session) {
+    err.code = ErrorCode::Fatal;
+    return err;
+  }
+
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+  int ret = wolfSSL_connect(wsession->ssl);
+
+  if (ret == SSL_SUCCESS) {
+    err.code = ErrorCode::Success;
+  } else {
+    int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+    err.code = impl::map_wolfssl_error(wsession->ssl, ssl_error, err.sys_errno);
+    err.backend_code = static_cast<uint64_t>(ssl_error);
+    impl::wolfssl_last_error() = err.backend_code;
+  }
+
+  return err;
+}
+
+inline TlsError accept(session_t session) {
+  TlsError err;
+  if (!session) {
+    err.code = ErrorCode::Fatal;
+    return err;
+  }
+
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+  int ret = wolfSSL_accept(wsession->ssl);
+
+  if (ret == SSL_SUCCESS) {
+    err.code = ErrorCode::Success;
+    // Capture SNI from thread-local storage after successful handshake
+    wsession->sni_hostname = std::move(impl::wolfssl_pending_sni());
+    impl::wolfssl_pending_sni().clear();
+  } else {
+    int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+    err.code = impl::map_wolfssl_error(wsession->ssl, ssl_error, err.sys_errno);
+    err.backend_code = static_cast<uint64_t>(ssl_error);
+    impl::wolfssl_last_error() = err.backend_code;
+  }
+
+  return err;
+}
+
+inline bool connect_nonblocking(session_t session, socket_t sock,
+                                time_t timeout_sec, time_t timeout_usec,
+                                TlsError *err) {
+  if (!session) {
+    if (err) { err->code = ErrorCode::Fatal; }
+    return false;
+  }
+
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+
+  // Set socket to non-blocking mode
+  detail::set_nonblocking(sock, true);
+  auto cleanup =
+      detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
+
+  int ret;
+  while ((ret = wolfSSL_connect(wsession->ssl)) != SSL_SUCCESS) {
+    int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+    if (ssl_error == SSL_ERROR_WANT_READ) {
+      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
+        continue;
+      }
+    } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
+      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
+        continue;
+      }
+    }
+
+    // Error or timeout
+    if (err) {
+      err->code =
+          impl::map_wolfssl_error(wsession->ssl, ssl_error, err->sys_errno);
+      err->backend_code = static_cast<uint64_t>(ssl_error);
+    }
+    impl::wolfssl_last_error() = static_cast<uint64_t>(ssl_error);
+    return false;
+  }
+
+  if (err) { err->code = ErrorCode::Success; }
+  return true;
+}
+
+inline bool accept_nonblocking(session_t session, socket_t sock,
+                               time_t timeout_sec, time_t timeout_usec,
+                               TlsError *err) {
+  if (!session) {
+    if (err) { err->code = ErrorCode::Fatal; }
+    return false;
+  }
+
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+
+  // Set socket to non-blocking mode
+  detail::set_nonblocking(sock, true);
+  auto cleanup =
+      detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
+
+  int ret;
+  while ((ret = wolfSSL_accept(wsession->ssl)) != SSL_SUCCESS) {
+    int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+    if (ssl_error == SSL_ERROR_WANT_READ) {
+      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
+        continue;
+      }
+    } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
+      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
+        continue;
+      }
+    }
+
+    // Error or timeout
+    if (err) {
+      err->code =
+          impl::map_wolfssl_error(wsession->ssl, ssl_error, err->sys_errno);
+      err->backend_code = static_cast<uint64_t>(ssl_error);
+    }
+    impl::wolfssl_last_error() = static_cast<uint64_t>(ssl_error);
+    return false;
+  }
+
+  if (err) { err->code = ErrorCode::Success; }
+
+  // Capture SNI from thread-local storage after successful handshake
+  wsession->sni_hostname = std::move(impl::wolfssl_pending_sni());
+  impl::wolfssl_pending_sni().clear();
+
+  return true;
+}
+
+inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
+  if (!session || !buf) {
+    err.code = ErrorCode::Fatal;
+    return -1;
+  }
+
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+  int ret = wolfSSL_read(wsession->ssl, buf, static_cast<int>(len));
+
+  if (ret > 0) {
+    err.code = ErrorCode::Success;
+    return static_cast<ssize_t>(ret);
+  }
+
+  if (ret == 0) {
+    err.code = ErrorCode::PeerClosed;
+    return 0;
+  }
+
+  int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+  err.code = impl::map_wolfssl_error(wsession->ssl, ssl_error, err.sys_errno);
+  err.backend_code = static_cast<uint64_t>(ssl_error);
+  impl::wolfssl_last_error() = err.backend_code;
+  return -1;
+}
+
+inline ssize_t write(session_t session, const void *buf, size_t len,
+                     TlsError &err) {
+  if (!session || !buf) {
+    err.code = ErrorCode::Fatal;
+    return -1;
+  }
+
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+  int ret = wolfSSL_write(wsession->ssl, buf, static_cast<int>(len));
+
+  if (ret > 0) {
+    err.code = ErrorCode::Success;
+    return static_cast<ssize_t>(ret);
+  }
+
+  // wolfSSL_write returns 0 when the peer has sent a close_notify.
+  // Treat this as an error (return -1) so callers don't spin in a
+  // write loop adding zero to the offset.
+  if (ret == 0) {
+    err.code = ErrorCode::PeerClosed;
+    return -1;
+  }
+
+  int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+  err.code = impl::map_wolfssl_error(wsession->ssl, ssl_error, err.sys_errno);
+  err.backend_code = static_cast<uint64_t>(ssl_error);
+  impl::wolfssl_last_error() = err.backend_code;
+  return -1;
+}
+
+inline int pending(const_session_t session) {
+  if (!session) { return 0; }
+  auto wsession =
+      static_cast<impl::WolfSSLSession *>(const_cast<void *>(session));
+  return wolfSSL_pending(wsession->ssl);
+}
+
+inline void shutdown(session_t session, bool graceful) {
+  if (!session) { return; }
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+
+  if (graceful) {
+    int ret;
+    int attempts = 0;
+    while ((ret = wolfSSL_shutdown(wsession->ssl)) != SSL_SUCCESS &&
+           attempts < 3) {
+      int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+      if (ssl_error != SSL_ERROR_WANT_READ &&
+          ssl_error != SSL_ERROR_WANT_WRITE) {
+        break;
+      }
+      attempts++;
+    }
+  } else {
+    wolfSSL_shutdown(wsession->ssl);
+  }
+}
+
+inline bool is_peer_closed(session_t session, socket_t sock) {
+  if (!session || sock == INVALID_SOCKET) { return true; }
+  auto wsession = static_cast<impl::WolfSSLSession *>(session);
+
+  // Check if there's already decrypted data available
+  if (wolfSSL_pending(wsession->ssl) > 0) { return false; }
+
+  // Set socket to non-blocking to avoid blocking on read
+  detail::set_nonblocking(sock, true);
+  auto cleanup =
+      detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
+
+  // Try a 1-byte read to check connection status
+  unsigned char buf;
+  int ret = wolfSSL_read(wsession->ssl, &buf, 1);
+
+  // If we got data or WANT_READ (would block), connection is alive
+  if (ret > 0) { return false; }
+
+  int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
+  if (ssl_error == SSL_ERROR_WANT_READ) { return false; }
+
+  return ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL ||
+         ret == 0;
+}
+
+inline cert_t get_peer_cert(const_session_t session) {
+  if (!session) { return nullptr; }
+  auto wsession =
+      static_cast<impl::WolfSSLSession *>(const_cast<void *>(session));
+
+  WOLFSSL_X509 *cert = wolfSSL_get_peer_certificate(wsession->ssl);
+  return static_cast<cert_t>(cert);
+}
+
+inline void free_cert(cert_t cert) {
+  if (cert) { wolfSSL_X509_free(static_cast<WOLFSSL_X509 *>(cert)); }
+}
+
+inline bool verify_hostname(cert_t cert, const char *hostname) {
+  if (!cert || !hostname) { return false; }
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+  std::string host_str(hostname);
+
+  // Check if hostname is an IP address
+  bool is_ip = impl::is_ipv4_address(host_str);
+  unsigned char ip_bytes[4];
+  if (is_ip) { impl::parse_ipv4(host_str, ip_bytes); }
+
+  // Check Subject Alternative Names
+  auto *san_names = static_cast<WOLF_STACK_OF(WOLFSSL_GENERAL_NAME) *>(
+      wolfSSL_X509_get_ext_d2i(x509, NID_subject_alt_name, nullptr, nullptr));
+
+  if (san_names) {
+    int san_count = wolfSSL_sk_num(san_names);
+    for (int i = 0; i < san_count; i++) {
+      auto *names =
+          static_cast<WOLFSSL_GENERAL_NAME *>(wolfSSL_sk_value(san_names, i));
+      if (!names) continue;
+
+      if (!is_ip && names->type == WOLFSSL_GEN_DNS) {
+        // DNS name
+        unsigned char *dns_name = nullptr;
+        int dns_len = wolfSSL_ASN1_STRING_to_UTF8(&dns_name, names->d.dNSName);
+        if (dns_name && dns_len > 0) {
+          std::string san_name(reinterpret_cast<char *>(dns_name),
+                               static_cast<size_t>(dns_len));
+          XFREE(dns_name, nullptr, DYNAMIC_TYPE_OPENSSL);
+          if (detail::match_hostname(san_name, host_str)) {
+            wolfSSL_sk_free(san_names);
+            return true;
+          }
+        }
+      } else if (is_ip && names->type == WOLFSSL_GEN_IPADD) {
+        // IP address
+        unsigned char *ip_data = wolfSSL_ASN1_STRING_data(names->d.iPAddress);
+        int ip_len = wolfSSL_ASN1_STRING_length(names->d.iPAddress);
+        if (ip_data && ip_len == 4 && memcmp(ip_data, ip_bytes, 4) == 0) {
+          wolfSSL_sk_free(san_names);
+          return true;
+        }
+      }
+    }
+    wolfSSL_sk_free(san_names);
+  }
+
+  // Fallback: Check Common Name (CN) in subject
+  WOLFSSL_X509_NAME *subject = wolfSSL_X509_get_subject_name(x509);
+  if (subject) {
+    char cn[256] = {};
+    int cn_len = wolfSSL_X509_NAME_get_text_by_NID(subject, NID_commonName, cn,
+                                                   sizeof(cn));
+    if (cn_len > 0) {
+      std::string cn_str(cn, static_cast<size_t>(cn_len));
+      if (detail::match_hostname(cn_str, host_str)) { return true; }
+    }
+  }
+
+  return false;
+}
+
+inline uint64_t hostname_mismatch_code() {
+  return static_cast<uint64_t>(DOMAIN_NAME_MISMATCH);
+}
+
+inline long get_verify_result(const_session_t session) {
+  if (!session) { return -1; }
+  auto wsession =
+      static_cast<impl::WolfSSLSession *>(const_cast<void *>(session));
+  long result = wolfSSL_get_verify_result(wsession->ssl);
+  return result;
+}
+
+inline std::string get_cert_subject_cn(cert_t cert) {
+  if (!cert) return "";
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+
+  WOLFSSL_X509_NAME *subject = wolfSSL_X509_get_subject_name(x509);
+  if (!subject) return "";
+
+  char cn[256] = {};
+  int cn_len = wolfSSL_X509_NAME_get_text_by_NID(subject, NID_commonName, cn,
+                                                 sizeof(cn));
+  if (cn_len <= 0) return "";
+  return std::string(cn, static_cast<size_t>(cn_len));
+}
+
+inline std::string get_cert_issuer_name(cert_t cert) {
+  if (!cert) return "";
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+
+  WOLFSSL_X509_NAME *issuer = wolfSSL_X509_get_issuer_name(x509);
+  if (!issuer) return "";
+
+  char *name_str = wolfSSL_X509_NAME_oneline(issuer, nullptr, 0);
+  if (!name_str) return "";
+
+  std::string result(name_str);
+  XFREE(name_str, nullptr, DYNAMIC_TYPE_OPENSSL);
+  return result;
+}
+
+inline bool get_cert_sans(cert_t cert, std::vector<SanEntry> &sans) {
+  sans.clear();
+  if (!cert) return false;
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+
+  auto *san_names = static_cast<WOLF_STACK_OF(WOLFSSL_GENERAL_NAME) *>(
+      wolfSSL_X509_get_ext_d2i(x509, NID_subject_alt_name, nullptr, nullptr));
+  if (!san_names) return true; // No SANs is not an error
+
+  int count = wolfSSL_sk_num(san_names);
+  for (int i = 0; i < count; i++) {
+    auto *name =
+        static_cast<WOLFSSL_GENERAL_NAME *>(wolfSSL_sk_value(san_names, i));
+    if (!name) continue;
+
+    SanEntry entry;
+    switch (name->type) {
+    case WOLFSSL_GEN_DNS: {
+      entry.type = SanType::DNS;
+      unsigned char *dns_name = nullptr;
+      int dns_len = wolfSSL_ASN1_STRING_to_UTF8(&dns_name, name->d.dNSName);
+      if (dns_name && dns_len > 0) {
+        entry.value = std::string(reinterpret_cast<char *>(dns_name),
+                                  static_cast<size_t>(dns_len));
+        XFREE(dns_name, nullptr, DYNAMIC_TYPE_OPENSSL);
+      }
+      break;
+    }
+    case WOLFSSL_GEN_IPADD: {
+      entry.type = SanType::IP;
+      unsigned char *ip_data = wolfSSL_ASN1_STRING_data(name->d.iPAddress);
+      int ip_len = wolfSSL_ASN1_STRING_length(name->d.iPAddress);
+      if (ip_data && ip_len == 4) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d.%d.%d.%d", ip_data[0], ip_data[1],
+                 ip_data[2], ip_data[3]);
+        entry.value = buf;
+      } else if (ip_data && ip_len == 16) {
+        char buf[64];
+        snprintf(buf, sizeof(buf),
+                 "%02x%02x:%02x%02x:%02x%02x:%02x%02x:"
+                 "%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                 ip_data[0], ip_data[1], ip_data[2], ip_data[3], ip_data[4],
+                 ip_data[5], ip_data[6], ip_data[7], ip_data[8], ip_data[9],
+                 ip_data[10], ip_data[11], ip_data[12], ip_data[13],
+                 ip_data[14], ip_data[15]);
+        entry.value = buf;
+      }
+      break;
+    }
+    case WOLFSSL_GEN_EMAIL:
+      entry.type = SanType::EMAIL;
+      {
+        unsigned char *email = nullptr;
+        int email_len = wolfSSL_ASN1_STRING_to_UTF8(&email, name->d.rfc822Name);
+        if (email && email_len > 0) {
+          entry.value = std::string(reinterpret_cast<char *>(email),
+                                    static_cast<size_t>(email_len));
+          XFREE(email, nullptr, DYNAMIC_TYPE_OPENSSL);
+        }
+      }
+      break;
+    case WOLFSSL_GEN_URI:
+      entry.type = SanType::URI;
+      {
+        unsigned char *uri = nullptr;
+        int uri_len = wolfSSL_ASN1_STRING_to_UTF8(
+            &uri, name->d.uniformResourceIdentifier);
+        if (uri && uri_len > 0) {
+          entry.value = std::string(reinterpret_cast<char *>(uri),
+                                    static_cast<size_t>(uri_len));
+          XFREE(uri, nullptr, DYNAMIC_TYPE_OPENSSL);
+        }
+      }
+      break;
+    default: entry.type = SanType::OTHER; break;
+    }
+
+    if (!entry.value.empty()) { sans.push_back(std::move(entry)); }
+  }
+  wolfSSL_sk_free(san_names);
+  return true;
+}
+
+inline bool get_cert_validity(cert_t cert, time_t &not_before,
+                              time_t &not_after) {
+  if (!cert) return false;
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+
+  const WOLFSSL_ASN1_TIME *nb = wolfSSL_X509_get_notBefore(x509);
+  const WOLFSSL_ASN1_TIME *na = wolfSSL_X509_get_notAfter(x509);
+
+  if (!nb || !na) return false;
+
+  // wolfSSL_ASN1_TIME_to_tm is available
+  struct tm tm_nb = {}, tm_na = {};
+  if (wolfSSL_ASN1_TIME_to_tm(nb, &tm_nb) != WOLFSSL_SUCCESS) return false;
+  if (wolfSSL_ASN1_TIME_to_tm(na, &tm_na) != WOLFSSL_SUCCESS) return false;
+
+#ifdef _WIN32
+  not_before = _mkgmtime(&tm_nb);
+  not_after = _mkgmtime(&tm_na);
+#else
+  not_before = timegm(&tm_nb);
+  not_after = timegm(&tm_na);
+#endif
+  return true;
+}
+
+inline std::string get_cert_serial(cert_t cert) {
+  if (!cert) return "";
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+
+  WOLFSSL_ASN1_INTEGER *serial_asn1 = wolfSSL_X509_get_serialNumber(x509);
+  if (!serial_asn1) return "";
+
+  // Get the serial number data
+  int len = serial_asn1->length;
+  unsigned char *data = serial_asn1->data;
+  if (!data || len <= 0) return "";
+
+  std::string result;
+  result.reserve(static_cast<size_t>(len) * 2);
+  for (int i = 0; i < len; i++) {
+    char hex[3];
+    snprintf(hex, sizeof(hex), "%02X", data[i]);
+    result += hex;
+  }
+  return result;
+}
+
+inline bool get_cert_der(cert_t cert, std::vector<unsigned char> &der) {
+  if (!cert) return false;
+  auto x509 = static_cast<WOLFSSL_X509 *>(cert);
+
+  int der_len = 0;
+  const unsigned char *der_data = wolfSSL_X509_get_der(x509, &der_len);
+  if (!der_data || der_len <= 0) return false;
+
+  der.assign(der_data, der_data + der_len);
+  return true;
+}
+
+inline const char *get_sni(const_session_t session) {
+  if (!session) return nullptr;
+  auto wsession = static_cast<const impl::WolfSSLSession *>(session);
+
+  // For server: return SNI received from client during handshake
+  if (!wsession->sni_hostname.empty()) {
+    return wsession->sni_hostname.c_str();
+  }
+
+  // For client: return the hostname set via set_sni
+  if (!wsession->hostname.empty()) { return wsession->hostname.c_str(); }
+
+  return nullptr;
+}
+
+inline uint64_t peek_error() {
+  return static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+}
+
+inline uint64_t get_error() {
+  uint64_t err = impl::wolfssl_last_error();
+  impl::wolfssl_last_error() = 0;
+  return err;
+}
+
+inline std::string error_string(uint64_t code) {
+  char buf[256];
+  wolfSSL_ERR_error_string(static_cast<unsigned long>(code), buf);
+  return std::string(buf);
+}
+
+inline ca_store_t create_ca_store(const char *pem, size_t len) {
+  // Create a temporary CTX to hold the CA certificates
+  WOLFSSL_CTX *tmp_ctx = wolfSSL_CTX_new(wolfTLSv1_2_client_method());
+  if (!tmp_ctx) { return nullptr; }
+
+  int ret = wolfSSL_CTX_load_verify_buffer(
+      tmp_ctx, reinterpret_cast<const unsigned char *>(pem),
+      static_cast<long>(len), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    wolfSSL_CTX_free(tmp_ctx);
+    return nullptr;
+  }
+
+  return static_cast<ca_store_t>(tmp_ctx);
+}
+
+inline void free_ca_store(ca_store_t store) {
+  if (store) { wolfSSL_CTX_free(static_cast<WOLFSSL_CTX *>(store)); }
+}
+
+inline bool set_ca_store(ctx_t ctx, ca_store_t store) {
+  if (!ctx || !store) { return false; }
+  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
+  auto *store_ctx = static_cast<WOLFSSL_CTX *>(store);
+
+  // Get the cert manager from the store context and load into our context
+  WOLFSSL_CERT_MANAGER *cm = wolfSSL_CTX_GetCertManager(store_ctx);
+  if (!cm) { return false; }
+
+  // We need to re-load the certs - wolfSSL doesn't support direct CM sharing
+  // For now, this is a simplified implementation
+  (void)wctx;
+  (void)cm;
+  return false; // TODO: Implement proper CA store sharing for wolfSSL
+}
+
+inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
+  certs.clear();
+  if (!ctx) { return 0; }
+  // wolfSSL doesn't provide easy iteration over loaded CA certs
+  // This would require accessing internal cert manager structures
+  (void)ctx;
+  return 0;
+}
+
+inline std::vector<std::string> get_ca_names(ctx_t ctx) {
+  std::vector<std::string> names;
+  if (!ctx) { return names; }
+  // wolfSSL doesn't provide easy iteration over loaded CA cert names
+  (void)ctx;
+  return names;
+}
+
+inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
+                               const char *key_pem, const char *password) {
+  if (!ctx || !cert_pem || !key_pem) { return false; }
+  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  // Load new certificate
+  int ret = wolfSSL_CTX_use_certificate_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(cert_pem),
+      static_cast<long>(strlen(cert_pem)), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  // Set password if provided
+  if (password) {
+    wolfSSL_CTX_set_default_passwd_cb_userdata(wctx->ctx,
+                                               const_cast<char *>(password));
+    wolfSSL_CTX_set_default_passwd_cb(
+        wctx->ctx,
+        [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
+          auto *pwd = static_cast<const char *>(userdata);
+          if (!pwd) return 0;
+          auto len = static_cast<int>(strlen(pwd));
+          if (len > size) len = size;
+          memcpy(buf, pwd, static_cast<size_t>(len));
+          return len;
+        });
+  }
+
+  // Load new private key
+  ret = wolfSSL_CTX_use_PrivateKey_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(key_pem),
+      static_cast<long>(strlen(key_pem)), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+
+  return true;
+}
+
+inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
+  if (!ctx || !ca_pem) { return false; }
+  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  int ret = wolfSSL_CTX_load_verify_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(ca_pem),
+      static_cast<long>(strlen(ca_pem)), SSL_FILETYPE_PEM);
+  if (ret != SSL_SUCCESS) {
+    impl::wolfssl_last_error() =
+        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    return false;
+  }
+  return true;
+}
+
+inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
+  if (!ctx) { return false; }
+  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
+
+  impl::get_verify_callback() = std::move(callback);
+  wctx->has_verify_callback = static_cast<bool>(impl::get_verify_callback());
+
+  if (wctx->has_verify_callback) {
+    wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
+                           impl::wolfssl_verify_callback);
+  } else {
+    wolfSSL_CTX_set_verify(
+        wctx->ctx,
+        wctx->verify_client
+            ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
+            : SSL_VERIFY_NONE,
+        nullptr);
+  }
+  return true;
+}
+
+inline long get_verify_error(const_session_t session) {
+  if (!session) { return -1; }
+  auto *wsession =
+      static_cast<impl::WolfSSLSession *>(const_cast<void *>(session));
+  return wolfSSL_get_verify_result(wsession->ssl);
+}
+
+inline std::string verify_error_string(long error_code) {
+  if (error_code == 0) { return ""; }
+  const char *str =
+      wolfSSL_X509_verify_cert_error_string(static_cast<int>(error_code));
+  return str ? std::string(str) : std::string();
+}
+
+} // namespace tls
+
+#endif // CPPHTTPLIB_WOLFSSL_SUPPORT
 
 // WebSocket implementation
 namespace ws {

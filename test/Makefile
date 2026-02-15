@@ -11,9 +11,13 @@ ifneq ($(OS), Windows_NT)
 		MBEDTLS_DIR ?= $(shell brew --prefix mbedtls@3)
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -lmbedcrypto
 		MBEDTLS_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
+		WOLFSSL_DIR ?= $(shell brew --prefix wolfssl)
+		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -I$(WOLFSSL_DIR)/include -I$(WOLFSSL_DIR)/include/wolfssl -L$(WOLFSSL_DIR)/lib -lwolfssl
+		WOLFSSL_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
 	else
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -lssl -lcrypto
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -lmbedcrypto
+		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -lwolfssl
 	endif
 endif
 
@@ -38,6 +42,7 @@ endif
 
 TEST_ARGS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
 TEST_ARGS_MBEDTLS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(MBEDTLS_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
+TEST_ARGS_WOLFSSL = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(WOLFSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
 TEST_ARGS_NO_TLS = gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(ZSTD_SUPPORT) $(LIBS)
 
 # By default, use standalone_fuzz_target_runner.
@@ -81,13 +86,16 @@ define run_parallel
 	echo "All shards passed."
 endef
 
-.PHONY: test_openssl_parallel test_mbedtls_parallel test_no_tls_parallel
+.PHONY: test_openssl_parallel test_mbedtls_parallel test_wolfssl_parallel test_no_tls_parallel
 
 test_openssl_parallel : test
 	$(call run_parallel,test)
 
 test_mbedtls_parallel : test_mbedtls
 	$(call run_parallel,test_mbedtls)
+
+test_wolfssl_parallel : test_wolfssl
+	$(call run_parallel,test_wolfssl)
 
 test_no_tls_parallel : test_no_tls
 	$(call run_parallel,test_no_tls)
@@ -130,6 +138,25 @@ proxy_mbedtls : test_proxy_mbedtls
 	cd proxy && docker compose down; \
 	exit $$exit_code
 
+proxy_wolfssl : test_proxy_wolfssl
+	@echo "Starting proxy server..."
+	cd proxy && \
+	docker compose up -d
+	@echo "Waiting for proxy to be ready..."
+	@until nc -z localhost 3128 && nc -z localhost 3129; do sleep 1; done
+	@echo "Proxy servers are ready, waiting additional 5 seconds for full startup..."
+	@sleep 5
+	@echo "Checking proxy server status..."
+	@cd proxy && docker compose ps
+	@echo "Checking proxy server logs..."
+	@cd proxy && docker compose logs --tail=20
+	@echo "Running proxy tests (wolfSSL)..."
+	./test_proxy_wolfssl; \
+	exit_code=$$?; \
+	echo "Stopping proxy server..."; \
+	cd proxy && docker compose down; \
+	exit $$exit_code
+
 test : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS)
 	@file $@
@@ -146,6 +173,14 @@ test_mbedtls : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
 
 test_split_mbedtls : test.cc ../httplib.h httplib.cc Makefile cert.pem
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_MBEDTLS)
+
+# wolfSSL backend targets
+test_wolfssl : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS_WOLFSSL)
+	@file $@
+
+test_split_wolfssl : test.cc ../httplib.h httplib.cc Makefile cert.pem
+	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_WOLFSSL)
 
 # No TLS
 test_no_tls : test.cc include_httplib.cc ../httplib.h Makefile
@@ -194,6 +229,9 @@ test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 test_proxy_mbedtls : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS_MBEDTLS)
 
+test_proxy_wolfssl : test_proxy.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS_WOLFSSL)
+
 # Runs server_fuzzer.cc based on value of $(LIB_FUZZING_ENGINE).
 # Usage: make fuzz_test LIB_FUZZING_ENGINE=/path/to/libFuzzer
 fuzz_test: server_fuzzer
@@ -216,5 +254,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log
 
