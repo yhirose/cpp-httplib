@@ -440,8 +440,10 @@ using socket_t = int;
 #endif // CPPHTTPLIB_MBEDTLS_SUPPORT
 
 #ifdef CPPHTTPLIB_WOLFSSL_SUPPORT
-#include <wolfssl/openssl/x509v3.h>
 #include <wolfssl/options.h>
+
+#include <wolfssl/openssl/x509v3.h>
+
 #include <wolfssl/ssl.h>
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/md5.h>
