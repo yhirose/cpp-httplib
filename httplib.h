@@ -444,6 +444,20 @@ using socket_t = int;
 
 #include <wolfssl/openssl/x509v3.h>
 
+// Fallback definitions for older wolfSSL versions (e.g., 5.6.6)
+#ifndef WOLFSSL_GEN_EMAIL
+#define WOLFSSL_GEN_EMAIL 1
+#endif
+#ifndef WOLFSSL_GEN_DNS
+#define WOLFSSL_GEN_DNS 2
+#endif
+#ifndef WOLFSSL_GEN_URI
+#define WOLFSSL_GEN_URI 6
+#endif
+#ifndef WOLFSSL_GEN_IPADD
+#define WOLFSSL_GEN_IPADD 7
+#endif
+
 #include <wolfssl/ssl.h>
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/md5.h>
