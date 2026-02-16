@@ -9153,8 +9153,19 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
     auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
 
     if (cli != INVALID_SOCKET) {
+      // Read the full HTTP request (until \r\n\r\n)
       char buf[4096];
-      ::recv(cli, buf, sizeof(buf), 0);
+      size_t total = 0;
+      while (total < sizeof(buf)) {
+        auto n = ::recv(cli, buf + total, sizeof(buf) - total, 0);
+        if (n <= 0) break;
+        total += static_cast<size_t>(n);
+        // Check for end of headers
+        if (total >= 4) {
+          std::string req(buf, total);
+          if (req.find("\r\n\r\n") != std::string::npos) break;
+        }
+      }
 
       // Malicious response: gzip-compressed body, no Content-Length
       std::string response_header = "HTTP/1.1 200 OK\r\n"
@@ -11633,7 +11644,7 @@ TEST(TaskQueueTest, IncreaseAtomicIntegerWithQueueLimit) {
   unsigned int queued_count{0};
   std::atomic_uint count{0};
   std::unique_ptr<TaskQueue> task_queue{
-      new ThreadPool{/*num_threads=*/1, qlimit}};
+      new ThreadPool{/*num_threads=*/1, /*max_threads=*/1, qlimit}};
 
   for (unsigned int i = 0; i < number_of_tasks; ++i) {
     if (task_queue->enqueue(
@@ -11654,7 +11665,7 @@ TEST(TaskQueueTest, IncreaseAtomicIntegerWithQueueLimit) {
 
 TEST(TaskQueueTest, MaxQueuedRequests) {
   static constexpr unsigned int qlimit{3};
-  std::unique_ptr<TaskQueue> task_queue{new ThreadPool{1, qlimit}};
+  std::unique_ptr<TaskQueue> task_queue{new ThreadPool{1, 1, qlimit}};
   std::condition_variable sem_cv;
   std::mutex sem_mtx;
   int credits = 0;
