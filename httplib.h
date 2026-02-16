@@ -15396,6 +15396,107 @@ inline VerifyCallback &get_mbedtls_verify_callback() {
   return callback;
 }
 
+// Check if a string is an IPv4 address
+inline bool is_ipv4_address(const std::string &str) {
+  int dots = 0;
+  for (char c : str) {
+    if (c == '.') {
+      dots++;
+    } else if (!isdigit(static_cast<unsigned char>(c))) {
+      return false;
+    }
+  }
+  return dots == 3;
+}
+
+// Parse IPv4 address string to bytes
+inline bool parse_ipv4(const std::string &str, unsigned char *out) {
+  int parts[4];
+  if (sscanf(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
+             &parts[3]) != 4) {
+    return false;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (parts[i] < 0 || parts[i] > 255) return false;
+    out[i] = static_cast<unsigned char>(parts[i]);
+  }
+  return true;
+}
+
+#ifdef _WIN32
+// Enumerate Windows system certificates and call callback with DER data
+template <typename Callback>
+inline bool enumerate_windows_system_certs(Callback cb) {
+  bool loaded = false;
+  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
+  for (auto store_name : store_names) {
+    HCERTSTORE hStore = CertOpenSystemStoreW(0, store_name);
+    if (hStore) {
+      PCCERT_CONTEXT pContext = nullptr;
+      while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
+             nullptr) {
+        if (cb(pContext->pbCertEncoded, pContext->cbCertEncoded)) {
+          loaded = true;
+        }
+      }
+      CertCloseStore(hStore, 0);
+    }
+  }
+  return loaded;
+}
+#endif
+
+#if defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+// Enumerate macOS Keychain certificates and call callback with DER data
+template <typename Callback>
+inline bool enumerate_macos_keychain_certs(Callback cb) {
+  bool loaded = false;
+  CFArrayRef certs = nullptr;
+  OSStatus status = SecTrustCopyAnchorCertificates(&certs);
+  if (status == errSecSuccess && certs) {
+    CFIndex count = CFArrayGetCount(certs);
+    for (CFIndex i = 0; i < count; i++) {
+      SecCertificateRef cert =
+          (SecCertificateRef)CFArrayGetValueAtIndex(certs, i);
+      CFDataRef data = SecCertificateCopyData(cert);
+      if (data) {
+        if (cb(CFDataGetBytePtr(data),
+               static_cast<size_t>(CFDataGetLength(data)))) {
+          loaded = true;
+        }
+        CFRelease(data);
+      }
+    }
+    CFRelease(certs);
+  }
+  return loaded;
+}
+#endif
+
+#if !defined(_WIN32) && !(defined(__APPLE__) &&                                \
+                          defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN))
+// Common CA certificate file paths on Linux/Unix
+inline const char **system_ca_paths() {
+  static const char *paths[] = {
+      "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
+      "/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
+      "/etc/ssl/ca-bundle.pem",             // OpenSUSE
+      "/etc/pki/tls/cacert.pem",            // OpenELEC
+      "/etc/ssl/cert.pem",                  // Alpine, FreeBSD
+      nullptr};
+  return paths;
+}
+
+// Common CA certificate directory paths on Linux/Unix
+inline const char **system_ca_dirs() {
+  static const char *dirs[] = {"/etc/ssl/certs",             // Debian/Ubuntu
+                               "/etc/pki/tls/certs",         // RHEL/CentOS
+                               "/usr/share/ca-certificates", // Other
+                               nullptr};
+  return dirs;
+}
+#endif
+
 } // namespace impl
 
 inline bool set_client_ca_file(ctx_t ctx, const char *ca_file,
@@ -16972,33 +17073,6 @@ inline int mbedtls_sni_callback(void *p_ctx, mbedtls_ssl_context *ssl,
 inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
                                    int cert_depth, uint32_t *flags);
 
-// Check if a string is an IPv4 address
-inline bool is_ipv4_address(const std::string &str) {
-  int dots = 0;
-  for (char c : str) {
-    if (c == '.') {
-      dots++;
-    } else if (!isdigit(static_cast<unsigned char>(c))) {
-      return false;
-    }
-  }
-  return dots == 3;
-}
-
-// Parse IPv4 address string to bytes
-inline bool parse_ipv4(const std::string &str, unsigned char *out) {
-  int parts[4];
-  if (sscanf(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
-             &parts[3]) != 4) {
-    return false;
-  }
-  for (int i = 0; i < 4; i++) {
-    if (parts[i] < 0 || parts[i] > 255) return false;
-    out[i] = static_cast<unsigned char>(parts[i]);
-  }
-  return true;
-}
-
 // MbedTLS verify callback wrapper
 inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
                                    int cert_depth, uint32_t *flags) {
@@ -17213,68 +17287,26 @@ inline bool load_system_certs(ctx_t ctx) {
   bool loaded = false;
 
 #ifdef _WIN32
-  // Load from Windows certificate store (ROOT and CA)
-  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
-  for (auto store_name : store_names) {
-    HCERTSTORE hStore = CertOpenSystemStoreW(0, store_name);
-    if (hStore) {
-      PCCERT_CONTEXT pContext = nullptr;
-      while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
-             nullptr) {
-        int ret = mbedtls_x509_crt_parse_der(
-            &mctx->ca_chain, pContext->pbCertEncoded, pContext->cbCertEncoded);
-        if (ret == 0) { loaded = true; }
-      }
-      CertCloseStore(hStore, 0);
-    }
-  }
+  loaded = impl::enumerate_windows_system_certs(
+      [&](const unsigned char *data, size_t len) {
+        return mbedtls_x509_crt_parse_der(&mctx->ca_chain, data, len) == 0;
+      });
 #elif defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-  // Load from macOS Keychain
-  CFArrayRef certs = nullptr;
-  OSStatus status = SecTrustCopyAnchorCertificates(&certs);
-  if (status == errSecSuccess && certs) {
-    CFIndex count = CFArrayGetCount(certs);
-    for (CFIndex i = 0; i < count; i++) {
-      SecCertificateRef cert =
-          (SecCertificateRef)CFArrayGetValueAtIndex(certs, i);
-      CFDataRef data = SecCertificateCopyData(cert);
-      if (data) {
-        int ret = mbedtls_x509_crt_parse_der(
-            &mctx->ca_chain, CFDataGetBytePtr(data),
-            static_cast<size_t>(CFDataGetLength(data)));
-        if (ret == 0) { loaded = true; }
-        CFRelease(data);
-      }
-    }
-    CFRelease(certs);
-  }
+  loaded = impl::enumerate_macos_keychain_certs(
+      [&](const unsigned char *data, size_t len) {
+        return mbedtls_x509_crt_parse_der(&mctx->ca_chain, data, len) == 0;
+      });
 #else
-  // Try common CA certificate locations on Linux/Unix
-  static const char *ca_paths[] = {
-      "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
-      "/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
-      "/etc/ssl/ca-bundle.pem",             // OpenSUSE
-      "/etc/pki/tls/cacert.pem",            // OpenELEC
-      "/etc/ssl/cert.pem",                  // Alpine, FreeBSD
-      nullptr};
-
-  for (const char **path = ca_paths; *path; ++path) {
-    int ret = mbedtls_x509_crt_parse_file(&mctx->ca_chain, *path);
-    if (ret >= 0) {
+  for (auto path = impl::system_ca_paths(); *path; ++path) {
+    if (mbedtls_x509_crt_parse_file(&mctx->ca_chain, *path) >= 0) {
       loaded = true;
       break;
     }
   }
 
-  // Also try the CA directory
   if (!loaded) {
-    static const char *ca_dirs[] = {"/etc/ssl/certs",     // Debian/Ubuntu
-                                    "/etc/pki/tls/certs", // RHEL/CentOS
-                                    "/usr/share/ca-certificates", nullptr};
-
-    for (const char **dir = ca_dirs; *dir; ++dir) {
-      int ret = mbedtls_x509_crt_parse_path(&mctx->ca_chain, *dir);
-      if (ret >= 0) {
+    for (auto dir = impl::system_ca_dirs(); *dir; ++dir) {
+      if (mbedtls_x509_crt_parse_path(&mctx->ca_chain, *dir) >= 0) {
         loaded = true;
         break;
       }
@@ -18269,31 +18301,17 @@ inline int wolfssl_verify_callback(int preverify_ok,
   return accepted ? 1 : 0;
 }
 
-// Check if a string is an IPv4 address
-inline bool is_ipv4_address(const std::string &str) {
-  int dots = 0;
-  for (char c : str) {
-    if (c == '.') {
-      dots++;
-    } else if (!isdigit(static_cast<unsigned char>(c))) {
-      return false;
-    }
-  }
-  return dots == 3;
-}
-
-// Parse IPv4 address string to bytes
-inline bool parse_ipv4(const std::string &str, unsigned char *out) {
-  int parts[4];
-  if (sscanf(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
-             &parts[3]) != 4) {
-    return false;
-  }
-  for (int i = 0; i < 4; i++) {
-    if (parts[i] < 0 || parts[i] > 255) return false;
-    out[i] = static_cast<unsigned char>(parts[i]);
-  }
-  return true;
+inline void set_wolfssl_password_cb(WOLFSSL_CTX *ctx, const char *password) {
+  wolfSSL_CTX_set_default_passwd_cb_userdata(ctx, const_cast<char *>(password));
+  wolfSSL_CTX_set_default_passwd_cb(
+      ctx, [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
+        auto *pwd = static_cast<const char *>(userdata);
+        if (!pwd) return 0;
+        auto len = static_cast<int>(strlen(pwd));
+        if (len > size) len = size;
+        memcpy(buf, pwd, static_cast<size_t>(len));
+        return len;
+      });
 }
 
 } // namespace impl
@@ -18411,69 +18429,32 @@ inline bool load_system_certs(ctx_t ctx) {
   bool loaded = false;
 
 #ifdef _WIN32
-  // Load from Windows certificate store
-  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
-  for (auto store_name : store_names) {
-    HCERTSTORE hStore = CertOpenSystemStoreW(0, store_name);
-    if (hStore) {
-      PCCERT_CONTEXT pContext = nullptr;
-      while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
-             nullptr) {
-        int ret = wolfSSL_CTX_load_verify_buffer(
-            wctx->ctx, pContext->pbCertEncoded,
-            static_cast<long>(pContext->cbCertEncoded), SSL_FILETYPE_ASN1);
-        if (ret == SSL_SUCCESS) { loaded = true; }
-      }
-      CertCloseStore(hStore, 0);
-    }
-  }
+  loaded = impl::enumerate_windows_system_certs(
+      [&](const unsigned char *data, size_t len) {
+        return wolfSSL_CTX_load_verify_buffer(wctx->ctx, data,
+                                              static_cast<long>(len),
+                                              SSL_FILETYPE_ASN1) == SSL_SUCCESS;
+      });
 #elif defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-  // Load from macOS Keychain
-  CFArrayRef certs = nullptr;
-  OSStatus status = SecTrustCopyAnchorCertificates(&certs);
-  if (status == errSecSuccess && certs) {
-    CFIndex count = CFArrayGetCount(certs);
-    for (CFIndex i = 0; i < count; i++) {
-      SecCertificateRef cert =
-          (SecCertificateRef)CFArrayGetValueAtIndex(certs, i);
-      CFDataRef data = SecCertificateCopyData(cert);
-      if (data) {
-        int ret = wolfSSL_CTX_load_verify_buffer(
-            wctx->ctx, CFDataGetBytePtr(data),
-            static_cast<long>(CFDataGetLength(data)), SSL_FILETYPE_ASN1);
-        if (ret == SSL_SUCCESS) { loaded = true; }
-        CFRelease(data);
-      }
-    }
-    CFRelease(certs);
-  }
+  loaded = impl::enumerate_macos_keychain_certs(
+      [&](const unsigned char *data, size_t len) {
+        return wolfSSL_CTX_load_verify_buffer(wctx->ctx, data,
+                                              static_cast<long>(len),
+                                              SSL_FILETYPE_ASN1) == SSL_SUCCESS;
+      });
 #else
-  // Try common CA certificate locations on Linux/Unix
-  static const char *ca_paths[] = {
-      "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
-      "/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
-      "/etc/ssl/ca-bundle.pem",             // OpenSUSE
-      "/etc/pki/tls/cacert.pem",            // OpenELEC
-      "/etc/ssl/cert.pem",                  // Alpine, FreeBSD
-      nullptr};
-
-  for (const char **path = ca_paths; *path; ++path) {
-    int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, *path, nullptr);
-    if (ret == SSL_SUCCESS) {
+  for (auto path = impl::system_ca_paths(); *path; ++path) {
+    if (wolfSSL_CTX_load_verify_locations(wctx->ctx, *path, nullptr) ==
+        SSL_SUCCESS) {
       loaded = true;
       break;
     }
   }
 
-  // Also try the CA directory
   if (!loaded) {
-    static const char *ca_dirs[] = {"/etc/ssl/certs",     // Debian/Ubuntu
-                                    "/etc/pki/tls/certs", // RHEL/CentOS
-                                    "/usr/share/ca-certificates", nullptr};
-
-    for (const char **dir = ca_dirs; *dir; ++dir) {
-      int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, nullptr, *dir);
-      if (ret == SSL_SUCCESS) {
+    for (auto dir = impl::system_ca_dirs(); *dir; ++dir) {
+      if (wolfSSL_CTX_load_verify_locations(wctx->ctx, nullptr, *dir) ==
+          SSL_SUCCESS) {
         loaded = true;
         break;
       }
@@ -18500,20 +18481,7 @@ inline bool set_client_cert_pem(ctx_t ctx, const char *cert, const char *key,
   }
 
   // Set password callback if password is provided
-  if (password) {
-    wolfSSL_CTX_set_default_passwd_cb_userdata(wctx->ctx,
-                                               const_cast<char *>(password));
-    wolfSSL_CTX_set_default_passwd_cb(
-        wctx->ctx,
-        [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
-          auto *pwd = static_cast<const char *>(userdata);
-          if (!pwd) return 0;
-          auto len = static_cast<int>(strlen(pwd));
-          if (len > size) len = size;
-          memcpy(buf, pwd, static_cast<size_t>(len));
-          return len;
-        });
-  }
+  if (password) { impl::set_wolfssl_password_cb(wctx->ctx, password); }
 
   // Load private key
   ret = wolfSSL_CTX_use_PrivateKey_buffer(
@@ -18544,20 +18512,7 @@ inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
   }
 
   // Set password callback if password is provided
-  if (password) {
-    wolfSSL_CTX_set_default_passwd_cb_userdata(wctx->ctx,
-                                               const_cast<char *>(password));
-    wolfSSL_CTX_set_default_passwd_cb(
-        wctx->ctx,
-        [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
-          auto *pwd = static_cast<const char *>(userdata);
-          if (!pwd) return 0;
-          auto len = static_cast<int>(strlen(pwd));
-          if (len > size) len = size;
-          memcpy(buf, pwd, static_cast<size_t>(len));
-          return len;
-        });
-  }
+  if (password) { impl::set_wolfssl_password_cb(wctx->ctx, password); }
 
   // Load private key file
   ret = wolfSSL_CTX_use_PrivateKey_file(wctx->ctx, key_path, SSL_FILETYPE_PEM);
@@ -19248,20 +19203,7 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
   }
 
   // Set password if provided
-  if (password) {
-    wolfSSL_CTX_set_default_passwd_cb_userdata(wctx->ctx,
-                                               const_cast<char *>(password));
-    wolfSSL_CTX_set_default_passwd_cb(
-        wctx->ctx,
-        [](char *buf, int size, int /*rwflag*/, void *userdata) -> int {
-          auto *pwd = static_cast<const char *>(userdata);
-          if (!pwd) return 0;
-          auto len = static_cast<int>(strlen(pwd));
-          if (len > size) len = size;
-          memcpy(buf, pwd, static_cast<size_t>(len));
-          return len;
-        });
-  }
+  if (password) { impl::set_wolfssl_password_cb(wctx->ctx, password); }
 
   // Load new private key
   ret = wolfSSL_CTX_use_PrivateKey_buffer(
