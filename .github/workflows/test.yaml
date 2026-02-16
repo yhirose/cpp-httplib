@@ -77,7 +77,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     strategy:
       matrix:
-        tls_backend: [openssl, mbedtls]
+        tls_backend: [openssl, mbedtls, wolfssl]
     name: ubuntu (${{ matrix.tls_backend }})
     steps:
       - name: checkout
@@ -92,6 +92,9 @@ jobs:
       - name: install Mbed TLS
         if: matrix.tls_backend == 'mbedtls'
         run: sudo apt-get install -y libmbedtls-dev
+      - name: install wolfSSL
+        if: matrix.tls_backend == 'wolfssl'
+        run: sudo apt-get install -y libwolfssl-dev
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
         run: cd test && make test_split && make test_openssl_parallel
@@ -100,6 +103,9 @@ jobs:
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
         run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
+      - name: build and run tests (wolfSSL)
+        if: matrix.tls_backend == 'wolfssl'
+        run: cd test && make test_split_wolfssl && make test_wolfssl_parallel
       - name: run fuzz test target
         if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
@@ -118,7 +124,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
     strategy:
       matrix:
-        tls_backend: [openssl, mbedtls]
+        tls_backend: [openssl, mbedtls, wolfssl]
     name: macos (${{ matrix.tls_backend }})
     steps:
       - name: checkout
@@ -126,6 +132,9 @@ jobs:
       - name: install Mbed TLS
         if: matrix.tls_backend == 'mbedtls'
         run: brew install mbedtls@3
+      - name: install wolfSSL
+        if: matrix.tls_backend == 'wolfssl'
+        run: brew install wolfssl
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
         run: cd test && make test_split && make test_openssl_parallel
@@ -134,6 +143,9 @@ jobs:
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
         run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
+      - name: build and run tests (wolfSSL)
+        if: matrix.tls_backend == 'wolfssl'
+        run: cd test && make test_split_wolfssl && make test_wolfssl_parallel
       - name: run fuzz test target
         if: matrix.tls_backend == 'openssl'
         run: cd test && make fuzz_test
