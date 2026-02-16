@@ -643,6 +643,40 @@ inline from_chars_result<double> from_chars(const char *first, const char *last,
   return {first + (endptr - s.c_str()), std::errc{}};
 }
 
+// Cross platform, safe, sleep function.
+template <class Rep, class Period>
+inline void sleep_for (std::chrono::duration<Rep, Period> duration)
+{
+  assert(duration > decltype(duration){0});
+
+#ifdef _MSC_VER
+  // The MSVC implementation of this_thread::sleep_for() uses the system clock
+  // and so is vulnerable to system clock changes (e.g. by the user or NTP
+  // sync). This means a call like sleep_for(1ms) may end up suspending the
+  // thread indefinitely. To avoid this, we use the Win32 ::Sleep() function
+  // instead.
+  //
+  // Note: ::Sleep() takes a duration in milliseconds however some places
+  // specify a sleep duration in microseconds. The MSVC this_thread::sleep_for()
+  // implementation converts the specified duration to milliseconds, and
+  // enforces a minimum sleep of 1ms. We do the same here for parity.
+  //
+  // Note: strictly speaking, calling the MSVC this_thread::sleep_for() with a
+  // very short duration may not suspend execution at all, however this is not
+  // our intent.
+  const auto duration_ms = static_cast<DWORD>(std::clamp<Rep>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(duration).count(),
+    1,
+    INFINITE - 1
+  ));
+  ::Sleep(duration_ms);
+#else
+  // For other STL implementations we trust that this_thread::sleep_for() is
+  // implemented using a steady clock.
+  std::this_thread::sleep_for(duration);
+#endif
+}
+
 } // namespace detail
 
 enum SSLVerifierResponse {
@@ -3862,7 +3896,7 @@ inline void SSEClient::wait_for_reconnect() {
   // Use small increments to check running_ flag frequently
   auto waited = 0;
   while (running_.load() && waited < reconnect_interval_ms_) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    detail::sleep_for(std::chrono::milliseconds(100));
     waited += 100;
   }
 }
@@ -5074,7 +5108,7 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
   while (true) {
     res = fn();
     if (res < 0 && errno == EINTR) {
-      std::this_thread::sleep_for(std::chrono::microseconds{1});
+      detail::sleep_for(std::chrono::microseconds{1});
       continue;
     }
     break;
@@ -9851,7 +9885,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
         if (tls::pending(session_) > 0) {
           return tls::read(session_, ptr, size, err);
         } else if (wait_readable()) {
-          std::this_thread::sleep_for(std::chrono::microseconds{10});
+          detail::sleep_for(std::chrono::microseconds{10});
           ret = tls::read(session_, ptr, size, err);
           if (ret >= 0) { return ret; }
         } else {
@@ -9886,7 +9920,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
       while (--n >= 0 && err.code == tls::ErrorCode::WantWrite) {
 #endif
         if (wait_writable()) {
-          std::this_thread::sleep_for(std::chrono::microseconds{10});
+          detail::sleep_for(std::chrono::microseconds{10});
           ret = tls::write(session_, ptr, handle_size, err);
           if (ret >= 0) { return ret; }
         } else {
@@ -10219,7 +10253,7 @@ inline bool Server::is_running() const { return is_running_; }
 
 inline void Server::wait_until_ready() const {
   while (!is_running_ && !is_decommissioned) {
-    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    detail::sleep_for(std::chrono::milliseconds{1});
   }
 }
 
@@ -10835,7 +10869,7 @@ inline bool Server::listen_internal() {
         if (errno == EMFILE) {
           // The per-process limit of open file descriptors has been reached.
           // Try to accept new connections after a short sleep.
-          std::this_thread::sleep_for(std::chrono::microseconds{1});
+          detail::sleep_for(std::chrono::microseconds{1});
           continue;
         } else if (errno == EINTR || errno == EAGAIN) {
           continue;
@@ -11481,7 +11515,7 @@ inline ClientImpl::~ClientImpl() {
       std::lock_guard<std::mutex> guard(socket_mutex_);
       if (socket_requests_in_flight_ == 0) { break; }
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    detail::sleep_for(std::chrono::milliseconds{1});
   }
 
   std::lock_guard<std::mutex> guard(socket_mutex_);
@@ -12581,7 +12615,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
         break;
       }
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      detail::sleep_for(std::chrono::milliseconds(1));
     }
   }
 #endif
