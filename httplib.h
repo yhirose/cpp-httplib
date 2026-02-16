@@ -446,7 +446,6 @@ using socket_t = int;
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/md5.h>
 #include <wolfssl/wolfcrypt/sha256.h>
-#include <wolfssl/wolfcrypt/sha512.h>
 #ifdef _WIN32
 #include <wincrypt.h>
 #ifdef _MSC_VER
@@ -18163,6 +18162,10 @@ inline uint64_t &wolfssl_last_error() {
   return err;
 }
 
+inline uint64_t wolfssl_peek_error() {
+  return static_cast<uint64_t>(wolfSSL_ERR_peek_error());
+}
+
 // Helper to map wolfSSL error to ErrorCode.
 // ssl_error is the value from wolfSSL_get_error().
 // raw_ret is the raw return value from the wolfSSL call (for low-level error).
@@ -18178,10 +18181,11 @@ inline ErrorCode map_wolfssl_error(WOLFSSL *ssl, int ssl_error,
     if (ssl) {
       // wolfSSL stores the low-level error code as a negative value.
       // DOMAIN_NAME_MISMATCH (-322) indicates hostname verification failure.
-      int low_err = ssl_error; // wolfSSL_get_error returns the low-level code
-      if (low_err == DOMAIN_NAME_MISMATCH) {
+#ifdef DOMAIN_NAME_MISMATCH
+      if (ssl_error == DOMAIN_NAME_MISMATCH) {
         return ErrorCode::HostnameMismatch;
       }
+#endif
       // Check verify result to distinguish cert verification from generic SSL
       // errors.
       long vr = wolfSSL_get_verify_result(ssl);
@@ -18209,6 +18213,7 @@ inline int wolfssl_sni_callback(WOLFSSL *ssl, int *ret, void *exArg) {
   (void)ret;
   (void)exArg;
 
+#ifdef HAVE_SNI
   void *name_data = nullptr;
   unsigned short name_len =
       wolfSSL_SNI_GetRequest(ssl, WOLFSSL_SNI_HOST_NAME, &name_data);
@@ -18219,6 +18224,10 @@ inline int wolfssl_sni_callback(WOLFSSL *ssl, int *ret, void *exArg) {
   } else {
     wolfssl_pending_sni().clear();
   }
+#else
+  (void)ssl;
+  wolfssl_pending_sni().clear();
+#endif
   return 0; // Continue regardless
 }
 
@@ -18328,8 +18337,10 @@ inline ctx_t create_server_context() {
   wolfSSL_CTX_set_verify(ctx->ctx, SSL_VERIFY_NONE, nullptr);
 
   // Enable SNI on server
+#ifdef HAVE_SNI
   wolfSSL_CTX_SNI_SetOptions(ctx->ctx, WOLFSSL_SNI_HOST_NAME,
                              WOLFSSL_SNI_CONTINUE_ON_MISMATCH);
+#endif
 
   return static_cast<ctx_t>(ctx);
 }
@@ -18356,8 +18367,7 @@ inline bool load_ca_pem(ctx_t ctx, const char *pem, size_t len) {
       wctx->ctx, reinterpret_cast<const unsigned char *>(pem),
       static_cast<long>(len), SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
   return true;
@@ -18369,8 +18379,7 @@ inline bool load_ca_file(ctx_t ctx, const char *file_path) {
 
   int ret = wolfSSL_CTX_load_verify_locations(wctx->ctx, file_path, nullptr);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
   return true;
@@ -18478,8 +18487,7 @@ inline bool set_client_cert_pem(ctx_t ctx, const char *cert, const char *key,
       wctx->ctx, reinterpret_cast<const unsigned char *>(cert),
       static_cast<long>(strlen(cert)), SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
 
@@ -18504,8 +18512,7 @@ inline bool set_client_cert_pem(ctx_t ctx, const char *cert, const char *key,
       wctx->ctx, reinterpret_cast<const unsigned char *>(key),
       static_cast<long>(strlen(key)), SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
 
@@ -18522,8 +18529,7 @@ inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
   int ret =
       wolfSSL_CTX_use_certificate_file(wctx->ctx, cert_path, SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
 
@@ -18546,8 +18552,7 @@ inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
   // Load private key file
   ret = wolfSSL_CTX_use_PrivateKey_file(wctx->ctx, key_path, SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
 
@@ -18583,8 +18588,7 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   session->sock = sock;
   session->ssl = wolfSSL_new(wctx->ctx);
   if (!session->ssl) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     delete session;
     return nullptr;
   }
@@ -18593,7 +18597,9 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
 
   // Set up SNI callback for server
   if (wctx->is_server) {
+#ifdef HAVE_SNI
     wolfSSL_CTX_set_servername_callback(wctx->ctx, impl::wolfssl_sni_callback);
+#endif
   }
 
   return static_cast<session_t>(session);
@@ -18607,13 +18613,14 @@ inline bool set_sni(session_t session, const char *hostname) {
   if (!session || !hostname) { return false; }
   auto wsession = static_cast<impl::WolfSSLSession *>(session);
 
+#ifdef HAVE_SNI
   int ret = wolfSSL_UseSNI(wsession->ssl, WOLFSSL_SNI_HOST_NAME, hostname,
                            static_cast<word16>(strlen(hostname)));
   if (ret != WOLFSSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
+#endif
 
   // Also set hostname for verification
   wolfSSL_check_domain_name(wsession->ssl, hostname);
@@ -18949,7 +18956,11 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 }
 
 inline uint64_t hostname_mismatch_code() {
+#ifdef DOMAIN_NAME_MISMATCH
   return static_cast<uint64_t>(DOMAIN_NAME_MISMATCH);
+#else
+  return 0;
+#endif
 }
 
 inline long get_verify_result(const_session_t session) {
@@ -19147,9 +19158,7 @@ inline const char *get_sni(const_session_t session) {
   return nullptr;
 }
 
-inline uint64_t peek_error() {
-  return static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
-}
+inline uint64_t peek_error() { return impl::wolfssl_peek_error(); }
 
 inline uint64_t get_error() {
   uint64_t err = impl::wolfssl_last_error();
@@ -19226,8 +19235,7 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
       wctx->ctx, reinterpret_cast<const unsigned char *>(cert_pem),
       static_cast<long>(strlen(cert_pem)), SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
 
@@ -19252,8 +19260,7 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
       wctx->ctx, reinterpret_cast<const unsigned char *>(key_pem),
       static_cast<long>(strlen(key_pem)), SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
 
@@ -19268,8 +19275,7 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
       wctx->ctx, reinterpret_cast<const unsigned char *>(ca_pem),
       static_cast<long>(strlen(ca_pem)), SSL_FILETYPE_PEM);
   if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    impl::wolfssl_last_error() = impl::wolfssl_peek_error();
     return false;
   }
   return true;
