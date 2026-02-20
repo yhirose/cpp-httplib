@@ -18370,6 +18370,7 @@ inline ctx_t create_server_context() {
   // Enable SNI on server
   wolfSSL_CTX_SNI_SetOptions(ctx->ctx, WOLFSSL_SNI_HOST_NAME,
                              WOLFSSL_SNI_CONTINUE_ON_MISMATCH);
+  wolfSSL_CTX_set_servername_callback(ctx->ctx, impl::wolfssl_sni_callback);
 
   return static_cast<ctx_t>(ctx);
 }
@@ -18568,11 +18569,6 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   }
 
   wolfSSL_set_fd(session->ssl, static_cast<int>(sock));
-
-  // Set up SNI callback for server
-  if (wctx->is_server) {
-    wolfSSL_CTX_set_servername_callback(wctx->ctx, impl::wolfssl_sni_callback);
-  }
 
   return static_cast<session_t>(session);
 }
@@ -18837,9 +18833,9 @@ inline bool is_peer_closed(session_t session, socket_t sock) {
   auto cleanup =
       detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
 
-  // Try a 1-byte read to check connection status
+  // Peek 1 byte to check connection status without consuming data
   unsigned char buf;
-  int ret = wolfSSL_read(wsession->ssl, &buf, 1);
+  int ret = wolfSSL_peek(wsession->ssl, &buf, 1);
 
   // If we got data or WANT_READ (would block), connection is alive
   if (ret > 0) { return false; }
