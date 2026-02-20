@@ -41,3 +41,6 @@ build:
     @(cd test && make test_split)
     @(cd test && make test_split_mbedtls)
     @(cd test && make test_split_wolfssl)
+
+bench:
+    @(cd benchmark && make bench-all)
