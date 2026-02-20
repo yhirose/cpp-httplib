@@ -468,6 +468,34 @@ svr.set_pre_request_handler([](const auto& req, auto& res) {
 });
 ```
 
+### Response user data
+
+`res.user_data` is a `std::map<std::string, httplib::any>` that lets pre-routing or pre-request handlers pass arbitrary data to route handlers.
+
+```cpp
+struct AuthContext {
+  std::string user_id;
+  std::string role;
+};
+
+svr.set_pre_routing_handler([](const auto& req, auto& res) {
+  auto token = req.get_header_value("Authorization");
+  res.user_data["auth"] = AuthContext{decode_token(token)};
+  return Server::HandlerResponse::Unhandled;
+});
+
+svr.Get("/me", [](const auto& /*req*/, auto& res) {
+  auto* ctx = httplib::any_cast<AuthContext>(&res.user_data["auth"]);
+  if (!ctx) {
+    res.status = StatusCode::Unauthorized_401;
+    return;
+  }
+  res.set_content("Hello " + ctx->user_id, "text/plain");
+});
+```
+
+`httplib::any` mirrors the C++17 `std::any` API. On C++17 and later it is an alias for `std::any`; on C++11/14 a compatible implementation is provided.
+
 ### Form data handling
 
 #### URL-encoded form data ('application/x-www-form-urlencoded')

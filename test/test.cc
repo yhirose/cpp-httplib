@@ -3000,6 +3000,113 @@ TEST(RequestHandlerTest, PreRequestHandler) {
   }
 }
 
+TEST(AnyTest, BasicOperations) {
+  // Default construction
+  httplib::any a;
+  EXPECT_FALSE(a.has_value());
+
+  // Value construction and any_cast (pointer form, noexcept)
+  httplib::any b(42);
+  EXPECT_TRUE(b.has_value());
+  auto *p = httplib::any_cast<int>(&b);
+  ASSERT_NE(nullptr, p);
+  EXPECT_EQ(42, *p);
+
+  // Type mismatch → nullptr
+  auto *q = httplib::any_cast<std::string>(&b);
+  EXPECT_EQ(nullptr, q);
+
+  // any_cast (value form) succeeds
+  EXPECT_EQ(42, httplib::any_cast<int>(b));
+
+  // any_cast (value form) throws on type mismatch
+  EXPECT_THROW(httplib::any_cast<std::string>(b), httplib::bad_any_cast);
+
+  // Copy
+  httplib::any c = b;
+  EXPECT_EQ(42, httplib::any_cast<int>(c));
+
+  // Move
+  httplib::any d = std::move(c);
+  EXPECT_EQ(42, httplib::any_cast<int>(d));
+
+  // Assignment with different type
+  b = std::string("hello");
+  EXPECT_EQ("hello", httplib::any_cast<std::string>(b));
+
+  // Reset
+  b.reset();
+  EXPECT_FALSE(b.has_value());
+}
+
+TEST(RequestHandlerTest, ResponseUserDataInPreRouting) {
+  struct AuthCtx {
+    std::string user_id;
+  };
+
+  Server svr;
+
+  svr.set_pre_routing_handler([](const Request & /*req*/, Response &res) {
+    res.user_data["auth"] = AuthCtx{"alice"};
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  svr.Get("/me", [](const Request & /*req*/, Response &res) {
+    auto *ctx = httplib::any_cast<AuthCtx>(&res.user_data["auth"]);
+    ASSERT_NE(nullptr, ctx);
+    res.set_content("Hello " + ctx->user_id, "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/me");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("Hello alice", res->body);
+}
+
+TEST(RequestHandlerTest, ResponseUserDataInPreRequest) {
+  struct RoleCtx {
+    std::string role;
+  };
+
+  Server svr;
+
+  svr.set_pre_request_handler([](const Request & /*req*/, Response &res) {
+    res.user_data["role"] = RoleCtx{"admin"};
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  svr.Get("/role", [](const Request & /*req*/, Response &res) {
+    auto *ctx = httplib::any_cast<RoleCtx>(&res.user_data["role"]);
+    ASSERT_NE(nullptr, ctx);
+    res.set_content(ctx->role, "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/role");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("admin", res->body);
+}
+
 TEST(InvalidFormatTest, StatusCode) {
   Server svr;
 
