@@ -75,6 +75,9 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 > [!NOTE]
 > wolfSSL must be built with OpenSSL compatibility layer enabled (`--enable-opensslall`). wolfSSL 5.x is supported.
 
+> [!NOTE]
+> **Mbed TLS / wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()` or `load_ca_cert_store(pem, size)`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable with these backends.
+
 > [!TIP]
 > For macOS: cpp-httplib can use system certs with `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`. `CoreFoundation` and `Security` should be linked with `-framework`.
 

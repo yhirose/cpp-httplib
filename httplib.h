@@ -3071,12 +3071,18 @@ struct WolfSSLContext {
   bool is_server = false;
   bool verify_client = false;
   bool has_verify_callback = false;
+  std::string ca_pem_data_; // accumulated PEM for get_ca_names/get_ca_certs
 
   WolfSSLContext();
   ~WolfSSLContext();
 
   WolfSSLContext(const WolfSSLContext &) = delete;
   WolfSSLContext &operator=(const WolfSSLContext &) = delete;
+};
+
+// CA store for wolfSSL: holds raw PEM bytes to allow reloading into any ctx
+struct WolfSSLCAStore {
+  std::string pem_data;
 };
 
 } // namespace impl
@@ -18394,6 +18400,7 @@ inline bool load_ca_pem(ctx_t ctx, const char *pem, size_t len) {
         static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
     return false;
   }
+  wctx->ca_pem_data_.append(pem, len);
   return true;
 }
 
@@ -19135,55 +19142,89 @@ inline std::string error_string(uint64_t code) {
 }
 
 inline ca_store_t create_ca_store(const char *pem, size_t len) {
-  // Create a temporary CTX to hold the CA certificates
+  if (!pem || len == 0) { return nullptr; }
+  // Validate by attempting to load into a temporary ctx
   WOLFSSL_CTX *tmp_ctx = wolfSSL_CTX_new(wolfTLSv1_2_client_method());
   if (!tmp_ctx) { return nullptr; }
-
   int ret = wolfSSL_CTX_load_verify_buffer(
       tmp_ctx, reinterpret_cast<const unsigned char *>(pem),
       static_cast<long>(len), SSL_FILETYPE_PEM);
-  if (ret != SSL_SUCCESS) {
-    wolfSSL_CTX_free(tmp_ctx);
-    return nullptr;
-  }
-
-  return static_cast<ca_store_t>(tmp_ctx);
+  wolfSSL_CTX_free(tmp_ctx);
+  if (ret != SSL_SUCCESS) { return nullptr; }
+  return static_cast<ca_store_t>(
+      new impl::WolfSSLCAStore{std::string(pem, len)});
 }
 
 inline void free_ca_store(ca_store_t store) {
-  if (store) { wolfSSL_CTX_free(static_cast<WOLFSSL_CTX *>(store)); }
+  delete static_cast<impl::WolfSSLCAStore *>(store);
 }
 
 inline bool set_ca_store(ctx_t ctx, ca_store_t store) {
   if (!ctx || !store) { return false; }
   auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
-  auto *store_ctx = static_cast<WOLFSSL_CTX *>(store);
-
-  // Get the cert manager from the store context and load into our context
-  WOLFSSL_CERT_MANAGER *cm = wolfSSL_CTX_GetCertManager(store_ctx);
-  if (!cm) { return false; }
-
-  // We need to re-load the certs - wolfSSL doesn't support direct CM sharing
-  // For now, this is a simplified implementation
-  (void)wctx;
-  (void)cm;
-  return false; // TODO: Implement proper CA store sharing for wolfSSL
+  auto *ca = static_cast<impl::WolfSSLCAStore *>(store);
+  int ret = wolfSSL_CTX_load_verify_buffer(
+      wctx->ctx, reinterpret_cast<const unsigned char *>(ca->pem_data.data()),
+      static_cast<long>(ca->pem_data.size()), SSL_FILETYPE_PEM);
+  if (ret == SSL_SUCCESS) { wctx->ca_pem_data_ += ca->pem_data; }
+  return ret == SSL_SUCCESS;
 }
 
 inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
   certs.clear();
   if (!ctx) { return 0; }
-  // wolfSSL doesn't provide easy iteration over loaded CA certs
-  // This would require accessing internal cert manager structures
-  (void)ctx;
-  return 0;
+  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
+  if (wctx->ca_pem_data_.empty()) { return 0; }
+
+  const std::string &pem = wctx->ca_pem_data_;
+  const std::string begin_marker = "-----BEGIN CERTIFICATE-----";
+  const std::string end_marker = "-----END CERTIFICATE-----";
+  size_t pos = 0;
+  while ((pos = pem.find(begin_marker, pos)) != std::string::npos) {
+    size_t end_pos = pem.find(end_marker, pos);
+    if (end_pos == std::string::npos) { break; }
+    end_pos += end_marker.size();
+    std::string cert_pem = pem.substr(pos, end_pos - pos);
+    WOLFSSL_X509 *x509 = wolfSSL_X509_load_certificate_buffer(
+        reinterpret_cast<const unsigned char *>(cert_pem.data()),
+        static_cast<int>(cert_pem.size()), WOLFSSL_FILETYPE_PEM);
+    if (x509) { certs.push_back(static_cast<cert_t>(x509)); }
+    pos = end_pos;
+  }
+  return certs.size();
 }
 
 inline std::vector<std::string> get_ca_names(ctx_t ctx) {
   std::vector<std::string> names;
   if (!ctx) { return names; }
-  // wolfSSL doesn't provide easy iteration over loaded CA cert names
-  (void)ctx;
+  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
+  if (wctx->ca_pem_data_.empty()) { return names; }
+
+  const std::string &pem = wctx->ca_pem_data_;
+  const std::string begin_marker = "-----BEGIN CERTIFICATE-----";
+  const std::string end_marker = "-----END CERTIFICATE-----";
+  size_t pos = 0;
+  while ((pos = pem.find(begin_marker, pos)) != std::string::npos) {
+    size_t end_pos = pem.find(end_marker, pos);
+    if (end_pos == std::string::npos) { break; }
+    end_pos += end_marker.size();
+    std::string cert_pem = pem.substr(pos, end_pos - pos);
+    WOLFSSL_X509 *x509 = wolfSSL_X509_load_certificate_buffer(
+        reinterpret_cast<const unsigned char *>(cert_pem.data()),
+        static_cast<int>(cert_pem.size()), WOLFSSL_FILETYPE_PEM);
+    if (x509) {
+      WOLFSSL_X509_NAME *subject = wolfSSL_X509_get_subject_name(x509);
+      if (subject) {
+        char *name_str = wolfSSL_X509_NAME_oneline(subject, nullptr, 0);
+        if (name_str) {
+          names.push_back(name_str);
+          XFREE(name_str, nullptr, DYNAMIC_TYPE_OPENSSL);
+        }
+      }
+      wolfSSL_X509_free(x509);
+    }
+    pos = end_pos;
+  }
   return names;
 }
 
