@@ -886,7 +886,11 @@ template <typename T> T any_cast(const any &a) {
   using U =
       typename std::remove_cv<typename std::remove_reference<T>::type>::type;
   const U *p = any_cast<U>(&a);
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
   if (!p) { throw bad_any_cast{}; }
+#else
+  if (!p) { std::abort(); }
+#endif
   return static_cast<T>(*p);
 }
 
@@ -894,7 +898,11 @@ template <typename T> T any_cast(any &a) {
   using U =
       typename std::remove_cv<typename std::remove_reference<T>::type>::type;
   U *p = any_cast<U>(&a);
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
   if (!p) { throw bad_any_cast{}; }
+#else
+  if (!p) { std::abort(); }
+#endif
   return static_cast<T>(*p);
 }
 
@@ -902,7 +910,11 @@ template <typename T> T any_cast(any &&a) {
   using U =
       typename std::remove_cv<typename std::remove_reference<T>::type>::type;
   U *p = any_cast<U>(&a);
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
   if (!p) { throw bad_any_cast{}; }
+#else
+  if (!p) { std::abort(); }
+#endif
   return static_cast<T>(std::move(*p));
 }
 
@@ -7948,7 +7960,7 @@ make_multipart_content_provider(const UploadFormDataItems &items,
       if (seg.size > 0 && offset - pos < seg.size) {
         size_t seg_offset = offset - pos;
         size_t available = seg.size - seg_offset;
-        size_t to_write = std::min(available, length);
+        size_t to_write = (std::min)(available, length);
         return sink.write(seg.data + seg_offset, to_write);
       }
       pos += seg.size;

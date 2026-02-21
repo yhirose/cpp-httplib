@@ -3020,7 +3020,9 @@ TEST(AnyTest, BasicOperations) {
   EXPECT_EQ(42, httplib::any_cast<int>(b));
 
   // any_cast (value form) throws on type mismatch
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
   EXPECT_THROW(httplib::any_cast<std::string>(b), httplib::bad_any_cast);
+#endif
 
   // Copy
   httplib::any c = b;
