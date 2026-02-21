@@ -11725,6 +11725,100 @@ TEST(MultipartFormDataTest, LargeHeader) {
   ASSERT_EQ("200", response.substr(9, 3));
 }
 
+TEST(MultipartFormDataTest, UploadItemsHasContentLength) {
+  // Verify that Post(path, headers, UploadFormDataItems) sends Content-Length
+  // (not chunked Transfer-Encoding) after the streaming refactor.
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/upload", [&](const Request &req, Response &res) {
+    auto cl_it = req.headers.find("Content-Length");
+    EXPECT_TRUE(cl_it != req.headers.end());
+    auto te_it = req.headers.find("Transfer-Encoding");
+    EXPECT_TRUE(te_it == req.headers.end());
+    EXPECT_EQ(2u, req.form.fields.size() + req.form.files.size());
+    res.set_content("ok", "text/plain");
+    handled = true;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  UploadFormDataItems items = {
+      {"field1", "hello", "", "text/plain"},
+      {"file1", "world", "test.txt", "application/octet-stream"},
+  };
+
+  Client cli(HOST, port);
+  auto res = cli.Post("/upload", {}, items);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(MultipartFormDataTest, MakeFileProvider) {
+  // Verify make_file_provider sends a file's contents correctly.
+  const std::string file_content(4096, 'Z');
+  const std::string tmp_path = "/tmp/httplib_test_make_file_provider.bin";
+  {
+    std::ofstream ofs(tmp_path, std::ios::binary);
+    ofs.write(file_content.data(),
+              static_cast<std::streamsize>(file_content.size()));
+  }
+
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/upload", [&](const Request &req, Response & /*res*/,
+                          const ContentReader &content_reader) {
+    ASSERT_TRUE(req.is_multipart_form_data());
+    std::vector<FormData> items;
+    content_reader(
+        [&](const FormData &file) {
+          items.push_back(file);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          items.back().content.append(data, data_length);
+          return true;
+        });
+    ASSERT_EQ(1u, items.size());
+    EXPECT_EQ("myfile", items[0].name);
+    EXPECT_EQ("data.bin", items[0].filename);
+    EXPECT_EQ("application/octet-stream", items[0].content_type);
+    EXPECT_EQ(file_content, items[0].content);
+    handled = true;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+    std::remove(tmp_path.c_str());
+  });
+
+  svr.wait_until_ready();
+
+  FormDataProviderItems providers;
+  providers.push_back(make_file_provider("myfile", tmp_path, "data.bin",
+                                         "application/octet-stream"));
+
+  Client cli(HOST, port);
+  auto res = cli.Post("/upload", {}, {}, providers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
   static constexpr unsigned int number_of_tasks{1000000};
   std::atomic_uint count{0};

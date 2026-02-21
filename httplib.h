@@ -334,6 +334,7 @@ using socket_t = int;
 #include <errno.h>
 #include <exception>
 #include <fcntl.h>
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -1000,6 +1001,34 @@ struct FormDataProvider {
   std::string content_type;
 };
 using FormDataProviderItems = std::vector<FormDataProvider>;
+
+inline FormDataProvider
+make_file_provider(const std::string &name, const std::string &filepath,
+                   const std::string &filename = std::string(),
+                   const std::string &content_type = std::string()) {
+  FormDataProvider fdp;
+  fdp.name = name;
+  fdp.filename = filename.empty() ? filepath : filename;
+  fdp.content_type = content_type;
+  fdp.provider = [filepath](size_t offset, DataSink &sink) -> bool {
+    std::ifstream f(filepath, std::ios::binary);
+    if (!f) { return false; }
+    if (offset > 0) {
+      f.seekg(static_cast<std::streamoff>(offset));
+      if (!f.good()) {
+        sink.done();
+        return true;
+      }
+    }
+    char buf[8192];
+    f.read(buf, sizeof(buf));
+    auto n = static_cast<size_t>(f.gcount());
+    if (n > 0) { return sink.write(buf, n); }
+    sink.done(); // EOF
+    return true;
+  };
+  return fdp;
+}
 
 using ContentReceiverWithProgress = std::function<bool(
     const char *data, size_t data_length, size_t offset, size_t total_length)>;
@@ -7870,6 +7899,64 @@ serialize_multipart_formdata(const UploadFormDataItems &items,
   return body;
 }
 
+inline size_t get_multipart_content_length(const UploadFormDataItems &items,
+                                           const std::string &boundary) {
+  size_t total = 0;
+  for (const auto &item : items) {
+    total += serialize_multipart_formdata_item_begin(item, boundary).size();
+    total += item.content.size();
+    total += serialize_multipart_formdata_item_end().size();
+  }
+  total += serialize_multipart_formdata_finish(boundary).size();
+  return total;
+}
+
+struct MultipartSegment {
+  const char *data;
+  size_t size;
+};
+
+// NOTE: items must outlive the returned ContentProvider
+//       (safe for synchronous use inside Post/Put/Patch)
+inline ContentProvider
+make_multipart_content_provider(const UploadFormDataItems &items,
+                                const std::string &boundary) {
+  // Own the per-item header strings and the finish string
+  std::vector<std::string> owned;
+  owned.reserve(items.size() + 1);
+  for (const auto &item : items)
+    owned.push_back(serialize_multipart_formdata_item_begin(item, boundary));
+  owned.push_back(serialize_multipart_formdata_finish(boundary));
+
+  // Flat segment list: [header, content, "\r\n"] * N + [finish]
+  std::vector<MultipartSegment> segs;
+  segs.reserve(items.size() * 3 + 1);
+  static const char crlf[] = "\r\n";
+  for (size_t i = 0; i < items.size(); i++) {
+    segs.push_back({owned[i].data(), owned[i].size()});
+    segs.push_back({items[i].content.data(), items[i].content.size()});
+    segs.push_back({crlf, 2});
+  }
+  segs.push_back({owned.back().data(), owned.back().size()});
+
+  return [owned = std::move(owned), segs = std::move(segs)](
+             size_t offset, size_t length, DataSink &sink) -> bool {
+    size_t pos = 0;
+    for (const auto &seg : segs) {
+      // Loop invariant: pos <= offset (proven by advancing pos only when
+      // offset - pos >= seg.size, i.e., the segment doesn't contain offset)
+      if (seg.size > 0 && offset - pos < seg.size) {
+        size_t seg_offset = offset - pos;
+        size_t available = seg.size - seg_offset;
+        size_t to_write = std::min(available, length);
+        return sink.write(seg.data + seg_offset, to_write);
+      }
+      pos += seg.size;
+    }
+    return true; // past end (shouldn't be reached when content_length is exact)
+  };
+}
+
 inline void coalesce_ranges(Ranges &ranges, size_t content_length) {
   if (ranges.size() <= 1) return;
 
@@ -13402,8 +13489,10 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-  const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Post(path, headers, body, content_type, progress);
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  return Post(path, headers, content_length,
+              detail::make_multipart_content_provider(items, boundary),
+              content_type, progress);
 }
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
@@ -13416,8 +13505,10 @@ inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
 
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-  const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Post(path, headers, body, content_type, progress);
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  return Post(path, headers, content_length,
+              detail::make_multipart_content_provider(items, boundary),
+              content_type, progress);
 }
 
 inline Result ClientImpl::Post(const std::string &path, const Headers &headers,
@@ -13595,8 +13686,10 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-  const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Put(path, headers, body, content_type, progress);
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  return Put(path, headers, content_length,
+             detail::make_multipart_content_provider(items, boundary),
+             content_type, progress);
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
@@ -13609,8 +13702,10 @@ inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
 
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-  const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Put(path, headers, body, content_type, progress);
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  return Put(path, headers, content_length,
+             detail::make_multipart_content_provider(items, boundary),
+             content_type, progress);
 }
 
 inline Result ClientImpl::Put(const std::string &path, const Headers &headers,
@@ -13790,8 +13885,10 @@ inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
   const auto &boundary = detail::make_multipart_data_boundary();
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-  const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Patch(path, headers, body, content_type, progress);
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  return Patch(path, headers, content_length,
+               detail::make_multipart_content_provider(items, boundary),
+               content_type, progress);
 }
 
 inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
@@ -13804,8 +13901,10 @@ inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,
 
   const auto &content_type =
       detail::serialize_multipart_formdata_get_content_type(boundary);
-  const auto &body = detail::serialize_multipart_formdata(items, boundary);
-  return Patch(path, headers, body, content_type, progress);
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  return Patch(path, headers, content_length,
+               detail::make_multipart_content_provider(items, boundary),
+               content_type, progress);
 }
 
 inline Result ClientImpl::Patch(const std::string &path, const Headers &headers,

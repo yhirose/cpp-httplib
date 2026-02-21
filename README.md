@@ -989,6 +989,17 @@ httplib::UploadFormDataItems items = {
 auto res = cli.Post("/multipart", items);
 ```
 
+To upload files from disk without loading them entirely into memory, use `make_file_provider`. The file is read and sent in chunks with a correct `Content-Length` header.
+
+```cpp
+httplib::FormDataProviderItems providers = {
+  httplib::make_file_provider("file1", "/path/to/large.bin", "large.bin", "application/octet-stream"),
+  httplib::make_file_provider("avatar", "/path/to/photo.jpg", "photo.jpg", "image/jpeg"),
+};
+
+auto res = cli.Post("/upload", {}, {}, providers);
+```
+
 ### PUT
 
 ```c++
