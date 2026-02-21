@@ -7951,10 +7951,19 @@ make_multipart_content_provider(const UploadFormDataItems &items,
   }
   segs.push_back({owned.back().data(), owned.back().size()});
 
-  return [owned = std::move(owned), segs = std::move(segs)](
-             size_t offset, size_t length, DataSink &sink) -> bool {
+  struct MultipartState {
+    std::vector<std::string> owned;
+    std::vector<MultipartSegment> segs;
+  };
+  auto state = std::make_shared<MultipartState>();
+  state->owned = std::move(owned);
+  // `segs` holds raw pointers into owned strings; std::string move preserves
+  // the data pointer, so these pointers remain valid after the move above.
+  state->segs = std::move(segs);
+
+  return [state](size_t offset, size_t length, DataSink &sink) -> bool {
     size_t pos = 0;
-    for (const auto &seg : segs) {
+    for (const auto &seg : state->segs) {
       // Loop invariant: pos <= offset (proven by advancing pos only when
       // offset - pos >= seg.size, i.e., the segment doesn't contain offset)
       if (seg.size > 0 && offset - pos < seg.size) {
