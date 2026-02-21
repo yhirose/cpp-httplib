@@ -2,11 +2,13 @@
 	Build options:
 	* Standard BUILD_SHARED_LIBS is supported and sets HTTPLIB_SHARED default value.
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
+	* HTTPLIB_USE_MBEDTLS_IF_AVAILABLE (default off)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZSTD_IF_AVAILABLE (default on)
 	* HTTPLIB_BUILD_MODULES (default off)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
+	* HTTPLIB_REQUIRE_MBEDTLS (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_REQUIRE_ZSTD (default off)
@@ -21,7 +23,7 @@
 
 	-------------------------------------------------------------------------------
 
-	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL ZLIB Brotli zstd) is available.
+	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL MbedTLS ZLIB Brotli zstd) is available.
 	This creates a httplib::httplib target (if found and if listed components are supported).
 	It can be linked like so:
 
@@ -48,6 +50,7 @@
 	These variables are available after you run find_package(httplib)
 	* HTTPLIB_HEADER_PATH - this is the full path to the installed header (e.g. /usr/include/httplib.h).
 	* HTTPLIB_IS_USING_OPENSSL - a bool for if OpenSSL support is enabled.
+	* HTTPLIB_IS_USING_MBEDTLS - a bool for if MbedTLS support is enabled.
 	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
 	* HTTPLIB_IS_USING_BROTLI - a bool for if Brotli support is enabled.
 	* HTTPLIB_IS_USING_ZSTD - a bool for if ZSTD support is enabled.
@@ -95,10 +98,12 @@ set(_HTTPLIB_OPENSSL_MIN_VER "3.0.0")
 option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
 # Allow for a build to require OpenSSL to pass, instead of just being optional
 option(HTTPLIB_REQUIRE_OPENSSL "Requires OpenSSL to be found & linked, or fails build." OFF)
+option(HTTPLIB_REQUIRE_MBEDTLS "Requires MbedTLS to be found & linked, or fails build." OFF)
 option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build." OFF)
 # Allow for a build to casually enable OpenSSL/ZLIB support, but silently continue if not found.
 # Make these options so their automatic use can be specifically disabled (as needed)
 option(HTTPLIB_USE_OPENSSL_IF_AVAILABLE "Uses OpenSSL (if available) to enable HTTPS support." ON)
+option(HTTPLIB_USE_MBEDTLS_IF_AVAILABLE "Uses MbedTLS (if available) to enable HTTPS support." OFF)
 option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib compression support." ON)
 # Lets you compile the program as a regular library instead of header-only
 option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a compilable header & source file (requires Python v3)." OFF)
@@ -119,6 +124,19 @@ else()
 	if(DEFINED CACHE{HTTPLIB_BUILD_MODULES} AND HTTPLIB_BUILD_MODULES)
 		message(WARNING "HTTPLIB_BUILD_MODULES requires CMake 3.28 or later. Current version is ${CMAKE_VERSION}. Modules support has been disabled.")
 	endif()
+endif()
+
+# OpenSSL and MbedTLS backends are mutually exclusive.
+if(HTTPLIB_REQUIRE_OPENSSL AND HTTPLIB_REQUIRE_MBEDTLS)
+	message(FATAL_ERROR "HTTPLIB_REQUIRE_OPENSSL and HTTPLIB_REQUIRE_MBEDTLS are mutually exclusive.")
+endif()
+
+if(HTTPLIB_USE_OPENSSL_IF_AVAILABLE AND HTTPLIB_USE_MBEDTLS_IF_AVAILABLE)
+	message(FATAL_ERROR "HTTPLIB_USE_OPENSSL_IF_AVAILABLE and HTTPLIB_USE_MBEDTLS_IF_AVAILABLE are mutually exclusive.")
+endif()
+
+if(HTTPLIB_REQUIRE_MBEDTLS)
+	set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF)
 endif()
 # Defaults to static library but respects standard BUILD_SHARED_LIBS if set
 include(CMakeDependentOption)
@@ -158,6 +176,11 @@ set(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO ${HTTPLIB_USE_NON_BLOCKING_GETADDR
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED)
+
+# Adds our cmake folder to the search path for custom find modules
+# (e.g. FindBrotli.cmake and FindMbedTLS.cmake).
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Since Cmake v3.11, Crypto & SSL became optional when not specified as COMPONENTS.
 if(HTTPLIB_REQUIRE_OPENSSL)
 	find_package(OpenSSL ${_HTTPLIB_OPENSSL_MIN_VER} COMPONENTS Crypto SSL REQUIRED)
@@ -173,6 +196,14 @@ elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
 	endif()
 endif()
 
+if(HTTPLIB_REQUIRE_MBEDTLS)
+	find_package(MbedTLS REQUIRED)
+	set(HTTPLIB_IS_USING_MBEDTLS TRUE)
+elseif(HTTPLIB_USE_MBEDTLS_IF_AVAILABLE)
+	find_package(MbedTLS QUIET)
+	set(HTTPLIB_IS_USING_MBEDTLS ${MbedTLS_FOUND})
+endif()
+
 if(HTTPLIB_REQUIRE_ZLIB)
 	find_package(ZLIB REQUIRED)
 	set(HTTPLIB_IS_USING_ZLIB TRUE)
@@ -184,9 +215,6 @@ elseif(HTTPLIB_USE_ZLIB_IF_AVAILABLE)
 	endif()
 endif()
 
-# Adds our cmake folder to the search path for find_package
-# This is so we can use our custom FindBrotli.cmake
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if(HTTPLIB_REQUIRE_BROTLI)
 	find_package(Brotli COMPONENTS encoder decoder common REQUIRED)
 	set(HTTPLIB_IS_USING_BROTLI TRUE)
@@ -327,6 +355,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:zstd::libzstd>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
+		$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:MbedTLS::mbedtls>
 )
 
 # Set the definitions to enable optional features
@@ -336,6 +365,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:CPPHTTPLIB_ZLIB_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:CPPHTTPLIB_ZSTD_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
+	$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:CPPHTTPLIB_MBEDTLS_SUPPORT>
 	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
 	$<$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>
 )
@@ -388,6 +418,7 @@ if(HTTPLIB_INSTALL)
 		# Install it so it can be used later by the httplibConfig.cmake file.
 		# Put it in the same dir as our config file instead of a global path so we don't potentially stomp on other packages.
 		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindBrotli.cmake"
+		"${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindMbedTLS.cmake"
 		DESTINATION ${_TARGET_INSTALL_CMAKEDIR}
 	)
 
