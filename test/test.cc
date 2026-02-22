@@ -11821,6 +11821,46 @@ TEST(MultipartFormDataTest, MakeFileProvider) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MakeFileBodyTest, Basic) {
+  const std::string file_content(4096, 'Z');
+  const std::string tmp_path = "/tmp/httplib_test_make_file_body.bin";
+  {
+    std::ofstream ofs(tmp_path, std::ios::binary);
+    ofs.write(file_content.data(),
+              static_cast<std::streamsize>(file_content.size()));
+  }
+
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/upload", [&](const Request &req, Response &res) {
+    EXPECT_EQ(file_content, req.body);
+    handled = true;
+    res.status = StatusCode::OK_200;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+    std::remove(tmp_path.c_str());
+  });
+
+  svr.wait_until_ready();
+
+  auto fb = make_file_body(tmp_path);
+  ASSERT_GT(fb.first, 0u);
+
+  Client cli(HOST, port);
+  auto res =
+      cli.Post("/upload", fb.first, fb.second, "application/octet-stream");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
   static constexpr unsigned int number_of_tasks{1000000};
   std::atomic_uint count{0};

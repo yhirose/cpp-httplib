@@ -989,7 +989,7 @@ httplib::UploadFormDataItems items = {
 auto res = cli.Post("/multipart", items);
 ```
 
-To upload files from disk without loading them entirely into memory, use `make_file_provider`. The file is read and sent in chunks with a correct `Content-Length` header.
+To upload files from disk without loading them entirely into memory, use `make_file_provider`. The file is sent with chunked transfer encoding.
 
 ```cpp
 httplib::FormDataProviderItems providers = {
@@ -998,6 +998,15 @@ httplib::FormDataProviderItems providers = {
 };
 
 auto res = cli.Post("/upload", {}, {}, providers);
+```
+
+### POST with a file body
+
+To POST a file as a raw binary body with `Content-Length`, use `make_file_body`.
+
+```cpp
+auto [size, provider] = httplib::make_file_body("/path/to/data.bin");
+auto res = cli.Post("/upload", size, provider, "application/octet-stream");
 ```
 
 ### PUT
