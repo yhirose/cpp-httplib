@@ -1,0 +1,62 @@
+name: test_offline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      test_linux:
+        description: 'Test on Linux'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  GTEST_FILTER: "-*.*_Online"
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    strategy:
+      matrix:
+        tls_backend: [openssl, no-tls]
+    name: ubuntu (${{ matrix.tls_backend }})
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install common libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
+      - name: install OpenSSL
+        if: matrix.tls_backend == 'openssl'
+        run: sudo apt-get install -y libssl-dev
+      - name: disable network
+        run: |
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo iptables -A OUTPUT -j REJECT
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo ip6tables -A OUTPUT -j REJECT
+      - name: build and run tests (OpenSSL)
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make test_split && make test_openssl_parallel
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+      - name: build and run tests (No TLS)
+        if: matrix.tls_backend == 'no-tls'
+        run: cd test && make test_no_tls_parallel
+      - name: restore network
+        if: always()
+        run: |
+          sudo iptables -F OUTPUT
+          sudo ip6tables -F OUTPUT

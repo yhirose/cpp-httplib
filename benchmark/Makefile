@@ -1,4 +1,7 @@
-CXXFLAGS = -std=c++11 -O2 -I..
+CXXFLAGS = -O2 -I..
+
+CPPHTTPLIB_CXXFLAGS = -std=c++11
+CROW_CXXFLAGS = -std=c++17
 
 CPPHTTPLIB_FLAGS = -DCPPHTTPLIB_THREAD_POOL_COUNT=16
 
@@ -18,11 +21,11 @@ run : server
 	@./server
 
 server : cpp-httplib/main.cpp ../httplib.h
-	@g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib/main.cpp
+	@g++ -o $@ $(CXXFLAGS) $(CPPHTTPLIB_CXXFLAGS) $(CPPHTTPLIB_FLAGS) cpp-httplib/main.cpp
 
 # crow
 bench-crow: server-crow
-	@echo "-------------\n Crow v1.2.0\n-------------\n"
+	@echo "-------------\n Crow v1.3.1\n-------------\n"
 	@./server-crow & export PID=$$!; $(BENCH); kill $${PID}
 	@echo ""
 
@@ -32,8 +35,8 @@ monitor-crow: server-crow
 run-crow : server-crow
 	@./server-crow
 
-server-crow : crow/main.cpp
-	@g++ -o $@ $(CXXFLAGS) crow/main.cpp
+server-crow : crow/main.cpp crow/crow_all.h
+	@g++ -o $@ $(CXXFLAGS) $(CROW_CXXFLAGS) crow/main.cpp
 
 # misc
 build: server server-crow

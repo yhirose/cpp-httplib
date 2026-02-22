@@ -2,7 +2,7 @@
 
 class CustomLogger : public crow::ILogHandler {
 public:
-  void log(std::string, crow::LogLevel) {}
+  void log(const std::string &, crow::LogLevel) {}
 };
 
 int main() {
