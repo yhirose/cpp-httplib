@@ -132,32 +132,20 @@ else()
 endif()
 
 # Incompatibility between TLS libraries
-set(TLS_LIBRARY_USED_TMP OFF)
+set(TLS_LIBRARIES_USED_TMP 0)
 
-foreach(tls_library ${HTTPLIB_REQUIRE_OPENSSL} ${HTTPLIB_REQUIRE_WOLFSSL} ${HTTPLIB_REQUIRE_MBEDTLS})
-	if(tls_library)
-		if(TLS_LIBRARY_USED_TMP)
-			message(FATAL_ERROR "TLS libraries are mutually exclusive.")
-		else()
-			set(TLS_LIBRARY_USED_TMP ON)
-		endif()
+foreach(tls_library OPENSSL WOLFSSL MBEDTLS)
+	set(TLS_REQUIRED ${HTTPLIB_REQUIRE_${tls_library}})
+	set(TLS_IF_AVAILABLE ${HTTPLIB_USE_${tls_library}_IF_AVAILABLE})
+
+	if(TLS_REQUIRED OR TLS_IF_AVAILABLE)
+		math(EXPR TLS_LIBRARIES_USED_TMP "${TLS_LIBRARIES_USED_TMP} + 1")
 	endif()
 endforeach()
 
-set(TLS_LIBRARY_USED_TMP OFF)
-
-foreach(tls_library ${HTTPLIB_USE_OPENSSL_IF_AVAILABLE} ${HTTPLIB_USE_WOLFSSL_IF_AVAILABLE} ${HTTPLIB_USE_MBEDTLS_IF_AVAILABLE})
-	if(tls_library)
-		if(TLS_LIBRARY_USED_TMP)
-			message(FATAL_ERROR "TLS libraries are mutually exclusive.")
-		else()
-			set(TLS_LIBRARY_USED_TMP ON)
-		endif()
-	endif()
-endforeach()
-
-if(HTTPLIB_REQUIRE_WOLFSSL OR HTTPLIB_REQUIRE_MBEDTLS)
-	set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF)
+message(WARNING ${TLS_LIBRARIES_USED_TMP})
+if(TLS_LIBRARIES_USED_TMP GREATER 1)
+	message(FATAL_ERROR "TLS libraries are mutually exclusive.")
 endif()
 
 # Defaults to static library but respects standard BUILD_SHARED_LIBS if set
