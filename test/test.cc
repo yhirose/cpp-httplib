@@ -4802,12 +4802,9 @@ TEST_F(ServerTest, HeaderCountSecurityTest) {
   if (res) {
     // If we get a response, it should be 400 Bad Request
     EXPECT_EQ(StatusCode::BadRequest_400, res->status);
-  } else {
-    // Request failed, which is the expected behavior for DoS protection
-    EXPECT_FALSE(res);
+    EXPECT_EQ("close", res->get_header_value("Connection"));
   }
 
-  EXPECT_EQ("close", res->get_header_value("Connection"));
   EXPECT_FALSE(cli_.is_socket_open());
 }
 
