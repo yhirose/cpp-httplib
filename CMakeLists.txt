@@ -2,12 +2,14 @@
 	Build options:
 	* Standard BUILD_SHARED_LIBS is supported and sets HTTPLIB_SHARED default value.
 	* HTTPLIB_USE_OPENSSL_IF_AVAILABLE (default on)
+	* HTTPLIB_USE_WOLFSSL_IF_AVAILABLE (default off)
 	* HTTPLIB_USE_MBEDTLS_IF_AVAILABLE (default off)
 	* HTTPLIB_USE_ZLIB_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_BROTLI_IF_AVAILABLE (default on)
 	* HTTPLIB_USE_ZSTD_IF_AVAILABLE (default on)
 	* HTTPLIB_BUILD_MODULES (default off)
 	* HTTPLIB_REQUIRE_OPENSSL (default off)
+	* HTTPLIB_REQUIRE_WOLFSSL (default off)
 	* HTTPLIB_REQUIRE_MBEDTLS (default off)
 	* HTTPLIB_REQUIRE_ZLIB (default off)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
@@ -23,7 +25,7 @@
 
 	-------------------------------------------------------------------------------
 
-	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL MbedTLS ZLIB Brotli zstd) is available.
+	After installation with Cmake, a find_package(httplib COMPONENTS OpenSSL wolfssl MbedTLS ZLIB Brotli zstd) is available.
 	This creates a httplib::httplib target (if found and if listed components are supported).
 	It can be linked like so:
 
@@ -50,6 +52,7 @@
 	These variables are available after you run find_package(httplib)
 	* HTTPLIB_HEADER_PATH - this is the full path to the installed header (e.g. /usr/include/httplib.h).
 	* HTTPLIB_IS_USING_OPENSSL - a bool for if OpenSSL support is enabled.
+	* HTTPLIB_IS_USING_WOLFSSL - a bool for if wolfSSL support is enabled.
 	* HTTPLIB_IS_USING_MBEDTLS - a bool for if MbedTLS support is enabled.
 	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
 	* HTTPLIB_IS_USING_BROTLI - a bool for if Brotli support is enabled.
@@ -98,11 +101,13 @@ set(_HTTPLIB_OPENSSL_MIN_VER "3.0.0")
 option(HTTPLIB_NO_EXCEPTIONS "Disable the use of C++ exceptions" OFF)
 # Allow for a build to require OpenSSL to pass, instead of just being optional
 option(HTTPLIB_REQUIRE_OPENSSL "Requires OpenSSL to be found & linked, or fails build." OFF)
+option(HTTPLIB_REQUIRE_WOLFSSL "Requires wolfSSL to be found & linked, or fails build." OFF)
 option(HTTPLIB_REQUIRE_MBEDTLS "Requires MbedTLS to be found & linked, or fails build." OFF)
 option(HTTPLIB_REQUIRE_ZLIB "Requires ZLIB to be found & linked, or fails build." OFF)
 # Allow for a build to casually enable OpenSSL/ZLIB support, but silently continue if not found.
 # Make these options so their automatic use can be specifically disabled (as needed)
 option(HTTPLIB_USE_OPENSSL_IF_AVAILABLE "Uses OpenSSL (if available) to enable HTTPS support." ON)
+option(HTTPLIB_USE_WOLFSSL_IF_AVAILABLE "Uses wolfSSL (if available) to enable HTTPS support." OFF)
 option(HTTPLIB_USE_MBEDTLS_IF_AVAILABLE "Uses MbedTLS (if available) to enable HTTPS support." OFF)
 option(HTTPLIB_USE_ZLIB_IF_AVAILABLE "Uses ZLIB (if available) to enable Zlib compression support." ON)
 # Lets you compile the program as a regular library instead of header-only
@@ -127,15 +132,19 @@ else()
 endif()
 
 # Incompatibility between OpenSSL and MbedTLS
-if(HTTPLIB_REQUIRE_OPENSSL AND HTTPLIB_REQUIRE_MBEDTLS)
-	message(FATAL_ERROR "HTTPLIB_REQUIRE_OPENSSL and HTTPLIB_REQUIRE_MBEDTLS are mutually exclusive.")
+if((HTTPLIB_REQUIRE_OPENSSL AND HTTPLIB_REQUIRE_WOLFSSL)
+	OR (HTTPLIB_REQUIRE_OPENSSL AND HTTPLIB_REQUIRE_MBEDTLS)
+	OR (HTTPLIB_REQUIRE_WOLFSSL AND HTTPLIB_REQUIRE_MBEDTLS))
+	message(FATAL_ERROR "TLS libraries are mutually exclusive.")
 endif()
 
-if(HTTPLIB_USE_OPENSSL_IF_AVAILABLE AND HTTPLIB_USE_MBEDTLS_IF_AVAILABLE)
-	message(FATAL_ERROR "HTTPLIB_USE_OPENSSL_IF_AVAILABLE and HTTPLIB_USE_MBEDTLS_IF_AVAILABLE are mutually exclusive.")
+if((HTTPLIB_USE_OPENSSL_IF_AVAILABLE AND HTTPLIB_USE_WOLFSSL_IF_AVAILABLE)
+	OR (HTTPLIB_USE_OPENSSL_IF_AVAILABLE AND HTTPLIB_USE_MBEDTLS_IF_AVAILABLE)
+	OR (HTTPLIB_USE_WOLFSSL_IF_AVAILABLE AND HTTPLIB_USE_MBEDTLS_IF_AVAILABLE))
+	message(FATAL_ERROR "TLS libraries are mutually exclusive.")
 endif()
 
-if(HTTPLIB_REQUIRE_MBEDTLS)
+if(HTTPLIB_REQUIRE_WOLFSSL OR HTTPLIB_REQUIRE_MBEDTLS)
 	set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF)
 endif()
 
@@ -190,6 +199,15 @@ elseif(HTTPLIB_USE_OPENSSL_IF_AVAILABLE)
 	else()
 		set(HTTPLIB_IS_USING_OPENSSL FALSE)
 	endif()
+endif()
+
+if(HTTPLIB_REQUIRE_WOLFSSL)
+	find_package(wolfssl REQUIRED)
+	set(HTTPLIB_IS_USING_WOLFSSL TRUE)
+elseif(HTTPLIB_USE_WOLFSSL_IF_AVAILABLE)
+	find_package(wolfssl QUIET)
+	set(HTTPLIB_IS_USING_MBEDTLS ${wolfssl_FOUND})
+    message(WARNING ${wolfssl_FOUND}) # TODO
 endif()
 
 if(HTTPLIB_REQUIRE_MBEDTLS)
@@ -354,6 +372,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:zstd::libzstd>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
+		$<$<BOOL:${HTTPLIB_IS_USING_WOLFSSL}>:wolfssl::wolfssl>
 		$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:MbedTLS::mbedtls>
 )
 
@@ -364,6 +383,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:CPPHTTPLIB_ZLIB_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:CPPHTTPLIB_ZSTD_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
+	$<$<BOOL:${HTTPLIB_IS_USING_WOLFSSL}>:CPPHTTPLIB_WOLFSSL_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:CPPHTTPLIB_MBEDTLS_SUPPORT>
 	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
 	$<$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>

@@ -4,6 +4,7 @@
 # Setting these here so they're accessible after install.
 # Might be useful for some users to check which settings were used.
 set(HTTPLIB_IS_USING_OPENSSL @HTTPLIB_IS_USING_OPENSSL@)
+set(HTTPLIB_IS_USING_MBEDTLS @HTTPLIB_IS_USING_WOLFSSL@)
 set(HTTPLIB_IS_USING_MBEDTLS @HTTPLIB_IS_USING_MBEDTLS@)
 set(HTTPLIB_IS_USING_ZLIB @HTTPLIB_IS_USING_ZLIB@)
 set(HTTPLIB_IS_COMPILED @HTTPLIB_COMPILE@)
@@ -30,6 +31,12 @@ endif()
 if(@HTTPLIB_IS_USING_ZLIB@)
 	find_dependency(ZLIB)
 	set(httplib_ZLIB_FOUND ${ZLIB_FOUND})
+endif()
+
+if(@HTTPLIB_IS_USING_WOLFSSL@)
+	find_dependency(wolfssl)
+	set(httplib_wolfssl_FOUND ${wolfssl_FOUND})
+    message(WARNING ${wolfssl_FOUND}) # TODO
 endif()
 
 if(@HTTPLIB_IS_USING_MBEDTLS@)
