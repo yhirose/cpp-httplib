@@ -36,7 +36,6 @@ endif()
 if(@HTTPLIB_IS_USING_WOLFSSL@)
 	find_dependency(wolfssl)
 	set(httplib_wolfssl_FOUND ${wolfssl_FOUND})
-    message(WARNING ${wolfssl_FOUND}) # TODO
 endif()
 
 if(@HTTPLIB_IS_USING_MBEDTLS@)

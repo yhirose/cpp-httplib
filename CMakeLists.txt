@@ -219,7 +219,6 @@ if(HTTPLIB_REQUIRE_WOLFSSL)
 elseif(HTTPLIB_USE_WOLFSSL_IF_AVAILABLE)
 	find_package(wolfssl QUIET)
 	set(HTTPLIB_IS_USING_WOLFSSL ${wolfssl_FOUND})
-    message(WARNING ${wolfssl_FOUND}) # TODO
 endif()
 
 if(HTTPLIB_REQUIRE_MBEDTLS)
