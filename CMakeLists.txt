@@ -143,7 +143,6 @@ foreach(tls_library OPENSSL WOLFSSL MBEDTLS)
 	endif()
 endforeach()
 
-message(WARNING ${TLS_LIBRARIES_USED_TMP})
 if(TLS_LIBRARIES_USED_TMP GREATER 1)
 	message(FATAL_ERROR "TLS libraries are mutually exclusive.")
 endif()
