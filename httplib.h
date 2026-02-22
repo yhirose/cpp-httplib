@@ -9862,8 +9862,7 @@ inline bool SocketStream::wait_readable() const {
 }
 
 inline bool SocketStream::wait_writable() const {
-  return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0 &&
-         is_socket_alive(sock_);
+  return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0;
 }
 
 inline ssize_t SocketStream::read(char *ptr, size_t size) {
@@ -10194,7 +10193,7 @@ inline bool SSLSocketStream::wait_readable() const {
 
 inline bool SSLSocketStream::wait_writable() const {
   return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0 &&
-         is_socket_alive(sock_) && !tls::is_peer_closed(session_, sock_);
+         !tls::is_peer_closed(session_, sock_);
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
@@ -10718,29 +10717,26 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   if (post_routing_handler_) { post_routing_handler_(req, res); }
 
   // Response line and headers
-  {
-    detail::BufferStream bstrm;
-    if (!detail::write_response_line(bstrm, res.status)) { return false; }
-    if (header_writer_(bstrm, res.headers) <= 0) { return false; }
+  detail::BufferStream bstrm;
+  if (!detail::write_response_line(bstrm, res.status)) { return false; }
+  if (header_writer_(bstrm, res.headers) <= 0) { return false; }
 
-    // Flush buffer
-    auto &data = bstrm.get_buffer();
-    detail::write_data(strm, data.data(), data.size());
+  // Combine small body with headers to reduce write syscalls
+  if (req.method != "HEAD" && !res.body.empty() && !res.content_provider_) {
+    bstrm.write(res.body.data(), res.body.size());
   }
 
-  // Body
+  // Flush buffer
+  auto &data = bstrm.get_buffer();
+  if (!detail::write_data(strm, data.data(), data.size())) { return false; }
+
+  // Streaming body
   auto ret = true;
-  if (req.method != "HEAD") {
-    if (!res.body.empty()) {
-      if (!detail::write_data(strm, res.body.data(), res.body.size())) {
-        ret = false;
-      }
-    } else if (res.content_provider_) {
-      if (write_content_with_provider(strm, req, res, boundary, content_type)) {
-        res.content_provider_success_ = true;
-      } else {
-        ret = false;
-      }
+  if (req.method != "HEAD" && res.content_provider_) {
+    if (write_content_with_provider(strm, req, res, boundary, content_type)) {
+      res.content_provider_success_ = true;
+    } else {
+      ret = false;
     }
   }
 
