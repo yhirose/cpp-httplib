@@ -323,9 +323,10 @@ TEST(SocketStream, wait_writable_UNIX) {
   asSocketStream(fds[0], [&](Stream &s0) {
     EXPECT_EQ(s0.socket(), fds[0]);
     EXPECT_TRUE(s0.wait_writable());
+    EXPECT_TRUE(s0.is_peer_alive());
 
     EXPECT_EQ(0, close(fds[1]));
-    EXPECT_FALSE(s0.wait_writable());
+    EXPECT_FALSE(s0.is_peer_alive());
 
     return true;
   });
@@ -367,7 +368,9 @@ TEST(SocketStream, wait_writable_INET) {
   };
   asSocketStream(disconnected_svr_sock, [&](Stream &ss) {
     EXPECT_EQ(ss.socket(), disconnected_svr_sock);
-    EXPECT_FALSE(ss.wait_writable());
+    // wait_writable() returns true because select_write() only checks if the
+    // send buffer has space. Peer disconnection is detected later by send().
+    EXPECT_TRUE(ss.wait_writable());
 
     return true;
   });
