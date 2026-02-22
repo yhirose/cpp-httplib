@@ -10726,6 +10726,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     bstrm.write(res.body.data(), res.body.size());
   }
 
+  // Log before writing to avoid race condition with client-side code that
+  // accesses logger-captured data immediately after receiving the response.
+  output_log(req, res);
+
   // Flush buffer
   auto &data = bstrm.get_buffer();
   if (!detail::write_data(strm, data.data(), data.size())) { return false; }
@@ -10739,9 +10743,6 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
       ret = false;
     }
   }
-
-  // Log
-  output_log(req, res);
 
   return ret;
 }
