@@ -357,14 +357,32 @@ using socket_t = int;
 #include <any>
 #endif
 
+// On macOS with a TLS backend, enable Keychain root certificates by default
+// unless the user explicitly opts out.
+#if defined(__APPLE__) &&                                                      \
+    !defined(CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES) &&         \
+    (defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                    \
+     defined(CPPHTTPLIB_MBEDTLS_SUPPORT) ||                                    \
+     defined(CPPHTTPLIB_WOLFSSL_SUPPORT))
+#ifndef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+#define CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+#endif
+#endif
+
+// On Windows, enable Schannel certificate verification by default
+// unless the user explicitly opts out.
+#if defined(_WIN32) &&                                                         \
+    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#define CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+#endif
+
 #if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO) ||                        \
     defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
 #if TARGET_OS_MAC
 #include <CFNetwork/CFHost.h>
 #include <CoreFoundation/CoreFoundation.h>
 #endif
-#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO or
-       // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 #ifdef _WIN32
@@ -382,11 +400,11 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 
-#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #if TARGET_OS_MAC
 #include <Security/Security.h>
 #endif
-#endif // CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
+#endif
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -430,11 +448,11 @@ using socket_t = int;
 #pragma comment(lib, "crypt32.lib")
 #endif
 #endif // _WIN32
-#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #if TARGET_OS_MAC
 #include <Security/Security.h>
 #endif
-#endif // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+#endif
 
 // Mbed TLS 3.x API compatibility
 #if MBEDTLS_VERSION_MAJOR >= 3
@@ -473,11 +491,11 @@ using socket_t = int;
 #pragma comment(lib, "crypt32.lib")
 #endif
 #endif // _WIN32
-#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #if TARGET_OS_MAC
 #include <Security/Security.h>
 #endif
-#endif // CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+#endif
 #endif // CPPHTTPLIB_WOLFSSL_SUPPORT
 
 // Define CPPHTTPLIB_SSL_ENABLED if any SSL backend is available
@@ -2561,8 +2579,7 @@ public:
 
   tls::ctx_t tls_context() const;
 
-#if defined(_WIN32) &&                                                         \
-    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   void enable_windows_certificate_verification(bool enabled);
 #endif
 
@@ -2683,8 +2700,7 @@ public:
 
   tls::ctx_t tls_context() const { return ctx_; }
 
-#if defined(_WIN32) &&                                                         \
-    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   void enable_windows_certificate_verification(bool enabled);
 #endif
 
@@ -2716,8 +2732,7 @@ private:
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 
-#if defined(_WIN32) &&                                                         \
-    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   bool enable_windows_cert_verification_ = true;
 #endif
 
@@ -15423,8 +15438,7 @@ inline void SSLClient::set_session_verifier(
   session_verifier_ = std::move(verifier);
 }
 
-#if defined(_WIN32) &&                                                         \
-    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 inline void SSLClient::enable_windows_certificate_verification(bool enabled) {
   enable_windows_cert_verification_ = enabled;
 }
@@ -15582,8 +15596,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
       }
     }
 
-#if defined(_WIN32) &&                                                         \
-    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
     // Additional Windows Schannel verification.
     // This provides real-time certificate validation with Windows Update
     // integration, working with both OpenSSL and MbedTLS backends.
@@ -15629,8 +15642,7 @@ inline void Client::enable_server_hostname_verification(bool enabled) {
   cli_->enable_server_hostname_verification(enabled);
 }
 
-#if defined(_WIN32) &&                                                         \
-    !defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 inline void Client::enable_windows_certificate_verification(bool enabled) {
   if (is_ssl_) {
     static_cast<SSLClient &>(*cli_).enable_windows_certificate_verification(
@@ -15753,7 +15765,7 @@ inline bool enumerate_windows_system_certs(Callback cb) {
 }
 #endif
 
-#if defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 // Enumerate macOS Keychain certificates and call callback with DER data
 template <typename Callback>
 inline bool enumerate_macos_keychain_certs(Callback cb) {
