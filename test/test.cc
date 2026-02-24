@@ -323,9 +323,10 @@ TEST(SocketStream, wait_writable_UNIX) {
   asSocketStream(fds[0], [&](Stream &s0) {
     EXPECT_EQ(s0.socket(), fds[0]);
     EXPECT_TRUE(s0.wait_writable());
+    EXPECT_TRUE(s0.is_peer_alive());
 
     EXPECT_EQ(0, close(fds[1]));
-    EXPECT_FALSE(s0.wait_writable());
+    EXPECT_FALSE(s0.is_peer_alive());
 
     return true;
   });

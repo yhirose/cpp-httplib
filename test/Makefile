@@ -7,13 +7,13 @@ ifneq ($(OS), Windows_NT)
 		PREFIX ?= $(shell brew --prefix)
 		OPENSSL_DIR = $(PREFIX)/opt/openssl@3
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
-		OPENSSL_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
+		OPENSSL_SUPPORT += -framework CoreFoundation -framework Security
 		MBEDTLS_DIR ?= $(shell brew --prefix mbedtls@3)
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -lmbedcrypto
-		MBEDTLS_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
+		MBEDTLS_SUPPORT += -framework CoreFoundation -framework Security
 		WOLFSSL_DIR ?= $(shell brew --prefix wolfssl)
 		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -I$(WOLFSSL_DIR)/include -I$(WOLFSSL_DIR)/include/wolfssl -L$(WOLFSSL_DIR)/lib -lwolfssl
-		WOLFSSL_SUPPORT += -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN -framework Security
+		WOLFSSL_SUPPORT += -framework CoreFoundation -framework Security
 	else
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -lssl -lcrypto
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -lmbedcrypto

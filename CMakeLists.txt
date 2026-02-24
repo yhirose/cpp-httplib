@@ -14,7 +14,7 @@
 	* HTTPLIB_REQUIRE_ZLIB (default off)
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_REQUIRE_ZSTD (default off)
-	* HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN (default on)
+	* HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES (default off)
 	* HTTPLIB_USE_NON_BLOCKING_GETADDRINFO (default on)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
@@ -57,7 +57,7 @@
 	* HTTPLIB_IS_USING_ZLIB - a bool for if ZLIB support is enabled.
 	* HTTPLIB_IS_USING_BROTLI - a bool for if Brotli support is enabled.
 	* HTTPLIB_IS_USING_ZSTD - a bool for if ZSTD support is enabled.
-	* HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN - a bool for if support of loading system certs from the Apple Keychain is enabled.
+	* HTTPLIB_IS_USING_MACOSX_AUTOMATIC_ROOT_CERTIFICATES - a bool for if support of loading system certs from the Apple Keychain is enabled.
 	* HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO - a bool for if nonblocking getaddrinfo is enabled.
 	* HTTPLIB_IS_COMPILED - a bool for if the library is compiled, or otherwise header-only.
 	* HTTPLIB_INCLUDE_DIR - the root path to httplib's header (e.g. /usr/include).
@@ -117,7 +117,7 @@ option(HTTPLIB_INSTALL "Enables the installation target" ON)
 option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
-option(HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN "Enable feature to load system certs from the Apple Keychain." ON)
+option(HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES "Disable loading system certs from the Apple Keychain on macOS." OFF)
 option(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO "Enables the non-blocking alternatives for getaddrinfo." ON)
 option(HTTPLIB_REQUIRE_ZSTD "Requires ZSTD to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_ZSTD_IF_AVAILABLE "Uses ZSTD (if available) to enable zstd support." ON)
@@ -179,7 +179,10 @@ endif()
 
 # Set some variables that are used in-tree and while building based on our options
 set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})
-set(HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN ${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN})
+set(HTTPLIB_IS_USING_MACOSX_AUTOMATIC_ROOT_CERTIFICATES TRUE)
+if(HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES)
+	set(HTTPLIB_IS_USING_MACOSX_AUTOMATIC_ROOT_CERTIFICATES FALSE)
+endif()
 set(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO ${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO})
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
@@ -359,7 +362,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<PLATFORM_ID:Windows>:ws2_32>
 		$<$<PLATFORM_ID:Windows>:crypt32>
 		# Needed for API from MacOS Security framework
-		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN}>>:-framework CFNetwork -framework CoreFoundation -framework Security>"
+		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_MACOSX_AUTOMATIC_ROOT_CERTIFICATES}>>:-framework CFNetwork -framework CoreFoundation -framework Security>"
 		# Needed for non-blocking getaddrinfo on MacOS
 		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>>:-framework CFNetwork -framework CoreFoundation>"
 		# Can't put multiple targets in a single generator expression or it bugs out.
@@ -381,9 +384,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_ZLIB}>:CPPHTTPLIB_ZLIB_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_ZSTD}>:CPPHTTPLIB_ZSTD_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:CPPHTTPLIB_OPENSSL_SUPPORT>
-	$<$<BOOL:${HTTPLIB_IS_USING_WOLFSSL}>:CPPHTTPLIB_WOLFSSL_SUPPORT>
-	$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:CPPHTTPLIB_MBEDTLS_SUPPORT>
-	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_CERTS_FROM_MACOSX_KEYCHAIN}>>:CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN>
+	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES}>>:CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES>
 	$<$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>
 )
 
