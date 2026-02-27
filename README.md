@@ -69,6 +69,7 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 | OpenSSL | `CPPHTTPLIB_OPENSSL_SUPPORT` | `libssl`, `libcrypto` |
 | Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` |
 | wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` |
+| TLSe | `CPPHTTPLIB_TLSE_SUPPORT` | `tlse.c` + `libtomcrypt.c` (compiled as C) |
 
 > [!NOTE]
 > OpenSSL 3.0 or later is required. Please see [this page](https://www.openssl.org/policies/releasestrat.html) for more information.
@@ -80,14 +81,21 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 > wolfSSL must be built with OpenSSL compatibility layer enabled (`--enable-opensslall`). wolfSSL 5.x is supported.
 
 > [!NOTE]
-> **Mbed TLS / wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()` or `load_ca_cert_store(pem, size)`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable with these backends.
+> **TLSe** is a single-file TLS 1.3/1.2/1.1/1.0 implementation. `tlse.c` must be compiled as C (not C++) and linked separately:
+> ```sh
+> gcc -c -DLTM_DESC -DTLS_AMALGAMATION -o tlse.o tlse/tlse.c
+> g++ -DCPPHTTPLIB_TLSE_SUPPORT -I./tlse ... -o myapp myapp.cpp tlse.o
+> ```
+
+> [!NOTE]
+> **Mbed TLS / wolfSSL / TLSe limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()` or `load_ca_cert_store(pem, size)`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable with these backends.
 
 > [!TIP]
 > For macOS: cpp-httplib automatically loads system certs from the Keychain when a TLS backend is enabled. `CoreFoundation` and `Security` must be linked with `-framework`. To disable this, define `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`.
 
 ```c++
-// Use either OpenSSL, Mbed TLS, or wolfSSL
-#define CPPHTTPLIB_OPENSSL_SUPPORT   // or CPPHTTPLIB_MBEDTLS_SUPPORT or CPPHTTPLIB_WOLFSSL_SUPPORT
+// Use either OpenSSL, Mbed TLS, wolfSSL, or TLSe
+#define CPPHTTPLIB_OPENSSL_SUPPORT   // or CPPHTTPLIB_MBEDTLS_SUPPORT, CPPHTTPLIB_WOLFSSL_SUPPORT, CPPHTTPLIB_TLSE_SUPPORT
 #include "path/to/httplib.h"
 
 // Server
@@ -116,7 +124,7 @@ When SSL operations fail, cpp-httplib provides detailed error information throug
 - `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL/wolfSSL, return value for Mbed TLS)
 
 ```c++
-#define CPPHTTPLIB_OPENSSL_SUPPORT  // or CPPHTTPLIB_MBEDTLS_SUPPORT or CPPHTTPLIB_WOLFSSL_SUPPORT
+#define CPPHTTPLIB_OPENSSL_SUPPORT  // or CPPHTTPLIB_MBEDTLS_SUPPORT, CPPHTTPLIB_WOLFSSL_SUPPORT, CPPHTTPLIB_TLSE_SUPPORT
 #include "path/to/httplib.h"
 
 httplib::Client cli("https://example.com");

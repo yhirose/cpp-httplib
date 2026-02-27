@@ -343,7 +343,8 @@ using socket_t = int;
     !defined(CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES) &&         \
     (defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                    \
      defined(CPPHTTPLIB_MBEDTLS_SUPPORT) ||                                    \
-     defined(CPPHTTPLIB_WOLFSSL_SUPPORT))
+     defined(CPPHTTPLIB_WOLFSSL_SUPPORT) ||                                    \
+     defined(CPPHTTPLIB_TLSE_SUPPORT))
 #ifndef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #define CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #endif
@@ -478,9 +479,59 @@ using socket_t = int;
 #endif
 #endif // CPPHTTPLIB_WOLFSSL_SUPPORT
 
+#ifdef CPPHTTPLIB_TLSE_SUPPORT
+#include "tlse.h"
+#ifdef H
+#undef H // libtomcrypt defines H(x,y,z) which conflicts with httplib
+#endif
+#ifndef _WIN32
+#include <dirent.h>
+#endif
+
+struct TLSCertificate {
+  unsigned short version;
+  unsigned int algorithm;
+  unsigned int key_algorithm;
+  unsigned int ec_algorithm;
+  unsigned char *exponent;
+  unsigned int exponent_len;
+  unsigned char *pk;
+  unsigned int pk_len;
+  unsigned char *priv;
+  unsigned int priv_len;
+  unsigned char *issuer_country;
+  unsigned char *issuer_state;
+  unsigned char *issuer_location;
+  unsigned char *issuer_entity;
+  unsigned char *issuer_subject;
+  unsigned char *not_before;
+  unsigned char *not_after;
+  unsigned char *country;
+  unsigned char *state;
+  unsigned char *location;
+  unsigned char *entity;
+  unsigned char *subject;
+  unsigned char **san;
+  unsigned short san_length;
+  unsigned char *ocsp;
+  unsigned char *serial_number;
+  unsigned int serial_len;
+  unsigned char *sign_key;
+  unsigned int sign_len;
+  unsigned char *fingerprint;
+  unsigned char *der_bytes;
+  unsigned int der_len;
+  unsigned char *bytes;
+  unsigned int len;
+};
+
+#endif // CPPHTTPLIB_TLSE_SUPPORT
+
 // Define CPPHTTPLIB_SSL_ENABLED if any SSL backend is available
 #if defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                     \
-    defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+    defined(CPPHTTPLIB_MBEDTLS_SUPPORT) ||                                     \
+    defined(CPPHTTPLIB_WOLFSSL_SUPPORT) ||                                     \
+    defined(CPPHTTPLIB_TLSE_SUPPORT)
 #define CPPHTTPLIB_SSL_ENABLED
 #endif
 
@@ -3260,6 +3311,37 @@ struct MbedTlsContext {
 
   MbedTlsContext(const MbedTlsContext &) = delete;
   MbedTlsContext &operator=(const MbedTlsContext &) = delete;
+};
+
+} // namespace impl
+} // namespace tls
+#endif
+
+#ifdef CPPHTTPLIB_TLSE_SUPPORT
+namespace tls {
+namespace impl {
+
+struct TLSeContext {
+  TLSContext *ctx = nullptr;
+  bool is_server = false;
+  bool verify_client = false;
+  bool has_verify_callback = false;
+  std::string ca_pem;
+  std::string cert_pem;
+  std::string key_pem;
+  unsigned short min_version = TLS_V12;
+
+  TLSeContext() = default;
+  ~TLSeContext() {
+    if (ctx) { tls_destroy_context(ctx); }
+  }
+
+  TLSeContext(const TLSeContext &) = delete;
+  TLSeContext &operator=(const TLSeContext &) = delete;
+};
+
+struct TLSeCAStore {
+  std::string pem_data;
 };
 
 } // namespace impl
@@ -8659,6 +8741,48 @@ inline std::string SHA_512(const std::string &s) {
                 static_cast<word32>(s.size()), hash);
   return hash_to_hex(hash);
 }
+#elif defined(CPPHTTPLIB_TLSE_SUPPORT)
+namespace {
+template <size_t N>
+inline std::string hash_to_hex(const unsigned char (&hash)[N]) {
+  std::stringstream ss;
+  for (size_t i = 0; i < N; ++i) {
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << static_cast<unsigned int>(hash[i]);
+  }
+  return ss.str();
+}
+} // namespace
+
+namespace {
+extern "C" {
+  int find_hash(const char *name);
+  int hash_memory(int hash, const unsigned char *in, unsigned long inlen,
+                  unsigned char *out, unsigned long *outlen);
+}
+inline std::string ltc_hash(const char *name, size_t outlen,
+                             const std::string &s) {
+  int idx = find_hash(name);
+  if (idx < 0) { return ""; }
+  std::vector<unsigned char> out(outlen);
+  unsigned long len = static_cast<unsigned long>(outlen);
+  if (hash_memory(idx, reinterpret_cast<const unsigned char *>(s.c_str()),
+                  static_cast<unsigned long>(s.size()), out.data(),
+                  &len) != 0) {
+    return "";
+  }
+  std::stringstream ss;
+  for (unsigned long i = 0; i < len; ++i) {
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << static_cast<unsigned int>(out[i]);
+  }
+  return ss.str();
+}
+} // namespace
+
+inline std::string MD5(const std::string &s) { return ltc_hash("md5", 16, s); }
+inline std::string SHA_256(const std::string &s) { return ltc_hash("sha256", 32, s); }
+inline std::string SHA_512(const std::string &s) { return ltc_hash("sha512", 64, s); }
 #endif
 
 inline bool is_ip_address(const std::string &host) {
@@ -19699,6 +19823,936 @@ inline std::string verify_error_string(long error_code) {
 } // namespace tls
 
 #endif // CPPHTTPLIB_WOLFSSL_SUPPORT
+
+/*
+ * Group 11: TLS abstraction layer - TLSe backend
+ */
+
+#ifdef CPPHTTPLIB_TLSE_SUPPORT
+
+namespace tls {
+
+namespace impl {
+
+struct TLSeSession {
+  TLSContext *ctx = nullptr;
+  socket_t sock = INVALID_SOCKET;
+  std::string hostname;
+  std::string sni_hostname;
+  int verify_result = 0;
+  TLSCertificate *peer_cert = nullptr;
+  TLSCertificate **cert_chain = nullptr;
+  int cert_chain_len = 0;
+
+  TLSeSession() = default;
+  ~TLSeSession() {
+    if (ctx) { tls_destroy_context(ctx); }
+  }
+
+  TLSeSession(const TLSeSession &) = delete;
+  TLSeSession &operator=(const TLSeSession &) = delete;
+};
+
+inline int &tlse_last_error() {
+  static thread_local int err = 0;
+  return err;
+}
+
+inline ErrorCode map_tlse_error(int ret, int &out_errno) {
+  if (ret > 0) { return ErrorCode::Success; }
+  switch (ret) {
+  case TLS_NEED_MORE_DATA: return ErrorCode::WantRead;
+  case TLS_CLOSE_CONNECTION: return ErrorCode::PeerClosed;
+  case TLS_NOT_VERIFIED: return ErrorCode::CertVerifyFailed;
+  case TLS_BROKEN_CONNECTION:
+    out_errno = errno;
+    return ErrorCode::SyscallError;
+  default: return ErrorCode::Fatal;
+  }
+}
+
+inline int tlse_recv_cb(int sock, void *buf, size_t len, int flags) {
+#ifdef _WIN32
+  int ret = recv(sock, static_cast<char *>(buf), static_cast<int>(len), flags);
+  if (ret == SOCKET_ERROR) {
+    int err = WSAGetLastError();
+    if (err == WSAEWOULDBLOCK) { errno = EAGAIN; return -1; }
+  }
+  return ret;
+#else
+  return static_cast<int>(recv(sock, buf, len, flags));
+#endif
+}
+
+inline int tlse_send_cb(int sock, const void *buf, size_t len, int flags) {
+#ifdef _WIN32
+  int ret =
+      send(sock, static_cast<const char *>(buf), static_cast<int>(len), flags);
+  if (ret == SOCKET_ERROR) {
+    int err = WSAGetLastError();
+    if (err == WSAEWOULDBLOCK) { errno = EAGAIN; return -1; }
+  }
+  return ret;
+#else
+  return static_cast<int>(send(sock, buf, len, flags));
+#endif
+}
+
+inline bool tlse_load_cert_key(TLSContext *ctx, const std::string &cert_pem,
+                                const std::string &key_pem) {
+  if (cert_pem.empty() || key_pem.empty()) { return false; }
+  int ret = tls_load_certificates(
+      ctx, reinterpret_cast<const unsigned char *>(cert_pem.c_str()),
+      static_cast<int>(cert_pem.size()));
+  if (ret <= 0) { return false; }
+  ret = tls_load_private_key(
+      ctx, reinterpret_cast<const unsigned char *>(key_pem.c_str()),
+      static_cast<int>(key_pem.size()));
+  return ret > 0;
+}
+
+inline bool tlse_load_root_ca(TLSContext *ctx, const std::string &ca_pem) {
+  if (ca_pem.empty()) { return false; }
+  int ret = tls_load_root_certificates(
+      ctx, reinterpret_cast<const unsigned char *>(ca_pem.c_str()),
+      static_cast<int>(ca_pem.size()));
+  return ret > 0;
+}
+
+inline TLSeSession *&tlse_current_session() {
+  static thread_local TLSeSession *session = nullptr;
+  return session;
+}
+
+inline int tlse_validation_bridge(TLSContext *context,
+                                   TLSCertificate **certificate_chain,
+                                   int len) {
+  (void)context;
+  TLSeSession *session = tlse_current_session();
+  if (session && len > 0 && certificate_chain) {
+    session->cert_chain = certificate_chain;
+    session->cert_chain_len = len;
+    if (certificate_chain[0]) { session->peer_cert = certificate_chain[0]; }
+  }
+  return no_error;
+}
+
+inline time_t tlse_parse_date(const unsigned char *date_str) {
+  if (!date_str) { return 0; }
+  const char *s = reinterpret_cast<const char *>(date_str);
+  size_t len = strlen(s);
+
+  struct tm t = {};
+  if (len >= 13 && s[12] == 'Z') {
+    int yy, mm, dd, hh, mi, ss;
+    if (sscanf(s, "%2d%2d%2d%2d%2d%2d", &yy, &mm, &dd, &hh, &mi, &ss) == 6) {
+      t.tm_year = (yy >= 50) ? (yy + 1900 - 1900) : (yy + 2000 - 1900);
+      t.tm_mon = mm - 1;
+      t.tm_mday = dd;
+      t.tm_hour = hh;
+      t.tm_min = mi;
+      t.tm_sec = ss;
+    }
+  } else if (len >= 15 && s[14] == 'Z') {
+    int yyyy, mm, dd, hh, mi, ss;
+    if (sscanf(s, "%4d%2d%2d%2d%2d%2d", &yyyy, &mm, &dd, &hh, &mi, &ss) ==
+        6) {
+      t.tm_year = yyyy - 1900;
+      t.tm_mon = mm - 1;
+      t.tm_mday = dd;
+      t.tm_hour = hh;
+      t.tm_min = mi;
+      t.tm_sec = ss;
+    }
+  }
+
+#ifdef _WIN32
+  return _mkgmtime(&t);
+#else
+  return timegm(&t);
+#endif
+}
+
+inline SanType tlse_detect_san_type(const char *san) {
+  if (!san) { return SanType::OTHER; }
+  if (strstr(san, "://")) { return SanType::URI; }
+  if (strchr(san, '@')) { return SanType::EMAIL; }
+  bool all_ip_chars = true;
+  int dots = 0, colons = 0;
+  for (const char *p = san; *p; p++) {
+    if (*p == '.') { dots++; }
+    else if (*p == ':') { colons++; }
+    else if (!isdigit(static_cast<unsigned char>(*p)) &&
+             !isxdigit(static_cast<unsigned char>(*p))) {
+      all_ip_chars = false;
+    }
+  }
+  if (all_ip_chars && dots == 3) { return SanType::IP; }
+  if (all_ip_chars && colons >= 2) { return SanType::IP; }
+  return SanType::DNS;
+}
+
+} // namespace impl
+
+inline ctx_t create_client_context() {
+  auto ctx = new (std::nothrow) impl::TLSeContext();
+  if (!ctx) { return nullptr; }
+  ctx->is_server = false;
+  ctx->min_version = TLS_V12;
+  tls_init();
+  ctx->ctx = tls_create_context(0, TLS_V12);
+  if (!ctx->ctx) {
+    delete ctx;
+    return nullptr;
+  }
+  return static_cast<ctx_t>(ctx);
+}
+
+inline ctx_t create_server_context() {
+  auto ctx = new (std::nothrow) impl::TLSeContext();
+  if (!ctx) { return nullptr; }
+  ctx->is_server = true;
+  ctx->min_version = TLS_V12;
+  tls_init();
+  ctx->ctx = tls_create_context(1, TLS_V12);
+  if (!ctx->ctx) {
+    delete ctx;
+    return nullptr;
+  }
+
+  return static_cast<ctx_t>(ctx);
+}
+
+inline void free_context(ctx_t ctx) {
+  if (ctx) { delete static_cast<impl::TLSeContext *>(ctx); }
+}
+
+inline bool set_min_version(ctx_t ctx, Version version) {
+  if (!ctx) { return false; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+  tctx->min_version = (version >= Version::TLS1_3) ? TLS_V13 : TLS_V12;
+  return true;
+}
+
+inline bool load_ca_pem(ctx_t ctx, const char *pem, size_t len) {
+  if (!ctx || !pem || len == 0) { return false; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+  tctx->ca_pem.append(pem, len);
+  int ret = tls_load_root_certificates(
+      tctx->ctx, reinterpret_cast<const unsigned char *>(pem),
+      static_cast<int>(len));
+  if (ret < 0) {
+    impl::tlse_last_error() = ret;
+    return false;
+  }
+  return true;
+}
+
+inline bool load_ca_file(ctx_t ctx, const char *file_path) {
+  if (!ctx || !file_path) { return false; }
+  std::ifstream f(file_path, std::ios::binary);
+  if (!f) { return false; }
+  std::string pem((std::istreambuf_iterator<char>(f)),
+                  std::istreambuf_iterator<char>());
+  if (pem.empty()) { return false; }
+
+  return load_ca_pem(ctx, pem.c_str(), pem.size());
+}
+
+inline bool load_ca_dir(ctx_t ctx, const char *dir_path) {
+  if (!ctx || !dir_path) { return false; }
+
+  bool loaded = false;
+#ifndef _WIN32
+  DIR *dir = opendir(dir_path);
+  if (!dir) { return false; }
+
+  struct dirent *entry;
+  while ((entry = readdir(dir)) != nullptr) {
+    const char *name = entry->d_name;
+    size_t name_len = strlen(name);
+    if (name_len > 4 &&
+        (strcmp(name + name_len - 4, ".pem") == 0 ||
+         strcmp(name + name_len - 4, ".crt") == 0)) {
+      std::string path = std::string(dir_path) + "/" + name;
+      if (load_ca_file(ctx, path.c_str())) { loaded = true; }
+    }
+  }
+  closedir(dir);
+#else
+  std::string pattern = std::string(dir_path) + "\\*";
+  WIN32_FIND_DATAA ffd;
+  HANDLE hFind = FindFirstFileA(pattern.c_str(), &ffd);
+  if (hFind == INVALID_HANDLE_VALUE) { return false; }
+  do {
+    const char *name = ffd.cFileName;
+    size_t name_len = strlen(name);
+    if (name_len > 4 &&
+        (strcmp(name + name_len - 4, ".pem") == 0 ||
+         strcmp(name + name_len - 4, ".crt") == 0)) {
+      std::string path = std::string(dir_path) + "\\" + name;
+      if (load_ca_file(ctx, path.c_str())) { loaded = true; }
+    }
+  } while (FindNextFileA(hFind, &ffd));
+  FindClose(hFind);
+#endif
+
+  return loaded;
+}
+
+inline bool load_system_certs(ctx_t ctx) {
+  if (!ctx) { return false; }
+  bool loaded = false;
+
+#ifdef _WIN32
+  static const wchar_t *store_names[] = {L"ROOT", L"CA"};
+  for (auto store_name : store_names) {
+    HCERTSTORE hStore = CertOpenSystemStoreW(0, store_name);
+    if (!hStore) { continue; }
+    PCCERT_CONTEXT pContext = nullptr;
+    while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
+           nullptr) {
+      DWORD pem_size = 0;
+      if (CryptBinaryToStringA(pContext->pbCertEncoded,
+                                pContext->cbCertEncoded,
+                                CRYPT_STRING_BASE64HEADER, nullptr,
+                                &pem_size)) {
+        std::string pem(pem_size, '\0');
+        if (CryptBinaryToStringA(pContext->pbCertEncoded,
+                                  pContext->cbCertEncoded,
+                                  CRYPT_STRING_BASE64HEADER, &pem[0],
+                                  &pem_size)) {
+          pem.resize(pem_size);
+          if (load_ca_pem(ctx, pem.c_str(), pem.size())) { loaded = true; }
+        }
+      }
+    }
+    CertCloseStore(hStore, 0);
+  }
+#elif defined(__APPLE__) && defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+  CFArrayRef certs = nullptr;
+  if (SecTrustCopyAnchorCertificates(&certs) == errSecSuccess && certs) {
+    CFIndex count = CFArrayGetCount(certs);
+    for (CFIndex i = 0; i < count; i++) {
+      auto cert = reinterpret_cast<SecCertificateRef>(
+          const_cast<void *>(CFArrayGetValueAtIndex(certs, i)));
+      CFDataRef der = SecCertificateCopyData(cert);
+      if (der) {
+        const unsigned char *data = CFDataGetBytePtr(der);
+        CFIndex len = CFDataGetLength(der);
+        static const char b64[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string pem = "-----BEGIN CERTIFICATE-----\n";
+        int line_len = 0;
+        for (CFIndex j = 0; j < len; j += 3) {
+          unsigned char b0 = data[j];
+          unsigned char b1 = (j + 1 < len) ? data[j + 1] : 0;
+          unsigned char b2 = (j + 2 < len) ? data[j + 2] : 0;
+          pem += b64[b0 >> 2];
+          pem += b64[((b0 & 3) << 4) | (b1 >> 4)];
+          pem += (j + 1 < len) ? b64[((b1 & 0xf) << 2) | (b2 >> 6)] : '=';
+          pem += (j + 2 < len) ? b64[b2 & 0x3f] : '=';
+          line_len += 4;
+          if (line_len >= 64) { pem += '\n'; line_len = 0; }
+        }
+        if (line_len > 0) { pem += '\n'; }
+        pem += "-----END CERTIFICATE-----\n";
+        if (load_ca_pem(ctx, pem.c_str(), pem.size())) { loaded = true; }
+        CFRelease(der);
+      }
+    }
+    CFRelease(certs);
+  }
+#else
+  static const char *ca_paths[] = {
+      "/etc/ssl/certs/ca-certificates.crt",
+      "/etc/pki/tls/certs/ca-bundle.crt",
+      "/etc/ssl/ca-bundle.pem",
+      "/etc/pki/tls/cacert.pem",
+      "/etc/ssl/cert.pem",
+      nullptr};
+  for (const char **p = ca_paths; *p; ++p) {
+    if (load_ca_file(ctx, *p)) { loaded = true; break; }
+  }
+  if (!loaded) {
+    static const char *ca_dirs[] = {"/etc/ssl/certs",
+                                    "/etc/pki/tls/certs",
+                                    "/usr/share/ca-certificates",
+                                    nullptr};
+    for (const char **d = ca_dirs; *d; ++d) {
+      if (load_ca_dir(ctx, *d)) { loaded = true; break; }
+    }
+  }
+#endif
+
+  return loaded;
+}
+
+inline bool set_client_cert_pem(ctx_t ctx, const char *cert, const char *key,
+                                 const char *password) {
+  if (!ctx || !cert || !key) { return false; }
+  (void)password;
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+
+  tctx->cert_pem = cert;
+  tctx->key_pem = key;
+
+  return impl::tlse_load_cert_key(tctx->ctx, tctx->cert_pem, tctx->key_pem);
+}
+
+inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
+                                  const char *key_path, const char *password) {
+  if (!ctx || !cert_path || !key_path) { return false; }
+
+  std::ifstream cf(cert_path, std::ios::binary);
+  if (!cf) { return false; }
+  std::string cert((std::istreambuf_iterator<char>(cf)),
+                   std::istreambuf_iterator<char>());
+
+  std::ifstream kf(key_path, std::ios::binary);
+  if (!kf) { return false; }
+  std::string key((std::istreambuf_iterator<char>(kf)),
+                  std::istreambuf_iterator<char>());
+
+  return set_client_cert_pem(ctx, cert.c_str(), key.c_str(), password);
+}
+
+inline void set_verify_client(ctx_t ctx, bool require) {
+  if (!ctx) { return; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+  tctx->verify_client = require;
+  if (require) {
+    tls_request_client_certificate(tctx->ctx);
+  }
+}
+
+inline session_t create_session(ctx_t ctx, socket_t sock) {
+  if (!ctx || sock == INVALID_SOCKET) { return nullptr; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+
+  auto session = new (std::nothrow) impl::TLSeSession();
+  if (!session) { return nullptr; }
+
+  session->sock = sock;
+
+  if (tctx->is_server) {
+    session->ctx = tls_accept(tctx->ctx);
+    if (!session->ctx) {
+      delete session;
+      return nullptr;
+    }
+    if (!tctx->cert_pem.empty() && !tctx->key_pem.empty()) {
+      impl::tlse_load_cert_key(session->ctx, tctx->cert_pem, tctx->key_pem);
+    }
+    if (!tctx->ca_pem.empty()) {
+      impl::tlse_load_root_ca(session->ctx, tctx->ca_pem);
+    }
+    if (tctx->verify_client) {
+      tls_request_client_certificate(session->ctx);
+    }
+  } else {
+    session->ctx = tls_create_context(0, tctx->min_version);
+    if (!session->ctx) {
+      delete session;
+      return nullptr;
+    }
+    if (!tctx->cert_pem.empty() && !tctx->key_pem.empty()) {
+      impl::tlse_load_cert_key(session->ctx, tctx->cert_pem, tctx->key_pem);
+    }
+    if (!tctx->ca_pem.empty()) {
+      impl::tlse_load_root_ca(session->ctx, tctx->ca_pem);
+    }
+  }
+
+  SSL_set_fd(session->ctx, static_cast<int>(sock));
+  SSL_CTX_set_verify(session->ctx, SSL_VERIFY_NONE,
+                     impl::tlse_validation_bridge);
+
+  return static_cast<session_t>(session);
+}
+
+inline void free_session(session_t session) {
+  if (session) { delete static_cast<impl::TLSeSession *>(session); }
+}
+
+inline bool set_sni(session_t session, const char *hostname) {
+  if (!session || !hostname) { return false; }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+  tsession->hostname = hostname;
+  return tls_sni_set(tsession->ctx, hostname) != 0;
+}
+
+inline bool set_hostname(session_t session, const char *hostname) {
+  return set_sni(session, hostname);
+}
+
+inline TlsError connect(session_t session) {
+  TlsError err;
+  if (!session) {
+    err.code = ErrorCode::Fatal;
+    return err;
+  }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+  int ret = SSL_connect(tsession->ctx);
+  if (ret == 1) {
+    err.code = ErrorCode::Success;
+    const char *sni = tls_sni(tsession->ctx);
+    if (sni) { tsession->sni_hostname = sni; }
+  } else {
+    impl::tlse_last_error() = ret;
+    int dummy = 0;
+    err.code = impl::map_tlse_error(ret, dummy);
+    err.backend_code = static_cast<uint64_t>(-ret);
+  }
+  return err;
+}
+
+inline TlsError accept(session_t session) {
+  TlsError err;
+  if (!session) {
+    err.code = ErrorCode::Fatal;
+    return err;
+  }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+  int ret = SSL_accept(tsession->ctx);
+  if (ret == 1) {
+    err.code = ErrorCode::Success;
+    const char *sni = tls_sni(tsession->ctx);
+    if (sni) { tsession->sni_hostname = sni; }
+  } else {
+    impl::tlse_last_error() = ret;
+    int dummy = 0;
+    err.code = impl::map_tlse_error(ret, dummy);
+    err.backend_code = static_cast<uint64_t>(-ret);
+  }
+  return err;
+}
+
+inline bool tlse_flush_pending(TLSContext *ctx, socket_t sock,
+                                time_t timeout_sec, time_t timeout_usec,
+                                TlsError *err) {
+  unsigned int out_len = 0;
+  const unsigned char *out = tls_get_write_buffer(ctx, &out_len);
+  if (!out || out_len == 0) { return true; }
+
+  size_t sent = 0;
+  while (sent < out_len) {
+    if (detail::select_write(sock, timeout_sec, timeout_usec) <= 0) {
+      if (err) { err->code = ErrorCode::Fatal; }
+      tls_buffer_clear(ctx);
+      return false;
+    }
+    int n = impl::tlse_send_cb(static_cast<int>(sock), out + sent,
+                                out_len - sent, 0);
+    if (n <= 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
+      if (err) { err->code = ErrorCode::SyscallError; err->sys_errno = errno; }
+      tls_buffer_clear(ctx);
+      return false;
+    }
+    sent += static_cast<size_t>(n);
+  }
+  tls_buffer_clear(ctx);
+  return true;
+}
+
+inline bool connect_nonblocking(session_t session, socket_t sock,
+                                 time_t timeout_sec, time_t timeout_usec,
+                                 TlsError *err) {
+  if (!session) {
+    if (err) { err->code = ErrorCode::Fatal; }
+    return false;
+  }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+
+  impl::tlse_current_session() = tsession;
+  auto session_cleanup =
+      detail::scope_exit([&]() { impl::tlse_current_session() = nullptr; });
+
+  tls_client_connect(tsession->ctx);
+
+  if (!tlse_flush_pending(tsession->ctx, sock, timeout_sec, timeout_usec,
+                           err)) {
+    return false;
+  }
+
+  unsigned char buf[16384];
+
+  while (tls_established(tsession->ctx) != 1) {
+    if (tls_is_broken(tsession->ctx)) {
+      if (err) { err->code = ErrorCode::Fatal; }
+      return false;
+    }
+
+    int sel = detail::select_read(sock, timeout_sec, timeout_usec);
+    if (sel <= 0) {
+      if (err) { err->code = ErrorCode::Fatal; }
+      return false;
+    }
+
+    int n = static_cast<int>(recv(sock, buf, sizeof(buf), 0));
+    if (n <= 0) {
+      if (err) {
+        err->code = (n == 0) ? ErrorCode::PeerClosed : ErrorCode::SyscallError;
+        if (n < 0) { err->sys_errno = errno; }
+      }
+      return false;
+    }
+
+    int consumed = tls_consume_stream(tsession->ctx, buf, n,
+                                       impl::tlse_validation_bridge);
+    if (consumed < 0) {
+      impl::tlse_last_error() = consumed;
+      if (err) {
+        int dummy = 0;
+        err->code = impl::map_tlse_error(consumed, dummy);
+        err->backend_code = static_cast<uint64_t>(-consumed);
+      }
+      return false;
+    }
+
+    if (!tlse_flush_pending(tsession->ctx, sock, timeout_sec, timeout_usec,
+                             err)) {
+      return false;
+    }
+  }
+
+  const char *sni = tls_sni(tsession->ctx);
+  if (sni) { tsession->sni_hostname = sni; }
+
+  if (err) { err->code = ErrorCode::Success; }
+  return true;
+}
+
+inline bool accept_nonblocking(session_t session, socket_t sock,
+                                time_t timeout_sec, time_t timeout_usec,
+                                TlsError *err) {
+  return connect_nonblocking(session, sock, timeout_sec, timeout_usec, err);
+}
+
+inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
+  if (!session || !buf) {
+    err.code = ErrorCode::Fatal;
+    return -1;
+  }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+
+  if (tls_pending(tsession->ctx) > 0) {
+    int ret = tls_read(tsession->ctx, static_cast<unsigned char *>(buf),
+                       static_cast<unsigned int>(len));
+    if (ret > 0) {
+      err.code = ErrorCode::Success;
+      return static_cast<ssize_t>(ret);
+    }
+  }
+
+  int ret = SSL_read(tsession->ctx, buf, static_cast<unsigned int>(len));
+  if (ret > 0) {
+    err.code = ErrorCode::Success;
+    return static_cast<ssize_t>(ret);
+  }
+  if (ret == 0) {
+    err.code = ErrorCode::PeerClosed;
+    return 0;
+  }
+
+  if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    err.code = ErrorCode::WantRead;
+    return -1;
+  }
+
+  impl::tlse_last_error() = ret;
+  err.code = ErrorCode::Fatal;
+  err.backend_code = static_cast<uint64_t>(-ret);
+  return -1;
+}
+
+inline ssize_t write(session_t session, const void *buf, size_t len,
+                      TlsError &err) {
+  if (!session || !buf) {
+    err.code = ErrorCode::Fatal;
+    return -1;
+  }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+  int ret = SSL_write(tsession->ctx, buf, static_cast<unsigned int>(len));
+  if (ret > 0) {
+    err.code = ErrorCode::Success;
+    return static_cast<ssize_t>(ret);
+  }
+  if (ret == 0) {
+    err.code = ErrorCode::PeerClosed;
+    return 0;
+  }
+
+  if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    err.code = ErrorCode::WantWrite;
+    return -1;
+  }
+
+  impl::tlse_last_error() = ret;
+  err.code = ErrorCode::Fatal;
+  err.backend_code = static_cast<uint64_t>(-ret);
+  return -1;
+}
+
+inline int pending(const_session_t session) {
+  if (!session) { return 0; }
+  auto tsession =
+      static_cast<impl::TLSeSession *>(const_cast<void *>(session));
+  return SSL_pending(tsession->ctx);
+}
+
+inline void shutdown(session_t session, bool graceful) {
+  if (!session) { return; }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+  if (graceful) {
+    tls_close_notify(tsession->ctx);
+    SSL_shutdown(tsession->ctx);
+  }
+}
+
+inline bool is_peer_closed(session_t session, socket_t sock) {
+  if (!session || sock == INVALID_SOCKET) { return true; }
+  auto tsession = static_cast<impl::TLSeSession *>(session);
+
+  if (tls_pending(tsession->ctx) > 0) { return false; }
+  detail::set_nonblocking(sock, true);
+  auto cleanup =
+      detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
+
+  unsigned char buf[1];
+  int ret = SSL_read(tsession->ctx, buf, 1);
+  if (ret > 0) { return false; }
+  if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) { return false; }
+  return true;
+}
+
+inline cert_t get_peer_cert(const_session_t session) {
+  if (!session) { return nullptr; }
+  auto tsession =
+      static_cast<impl::TLSeSession *>(const_cast<void *>(session));
+  return static_cast<cert_t>(tsession->peer_cert);
+}
+
+inline void free_cert(cert_t cert) { (void)cert; }
+
+inline bool verify_hostname(cert_t cert, const char *hostname) {
+  if (!cert || !hostname) { return false; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+  return tls_certificate_valid_subject(tcert, hostname) == 0;
+}
+
+inline uint64_t hostname_mismatch_code() {
+  return static_cast<uint64_t>(-TLS_NOT_VERIFIED);
+}
+
+inline long get_verify_result(const_session_t session) {
+  if (!session) { return -1; }
+  auto tsession =
+      static_cast<impl::TLSeSession *>(const_cast<void *>(session));
+
+  if (!tsession->cert_chain || tsession->cert_chain_len == 0) { return 1; }
+  int result = tls_certificate_chain_is_valid_root(
+      tsession->ctx, tsession->cert_chain, tsession->cert_chain_len);
+  return (result == (int)no_error) ? 0 : static_cast<long>(result);
+}
+
+inline std::string get_cert_subject_cn(cert_t cert) {
+  if (!cert) { return ""; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+  if (!tcert->subject) { return ""; }
+
+  const char *subj = reinterpret_cast<const char *>(tcert->subject);
+  const char *cn = strstr(subj, "CN=");
+  if (cn) {
+    cn += 3;
+    const char *end = strchr(cn, ',');
+    if (end) { return std::string(cn, end); }
+    return std::string(cn);
+  }
+  return std::string(subj);
+}
+
+inline std::string get_cert_issuer_name(cert_t cert) {
+  if (!cert) { return ""; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+  if (!tcert->issuer_subject) { return ""; }
+  return std::string(reinterpret_cast<const char *>(tcert->issuer_subject));
+}
+
+inline bool get_cert_sans(cert_t cert, std::vector<SanEntry> &sans) {
+  sans.clear();
+  if (!cert) { return false; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+
+  for (unsigned short i = 0; i < tcert->san_length; i++) {
+    if (!tcert->san[i]) { continue; }
+    const char *san_str = reinterpret_cast<const char *>(tcert->san[i]);
+    SanEntry entry;
+    entry.type = impl::tlse_detect_san_type(san_str);
+    entry.value = san_str;
+    if (!entry.value.empty()) { sans.push_back(std::move(entry)); }
+  }
+  return true;
+}
+
+inline bool get_cert_validity(cert_t cert, time_t &not_before,
+                               time_t &not_after) {
+  if (!cert) { return false; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+
+  not_before = impl::tlse_parse_date(tcert->not_before);
+  not_after = impl::tlse_parse_date(tcert->not_after);
+  return true;
+}
+
+inline std::string get_cert_serial(cert_t cert) {
+  if (!cert) { return ""; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+  if (!tcert->serial_number || tcert->serial_len == 0) { return ""; }
+
+  std::string result;
+  result.reserve(tcert->serial_len * 2);
+  for (unsigned int i = 0; i < tcert->serial_len; i++) {
+    char hex[3];
+    snprintf(hex, sizeof(hex), "%02X", tcert->serial_number[i]);
+    result += hex;
+  }
+  return result;
+}
+
+inline bool get_cert_der(cert_t cert, std::vector<unsigned char> &der) {
+  if (!cert) { return false; }
+  auto tcert = static_cast<TLSCertificate *>(cert);
+  if (!tcert->der_bytes || tcert->der_len == 0) { return false; }
+  der.assign(tcert->der_bytes, tcert->der_bytes + tcert->der_len);
+  return true;
+}
+
+inline const char *get_sni(const_session_t session) {
+  if (!session) { return nullptr; }
+  auto tsession = static_cast<const impl::TLSeSession *>(session);
+
+  if (!tsession->sni_hostname.empty()) { return tsession->sni_hostname.c_str(); }
+  if (!tsession->hostname.empty()) { return tsession->hostname.c_str(); }
+  return tls_sni(tsession->ctx);
+}
+
+inline uint64_t peek_error() {
+  return static_cast<uint64_t>(-impl::tlse_last_error());
+}
+
+inline uint64_t get_error() {
+  uint64_t e = static_cast<uint64_t>(-impl::tlse_last_error());
+  impl::tlse_last_error() = 0;
+  return e;
+}
+
+inline std::string error_string(uint64_t code) {
+  int c = -static_cast<int>(code);
+  switch (c) {
+  case TLS_NEED_MORE_DATA: return "TLS_NEED_MORE_DATA";
+  case TLS_GENERIC_ERROR: return "TLS_GENERIC_ERROR";
+  case TLS_BROKEN_PACKET: return "TLS_BROKEN_PACKET";
+  case TLS_NOT_UNDERSTOOD: return "TLS_NOT_UNDERSTOOD";
+  case TLS_NOT_SAFE: return "TLS_NOT_SAFE";
+  case TLS_NO_COMMON_CIPHER: return "TLS_NO_COMMON_CIPHER";
+  case TLS_UNEXPECTED_MESSAGE: return "TLS_UNEXPECTED_MESSAGE";
+  case TLS_CLOSE_CONNECTION: return "TLS_CLOSE_CONNECTION";
+  case TLS_COMPRESSION_NOT_SUPPORTED: return "TLS_COMPRESSION_NOT_SUPPORTED";
+  case TLS_NO_MEMORY: return "TLS_NO_MEMORY";
+  case TLS_NOT_VERIFIED: return "TLS_NOT_VERIFIED";
+  case TLS_INTEGRITY_FAILED: return "TLS_INTEGRITY_FAILED";
+  case TLS_ERROR_ALERT: return "TLS_ERROR_ALERT";
+  case TLS_BROKEN_CONNECTION: return "TLS_BROKEN_CONNECTION";
+  case TLS_BAD_CERTIFICATE: return "TLS_BAD_CERTIFICATE";
+  case TLS_UNSUPPORTED_CERTIFICATE: return "TLS_UNSUPPORTED_CERTIFICATE";
+  case TLS_NO_RENEGOTIATION: return "TLS_NO_RENEGOTIATION";
+  case TLS_FEATURE_NOT_SUPPORTED: return "TLS_FEATURE_NOT_SUPPORTED";
+  case TLS_DECRYPTION_FAILED: return "TLS_DECRYPTION_FAILED";
+  default: return "TLS_UNKNOWN_ERROR";
+  }
+}
+
+inline ca_store_t create_ca_store(const char *pem, size_t len) {
+  if (!pem || len == 0) { return nullptr; }
+  auto store = new (std::nothrow) impl::TLSeCAStore();
+  if (!store) { return nullptr; }
+  store->pem_data.assign(pem, len);
+  return static_cast<ca_store_t>(store);
+}
+
+inline void free_ca_store(ca_store_t store) {
+  if (store) { delete static_cast<impl::TLSeCAStore *>(store); }
+}
+
+inline bool set_ca_store(ctx_t ctx, ca_store_t store) {
+  if (!ctx || !store) { return false; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+  auto tstore = static_cast<impl::TLSeCAStore *>(store);
+
+  tctx->ca_pem += tstore->pem_data;
+  return impl::tlse_load_root_ca(tctx->ctx, tstore->pem_data);
+}
+
+inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
+  certs.clear();
+  (void)ctx;
+  return 0;
+}
+
+inline std::vector<std::string> get_ca_names(ctx_t ctx) {
+  (void)ctx;
+  return {};
+}
+
+inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
+                                const char *key_pem, const char *password) {
+  if (!ctx || !cert_pem || !key_pem) { return false; }
+  (void)password;
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+
+  tls_clear_certificates(tctx->ctx);
+  tctx->cert_pem = cert_pem;
+  tctx->key_pem = key_pem;
+
+  return impl::tlse_load_cert_key(tctx->ctx, tctx->cert_pem, tctx->key_pem);
+}
+
+inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
+  if (!ctx || !ca_pem) { return false; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+
+  tctx->ca_pem = ca_pem;
+  return impl::tlse_load_root_ca(tctx->ctx, tctx->ca_pem);
+}
+
+inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
+  if (!ctx) { return false; }
+  auto tctx = static_cast<impl::TLSeContext *>(ctx);
+
+  impl::get_verify_callback() = std::move(callback);
+  tctx->has_verify_callback =
+      static_cast<bool>(impl::get_verify_callback());
+
+  return true;
+}
+
+inline long get_verify_error(const_session_t session) {
+  if (!session) { return -1; }
+  auto tsession =
+      static_cast<impl::TLSeSession *>(const_cast<void *>(session));
+  return tls_client_verified(tsession->ctx) ? 0 : TLS_NOT_VERIFIED;
+}
+
+inline std::string verify_error_string(long error_code) {
+  if (error_code == 0) { return ""; }
+  return error_string(static_cast<uint64_t>(-error_code));
+}
+
+} // namespace tls
+
+#endif // CPPHTTPLIB_TLSE_SUPPORT
 
 // WebSocket implementation
 namespace ws {
