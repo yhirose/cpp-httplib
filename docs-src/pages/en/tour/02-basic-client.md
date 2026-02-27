@@ -7,7 +7,7 @@ cpp-httplib isn't just for servers -- it also comes with a full HTTP client. Let
 
 ## Preparing a Test Server
 
-To try out the client, you need a server that accepts requests. Save the following code as `test_server.cpp`, then compile and run it the same way you did in the previous chapter. We'll cover the server details in the next chapter.
+To try out the client, you need a server that accepts requests. Save the following code, then compile and run it the same way you did in the previous chapter. We'll cover the server details in the next chapter.
 
 ```cpp
 #include "httplib.h"
