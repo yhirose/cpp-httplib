@@ -1,0 +1,12 @@
+[site]
+title = "cpp-httplib"
+version = "0.35.0"
+base_url = "https://yhirose.github.io/cpp-httplib"
+
+[i18n]
+default_lang = "en"
+langs = ["en", "ja"]
+
+[highlight]
+theme = "base16-eighties.dark"
+theme_light = "base16-ocean.light"

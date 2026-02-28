@@ -57,6 +57,7 @@ test/*.log
 test/_build_*
 work/
 benchmark/server*
+docs-gen/target/
 
 *.swp
 

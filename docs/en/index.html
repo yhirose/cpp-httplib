@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cpp-httplib - cpp-httplib</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.35.0</span></a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/en/">Home</a>
+        <a href="/en/tour/">Tour</a>
+      </nav>
+      <div class="header-tools">
+        <button class="theme-toggle" aria-label="Toggle theme"></button>
+        <div class="lang-selector">
+          <button class="lang-btn" aria-label="Language">EN</button>
+          <ul class="lang-popup">
+            
+            <li><a href="#" data-lang="en">EN</a></li>
+            
+            <li><a href="#" data-lang="ja">JA</a></li>
+            
+          </ul>
+        </div>
+      </div>
+      
+    </div>
+  </header>
+
+  
+
+  <div class="layout no-sidebar">
+    
+<main class="content portal">
+  <article>
+    <h1>cpp-httplib</h1>
+    <p><a href="https://github.com/yhirose/cpp-httplib">cpp-httplib</a> is an HTTP/HTTPS library for C++. Just copy a single header file, <a href="https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h"><code>httplib.h</code></a>, and you're ready to go.</p>
+<p>When you need a quick HTTP server or client in C++, you want something that just works. That's exactly why I built cpp-httplib. You can start writing both servers and clients in just a few lines of code.</p>
+<p>The API uses a lambda-based design that feels natural. It runs anywhere you have a C++11 or later compiler. Windows, macOS, Linux — use whatever environment you already have.</p>
+<p>HTTPS works too. Just link OpenSSL or mbedTLS, and both server and client gain TLS support. Content-Encoding (gzip, Brotli, etc.), file uploads, and other features you actually need in real-world development are all included. WebSocket is also supported.</p>
+<p>Under the hood, it uses blocking I/O with a thread pool. It's not built for handling massive numbers of simultaneous connections. But for API servers, embedded HTTP in tools, mock servers for testing, and many other use cases, it delivers solid performance.</p>
+<p>"Solve today's problem, today." That's the kind of simplicity cpp-httplib aims for.</p>
+<h2>Documentation</h2>
+<ul>
+<li><a href="tour/">A Tour of cpp-httplib</a> — A step-by-step tutorial covering the basics. Start here if you're new</li>
+<li><a href="cookbook/">Cookbook</a> — A collection of recipes organized by topic. Jump to whatever you need</li>
+</ul>
+
+  </article>
+</main>
+
+  </div>
+
+  <footer class="footer">
+    &copy; 2025 yhirose. All rights reserved.
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

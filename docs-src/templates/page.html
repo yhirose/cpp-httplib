@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block layout_class %}has-sidebar{% endblock %}
+
+{% block sidebar_toggle %}<button class="sidebar-toggle" aria-label="Menu">&#9776;</button>{% endblock %}
+
+{% block body %}
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+    {% for section in nav %}
+    <div class="nav-section">
+      <a href="{{ section.url }}" class="nav-section-title {% if section.active %}active{% endif %}">{{ section.title }}</a>
+      {% if section.children %}
+      <ul class="nav-list">
+        {% for item in section.children %}
+        <li><a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </nav>
+</aside>
+<main class="content">
+  <article>
+    <h1>{{ page.title }}</h1>
+    {{ content | safe }}
+  </article>
+</main>
+{% endblock %}

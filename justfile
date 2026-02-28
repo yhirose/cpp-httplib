@@ -44,3 +44,7 @@ build:
 
 bench:
     @(cd benchmark && make bench-all)
+
+docs:
+    cargo build --release --manifest-path docs-gen/Cargo.toml
+    ./docs-gen/target/release/docs-gen docs-src --out docs

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cpp-httplib - cpp-httplib</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.35.0</span></a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/ja/">Home</a>
+        <a href="/ja/tour/">Tour</a>
+      </nav>
+      <div class="header-tools">
+        <button class="theme-toggle" aria-label="Toggle theme"></button>
+        <div class="lang-selector">
+          <button class="lang-btn" aria-label="Language">JA</button>
+          <ul class="lang-popup">
+            
+            <li><a href="#" data-lang="en">EN</a></li>
+            
+            <li><a href="#" data-lang="ja">JA</a></li>
+            
+          </ul>
+        </div>
+      </div>
+      
+    </div>
+  </header>
+
+  
+
+  <div class="layout no-sidebar">
+    
+<main class="content portal">
+  <article>
+    <h1>cpp-httplib</h1>
+    <p><a href="https://github.com/yhirose/cpp-httplib">cpp-httplib</a>は、C++用のHTTP/HTTPSライブラリです。<a href="https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h"><code>httplib.h</code></a> というヘッダーファイルを1枚コピーするだけで使えます。</p>
+<p>C++でちょっとしたHTTPサーバーやクライアントが必要になったとき、すぐに動くものが欲しいですよね。cpp-httplibはまさにそのために作られました。サーバーもクライアントも、数行のコードで書き始められます。</p>
+<p>APIはラムダ式をベースにした直感的な設計で、C++11以降のコンパイラーがあればどこでも動きます。Windows、macOS、Linux — お使いの環境をそのまま使えます。</p>
+<p>HTTPSも使えます。OpenSSLやmbedTLSをリンクするだけで、サーバー・クライアントの両方がTLSに対応します。Content-Encoding（gzip, brotli等）、ファイルアップロードなど、実際の開発で必要になる機能もひと通り揃っています。WebSocketもサポートしています。</p>
+<p>内部的にはブロッキングI/Oとスレッドプールを使っています。大量の同時接続を捌くような用途には向きませんが、APIサーバーやツールの組み込みHTTP、テスト用のモックサーバーなど、多くのユースケースで十分な性能を発揮します。</p>
+<p>「今日の課題を、今日中に解決する」— cpp-httplibが目指しているのは、そういうシンプルさです。</p>
+<h2>ドキュメント</h2>
+<ul>
+<li><a href="tour/">A Tour of cpp-httplib</a> — 基本を順を追って学べるチュートリアル。初めての方はここから</li>
+<li><a href="cookbook/">Cookbook</a> — 目的別のレシピ集。必要なトピックから読めます</li>
+</ul>
+
+  </article>
+</main>
+
+  </div>
+
+  <footer class="footer">
+    &copy; 2025 yhirose. All rights reserved.
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

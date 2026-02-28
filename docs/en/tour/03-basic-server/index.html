@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Basic Server - cpp-httplib</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.35.0</span></a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/en/">Home</a>
+        <a href="/en/tour/">Tour</a>
+      </nav>
+      <div class="header-tools">
+        <button class="theme-toggle" aria-label="Toggle theme"></button>
+        <div class="lang-selector">
+          <button class="lang-btn" aria-label="Language">EN</button>
+          <ul class="lang-popup">
+            
+            <li><a href="#" data-lang="en">EN</a></li>
+            
+            <li><a href="#" data-lang="ja">JA</a></li>
+            
+          </ul>
+        </div>
+      </div>
+      <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
+    </div>
+  </header>
+
+  
+
+  <div class="layout has-sidebar">
+    
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+    
+    <div class="nav-section">
+      <a href="&#x2F;en&#x2F;tour&#x2F;" class="nav-section-title active">A Tour of cpp-httplib</a>
+      
+      <ul class="nav-list">
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;01-getting-started&#x2F;" class="">Getting Started</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;02-basic-client&#x2F;" class="">Basic Client</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;03-basic-server&#x2F;" class="active">Basic Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;04-static-file-server&#x2F;" class="">Static File Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;05-tls-setup&#x2F;" class="">TLS Setup</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;06-https-client&#x2F;" class="">HTTPS Client</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;07-https-server&#x2F;" class="">HTTPS Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;08-websocket&#x2F;" class="">WebSocket</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;09-whats-next&#x2F;" class="">What&#x27;s Next</a></li>
+        
+      </ul>
+      
+    </div>
+    
+  </nav>
+</aside>
+<main class="content">
+  <article>
+    <h1>Basic Server</h1>
+    <p>In the previous chapter, you sent requests from a client to a test server. Now let's walk through how that server actually works.</p>
+<h2>Starting the Server</h2>
+<p>Once you've registered your routes, call <code>svr.listen()</code> to start the server.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
+</span></pre>
+</div>
+<p>The first argument is the host, and the second is the port. <code>"0.0.0.0"</code> listens on all network interfaces. Use <code>"127.0.0.1"</code> if you want to accept connections from your own machine only.</p>
+<p><code>listen()</code> is a blocking call. It won't return until the server stops. The server keeps running until you press <code>Ctrl+C</code> in your terminal or call <code>svr.stop()</code> from another thread.</p>
+<h2>Routing</h2>
+<p>Routing is the heart of any server. It's how you tell cpp-httplib: when a request comes in for this URL with this HTTP method, run this code.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Server svr;
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::Request &amp;req, httplib::Response &amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Server svr;
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request &amp;req, httplib::Response &amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p><code>svr.Get()</code> registers a handler for GET requests. The first argument is the path, the second is the handler function. When a GET request arrives at <code>/hi</code>, your lambda runs.</p>
+<p>There's a method for each HTTP verb.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/path</span><span style="color:#d3d0c8;">&quot;,    handler);  </span><span style="color:#747369;">// GET
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/path</span><span style="color:#d3d0c8;">&quot;,   handler);  </span><span style="color:#747369;">// POST
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Put</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/path</span><span style="color:#d3d0c8;">&quot;,    handler);  </span><span style="color:#747369;">// PUT
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Delete</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/path</span><span style="color:#d3d0c8;">&quot;, handler);  </span><span style="color:#747369;">// DELETE
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/path</span><span style="color:#4f5b66;">&quot;,    handler);  </span><span style="color:#a7adba;">// GET
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/path</span><span style="color:#4f5b66;">&quot;,   handler);  </span><span style="color:#a7adba;">// POST
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Put</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/path</span><span style="color:#4f5b66;">&quot;,    handler);  </span><span style="color:#a7adba;">// PUT
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Delete</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/path</span><span style="color:#4f5b66;">&quot;, handler);  </span><span style="color:#a7adba;">// DELETE
+</span></pre>
+</div>
+<p>The handler signature is <code>(const httplib::Request &amp;req, httplib::Response &amp;res)</code>. You can use <code>auto</code> to keep it short.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>The handler only runs when the path matches. Requests to unregistered paths automatically return 404.</p>
+<h2>The Request Object</h2>
+<p>The first parameter <code>req</code> gives you everything the client sent.</p>
+<h3>Body</h3>
+<p><code>req.body</code> holds the request body as a <code>std::string</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/post</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#747369;">// Echo the body back to the client
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(req.</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/post</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Echo the body back to the client
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(req.</span><span style="color:#bf616a;">body</span><span style="color:#4f5b66;">, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h3>Headers</h3>
+<p>Use <code>req.get_header_value()</code> to read a request header.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/check</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> auth = req.</span><span style="color:#6699cc;">get_header_value</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Authorization</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Auth: </span><span style="color:#d3d0c8;">&quot; + auth, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/check</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> auth = req.</span><span style="color:#8fa1b3;">get_header_value</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Authorization</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Auth: </span><span style="color:#4f5b66;">&quot; + auth, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h3>Query Parameters and Form Data</h3>
+<p><code>req.get_param_value()</code> retrieves a parameter by name. It works for both GET query parameters and POST form data.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/search</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> q = req.</span><span style="color:#6699cc;">get_param_value</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">q</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Query: </span><span style="color:#d3d0c8;">&quot; + q, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/search</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> q = req.</span><span style="color:#8fa1b3;">get_param_value</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">q</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Query: </span><span style="color:#4f5b66;">&quot; + q, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>A request to <code>/search?q=cpp-httplib</code> gives you <code>"cpp-httplib"</code> for <code>q</code>.</p>
+<p>To loop over all parameters, use <code>req.params</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/submit</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    std::string result;
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">for </span><span style="color:#d3d0c8;">(</span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;[key, val] : req.</span><span style="color:#f2777a;">params</span><span style="color:#d3d0c8;">) {
+</span><span style="color:#d3d0c8;">        result += key + &quot;</span><span style="color:#99cc99;"> = </span><span style="color:#d3d0c8;">&quot; + val + &quot;</span><span style="color:#66cccc;">\n</span><span style="color:#d3d0c8;">&quot;;
+</span><span style="color:#d3d0c8;">    }
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(result, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/submit</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    std::string result;
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">for </span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;[key, val] : req.</span><span style="color:#bf616a;">params</span><span style="color:#4f5b66;">) {
+</span><span style="color:#4f5b66;">        result += key + &quot;</span><span style="color:#a3be8c;"> = </span><span style="color:#4f5b66;">&quot; + val + &quot;</span><span style="color:#96b5b4;">\n</span><span style="color:#4f5b66;">&quot;;
+</span><span style="color:#4f5b66;">    }
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(result, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h3>File Uploads</h3>
+<p>Files uploaded via multipart form data are available through <code>req.form.get_file()</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/upload</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> f = req.</span><span style="color:#f2777a;">form</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">get_file</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">file</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> content = f.</span><span style="color:#f2777a;">filename </span><span style="color:#d3d0c8;">+ &quot;</span><span style="color:#99cc99;"> (</span><span style="color:#d3d0c8;">&quot; + </span><span style="color:#6699cc;">std::to_string</span><span style="color:#d3d0c8;">(f.</span><span style="color:#f2777a;">content</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">size</span><span style="color:#d3d0c8;">()) + &quot;</span><span style="color:#99cc99;"> bytes)</span><span style="color:#d3d0c8;">&quot;;
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(content, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/upload</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> f = req.</span><span style="color:#bf616a;">form</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">get_file</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">file</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> content = f.</span><span style="color:#bf616a;">filename </span><span style="color:#4f5b66;">+ &quot;</span><span style="color:#a3be8c;"> (</span><span style="color:#4f5b66;">&quot; + </span><span style="color:#8fa1b3;">std::to_string</span><span style="color:#4f5b66;">(f.</span><span style="color:#bf616a;">content</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">size</span><span style="color:#4f5b66;">()) + &quot;</span><span style="color:#a3be8c;"> bytes)</span><span style="color:#4f5b66;">&quot;;
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(content, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p><code>f.filename</code> gives you the filename, and <code>f.content</code> gives you the file data.</p>
+<h2>Path Parameters</h2>
+<p>Sometimes you want to capture part of the URL as a variable -- for example, the <code>42</code> in <code>/users/42</code>. Use the <code>:param</code> syntax to do that.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/users/:id</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> id = req.</span><span style="color:#f2777a;">path_params</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">at</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">id</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">User ID: </span><span style="color:#d3d0c8;">&quot; + id, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/users/:id</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> id = req.</span><span style="color:#bf616a;">path_params</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">at</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">id</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">User ID: </span><span style="color:#4f5b66;">&quot; + id, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>A request to <code>/users/42</code> gives you <code>"42"</code> from <code>req.path_params.at("id")</code>. <code>/users/100</code> gives you <code>"100"</code>.</p>
+<p>You can capture multiple segments at once.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/users/:user_id/posts/:post_id</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> user_id = req.</span><span style="color:#f2777a;">path_params</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">at</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">user_id</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> post_id = req.</span><span style="color:#f2777a;">path_params</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">at</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">post_id</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">User: </span><span style="color:#d3d0c8;">&quot; + user_id + &quot;</span><span style="color:#99cc99;">, Post: </span><span style="color:#d3d0c8;">&quot; + post_id, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/users/:user_id/posts/:post_id</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> user_id = req.</span><span style="color:#bf616a;">path_params</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">at</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">user_id</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> post_id = req.</span><span style="color:#bf616a;">path_params</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">at</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">post_id</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">User: </span><span style="color:#4f5b66;">&quot; + user_id + &quot;</span><span style="color:#a3be8c;">, Post: </span><span style="color:#4f5b66;">&quot; + post_id, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h3>Regex Patterns</h3>
+<p>You can also write a regular expression directly in the path instead of <code>:param</code>. Capture group values are available via <code>req.matches</code>, which is a <code>std::smatch</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#747369;">// Only accept numeric IDs
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(</span><span style="color:#cc99cc;">R</span><span style="color:#d3d0c8;">&quot;(</span><span style="color:#99cc99;">/files/(\d+)</span><span style="color:#d3d0c8;">)&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> id = req.</span><span style="color:#f2777a;">matches</span><span style="color:#d3d0c8;">[</span><span style="color:#f99157;">1</span><span style="color:#d3d0c8;">];  </span><span style="color:#747369;">// First capture group
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">File ID: </span><span style="color:#d3d0c8;">&quot; + </span><span style="color:#6699cc;">std::string</span><span style="color:#d3d0c8;">(id), &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#a7adba;">// Only accept numeric IDs
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">R</span><span style="color:#4f5b66;">&quot;(</span><span style="color:#a3be8c;">/files/(\d+)</span><span style="color:#4f5b66;">)&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> id = req.</span><span style="color:#bf616a;">matches</span><span style="color:#4f5b66;">[</span><span style="color:#d08770;">1</span><span style="color:#4f5b66;">];  </span><span style="color:#a7adba;">// First capture group
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">File ID: </span><span style="color:#4f5b66;">&quot; + </span><span style="color:#8fa1b3;">std::string</span><span style="color:#4f5b66;">(id), &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p><code>/files/42</code> matches, but <code>/files/abc</code> doesn't. This is handy when you want to constrain what values are accepted.</p>
+<h2>Building a Response</h2>
+<p>The second parameter <code>res</code> is how you send data back to the client.</p>
+<h3>Body and Content-Type</h3>
+<p><code>res.set_content()</code> sets the body and Content-Type. That's all you need for a 200 response.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h3>Status Code</h3>
+<p>To return a different status code, assign to <code>res.status</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/not-found</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">= </span><span style="color:#f99157;">404</span><span style="color:#d3d0c8;">;
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Not found</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/not-found</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">= </span><span style="color:#d08770;">404</span><span style="color:#4f5b66;">;
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Not found</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h3>Response Headers</h3>
+<p>Add response headers with <code>res.set_header()</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/with-header</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_header</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">X-Custom</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">my-value</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/with-header</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_header</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">X-Custom</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">my-value</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h2>Walking Through the Test Server</h2>
+<p>Now let's use what we've learned to read through the test server from the previous chapter.</p>
+<h3>GET /hi</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>The simplest possible handler. We don't need any information from the request, so the <code>req</code> parameter is left unnamed. It just returns <code>"Hello!"</code>.</p>
+<h3>GET /search</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/search</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> q = req.</span><span style="color:#6699cc;">get_param_value</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">q</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Query: </span><span style="color:#d3d0c8;">&quot; + q, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/search</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> q = req.</span><span style="color:#8fa1b3;">get_param_value</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">q</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Query: </span><span style="color:#4f5b66;">&quot; + q, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p><code>req.get_param_value("q")</code> pulls out the query parameter <code>q</code>. A request to <code>/search?q=cpp-httplib</code> returns <code>"Query: cpp-httplib"</code>.</p>
+<h3>POST /post</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/post</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(req.</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/post</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(req.</span><span style="color:#bf616a;">body</span><span style="color:#4f5b66;">, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>An echo server. Whatever body the client sends, <code>req.body</code> holds it, and we send it straight back.</p>
+<h3>POST /submit</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/submit</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    std::string result;
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">for </span><span style="color:#d3d0c8;">(</span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;[key, val] : req.</span><span style="color:#f2777a;">params</span><span style="color:#d3d0c8;">) {
+</span><span style="color:#d3d0c8;">        result += key + &quot;</span><span style="color:#99cc99;"> = </span><span style="color:#d3d0c8;">&quot; + val + &quot;</span><span style="color:#66cccc;">\n</span><span style="color:#d3d0c8;">&quot;;
+</span><span style="color:#d3d0c8;">    }
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(result, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/submit</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    std::string result;
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">for </span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;[key, val] : req.</span><span style="color:#bf616a;">params</span><span style="color:#4f5b66;">) {
+</span><span style="color:#4f5b66;">        result += key + &quot;</span><span style="color:#a3be8c;"> = </span><span style="color:#4f5b66;">&quot; + val + &quot;</span><span style="color:#96b5b4;">\n</span><span style="color:#4f5b66;">&quot;;
+</span><span style="color:#4f5b66;">    }
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(result, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>Loops over the form data in <code>req.params</code> using structured bindings (<code>auto &amp;[key, val]</code>) to unpack each key-value pair.</p>
+<h3>POST /upload</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/upload</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> f = req.</span><span style="color:#f2777a;">form</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">get_file</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">file</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> content = f.</span><span style="color:#f2777a;">filename </span><span style="color:#d3d0c8;">+ &quot;</span><span style="color:#99cc99;"> (</span><span style="color:#d3d0c8;">&quot; + </span><span style="color:#6699cc;">std::to_string</span><span style="color:#d3d0c8;">(f.</span><span style="color:#f2777a;">content</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">size</span><span style="color:#d3d0c8;">()) + &quot;</span><span style="color:#99cc99;"> bytes)</span><span style="color:#d3d0c8;">&quot;;
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(content, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/upload</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> f = req.</span><span style="color:#bf616a;">form</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">get_file</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">file</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> content = f.</span><span style="color:#bf616a;">filename </span><span style="color:#4f5b66;">+ &quot;</span><span style="color:#a3be8c;"> (</span><span style="color:#4f5b66;">&quot; + </span><span style="color:#8fa1b3;">std::to_string</span><span style="color:#4f5b66;">(f.</span><span style="color:#bf616a;">content</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">size</span><span style="color:#4f5b66;">()) + &quot;</span><span style="color:#a3be8c;"> bytes)</span><span style="color:#4f5b66;">&quot;;
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(content, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>Receives a file uploaded via multipart form data. <code>req.form.get_file("file")</code> fetches the field named <code>"file"</code>, and we respond with the filename and size.</p>
+<h3>GET /users/:id</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/users/:id</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> id = req.</span><span style="color:#f2777a;">path_params</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">at</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">id</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">User ID: </span><span style="color:#d3d0c8;">&quot; + id, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/users/:id</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> id = req.</span><span style="color:#bf616a;">path_params</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">at</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">id</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">User ID: </span><span style="color:#4f5b66;">&quot; + id, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p><code>:id</code> is the path parameter. <code>req.path_params.at("id")</code> retrieves its value. <code>/users/42</code> gives you <code>"42"</code>, <code>/users/alice</code> gives you <code>"alice"</code>.</p>
+<h3>GET /files/(\d+)</h3>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(</span><span style="color:#cc99cc;">R</span><span style="color:#d3d0c8;">&quot;(</span><span style="color:#99cc99;">/files/(\d+)</span><span style="color:#d3d0c8;">)&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> id = req.</span><span style="color:#f2777a;">matches</span><span style="color:#d3d0c8;">[</span><span style="color:#f99157;">1</span><span style="color:#d3d0c8;">];
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">File ID: </span><span style="color:#d3d0c8;">&quot; + </span><span style="color:#6699cc;">std::string</span><span style="color:#d3d0c8;">(id), &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">R</span><span style="color:#4f5b66;">&quot;(</span><span style="color:#a3be8c;">/files/(\d+)</span><span style="color:#4f5b66;">)&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> id = req.</span><span style="color:#bf616a;">matches</span><span style="color:#4f5b66;">[</span><span style="color:#d08770;">1</span><span style="color:#4f5b66;">];
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">File ID: </span><span style="color:#4f5b66;">&quot; + </span><span style="color:#8fa1b3;">std::string</span><span style="color:#4f5b66;">(id), &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>The regex <code>(\d+)</code> matches numeric IDs only. <code>/files/42</code> hits this handler, but <code>/files/abc</code> returns 404. <code>req.matches[1]</code> retrieves the first capture group.</p>
+<h2>Next Steps</h2>
+<p>You now have the full picture of how a server works. Routing, reading requests, building responses -- that's enough to build a real API server.</p>
+<p>Next, let's look at serving static files. We'll build a server that delivers HTML and CSS.</p>
+<p><strong>Next:</strong> <a href="../04-static-file-server">Static File Server</a></p>
+
+  </article>
+</main>
+
+  </div>
+
+  <footer class="footer">
+    &copy; 2025 yhirose. All rights reserved.
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

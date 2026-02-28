@@ -1,0 +1,16 @@
+[package]
+name = "docs-gen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pulldown-cmark = "0.12"
+tera = "1"
+walkdir = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yml = "0.0.12"
+toml = "0.8"
+syntect = "5"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }

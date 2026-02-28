@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Static File Server - cpp-httplib</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.35.0</span></a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/en/">Home</a>
+        <a href="/en/tour/">Tour</a>
+      </nav>
+      <div class="header-tools">
+        <button class="theme-toggle" aria-label="Toggle theme"></button>
+        <div class="lang-selector">
+          <button class="lang-btn" aria-label="Language">EN</button>
+          <ul class="lang-popup">
+            
+            <li><a href="#" data-lang="en">EN</a></li>
+            
+            <li><a href="#" data-lang="ja">JA</a></li>
+            
+          </ul>
+        </div>
+      </div>
+      <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
+    </div>
+  </header>
+
+  
+
+  <div class="layout has-sidebar">
+    
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+    
+    <div class="nav-section">
+      <a href="&#x2F;en&#x2F;tour&#x2F;" class="nav-section-title active">A Tour of cpp-httplib</a>
+      
+      <ul class="nav-list">
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;01-getting-started&#x2F;" class="">Getting Started</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;02-basic-client&#x2F;" class="">Basic Client</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;03-basic-server&#x2F;" class="">Basic Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;04-static-file-server&#x2F;" class="active">Static File Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;05-tls-setup&#x2F;" class="">TLS Setup</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;06-https-client&#x2F;" class="">HTTPS Client</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;07-https-server&#x2F;" class="">HTTPS Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;08-websocket&#x2F;" class="">WebSocket</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;09-whats-next&#x2F;" class="">What&#x27;s Next</a></li>
+        
+      </ul>
+      
+    </div>
+    
+  </nav>
+</aside>
+<main class="content">
+  <article>
+    <h1>Static File Server</h1>
+    <p>cpp-httplib can serve static files too — HTML, CSS, images, you name it. No complicated configuration required. One call to <code>set_mount_point()</code> is all it takes.</p>
+<h2>The basics of set_mount_point</h2>
+<p>Let's jump right in. <code>set_mount_point()</code> maps a URL path to a local directory.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
+</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
+</span><span style="color:#d3d0c8;">    httplib::Server svr;
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./html</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; &quot;</span><span style="color:#99cc99;">Listening on port 8080...</span><span style="color:#d3d0c8;">&quot; &lt;&lt; std::endl;
+</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
+</span><span style="color:#d3d0c8;">}
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
+</span><span style="color:#4f5b66;">    httplib::Server svr;
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">./html</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Listening on port 8080...</span><span style="color:#4f5b66;">&quot; &lt;&lt; std::endl;
+</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
+</span><span style="color:#4f5b66;">}
+</span></pre>
+</div>
+<p>The first argument is the URL mount point. The second is the local directory path. In this example, requests to <code>/</code> are served from the <code>./html</code> directory.</p>
+<p>Let's try it out. First, create an <code>html</code> directory and add an <code>index.html</code> file.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#6699cc;">mkdir</span><span style="color:#d3d0c8;"> html
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#8fa1b3;">mkdir</span><span style="color:#4f5b66;"> html
+</span></pre>
+</div><div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">&lt;!</span><span style="color:#f2777a;">DOCTYPE</span><span style="color:#d3d0c8;"> html&gt;
+</span><span style="color:#d3d0c8;">&lt;</span><span style="color:#f2777a;">html</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">&lt;</span><span style="color:#f2777a;">head</span><span style="color:#d3d0c8;">&gt;&lt;</span><span style="color:#f2777a;">title</span><span style="color:#d3d0c8;">&gt;My Page&lt;/</span><span style="color:#f2777a;">title</span><span style="color:#d3d0c8;">&gt;&lt;/</span><span style="color:#f2777a;">head</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">&lt;</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">    &lt;</span><span style="color:#f2777a;">h1</span><span style="color:#d3d0c8;">&gt;Hello from cpp-httplib!&lt;/</span><span style="color:#f2777a;">h1</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">    &lt;</span><span style="color:#f2777a;">p</span><span style="color:#d3d0c8;">&gt;This is a static file.&lt;/</span><span style="color:#f2777a;">p</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">&lt;/</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">&gt;
+</span><span style="color:#d3d0c8;">&lt;/</span><span style="color:#f2777a;">html</span><span style="color:#d3d0c8;">&gt;
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">&lt;!</span><span style="color:#bf616a;">DOCTYPE</span><span style="color:#4f5b66;"> html&gt;
+</span><span style="color:#4f5b66;">&lt;</span><span style="color:#bf616a;">html</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">&lt;</span><span style="color:#bf616a;">head</span><span style="color:#4f5b66;">&gt;&lt;</span><span style="color:#bf616a;">title</span><span style="color:#4f5b66;">&gt;My Page&lt;/</span><span style="color:#bf616a;">title</span><span style="color:#4f5b66;">&gt;&lt;/</span><span style="color:#bf616a;">head</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">&lt;</span><span style="color:#bf616a;">body</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">    &lt;</span><span style="color:#bf616a;">h1</span><span style="color:#4f5b66;">&gt;Hello from cpp-httplib!&lt;/</span><span style="color:#bf616a;">h1</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">    &lt;</span><span style="color:#bf616a;">p</span><span style="color:#4f5b66;">&gt;This is a static file.&lt;/</span><span style="color:#bf616a;">p</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">&lt;/</span><span style="color:#bf616a;">body</span><span style="color:#4f5b66;">&gt;
+</span><span style="color:#4f5b66;">&lt;/</span><span style="color:#bf616a;">html</span><span style="color:#4f5b66;">&gt;
+</span></pre>
+</div>
+<p>Compile and start the server.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#6699cc;">g++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -o</span><span style="color:#d3d0c8;"> server server.cpp</span><span style="color:#f2777a;"> -pthread
+</span><span style="color:#6699cc;">./server
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#8fa1b3;">g++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -o</span><span style="color:#4f5b66;"> server server.cpp</span><span style="color:#bf616a;"> -pthread
+</span><span style="color:#8fa1b3;">./server
+</span></pre>
+</div>
+<p>Open <code>http://localhost:8080</code> in your browser. You should see the contents of <code>html/index.html</code>. Visiting <code>http://localhost:8080/index.html</code> returns the same page.</p>
+<p>You can also access it with the client code from the previous chapter, or with <code>curl</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:8080</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
+</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// HTML is displayed
+</span><span style="color:#d3d0c8;">}
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:8080</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
+</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// HTML is displayed
+</span><span style="color:#4f5b66;">}
+</span></pre>
+</div><div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#4f5b66;"> http://localhost:8080
+</span></pre>
+</div>
+<h2>Multiple mount points</h2>
+<p>You can call <code>set_mount_point()</code> as many times as you like. Each URL path gets its own directory.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./public</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/assets</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./static/assets</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/docs</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./documentation</span><span style="color:#d3d0c8;">&quot;);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">./public</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/assets</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">./static/assets</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/docs</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">./documentation</span><span style="color:#4f5b66;">&quot;);
+</span></pre>
+</div>
+<p>A request to <code>/assets/style.css</code> serves <code>./static/assets/style.css</code>. A request to <code>/docs/guide.html</code> serves <code>./documentation/guide.html</code>.</p>
+<h2>Combining with handlers</h2>
+<p>Static file serving and routing handlers — the kind you learned about in the previous chapter — work side by side.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Server svr;
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#747369;">// API endpoint
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/api/hello</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(</span><span style="color:#cc99cc;">R</span><span style="color:#d3d0c8;">&quot;(</span><span style="color:#99cc99;">{&quot;message&quot;:&quot;Hello!&quot;}</span><span style="color:#d3d0c8;">)&quot;, &quot;</span><span style="color:#99cc99;">application/json</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#747369;">// Static file serving
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./public</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Server svr;
+</span><span style="color:#4f5b66;">
+</span><span style="color:#a7adba;">// API endpoint
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/api/hello</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">R</span><span style="color:#4f5b66;">&quot;(</span><span style="color:#a3be8c;">{&quot;message&quot;:&quot;Hello!&quot;}</span><span style="color:#4f5b66;">)&quot;, &quot;</span><span style="color:#a3be8c;">application/json</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#a7adba;">// Static file serving
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">./public</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
+</span></pre>
+</div>
+<p>Handlers take priority. The handler responds to <code>/api/hello</code>. For every other path, the server looks for a file in <code>./public</code>.</p>
+<h2>Adding response headers</h2>
+<p>Pass headers as the third argument to <code>set_mount_point()</code> and they get attached to every static file response. This is great for cache control.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./public</span><span style="color:#d3d0c8;">&quot;, {
+</span><span style="color:#d3d0c8;">    {&quot;</span><span style="color:#99cc99;">Cache-Control</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">max-age=3600</span><span style="color:#d3d0c8;">&quot;}
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">./public</span><span style="color:#4f5b66;">&quot;, {
+</span><span style="color:#4f5b66;">    {&quot;</span><span style="color:#a3be8c;">Cache-Control</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">max-age=3600</span><span style="color:#4f5b66;">&quot;}
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>With this in place, the browser caches served files for one hour.</p>
+<h2>A Dockerfile for your static file server</h2>
+<p>The cpp-httplib repository includes a <code>Dockerfile</code> built for static file serving. We also publish a pre-built image on Docker Hub, so you can get up and running with a single command.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">&gt; docker run</span><span style="color:#f2777a;"> -p</span><span style="color:#d3d0c8;"> 8080:80</span><span style="color:#f2777a;"> -v</span><span style="color:#d3d0c8;"> ./my-site:/html yhirose4dockerhub/cpp-httplib-server
+</span><span style="color:#6699cc;">Serving</span><span style="color:#d3d0c8;"> HTTP on 0.0.0.0:80
+</span><span style="color:#6699cc;">Mount</span><span style="color:#d3d0c8;"> point: / -&gt; ./html
+</span><span style="color:#6699cc;">Press</span><span style="color:#d3d0c8;"> Ctrl+C to shutdown gracefully...
+</span><span style="color:#6699cc;">192.168.65.1</span><span style="color:#d3d0c8;"> - - </span><span style="color:#cc99cc;">[</span><span style="color:#d3d0c8;">22/Feb/2026:12:00:00 +0000</span><span style="color:#cc99cc;">] </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">GET / HTTP/1.1</span><span style="color:#d3d0c8;">&quot; 200 256 &quot;</span><span style="color:#99cc99;">-</span><span style="color:#d3d0c8;">&quot; &quot;</span><span style="color:#99cc99;">Mozilla/5.0 ...</span><span style="color:#d3d0c8;">&quot;
+</span><span style="color:#6699cc;">192.168.65.1</span><span style="color:#d3d0c8;"> - - </span><span style="color:#cc99cc;">[</span><span style="color:#d3d0c8;">22/Feb/2026:12:00:00 +0000</span><span style="color:#cc99cc;">] </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">GET /style.css HTTP/1.1</span><span style="color:#d3d0c8;">&quot; 200 1024 &quot;</span><span style="color:#99cc99;">-</span><span style="color:#d3d0c8;">&quot; &quot;</span><span style="color:#99cc99;">Mozilla/5.0 ...</span><span style="color:#d3d0c8;">&quot;
+</span><span style="color:#6699cc;">192.168.65.1</span><span style="color:#d3d0c8;"> - - </span><span style="color:#cc99cc;">[</span><span style="color:#d3d0c8;">22/Feb/2026:12:00:01 +0000</span><span style="color:#cc99cc;">] </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">GET /favicon.ico HTTP/1.1</span><span style="color:#d3d0c8;">&quot; 404 152 &quot;</span><span style="color:#99cc99;">-</span><span style="color:#d3d0c8;">&quot; &quot;</span><span style="color:#99cc99;">Mozilla/5.0 ...</span><span style="color:#d3d0c8;">&quot;
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">&gt; docker run</span><span style="color:#bf616a;"> -p</span><span style="color:#4f5b66;"> 8080:80</span><span style="color:#bf616a;"> -v</span><span style="color:#4f5b66;"> ./my-site:/html yhirose4dockerhub/cpp-httplib-server
+</span><span style="color:#8fa1b3;">Serving</span><span style="color:#4f5b66;"> HTTP on 0.0.0.0:80
+</span><span style="color:#8fa1b3;">Mount</span><span style="color:#4f5b66;"> point: / -&gt; ./html
+</span><span style="color:#8fa1b3;">Press</span><span style="color:#4f5b66;"> Ctrl+C to shutdown gracefully...
+</span><span style="color:#8fa1b3;">192.168.65.1</span><span style="color:#4f5b66;"> - - </span><span style="color:#b48ead;">[</span><span style="color:#4f5b66;">22/Feb/2026:12:00:00 +0000</span><span style="color:#b48ead;">] </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">GET / HTTP/1.1</span><span style="color:#4f5b66;">&quot; 200 256 &quot;</span><span style="color:#a3be8c;">-</span><span style="color:#4f5b66;">&quot; &quot;</span><span style="color:#a3be8c;">Mozilla/5.0 ...</span><span style="color:#4f5b66;">&quot;
+</span><span style="color:#8fa1b3;">192.168.65.1</span><span style="color:#4f5b66;"> - - </span><span style="color:#b48ead;">[</span><span style="color:#4f5b66;">22/Feb/2026:12:00:00 +0000</span><span style="color:#b48ead;">] </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">GET /style.css HTTP/1.1</span><span style="color:#4f5b66;">&quot; 200 1024 &quot;</span><span style="color:#a3be8c;">-</span><span style="color:#4f5b66;">&quot; &quot;</span><span style="color:#a3be8c;">Mozilla/5.0 ...</span><span style="color:#4f5b66;">&quot;
+</span><span style="color:#8fa1b3;">192.168.65.1</span><span style="color:#4f5b66;"> - - </span><span style="color:#b48ead;">[</span><span style="color:#4f5b66;">22/Feb/2026:12:00:01 +0000</span><span style="color:#b48ead;">] </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">GET /favicon.ico HTTP/1.1</span><span style="color:#4f5b66;">&quot; 404 152 &quot;</span><span style="color:#a3be8c;">-</span><span style="color:#4f5b66;">&quot; &quot;</span><span style="color:#a3be8c;">Mozilla/5.0 ...</span><span style="color:#4f5b66;">&quot;
+</span></pre>
+</div>
+<p>Everything in your <code>./my-site</code> directory gets served on port 8080. The access log follows the same format as NGINX, so you can see exactly what's happening.</p>
+<h2>What's next</h2>
+<p>You can now serve static files. A web server that delivers HTML, CSS, and JavaScript — built with this little code.</p>
+<p>Next, let's encrypt your connections with HTTPS. We'll start by setting up a TLS library.</p>
+<p><strong>Next:</strong> <a href="../05-tls-setup">TLS Setup</a></p>
+
+  </article>
+</main>
+
+  </div>
+
+  <footer class="footer">
+    &copy; 2025 yhirose. All rights reserved.
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

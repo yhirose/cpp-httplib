@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What&#x27;s Next - cpp-httplib</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.35.0</span></a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/ja/">Home</a>
+        <a href="/ja/tour/">Tour</a>
+      </nav>
+      <div class="header-tools">
+        <button class="theme-toggle" aria-label="Toggle theme"></button>
+        <div class="lang-selector">
+          <button class="lang-btn" aria-label="Language">JA</button>
+          <ul class="lang-popup">
+            
+            <li><a href="#" data-lang="en">EN</a></li>
+            
+            <li><a href="#" data-lang="ja">JA</a></li>
+            
+          </ul>
+        </div>
+      </div>
+      <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
+    </div>
+  </header>
+
+  
+
+  <div class="layout has-sidebar">
+    
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+    
+    <div class="nav-section">
+      <a href="&#x2F;ja&#x2F;tour&#x2F;" class="nav-section-title active">A Tour of cpp-httplib</a>
+      
+      <ul class="nav-list">
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;01-getting-started&#x2F;" class="">Getting Started</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;02-basic-client&#x2F;" class="">Basic Client</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;03-basic-server&#x2F;" class="">Basic Server</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;04-static-file-server&#x2F;" class="">Static File Server</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;05-tls-setup&#x2F;" class="">TLS Setup</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;06-https-client&#x2F;" class="">HTTPS Client</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;07-https-server&#x2F;" class="">HTTPS Server</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;08-websocket&#x2F;" class="">WebSocket</a></li>
+        
+        <li><a href="&#x2F;ja&#x2F;tour&#x2F;09-whats-next&#x2F;" class="active">What&#x27;s Next</a></li>
+        
+      </ul>
+      
+    </div>
+    
+  </nav>
+</aside>
+<main class="content">
+  <article>
+    <h1>What&#x27;s Next</h1>
+    <p>Tourお疲れさまでした！ cpp-httplibの基本はひと通り押さえましたね。でも、まだまだ便利な機能があります。Tourで取り上げなかった機能をカテゴリー別に紹介します。</p>
+<h2>Streaming API</h2>
+<p>LLMのストリーミング応答や大きなファイルのダウンロードでは、レスポンス全体をメモリに載せたくないですよね。<code>stream::Get()</code> を使えば、データをチャンクごとに処理できます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:11434</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> result = </span><span style="color:#6699cc;">httplib::stream::Get</span><span style="color:#d3d0c8;">(cli, &quot;</span><span style="color:#99cc99;">/api/generate</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(result) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">while </span><span style="color:#d3d0c8;">(result.</span><span style="color:#6699cc;">next</span><span style="color:#d3d0c8;">()) {
+</span><span style="color:#d3d0c8;">        std::cout.</span><span style="color:#6699cc;">write</span><span style="color:#d3d0c8;">(result.</span><span style="color:#6699cc;">data</span><span style="color:#d3d0c8;">(), result.</span><span style="color:#6699cc;">size</span><span style="color:#d3d0c8;">());
+</span><span style="color:#d3d0c8;">    }
+</span><span style="color:#d3d0c8;">}
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:11434</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> result = </span><span style="color:#8fa1b3;">httplib::stream::Get</span><span style="color:#4f5b66;">(cli, &quot;</span><span style="color:#a3be8c;">/api/generate</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(result) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">while </span><span style="color:#4f5b66;">(result.</span><span style="color:#8fa1b3;">next</span><span style="color:#4f5b66;">()) {
+</span><span style="color:#4f5b66;">        std::cout.</span><span style="color:#8fa1b3;">write</span><span style="color:#4f5b66;">(result.</span><span style="color:#8fa1b3;">data</span><span style="color:#4f5b66;">(), result.</span><span style="color:#8fa1b3;">size</span><span style="color:#4f5b66;">());
+</span><span style="color:#4f5b66;">    }
+</span><span style="color:#4f5b66;">}
+</span></pre>
+</div>
+<p><code>Get()</code> に <code>content_receiver</code> コールバックを渡す方法もあります。こちらはKeep-Aliveと併用できます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:8080</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/stream</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const char </span><span style="color:#d3d0c8;">*data, size_t len) {
+</span><span style="color:#d3d0c8;">    std::cout.</span><span style="color:#6699cc;">write</span><span style="color:#d3d0c8;">(data, len);
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">return </span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">;
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:8080</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/stream</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const char </span><span style="color:#4f5b66;">*data, size_t len) {
+</span><span style="color:#4f5b66;">    std::cout.</span><span style="color:#8fa1b3;">write</span><span style="color:#4f5b66;">(data, len);
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">return </span><span style="color:#d08770;">true</span><span style="color:#4f5b66;">;
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>サーバー側には <code>set_content_provider()</code> と <code>set_chunked_content_provider()</code> があります。サイズがわかっているなら前者、不明なら後者を使ってください。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#747369;">// サイズ指定あり（Content-Length が設定される）
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/file</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> size = </span><span style="color:#6699cc;">get_file_size</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">large.bin</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content_provider</span><span style="color:#d3d0c8;">(size, &quot;</span><span style="color:#99cc99;">application/octet-stream</span><span style="color:#d3d0c8;">&quot;,
+</span><span style="color:#d3d0c8;">        [](size_t offset, size_t length, httplib::DataSink &amp;sink) {
+</span><span style="color:#d3d0c8;">            </span><span style="color:#747369;">// offset から length バイト分を送る
+</span><span style="color:#d3d0c8;">            </span><span style="color:#cc99cc;">return </span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">;
+</span><span style="color:#d3d0c8;">        });
+</span><span style="color:#d3d0c8;">});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#747369;">// サイズ不明（Chunked Transfer Encoding）
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/stream</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_chunked_content_provider</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;,
+</span><span style="color:#d3d0c8;">        [](size_t offset, httplib::DataSink &amp;sink) {
+</span><span style="color:#d3d0c8;">            sink.</span><span style="color:#6699cc;">write</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">chunk</span><span style="color:#66cccc;">\n</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">6</span><span style="color:#d3d0c8;">);
+</span><span style="color:#d3d0c8;">            </span><span style="color:#cc99cc;">return </span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">;  </span><span style="color:#747369;">// falseを返すと終了
+</span><span style="color:#d3d0c8;">        });
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#a7adba;">// サイズ指定あり（Content-Length が設定される）
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/file</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> size = </span><span style="color:#8fa1b3;">get_file_size</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">large.bin</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content_provider</span><span style="color:#4f5b66;">(size, &quot;</span><span style="color:#a3be8c;">application/octet-stream</span><span style="color:#4f5b66;">&quot;,
+</span><span style="color:#4f5b66;">        [](size_t offset, size_t length, httplib::DataSink &amp;sink) {
+</span><span style="color:#4f5b66;">            </span><span style="color:#a7adba;">// offset から length バイト分を送る
+</span><span style="color:#4f5b66;">            </span><span style="color:#b48ead;">return </span><span style="color:#d08770;">true</span><span style="color:#4f5b66;">;
+</span><span style="color:#4f5b66;">        });
+</span><span style="color:#4f5b66;">});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#a7adba;">// サイズ不明（Chunked Transfer Encoding）
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/stream</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_chunked_content_provider</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;,
+</span><span style="color:#4f5b66;">        [](size_t offset, httplib::DataSink &amp;sink) {
+</span><span style="color:#4f5b66;">            sink.</span><span style="color:#8fa1b3;">write</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">chunk</span><span style="color:#96b5b4;">\n</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">6</span><span style="color:#4f5b66;">);
+</span><span style="color:#4f5b66;">            </span><span style="color:#b48ead;">return </span><span style="color:#d08770;">true</span><span style="color:#4f5b66;">;  </span><span style="color:#a7adba;">// falseを返すと終了
+</span><span style="color:#4f5b66;">        });
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>大きなファイルのアップロードには <code>make_file_provider()</code> が便利です。ファイルを全部メモリに読み込まず、ストリーミングで送れます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:8080</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/upload</span><span style="color:#d3d0c8;">&quot;, {}, {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#6699cc;">httplib::make_file_provider</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">file</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">/path/to/large-file.zip</span><span style="color:#d3d0c8;">&quot;)
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:8080</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/upload</span><span style="color:#4f5b66;">&quot;, {}, {
+</span><span style="color:#4f5b66;">    </span><span style="color:#8fa1b3;">httplib::make_file_provider</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">file</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">/path/to/large-file.zip</span><span style="color:#4f5b66;">&quot;)
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h2>Server-Sent Events (SSE)</h2>
+<p>SSEクライアントも用意しています。自動再接続や <code>Last-Event-ID</code> による再開にも対応しています。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:8080</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">httplib::sse::SSEClient </span><span style="color:#6699cc;">sse</span><span style="color:#d3d0c8;">(</span><span style="color:#f2777a;">cli</span><span style="color:#d3d0c8;">, &quot;</span><span style="color:#99cc99;">/events</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">sse.</span><span style="color:#6699cc;">on_message</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::sse::SSEMessage &amp;msg) {
+</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; msg.</span><span style="color:#f2777a;">event </span><span style="color:#d3d0c8;">&lt;&lt; &quot;</span><span style="color:#99cc99;">: </span><span style="color:#d3d0c8;">&quot; &lt;&lt; msg.</span><span style="color:#f2777a;">data </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;
+</span><span style="color:#d3d0c8;">});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">sse.</span><span style="color:#6699cc;">start</span><span style="color:#d3d0c8;">();  </span><span style="color:#747369;">// ブロッキング、自動再接続あり
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:8080</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">httplib::sse::SSEClient </span><span style="color:#8fa1b3;">sse</span><span style="color:#4f5b66;">(</span><span style="color:#bf616a;">cli</span><span style="color:#4f5b66;">, &quot;</span><span style="color:#a3be8c;">/events</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">sse.</span><span style="color:#8fa1b3;">on_message</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::sse::SSEMessage &amp;msg) {
+</span><span style="color:#4f5b66;">    std::cout &lt;&lt; msg.</span><span style="color:#bf616a;">event </span><span style="color:#4f5b66;">&lt;&lt; &quot;</span><span style="color:#a3be8c;">: </span><span style="color:#4f5b66;">&quot; &lt;&lt; msg.</span><span style="color:#bf616a;">data </span><span style="color:#4f5b66;">&lt;&lt; std::endl;
+</span><span style="color:#4f5b66;">});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">sse.</span><span style="color:#8fa1b3;">start</span><span style="color:#4f5b66;">();  </span><span style="color:#a7adba;">// ブロッキング、自動再接続あり
+</span></pre>
+</div>
+<p>イベントタイプごとにハンドラーを分けることもできますよ。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">sse.</span><span style="color:#6699cc;">on_event</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">update</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::sse::SSEMessage &amp;msg) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#747369;">// &quot;update&quot; イベントだけ処理
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">sse.</span><span style="color:#8fa1b3;">on_event</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">update</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::sse::SSEMessage &amp;msg) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// &quot;update&quot; イベントだけ処理
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h2>認証</h2>
+<p>クライアントにはBasic認証、Bearer Token認証、Digest認証のヘルパーを用意しています。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://api.example.com</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_basic_auth</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">user</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">password</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_bearer_token_auth</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">my-token</span><span style="color:#d3d0c8;">&quot;);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">https://api.example.com</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_basic_auth</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">user</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">password</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_bearer_token_auth</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">my-token</span><span style="color:#4f5b66;">&quot;);
+</span></pre>
+</div>
+<h2>圧縮</h2>
+<p>gzip、Brotli、Zstandardによる圧縮・展開に対応しています。使いたい方式のマクロを定義してコンパイルしましょう。</p>
+<table><thead><tr><th>圧縮方式</th><th>マクロ定義</th></tr></thead><tbody>
+<tr><td>gzip</td><td><code>CPPHTTPLIB_ZLIB_SUPPORT</code></td></tr>
+<tr><td>Brotli</td><td><code>CPPHTTPLIB_BROTLI_SUPPORT</code></td></tr>
+<tr><td>Zstandard</td><td><code>CPPHTTPLIB_ZSTD_SUPPORT</code></td></tr>
+</tbody></table>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://example.com</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_compress</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">);    </span><span style="color:#747369;">// リクエストボディを圧縮
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_decompress</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">);  </span><span style="color:#747369;">// レスポンスボディを展開
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">https://example.com</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_compress</span><span style="color:#4f5b66;">(</span><span style="color:#d08770;">true</span><span style="color:#4f5b66;">);    </span><span style="color:#a7adba;">// リクエストボディを圧縮
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_decompress</span><span style="color:#4f5b66;">(</span><span style="color:#d08770;">true</span><span style="color:#4f5b66;">);  </span><span style="color:#a7adba;">// レスポンスボディを展開
+</span></pre>
+</div>
+<h2>プロキシ</h2>
+<p>HTTPプロキシ経由で接続できます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://example.com</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_proxy</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">proxy.example.com</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_proxy_basic_auth</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">user</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">password</span><span style="color:#d3d0c8;">&quot;);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">https://example.com</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_proxy</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">proxy.example.com</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_proxy_basic_auth</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">user</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">password</span><span style="color:#4f5b66;">&quot;);
+</span></pre>
+</div>
+<h2>タイムアウト</h2>
+<p>接続・読み取り・書き込みのタイムアウトを個別に設定できます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://example.com</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_connection_timeout</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">5</span><span style="color:#d3d0c8;">, </span><span style="color:#f99157;">0</span><span style="color:#d3d0c8;">);  </span><span style="color:#747369;">// 5秒
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_read_timeout</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">10</span><span style="color:#d3d0c8;">, </span><span style="color:#f99157;">0</span><span style="color:#d3d0c8;">);       </span><span style="color:#747369;">// 10秒
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_write_timeout</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">10</span><span style="color:#d3d0c8;">, </span><span style="color:#f99157;">0</span><span style="color:#d3d0c8;">);      </span><span style="color:#747369;">// 10秒
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">https://example.com</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_connection_timeout</span><span style="color:#4f5b66;">(</span><span style="color:#d08770;">5</span><span style="color:#4f5b66;">, </span><span style="color:#d08770;">0</span><span style="color:#4f5b66;">);  </span><span style="color:#a7adba;">// 5秒
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_read_timeout</span><span style="color:#4f5b66;">(</span><span style="color:#d08770;">10</span><span style="color:#4f5b66;">, </span><span style="color:#d08770;">0</span><span style="color:#4f5b66;">);       </span><span style="color:#a7adba;">// 10秒
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_write_timeout</span><span style="color:#4f5b66;">(</span><span style="color:#d08770;">10</span><span style="color:#4f5b66;">, </span><span style="color:#d08770;">0</span><span style="color:#4f5b66;">);      </span><span style="color:#a7adba;">// 10秒
+</span></pre>
+</div>
+<h2>Keep-Alive</h2>
+<p>同じサーバーに何度もリクエストするなら、Keep-Aliveを有効にしましょう。TCP接続を再利用するので効率的です。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://example.com</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_keep_alive</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">https://example.com</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_keep_alive</span><span style="color:#4f5b66;">(</span><span style="color:#d08770;">true</span><span style="color:#4f5b66;">);
+</span></pre>
+</div>
+<h2>サーバーのミドルウェア</h2>
+<p>リクエスト処理の前後にフックを挟めます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_pre_routing_handler</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#747369;">// すべてのリクエストの前に実行される
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">return</span><span style="color:#d3d0c8;"> httplib::Server::HandlerResponse::Unhandled;  </span><span style="color:#747369;">// 通常のルーティングに進む
+</span><span style="color:#d3d0c8;">});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_post_routing_handler</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#747369;">// レスポンスが返された後に実行される
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_header</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">X-Server</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">cpp-httplib</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_pre_routing_handler</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// すべてのリクエストの前に実行される
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">return</span><span style="color:#4f5b66;"> httplib::Server::HandlerResponse::Unhandled;  </span><span style="color:#a7adba;">// 通常のルーティングに進む
+</span><span style="color:#4f5b66;">});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_post_routing_handler</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// レスポンスが返された後に実行される
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_header</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">X-Server</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">cpp-httplib</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p><code>req.user_data</code> を使うと、ミドルウェアからハンドラーにデータを渡せます。認証トークンのデコード結果を共有するときに便利です。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_pre_routing_handler</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    req.</span><span style="color:#f2777a;">user_data</span><span style="color:#d3d0c8;">[&quot;</span><span style="color:#99cc99;">auth_user</span><span style="color:#d3d0c8;">&quot;] = </span><span style="color:#6699cc;">std::string</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">alice</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">return</span><span style="color:#d3d0c8;"> httplib::Server::HandlerResponse::Unhandled;
+</span><span style="color:#d3d0c8;">});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/me</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> user = std::</span><span style="color:#6699cc;">any_cast</span><span style="color:#d3d0c8;">&lt;std::string&gt;(req.</span><span style="color:#f2777a;">user_data</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">at</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">auth_user</span><span style="color:#d3d0c8;">&quot;));
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello, </span><span style="color:#d3d0c8;">&quot; + user, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_pre_routing_handler</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    req.</span><span style="color:#bf616a;">user_data</span><span style="color:#4f5b66;">[&quot;</span><span style="color:#a3be8c;">auth_user</span><span style="color:#4f5b66;">&quot;] = </span><span style="color:#8fa1b3;">std::string</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">alice</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">return</span><span style="color:#4f5b66;"> httplib::Server::HandlerResponse::Unhandled;
+</span><span style="color:#4f5b66;">});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/me</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> user = std::</span><span style="color:#8fa1b3;">any_cast</span><span style="color:#4f5b66;">&lt;std::string&gt;(req.</span><span style="color:#bf616a;">user_data</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">at</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">auth_user</span><span style="color:#4f5b66;">&quot;));
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello, </span><span style="color:#4f5b66;">&quot; + user, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<p>エラーや例外のハンドラーもカスタマイズできますよ。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_error_handler</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Custom Error Page</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/html</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_exception_handler</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res, std::exception_ptr ep) {
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">= </span><span style="color:#f99157;">500</span><span style="color:#d3d0c8;">;
+</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Internal Server Error</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_error_handler</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Custom Error Page</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/html</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_exception_handler</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res, std::exception_ptr ep) {
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">= </span><span style="color:#d08770;">500</span><span style="color:#4f5b66;">;
+</span><span style="color:#4f5b66;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Internal Server Error</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h2>ロギング</h2>
+<p>サーバーでもクライアントでもロガーを設定できます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_logger</span><span style="color:#d3d0c8;">([](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;req, </span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;res) {
+</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; req.</span><span style="color:#f2777a;">method </span><span style="color:#d3d0c8;">&lt;&lt; &quot; &quot; &lt;&lt; req.</span><span style="color:#f2777a;">path </span><span style="color:#d3d0c8;">&lt;&lt; &quot; &quot; &lt;&lt; res.</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;
+</span><span style="color:#d3d0c8;">});
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_logger</span><span style="color:#4f5b66;">([](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;res) {
+</span><span style="color:#4f5b66;">    std::cout &lt;&lt; req.</span><span style="color:#bf616a;">method </span><span style="color:#4f5b66;">&lt;&lt; &quot; &quot; &lt;&lt; req.</span><span style="color:#bf616a;">path </span><span style="color:#4f5b66;">&lt;&lt; &quot; &quot; &lt;&lt; res.</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">&lt;&lt; std::endl;
+</span><span style="color:#4f5b66;">});
+</span></pre>
+</div>
+<h2>Unix Domain Socket</h2>
+<p>TCP以外に、Unix Domain Socketでの通信にも対応しています。同じマシン上のプロセス間通信に使えます。</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#747369;">// サーバー
+</span><span style="color:#d3d0c8;">httplib::Server svr;
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_address_family</span><span style="color:#d3d0c8;">(AF_UNIX);
+</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/tmp/httplib.sock</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">0</span><span style="color:#d3d0c8;">);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#a7adba;">// サーバー
+</span><span style="color:#4f5b66;">httplib::Server svr;
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">set_address_family</span><span style="color:#4f5b66;">(AF_UNIX);
+</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/tmp/httplib.sock</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">0</span><span style="color:#4f5b66;">);
+</span></pre>
+</div><div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#747369;">// クライアント
+</span><span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_address_family</span><span style="color:#d3d0c8;">(AF_UNIX);
+</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_hostname_addr_map</span><span style="color:#d3d0c8;">({{&quot;</span><span style="color:#99cc99;">localhost</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">/tmp/httplib.sock</span><span style="color:#d3d0c8;">&quot;}});
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#a7adba;">// クライアント
+</span><span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_address_family</span><span style="color:#4f5b66;">(AF_UNIX);
+</span><span style="color:#4f5b66;">cli.</span><span style="color:#8fa1b3;">set_hostname_addr_map</span><span style="color:#4f5b66;">({{&quot;</span><span style="color:#a3be8c;">localhost</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">/tmp/httplib.sock</span><span style="color:#4f5b66;">&quot;}});
+</span><span style="color:#4f5b66;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;);
+</span></pre>
+</div>
+<h2>さらに詳しく</h2>
+<p>もっと詳しく知りたいときは、以下を参照してください。</p>
+<ul>
+<li>Cookbook — よくあるユースケースのレシピ集</li>
+<li><a href="https://github.com/yhirose/cpp-httplib/blob/master/README.md">README</a> — 全APIのリファレンス</li>
+<li><a href="https://github.com/yhirose/cpp-httplib/blob/master/README-sse.md">README-sse</a> — Server-Sent Eventsの使い方</li>
+<li><a href="https://github.com/yhirose/cpp-httplib/blob/master/README-stream.md">README-stream</a> — Streaming APIの使い方</li>
+<li><a href="https://github.com/yhirose/cpp-httplib/blob/master/README-websocket.md">README-websocket</a> — WebSocketサーバーの使い方</li>
+</ul>
+
+  </article>
+</main>
+
+  </div>
+
+  <footer class="footer">
+    &copy; 2025 yhirose. All rights reserved.
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>
