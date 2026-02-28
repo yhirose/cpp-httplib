@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} - {{ site.title }}</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/{{ lang }}/" class="header-title">{{ site.title }}</a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/{{ lang }}/">Home</a>
+        <a href="/{{ lang }}/tour/">Tour</a>
+      </nav>
+      <button class="theme-toggle" aria-label="Toggle theme"></button>
+      <div class="lang-selector">
+        <button class="lang-btn" aria-label="Language">{{ lang | upper }}</button>
+        <ul class="lang-popup">
+          {% for l in site.langs %}
+          <li><a href="#" data-lang="{{ l }}">{{ l | upper }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
+    </div>
+  </header>
+
+  {% if page.status == "draft" %}
+  <div class="draft-banner">DRAFT</div>
+  {% endif %}
+
+  <div class="layout {% block layout_class %}{% endblock %}">
+    {% block body %}{% endblock %}
+  </div>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

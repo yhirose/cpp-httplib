@@ -58,6 +58,9 @@ test/_build_*
 work/
 benchmark/server*
 
+docs/
+docs-gen/target/
+
 *.swp
 
 build/

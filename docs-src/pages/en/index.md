@@ -17,5 +17,5 @@ Under the hood, it uses blocking I/O with a thread pool. It's not built for hand
 
 ## Documentation
 
-- [A Tour of cpp-httplib](tour/index) — A step-by-step tutorial covering the basics. Start here if you're new
-- [Cookbook](cookbook/index) — A collection of recipes organized by topic. Jump to whatever you need
+- [A Tour of cpp-httplib](tour/) — A step-by-step tutorial covering the basics. Start here if you're new
+- [Cookbook](cookbook/) — A collection of recipes organized by topic. Jump to whatever you need

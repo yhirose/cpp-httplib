@@ -17,5 +17,5 @@ HTTPSも使えます。OpenSSLやmbedTLSをリンクするだけで、サーバ�
 
 ## ドキュメント
 
-- [A Tour of cpp-httplib](tour/index) — 基本を順を追って学べるチュートリアル。初めての方はここから
-- [Cookbook](cookbook/index) — 目的別のレシピ集。必要なトピックから読めます
+- [A Tour of cpp-httplib](tour/) — 基本を順を追って学べるチュートリアル。初めての方はここから
+- [Cookbook](cookbook/) — 目的別のレシピ集。必要なトピックから読めます
