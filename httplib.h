@@ -11739,16 +11739,6 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       routed = true;
     } else {
       res.status = StatusCode::InternalServerError_500;
-      std::string val;
-      auto s = e.what();
-      for (size_t i = 0; s[i]; i++) {
-        switch (s[i]) {
-        case '\r': val += "\\r"; break;
-        case '\n': val += "\\n"; break;
-        default: val += s[i]; break;
-        }
-      }
-      res.set_header("EXCEPTION_WHAT", val);
     }
   } catch (...) {
     if (exception_handler_) {
@@ -11757,7 +11747,6 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       routed = true;
     } else {
       res.status = StatusCode::InternalServerError_500;
-      res.set_header("EXCEPTION_WHAT", "UNKNOWN");
     }
   }
 #endif

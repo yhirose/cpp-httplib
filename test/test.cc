@@ -2701,16 +2701,14 @@ TEST(ExceptionTest, WithoutExceptionHandler) {
     auto res = cli.Get("/exception");
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
-    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
-    EXPECT_EQ("exception...", res->get_header_value("EXCEPTION_WHAT"));
+    EXPECT_FALSE(res->has_header("EXCEPTION_WHAT"));
   }
 
   {
     auto res = cli.Get("/unknown");
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
-    ASSERT_TRUE(res->has_header("EXCEPTION_WHAT"));
-    EXPECT_EQ("exception\\r\\n...", res->get_header_value("EXCEPTION_WHAT"));
+    EXPECT_FALSE(res->has_header("EXCEPTION_WHAT"));
   }
 }
 
