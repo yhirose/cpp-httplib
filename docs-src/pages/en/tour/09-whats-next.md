@@ -1,7 +1,6 @@
 ---
 title: "What's Next"
 order: 9
-draft: true
 ---
 
 Great job finishing the Tour! You now have a solid grasp of the cpp-httplib basics. But there's a lot more to explore. Here's a quick overview of features we didn't cover in the Tour, organized by category.

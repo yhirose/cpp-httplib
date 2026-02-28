@@ -25,6 +25,7 @@ struct NavItem {
 #[derive(Debug, Serialize)]
 struct SiteContext {
     title: String,
+    version: Option<String>,
     base_url: String,
     langs: Vec<String>,
 }
@@ -95,6 +96,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
             ctx.insert("lang", lang);
             ctx.insert("site", &SiteContext {
                 title: config.site.title.clone(),
+                version: config.site.version.clone(),
                 base_url: config.site.base_url.clone(),
                 langs: config.i18n.langs.clone(),
             });

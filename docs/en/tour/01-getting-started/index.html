@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting Started - cpp-httplib</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    (function() {
+      var t = localStorage.getItem('preferred-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="/en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.35.0</span></a>
+      <div class="header-spacer"></div>
+      <nav class="header-nav">
+        <a href="/en/">Home</a>
+        <a href="/en/tour/">Tour</a>
+      </nav>
+      <div class="header-tools">
+        <button class="theme-toggle" aria-label="Toggle theme"></button>
+        <div class="lang-selector">
+          <button class="lang-btn" aria-label="Language">EN</button>
+          <ul class="lang-popup">
+            
+            <li><a href="#" data-lang="en">EN</a></li>
+            
+            <li><a href="#" data-lang="ja">JA</a></li>
+            
+          </ul>
+        </div>
+      </div>
+      <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
+    </div>
+  </header>
+
+  
+
+  <div class="layout has-sidebar">
+    
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+    
+    <div class="nav-section">
+      <a href="&#x2F;en&#x2F;tour&#x2F;" class="nav-section-title active">A Tour of cpp-httplib</a>
+      
+      <ul class="nav-list">
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;01-getting-started&#x2F;" class="active">Getting Started</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;02-basic-client&#x2F;" class="">Basic Client</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;03-basic-server&#x2F;" class="">Basic Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;04-static-file-server&#x2F;" class="">Static File Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;05-tls-setup&#x2F;" class="">TLS Setup</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;06-https-client&#x2F;" class="">HTTPS Client</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;07-https-server&#x2F;" class="">HTTPS Server</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;08-websocket&#x2F;" class="">WebSocket</a></li>
+        
+        <li><a href="&#x2F;en&#x2F;tour&#x2F;09-whats-next&#x2F;" class="">What&#x27;s Next</a></li>
+        
+      </ul>
+      
+    </div>
+    
+  </nav>
+</aside>
+<main class="content">
+  <article>
+    <h1>Getting Started</h1>
+    <p>All you need to get started with cpp-httplib is <code>httplib.h</code> and a C++ compiler. Let's download the file and get a Hello World server running.</p>
+<h2>Getting httplib.h</h2>
+<p>You can download it directly from GitHub. Always use the latest version.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -LO</span><span style="color:#d3d0c8;"> https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -LO</span><span style="color:#4f5b66;"> https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
+</span></pre>
+</div>
+<p>Place the downloaded <code>httplib.h</code> in your project directory and you're good to go.</p>
+<h2>Setting Up Your Compiler</h2>
+<table><thead><tr><th>OS</th><th>Development Environment</th><th>Setup</th></tr></thead><tbody>
+<tr><td>macOS</td><td>Apple Clang</td><td>Xcode Command Line Tools (<code>xcode-select --install</code>)</td></tr>
+<tr><td>Ubuntu</td><td>clang++ or g++</td><td><code>apt install clang</code> or <code>apt install g++</code></td></tr>
+<tr><td>Windows</td><td>MSVC</td><td>Visual Studio 2022 or later (install with C++ components)</td></tr>
+</tbody></table>
+<h2>Hello World Server</h2>
+<p>Save the following code as <code>server.cpp</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
+</span><span style="color:#d3d0c8;">    httplib::Server svr;
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::Request&amp;, httplib::Response&amp; res) {
+</span><span style="color:#d3d0c8;">        res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello, World!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
+</span><span style="color:#d3d0c8;">    });
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
+</span><span style="color:#d3d0c8;">}
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
+</span><span style="color:#4f5b66;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
+</span><span style="color:#4f5b66;">    httplib::Server svr;
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request&amp;, httplib::Response&amp; res) {
+</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello, World!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
+</span><span style="color:#4f5b66;">    });
+</span><span style="color:#4f5b66;">
+</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
+</span><span style="color:#4f5b66;">}
+</span></pre>
+</div>
+<p>In just a few lines, you have a server that responds to HTTP requests.</p>
+<h2>Compiling and Running</h2>
+<p>The sample code in this tutorial is written in C++17 for cleaner, more concise code. cpp-httplib itself can compile with C++11 as well.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#747369;"># macOS
+</span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -o</span><span style="color:#d3d0c8;"> server server.cpp
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#747369;"># Linux
+</span><span style="color:#747369;"># `-pthread`: cpp-httplib uses threads internally
+</span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -pthread -o</span><span style="color:#d3d0c8;"> server server.cpp
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#747369;"># Windows (Developer Command Prompt)
+</span><span style="color:#747369;"># `/EHsc`: Enable C++ exception handling
+</span><span style="color:#6699cc;">cl</span><span style="color:#d3d0c8;"> /EHsc /std:c++17 server.cpp
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#a7adba;"># macOS
+</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -o</span><span style="color:#4f5b66;"> server server.cpp
+</span><span style="color:#4f5b66;">
+</span><span style="color:#a7adba;"># Linux
+</span><span style="color:#a7adba;"># `-pthread`: cpp-httplib uses threads internally
+</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -pthread -o</span><span style="color:#4f5b66;"> server server.cpp
+</span><span style="color:#4f5b66;">
+</span><span style="color:#a7adba;"># Windows (Developer Command Prompt)
+</span><span style="color:#a7adba;"># `/EHsc`: Enable C++ exception handling
+</span><span style="color:#8fa1b3;">cl</span><span style="color:#4f5b66;"> /EHsc /std:c++17 server.cpp
+</span></pre>
+</div>
+<p>Once it compiles, run it.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#747369;"># macOS / Linux
+</span><span style="color:#6699cc;">./server
+</span><span style="color:#d3d0c8;">
+</span><span style="color:#747369;"># Windows
+</span><span style="color:#6699cc;">server.exe
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#a7adba;"># macOS / Linux
+</span><span style="color:#8fa1b3;">./server
+</span><span style="color:#4f5b66;">
+</span><span style="color:#a7adba;"># Windows
+</span><span style="color:#8fa1b3;">server.exe
+</span></pre>
+</div>
+<p>Open <code>http://localhost:8080</code> in your browser. If you see "Hello, World!", you're all set.</p>
+<p>You can also verify with <code>curl</code>.</p>
+<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080/
+</span><span style="color:#747369;"># Hello, World!
+</span></pre>
+</div><div class="code-light"><pre style="background-color:#eff1f5;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#4f5b66;"> http://localhost:8080/
+</span><span style="color:#a7adba;"># Hello, World!
+</span></pre>
+</div>
+<p>To stop the server, press <code>Ctrl+C</code> in your terminal.</p>
+<h2>Next Steps</h2>
+<p>Now you know the basics of running a server. Next, let's look at the client side. cpp-httplib also comes with HTTP client functionality.</p>
+<p><strong>Next:</strong> <a href="../02-basic-client">Basic Client</a></p>
+
+  </article>
+</main>
+
+  </div>
+
+  <footer class="footer">
+    &copy; 2025 yhirose. All rights reserved.
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

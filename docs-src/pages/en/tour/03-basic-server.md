@@ -3,7 +3,7 @@ title: "Basic Server"
 order: 3
 ---
 
-In the previous chapter, you sent requests from a client using `test_server.cpp`. Now let's walk through how that server actually works.
+In the previous chapter, you sent requests from a client to a test server. Now let's walk through how that server actually works.
 
 ## Starting the Server
 
@@ -190,7 +190,7 @@ svr.Get("/with-header", [](const auto &req, auto &res) {
 
 ## Walking Through the Test Server
 
-Now let's use what we've learned to read through the `test_server.cpp` from the previous chapter.
+Now let's use what we've learned to read through the test server from the previous chapter.
 
 ### GET /hi
 

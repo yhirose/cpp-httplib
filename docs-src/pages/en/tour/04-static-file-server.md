@@ -1,7 +1,6 @@
 ---
 title: "Static File Server"
 order: 4
-draft: true
 ---
 
 cpp-httplib can serve static files too — HTML, CSS, images, you name it. No complicated configuration required. One call to `set_mount_point()` is all it takes.

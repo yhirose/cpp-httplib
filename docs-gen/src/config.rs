@@ -12,6 +12,7 @@ pub struct SiteConfig {
 #[derive(Debug, Deserialize)]
 pub struct Site {
     pub title: String,
+    pub version: Option<String>,
     pub base_url: String,
 }
 

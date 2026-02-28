@@ -1,7 +1,6 @@
 ---
 title: "WebSocket"
 order: 8
-draft: true
 ---
 
 cpp-httplib supports WebSocket as well. Unlike HTTP request/response, WebSocket lets the server and client exchange messages in both directions. It's great for chat apps and real-time notifications.
