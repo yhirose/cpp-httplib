@@ -8649,6 +8649,68 @@ TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
   }
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+// `payload_max_length` is not enforced on decompressed body in ContentReader
+// path.
+TEST(PayloadLimitBypassTest, StreamingGzipDecompression) {
+  Server svr;
+  const size_t LIMIT = 64 * 1024; // 64KB
+  svr.set_payload_max_length(LIMIT);
+
+  size_t total = 0;
+  svr.Post("/stream", [&](const Request & /*req*/, Response &res,
+                          const ContentReader &content_reader) {
+    content_reader([&](const char * /*data*/, size_t len) {
+      total += len;
+      return true;
+    });
+    res.status = 200;
+    res.set_content("stream_ok", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // Prepare 256KB raw data and gzip-compress it
+  std::string raw(256 * 1024, 'A');
+  std::string gz;
+  {
+    z_stream zs{};
+    deflateInit2(&zs, Z_BEST_COMPRESSION, Z_DEFLATED, 15 + 16, 8,
+                 Z_DEFAULT_STRATEGY);
+    zs.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(raw.data()));
+    zs.avail_in = static_cast<uInt>(raw.size());
+    char outbuf[4096];
+    int ret;
+    do {
+      zs.next_out = reinterpret_cast<Bytef *>(outbuf);
+      zs.avail_out = sizeof(outbuf);
+      ret = deflate(&zs, Z_FINISH);
+      gz.append(outbuf, sizeof(outbuf) - zs.avail_out);
+    } while (ret != Z_STREAM_END);
+    deflateEnd(&zs);
+  }
+
+  Client cli(HOST, PORT);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+  Headers headers = {{"Content-Encoding", "gzip"}};
+  auto res = cli.Post("/stream", headers, gz.data(), gz.size(),
+                      "application/octet-stream");
+  ASSERT_TRUE(res);
+
+  // Server must reject oversized decompressed payloads with 413.
+  EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+
+  // Decompressed bytes delivered to the handler must not exceed LIMIT.
+  EXPECT_LE(total, LIMIT);
+}
+#endif
+
 // Regression test for DoS vulnerability: a malicious server sending a response
 // without Content-Length header must not cause unbounded memory consumption on
 // the client side. The client should stop reading after a reasonable limit,
@@ -15658,7 +15720,7 @@ TEST(ZipBombProtectionTest, DecompressedSizeExceedsLimit) {
 
   // Server should reject because decompressed size (8KB) exceeds limit (1KB)
   ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
 }
 #endif
 
