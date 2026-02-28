@@ -3887,6 +3887,13 @@ protected:
                    "01234567890123456789012345678901234567890",
                    "text/plain");
              })
+        .Get("/compress-with-charset",
+             [&](const Request & /*req*/, Response &res) {
+               res.set_content(
+                   "12345678901234567890123456789012345678901234567890123456789"
+                   "01234567890123456789012345678901234567890",
+                   "application/json; charset=utf-8");
+             })
         .Get("/nocompress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
@@ -6241,6 +6248,21 @@ TEST_F(ServerTest, Gzip) {
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("33", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, GzipWithContentTypeParameters) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip, deflate");
+  auto res = cli_.Get("/compress-with-charset", headers);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("application/json; charset=utf-8",
+            res->get_header_value("Content-Type"));
   EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
             "7890123456789012345678901234567890",
             res->body);

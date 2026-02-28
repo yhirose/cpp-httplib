@@ -6380,10 +6380,46 @@ find_content_type(const std::string &path,
   }
 }
 
+inline std::string
+extract_media_type(const std::string &content_type,
+                   std::map<std::string, std::string> *params = nullptr) {
+  // Extract type/subtype from Content-Type value (RFC 2045)
+  // e.g. "application/json; charset=utf-8" -> "application/json"
+  auto media_type = content_type;
+  auto semicolon_pos = media_type.find(';');
+  if (semicolon_pos != std::string::npos) {
+    auto param_str = media_type.substr(semicolon_pos + 1);
+    media_type = media_type.substr(0, semicolon_pos);
+
+    if (params) {
+      // Parse parameters: key=value pairs separated by ';'
+      split(param_str.data(), param_str.data() + param_str.size(), ';',
+            [&](const char *b, const char *e) {
+              std::string key;
+              std::string val;
+              split(b, e, '=', [&](const char *b2, const char *e2) {
+                if (key.empty()) {
+                  key.assign(b2, e2);
+                } else {
+                  val.assign(b2, e2);
+                }
+              });
+              if (!key.empty()) {
+                params->emplace(trim_copy(key), trim_double_quotes_copy(val));
+              }
+            });
+    }
+  }
+
+  // Trim whitespace from media type
+  return trim_copy(media_type);
+}
+
 inline bool can_compress_content_type(const std::string &content_type) {
   using udl::operator""_t;
 
-  auto tag = str2tag(content_type);
+  auto mime_type = extract_media_type(content_type);
+  auto tag = str2tag(mime_type);
 
   switch (tag) {
   case "image/svg+xml"_t:
@@ -6395,7 +6431,7 @@ inline bool can_compress_content_type(const std::string &content_type) {
 
   case "text/event-stream"_t: return false;
 
-  default: return !content_type.rfind("text/", 0);
+  default: return !mime_type.rfind("text/", 0);
   }
 }
 
@@ -7426,12 +7462,11 @@ inline std::string normalize_query_string(const std::string &query) {
 
 inline bool parse_multipart_boundary(const std::string &content_type,
                                      std::string &boundary) {
-  auto boundary_keyword = "boundary=";
-  auto pos = content_type.find(boundary_keyword);
-  if (pos == std::string::npos) { return false; }
-  auto end = content_type.find(';', pos);
-  auto beg = pos + strlen(boundary_keyword);
-  boundary = trim_double_quotes_copy(content_type.substr(beg, end - beg));
+  std::map<std::string, std::string> params;
+  extract_media_type(content_type, &params);
+  auto it = params.find("boundary");
+  if (it == params.end()) { return false; }
+  boundary = it->second;
   return !boundary.empty();
 }
 
@@ -7599,11 +7634,7 @@ inline bool parse_accept_header(const std::string &s,
     }
 
     // Remove additional parameters from media type
-    auto param_pos = accept_entry.media_type.find(';');
-    if (param_pos != std::string::npos) {
-      accept_entry.media_type =
-          trim_copy(accept_entry.media_type.substr(0, param_pos));
-    }
+    accept_entry.media_type = extract_media_type(accept_entry.media_type);
 
     // Basic validation of media type format
     if (accept_entry.media_type.empty()) {
@@ -9433,7 +9464,7 @@ inline size_t Request::get_param_value_count(const std::string &key) const {
 
 inline bool Request::is_multipart_form_data() const {
   const auto &content_type = get_header_value("Content-Type");
-  return !content_type.rfind("multipart/form-data", 0);
+  return detail::extract_media_type(content_type) == "multipart/form-data";
 }
 
 // Multipart FormData implementation
@@ -10915,7 +10946,8 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
             return true;
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
-    if (!content_type.find("application/x-www-form-urlencoded")) {
+    if (detail::extract_media_type(content_type) ==
+        "application/x-www-form-urlencoded") {
       if (req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
         res.status = StatusCode::PayloadTooLarge_413; // NOTE: should be 414?
         output_error_log(Error::ExceedMaxPayloadSize, &req);
