@@ -537,8 +537,17 @@ svr.Post("/multipart", [&](const Request& req, Response& res) {
       std::cout << "Header: " << header.first << " = " << header.second << std::endl;
     }
 
+    // IMPORTANT: file.filename is an untrusted value from the client.
+    // Always extract only the basename to prevent path traversal attacks.
+    auto safe_name = std::filesystem::path(file.filename).filename();
+    if (safe_name.empty() || safe_name == "." || safe_name == "..") {
+      res.status = StatusCode::BadRequest_400;
+      res.set_content("Invalid filename", "text/plain");
+      return;
+    }
+
     // Save to disk
-    std::ofstream ofs(file.filename, std::ios::binary);
+    std::ofstream ofs(upload_dir / safe_name, std::ios::binary);
     ofs << file.content;
   }
 
