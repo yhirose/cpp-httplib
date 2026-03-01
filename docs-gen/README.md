@@ -54,6 +54,7 @@ docs-src/
 [site]
 title = "My Project"
 base_url = "https://example.github.io/my-project"
+base_path = "/my-project"
 
 [i18n]
 default_lang = "en"
@@ -63,6 +64,19 @@ langs = ["en", "ja"]
 theme = "base16-eighties.dark"        # Dark mode syntax theme (syntect built-in)
 theme_light = "base16-ocean.light"    # Light mode syntax theme (optional)
 ```
+
+### `base_path`
+
+`base_path` controls the URL prefix prepended to all generated links, CSS/JS paths, and redirects.
+
+| Value | Use case |
+|---|---|
+| `"/my-project"` | GitHub Pages (`https://user.github.io/my-project/`) |
+| `""` | Local development at `http://localhost:8000/` |
+
+Leave empty for local-only use; set to `"/<repo-name>"` before deploying to GitHub Pages.
+
+### `highlight`
 
 When `theme_light` is set, code blocks are rendered twice (dark and light) and toggled via CSS classes `.code-dark` / `.code-light`.
 
@@ -89,13 +103,25 @@ order: 1
 
 Markdown files are mapped to URLs as follows:
 
-| File path             | URL             | Output file              |
-|-----------------------|-----------------|--------------------------|
-| `en/index.md`         | `/en/`          | `en/index.html`          |
-| `en/tour/index.md`    | `/en/tour/`     | `en/tour/index.html`     |
-| `en/tour/01-foo.md`   | `/en/tour/01-foo/` | `en/tour/01-foo/index.html` |
+| File path             | URL                         | Output file                         |
+|-----------------------|-----------------------------|-------------------------------------|
+| `en/index.md`         | `<base_path>/en/`           | `en/index.html`                     |
+| `en/tour/index.md`    | `<base_path>/en/tour/`      | `en/tour/index.html`                |
+| `en/tour/01-foo.md`   | `<base_path>/en/tour/01-foo/` | `en/tour/01-foo/index.html`       |
 
-A root `index.html` is generated automatically, redirecting `/` to `/<default_lang>/` (respecting `localStorage` preference).
+A root `index.html` is generated automatically, redirecting `<base_path>/` to `<base_path>/<default_lang>/` (respecting `localStorage` preference).
+
+## Local Debugging vs GitHub Pages
+
+To preview locally with the same URL structure as GitHub Pages, set `base_path = "/cpp-httplib"` in `config.toml`, then:
+
+```bash
+./docs-gen/target/release/docs-gen docs-src --out /tmp/test/cpp-httplib
+cd /tmp/test && python3 -m http.server
+# Open http://localhost:8000/cpp-httplib/
+```
+
+For a plain local preview (no prefix), set `base_path = ""` and open `http://localhost:8000/`.
 
 ## Navigation
 
@@ -122,6 +148,7 @@ Templates use [Tera](https://keats.github.io/tera/) syntax. Available variables:
 | `lang`        | string | Current language code |
 | `site.title`  | string | Site title from config |
 | `site.base_url` | string | Base URL from config |
+| `site.base_path` | string | Base path prefix (e.g. `"/cpp-httplib"` or `""`) |
 | `site.langs`  | list   | Available language codes |
 
 ### page.html only

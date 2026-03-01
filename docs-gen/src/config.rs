@@ -14,6 +14,8 @@ pub struct Site {
     pub title: String,
     pub version: Option<String>,
     pub base_url: String,
+    #[serde(default)]
+    pub base_path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,8 +35,11 @@ impl SiteConfig {
         let path = src_dir.join("config.toml");
         let content =
             std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
-        let config: SiteConfig =
+        let mut config: SiteConfig =
             toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
+        // Normalize base_path: strip trailing slash (but keep empty for root)
+        let bp = config.site.base_path.trim_end_matches('/').to_string();
+        config.site.base_path = bp;
         Ok(config)
     }
 

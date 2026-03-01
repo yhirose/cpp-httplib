@@ -27,6 +27,7 @@ struct SiteContext {
     title: String,
     version: Option<String>,
     base_url: String,
+    base_path: String,
     langs: Vec<String>,
 }
 
@@ -67,7 +68,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
             continue;
         }
 
-        let pages = collect_pages(&pages_dir, lang, out, &renderer)?;
+        let pages = collect_pages(&pages_dir, lang, out, &renderer, &config.site.base_path)?;
         let nav = build_nav(&pages);
 
         for page in &pages {
@@ -81,7 +82,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
             let section_nav: Vec<&NavItem> = nav
                 .iter()
                 .filter(|item| {
-                    let item_section = extract_section(&item.url);
+                    let item_section = extract_section(&item.url, &config.site.base_path);
                     item_section == page.section
                 })
                 .collect();
@@ -98,6 +99,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
                 title: config.site.title.clone(),
                 version: config.site.version.clone(),
                 base_url: config.site.base_url.clone(),
+                base_path: config.site.base_path.clone(),
                 langs: config.i18n.langs.clone(),
             });
 
@@ -148,6 +150,7 @@ fn collect_pages(
     lang: &str,
     out: &Path,
     renderer: &MarkdownRenderer,
+    base_path: &str,
 ) -> Result<Vec<Page>> {
     let mut pages = Vec::new();
 
@@ -172,30 +175,30 @@ fn collect_pages(
 
         // Compute URL and output path
         let (url, out_path) = if rel.file_name().map_or(false, |f| f == "index.md") {
-            // index.md -> /<lang>/dir/
+            // index.md -> <base_path>/<lang>/dir/
             let parent = rel.parent().unwrap_or(Path::new(""));
             if parent.as_os_str().is_empty() {
                 // Root index.md
                 (
-                    format!("/{}/", lang),
+                    format!("{}/{}/", base_path, lang),
                     out.join(lang).join("index.html"),
                 )
             } else {
                 (
-                    format!("/{}/{}/", lang, parent.display()),
+                    format!("{}/{}/{}/", base_path, lang, parent.display()),
                     out.join(lang).join(parent).join("index.html"),
                 )
             }
         } else {
-            // foo.md -> /<lang>/foo/
+            // foo.md -> <base_path>/<lang>/foo/
             let stem = rel.with_extension("");
             (
-                format!("/{}/{}/", lang, stem.display()),
+                format!("{}/{}/{}/", base_path, lang, stem.display()),
                 out.join(lang).join(&stem).join("index.html"),
             )
         };
 
-        let section = extract_section(&url);
+        let section = extract_section(&url, base_path);
 
         pages.push(Page {
             frontmatter,
@@ -210,9 +213,11 @@ fn collect_pages(
     Ok(pages)
 }
 
-fn extract_section(url: &str) -> String {
+fn extract_section(url: &str, base_path: &str) -> String {
+    // Strip base_path prefix before parsing
+    let stripped = url.strip_prefix(base_path).unwrap_or(url);
     // URL format: /<lang>/ or /<lang>/section/...
-    let parts: Vec<&str> = url.trim_matches('/').split('/').collect();
+    let parts: Vec<&str> = stripped.trim_matches('/').split('/').collect();
     if parts.len() >= 2 {
         parts[1].to_string()
     } else {
@@ -249,7 +254,7 @@ fn build_nav(pages: &[Page]) -> Vec<NavItem> {
         // Find the section index page
         let index_page = section_pages
             .iter()
-            .find(|p| p.rel_path.ends_with("index.md") && extract_section(&p.url) == section);
+            .find(|p| p.rel_path.ends_with("index.md") && p.section == section);
 
         let section_title = index_page
             .map(|p| p.frontmatter.title.clone())
@@ -260,7 +265,7 @@ fn build_nav(pages: &[Page]) -> Vec<NavItem> {
 
         let children: Vec<NavItem> = section_pages
             .iter()
-            .filter(|p| !p.rel_path.ends_with("index.md") || extract_section(&p.url) != section)
+            .filter(|p| !p.rel_path.ends_with("index.md") || p.section != section)
             .map(|p| NavItem {
                 title: p.frontmatter.title.clone(),
                 url: p.url.clone(),
@@ -294,6 +299,7 @@ fn set_active(item: &mut NavItem, current_url: &str) {
 }
 
 fn generate_root_redirect(out: &Path, config: &SiteConfig) -> Result<()> {
+    let base_path = &config.site.base_path;
     let html = format!(
         r#"<!DOCTYPE html>
 <html>
@@ -301,19 +307,19 @@ fn generate_root_redirect(out: &Path, config: &SiteConfig) -> Result<()> {
 <meta charset="utf-8">
 <script>
 (function() {{
-  var lang = localStorage.getItem('preferred-lang') || '{}';
-  window.location.replace('/' + lang + '/');
+  var lang = localStorage.getItem('preferred-lang') || '{default_lang}';
+  window.location.replace('{base_path}/' + lang + '/');
 }})();
 </script>
-<meta http-equiv="refresh" content="0;url=/{default_lang}/">
+<meta http-equiv="refresh" content="0;url={base_path}/{default_lang}/">
 <title>Redirecting...</title>
 </head>
 <body>
-<p>Redirecting to <a href="/{default_lang}/">/{default_lang}/</a>...</p>
+<p>Redirecting to <a href="{base_path}/{default_lang}/">{base_path}/{default_lang}/</a>...</p>
 </body>
 </html>"#,
-        config.i18n.default_lang,
         default_lang = config.i18n.default_lang,
+        base_path = base_path,
     );
 
     fs::write(out.join("index.html"), html)?;

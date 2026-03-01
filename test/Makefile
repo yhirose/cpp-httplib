@@ -254,5 +254,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
 

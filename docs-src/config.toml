@@ -2,6 +2,9 @@
 title = "cpp-httplib"
 version = "0.35.0"
 base_url = "https://yhirose.github.io/cpp-httplib"
+# Base path for URL generation. Use "/cpp-httplib" for GitHub Pages,
+# or "" for local development (python3 -m http.server).
+base_path = "/cpp-httplib"
 
 [i18n]
 default_lang = "en"

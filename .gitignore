@@ -55,6 +55,7 @@ test/*.pem
 test/*.srl
 test/*.log
 test/_build_*
+test/cpp-httplib/
 work/
 benchmark/server*
 docs-gen/target/

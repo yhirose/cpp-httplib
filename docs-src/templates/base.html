@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="{{ lang }}">
+<html lang="{{ lang }}" data-base-path="{{ site.base_path }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page.title }} - {{ site.title }}</title>
-  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="{{ site.base_path }}/css/main.css">
   <script>
     (function() {
       var t = localStorage.getItem('preferred-theme');
@@ -16,11 +16,11 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <a href="/{{ lang }}/" class="header-title">{{ site.title }}{% if site.version %} <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v{{ site.version }}</span>{% endif %}</a>
+      <a href="{{ site.base_path }}/{{ lang }}/" class="header-title">{{ site.title }}{% if site.version %} <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v{{ site.version }}</span>{% endif %}</a>
       <div class="header-spacer"></div>
       <nav class="header-nav">
-        <a href="/{{ lang }}/">Home</a>
-        <a href="/{{ lang }}/tour/">Tour</a>
+        <a href="{{ site.base_path }}/{{ lang }}/">Home</a>
+        <a href="{{ site.base_path }}/{{ lang }}/tour/">Tour</a>
       </nav>
       <div class="header-tools">
         <button class="theme-toggle" aria-label="Toggle theme"></button>
@@ -49,6 +49,6 @@
     &copy; 2026 yhirose. All rights reserved.
   </footer>
 
-  <script src="/js/main.js"></script>
+  <script src="{{ site.base_path }}/js/main.js"></script>
 </body>
 </html>
