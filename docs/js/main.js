@@ -19,8 +19,11 @@
     e.preventDefault();
     var lang = link.getAttribute('data-lang');
     localStorage.setItem('preferred-lang', lang);
+    var basePath = document.documentElement.getAttribute('data-base-path') || '';
     var path = window.location.pathname;
-    var newPath = path.replace(/^\/[a-z]{2}\//, '/' + lang + '/');
+    // Strip base path prefix, replace lang, then re-add base path
+    var pathWithoutBase = path.slice(basePath.length);
+    var newPath = basePath + pathWithoutBase.replace(/^\/[a-z]{2}\//, '/' + lang + '/');
     window.location.href = newPath;
   });
 })();
