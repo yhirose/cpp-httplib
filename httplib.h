@@ -6424,10 +6424,15 @@ inline bool can_compress_content_type(const std::string &content_type) {
   switch (tag) {
   case "image/svg+xml"_t:
   case "application/javascript"_t:
+  case "application/x-javascript"_t:
   case "application/json"_t:
+  case "application/ld+json"_t:
   case "application/xml"_t:
-  case "application/protobuf"_t:
-  case "application/xhtml+xml"_t: return true;
+  case "application/xhtml+xml"_t:
+  case "application/rss+xml"_t:
+  case "application/atom+xml"_t:
+  case "application/xslt+xml"_t:
+  case "application/protobuf"_t: return true;
 
   case "text/event-stream"_t: return false;
 
