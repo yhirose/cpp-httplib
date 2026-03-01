@@ -11801,7 +11801,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 #else
   try {
     routed = routing(req, res, strm);
-  } catch (std::exception &e) {
+  } catch (std::exception &) {
     if (exception_handler_) {
       auto ep = std::current_exception();
       exception_handler_(req, res, ep);
