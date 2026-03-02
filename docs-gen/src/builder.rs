@@ -1,4 +1,5 @@
 use crate::config::SiteConfig;
+use crate::defaults;
 use crate::markdown::{Frontmatter, MarkdownRenderer};
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -44,9 +45,8 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
     let config = SiteConfig::load(src)?;
     let renderer = MarkdownRenderer::new(config.highlight_theme(), config.highlight_theme_light());
 
-    let templates_dir = src.join("templates");
-    let template_glob = format!("{}/**/*.html", templates_dir.display());
-    let tera = Tera::new(&template_glob).context("Failed to load templates")?;
+    // Build Tera: start with embedded defaults, then override with user templates
+    let tera = build_tera(src)?;
 
     // Clean output directory
     if out.exists() {
@@ -54,7 +54,8 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
     }
     fs::create_dir_all(out)?;
 
-    // Copy static files
+    // Copy static files: embedded defaults first, then user overrides on top
+    copy_default_static(out)?;
     let static_dir = src.join("static");
     if static_dir.exists() {
         copy_dir_recursive(&static_dir, out)?;
@@ -323,6 +324,52 @@ fn generate_root_redirect(out: &Path, config: &SiteConfig) -> Result<()> {
     );
 
     fs::write(out.join("index.html"), html)?;
+    Ok(())
+}
+
+/// Build Tera with embedded default templates, then override with any files
+/// found in `<src>/templates/`.
+fn build_tera(src: &Path) -> Result<Tera> {
+    let mut tera = Tera::default();
+
+    // Register embedded defaults
+    for (name, source) in defaults::default_templates() {
+        tera.add_raw_template(name, source)
+            .with_context(|| format!("Failed to add default template '{}'", name))?;
+    }
+
+    // Override with user-provided templates (if any)
+    let templates_dir = src.join("templates");
+    if templates_dir.exists() {
+        for entry in WalkDir::new(&templates_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "html"))
+        {
+            let path = entry.path();
+            let rel = path.strip_prefix(&templates_dir)?;
+            let name = rel.to_string_lossy().replace('\\', "/");
+            let source = fs::read_to_string(path)
+                .with_context(|| format!("Failed to read template {}", path.display()))?;
+            tera.add_raw_template(&name, &source)
+                .with_context(|| format!("Failed to register template '{}'", name))?;
+        }
+    }
+
+    Ok(tera)
+}
+
+/// Write embedded default static files (css/js) to the output directory.
+fn copy_default_static(out: &Path) -> Result<()> {
+    for (rel_path, content) in defaults::default_static_files() {
+        let target = out.join(rel_path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        // Only write if not already present (user file takes precedence via
+        // the subsequent copy_dir_recursive call, but write defaults first)
+        fs::write(&target, content)?;
+    }
     Ok(())
 }
 

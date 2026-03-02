@@ -1,23 +1,78 @@
 mod builder;
 mod config;
+mod defaults;
 mod markdown;
 
-use clap::Parser;
-use std::path::PathBuf;
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(version, about = "A simple static site generator")]
 struct Cli {
-    /// Source directory containing config.toml
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    /// Source directory containing config.toml (used when no subcommand given)
     #[arg(default_value = ".")]
     src: PathBuf,
 
-    /// Output directory
+    /// Output directory (used when no subcommand given)
     #[arg(long, default_value = "docs")]
     out: PathBuf,
 }
 
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    builder::build(&cli.src, &cli.out)
+#[derive(Subcommand)]
+enum Command {
+    /// Build the documentation site
+    Build {
+        /// Source directory containing config.toml
+        #[arg(default_value = ".")]
+        src: PathBuf,
+
+        /// Output directory
+        #[arg(long, default_value = "docs")]
+        out: PathBuf,
+    },
+    /// Initialize a new docs project with default scaffold files
+    Init {
+        /// Target directory to initialize (default: current directory)
+        #[arg(default_value = ".")]
+        src: PathBuf,
+    },
 }
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Command::Build { src, out }) => builder::build(&src, &out),
+        Some(Command::Init { src }) => cmd_init(&src),
+        None => builder::build(&cli.src, &cli.out),
+    }
+}
+
+fn cmd_init(target: &Path) -> Result<()> {
+    let mut skipped = 0usize;
+    let mut created = 0usize;
+
+    for (rel_path, content) in defaults::init_files() {
+        let dest = target.join(rel_path);
+        if dest.exists() {
+            eprintln!("Skipping (already exists): {}", dest.display());
+            skipped += 1;
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&dest, content)?;
+        println!("Created: {}", dest.display());
+        created += 1;
+    }
+
+    println!("\nInit complete: {} file(s) created, {} skipped.", created, skipped);
+    Ok(())
+}
+

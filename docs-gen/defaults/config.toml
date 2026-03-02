@@ -1,0 +1,12 @@
+[site]
+title = "My Docs"
+base_url = "https://example.com"
+base_path = ""
+
+[i18n]
+default_lang = "en"
+langs = ["en", "ja"]
+
+[highlight]
+theme = "base16-ocean.dark"
+theme_light = "InspiredGitHub"
