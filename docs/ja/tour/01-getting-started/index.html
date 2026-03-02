@@ -105,13 +105,13 @@
     <p>cpp-httplibを始めるのに必要なのは、<code>httplib.h</code>とC++コンパイラーだけです。ファイルをダウンロードして、Hello Worldサーバーを動かすところまでやってみましょう。</p>
 <h2>httplib.h の入手</h2>
 <p>GitHubから直接ダウンロードできます。常に最新版を使ってください。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -LO</span><span style="color:#d3d0c8;"> https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -LO</span><span style="color:#4f5b66;"> https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl -LO https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
 </span></pre>
-</div>
+</div></div>
 <p>ダウンロードした <code>httplib.h</code> をプロジェクトのディレクトリに置けば、準備完了です。</p>
 <h2>コンパイラーの準備</h2>
 <table><thead><tr><th>OS</th><th>開発環境</th><th>セットアップ</th></tr></thead><tbody>
@@ -121,7 +121,7 @@
 </tbody></table>
 <h2>Hello World サーバー</h2>
 <p>次のコードを <code>server.cpp</code> として保存しましょう。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#d3d0c8;">
 </span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
@@ -134,24 +134,24 @@
 </span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
-</span><span style="color:#4f5b66;">    httplib::Server svr;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request&amp;, httplib::Response&amp; res) {
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello, World!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span style="color:#323232;">() {
+</span><span style="color:#323232;">    httplib::Server svr;
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Get(</span><span style="color:#183691;">&quot;/&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const</span><span style="color:#323232;"> httplib::Request</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">, httplib::Response</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;"> res) {
+</span><span style="color:#323232;">        res.set_content(</span><span style="color:#183691;">&quot;Hello, World!&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.listen(</span><span style="color:#183691;">&quot;0.0.0.0&quot;</span><span style="color:#323232;">, </span><span style="color:#0086b3;">8080</span><span style="color:#323232;">);
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>たった数行で、HTTPリクエストに応答するサーバーが書けます。</p>
 <h2>コンパイルと実行</h2>
 <p>このチュートリアルのサンプルコードは、コードを簡潔に書けるC++17で書いています。cpp-httplib自体はC++11でもコンパイルできます。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#747369;"># macOS
 </span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -o</span><span style="color:#d3d0c8;"> server server.cpp
 </span><span style="color:#d3d0c8;">
@@ -163,46 +163,46 @@
 </span><span style="color:#747369;"># `/EHsc`: C++例外処理を有効化
 </span><span style="color:#6699cc;">cl</span><span style="color:#d3d0c8;"> /EHsc /std:c++17 server.cpp
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#a7adba;"># macOS
-</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -o</span><span style="color:#4f5b66;"> server server.cpp
-</span><span style="color:#4f5b66;">
-</span><span style="color:#a7adba;"># Linux
-</span><span style="color:#a7adba;"># `-pthread`: cpp-httplibは内部でスレッドを使用
-</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -pthread -o</span><span style="color:#4f5b66;"> server server.cpp
-</span><span style="color:#4f5b66;">
-</span><span style="color:#a7adba;"># Windows (Developer Command Prompt)
-</span><span style="color:#a7adba;"># `/EHsc`: C++例外処理を有効化
-</span><span style="color:#8fa1b3;">cl</span><span style="color:#4f5b66;"> /EHsc /std:c++17 server.cpp
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-style:italic;color:#969896;"># macOS
+</span><span style="color:#323232;">clang++ -std</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;">c++17 -o server server.cpp
+</span><span style="color:#323232;">
+</span><span style="font-style:italic;color:#969896;"># Linux
+</span><span style="font-style:italic;color:#969896;"># `-pthread`: cpp-httplibは内部でスレッドを使用
+</span><span style="color:#323232;">clang++ -std</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;">c++17 -pthread -o server server.cpp
+</span><span style="color:#323232;">
+</span><span style="font-style:italic;color:#969896;"># Windows (Developer Command Prompt)
+</span><span style="font-style:italic;color:#969896;"># `/EHsc`: C++例外処理を有効化
+</span><span style="color:#323232;">cl /EHsc /std:c++17 server.cpp
 </span></pre>
-</div>
+</div></div>
 <p>コンパイルできたら実行します。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#747369;"># macOS / Linux
 </span><span style="color:#6699cc;">./server
 </span><span style="color:#d3d0c8;">
 </span><span style="color:#747369;"># Windows
 </span><span style="color:#6699cc;">server.exe
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#a7adba;"># macOS / Linux
-</span><span style="color:#8fa1b3;">./server
-</span><span style="color:#4f5b66;">
-</span><span style="color:#a7adba;"># Windows
-</span><span style="color:#8fa1b3;">server.exe
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-style:italic;color:#969896;"># macOS / Linux
+</span><span style="color:#323232;">./server
+</span><span style="color:#323232;">
+</span><span style="font-style:italic;color:#969896;"># Windows
+</span><span style="color:#323232;">server.exe
 </span></pre>
-</div>
+</div></div>
 <p>ブラウザで <code>http://localhost:8080</code> を開いてください。"Hello, World!" と表示されれば成功です。</p>
 <p><code>curl</code> でも確認できます。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080/
 </span><span style="color:#747369;"># Hello, World!
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#4f5b66;"> http://localhost:8080/
-</span><span style="color:#a7adba;"># Hello, World!
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl http://localhost:8080/
+</span><span style="font-style:italic;color:#969896;"># Hello, World!
 </span></pre>
-</div>
+</div></div>
 <p>サーバーを停止するには、ターミナルで <code>Ctrl+C</code> を押します。</p>
 <h2>次のステップ</h2>
 <p>サーバーの基本がわかりましたね。次は、クライアント側を見てみましょう。cpp-httplibはHTTPクライアント機能も備えています。</p>

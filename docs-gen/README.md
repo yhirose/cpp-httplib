@@ -116,7 +116,8 @@ icon_svg = '<svg ...>...</svg>'
 langs = ["en", "ja"]    # First entry is the default language
 
 [highlight]
-theme = "base16-eighties.dark"   # Syntax highlighting theme
+dark_theme = "base16-eighties.dark"   # Dark mode theme
+light_theme = "InspiredGitHub"         # Light mode theme (optional)
 ```
 
 ### `[site]`
@@ -149,7 +150,8 @@ Defines buttons in the site header. Each entry supports:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `theme` | `base16-ocean.dark` | Syntax highlighting theme name (syntect built-in) |
+| `dark_theme` | `base16-ocean.dark` | Theme for dark mode |
+| `light_theme` | _(none)_ | Theme for light mode. When set, both dark and light code blocks are emitted and toggled via CSS. |
 
 Available themes: `base16-ocean.dark`, `base16-ocean.light`, `base16-eighties.dark`, `base16-mocha.dark`, `InspiredGitHub`, `Solarized (dark)`, `Solarized (light)`.
 

@@ -59,7 +59,8 @@ impl I18n {
 
 #[derive(Debug, Deserialize)]
 pub struct Highlight {
-    pub theme: Option<String>,
+    pub dark_theme: Option<String>,
+    pub light_theme: Option<String>,
 }
 
 impl SiteConfig {
@@ -81,10 +82,16 @@ impl SiteConfig {
         Ok(config)
     }
 
-    pub fn highlight_theme(&self) -> &str {
+    pub fn highlight_dark_theme(&self) -> &str {
         self.highlight
             .as_ref()
-            .and_then(|h| h.theme.as_deref())
+            .and_then(|h| h.dark_theme.as_deref())
             .unwrap_or("base16-ocean.dark")
+    }
+
+    pub fn highlight_light_theme(&self) -> Option<&str> {
+        self.highlight
+            .as_ref()
+            .and_then(|h| h.light_theme.as_deref())
     }
 }

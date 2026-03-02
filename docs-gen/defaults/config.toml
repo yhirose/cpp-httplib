@@ -16,4 +16,5 @@ base_path = "/my-project"
 langs = ["en"]
 
 [highlight]
-theme = "base16-ocean.dark"
+dark_theme = "base16-ocean.dark"
+light_theme = "InspiredGitHub"

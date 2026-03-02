@@ -113,7 +113,7 @@
 </tbody></table>
 <h2>コンパイルオプション</h2>
 <p>TLS機能を有効にするには、<code>CPPHTTPLIB_OPENSSL_SUPPORT</code> マクロを定義してコンパイルします。前章までのコンパイルコマンドに、いくつかオプションが増えます。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#747369;"># macOS (Homebrew)
 </span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#d3d0c8;">\
 </span><span style="color:#f2777a;">    -I</span><span style="color:#d3d0c8;">$</span><span style="color:#f2777a;">(</span><span style="color:#6699cc;">brew</span><span style="color:#f2777a;"> --prefix openssl)</span><span style="color:#d3d0c8;">/include \
@@ -130,24 +130,24 @@
 </span><span style="color:#747369;"># Windows (Developer Command Prompt)
 </span><span style="color:#6699cc;">cl</span><span style="color:#d3d0c8;"> /EHsc /std:c++17 /DCPPHTTPLIB_OPENSSL_SUPPORT server.cpp libssl.lib libcrypto.lib
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#a7adba;"># macOS (Homebrew)
-</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#4f5b66;">\
-</span><span style="color:#bf616a;">    -I</span><span style="color:#4f5b66;">$</span><span style="color:#bf616a;">(</span><span style="color:#8fa1b3;">brew</span><span style="color:#bf616a;"> --prefix openssl)</span><span style="color:#4f5b66;">/include \
-</span><span style="color:#bf616a;">    -L</span><span style="color:#4f5b66;">$</span><span style="color:#bf616a;">(</span><span style="color:#8fa1b3;">brew</span><span style="color:#bf616a;"> --prefix openssl)</span><span style="color:#4f5b66;">/lib \
-</span><span style="color:#bf616a;">    -lssl -lcrypto </span><span style="color:#4f5b66;">\
-</span><span style="color:#bf616a;">    -framework</span><span style="color:#4f5b66;"> CoreFoundation</span><span style="color:#bf616a;"> -framework</span><span style="color:#4f5b66;"> Security \
-</span><span style="color:#bf616a;">    -o</span><span style="color:#4f5b66;"> server server.cpp
-</span><span style="color:#4f5b66;">
-</span><span style="color:#a7adba;"># Linux
-</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#4f5b66;">=c++17</span><span style="color:#bf616a;"> -pthread -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#4f5b66;">\
-</span><span style="color:#bf616a;">    -lssl -lcrypto </span><span style="color:#4f5b66;">\
-</span><span style="color:#bf616a;">    -o</span><span style="color:#4f5b66;"> server server.cpp
-</span><span style="color:#4f5b66;">
-</span><span style="color:#a7adba;"># Windows (Developer Command Prompt)
-</span><span style="color:#8fa1b3;">cl</span><span style="color:#4f5b66;"> /EHsc /std:c++17 /DCPPHTTPLIB_OPENSSL_SUPPORT server.cpp libssl.lib libcrypto.lib
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-style:italic;color:#969896;"># macOS (Homebrew)
+</span><span style="color:#323232;">clang++ -std</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;">c++17 -DCPPHTTPLIB_OPENSSL_SUPPORT \
+</span><span style="color:#323232;">    -I$(brew --prefix openssl)/include \
+</span><span style="color:#323232;">    -L$(brew --prefix openssl)/lib \
+</span><span style="color:#323232;">    -lssl -lcrypto \
+</span><span style="color:#323232;">    -framework CoreFoundation -framework Security \
+</span><span style="color:#323232;">    -o server server.cpp
+</span><span style="color:#323232;">
+</span><span style="font-style:italic;color:#969896;"># Linux
+</span><span style="color:#323232;">clang++ -std</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;">c++17 -pthread -DCPPHTTPLIB_OPENSSL_SUPPORT \
+</span><span style="color:#323232;">    -lssl -lcrypto \
+</span><span style="color:#323232;">    -o server server.cpp
+</span><span style="color:#323232;">
+</span><span style="font-style:italic;color:#969896;"># Windows (Developer Command Prompt)
+</span><span style="color:#323232;">cl /EHsc /std:c++17 /DCPPHTTPLIB_OPENSSL_SUPPORT server.cpp libssl.lib libcrypto.lib
 </span></pre>
-</div>
+</div></div>
 <p>それぞれのオプションの役割を見てみましょう。</p>
 <ul>
 <li><strong><code>-DCPPHTTPLIB_OPENSSL_SUPPORT</code></strong> — TLS機能を有効にするマクロ定義</li>
@@ -157,7 +157,7 @@
 </ul>
 <h2>動作確認</h2>
 <p>ちゃんと動くか確認してみましょう。<code>httplib::Client</code> にHTTPSのURLを渡してアクセスするだけのプログラムです。</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">#define </span><span style="color:#d3d0c8;">CPPHTTPLIB_OPENSSL_SUPPORT
 </span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
@@ -173,23 +173,23 @@
 </span><span style="color:#d3d0c8;">    }
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">#define </span><span style="color:#4f5b66;">CPPHTTPLIB_OPENSSL_SUPPORT
-</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#4f5b66;">&gt;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
-</span><span style="color:#4f5b66;">    httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">https://www.google.com</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">        std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Status: </span><span style="color:#4f5b66;">&quot; &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">&lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    } </span><span style="color:#b48ead;">else </span><span style="color:#4f5b66;">{
-</span><span style="color:#4f5b66;">        std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Error: </span><span style="color:#4f5b66;">&quot; &lt;&lt; </span><span style="color:#8fa1b3;">httplib::to_string</span><span style="color:#4f5b66;">(res.</span><span style="color:#8fa1b3;">error</span><span style="color:#4f5b66;">()) &lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">#define </span><span style="color:#323232;">CPPHTTPLIB_OPENSSL_SUPPORT
+</span><span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&lt;iostream&gt;
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span style="color:#323232;">() {
+</span><span style="color:#323232;">    httplib::Client cli(</span><span style="color:#183691;">&quot;https://www.google.com&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">        std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;Status: &quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#323232;">{
+</span><span style="color:#323232;">        std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;Error: &quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#323232;">httplib::to_string(res.error()) </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>コンパイルして実行してみてください。<code>Status: 200</code> と表示されれば、セットアップ完了です。</p>
 <h2>他のTLSバックエンド</h2>
 <p>cpp-httplibはOpenSSL以外にも、Mbed TLSとwolfSSLに対応しています。マクロ定義とリンクするライブラリを変えるだけで切り替えられます。</p>

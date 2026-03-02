@@ -3,6 +3,7 @@ mod config;
 mod defaults;
 mod markdown;
 mod serve;
+mod utils;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, CommandFactory};

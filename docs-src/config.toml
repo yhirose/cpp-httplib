@@ -18,4 +18,5 @@ icon_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewB
 langs = ["en", "ja"]
 
 [highlight]
-theme = "base16-eighties.dark"
+dark_theme = "base16-eighties.dark"
+light_theme = "InspiredGitHub"

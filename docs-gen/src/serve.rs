@@ -1,5 +1,6 @@
 use crate::builder;
 use crate::config::SiteConfig;
+use crate::utils::copy_dir_recursive;
 use anyhow::{Context, Result};
 use notify::{Event, RecursiveMode, Watcher};
 use socket2::{Domain, Protocol, Socket, Type};
@@ -277,24 +278,6 @@ fn send_ws_text_frame(mut stream: &TcpStream, msg: &str) -> Result<()> {
 
     stream.write_all(&frame)?;
     stream.flush()?;
-    Ok(())
-}
-
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    for entry in WalkDir::new(src).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        let rel = path.strip_prefix(src)?;
-        let target = dst.join(rel);
-
-        if path.is_dir() {
-            fs::create_dir_all(&target)?;
-        } else {
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(path, &target)?;
-        }
-    }
     Ok(())
 }
 

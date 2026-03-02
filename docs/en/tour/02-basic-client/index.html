@@ -105,7 +105,7 @@
     <p>cpp-httplib isn't just for servers -- it also comes with a full HTTP client. Let's use <code>httplib::Client</code> to send GET and POST requests.</p>
 <h2>Preparing a Test Server</h2>
 <p>To try out the client, you need a server that accepts requests. Save the following code, then compile and run it the same way you did in the previous chapter. We'll cover the server details in the next chapter.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
 </span><span style="color:#d3d0c8;">
@@ -153,58 +153,58 @@
 </span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#4f5b66;">&gt;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
-</span><span style="color:#4f5b66;">    httplib::Server svr;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/search</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> q = req.</span><span style="color:#8fa1b3;">get_param_value</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">q</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Query: </span><span style="color:#4f5b66;">&quot; + q, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/post</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(req.</span><span style="color:#bf616a;">body</span><span style="color:#4f5b66;">, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/submit</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        std::string result;
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">for </span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;[key, val] : req.</span><span style="color:#bf616a;">params</span><span style="color:#4f5b66;">) {
-</span><span style="color:#4f5b66;">            result += key + &quot;</span><span style="color:#a3be8c;"> = </span><span style="color:#4f5b66;">&quot; + val + &quot;</span><span style="color:#96b5b4;">\n</span><span style="color:#4f5b66;">&quot;;
-</span><span style="color:#4f5b66;">        }
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(result, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/upload</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> f = req.</span><span style="color:#bf616a;">form</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">get_file</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">file</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> content = f.</span><span style="color:#bf616a;">filename </span><span style="color:#4f5b66;">+ &quot;</span><span style="color:#a3be8c;"> (</span><span style="color:#4f5b66;">&quot; + </span><span style="color:#8fa1b3;">std::to_string</span><span style="color:#4f5b66;">(f.</span><span style="color:#bf616a;">content</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">size</span><span style="color:#4f5b66;">()) + &quot;</span><span style="color:#a3be8c;"> bytes)</span><span style="color:#4f5b66;">&quot;;
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(content, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/users/:id</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> id = req.</span><span style="color:#bf616a;">path_params</span><span style="color:#4f5b66;">.</span><span style="color:#8fa1b3;">at</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">id</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">User ID: </span><span style="color:#4f5b66;">&quot; + id, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(</span><span style="color:#b48ead;">R</span><span style="color:#4f5b66;">&quot;(</span><span style="color:#a3be8c;">/files/(\d+)</span><span style="color:#4f5b66;">)&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#4f5b66;">&amp;req, </span><span style="color:#b48ead;">auto </span><span style="color:#4f5b66;">&amp;res) {
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> id = req.</span><span style="color:#bf616a;">matches</span><span style="color:#4f5b66;">[</span><span style="color:#d08770;">1</span><span style="color:#4f5b66;">];
-</span><span style="color:#4f5b66;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">File ID: </span><span style="color:#4f5b66;">&quot; + </span><span style="color:#8fa1b3;">std::string</span><span style="color:#4f5b66;">(id), &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Listening on port 8080...</span><span style="color:#4f5b66;">&quot; &lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&lt;iostream&gt;
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span style="color:#323232;">() {
+</span><span style="color:#323232;">    httplib::Server svr;
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Get(</span><span style="color:#183691;">&quot;/hi&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        res.set_content(</span><span style="color:#183691;">&quot;Hello!&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Get(</span><span style="color:#183691;">&quot;/search&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">req, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> q </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> req.get_param_value(</span><span style="color:#183691;">&quot;q&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">        res.set_content(</span><span style="color:#183691;">&quot;Query: &quot; </span><span style="font-weight:bold;color:#a71d5d;">+</span><span style="color:#323232;"> q, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Post(</span><span style="color:#183691;">&quot;/post&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">req, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        res.set_content(req.body, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Post(</span><span style="color:#183691;">&quot;/submit&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">req, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        std::string result;
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">for </span><span style="color:#323232;">(</span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">[key, val] </span><span style="font-weight:bold;color:#a71d5d;">:</span><span style="color:#323232;"> req.params) {
+</span><span style="color:#323232;">            result </span><span style="font-weight:bold;color:#a71d5d;">+=</span><span style="color:#323232;"> key </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#183691;">&quot; = &quot; </span><span style="font-weight:bold;color:#a71d5d;">+</span><span style="color:#323232;"> val </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">&quot;</span><span style="color:#323232;">;
+</span><span style="color:#323232;">        }
+</span><span style="color:#323232;">        res.set_content(result, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Post(</span><span style="color:#183691;">&quot;/upload&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">req, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> f </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> req.form.get_file(</span><span style="color:#183691;">&quot;file&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> content </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> f.filename </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#183691;">&quot; (&quot; </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#323232;">std::to_string(f.content.size()) </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#183691;">&quot; bytes)&quot;</span><span style="color:#323232;">;
+</span><span style="color:#323232;">        res.set_content(content, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Get(</span><span style="color:#183691;">&quot;/users/:id&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">req, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> req.path_params.at(</span><span style="color:#183691;">&quot;id&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">        res.set_content(</span><span style="color:#183691;">&quot;User ID: &quot; </span><span style="font-weight:bold;color:#a71d5d;">+</span><span style="color:#323232;"> id, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.Get(</span><span style="font-weight:bold;color:#a71d5d;">R</span><span style="color:#183691;">&quot;(/files/(\d+))&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const auto &amp;</span><span style="color:#323232;">req, </span><span style="font-weight:bold;color:#a71d5d;">auto &amp;</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> req.matches[</span><span style="color:#0086b3;">1</span><span style="color:#323232;">];
+</span><span style="color:#323232;">        res.set_content(</span><span style="color:#183691;">&quot;File ID: &quot; </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#323232;">std::string(id), </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;Listening on port 8080...&quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    svr.listen(</span><span style="color:#183691;">&quot;0.0.0.0&quot;</span><span style="color:#323232;">, </span><span style="color:#0086b3;">8080</span><span style="color:#323232;">);
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <h2>GET Request</h2>
 <p>Once the server is running, open a separate terminal and give it a try. Let's start with the simplest GET request.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
 </span><span style="color:#d3d0c8;">
@@ -218,35 +218,35 @@
 </span><span style="color:#d3d0c8;">    }
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#4f5b66;">&gt;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
-</span><span style="color:#4f5b66;">    httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:8080</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// 200
-</span><span style="color:#4f5b66;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;    </span><span style="color:#a7adba;">// Hello!
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&lt;iostream&gt;
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span style="color:#323232;">() {
+</span><span style="color:#323232;">    httplib::Client cli(</span><span style="color:#183691;">&quot;http://localhost:8080&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/hi&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">        std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// 200
+</span><span style="color:#323232;">        std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;    </span><span style="font-style:italic;color:#969896;">// Hello!
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>Pass the server address to the <code>httplib::Client</code> constructor, then call <code>Get()</code> to send a request. You can retrieve the status code and body from the returned <code>res</code>.</p>
 <p>Here's the equivalent <code>curl</code> command.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080/hi
 </span><span style="color:#747369;"># Hello!
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#4f5b66;"> http://localhost:8080/hi
-</span><span style="color:#a7adba;"># Hello!
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl http://localhost:8080/hi
+</span><span style="font-style:italic;color:#969896;"># Hello!
 </span></pre>
-</div>
+</div></div>
 <h2>Checking the Response</h2>
 <p>A response contains header information in addition to the status code and body.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
 </span><span style="color:#d3d0c8;">    </span><span style="color:#747369;">// Status code
@@ -259,141 +259,141 @@
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#6699cc;">get_header_value</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Content-Type</span><span style="color:#d3d0c8;">&quot;) &lt;&lt; std::endl;  </span><span style="color:#747369;">// text/plain
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Status code
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// 200
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Body
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// Hello!
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Headers
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#8fa1b3;">get_header_value</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Content-Type</span><span style="color:#4f5b66;">&quot;) &lt;&lt; std::endl;  </span><span style="color:#a7adba;">// text/plain
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/hi&quot;</span><span style="color:#323232;">);
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Status code
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// 200
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Body
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// Hello!
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Headers
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;get_header_value(</span><span style="color:#183691;">&quot;Content-Type&quot;</span><span style="color:#323232;">) </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// text/plain
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p><code>res-&gt;body</code> is a <code>std::string</code>, so if you want to parse a JSON response, you can pass it directly to a JSON library like <a href="https://github.com/nlohmann/json">nlohmann/json</a>.</p>
 <h2>Query Parameters</h2>
 <p>To add query parameters to a GET request, you can either write them directly in the URL or use <code>httplib::Params</code>.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/search</span><span style="color:#d3d0c8;">&quot;, httplib::Params{{&quot;</span><span style="color:#99cc99;">q</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">cpp-httplib</span><span style="color:#d3d0c8;">&quot;}});
 </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// Query: cpp-httplib
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/search</span><span style="color:#4f5b66;">&quot;, httplib::Params{{&quot;</span><span style="color:#a3be8c;">q</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">cpp-httplib</span><span style="color:#4f5b66;">&quot;}});
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// Query: cpp-httplib
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/search&quot;</span><span style="color:#323232;">, httplib::Params{{</span><span style="color:#183691;">&quot;q&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;cpp-httplib&quot;</span><span style="color:#323232;">}});
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// Query: cpp-httplib
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p><code>httplib::Params</code> automatically URL-encodes special characters for you.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">http://localhost:8080/search?q=cpp-httplib</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#747369;"># Query: cpp-httplib
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">http://localhost:8080/search?q=cpp-httplib</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#a7adba;"># Query: cpp-httplib
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl </span><span style="color:#183691;">&quot;http://localhost:8080/search?q=cpp-httplib&quot;
+</span><span style="font-style:italic;color:#969896;"># Query: cpp-httplib
 </span></pre>
-</div>
+</div></div>
 <h2>Path Parameters</h2>
 <p>When values are embedded directly in the URL path, no special client API is needed. Just pass the path to <code>Get()</code> as-is.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/users/42</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// User ID: 42
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/users/42</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// User ID: 42
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/users/42&quot;</span><span style="color:#323232;">);
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// User ID: 42
+</span><span style="color:#323232;">}
 </span></pre>
-</div><div class="code-dark"><pre style="background-color:#2d2d2d;">
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080/users/42
 </span><span style="color:#747369;"># User ID: 42
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#4f5b66;"> http://localhost:8080/users/42
-</span><span style="color:#a7adba;"># User ID: 42
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl http://localhost:8080/users/42
+</span><span style="font-style:italic;color:#969896;"># User ID: 42
 </span></pre>
-</div>
+</div></div>
 <p>The test server also has a <code>/files/(\d+)</code> route that uses a regex to accept numeric IDs only.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/files/42</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// File ID: 42
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/files/42</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// File ID: 42
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/files/42&quot;</span><span style="color:#323232;">);
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// File ID: 42
+</span><span style="color:#323232;">}
 </span></pre>
-</div><div class="code-dark"><pre style="background-color:#2d2d2d;">
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080/files/42
 </span><span style="color:#747369;"># File ID: 42
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#4f5b66;"> http://localhost:8080/files/42
-</span><span style="color:#a7adba;"># File ID: 42
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl http://localhost:8080/files/42
+</span><span style="font-style:italic;color:#969896;"># File ID: 42
 </span></pre>
-</div>
+</div></div>
 <p>Pass a non-numeric ID like <code>/files/abc</code> and you'll get a 404. We'll cover how that works in the next chapter.</p>
 <h2>Request Headers</h2>
 <p>To add custom HTTP headers, pass an <code>httplib::Headers</code> object. This works with both <code>Get()</code> and <code>Post()</code>.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;, httplib::Headers{
 </span><span style="color:#d3d0c8;">    {&quot;</span><span style="color:#99cc99;">Authorization</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">Bearer my-token</span><span style="color:#d3d0c8;">&quot;}
 </span><span style="color:#d3d0c8;">});
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;, httplib::Headers{
-</span><span style="color:#4f5b66;">    {&quot;</span><span style="color:#a3be8c;">Authorization</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">Bearer my-token</span><span style="color:#4f5b66;">&quot;}
-</span><span style="color:#4f5b66;">});
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/hi&quot;</span><span style="color:#323232;">, httplib::Headers{
+</span><span style="color:#323232;">    {</span><span style="color:#183691;">&quot;Authorization&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;Bearer my-token&quot;</span><span style="color:#323232;">}
+</span><span style="color:#323232;">});
 </span></pre>
-</div><div class="code-dark"><pre style="background-color:#2d2d2d;">
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -H </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">Authorization: Bearer my-token</span><span style="color:#d3d0c8;">&quot; http://localhost:8080/hi
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -H </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">Authorization: Bearer my-token</span><span style="color:#4f5b66;">&quot; http://localhost:8080/hi
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl -H </span><span style="color:#183691;">&quot;Authorization: Bearer my-token&quot;</span><span style="color:#323232;"> http://localhost:8080/hi
 </span></pre>
-</div>
+</div></div>
 <h2>POST Request</h2>
 <p>Let's POST some text data. Pass the body as the second argument to <code>Post()</code> and the Content-Type as the third.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/post</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">Hello, Server!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// 200
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;    </span><span style="color:#747369;">// Hello, Server!
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/post</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">Hello, Server!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// 200
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;    </span><span style="color:#a7adba;">// Hello, Server!
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Post(</span><span style="color:#183691;">&quot;/post&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;Hello, Server!&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">);
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// 200
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;    </span><span style="font-style:italic;color:#969896;">// Hello, Server!
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>The test server's <code>/post</code> endpoint echoes the body back, so you get the same string you sent.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -X</span><span style="color:#d3d0c8;"> POST</span><span style="color:#f2777a;"> -H </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">Content-Type: text/plain</span><span style="color:#d3d0c8;">&quot;</span><span style="color:#f2777a;"> -d </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">Hello, Server!</span><span style="color:#d3d0c8;">&quot; http://localhost:8080/post
 </span><span style="color:#747369;"># Hello, Server!
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -X</span><span style="color:#4f5b66;"> POST</span><span style="color:#bf616a;"> -H </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">Content-Type: text/plain</span><span style="color:#4f5b66;">&quot;</span><span style="color:#bf616a;"> -d </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">Hello, Server!</span><span style="color:#4f5b66;">&quot; http://localhost:8080/post
-</span><span style="color:#a7adba;"># Hello, Server!
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl -X POST -H </span><span style="color:#183691;">&quot;Content-Type: text/plain&quot;</span><span style="color:#323232;"> -d </span><span style="color:#183691;">&quot;Hello, Server!&quot;</span><span style="color:#323232;"> http://localhost:8080/post
+</span><span style="font-style:italic;color:#969896;"># Hello, Server!
 </span></pre>
-</div>
+</div></div>
 <h2>Sending Form Data</h2>
 <p>You can send key-value pairs just like an HTML form. Use <code>httplib::Params</code> for this.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/submit</span><span style="color:#d3d0c8;">&quot;, httplib::Params{
 </span><span style="color:#d3d0c8;">    {&quot;</span><span style="color:#99cc99;">name</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">Alice</span><span style="color:#d3d0c8;">&quot;},
 </span><span style="color:#d3d0c8;">    {&quot;</span><span style="color:#99cc99;">age</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">30</span><span style="color:#d3d0c8;">&quot;}
@@ -404,29 +404,29 @@
 </span><span style="color:#d3d0c8;">    </span><span style="color:#747369;">// name = Alice
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/submit</span><span style="color:#4f5b66;">&quot;, httplib::Params{
-</span><span style="color:#4f5b66;">    {&quot;</span><span style="color:#a3be8c;">name</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">Alice</span><span style="color:#4f5b66;">&quot;},
-</span><span style="color:#4f5b66;">    {&quot;</span><span style="color:#a3be8c;">age</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">30</span><span style="color:#4f5b66;">&quot;}
-</span><span style="color:#4f5b66;">});
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// age = 30
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// name = Alice
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Post(</span><span style="color:#183691;">&quot;/submit&quot;</span><span style="color:#323232;">, httplib::Params{
+</span><span style="color:#323232;">    {</span><span style="color:#183691;">&quot;name&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;Alice&quot;</span><span style="color:#323232;">},
+</span><span style="color:#323232;">    {</span><span style="color:#183691;">&quot;age&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;30&quot;</span><span style="color:#323232;">}
+</span><span style="color:#323232;">});
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// age = 30
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// name = Alice
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>This sends the data in <code>application/x-www-form-urlencoded</code> format.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -X</span><span style="color:#d3d0c8;"> POST</span><span style="color:#f2777a;"> -d </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">name=Alice&amp;age=30</span><span style="color:#d3d0c8;">&quot; http://localhost:8080/submit
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -X</span><span style="color:#4f5b66;"> POST</span><span style="color:#bf616a;"> -d </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">name=Alice&amp;age=30</span><span style="color:#4f5b66;">&quot; http://localhost:8080/submit
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl -X POST -d </span><span style="color:#183691;">&quot;name=Alice&amp;age=30&quot;</span><span style="color:#323232;"> http://localhost:8080/submit
 </span></pre>
-</div>
+</div></div>
 <h2>POSTing a File</h2>
 <p>To upload a file, use <code>httplib::UploadFormDataItems</code> to send it as multipart form data.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Post</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/upload</span><span style="color:#d3d0c8;">&quot;, httplib::UploadFormDataItems{
 </span><span style="color:#d3d0c8;">    {&quot;</span><span style="color:#99cc99;">file</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">Hello, File!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">hello.txt</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;}
 </span><span style="color:#d3d0c8;">});
@@ -434,26 +434,26 @@
 </span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// hello.txt (12 bytes)
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Post</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/upload</span><span style="color:#4f5b66;">&quot;, httplib::UploadFormDataItems{
-</span><span style="color:#4f5b66;">    {&quot;</span><span style="color:#a3be8c;">file</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">Hello, File!</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">hello.txt</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#4f5b66;">&quot;}
-</span><span style="color:#4f5b66;">});
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;  </span><span style="color:#a7adba;">// hello.txt (12 bytes)
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Post(</span><span style="color:#183691;">&quot;/upload&quot;</span><span style="color:#323232;">, httplib::UploadFormDataItems{
+</span><span style="color:#323232;">    {</span><span style="color:#183691;">&quot;file&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;Hello, File!&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;hello.txt&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;text/plain&quot;</span><span style="color:#323232;">}
+</span><span style="color:#323232;">});
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// hello.txt (12 bytes)
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>Each element in <code>UploadFormDataItems</code> has four fields: <code>{name, content, filename, content_type}</code>.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -F </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">file=Hello, File!;filename=hello.txt;type=text/plain</span><span style="color:#d3d0c8;">&quot; http://localhost:8080/upload
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -F </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">file=Hello, File!;filename=hello.txt;type=text/plain</span><span style="color:#4f5b66;">&quot; http://localhost:8080/upload
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">curl -F </span><span style="color:#183691;">&quot;file=Hello, File!;filename=hello.txt;type=text/plain&quot;</span><span style="color:#323232;"> http://localhost:8080/upload
 </span></pre>
-</div>
+</div></div>
 <h2>Error Handling</h2>
 <p>Network communication can fail -- the server might not be reachable. Always check whether <code>res</code> is valid.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:9999</span><span style="color:#d3d0c8;">&quot;);  </span><span style="color:#747369;">// Non-existent port
 </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/hi</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#d3d0c8;">
@@ -472,26 +472,26 @@
 </span><span style="color:#d3d0c8;">
 </span><span style="color:#d3d0c8;">std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#4f5b66;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">http://localhost:9999</span><span style="color:#4f5b66;">&quot;);  </span><span style="color:#a7adba;">// Non-existent port
-</span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/hi</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(!res) {
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Connection error
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Error: </span><span style="color:#4f5b66;">&quot; &lt;&lt; </span><span style="color:#8fa1b3;">httplib::to_string</span><span style="color:#4f5b66;">(res.</span><span style="color:#8fa1b3;">error</span><span style="color:#4f5b66;">()) &lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Error: Connection
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">return </span><span style="color:#d08770;">1</span><span style="color:#4f5b66;">;
-</span><span style="color:#4f5b66;">}
-</span><span style="color:#4f5b66;">
-</span><span style="color:#a7adba;">// If we reach here, we have a response
-</span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">!= </span><span style="color:#d08770;">200</span><span style="color:#4f5b66;">) {
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">HTTP Error: </span><span style="color:#4f5b66;">&quot; &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#4f5b66;">&lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">return </span><span style="color:#d08770;">1</span><span style="color:#4f5b66;">;
-</span><span style="color:#4f5b66;">}
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#4f5b66;">&lt;&lt; std::endl;
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;http://localhost:9999&quot;</span><span style="color:#323232;">);  </span><span style="font-style:italic;color:#969896;">// Non-existent port
+</span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/hi&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(</span><span style="font-weight:bold;color:#a71d5d;">!</span><span style="color:#323232;">res) {
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Connection error
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;Error: &quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#323232;">httplib::to_string(res.error()) </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Error: Connection
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">1</span><span style="color:#323232;">;
+</span><span style="color:#323232;">}
+</span><span style="color:#323232;">
+</span><span style="font-style:italic;color:#969896;">// If we reach here, we have a response
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">200</span><span style="color:#323232;">) {
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;HTTP Error: &quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">1</span><span style="color:#323232;">;
+</span><span style="color:#323232;">}
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
 </span></pre>
-</div>
+</div></div>
 <p>There are two levels of errors.</p>
 <ul>
 <li><strong>Connection error</strong>: The client couldn't reach the server. <code>res</code> evaluates to false, and you can call <code>res.error()</code> to find out what went wrong.</li>

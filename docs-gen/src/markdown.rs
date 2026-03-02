@@ -16,15 +16,17 @@ pub struct Frontmatter {
 pub struct MarkdownRenderer {
     syntax_set: SyntaxSet,
     theme_set: ThemeSet,
-    theme_name: String,
+    dark_theme: String,
+    light_theme: Option<String>,
 }
 
 impl MarkdownRenderer {
-    pub fn new(theme_name: &str) -> Self {
+    pub fn new(dark_theme: &str, light_theme: Option<&str>) -> Self {
         Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
-            theme_name: theme_name.to_string(),
+            dark_theme: dark_theme.to_string(),
+            light_theme: light_theme.map(|s| s.to_string()),
         }
     }
 
@@ -84,16 +86,31 @@ impl MarkdownRenderer {
     }
 
     fn highlight_code(&self, code: &str, lang: &str) -> String {
-        if lang.is_empty() {
-            return format!("<pre><code>{}</code></pre>", escape_html(code));
+        let syntax = if lang.is_empty() {
+            self.syntax_set.find_syntax_plain_text()
+        } else {
+            self.syntax_set
+                .find_syntax_by_token(lang)
+                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text())
+        };
+
+        let dark_html = self.highlight_with_theme(code, syntax, &self.dark_theme);
+
+        match &self.light_theme {
+            Some(light) => {
+                let light_html = self.highlight_with_theme(code, syntax, light);
+                format!(
+                    concat!(
+                        "<div class=\"code-block-wrapper\">",
+                        "<div data-code-theme=\"dark\">{}</div>",
+                        "<div data-code-theme=\"light\">{}</div>",
+                        "</div>",
+                    ),
+                    dark_html, light_html
+                )
+            }
+            None => dark_html,
         }
-
-        let syntax = self
-            .syntax_set
-            .find_syntax_by_token(lang)
-            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
-
-        self.highlight_with_theme(code, syntax, &self.theme_name)
     }
 
     fn highlight_with_theme(

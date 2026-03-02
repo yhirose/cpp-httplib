@@ -106,7 +106,7 @@
 <p>Let's build an echo server and client right away.</p>
 <h2>Echo Server</h2>
 <p>Here's an echo server that sends back whatever message it receives.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
 </span><span style="color:#d3d0c8;">
@@ -124,30 +124,30 @@
 </span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#4f5b66;">&gt;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
-</span><span style="color:#4f5b66;">    httplib::Server svr;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">WebSocket</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/ws</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request &amp;, httplib::ws::WebSocket &amp;ws) {
-</span><span style="color:#4f5b66;">        std::string msg;
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">while </span><span style="color:#4f5b66;">(ws.</span><span style="color:#8fa1b3;">read</span><span style="color:#4f5b66;">(msg)) {
-</span><span style="color:#4f5b66;">            ws.</span><span style="color:#8fa1b3;">send</span><span style="color:#4f5b66;">(msg);  </span><span style="color:#a7adba;">// Send back the received message as-is
-</span><span style="color:#4f5b66;">        }
-</span><span style="color:#4f5b66;">    });
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Listening on port 8080...</span><span style="color:#4f5b66;">&quot; &lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#4f5b66;">);
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&lt;iostream&gt;
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span style="color:#323232;">() {
+</span><span style="color:#323232;">    httplib::Server svr;
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    svr.WebSocket(</span><span style="color:#183691;">&quot;/ws&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const</span><span style="color:#323232;"> httplib::Request </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">, httplib::ws::WebSocket </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">ws) {
+</span><span style="color:#323232;">        std::string msg;
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">while </span><span style="color:#323232;">(ws.read(msg)) {
+</span><span style="color:#323232;">            ws.send(msg);  </span><span style="font-style:italic;color:#969896;">// Send back the received message as-is
+</span><span style="color:#323232;">        }
+</span><span style="color:#323232;">    });
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;Listening on port 8080...&quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">    svr.listen(</span><span style="color:#183691;">&quot;0.0.0.0&quot;</span><span style="color:#323232;">, </span><span style="color:#0086b3;">8080</span><span style="color:#323232;">);
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>You register a WebSocket handler with <code>svr.WebSocket()</code>. It works just like <code>svr.Get()</code> and <code>svr.Post()</code> from Chapter 3.</p>
 <p>Inside the handler, <code>ws.read(msg)</code> waits for a message. When the connection closes, <code>read()</code> returns <code>false</code>, so the loop exits. <code>ws.send(msg)</code> sends a message back.</p>
 <h2>Connecting from a Client</h2>
 <p>Let's connect to the server using <code>httplib::ws::WebSocketClient</code>.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
 </span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
 </span><span style="color:#d3d0c8;">
@@ -171,35 +171,35 @@
 </span><span style="color:#d3d0c8;">    client.</span><span style="color:#6699cc;">close</span><span style="color:#d3d0c8;">();
 </span><span style="color:#d3d0c8;">}
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#4f5b66;">&quot;
-</span><span style="color:#b48ead;">#include </span><span style="color:#4f5b66;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#4f5b66;">&gt;
-</span><span style="color:#4f5b66;">
-</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#4f5b66;">() {
-</span><span style="color:#4f5b66;">    httplib::ws::WebSocketClient </span><span style="color:#8fa1b3;">client</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">ws://localhost:8080/ws</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(!client.</span><span style="color:#8fa1b3;">connect</span><span style="color:#4f5b66;">()) {
-</span><span style="color:#4f5b66;">        std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Connection failed</span><span style="color:#4f5b66;">&quot; &lt;&lt; std::endl;
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">return </span><span style="color:#d08770;">1</span><span style="color:#4f5b66;">;
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Send a message
-</span><span style="color:#4f5b66;">    client.</span><span style="color:#8fa1b3;">send</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Hello, WebSocket!</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    </span><span style="color:#a7adba;">// Receive a response from the server
-</span><span style="color:#4f5b66;">    std::string msg;
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(client.</span><span style="color:#8fa1b3;">read</span><span style="color:#4f5b66;">(msg)) {
-</span><span style="color:#4f5b66;">        std::cout &lt;&lt; msg &lt;&lt; std::endl;  </span><span style="color:#a7adba;">// Hello, WebSocket!
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    client.</span><span style="color:#8fa1b3;">close</span><span style="color:#4f5b66;">();
-</span><span style="color:#4f5b66;">}
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&lt;iostream&gt;
+</span><span style="color:#323232;">
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span style="color:#323232;">() {
+</span><span style="color:#323232;">    httplib::ws::WebSocketClient client(</span><span style="color:#183691;">&quot;ws://localhost:8080/ws&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(</span><span style="font-weight:bold;color:#a71d5d;">!</span><span style="color:#323232;">client.connect()) {
+</span><span style="color:#323232;">        std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt; </span><span style="color:#183691;">&quot;Connection failed&quot; </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">1</span><span style="color:#323232;">;
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Send a message
+</span><span style="color:#323232;">    client.send(</span><span style="color:#183691;">&quot;Hello, WebSocket!&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    </span><span style="font-style:italic;color:#969896;">// Receive a response from the server
+</span><span style="color:#323232;">    std::string msg;
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(client.read(msg)) {
+</span><span style="color:#323232;">        std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> msg </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// Hello, WebSocket!
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    client.close();
+</span><span style="color:#323232;">}
 </span></pre>
-</div>
+</div></div>
 <p>Pass a URL in <code>ws://host:port/path</code> format to the constructor. Call <code>connect()</code> to start the connection, then use <code>send()</code> and <code>read()</code> to exchange messages.</p>
 <h2>Text and Binary</h2>
 <p>WebSocket has two types of messages: text and binary. You can tell them apart by the return value of <code>read()</code>.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">WebSocket</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/ws</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::Request &amp;, httplib::ws::WebSocket &amp;ws) {
 </span><span style="color:#d3d0c8;">    std::string msg;
 </span><span style="color:#d3d0c8;">    httplib::ws::ReadResult ret;
@@ -212,20 +212,20 @@
 </span><span style="color:#d3d0c8;">    }
 </span><span style="color:#d3d0c8;">});
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">WebSocket</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/ws</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request &amp;, httplib::ws::WebSocket &amp;ws) {
-</span><span style="color:#4f5b66;">    std::string msg;
-</span><span style="color:#4f5b66;">    httplib::ws::ReadResult ret;
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">while </span><span style="color:#4f5b66;">((ret = ws.</span><span style="color:#8fa1b3;">read</span><span style="color:#4f5b66;">(msg))) {
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(ret == httplib::ws::Binary) {
-</span><span style="color:#4f5b66;">            ws.</span><span style="color:#8fa1b3;">send</span><span style="color:#4f5b66;">(msg.</span><span style="color:#8fa1b3;">data</span><span style="color:#4f5b66;">(), msg.</span><span style="color:#8fa1b3;">size</span><span style="color:#4f5b66;">());  </span><span style="color:#a7adba;">// Send as binary
-</span><span style="color:#4f5b66;">        } </span><span style="color:#b48ead;">else </span><span style="color:#4f5b66;">{
-</span><span style="color:#4f5b66;">            ws.</span><span style="color:#8fa1b3;">send</span><span style="color:#4f5b66;">(msg);  </span><span style="color:#a7adba;">// Send as text
-</span><span style="color:#4f5b66;">        }
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">});
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">svr.WebSocket(</span><span style="color:#183691;">&quot;/ws&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const</span><span style="color:#323232;"> httplib::Request </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">, httplib::ws::WebSocket </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">ws) {
+</span><span style="color:#323232;">    std::string msg;
+</span><span style="color:#323232;">    httplib::ws::ReadResult ret;
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span style="color:#323232;">((ret </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> ws.read(msg))) {
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(ret </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#323232;"> httplib::ws::Binary) {
+</span><span style="color:#323232;">            ws.send(msg.data(), msg.size());  </span><span style="font-style:italic;color:#969896;">// Send as binary
+</span><span style="color:#323232;">        } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#323232;">{
+</span><span style="color:#323232;">            ws.send(msg);  </span><span style="font-style:italic;color:#969896;">// Send as text
+</span><span style="color:#323232;">        }
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">});
 </span></pre>
-</div>
+</div></div>
 <ul>
 <li><code>ws.send(const std::string &amp;)</code> — sends as a text message</li>
 <li><code>ws.send(const char *, size_t)</code> — sends as a binary message</li>
@@ -233,7 +233,7 @@
 <p>The client-side API is the same.</p>
 <h2>Accessing Request Information</h2>
 <p>You can read HTTP request information from the handshake through the first argument <code>req</code> in the handler. This is handy for checking authentication tokens.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">WebSocket</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/ws</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::Request &amp;req, httplib::ws::WebSocket &amp;ws) {
 </span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> token = req.</span><span style="color:#6699cc;">get_header_value</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Authorization</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(token.</span><span style="color:#6699cc;">empty</span><span style="color:#d3d0c8;">()) {
@@ -247,24 +247,24 @@
 </span><span style="color:#d3d0c8;">    }
 </span><span style="color:#d3d0c8;">});
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">WebSocket</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/ws</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request &amp;req, httplib::ws::WebSocket &amp;ws) {
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">auto</span><span style="color:#4f5b66;"> token = req.</span><span style="color:#8fa1b3;">get_header_value</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">Authorization</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">if </span><span style="color:#4f5b66;">(token.</span><span style="color:#8fa1b3;">empty</span><span style="color:#4f5b66;">()) {
-</span><span style="color:#4f5b66;">        ws.</span><span style="color:#8fa1b3;">close</span><span style="color:#4f5b66;">(httplib::ws::CloseStatus::PolicyViolation, &quot;</span><span style="color:#a3be8c;">unauthorized</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">        </span><span style="color:#b48ead;">return</span><span style="color:#4f5b66;">;
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">    std::string msg;
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">while </span><span style="color:#4f5b66;">(ws.</span><span style="color:#8fa1b3;">read</span><span style="color:#4f5b66;">(msg)) {
-</span><span style="color:#4f5b66;">        ws.</span><span style="color:#8fa1b3;">send</span><span style="color:#4f5b66;">(msg);
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">});
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">svr.WebSocket(</span><span style="color:#183691;">&quot;/ws&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const</span><span style="color:#323232;"> httplib::Request </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">req, httplib::ws::WebSocket </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">ws) {
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> req.get_header_value(</span><span style="color:#183691;">&quot;Authorization&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#323232;">(token.empty()) {
+</span><span style="color:#323232;">        ws.close(httplib::ws::CloseStatus::PolicyViolation, </span><span style="color:#183691;">&quot;unauthorized&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span style="color:#323232;">;
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">    std::string msg;
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span style="color:#323232;">(ws.read(msg)) {
+</span><span style="color:#323232;">        ws.send(msg);
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">});
 </span></pre>
-</div>
+</div></div>
 <h2>Using WSS</h2>
 <p>WebSocket over HTTPS (WSS) is also supported. On the server side, just register a WebSocket handler on <code>httplib::SSLServer</code>.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#d3d0c8;">httplib::SSLServer </span><span style="color:#6699cc;">svr</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">cert.pem</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">key.pem</span><span style="color:#d3d0c8;">&quot;);
 </span><span style="color:#d3d0c8;">
 </span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">WebSocket</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/ws</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::Request &amp;, httplib::ws::WebSocket &amp;ws) {
@@ -276,27 +276,27 @@
 </span><span style="color:#d3d0c8;">
 </span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8443</span><span style="color:#d3d0c8;">);
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#4f5b66;">httplib::SSLServer </span><span style="color:#8fa1b3;">svr</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">cert.pem</span><span style="color:#4f5b66;">&quot;, &quot;</span><span style="color:#a3be8c;">key.pem</span><span style="color:#4f5b66;">&quot;);
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">WebSocket</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">/ws</span><span style="color:#4f5b66;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#4f5b66;"> httplib::Request &amp;, httplib::ws::WebSocket &amp;ws) {
-</span><span style="color:#4f5b66;">    std::string msg;
-</span><span style="color:#4f5b66;">    </span><span style="color:#b48ead;">while </span><span style="color:#4f5b66;">(ws.</span><span style="color:#8fa1b3;">read</span><span style="color:#4f5b66;">(msg)) {
-</span><span style="color:#4f5b66;">        ws.</span><span style="color:#8fa1b3;">send</span><span style="color:#4f5b66;">(msg);
-</span><span style="color:#4f5b66;">    }
-</span><span style="color:#4f5b66;">});
-</span><span style="color:#4f5b66;">
-</span><span style="color:#4f5b66;">svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#4f5b66;">&quot;, </span><span style="color:#d08770;">8443</span><span style="color:#4f5b66;">);
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">httplib::SSLServer </span><span style="font-weight:bold;color:#795da3;">svr</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;cert.pem&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;key.pem&quot;</span><span style="color:#323232;">);
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">svr.WebSocket(</span><span style="color:#183691;">&quot;/ws&quot;</span><span style="color:#323232;">, [](</span><span style="font-weight:bold;color:#a71d5d;">const</span><span style="color:#323232;"> httplib::Request </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">, httplib::ws::WebSocket </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span style="color:#323232;">ws) {
+</span><span style="color:#323232;">    std::string msg;
+</span><span style="color:#323232;">    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span style="color:#323232;">(ws.read(msg)) {
+</span><span style="color:#323232;">        ws.send(msg);
+</span><span style="color:#323232;">    }
+</span><span style="color:#323232;">});
+</span><span style="color:#323232;">
+</span><span style="color:#323232;">svr.listen(</span><span style="color:#183691;">&quot;0.0.0.0&quot;</span><span style="color:#323232;">, </span><span style="color:#0086b3;">8443</span><span style="color:#323232;">);
 </span></pre>
-</div>
+</div></div>
 <p>On the client side, use the <code>wss://</code> scheme.</p>
-<div class="code-dark"><pre style="background-color:#2d2d2d;">
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
 <span style="color:#d3d0c8;">httplib::ws::WebSocketClient </span><span style="color:#6699cc;">client</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">wss://localhost:8443/ws</span><span style="color:#d3d0c8;">&quot;);
 </span></pre>
-</div><div class="code-light"><pre style="background-color:#eff1f5;">
-<span style="color:#4f5b66;">httplib::ws::WebSocketClient </span><span style="color:#8fa1b3;">client</span><span style="color:#4f5b66;">(&quot;</span><span style="color:#a3be8c;">wss://localhost:8443/ws</span><span style="color:#4f5b66;">&quot;);
+</div><div data-code-theme="light"><pre style="background-color:#ffffff;">
+<span style="color:#323232;">httplib::ws::WebSocketClient </span><span style="font-weight:bold;color:#795da3;">client</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;wss://localhost:8443/ws&quot;</span><span style="color:#323232;">);
 </span></pre>
-</div>
+</div></div>
 <h2>Next Steps</h2>
 <p>Now you know the basics of WebSocket. This wraps up the Tour.</p>
 <p>The next page gives you a summary of features we didn't cover in the Tour.</p>

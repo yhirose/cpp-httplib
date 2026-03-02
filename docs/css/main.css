@@ -342,6 +342,19 @@ a:hover {
   color: var(--text-muted);
 }
 
+/* Code block theme switching: show dark by default, swap on light mode */
+.code-block-wrapper > [data-code-theme="light"] {
+  display: none;
+}
+
+html[data-theme="light"] .code-block-wrapper > [data-code-theme="dark"] {
+  display: none;
+}
+
+html[data-theme="light"] .code-block-wrapper > [data-code-theme="light"] {
+  display: block;
+}
+
 /* Footer */
 .footer {
   padding: 12px 16px;

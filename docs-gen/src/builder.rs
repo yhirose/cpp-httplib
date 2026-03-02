@@ -1,6 +1,7 @@
 use crate::config::{NavLink, SiteConfig};
 use crate::defaults;
 use crate::markdown::{Frontmatter, MarkdownRenderer};
+use crate::utils::copy_dir_recursive;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fs;
@@ -55,7 +56,10 @@ struct Page {
 
 pub fn build(src: &Path, out: &Path) -> Result<()> {
     let config = SiteConfig::load(src)?;
-    let renderer = MarkdownRenderer::new(config.highlight_theme());
+    let renderer = MarkdownRenderer::new(
+        config.highlight_dark_theme(),
+        config.highlight_light_theme(),
+    );
 
     // Build Tera: start with embedded defaults, then override with user templates
     let tera = build_tera(src)?;
@@ -89,7 +93,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
 
         for page in &pages {
             // Collect search data for pages-data.json
-            let plain_body = strip_html_tags(&page.html_content);
+            let plain_body = strip_html_tags(&remove_light_theme_blocks(&page.html_content));
             let truncated_body: String = plain_body.chars().take(500).collect();
             page_data_entries.push(PageDataEntry {
                 title: page.frontmatter.title.clone(),
@@ -405,24 +409,6 @@ fn copy_default_static(out: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    for entry in WalkDir::new(src).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        let rel = path.strip_prefix(src)?;
-        let target = dst.join(rel);
-
-        if path.is_dir() {
-            fs::create_dir_all(&target)?;
-        } else {
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(path, &target)?;
-        }
-    }
-    Ok(())
-}
-
 /// Strip HTML tags from a string and collapse whitespace into a single space,
 /// producing a plain-text representation suitable for search indexing.
 fn strip_html_tags(html: &str) -> String {
@@ -445,4 +431,38 @@ fn strip_html_tags(html: &str) -> String {
     // Collapse whitespace
     let collapsed: String = result.split_whitespace().collect::<Vec<_>>().join(" ");
     collapsed
+}
+
+/// Remove `<div data-code-theme="light">...</div>` blocks so that
+/// dual-theme code snippets are only indexed once.
+fn remove_light_theme_blocks(html: &str) -> String {
+    const MARKER: &str = "<div data-code-theme=\"light\"";
+    let mut result = String::with_capacity(html.len());
+    let mut remaining = html;
+
+    while let Some(start) = remaining.find(MARKER) {
+        result.push_str(&remaining[..start]);
+        remaining = &remaining[start..];
+
+        let mut depth: usize = 0;
+        let mut i = 0;
+        while i < remaining.len() {
+            if remaining[i..].starts_with("<div") {
+                depth += 1;
+                i += 4;
+            } else if remaining[i..].starts_with("</div>") {
+                depth -= 1;
+                i += 6;
+                if depth == 0 {
+                    break;
+                }
+            } else {
+                i += remaining[i..].chars().next().map_or(1, |c| c.len_utf8());
+            }
+        }
+        remaining = &remaining[i..];
+    }
+
+    result.push_str(remaining);
+    result
 }
