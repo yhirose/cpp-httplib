@@ -15791,8 +15791,14 @@ inline bool is_ipv4_address(const std::string &str) {
 // Parse IPv4 address string to bytes
 inline bool parse_ipv4(const std::string &str, unsigned char *out) {
   int parts[4];
+#ifdef _WIN32
+  if (sscanf_s(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
+               &parts[3]) != 4)
+#else
   if (sscanf(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
-             &parts[3]) != 4) {
+             &parts[3]) != 4)
+#endif
+  {
     return false;
   }
   for (int i = 0; i < 4; i++) {
