@@ -42,7 +42,7 @@ impl MarkdownRenderer {
         let yaml = &after_first[..end];
         let body = &after_first[end + 4..];
         let fm: Frontmatter =
-            serde_yml::from_str(yaml).context("Failed to parse frontmatter YAML")?;
+            serde_yaml::from_str(yaml).context("Failed to parse frontmatter YAML")?;
         Ok((fm, body))
     }
 
