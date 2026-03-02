@@ -2946,6 +2946,13 @@ inline std::wstring u8string_to_wstring(const char *s) {
 }
 #endif
 
+inline std::string ToLowercase(std::string str) {
+  std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return str;
+}
+
 struct FileStat {
   FileStat(const std::string &path);
   bool is_file() const;
@@ -4622,17 +4629,15 @@ inline bool is_websocket_upgrade(const Request &req) {
   // Check Upgrade: websocket (case-insensitive)
   auto upgrade_it = req.headers.find("Upgrade");
   if (upgrade_it == req.headers.end()) { return false; }
-  auto upgrade_val = upgrade_it->second;
-  std::transform(upgrade_val.begin(), upgrade_val.end(), upgrade_val.begin(),
-                 ::tolower);
+  auto upgrade_val = ToLowercase(upgrade_it->second);
+
   if (upgrade_val != "websocket") { return false; }
 
   // Check Connection header contains "Upgrade"
   auto connection_it = req.headers.find("Connection");
   if (connection_it == req.headers.end()) { return false; }
-  auto connection_val = connection_it->second;
-  std::transform(connection_val.begin(), connection_val.end(),
-                 connection_val.begin(), ::tolower);
+  auto connection_val = ToLowercase(connection_it->second);
+
   if (connection_val.find("upgrade") == std::string::npos) { return false; }
 
   // Check Sec-WebSocket-Key is a valid base64-encoded 16-byte value (24 chars)
@@ -6852,17 +6857,14 @@ inline bool read_websocket_upgrade_response(Stream &strm,
   // Verify Upgrade: websocket (case-insensitive)
   auto upgrade_it = headers.find("Upgrade");
   if (upgrade_it == headers.end()) { return false; }
-  auto upgrade_val = upgrade_it->second;
-  std::transform(upgrade_val.begin(), upgrade_val.end(), upgrade_val.begin(),
-                 ::tolower);
+  auto upgrade_val = ToLowercase(upgrade_it->second);
+
   if (upgrade_val != "websocket") { return false; }
 
   // Verify Connection header contains "Upgrade" (case-insensitive)
   auto connection_it = headers.find("Connection");
   if (connection_it == headers.end()) { return false; }
-  auto connection_val = connection_it->second;
-  std::transform(connection_val.begin(), connection_val.end(),
-                 connection_val.begin(), ::tolower);
+  auto connection_val = ToLowercase(connection_it->second);
   if (connection_val.find("upgrade") == std::string::npos) { return false; }
 
   // Verify Sec-WebSocket-Accept header value
