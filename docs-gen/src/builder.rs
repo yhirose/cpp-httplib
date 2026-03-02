@@ -15,6 +15,17 @@ struct PageContext {
     status: Option<String>,
 }
 
+/// Entry for pages-data.json used by client-side search.
+#[derive(Debug, Serialize)]
+struct PageDataEntry {
+    title: String,
+    url: String,
+    lang: String,
+    section: String,
+    /// Plain-text body with HTML tags stripped (truncated to ~500 chars).
+    body: String,
+}
+
 #[derive(Debug, Serialize, Clone)]
 struct NavItem {
     title: String,
@@ -62,6 +73,9 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
         copy_dir_recursive(&static_dir, out)?;
     }
 
+    // Collect page data entries for pages-data.json across all languages
+    let mut page_data_entries: Vec<PageDataEntry> = Vec::new();
+
     // Build each language
     for lang in &config.i18n.langs {
         let pages_dir = src.join("pages").join(lang);
@@ -74,6 +88,17 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
         let nav = build_nav(&pages);
 
         for page in &pages {
+            // Collect search data for pages-data.json
+            let plain_body = strip_html_tags(&page.html_content);
+            let truncated_body: String = plain_body.chars().take(500).collect();
+            page_data_entries.push(PageDataEntry {
+                title: page.frontmatter.title.clone(),
+                url: page.url.clone(),
+                lang: lang.clone(),
+                section: page.section.clone(),
+                body: truncated_body,
+            });
+
             let template_name = if page.section.is_empty() {
                 "portal.html"
             } else {
@@ -135,6 +160,11 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
             fs::write(&page.out_path, html)?;
         }
     }
+
+    // Generate pages-data.json for client-side search
+    let pages_json = serde_json::to_string(&page_data_entries)
+        .context("Failed to serialize pages-data.json")?;
+    fs::write(out.join("pages-data.json"), pages_json)?;
 
     // Generate root redirect
     generate_root_redirect(out, &config)?;
@@ -391,4 +421,28 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Strip HTML tags from a string and collapse whitespace into a single space,
+/// producing a plain-text representation suitable for search indexing.
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                // Insert a space to avoid words being glued across tags
+                result.push(' ');
+            }
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+
+    // Collapse whitespace
+    let collapsed: String = result.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed
 }

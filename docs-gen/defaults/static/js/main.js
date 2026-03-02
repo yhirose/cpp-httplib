@@ -78,3 +78,220 @@
     }
   });
 })();
+
+// Site search (⌘K / Ctrl+K)
+(function () {
+  var overlay = document.getElementById('search-overlay');
+  var input = document.getElementById('search-input');
+  var resultsList = document.getElementById('search-results');
+  if (!overlay || !input || !resultsList) return;
+
+  var searchBtn = document.querySelector('.search-btn');
+  var pagesData = null; // cached pages-data.json
+  var activeIndex = -1;
+
+  function getCurrentLang() {
+    return document.documentElement.getAttribute('lang') || 'en';
+  }
+
+  function getBasePath() {
+    return document.documentElement.getAttribute('data-base-path') || '';
+  }
+
+  function openSearch() {
+    overlay.classList.add('open');
+    input.value = '';
+    resultsList.innerHTML = '';
+    activeIndex = -1;
+    input.focus();
+    loadPagesData();
+  }
+
+  function closeSearch() {
+    overlay.classList.remove('open');
+    input.value = '';
+    resultsList.innerHTML = '';
+    activeIndex = -1;
+  }
+
+  function loadPagesData() {
+    if (pagesData) return;
+    var basePath = getBasePath();
+    fetch(basePath + '/pages-data.json')
+      .then(function (res) { return res.json(); })
+      .then(function (data) { pagesData = data; })
+      .catch(function () { pagesData = []; });
+  }
+
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function highlightText(text, query) {
+    if (!query) return text;
+    var escaped = escapeRegExp(query);
+    var re = new RegExp('(' + escaped + ')', 'gi');
+    return text.replace(re, '<mark>$1</mark>');
+  }
+
+  function buildSnippet(body, query) {
+    if (!query || !body) return '';
+    var lower = body.toLowerCase();
+    var idx = lower.indexOf(query.toLowerCase());
+    var start, end, snippet;
+    if (idx === -1) {
+      snippet = body.substring(0, 120);
+    } else {
+      start = Math.max(0, idx - 40);
+      end = Math.min(body.length, idx + query.length + 80);
+      snippet = (start > 0 ? '...' : '') + body.substring(start, end) + (end < body.length ? '...' : '');
+    }
+    return highlightText(snippet, query);
+  }
+
+  function search(query) {
+    if (!pagesData || !query) {
+      resultsList.innerHTML = '';
+      activeIndex = -1;
+      return;
+    }
+
+    var lang = getCurrentLang();
+    var q = query.toLowerCase();
+
+    // Score and filter
+    var scored = [];
+    for (var i = 0; i < pagesData.length; i++) {
+      var page = pagesData[i];
+      if (page.lang !== lang) continue;
+
+      var score = 0;
+      var titleLower = page.title.toLowerCase();
+      var bodyLower = (page.body || '').toLowerCase();
+
+      if (titleLower.indexOf(q) !== -1) {
+        score += 10;
+        // Bonus for exact title match
+        if (titleLower === q) score += 5;
+      }
+      if (bodyLower.indexOf(q) !== -1) {
+        score += 3;
+      }
+      if (page.section.toLowerCase().indexOf(q) !== -1) {
+        score += 1;
+      }
+
+      if (score > 0) {
+        scored.push({ page: page, score: score });
+      }
+    }
+
+    // Sort by score descending
+    scored.sort(function (a, b) { return b.score - a.score; });
+
+    // Limit results
+    var results = scored.slice(0, 20);
+
+    if (results.length === 0) {
+      resultsList.innerHTML = '<li class="search-no-results">No results found.</li>';
+      activeIndex = -1;
+      return;
+    }
+
+    var html = '';
+    for (var j = 0; j < results.length; j++) {
+      var r = results[j];
+      var snippet = buildSnippet(r.page.body, query);
+      html += '<li data-url="' + r.page.url + '">'
+        + '<div class="search-result-title">' + highlightText(r.page.title, query) + '</div>'
+        + (snippet ? '<div class="search-result-snippet">' + snippet + '</div>' : '')
+        + '</li>';
+    }
+    resultsList.innerHTML = html;
+    activeIndex = -1;
+  }
+
+  function setActive(index) {
+    var items = resultsList.querySelectorAll('li[data-url]');
+    if (items.length === 0) return;
+    // Remove previous active
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove('active');
+    }
+    if (index < 0) index = items.length - 1;
+    if (index >= items.length) index = 0;
+    activeIndex = index;
+    items[activeIndex].classList.add('active');
+    items[activeIndex].scrollIntoView({ block: 'nearest' });
+  }
+
+  function navigateToActive() {
+    var items = resultsList.querySelectorAll('li[data-url]');
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      var url = items[activeIndex].getAttribute('data-url');
+      if (url) {
+        closeSearch();
+        window.location.href = url;
+      }
+    }
+  }
+
+  // Event: search button
+  if (searchBtn) {
+    searchBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openSearch();
+    });
+  }
+
+  // Use capture phase to intercept keys before browser default behavior
+  // (e.g. ESC clearing input text in some browsers)
+  document.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      overlay.classList.contains('open') ? closeSearch() : openSearch();
+      return;
+    }
+    if (!overlay.classList.contains('open')) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSearch();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive(activeIndex + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive(activeIndex - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      navigateToActive();
+    }
+  }, true); // capture phase
+
+  // Event: click overlay background to close
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) {
+      closeSearch();
+    }
+  });
+
+  // Event: click result item
+  resultsList.addEventListener('click', function (e) {
+    var li = e.target.closest('li[data-url]');
+    if (!li) return;
+    var url = li.getAttribute('data-url');
+    if (url) {
+      closeSearch();
+      window.location.href = url;
+    }
+  });
+
+  // Event: input for live search
+  var debounceTimer = null;
+  input.addEventListener('input', function () {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(function () {
+      search(input.value.trim());
+    }, 150);
+  });
+})();

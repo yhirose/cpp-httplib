@@ -41,6 +41,9 @@
         
       </nav>
       <div class="header-tools">
+        <button class="search-btn" aria-label="Search (⌘K)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
         <button class="theme-toggle" aria-label="Toggle theme"></button>
         <div class="lang-selector">
           <button class="lang-btn" aria-label="Language">
@@ -307,6 +310,18 @@
   <footer class="footer">
     &copy; 2026 yhirose. All rights reserved.
   </footer>
+
+  <!-- Search modal -->
+  <div class="search-overlay" id="search-overlay">
+    <div class="search-modal">
+      <div class="search-input-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" placeholder="Search..." autocomplete="off" spellcheck="false">
+        <kbd class="search-esc">ESC</kbd>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+    </div>
+  </div>
 
   <script src="&#x2F;cpp-httplib/js/main.js"></script>
 </body>
