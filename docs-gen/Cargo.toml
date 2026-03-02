@@ -14,3 +14,9 @@ toml = "0.8"
 syntect = "5"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+notify = "7"
+tiny_http = "0.12"
+tungstenite = "0.24"
+open = "5"
+tempfile = "3"
+socket2 = { version = "0.5", features = ["all"] }

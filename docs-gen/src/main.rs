@@ -2,6 +2,7 @@ mod builder;
 mod config;
 mod defaults;
 mod markdown;
+mod serve;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, CommandFactory};
@@ -41,6 +42,20 @@ enum Command {
         #[arg(default_value = ".")]
         src: PathBuf,
     },
+    /// Start a local development server with live-reload
+    Serve {
+        /// Source directory containing config.toml
+        #[arg(default_value = ".")]
+        src: PathBuf,
+
+        /// Port number for the HTTP server
+        #[arg(long, default_value = "8080")]
+        port: u16,
+
+        /// Open browser automatically
+        #[arg(long)]
+        open: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -49,6 +64,7 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Command::Build { src, out }) => builder::build(&src, &out),
         Some(Command::Init { src }) => cmd_init(&src),
+        Some(Command::Serve { src, port, open }) => serve::serve(&src, port, open),
         None => {
             Cli::command().print_help()?;
             println!();

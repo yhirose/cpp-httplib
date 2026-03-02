@@ -3,6 +3,15 @@ title = "My Docs"
 base_url = "https://example.com"
 base_path = ""
 
+# [[nav]]
+# label = "Guide"
+# path = "guide/"
+#
+# [[nav]]
+# label = "GitHub"
+# url = "https://github.com/your/repo"
+# icon = "github"
+
 [i18n]
 default_lang = "en"
 langs = ["en", "ja"]

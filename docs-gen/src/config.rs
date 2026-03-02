@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -7,6 +7,20 @@ pub struct SiteConfig {
     pub site: Site,
     pub i18n: I18n,
     pub highlight: Option<Highlight>,
+    #[serde(default)]
+    pub nav: Vec<NavLink>,
+}
+
+/// A navigation link entry defined in config.toml under [[nav]].
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NavLink {
+    pub label: String,
+    /// Absolute or external URL (e.g. GitHub link).
+    pub url: Option<String>,
+    /// Path relative to /<base_path>/<lang>/ (e.g. "tour/").
+    pub path: Option<String>,
+    /// Optional inline SVG string to display as an icon.
+    pub icon_svg: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

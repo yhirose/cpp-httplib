@@ -7,6 +7,7 @@ pub const TEMPLATE_PORTAL: &str = include_str!("../defaults/templates/portal.htm
 
 pub const STATIC_CSS_MAIN: &str = include_str!("../defaults/static/css/main.css");
 pub const STATIC_JS_MAIN: &str = include_str!("../defaults/static/js/main.js");
+pub const STATIC_FAVICON_SVG: &str = include_str!("../defaults/static/favicon.svg");
 
 // Init command templates
 pub const INIT_CONFIG_TOML: &str = include_str!("../defaults/config.toml");
@@ -27,6 +28,7 @@ pub fn default_static_files() -> Vec<(&'static str, &'static str)> {
     vec![
         ("css/main.css", STATIC_CSS_MAIN),
         ("js/main.js", STATIC_JS_MAIN),
+        ("favicon.svg", STATIC_FAVICON_SVG),
     ]
 }
 

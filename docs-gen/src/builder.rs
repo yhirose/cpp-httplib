@@ -1,4 +1,4 @@
-use crate::config::SiteConfig;
+use crate::config::{NavLink, SiteConfig};
 use crate::defaults;
 use crate::markdown::{Frontmatter, MarkdownRenderer};
 use anyhow::{Context, Result};
@@ -30,6 +30,7 @@ struct SiteContext {
     base_url: String,
     base_path: String,
     langs: Vec<String>,
+    nav: Vec<NavLink>,
 }
 
 struct Page {
@@ -102,6 +103,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
                 base_url: config.site.base_url.clone(),
                 base_path: config.site.base_path.clone(),
                 langs: config.i18n.langs.clone(),
+                nav: config.nav.clone(),
             });
 
             // Set active state and pass nav

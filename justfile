@@ -46,10 +46,10 @@ bench:
     @(cd benchmark && make bench-all)
 
 docs:
-    cargo build --release --manifest-path docs-gen/Cargo.toml
-    ./docs-gen/target/release/docs-gen build docs-src --out docs
+    @cargo build --release --manifest-path docs-gen/Cargo.toml
+    @./docs-gen/target/release/docs-gen build docs-src --out docs
 
-docs-test:
-    cargo build --release --manifest-path docs-gen/Cargo.toml
-    ./docs-gen/target/release/docs-gen build docs-src --out test/cpp-httplib
-    cd test && python3 -m http.server
+docs-serve:
+    @cargo build --release --manifest-path docs-gen/Cargo.toml
+    -@./docs-gen/target/release/docs-gen serve docs-src --open
+
