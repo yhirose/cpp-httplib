@@ -304,7 +304,7 @@ a:hover {
 }
 
 .content article pre {
-  background: var(--bg-code) !important;
+  background: var(--bg-code);
   color: var(--text-code);
   padding: 16px;
   border-radius: 4px;
@@ -425,13 +425,6 @@ a:hover {
   --nav-section: #666;
   --nav-section-active: #333;
 }
-
-/* Code block theme switching */
-.code-light { display: none; }
-.code-dark { display: block; }
-
-[data-theme="light"] .code-light { display: block; }
-[data-theme="light"] .code-dark { display: none; }
 
 /* Theme toggle */
 .theme-toggle {

@@ -1,137 +1,218 @@
 # docs-gen
 
-A simple static site generator written in Rust. Designed for multi-language documentation sites with Markdown content, Tera templates, and syntax highlighting.
+A static site generator for multi-language documentation. Markdown content, Tera templates, and syntax highlighting — all in a single binary.
 
-## Build
+## Quick Start
+
+```bash
+# 1. Scaffold a new project
+docs-gen init my-docs
+
+# 2. Start the local dev server with live-reload
+docs-gen serve my-docs --open
+
+# 3. Build for production
+docs-gen build my-docs --out docs
+```
+
+---
+
+## Commands
+
+### `init [DIR]`
+
+Creates a new project scaffold in `DIR` (default: `.`).
+
+Generated files:
 
 ```
-cargo build --release --manifest-path docs-gen/Cargo.toml
+config.toml
+pages/
+  en/index.md
+  ja/index.md
+templates/
+  base.html
+  page.html
+  portal.html
+static/
+  css/main.css
+  js/main.js
 ```
 
-## Usage
+Existing files are never overwritten.
 
-```
-docs-gen [SRC] [--out OUT]
-```
+---
 
-- `SRC` — Source directory containing `config.toml` (default: `.`)
-- `--out OUT` — Output directory (default: `docs`)
+### `serve [SRC] [--port PORT] [--open]`
 
-Example:
+Builds the site into a temporary directory and serves it locally. Watches for changes and live-reloads the browser automatically.
 
-```
-./docs-gen/target/release/docs-gen docs-src --out docs
-```
+| Option | Default | Description |
+|--------|---------|-------------|
+| `SRC` | `.` | Source directory |
+| `--port` | `8080` | HTTP server port |
+| `--open` | — | Open browser on startup |
+
+---
+
+### `build [SRC] [--out OUT]`
+
+Generates the static site from source.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `SRC` | `.` | Source directory |
+| `--out` | `docs` | Output directory |
+
+---
 
 ## Source Directory Structure
 
+Only `config.toml` and `pages/` are required. `templates/` and `static/` are optional — when absent, built-in defaults are used automatically.
+
 ```
-docs-src/
-├── config.toml          # Site configuration
-├── pages/               # Markdown content (one subdirectory per language)
+my-docs/
+├── config.toml          # Site configuration (required)
+├── pages/               # Markdown content (required)
 │   ├── en/
-│   │   ├── index.md     # Portal page (no sidebar)
-│   │   ├── tour/
-│   │   │   ├── index.md # Section index
-│   │   │   ├── 01-getting-started.md
-│   │   │   └── ...
-│   │   └── cookbook/
-│   │       └── index.md
+│   │   ├── index.md         # Portal page (homepage, no sidebar)
+│   │   └── guide/
+│   │       ├── index.md     # Section index
+│   │       ├── 01-intro.md
+│   │       └── 02-usage.md
 │   └── ja/
-│       └── ...          # Same structure as en/
-├── templates/           # Tera HTML templates
-│   ├── base.html        # Base layout (header, scripts)
-│   ├── page.html        # Content page with sidebar navigation
-│   └── portal.html      # Portal page without sidebar
-└── static/              # Static assets (copied as-is to output root)
-    ├── css/
-    └── js/
+│       └── ...
+├── templates/           # Override built-in HTML templates (optional)
+│   ├── base.html
+│   ├── page.html
+│   └── portal.html
+└── static/              # Override built-in CSS/JS/assets (optional)
+    ├── css/main.css
+    └── js/main.js
 ```
+
+---
 
 ## config.toml
 
 ```toml
 [site]
 title = "My Project"
-base_url = "https://example.github.io/my-project"
-base_path = "/my-project"
+version = "1.0.0"                           # Optional. Shown in header.
+hostname = "https://example.github.io"      # Optional. Combined with base_path for full URLs.
+base_path = "/my-project"                   # URL prefix. Use "" for local-only.
+
+[[nav]]
+label = "Guide"
+path = "guide/"                             # Internal section path (resolved per language)
+icon_svg = '<svg ...>...</svg>'             # Optional inline SVG icon
+
+[[nav]]
+label = "GitHub"
+url = "https://github.com/your/repo"        # External URL
+icon_svg = '<svg ...>...</svg>'
 
 [i18n]
-default_lang = "en"
-langs = ["en", "ja"]
+langs = ["en", "ja"]    # First entry is the default language
 
 [highlight]
-theme = "base16-eighties.dark"        # Dark mode syntax theme (syntect built-in)
-theme_light = "base16-ocean.light"    # Light mode syntax theme (optional)
+theme = "base16-eighties.dark"   # Syntax highlighting theme
 ```
 
-### `base_path`
+### `[site]`
 
-`base_path` controls the URL prefix prepended to all generated links, CSS/JS paths, and redirects.
+| Key | Required | Description |
+|-----|----------|-------------|
+| `title` | yes | Site title displayed in the header |
+| `version` | no | Version string displayed in the header |
+| `hostname` | no | Base hostname (e.g. `"https://user.github.io"`). Combined with `base_path` to form `site.base_url` in templates. |
+| `base_path` | no | URL path prefix. Use `"/repo-name"` for GitHub Pages, `""` for local development. |
 
-| Value | Use case |
-|---|---|
-| `"/my-project"` | GitHub Pages (`https://user.github.io/my-project/`) |
-| `""` | Local development at `http://localhost:8000/` |
+### `[[nav]]` — Toolbar Buttons
 
-Leave empty for local-only use; set to `"/<repo-name>"` before deploying to GitHub Pages.
+Defines buttons in the site header. Each entry supports:
 
-### `highlight`
+| Key | Required | Description |
+|-----|----------|-------------|
+| `label` | yes | Button label text |
+| `path` | no | Internal section path relative to `<lang>/` (e.g. `"guide/"`). Resolved using the current language. |
+| `url` | no | Absolute external URL. Takes precedence over `path` if both are set. |
+| `icon_svg` | no | Inline SVG markup displayed as an icon |
 
-When `theme_light` is set, code blocks are rendered twice (dark and light) and toggled via CSS classes `.code-dark` / `.code-light`.
+### `[i18n]`
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `langs` | yes | List of language codes. At least one is required. The first entry is used as the default language. |
+
+### `[highlight]`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `theme` | `base16-ocean.dark` | Syntax highlighting theme name (syntect built-in) |
 
 Available themes: `base16-ocean.dark`, `base16-ocean.light`, `base16-eighties.dark`, `base16-mocha.dark`, `InspiredGitHub`, `Solarized (dark)`, `Solarized (light)`.
 
-## Markdown Frontmatter
+---
 
-Every `.md` file requires YAML frontmatter:
+## Writing Pages
+
+### Frontmatter
+
+Every `.md` file must begin with YAML frontmatter:
 
 ```yaml
 ---
-title: "Page Title"
+title: "Getting Started"
 order: 1
 ---
+
+Page content goes here...
 ```
 
-| Field    | Required | Description |
-|----------|----------|-------------|
-| `title`  | yes      | Page title shown in heading and browser tab |
-| `order`  | no       | Sort order within the section (default: `0`) |
-| `status` | no       | Set to `"draft"` to show a DRAFT banner |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `title` | yes | Page title shown in the heading and browser tab |
+| `order` | no | Sort order within the section (default: `0`) |
+| `status` | no | Set to `"draft"` to display a DRAFT banner |
 
-## URL Routing
+### URL Routing
 
-Markdown files are mapped to URLs as follows:
+Files are mapped to URLs as follows:
 
-| File path             | URL                         | Output file                         |
-|-----------------------|-----------------------------|-------------------------------------|
-| `en/index.md`         | `<base_path>/en/`           | `en/index.html`                     |
-| `en/tour/index.md`    | `<base_path>/en/tour/`      | `en/tour/index.html`                |
-| `en/tour/01-foo.md`   | `<base_path>/en/tour/01-foo/` | `en/tour/01-foo/index.html`       |
+| File | URL |
+|------|-----|
+| `en/index.md` | `<base_path>/en/` |
+| `en/guide/index.md` | `<base_path>/en/guide/` |
+| `en/guide/01-intro.md` | `<base_path>/en/guide/01-intro/` |
 
-A root `index.html` is generated automatically, redirecting `<base_path>/` to `<base_path>/<default_lang>/` (respecting `localStorage` preference).
+The root `index.html` is generated automatically and redirects to the default language, respecting the user's `localStorage` language preference.
 
-## Local Debugging vs GitHub Pages
+### Sidebar Navigation
 
-To preview locally with the same URL structure as GitHub Pages, set `base_path = "/cpp-httplib"` in `config.toml`, then:
-
-```bash
-./docs-gen/target/release/docs-gen docs-src --out /tmp/test/cpp-httplib
-cd /tmp/test && python3 -m http.server
-# Open http://localhost:8000/cpp-httplib/
-```
-
-For a plain local preview (no prefix), set `base_path = ""` and open `http://localhost:8000/`.
-
-## Navigation
-
-Navigation is generated automatically from the directory structure:
+Sidebar navigation is generated automatically:
 
 - Each subdirectory under a language becomes a **section**
 - The section's `index.md` title is used as the section heading
 - Pages within a section are sorted by `order`, then by filename
-- `portal.html` template is used for root `index.md` (no sidebar)
-- `page.html` template is used for all other pages (with sidebar)
+- `index.md` at the language root uses `portal.html` (no sidebar)
+- All other pages use `page.html` (with sidebar)
+
+---
+
+## Customizing Templates and Assets
+
+When `templates/` or `static/` directories exist in the source, files there override the built-in defaults. Use `docs-gen init` to generate the defaults as a starting point.
+
+Three templates are available:
+
+| Template | Used for |
+|----------|----------|
+| `base.html` | Shared layout: `<head>`, header, footer, scripts |
+| `page.html` | Content pages with sidebar |
+| `portal.html` | Homepage (`index.md` at language root), no sidebar |
+
+---
 
 ## Template Variables
 
@@ -139,37 +220,33 @@ Templates use [Tera](https://keats.github.io/tera/) syntax. Available variables:
 
 ### All templates
 
-| Variable      | Type   | Description |
-|---------------|--------|-------------|
-| `page.title`  | string | Page title from frontmatter |
-| `page.url`    | string | Page URL path |
+| Variable | Type | Description |
+|----------|------|-------------|
+| `page.title` | string | Page title from frontmatter |
+| `page.url` | string | Page URL path |
 | `page.status` | string? | `"draft"` or null |
-| `content`     | string | Rendered HTML content (use `{{ content \| safe }}`) |
-| `lang`        | string | Current language code |
-| `site.title`  | string | Site title from config |
-| `site.base_url` | string | Base URL from config |
-| `site.base_path` | string | Base path prefix (e.g. `"/cpp-httplib"` or `""`) |
-| `site.langs`  | list   | Available language codes |
+| `content` | string | Rendered HTML (use `{{ content \| safe }}`) |
+| `lang` | string | Current language code |
+| `site.title` | string | Site title |
+| `site.version` | string? | Site version |
+| `site.base_url` | string | Full base URL (`hostname` + `base_path`) |
+| `site.base_path` | string | URL path prefix |
+| `site.langs` | list | All language codes |
+| `site.nav` | list | Toolbar button entries |
+| `site.nav[].label` | string | Button label |
+| `site.nav[].url` | string? | External URL (if set) |
+| `site.nav[].path` | string? | Internal section path (if set) |
+| `site.nav[].icon_svg` | string? | Inline SVG icon (if set) |
 
-### page.html only
+### `page.html` only
 
-| Variable           | Type   | Description |
-|--------------------|--------|-------------|
-| `nav`              | list   | Navigation sections |
-| `nav[].title`      | string | Section title |
-| `nav[].url`        | string | Section URL |
-| `nav[].active`     | bool   | Whether this section contains the current page |
-| `nav[].children`   | list   | Child pages |
+| Variable | Type | Description |
+|----------|------|-------------|
+| `nav` | list | Sidebar sections |
+| `nav[].title` | string | Section title |
+| `nav[].url` | string | Section index URL |
+| `nav[].active` | bool | True if this section contains the current page |
+| `nav[].children` | list | Pages within this section |
 | `nav[].children[].title` | string | Page title |
-| `nav[].children[].url`   | string | Page URL |
-| `nav[].children[].active` | bool  | Whether this is the current page |
-
-## Dependencies
-
-- [pulldown-cmark](https://crates.io/crates/pulldown-cmark) — Markdown parsing
-- [tera](https://crates.io/crates/tera) — Template engine
-- [syntect](https://crates.io/crates/syntect) — Syntax highlighting
-- [walkdir](https://crates.io/crates/walkdir) — Directory traversal
-- [serde](https://crates.io/crates/serde) / [serde_yml](https://crates.io/crates/serde_yml) / [toml](https://crates.io/crates/toml) — Serialization
-- [clap](https://crates.io/crates/clap) — CLI argument parsing
-- [anyhow](https://crates.io/crates/anyhow) — Error handling
+| `nav[].children[].url` | string | Page URL |
+| `nav[].children[].active` | bool | True if this is the current page |

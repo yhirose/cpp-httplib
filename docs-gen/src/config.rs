@@ -27,21 +27,39 @@ pub struct NavLink {
 pub struct Site {
     pub title: String,
     pub version: Option<String>,
-    pub base_url: String,
+    /// Optional hostname (e.g. "https://example.github.io"). Combined with
+    /// base_path to form the full base URL.
+    pub hostname: Option<String>,
     #[serde(default)]
     pub base_path: String,
 }
 
+impl Site {
+    /// Returns the full base URL derived from hostname + base_path.
+    /// Falls back to base_path alone if hostname is not set.
+    pub fn base_url(&self) -> String {
+        match &self.hostname {
+            Some(h) => format!("{}{}", h.trim_end_matches('/'), self.base_path),
+            None => self.base_path.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct I18n {
-    pub default_lang: String,
     pub langs: Vec<String>,
+}
+
+impl I18n {
+    /// Returns the default language, which is the first entry in langs.
+    pub fn default_lang(&self) -> &str {
+        self.langs.first().map(|s| s.as_str()).unwrap_or("en")
+    }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Highlight {
     pub theme: Option<String>,
-    pub theme_light: Option<String>,
 }
 
 impl SiteConfig {
@@ -51,6 +69,12 @@ impl SiteConfig {
             std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
         let mut config: SiteConfig =
             toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
+
+        // Validate required fields
+        if config.i18n.langs.is_empty() {
+            anyhow::bail!("[i18n] langs must not be empty. Please specify at least one language.");
+        }
+
         // Normalize base_path: strip trailing slash (but keep empty for root)
         let bp = config.site.base_path.trim_end_matches('/').to_string();
         config.site.base_path = bp;
@@ -62,11 +86,5 @@ impl SiteConfig {
             .as_ref()
             .and_then(|h| h.theme.as_deref())
             .unwrap_or("base16-ocean.dark")
-    }
-
-    pub fn highlight_theme_light(&self) -> Option<&str> {
-        self.highlight
-            .as_ref()
-            .and_then(|h| h.theme_light.as_deref())
     }
 }

@@ -55,7 +55,7 @@ struct Page {
 
 pub fn build(src: &Path, out: &Path) -> Result<()> {
     let config = SiteConfig::load(src)?;
-    let renderer = MarkdownRenderer::new(config.highlight_theme(), config.highlight_theme_light());
+    let renderer = MarkdownRenderer::new(config.highlight_theme());
 
     // Build Tera: start with embedded defaults, then override with user templates
     let tera = build_tera(src)?;
@@ -125,7 +125,7 @@ pub fn build(src: &Path, out: &Path) -> Result<()> {
             ctx.insert("site", &SiteContext {
                 title: config.site.title.clone(),
                 version: config.site.version.clone(),
-                base_url: config.site.base_url.clone(),
+                base_url: config.site.base_url(),
                 base_path: config.site.base_path.clone(),
                 langs: config.i18n.langs.clone(),
                 nav: config.nav.clone(),
@@ -351,7 +351,7 @@ fn generate_root_redirect(out: &Path, config: &SiteConfig) -> Result<()> {
 <p>Redirecting to <a href="{base_path}/{default_lang}/">{base_path}/{default_lang}/</a>...</p>
 </body>
 </html>"#,
-        default_lang = config.i18n.default_lang,
+        default_lang = config.i18n.default_lang(),
         base_path = base_path,
     );
 

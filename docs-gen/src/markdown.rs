@@ -17,16 +17,14 @@ pub struct MarkdownRenderer {
     syntax_set: SyntaxSet,
     theme_set: ThemeSet,
     theme_name: String,
-    theme_light_name: Option<String>,
 }
 
 impl MarkdownRenderer {
-    pub fn new(theme_name: &str, theme_light_name: Option<&str>) -> Self {
+    pub fn new(theme_name: &str) -> Self {
         Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             theme_name: theme_name.to_string(),
-            theme_light_name: theme_light_name.map(|s| s.to_string()),
         }
     }
 
@@ -95,17 +93,7 @@ impl MarkdownRenderer {
             .find_syntax_by_token(lang)
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
-        let dark_html = self.highlight_with_theme(code, syntax, &self.theme_name);
-
-        if let Some(ref light_name) = self.theme_light_name {
-            let light_html = self.highlight_with_theme(code, syntax, light_name);
-            format!(
-                "<div class=\"code-dark\">{}</div><div class=\"code-light\">{}</div>",
-                dark_html, light_html
-            )
-        } else {
-            dark_html
-        }
+        self.highlight_with_theme(code, syntax, &self.theme_name)
     }
 
     fn highlight_with_theme(
