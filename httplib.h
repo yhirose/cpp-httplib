@@ -15453,7 +15453,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
         private_key_password.empty() ? nullptr : private_key_password.c_str();
     if (!tls::set_client_cert_file(ctx_, client_cert_path.c_str(),
                                    client_key_path.c_str(), password)) {
-      last_backend_error_ = tls::get_error();
+      last_backend_error_ = static_cast<unsigned long>(tls::get_error());
       tls::free_context(ctx_);
       ctx_ = nullptr;
     }
@@ -15471,7 +15471,7 @@ inline SSLClient::SSLClient(const std::string &host, int port,
   if (pem.cert_pem && pem.key_pem) {
     if (!tls::set_client_cert_pem(ctx_, pem.cert_pem, pem.key_pem,
                                   pem.private_key_password)) {
-      last_backend_error_ = tls::get_error();
+      last_backend_error_ = static_cast<unsigned long>(tls::get_error());
       tls::free_context(ctx_);
       ctx_ = nullptr;
     }
@@ -15520,17 +15520,17 @@ inline bool SSLClient::load_certs() {
 
     if (!ca_cert_file_path_.empty()) {
       if (!tls::load_ca_file(ctx_, ca_cert_file_path_.c_str())) {
-        last_backend_error_ = tls::get_error();
+        last_backend_error_ = static_cast<unsigned long>(tls::get_error());
         ret = false;
       }
     } else if (!ca_cert_dir_path_.empty()) {
       if (!tls::load_ca_dir(ctx_, ca_cert_dir_path_.c_str())) {
-        last_backend_error_ = tls::get_error();
+        last_backend_error_ = static_cast<unsigned long>(tls::get_error());
         ret = false;
       }
     } else if (ca_cert_pem_.empty()) {
       if (!tls::load_system_certs(ctx_)) {
-        last_backend_error_ = tls::get_error();
+        last_backend_error_ = static_cast<unsigned long>(tls::get_error());
       }
     }
   });
@@ -15573,7 +15573,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 
   if (!session) {
     error = Error::SSLConnection;
-    last_backend_error_ = get_error();
+    last_backend_error_ = static_cast<unsigned long>(get_error());
     return false;
   }
 
@@ -15589,7 +15589,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   if (!is_ip) {
     if (!set_sni(session, host_.c_str())) {
       error = Error::SSLConnection;
-      last_backend_error_ = get_error();
+      last_backend_error_ = static_cast<unsigned long>(get_error());
       return false;
     }
   }
@@ -15599,7 +15599,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   if (!connect_nonblocking(session, socket.sock, connection_timeout_sec_,
                            connection_timeout_usec_, &tls_err)) {
     last_ssl_error_ = static_cast<int>(tls_err.code);
-    last_backend_error_ = tls_err.backend_code;
+    last_backend_error_ = static_cast<unsigned long>(tls_err.backend_code);
     if (tls_err.code == ErrorCode::CertVerifyFailed) {
       error = Error::SSLServerVerification;
     } else if (tls_err.code == ErrorCode::HostnameMismatch) {
@@ -15616,7 +15616,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   if (session_verifier_) { verification_status = session_verifier_(session); }
 
   if (verification_status == SSLVerifierResponse::CertificateRejected) {
-    last_backend_error_ = get_error();
+    last_backend_error_ = static_cast<unsigned long>(get_error());
     error = Error::SSLServerVerification;
     output_error_log(error, nullptr);
     return false;
@@ -15635,7 +15635,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 
     auto server_cert = get_peer_cert(session);
     if (!server_cert) {
-      last_backend_error_ = get_error();
+      last_backend_error_ = static_cast<unsigned long>(get_error());
       error = Error::SSLServerVerification;
       output_error_log(error, nullptr);
       return false;
@@ -15649,7 +15649,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     // addresses where SNI is not set.
     if (server_hostname_verification_) {
       if (!verify_hostname(server_cert, host_.c_str())) {
-        last_backend_error_ = hostname_mismatch_code();
+        last_backend_error_ = static_cast<unsigned long>(hostname_mismatch_code());
         error = Error::SSLServerHostnameVerification;
         output_error_log(error, nullptr);
         return false;
