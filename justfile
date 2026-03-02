@@ -47,9 +47,9 @@ bench:
 
 docs:
     cargo build --release --manifest-path docs-gen/Cargo.toml
-    ./docs-gen/target/release/docs-gen docs-src --out docs
+    ./docs-gen/target/release/docs-gen build docs-src --out docs
 
 docs-test:
     cargo build --release --manifest-path docs-gen/Cargo.toml
-    ./docs-gen/target/release/docs-gen docs-src --out test/cpp-httplib
+    ./docs-gen/target/release/docs-gen build docs-src --out test/cpp-httplib
     cd test && python3 -m http.server

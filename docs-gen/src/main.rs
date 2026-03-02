@@ -4,7 +4,7 @@ mod defaults;
 mod markdown;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, CommandFactory};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -49,7 +49,11 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Command::Build { src, out }) => builder::build(&src, &out),
         Some(Command::Init { src }) => cmd_init(&src),
-        None => builder::build(&cli.src, &cli.out),
+        None => {
+            Cli::command().print_help()?;
+            println!();
+            Ok(())
+        }
     }
 }
 
