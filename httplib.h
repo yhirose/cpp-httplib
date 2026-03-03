@@ -575,6 +575,14 @@ inline unsigned char to_lower(int c) {
   return table[(unsigned char)(char)c];
 }
 
+inline std::string to_lower(const std::string &s) {
+  std::string result = s;
+  std::transform(
+      result.begin(), result.end(), result.begin(),
+      [](unsigned char c) { return static_cast<char>(to_lower(c)); });
+  return result;
+}
+
 inline bool equal(const std::string &a, const std::string &b) {
   return a.size() == b.size() &&
          std::equal(a.begin(), a.end(), b.begin(), [](char ca, char cb) {
@@ -1863,23 +1871,23 @@ public:
       : res_(std::move(res)), err_(err),
         request_headers_(std::move(request_headers)), ssl_error_(ssl_error) {}
   Result(std::unique_ptr<Response> &&res, Error err, Headers &&request_headers,
-         int ssl_error, unsigned long ssl_backend_error)
+         int ssl_error, uint64_t ssl_backend_error)
       : res_(std::move(res)), err_(err),
         request_headers_(std::move(request_headers)), ssl_error_(ssl_error),
         ssl_backend_error_(ssl_backend_error) {}
 
   int ssl_error() const { return ssl_error_; }
-  unsigned long ssl_backend_error() const { return ssl_backend_error_; }
+  uint64_t ssl_backend_error() const { return ssl_backend_error_; }
 
 private:
   int ssl_error_ = 0;
-  unsigned long ssl_backend_error_ = 0;
+  uint64_t ssl_backend_error_ = 0;
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 public:
   [[deprecated("Use ssl_backend_error() instead")]]
-  unsigned long ssl_openssl_error() const {
+  uint64_t ssl_openssl_error() const {
     return ssl_backend_error_;
   }
 #endif
@@ -2349,7 +2357,7 @@ protected:
   bool server_hostname_verification_ = true;
   std::string ca_cert_pem_; // Store CA cert PEM for redirect transfer
   int last_ssl_error_ = 0;
-  unsigned long last_backend_error_ = 0;
+  uint64_t last_backend_error_ = 0;
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -4622,17 +4630,13 @@ inline bool is_websocket_upgrade(const Request &req) {
   // Check Upgrade: websocket (case-insensitive)
   auto upgrade_it = req.headers.find("Upgrade");
   if (upgrade_it == req.headers.end()) { return false; }
-  auto upgrade_val = upgrade_it->second;
-  std::transform(upgrade_val.begin(), upgrade_val.end(), upgrade_val.begin(),
-                 ::tolower);
+  auto upgrade_val = case_ignore::to_lower(upgrade_it->second);
   if (upgrade_val != "websocket") { return false; }
 
   // Check Connection header contains "Upgrade"
   auto connection_it = req.headers.find("Connection");
   if (connection_it == req.headers.end()) { return false; }
-  auto connection_val = connection_it->second;
-  std::transform(connection_val.begin(), connection_val.end(),
-                 connection_val.begin(), ::tolower);
+  auto connection_val = case_ignore::to_lower(connection_it->second);
   if (connection_val.find("upgrade") == std::string::npos) { return false; }
 
   // Check Sec-WebSocket-Key is a valid base64-encoded 16-byte value (24 chars)
@@ -6852,17 +6856,13 @@ inline bool read_websocket_upgrade_response(Stream &strm,
   // Verify Upgrade: websocket (case-insensitive)
   auto upgrade_it = headers.find("Upgrade");
   if (upgrade_it == headers.end()) { return false; }
-  auto upgrade_val = upgrade_it->second;
-  std::transform(upgrade_val.begin(), upgrade_val.end(), upgrade_val.begin(),
-                 ::tolower);
+  auto upgrade_val = case_ignore::to_lower(upgrade_it->second);
   if (upgrade_val != "websocket") { return false; }
 
   // Verify Connection header contains "Upgrade" (case-insensitive)
   auto connection_it = headers.find("Connection");
   if (connection_it == headers.end()) { return false; }
-  auto connection_val = connection_it->second;
-  std::transform(connection_val.begin(), connection_val.end(),
-                 connection_val.begin(), ::tolower);
+  auto connection_val = case_ignore::to_lower(connection_it->second);
   if (connection_val.find("upgrade") == std::string::npos) { return false; }
 
   // Verify Sec-WebSocket-Accept header value
@@ -8806,9 +8806,10 @@ inline bool match_hostname(const std::string &pattern,
 // Verify certificate using Windows CertGetCertificateChain API.
 // This provides real-time certificate validation with Windows Update
 // integration, independent of the TLS backend (OpenSSL or MbedTLS).
-inline bool verify_cert_with_windows_schannel(
-    const std::vector<unsigned char> &der_cert, const std::string &hostname,
-    bool verify_hostname, unsigned long &out_error) {
+inline bool
+verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
+                                  const std::string &hostname,
+                                  bool verify_hostname, uint64_t &out_error) {
   if (der_cert.empty()) { return false; }
 
   out_error = 0;
@@ -15625,7 +15626,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
       server_certificate_verification_) {
     verify_result_ = tls::get_verify_result(session);
     if (verify_result_ != 0) {
-      last_backend_error_ = static_cast<unsigned long>(verify_result_);
+      last_backend_error_ = static_cast<uint64_t>(verify_result_);
       error = Error::SSLServerVerification;
       output_error_log(error, nullptr);
       return false;
@@ -15664,7 +15665,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
         ca_cert_dir_path_.empty() && ca_cert_pem_.empty()) {
       std::vector<unsigned char> der;
       if (get_cert_der(server_cert, der)) {
-        unsigned long wincrypt_error = 0;
+        uint64_t wincrypt_error = 0;
         if (!detail::verify_cert_with_windows_schannel(
                 der, host_, server_hostname_verification_, wincrypt_error)) {
           last_backend_error_ = wincrypt_error;
@@ -15788,16 +15789,26 @@ inline bool is_ipv4_address(const std::string &str) {
 
 // Parse IPv4 address string to bytes
 inline bool parse_ipv4(const std::string &str, unsigned char *out) {
-  int parts[4];
-  if (sscanf(str.c_str(), "%d.%d.%d.%d", &parts[0], &parts[1], &parts[2],
-             &parts[3]) != 4) {
-    return false;
-  }
+  const char *p = str.c_str();
   for (int i = 0; i < 4; i++) {
-    if (parts[i] < 0 || parts[i] > 255) return false;
-    out[i] = static_cast<unsigned char>(parts[i]);
+    if (i > 0) {
+      if (*p != '.') { return false; }
+      p++;
+    }
+    int val = 0;
+    int digits = 0;
+    while (*p >= '0' && *p <= '9') {
+      val = val * 10 + (*p - '0');
+      if (val > 255) { return false; }
+      p++;
+      digits++;
+    }
+    if (digits == 0) { return false; }
+    // Reject leading zeros (e.g., "01.002.03.04") to prevent ambiguity
+    if (digits > 1 && *(p - digits) == '0') { return false; }
+    out[i] = static_cast<unsigned char>(val);
   }
-  return true;
+  return *p == '\0';
 }
 
 #ifdef _WIN32
@@ -17099,11 +17110,11 @@ inline void update_server_certs_from_x509(ctx_t ctx, X509 *cert, EVP_PKEY *key,
 
 inline ctx_t create_client_context_from_x509(X509 *cert, EVP_PKEY *key,
                                              const char *password,
-                                             unsigned long &out_error) {
+                                             uint64_t &out_error) {
   out_error = 0;
   auto ctx = create_client_context();
   if (!ctx) {
-    out_error = static_cast<unsigned long>(get_error());
+    out_error = get_error();
     return nullptr;
   }
 
@@ -17117,7 +17128,7 @@ inline ctx_t create_client_context_from_x509(X509 *cert, EVP_PKEY *key,
     }
     if (!set_client_cert_pem(ctx, cert_pem.c_str(), key_pem.c_str(),
                              password)) {
-      out_error = static_cast<unsigned long>(get_error());
+      out_error = get_error();
       free_context(ctx);
       return nullptr;
     }
