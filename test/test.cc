@@ -11609,6 +11609,52 @@ TEST(MultipartFormDataTest, AlternateFilename) {
   ASSERT_TRUE(send_request(1, req));
 }
 
+TEST(MultipartFormDataTest, AlternateFilenameLongValueAndCaseInsensitive) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &req, Response &res) {
+    // Case-insensitive "utf-8''" prefix with a long value
+    const auto &file = req.form.get_file("file1");
+    ASSERT_EQ("file1", file.name);
+    std::string expected_filename(2000, 'A');
+    ASSERT_EQ(expected_filename, file.filename);
+
+    res.set_content("ok", "text/plain");
+    handled = true;
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  // Build body with a long filename* value using mixed-case prefix "Utf-8''"
+  // Prior to the fix, this would cause O(N) stack recursion in std::regex
+  std::string long_filename(2000, 'A');
+  std::string body = "----------\r\n"
+                     "Content-Disposition: form-data; name=\"file1\"; "
+                     "filename*=\"Utf-8''" +
+                     long_filename +
+                     "\"\r\n"
+                     "\r\n"
+                     "hello\r\n"
+                     "------------\r\n";
+
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Type: multipart/form-data;boundary=--------\r\n"
+             "Content-Length: " +
+             std::to_string(body.size()) +
+             "\r\n\r\n" + body;
+
+  ASSERT_TRUE(send_request(1, req));
+}
+
 TEST(MultipartFormDataTest, CloseDelimiterWithoutCRLF) {
   auto handled = false;
 

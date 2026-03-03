@@ -7770,13 +7770,14 @@ public:
 
               it = params.find("filename*");
               if (it != params.end()) {
-                // Only allow UTF-8 encoding...
-                thread_local const std::regex re_rfc5987_encoding(
-                    R"~(^UTF-8''(.+?)$)~", std::regex_constants::icase);
-
-                std::smatch m2;
-                if (std::regex_match(it->second, m2, re_rfc5987_encoding)) {
-                  file_.filename = decode_path_component(m2[1]); // override...
+                // RFC 5987: only UTF-8 encoding is allowed
+                const auto &val = it->second;
+                constexpr size_t prefix_len = 7; // length of "UTF-8''"
+                if (val.size() > prefix_len &&
+                    case_ignore::to_lower(val.substr(0, prefix_len)) ==
+                        "utf-8''") {
+                  file_.filename = decode_path_component(
+                      val.substr(prefix_len)); // override...
                 } else {
                   is_valid_ = false;
                   return false;
