@@ -11649,8 +11649,7 @@ TEST(MultipartFormDataTest, AlternateFilenameLongValueAndCaseInsensitive) {
   auto req = "POST /test HTTP/1.1\r\n"
              "Content-Type: multipart/form-data;boundary=--------\r\n"
              "Content-Length: " +
-             std::to_string(body.size()) +
-             "\r\n\r\n" + body;
+             std::to_string(body.size()) + "\r\n\r\n" + body;
 
   ASSERT_TRUE(send_request(1, req));
 }
