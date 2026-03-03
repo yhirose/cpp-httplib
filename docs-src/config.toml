@@ -1,6 +1,6 @@
 [site]
 title = "cpp-httplib"
-version = "0.35.0"
+version = "0.36.0"
 hostname = "https://yhirose.github.io"
 base_path = "/cpp-httplib"
 
