@@ -11617,7 +11617,11 @@ TEST(MultipartFormDataTest, AlternateFilenameLongValueAndCaseInsensitive) {
     // Case-insensitive "utf-8''" prefix with a long value
     const auto &file = req.form.get_file("file1");
     ASSERT_EQ("file1", file.name);
-    std::string expected_filename(2000, 'A');
+    // 8000 chars exercises both the Content-Disposition parser and the
+    // filename* parser near the CPPHTTPLIB_HEADER_MAX_LENGTH limit (8192).
+    // Prior to the fix, std::regex_match on this header would cause O(N)
+    // stack recursion in libstdc++, leading to SIGSEGV.
+    std::string expected_filename(8000, 'A');
     ASSERT_EQ(expected_filename, file.filename);
 
     res.set_content("ok", "text/plain");
@@ -11635,8 +11639,8 @@ TEST(MultipartFormDataTest, AlternateFilenameLongValueAndCaseInsensitive) {
   svr.wait_until_ready();
 
   // Build body with a long filename* value using mixed-case prefix "Utf-8''"
-  // Prior to the fix, this would cause O(N) stack recursion in std::regex
-  std::string long_filename(2000, 'A');
+  // Regression test for GHSA-qq6v-r583-3h69
+  std::string long_filename(8000, 'A');
   std::string body = "----------\r\n"
                      "Content-Disposition: form-data; name=\"file1\"; "
                      "filename*=\"Utf-8''" +

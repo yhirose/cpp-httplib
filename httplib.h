@@ -7748,14 +7748,10 @@ public:
             file_.content_type =
                 trim_copy(header.substr(str_len(header_content_type)));
           } else {
-            thread_local const std::regex re_content_disposition(
-                R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
-                std::regex_constants::icase);
-
-            std::smatch m;
-            if (std::regex_match(header, m, re_content_disposition)) {
+            std::string disposition_params;
+            if (parse_content_disposition(header, disposition_params)) {
               Params params;
-              parse_disposition_params(m[1], params);
+              parse_disposition_params(disposition_params, params);
 
               auto it = params.find("name");
               if (it != params.end()) {
@@ -7772,10 +7768,10 @@ public:
               if (it != params.end()) {
                 // RFC 5987: only UTF-8 encoding is allowed
                 const auto &val = it->second;
-                constexpr size_t prefix_len = 7; // length of "UTF-8''"
+                constexpr const char utf8_prefix[] = "UTF-8''";
+                constexpr size_t prefix_len = str_len(utf8_prefix);
                 if (val.size() > prefix_len &&
-                    case_ignore::to_lower(val.substr(0, prefix_len)) ==
-                        "utf-8''") {
+                    start_with_case_ignore(val, utf8_prefix)) {
                   file_.filename = decode_path_component(
                       val.substr(prefix_len)); // override...
                 } else {
@@ -7845,14 +7841,45 @@ private:
     file_.headers.clear();
   }
 
-  bool start_with_case_ignore(const std::string &a, const char *b) const {
+  bool start_with_case_ignore(const std::string &a, const char *b,
+                              size_t offset = 0) const {
     const auto b_len = strlen(b);
-    if (a.size() < b_len) { return false; }
+    if (a.size() < offset + b_len) { return false; }
     for (size_t i = 0; i < b_len; i++) {
-      if (case_ignore::to_lower(a[i]) != case_ignore::to_lower(b[i])) {
+      if (case_ignore::to_lower(a[offset + i]) != case_ignore::to_lower(b[i])) {
         return false;
       }
     }
+    return true;
+  }
+
+  // Parses "Content-Disposition: form-data; <params>" without std::regex.
+  // Returns true if header matches, with the params portion in `params_out`.
+  bool parse_content_disposition(const std::string &header,
+                                 std::string &params_out) const {
+    constexpr const char prefix[] = "Content-Disposition:";
+    constexpr size_t prefix_len = str_len(prefix);
+
+    if (!start_with_case_ignore(header, prefix)) { return false; }
+
+    // Skip whitespace after "Content-Disposition:"
+    auto pos = prefix_len;
+    while (pos < header.size() && (header[pos] == ' ' || header[pos] == '\t')) {
+      pos++;
+    }
+
+    // Match "form-data;" (case-insensitive)
+    constexpr const char form_data[] = "form-data;";
+    constexpr size_t form_data_len = str_len(form_data);
+    if (!start_with_case_ignore(header, form_data, pos)) { return false; }
+    pos += form_data_len;
+
+    // Skip whitespace after "form-data;"
+    while (pos < header.size() && (header[pos] == ' ' || header[pos] == '\t')) {
+      pos++;
+    }
+
+    params_out = header.substr(pos);
     return true;
   }
 
