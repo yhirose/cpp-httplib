@@ -17,16 +17,16 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <a href="&#x2F;cpp-httplib/ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
+      <a href="&#x2F;cpp-httplib&#x2F;ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
       <div class="header-spacer"></div>
       <nav class="header-nav">
-        <a href="&#x2F;cpp-httplib/ja/">
+        <a href="&#x2F;cpp-httplib&#x2F;ja/">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Home
         </a>
         
         
-        <a href="&#x2F;cpp-httplib/ja/tour&#x2F;">
+        <a href="&#x2F;cpp-httplib&#x2F;ja/tour&#x2F;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           Tour
         </a>
@@ -45,6 +45,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <button class="theme-toggle" aria-label="Toggle theme"></button>
+        
         <div class="lang-selector">
           <button class="lang-btn" aria-label="Language">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -58,6 +59,7 @@
             
           </ul>
         </div>
+        
       </div>
       <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
     </div>
@@ -105,22 +107,22 @@
     <p>前章でOpenSSLのセットアップが済んだので、さっそくHTTPSクライアントを使ってみましょう。2章で使った <code>httplib::Client</code> がそのまま使えます。コンストラクタに <code>https://</code> 付きのURLを渡すだけです。</p>
 <h2>GETリクエスト</h2>
 <p>実在するHTTPSサイトにアクセスしてみましょう。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#define </span><span style="color:#d3d0c8;">CPPHTTPLIB_OPENSSL_SUPPORT
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://nghttp2.org</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;           </span><span style="color:#747369;">// 200
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">.</span><span style="color:#6699cc;">substr</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">0</span><span style="color:#d3d0c8;">, </span><span style="color:#f99157;">100</span><span style="color:#d3d0c8;">) &lt;&lt; std::endl;  </span><span style="color:#747369;">// HTMLの先頭部分
-</span><span style="color:#d3d0c8;">    } </span><span style="color:#cc99cc;">else </span><span style="color:#d3d0c8;">{
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; &quot;</span><span style="color:#99cc99;">Error: </span><span style="color:#d3d0c8;">&quot; &lt;&lt; </span><span style="color:#6699cc;">httplib::to_string</span><span style="color:#d3d0c8;">(res.</span><span style="color:#6699cc;">error</span><span style="color:#d3d0c8;">()) &lt;&lt; std::endl;
-</span><span style="color:#d3d0c8;">    }
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#define </span><span style="color:#c0c5ce;">CPPHTTPLIB_OPENSSL_SUPPORT
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://nghttp2.org</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;           </span><span style="color:#65737e;">// 200
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body</span><span style="color:#c0c5ce;">.</span><span style="color:#8fa1b3;">substr</span><span style="color:#c0c5ce;">(</span><span style="color:#d08770;">0</span><span style="color:#c0c5ce;">, </span><span style="color:#d08770;">100</span><span style="color:#c0c5ce;">) &lt;&lt; std::endl;  </span><span style="color:#65737e;">// HTMLの先頭部分
+</span><span style="color:#c0c5ce;">    } </span><span style="color:#b48ead;">else </span><span style="color:#c0c5ce;">{
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Error: </span><span style="color:#c0c5ce;">&quot; &lt;&lt; </span><span style="color:#8fa1b3;">httplib::to_string</span><span style="color:#c0c5ce;">(res.</span><span style="color:#8fa1b3;">error</span><span style="color:#c0c5ce;">()) &lt;&lt; std::endl;
+</span><span style="color:#c0c5ce;">    }
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#define </span><span style="color:#323232;">CPPHTTPLIB_OPENSSL_SUPPORT
@@ -141,8 +143,8 @@
 </span></pre>
 </div></div>
 <p>2章では <code>httplib::Client cli("http://localhost:8080")</code> と書きましたよね。スキームを <code>https://</code> に変えるだけです。<code>Get()</code> や <code>Post()</code> など、2章で学んだAPIはすべてそのまま使えます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> https://nghttp2.org/
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#c0c5ce;"> https://nghttp2.org/
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl https://nghttp2.org/
@@ -150,8 +152,8 @@
 </div></div>
 <h2>ポートの指定</h2>
 <p>HTTPSのデフォルトポートは443です。別のポートを使いたい場合は、URLにポートを含めます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://localhost:8443</span><span style="color:#d3d0c8;">&quot;);
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://localhost:8443</span><span style="color:#c0c5ce;">&quot;);
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;https://localhost:8443&quot;</span><span style="color:#323232;">);
@@ -162,11 +164,11 @@
 <p>CA証明書は、macOSならKeychain、LinuxならシステムのCA証明書ストア、WindowsならWindowsの証明書ストアから自動で読み込みます。ほとんどの場合、追加の設定は要りません。</p>
 <h3>CA証明書ファイルの指定</h3>
 <p>環境によってはシステムのCA証明書が見つからないこともあります。そのときは <code>set_ca_cert_path()</code> でパスを直接指定してください。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://nghttp2.org</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_ca_cert_path</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/etc/ssl/certs/ca-certificates.crt</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://nghttp2.org</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">cli.</span><span style="color:#8fa1b3;">set_ca_cert_path</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/etc/ssl/certs/ca-certificates.crt</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;https://nghttp2.org&quot;</span><span style="color:#323232;">);
@@ -174,8 +176,8 @@
 </span><span style="color:#323232;">
 </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/&quot;</span><span style="color:#323232;">);
 </span></pre>
-</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> --cacert</span><span style="color:#d3d0c8;"> /etc/ssl/certs/ca-certificates.crt https://nghttp2.org/
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> --cacert</span><span style="color:#c0c5ce;"> /etc/ssl/certs/ca-certificates.crt https://nghttp2.org/
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl --cacert /etc/ssl/certs/ca-certificates.crt https://nghttp2.org/
@@ -183,11 +185,11 @@
 </div></div>
 <h3>証明書検証の無効化</h3>
 <p>開発中、自己署名証明書のサーバーに接続したいときは、検証を無効にできます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://localhost:8443</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">enable_server_certificate_verification</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">false</span><span style="color:#d3d0c8;">);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://localhost:8443</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">cli.</span><span style="color:#8fa1b3;">enable_server_certificate_verification</span><span style="color:#c0c5ce;">(</span><span style="color:#d08770;">false</span><span style="color:#c0c5ce;">);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;https://localhost:8443&quot;</span><span style="color:#323232;">);
@@ -195,8 +197,8 @@
 </span><span style="color:#323232;">
 </span><span style="font-weight:bold;color:#a71d5d;">auto</span><span style="color:#323232;"> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;"> cli.Get(</span><span style="color:#183691;">&quot;/&quot;</span><span style="color:#323232;">);
 </span></pre>
-</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -k</span><span style="color:#d3d0c8;"> https://localhost:8443/
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -k</span><span style="color:#c0c5ce;"> https://localhost:8443/
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl -k https://localhost:8443/
@@ -206,14 +208,14 @@
 <h2>リダイレクトの追跡</h2>
 <p>HTTPSサイトへのアクセスでは、リダイレクトに遭遇することがよくあります。たとえば <code>http://</code> から <code>https://</code> へ、あるいは <code>www</code> なしから <code>www</code> ありへ転送されるケースです。</p>
 <p>デフォルトではリダイレクトを追跡しません。リダイレクト先は <code>Location</code> ヘッダーで確認できます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://nghttp2.org</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/httpbin/redirect/3</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// 302
-</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#6699cc;">get_header_value</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Location</span><span style="color:#d3d0c8;">&quot;) &lt;&lt; std::endl;
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://nghttp2.org</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/httpbin/redirect/3</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;  </span><span style="color:#65737e;">// 302
+</span><span style="color:#c0c5ce;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#8fa1b3;">get_header_value</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">Location</span><span style="color:#c0c5ce;">&quot;) &lt;&lt; std::endl;
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;https://nghttp2.org&quot;</span><span style="color:#323232;">);
@@ -224,22 +226,22 @@
 </span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;get_header_value(</span><span style="color:#183691;">&quot;Location&quot;</span><span style="color:#323232;">) </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;
 </span><span style="color:#323232;">}
 </span></pre>
-</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> https://nghttp2.org/httpbin/redirect/3
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#c0c5ce;"> https://nghttp2.org/httpbin/redirect/3
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl https://nghttp2.org/httpbin/redirect/3
 </span></pre>
 </div></div>
 <p><code>set_follow_location(true)</code> を設定すると、リダイレクトを自動で追跡して、最終的なレスポンスを返してくれます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://nghttp2.org</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">cli.</span><span style="color:#6699cc;">set_follow_location</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">true</span><span style="color:#d3d0c8;">);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/httpbin/redirect/3</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// 200（最終的なレスポンス）
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://nghttp2.org</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">cli.</span><span style="color:#8fa1b3;">set_follow_location</span><span style="color:#c0c5ce;">(</span><span style="color:#d08770;">true</span><span style="color:#c0c5ce;">);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/httpbin/redirect/3</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;  </span><span style="color:#65737e;">// 200（最終的なレスポンス）
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;https://nghttp2.org&quot;</span><span style="color:#323232;">);
@@ -250,8 +252,8 @@
 </span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;status </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// 200（最終的なレスポンス）
 </span><span style="color:#323232;">}
 </span></pre>
-</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -L</span><span style="color:#d3d0c8;"> https://nghttp2.org/httpbin/redirect/3
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -L</span><span style="color:#c0c5ce;"> https://nghttp2.org/httpbin/redirect/3
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl -L https://nghttp2.org/httpbin/redirect/3
@@ -267,7 +269,7 @@
   </div>
 
   <footer class="footer">
-    &copy; 2026 yhirose. All rights reserved.
+    © 2026 Yuji Hirose. All rights reserved.
   </footer>
 
   <!-- Search modal -->

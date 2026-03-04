@@ -17,16 +17,16 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <a href="&#x2F;cpp-httplib/en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
+      <a href="&#x2F;cpp-httplib&#x2F;en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
       <div class="header-spacer"></div>
       <nav class="header-nav">
-        <a href="&#x2F;cpp-httplib/en/">
+        <a href="&#x2F;cpp-httplib&#x2F;en/">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Home
         </a>
         
         
-        <a href="&#x2F;cpp-httplib/en/tour&#x2F;">
+        <a href="&#x2F;cpp-httplib&#x2F;en/tour&#x2F;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           Tour
         </a>
@@ -45,6 +45,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <button class="theme-toggle" aria-label="Toggle theme"></button>
+        
         <div class="lang-selector">
           <button class="lang-btn" aria-label="Language">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -58,6 +59,7 @@
             
           </ul>
         </div>
+        
       </div>
       <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
     </div>
@@ -105,8 +107,8 @@
     <p>All you need to get started with cpp-httplib is <code>httplib.h</code> and a C++ compiler. Let's download the file and get a Hello World server running.</p>
 <h2>Getting httplib.h</h2>
 <p>You can download it directly from GitHub. Always use the latest version.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -LO</span><span style="color:#d3d0c8;"> https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -LO</span><span style="color:#c0c5ce;"> https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl -LO https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
@@ -121,18 +123,18 @@
 </tbody></table>
 <h2>Hello World Server</h2>
 <p>Save the following code as <code>server.cpp</code>.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::Server svr;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const</span><span style="color:#d3d0c8;"> httplib::Request&amp;, httplib::Response&amp; res) {
-</span><span style="color:#d3d0c8;">        res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello, World!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    });
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::Server svr;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;, [](</span><span style="color:#b48ead;">const</span><span style="color:#c0c5ce;"> httplib::Request&amp;, httplib::Response&amp; res) {
+</span><span style="color:#c0c5ce;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">Hello, World!</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    });
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#c0c5ce;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#c0c5ce;">);
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
@@ -151,17 +153,17 @@
 <p>In just a few lines, you have a server that responds to HTTP requests.</p>
 <h2>Compiling and Running</h2>
 <p>The sample code in this tutorial is written in C++17 for cleaner, more concise code. cpp-httplib itself can compile with C++11 as well.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#747369;"># macOS
-</span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -o</span><span style="color:#d3d0c8;"> server server.cpp
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;"># Linux
-</span><span style="color:#747369;"># `-pthread`: cpp-httplib uses threads internally
-</span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -pthread -o</span><span style="color:#d3d0c8;"> server server.cpp
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;"># Windows (Developer Command Prompt)
-</span><span style="color:#747369;"># `/EHsc`: Enable C++ exception handling
-</span><span style="color:#6699cc;">cl</span><span style="color:#d3d0c8;"> /EHsc /std:c++17 server.cpp
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#65737e;"># macOS
+</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#c0c5ce;">=c++17</span><span style="color:#bf616a;"> -o</span><span style="color:#c0c5ce;"> server server.cpp
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;"># Linux
+</span><span style="color:#65737e;"># `-pthread`: cpp-httplib uses threads internally
+</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#c0c5ce;">=c++17</span><span style="color:#bf616a;"> -pthread -o</span><span style="color:#c0c5ce;"> server server.cpp
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;"># Windows (Developer Command Prompt)
+</span><span style="color:#65737e;"># `/EHsc`: Enable C++ exception handling
+</span><span style="color:#8fa1b3;">cl</span><span style="color:#c0c5ce;"> /EHsc /std:c++17 server.cpp
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-style:italic;color:#969896;"># macOS
@@ -177,12 +179,12 @@
 </span></pre>
 </div></div>
 <p>Once it compiles, run it.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#747369;"># macOS / Linux
-</span><span style="color:#6699cc;">./server
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;"># Windows
-</span><span style="color:#6699cc;">server.exe
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#65737e;"># macOS / Linux
+</span><span style="color:#8fa1b3;">./server
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;"># Windows
+</span><span style="color:#8fa1b3;">server.exe
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-style:italic;color:#969896;"># macOS / Linux
@@ -194,9 +196,9 @@
 </div></div>
 <p>Open <code>http://localhost:8080</code> in your browser. If you see "Hello, World!", you're all set.</p>
 <p>You can also verify with <code>curl</code>.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080/
-</span><span style="color:#747369;"># Hello, World!
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#c0c5ce;"> http://localhost:8080/
+</span><span style="color:#65737e;"># Hello, World!
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl http://localhost:8080/
@@ -214,7 +216,7 @@
   </div>
 
   <footer class="footer">
-    &copy; 2026 yhirose. All rights reserved.
+    © 2026 Yuji Hirose. All rights reserved.
   </footer>
 
   <!-- Search modal -->

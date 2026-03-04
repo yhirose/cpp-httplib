@@ -17,16 +17,16 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <a href="&#x2F;cpp-httplib/ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
+      <a href="&#x2F;cpp-httplib&#x2F;ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
       <div class="header-spacer"></div>
       <nav class="header-nav">
-        <a href="&#x2F;cpp-httplib/ja/">
+        <a href="&#x2F;cpp-httplib&#x2F;ja/">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Home
         </a>
         
         
-        <a href="&#x2F;cpp-httplib/ja/tour&#x2F;">
+        <a href="&#x2F;cpp-httplib&#x2F;ja/tour&#x2F;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           Tour
         </a>
@@ -45,6 +45,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <button class="theme-toggle" aria-label="Toggle theme"></button>
+        
         <div class="lang-selector">
           <button class="lang-btn" aria-label="Language">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -58,6 +59,7 @@
             
           </ul>
         </div>
+        
       </div>
       <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
     </div>
@@ -106,8 +108,8 @@
 <p>ただし、TLSサーバーにはサーバー証明書と秘密鍵が必要です。まずはそこから準備しましょう。</p>
 <h2>自己署名証明書の作成</h2>
 <p>開発やテスト用なら、自己署名証明書（いわゆるオレオレ証明書）で十分です。OpenSSLのコマンドでサクッと作れます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">openssl</span><span style="color:#d3d0c8;"> req</span><span style="color:#f2777a;"> -x509 -noenc -keyout</span><span style="color:#d3d0c8;"> key.pem</span><span style="color:#f2777a;"> -out</span><span style="color:#d3d0c8;"> cert.pem</span><span style="color:#f2777a;"> -subj</span><span style="color:#d3d0c8;"> /CN=localhost
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">openssl</span><span style="color:#c0c5ce;"> req</span><span style="color:#bf616a;"> -x509 -noenc -keyout</span><span style="color:#c0c5ce;"> key.pem</span><span style="color:#bf616a;"> -out</span><span style="color:#c0c5ce;"> cert.pem</span><span style="color:#bf616a;"> -subj</span><span style="color:#c0c5ce;"> /CN=localhost
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">openssl req -x509 -noenc -keyout key.pem -out cert.pem -subj /CN=localhost
@@ -120,21 +122,21 @@
 </ul>
 <h2>最小のHTTPSサーバー</h2>
 <p>証明書ができたら、さっそくサーバーを書いてみましょう。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#define </span><span style="color:#d3d0c8;">CPPHTTPLIB_OPENSSL_SUPPORT
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::SSLServer </span><span style="color:#6699cc;">svr</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">cert.pem</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">key.pem</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
-</span><span style="color:#d3d0c8;">        res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">Hello, HTTPS!</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">text/plain</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    });
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; &quot;</span><span style="color:#99cc99;">Listening on https://localhost:8443</span><span style="color:#d3d0c8;">&quot; &lt;&lt; std::endl;
-</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8443</span><span style="color:#d3d0c8;">);
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#define </span><span style="color:#c0c5ce;">CPPHTTPLIB_OPENSSL_SUPPORT
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::SSLServer </span><span style="color:#8fa1b3;">svr</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">cert.pem</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">key.pem</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#c0c5ce;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#c0c5ce;">&amp;res) {
+</span><span style="color:#c0c5ce;">        res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">Hello, HTTPS!</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">text/plain</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    });
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Listening on https://localhost:8443</span><span style="color:#c0c5ce;">&quot; &lt;&lt; std::endl;
+</span><span style="color:#c0c5ce;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#c0c5ce;">&quot;, </span><span style="color:#d08770;">8443</span><span style="color:#c0c5ce;">);
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#define </span><span style="color:#323232;">CPPHTTPLIB_OPENSSL_SUPPORT
@@ -157,9 +159,9 @@
 <p>コンパイルして起動しましょう。</p>
 <h2>動作確認</h2>
 <p>サーバーが起動したら、<code>curl</code> でアクセスしてみましょう。自己署名証明書なので、<code>-k</code> オプションで証明書検証をスキップします。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#f2777a;"> -k</span><span style="color:#d3d0c8;"> https://localhost:8443/
-</span><span style="color:#747369;"># Hello, HTTPS!
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#bf616a;"> -k</span><span style="color:#c0c5ce;"> https://localhost:8443/
+</span><span style="color:#65737e;"># Hello, HTTPS!
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl -k https://localhost:8443/
@@ -171,20 +173,20 @@
 <p>前章の <code>httplib::Client</code> で接続してみましょう。自己署名証明書のサーバーに接続するには、2つの方法があります。</p>
 <h3>方法1: 証明書検証を無効にする</h3>
 <p>開発時の手軽な方法です。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#define </span><span style="color:#d3d0c8;">CPPHTTPLIB_OPENSSL_SUPPORT
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://localhost:8443</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    cli.</span><span style="color:#6699cc;">enable_server_certificate_verification</span><span style="color:#d3d0c8;">(</span><span style="color:#f99157;">false</span><span style="color:#d3d0c8;">);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// Hello, HTTPS!
-</span><span style="color:#d3d0c8;">    }
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#define </span><span style="color:#c0c5ce;">CPPHTTPLIB_OPENSSL_SUPPORT
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://localhost:8443</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    cli.</span><span style="color:#8fa1b3;">enable_server_certificate_verification</span><span style="color:#c0c5ce;">(</span><span style="color:#d08770;">false</span><span style="color:#c0c5ce;">);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;  </span><span style="color:#65737e;">// Hello, HTTPS!
+</span><span style="color:#c0c5ce;">    }
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#define </span><span style="color:#323232;">CPPHTTPLIB_OPENSSL_SUPPORT
@@ -204,20 +206,20 @@
 </div></div>
 <h3>方法2: 自己署名証明書をCA証明書として指定する</h3>
 <p>こちらのほうが安全です。<code>cert.pem</code> をCA証明書として信頼するよう指定します。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#define </span><span style="color:#d3d0c8;">CPPHTTPLIB_OPENSSL_SUPPORT
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://localhost:8443</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    cli.</span><span style="color:#6699cc;">set_ca_cert_path</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">cert.pem</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// Hello, HTTPS!
-</span><span style="color:#d3d0c8;">    }
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#define </span><span style="color:#c0c5ce;">CPPHTTPLIB_OPENSSL_SUPPORT
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://localhost:8443</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    cli.</span><span style="color:#8fa1b3;">set_ca_cert_path</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">cert.pem</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;  </span><span style="color:#65737e;">// Hello, HTTPS!
+</span><span style="color:#c0c5ce;">    }
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#define </span><span style="color:#323232;">CPPHTTPLIB_OPENSSL_SUPPORT
@@ -256,7 +258,7 @@
   </div>
 
   <footer class="footer">
-    &copy; 2026 yhirose. All rights reserved.
+    © 2026 Yuji Hirose. All rights reserved.
   </footer>
 
   <!-- Search modal -->

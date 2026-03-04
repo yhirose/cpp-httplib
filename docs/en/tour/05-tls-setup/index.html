@@ -17,16 +17,16 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <a href="&#x2F;cpp-httplib/en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
+      <a href="&#x2F;cpp-httplib&#x2F;en/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
       <div class="header-spacer"></div>
       <nav class="header-nav">
-        <a href="&#x2F;cpp-httplib/en/">
+        <a href="&#x2F;cpp-httplib&#x2F;en/">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Home
         </a>
         
         
-        <a href="&#x2F;cpp-httplib/en/tour&#x2F;">
+        <a href="&#x2F;cpp-httplib&#x2F;en/tour&#x2F;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           Tour
         </a>
@@ -45,6 +45,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <button class="theme-toggle" aria-label="Toggle theme"></button>
+        
         <div class="lang-selector">
           <button class="lang-btn" aria-label="Language">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -58,6 +59,7 @@
             
           </ul>
         </div>
+        
       </div>
       <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
     </div>
@@ -113,22 +115,22 @@
 </tbody></table>
 <h2>Compile Options</h2>
 <p>To enable TLS, define the <code>CPPHTTPLIB_OPENSSL_SUPPORT</code> macro when compiling. You'll need a few extra options compared to the previous chapters.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#747369;"># macOS (Homebrew)
-</span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#d3d0c8;">\
-</span><span style="color:#f2777a;">    -I</span><span style="color:#d3d0c8;">$</span><span style="color:#f2777a;">(</span><span style="color:#6699cc;">brew</span><span style="color:#f2777a;"> --prefix openssl)</span><span style="color:#d3d0c8;">/include \
-</span><span style="color:#f2777a;">    -L</span><span style="color:#d3d0c8;">$</span><span style="color:#f2777a;">(</span><span style="color:#6699cc;">brew</span><span style="color:#f2777a;"> --prefix openssl)</span><span style="color:#d3d0c8;">/lib \
-</span><span style="color:#f2777a;">    -lssl -lcrypto </span><span style="color:#d3d0c8;">\
-</span><span style="color:#f2777a;">    -framework</span><span style="color:#d3d0c8;"> CoreFoundation</span><span style="color:#f2777a;"> -framework</span><span style="color:#d3d0c8;"> Security \
-</span><span style="color:#f2777a;">    -o</span><span style="color:#d3d0c8;"> server server.cpp
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;"># Linux
-</span><span style="color:#6699cc;">clang++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -pthread -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#d3d0c8;">\
-</span><span style="color:#f2777a;">    -lssl -lcrypto </span><span style="color:#d3d0c8;">\
-</span><span style="color:#f2777a;">    -o</span><span style="color:#d3d0c8;"> server server.cpp
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;"># Windows (Developer Command Prompt)
-</span><span style="color:#6699cc;">cl</span><span style="color:#d3d0c8;"> /EHsc /std:c++17 /DCPPHTTPLIB_OPENSSL_SUPPORT server.cpp libssl.lib libcrypto.lib
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#65737e;"># macOS (Homebrew)
+</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#c0c5ce;">=c++17</span><span style="color:#bf616a;"> -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#c0c5ce;">\
+</span><span style="color:#bf616a;">    -I</span><span style="color:#c0c5ce;">$</span><span style="color:#bf616a;">(</span><span style="color:#8fa1b3;">brew</span><span style="color:#bf616a;"> --prefix openssl)</span><span style="color:#c0c5ce;">/include \
+</span><span style="color:#bf616a;">    -L</span><span style="color:#c0c5ce;">$</span><span style="color:#bf616a;">(</span><span style="color:#8fa1b3;">brew</span><span style="color:#bf616a;"> --prefix openssl)</span><span style="color:#c0c5ce;">/lib \
+</span><span style="color:#bf616a;">    -lssl -lcrypto </span><span style="color:#c0c5ce;">\
+</span><span style="color:#bf616a;">    -framework</span><span style="color:#c0c5ce;"> CoreFoundation</span><span style="color:#bf616a;"> -framework</span><span style="color:#c0c5ce;"> Security \
+</span><span style="color:#bf616a;">    -o</span><span style="color:#c0c5ce;"> server server.cpp
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;"># Linux
+</span><span style="color:#8fa1b3;">clang++</span><span style="color:#bf616a;"> -std</span><span style="color:#c0c5ce;">=c++17</span><span style="color:#bf616a;"> -pthread -DCPPHTTPLIB_OPENSSL_SUPPORT </span><span style="color:#c0c5ce;">\
+</span><span style="color:#bf616a;">    -lssl -lcrypto </span><span style="color:#c0c5ce;">\
+</span><span style="color:#bf616a;">    -o</span><span style="color:#c0c5ce;"> server server.cpp
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;"># Windows (Developer Command Prompt)
+</span><span style="color:#8fa1b3;">cl</span><span style="color:#c0c5ce;"> /EHsc /std:c++17 /DCPPHTTPLIB_OPENSSL_SUPPORT server.cpp libssl.lib libcrypto.lib
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-style:italic;color:#969896;"># macOS (Homebrew)
@@ -157,21 +159,21 @@
 </ul>
 <h2>Verifying the Setup</h2>
 <p>Let's make sure everything works. Here's a simple program that passes an HTTPS URL to <code>httplib::Client</code>.</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#define </span><span style="color:#d3d0c8;">CPPHTTPLIB_OPENSSL_SUPPORT
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">https://www.google.com</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">    </span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; &quot;</span><span style="color:#99cc99;">Status: </span><span style="color:#d3d0c8;">&quot; &lt;&lt; res-&gt;</span><span style="color:#f2777a;">status </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;
-</span><span style="color:#d3d0c8;">    } </span><span style="color:#cc99cc;">else </span><span style="color:#d3d0c8;">{
-</span><span style="color:#d3d0c8;">        std::cout &lt;&lt; &quot;</span><span style="color:#99cc99;">Error: </span><span style="color:#d3d0c8;">&quot; &lt;&lt; </span><span style="color:#6699cc;">httplib::to_string</span><span style="color:#d3d0c8;">(res.</span><span style="color:#6699cc;">error</span><span style="color:#d3d0c8;">()) &lt;&lt; std::endl;
-</span><span style="color:#d3d0c8;">    }
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#define </span><span style="color:#c0c5ce;">CPPHTTPLIB_OPENSSL_SUPPORT
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">https://www.google.com</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">    </span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Status: </span><span style="color:#c0c5ce;">&quot; &lt;&lt; res-&gt;</span><span style="color:#bf616a;">status </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;
+</span><span style="color:#c0c5ce;">    } </span><span style="color:#b48ead;">else </span><span style="color:#c0c5ce;">{
+</span><span style="color:#c0c5ce;">        std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Error: </span><span style="color:#c0c5ce;">&quot; &lt;&lt; </span><span style="color:#8fa1b3;">httplib::to_string</span><span style="color:#c0c5ce;">(res.</span><span style="color:#8fa1b3;">error</span><span style="color:#c0c5ce;">()) &lt;&lt; std::endl;
+</span><span style="color:#c0c5ce;">    }
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#define </span><span style="color:#323232;">CPPHTTPLIB_OPENSSL_SUPPORT
@@ -209,7 +211,7 @@
   </div>
 
   <footer class="footer">
-    &copy; 2026 yhirose. All rights reserved.
+    © 2026 Yuji Hirose. All rights reserved.
   </footer>
 
   <!-- Search modal -->

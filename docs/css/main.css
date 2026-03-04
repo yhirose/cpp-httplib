@@ -12,7 +12,7 @@
   --link: palegoldenrod;
   --heading: lightskyblue;
   --heading-link: #f0c090;
-  --header-nav-link: pink;
+  --header-nav-link: #ddd;
   --emphasis: pink;
   --nav-section: #bbb;
   --nav-section-active: #ddd;
@@ -357,7 +357,7 @@ html[data-theme="light"] .code-block-wrapper > [data-code-theme="light"] {
 
 /* Footer */
 .footer {
-  padding: 12px 16px;
+  padding: 8px 16px;
   text-align: center;
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -433,7 +433,7 @@ html[data-theme="light"] .code-block-wrapper > [data-code-theme="light"] {
   --link: #b8860b;
   --heading: #2a6496;
   --heading-link: #c06020;
-  --header-nav-link: #c04060;
+  --header-nav-link: #282828;
   --emphasis: #c04060;
   --nav-section: #666;
   --nav-section-active: #333;

@@ -17,16 +17,16 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <a href="&#x2F;cpp-httplib/ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
+      <a href="&#x2F;cpp-httplib&#x2F;ja/" class="header-title">cpp-httplib <span style="font-size:0.75em;font-weight:normal;margin-left:4px">v0.36.0</span></a>
       <div class="header-spacer"></div>
       <nav class="header-nav">
-        <a href="&#x2F;cpp-httplib/ja/">
+        <a href="&#x2F;cpp-httplib&#x2F;ja/">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Home
         </a>
         
         
-        <a href="&#x2F;cpp-httplib/ja/tour&#x2F;">
+        <a href="&#x2F;cpp-httplib&#x2F;ja/tour&#x2F;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           Tour
         </a>
@@ -45,6 +45,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <button class="theme-toggle" aria-label="Toggle theme"></button>
+        
         <div class="lang-selector">
           <button class="lang-btn" aria-label="Language">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -58,6 +59,7 @@
             
           </ul>
         </div>
+        
       </div>
       <button class="sidebar-toggle" aria-label="Menu">&#9776;</button>
     </div>
@@ -105,18 +107,18 @@
     <p>cpp-httplibは、HTMLやCSS、画像ファイルなどの静的ファイルも配信できます。面倒な設定は要りません。<code>set_mount_point()</code> を1行呼ぶだけです。</p>
 <h2>set_mount_point の基本</h2>
 <p>さっそくやってみましょう。<code>set_mount_point()</code> は、URLのパスとローカルディレクトリを紐づけます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">httplib.h</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#cc99cc;">#include </span><span style="color:#d3d0c8;">&lt;</span><span style="color:#99cc99;">iostream</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#cc99cc;">int </span><span style="color:#6699cc;">main</span><span style="color:#d3d0c8;">() {
-</span><span style="color:#d3d0c8;">    httplib::Server svr;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./html</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; &quot;</span><span style="color:#99cc99;">Listening on port 8080...</span><span style="color:#d3d0c8;">&quot; &lt;&lt; std::endl;
-</span><span style="color:#d3d0c8;">    svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">httplib.h</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#b48ead;">#include </span><span style="color:#c0c5ce;">&lt;</span><span style="color:#a3be8c;">iostream</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#b48ead;">int </span><span style="color:#8fa1b3;">main</span><span style="color:#c0c5ce;">() {
+</span><span style="color:#c0c5ce;">    httplib::Server svr;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">./html</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">    std::cout &lt;&lt; &quot;</span><span style="color:#a3be8c;">Listening on port 8080...</span><span style="color:#c0c5ce;">&quot; &lt;&lt; std::endl;
+</span><span style="color:#c0c5ce;">    svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#c0c5ce;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#c0c5ce;">);
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">#include </span><span style="color:#183691;">&quot;httplib.h&quot;
@@ -134,21 +136,21 @@
 </div></div>
 <p>第1引数がURLのマウントポイント、第2引数がローカルのディレクトリパスです。この例だと、<code>/</code> へのリクエストを <code>./html</code> ディレクトリから配信します。</p>
 <p>試してみましょう。まず <code>html</code> ディレクトリを作って、<code>index.html</code> を置きます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">mkdir</span><span style="color:#d3d0c8;"> html
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">mkdir</span><span style="color:#c0c5ce;"> html
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">mkdir html
 </span></pre>
-</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">&lt;!</span><span style="color:#f2777a;">DOCTYPE</span><span style="color:#d3d0c8;"> html&gt;
-</span><span style="color:#d3d0c8;">&lt;</span><span style="color:#f2777a;">html</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">&lt;</span><span style="color:#f2777a;">head</span><span style="color:#d3d0c8;">&gt;&lt;</span><span style="color:#f2777a;">title</span><span style="color:#d3d0c8;">&gt;My Page&lt;/</span><span style="color:#f2777a;">title</span><span style="color:#d3d0c8;">&gt;&lt;/</span><span style="color:#f2777a;">head</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">&lt;</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">    &lt;</span><span style="color:#f2777a;">h1</span><span style="color:#d3d0c8;">&gt;Hello from cpp-httplib!&lt;/</span><span style="color:#f2777a;">h1</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">    &lt;</span><span style="color:#f2777a;">p</span><span style="color:#d3d0c8;">&gt;This is a static file.&lt;/</span><span style="color:#f2777a;">p</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">&lt;/</span><span style="color:#f2777a;">body</span><span style="color:#d3d0c8;">&gt;
-</span><span style="color:#d3d0c8;">&lt;/</span><span style="color:#f2777a;">html</span><span style="color:#d3d0c8;">&gt;
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">&lt;!</span><span style="color:#bf616a;">DOCTYPE</span><span style="color:#c0c5ce;"> html&gt;
+</span><span style="color:#c0c5ce;">&lt;</span><span style="color:#bf616a;">html</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">&lt;</span><span style="color:#bf616a;">head</span><span style="color:#c0c5ce;">&gt;&lt;</span><span style="color:#bf616a;">title</span><span style="color:#c0c5ce;">&gt;My Page&lt;/</span><span style="color:#bf616a;">title</span><span style="color:#c0c5ce;">&gt;&lt;/</span><span style="color:#bf616a;">head</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">&lt;</span><span style="color:#bf616a;">body</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">    &lt;</span><span style="color:#bf616a;">h1</span><span style="color:#c0c5ce;">&gt;Hello from cpp-httplib!&lt;/</span><span style="color:#bf616a;">h1</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">    &lt;</span><span style="color:#bf616a;">p</span><span style="color:#c0c5ce;">&gt;This is a static file.&lt;/</span><span style="color:#bf616a;">p</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">&lt;/</span><span style="color:#bf616a;">body</span><span style="color:#c0c5ce;">&gt;
+</span><span style="color:#c0c5ce;">&lt;/</span><span style="color:#bf616a;">html</span><span style="color:#c0c5ce;">&gt;
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">&lt;!</span><span style="color:#63a35c;">DOCTYPE</span><span style="color:#323232;"> html&gt;
@@ -162,9 +164,9 @@
 </span></pre>
 </div></div>
 <p>コンパイルして起動します。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">g++</span><span style="color:#f2777a;"> -std</span><span style="color:#d3d0c8;">=c++17</span><span style="color:#f2777a;"> -o</span><span style="color:#d3d0c8;"> server server.cpp</span><span style="color:#f2777a;"> -pthread
-</span><span style="color:#6699cc;">./server
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">g++</span><span style="color:#bf616a;"> -std</span><span style="color:#c0c5ce;">=c++17</span><span style="color:#bf616a;"> -o</span><span style="color:#c0c5ce;"> server server.cpp</span><span style="color:#bf616a;"> -pthread
+</span><span style="color:#8fa1b3;">./server
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">g++ -std</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#323232;">c++17 -o server server.cpp -pthread
@@ -173,12 +175,12 @@
 </div></div>
 <p>ブラウザで <code>http://localhost:8080</code> を開いてみてください。<code>html/index.html</code> の内容が表示されるはずです。<code>http://localhost:8080/index.html</code> でも同じページが返ります。</p>
 <p>もちろん、前章のクライアントコードや <code>curl</code> でもアクセスできますよ。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Client </span><span style="color:#6699cc;">cli</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">http://localhost:8080</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#cc99cc;">auto</span><span style="color:#d3d0c8;"> res = cli.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#cc99cc;">if </span><span style="color:#d3d0c8;">(res) {
-</span><span style="color:#d3d0c8;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#f2777a;">body </span><span style="color:#d3d0c8;">&lt;&lt; std::endl;  </span><span style="color:#747369;">// HTMLが表示される
-</span><span style="color:#d3d0c8;">}
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Client </span><span style="color:#8fa1b3;">cli</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">http://localhost:8080</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#b48ead;">auto</span><span style="color:#c0c5ce;"> res = cli.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#b48ead;">if </span><span style="color:#c0c5ce;">(res) {
+</span><span style="color:#c0c5ce;">    std::cout &lt;&lt; res-&gt;</span><span style="color:#bf616a;">body </span><span style="color:#c0c5ce;">&lt;&lt; std::endl;  </span><span style="color:#65737e;">// HTMLが表示される
+</span><span style="color:#c0c5ce;">}
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Client </span><span style="font-weight:bold;color:#795da3;">cli</span><span style="color:#323232;">(</span><span style="color:#183691;">&quot;http://localhost:8080&quot;</span><span style="color:#323232;">);
@@ -187,8 +189,8 @@
 </span><span style="color:#323232;">    std::cout </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> res-&gt;body </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span style="color:#323232;"> std::endl;  </span><span style="font-style:italic;color:#969896;">// HTMLが表示される
 </span><span style="color:#323232;">}
 </span></pre>
-</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#6699cc;">curl</span><span style="color:#d3d0c8;"> http://localhost:8080
+</div></div><div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#8fa1b3;">curl</span><span style="color:#c0c5ce;"> http://localhost:8080
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">curl http://localhost:8080
@@ -196,10 +198,10 @@
 </div></div>
 <h2>複数のマウントポイント</h2>
 <p><code>set_mount_point()</code> は何回でも呼べます。URLのパスごとに、別々のディレクトリを割り当てられます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./public</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/assets</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./static/assets</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/docs</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./documentation</span><span style="color:#d3d0c8;">&quot;);
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">./public</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/assets</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">./static/assets</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/docs</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">./documentation</span><span style="color:#c0c5ce;">&quot;);
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">svr.set_mount_point(</span><span style="color:#183691;">&quot;/&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;./public&quot;</span><span style="color:#323232;">);
@@ -210,18 +212,18 @@
 <p><code>/assets/style.css</code> なら <code>./static/assets/style.css</code> を、<code>/docs/guide.html</code> なら <code>./documentation/guide.html</code> を配信します。</p>
 <h2>ハンドラーとの組み合わせ</h2>
 <p>静的ファイルの配信と、前章で学んだルーティングハンドラーは共存できます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">httplib::Server svr;
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;">// APIエンドポイント
-</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">Get</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/api/hello</span><span style="color:#d3d0c8;">&quot;, [](</span><span style="color:#cc99cc;">const auto </span><span style="color:#d3d0c8;">&amp;, </span><span style="color:#cc99cc;">auto </span><span style="color:#d3d0c8;">&amp;res) {
-</span><span style="color:#d3d0c8;">    res.</span><span style="color:#6699cc;">set_content</span><span style="color:#d3d0c8;">(</span><span style="color:#cc99cc;">R</span><span style="color:#d3d0c8;">&quot;(</span><span style="color:#99cc99;">{&quot;message&quot;:&quot;Hello!&quot;}</span><span style="color:#d3d0c8;">)&quot;, &quot;</span><span style="color:#99cc99;">application/json</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">});
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#747369;">// 静的ファイル配信
-</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./public</span><span style="color:#d3d0c8;">&quot;);
-</span><span style="color:#d3d0c8;">
-</span><span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">listen</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">0.0.0.0</span><span style="color:#d3d0c8;">&quot;, </span><span style="color:#f99157;">8080</span><span style="color:#d3d0c8;">);
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">httplib::Server svr;
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;">// APIエンドポイント
+</span><span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">Get</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/api/hello</span><span style="color:#c0c5ce;">&quot;, [](</span><span style="color:#b48ead;">const auto </span><span style="color:#c0c5ce;">&amp;, </span><span style="color:#b48ead;">auto </span><span style="color:#c0c5ce;">&amp;res) {
+</span><span style="color:#c0c5ce;">    res.</span><span style="color:#8fa1b3;">set_content</span><span style="color:#c0c5ce;">(</span><span style="color:#b48ead;">R</span><span style="color:#c0c5ce;">&quot;(</span><span style="color:#a3be8c;">{&quot;message&quot;:&quot;Hello!&quot;}</span><span style="color:#c0c5ce;">)&quot;, &quot;</span><span style="color:#a3be8c;">application/json</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">});
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#65737e;">// 静的ファイル配信
+</span><span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">./public</span><span style="color:#c0c5ce;">&quot;);
+</span><span style="color:#c0c5ce;">
+</span><span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">listen</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">0.0.0.0</span><span style="color:#c0c5ce;">&quot;, </span><span style="color:#d08770;">8080</span><span style="color:#c0c5ce;">);
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">httplib::Server svr;
@@ -240,10 +242,10 @@
 <p>ハンドラーが先に評価されます。<code>/api/hello</code> にはハンドラーが応答し、それ以外のパスは <code>./public</code> ディレクトリからファイルを探します。</p>
 <h2>レスポンスヘッダーの追加</h2>
 <p><code>set_mount_point()</code> の第3引数にヘッダーを渡すと、静的ファイルのレスポンスにカスタムヘッダーを付けられます。キャッシュ制御に便利です。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">svr.</span><span style="color:#6699cc;">set_mount_point</span><span style="color:#d3d0c8;">(&quot;</span><span style="color:#99cc99;">/</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">./public</span><span style="color:#d3d0c8;">&quot;, {
-</span><span style="color:#d3d0c8;">    {&quot;</span><span style="color:#99cc99;">Cache-Control</span><span style="color:#d3d0c8;">&quot;, &quot;</span><span style="color:#99cc99;">max-age=3600</span><span style="color:#d3d0c8;">&quot;}
-</span><span style="color:#d3d0c8;">});
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">svr.</span><span style="color:#8fa1b3;">set_mount_point</span><span style="color:#c0c5ce;">(&quot;</span><span style="color:#a3be8c;">/</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">./public</span><span style="color:#c0c5ce;">&quot;, {
+</span><span style="color:#c0c5ce;">    {&quot;</span><span style="color:#a3be8c;">Cache-Control</span><span style="color:#c0c5ce;">&quot;, &quot;</span><span style="color:#a3be8c;">max-age=3600</span><span style="color:#c0c5ce;">&quot;}
+</span><span style="color:#c0c5ce;">});
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="color:#323232;">svr.set_mount_point(</span><span style="color:#183691;">&quot;/&quot;</span><span style="color:#323232;">, </span><span style="color:#183691;">&quot;./public&quot;</span><span style="color:#323232;">, {
@@ -254,14 +256,14 @@
 <p>こうすると、ブラウザは配信されたファイルを1時間キャッシュします。</p>
 <h2>静的ファイルサーバー用のDockerファイル</h2>
 <p>cpp-httplibのリポジトリには、静的ファイルサーバー用の <code>Dockerfile</code> が含まれています。Docker Hubにビルド済みイメージも公開しているので、1コマンドで起動できます。</p>
-<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2d2d2d;">
-<span style="color:#d3d0c8;">&gt; docker run</span><span style="color:#f2777a;"> -p</span><span style="color:#d3d0c8;"> 8080:80</span><span style="color:#f2777a;"> -v</span><span style="color:#d3d0c8;"> ./my-site:/html yhirose4dockerhub/cpp-httplib-server
-</span><span style="color:#6699cc;">Serving</span><span style="color:#d3d0c8;"> HTTP on 0.0.0.0:80
-</span><span style="color:#6699cc;">Mount</span><span style="color:#d3d0c8;"> point: / -&gt; ./html
-</span><span style="color:#6699cc;">Press</span><span style="color:#d3d0c8;"> Ctrl+C to shutdown gracefully...
-</span><span style="color:#6699cc;">192.168.65.1</span><span style="color:#d3d0c8;"> - - </span><span style="color:#cc99cc;">[</span><span style="color:#d3d0c8;">22/Feb/2026:12:00:00 +0000</span><span style="color:#cc99cc;">] </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">GET / HTTP/1.1</span><span style="color:#d3d0c8;">&quot; 200 256 &quot;</span><span style="color:#99cc99;">-</span><span style="color:#d3d0c8;">&quot; &quot;</span><span style="color:#99cc99;">Mozilla/5.0 ...</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#6699cc;">192.168.65.1</span><span style="color:#d3d0c8;"> - - </span><span style="color:#cc99cc;">[</span><span style="color:#d3d0c8;">22/Feb/2026:12:00:00 +0000</span><span style="color:#cc99cc;">] </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">GET /style.css HTTP/1.1</span><span style="color:#d3d0c8;">&quot; 200 1024 &quot;</span><span style="color:#99cc99;">-</span><span style="color:#d3d0c8;">&quot; &quot;</span><span style="color:#99cc99;">Mozilla/5.0 ...</span><span style="color:#d3d0c8;">&quot;
-</span><span style="color:#6699cc;">192.168.65.1</span><span style="color:#d3d0c8;"> - - </span><span style="color:#cc99cc;">[</span><span style="color:#d3d0c8;">22/Feb/2026:12:00:01 +0000</span><span style="color:#cc99cc;">] </span><span style="color:#d3d0c8;">&quot;</span><span style="color:#99cc99;">GET /favicon.ico HTTP/1.1</span><span style="color:#d3d0c8;">&quot; 404 152 &quot;</span><span style="color:#99cc99;">-</span><span style="color:#d3d0c8;">&quot; &quot;</span><span style="color:#99cc99;">Mozilla/5.0 ...</span><span style="color:#d3d0c8;">&quot;
+<div class="code-block-wrapper"><div data-code-theme="dark"><pre style="background-color:#2b303b;">
+<span style="color:#c0c5ce;">&gt; docker run</span><span style="color:#bf616a;"> -p</span><span style="color:#c0c5ce;"> 8080:80</span><span style="color:#bf616a;"> -v</span><span style="color:#c0c5ce;"> ./my-site:/html yhirose4dockerhub/cpp-httplib-server
+</span><span style="color:#8fa1b3;">Serving</span><span style="color:#c0c5ce;"> HTTP on 0.0.0.0:80
+</span><span style="color:#8fa1b3;">Mount</span><span style="color:#c0c5ce;"> point: / -&gt; ./html
+</span><span style="color:#8fa1b3;">Press</span><span style="color:#c0c5ce;"> Ctrl+C to shutdown gracefully...
+</span><span style="color:#8fa1b3;">192.168.65.1</span><span style="color:#c0c5ce;"> - - </span><span style="color:#b48ead;">[</span><span style="color:#c0c5ce;">22/Feb/2026:12:00:00 +0000</span><span style="color:#b48ead;">] </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">GET / HTTP/1.1</span><span style="color:#c0c5ce;">&quot; 200 256 &quot;</span><span style="color:#a3be8c;">-</span><span style="color:#c0c5ce;">&quot; &quot;</span><span style="color:#a3be8c;">Mozilla/5.0 ...</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#8fa1b3;">192.168.65.1</span><span style="color:#c0c5ce;"> - - </span><span style="color:#b48ead;">[</span><span style="color:#c0c5ce;">22/Feb/2026:12:00:00 +0000</span><span style="color:#b48ead;">] </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">GET /style.css HTTP/1.1</span><span style="color:#c0c5ce;">&quot; 200 1024 &quot;</span><span style="color:#a3be8c;">-</span><span style="color:#c0c5ce;">&quot; &quot;</span><span style="color:#a3be8c;">Mozilla/5.0 ...</span><span style="color:#c0c5ce;">&quot;
+</span><span style="color:#8fa1b3;">192.168.65.1</span><span style="color:#c0c5ce;"> - - </span><span style="color:#b48ead;">[</span><span style="color:#c0c5ce;">22/Feb/2026:12:00:01 +0000</span><span style="color:#b48ead;">] </span><span style="color:#c0c5ce;">&quot;</span><span style="color:#a3be8c;">GET /favicon.ico HTTP/1.1</span><span style="color:#c0c5ce;">&quot; 404 152 &quot;</span><span style="color:#a3be8c;">-</span><span style="color:#c0c5ce;">&quot; &quot;</span><span style="color:#a3be8c;">Mozilla/5.0 ...</span><span style="color:#c0c5ce;">&quot;
 </span></pre>
 </div><div data-code-theme="light"><pre style="background-color:#ffffff;">
 <span style="font-weight:bold;color:#a71d5d;">&gt;</span><span style="color:#323232;"> docker run -p 8080:80 -v ./my-site:/html yhirose4dockerhub/cpp-httplib-server
@@ -285,7 +287,7 @@
   </div>
 
   <footer class="footer">
-    &copy; 2026 yhirose. All rights reserved.
+    © 2026 Yuji Hirose. All rights reserved.
   </footer>
 
   <!-- Search modal -->
