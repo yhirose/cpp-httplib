@@ -1,5 +1,5 @@
 [system]
-theme = "default"
+theme = "monotone"
 langs = ["en", "ja"]
 
 [site]
