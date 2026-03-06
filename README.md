@@ -5,7 +5,7 @@
 A C++11 single-file header-only cross platform HTTP/HTTPS library.<br>
 It's extremely easy to set up. Just include the **[httplib.h](https://raw.githubusercontent.com/yhirose/cpp-httplib/refs/heads/master/httplib.h)** file in your code!
 
-**Learn more in the [official documentation](https://yhirose.github.io/cpp-httplib/)**.
+Learn more in the [official documentation](https://yhirose.github.io/cpp-httplib/) (built with [docs-gen](https://github.com/yhirose/docs-gen)).
 
 > [!IMPORTANT]
 > This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
