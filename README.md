@@ -10,6 +10,9 @@ Learn more in the [official documentation](https://yhirose.github.io/cpp-httplib
 > [!IMPORTANT]
 > This library uses 'blocking' socket I/O. If you are looking for a library with 'non-blocking' socket I/O, this is not the one that you want.
 
+> [!WARNING]
+> 32-bit platforms are **NOT supported**. Use at your own risk. The library may compile on 32-bit targets, but no security review has been conducted for 32-bit environments. Integer truncation and other 32-bit-specific issues may exist. **Security reports that only affect 32-bit platforms will be closed without action.** The maintainer does not have access to 32-bit environments for testing or fixing issues. CI includes basic compile checks only, not functional or security testing.
+
 ## Main Features
 
 - HTTP Server/Client
@@ -1544,11 +1547,6 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 
 > [!NOTE]
 > Windows 8 or lower, Visual Studio 2015 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
-
-### 32-bit
-
-> [!NOTE]
-> 32-bit platforms are not officially supported, but should work for basic usage. CI includes build checks for 32-bit Windows (MSVC x86), Linux x86, and ARM 32-bit to catch regressions.
 
 ## License
 
