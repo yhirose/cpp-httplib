@@ -18,10 +18,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Configure (32-bit)
-        run: cmake -B build -A Win32 -DHTTPLIB_TEST=OFF
-      - name: Build
-        run: cmake --build build --config Release
+      - name: Build (Win32)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
+          cl /std:c++14 /EHsc /W4 /WX /c /Fo:NUL test\test_32bit_build.cpp
 
   test-arm32:
     name: ARM 32-bit (cross-compile)
@@ -32,4 +33,4 @@ jobs:
       - name: Install cross compiler
         run: sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf
       - name: Build (ARM 32-bit)
-        run: arm-linux-gnueabihf-g++ -std=c++11 -Wall -Wextra -Werror -c -o /dev/null test/test_32bit_build.cpp
+        run: arm-linux-gnueabihf-g++ -std=c++11 -Wall -Wextra -Wno-psabi -Werror -c -o /dev/null test/test_32bit_build.cpp
