@@ -173,9 +173,6 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 		message(WARNING "The target is Windows but CMAKE_SYSTEM_VERSION is not set, the default system version is set to Windows 10.")
 	endif()
 endif()
-if(CMAKE_SIZEOF_VOID_P LESS 8)
-	message(WARNING "Pointer size ${CMAKE_SIZEOF_VOID_P} is not supported. Please use a 64-bit compiler.")
-endif()
 
 # Set some variables that are used in-tree and while building based on our options
 set(HTTPLIB_IS_COMPILED ${HTTPLIB_COMPILE})

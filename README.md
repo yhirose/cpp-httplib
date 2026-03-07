@@ -1545,6 +1545,11 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 > [!NOTE]
 > Windows 8 or lower, Visual Studio 2015 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
 
+### 32-bit
+
+> [!NOTE]
+> 32-bit platforms are not officially supported, but should work for basic usage. CI includes build checks for 32-bit Windows (MSVC x86), Linux x86, and ARM 32-bit to catch regressions.
+
 ## License
 
 MIT license (© 2026 Yuji Hirose)

@@ -40,7 +40,7 @@ jobs:
           clang-format --version
           cd test && make style_check
 
-  build-error-check-on-32bit:
+  build-and-test-on-32bit:
     runs-on: ubuntu-latest
     if: >
       (github.event_name == 'push') ||
@@ -64,9 +64,8 @@ jobs:
             libssl-dev${{ matrix.config.arch_suffix }} libcurl4-openssl-dev${{ matrix.config.arch_suffix }} \
             zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }} \
             libzstd-dev${{ matrix.config.arch_suffix }}
-      - name: build and run tests (expect failure)
+      - name: build and run tests
         run: cd test && make test EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}"
-        continue-on-error: true
 
   ubuntu:
     runs-on: ubuntu-latest
