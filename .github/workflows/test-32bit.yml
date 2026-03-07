@@ -1,0 +1,36 @@
+name: 32-bit Build Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test-win32:
+    name: Windows 32-bit (MSVC x86)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (Win32)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
+          cl /std:c++14 /EHsc /W4 /WX /c /Fo:NUL test\test_32bit_build.cpp
+
+  test-arm32:
+    name: ARM 32-bit (cross-compile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler
+        run: sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf
+      - name: Build (ARM 32-bit)
+        run: arm-linux-gnueabihf-g++ -std=c++11 -Wall -Wextra -Wno-psabi -Werror -c -o /dev/null test/test_32bit_build.cpp
