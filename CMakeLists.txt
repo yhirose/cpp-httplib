@@ -242,27 +242,33 @@ endif()
 # zstd < 1.5.6 does not provide the CMake imported target `zstd::libzstd`.
 # Older versions must be consumed via their pkg-config file.
 if(HTTPLIB_REQUIRE_ZSTD)
-	find_package(zstd 1.5.6 CONFIG)
-	if(NOT zstd_FOUND)
-		find_package(PkgConfig REQUIRED)
-		pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
-		add_library(zstd::libzstd ALIAS PkgConfig::zstd)
+	if (NOT TARGET zstd::libzstd)
+		find_package(zstd 1.5.6 CONFIG)
+		if(NOT zstd_FOUND)
+			find_package(PkgConfig REQUIRED)
+			pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
+			add_library(zstd::libzstd ALIAS PkgConfig::zstd)
+		endif()
 	endif()
 	set(HTTPLIB_IS_USING_ZSTD TRUE)
 elseif(HTTPLIB_USE_ZSTD_IF_AVAILABLE)
-	find_package(zstd 1.5.6 CONFIG QUIET)
-	if(NOT zstd_FOUND)
-		find_package(PkgConfig QUIET)
-		if(PKG_CONFIG_FOUND)
-			pkg_check_modules(zstd QUIET IMPORTED_TARGET libzstd)
+	if (TARGET zstd::libzstd)
+		set(HTTPLIB_IS_USING_ZSTD TRUE)
+	else()
+		find_package(zstd 1.5.6 CONFIG QUIET)
+		if(NOT zstd_FOUND)
+			find_package(PkgConfig QUIET)
+			if(PKG_CONFIG_FOUND)
+				pkg_check_modules(zstd QUIET IMPORTED_TARGET libzstd)
 
-			if(TARGET PkgConfig::zstd)
-				add_library(zstd::libzstd ALIAS PkgConfig::zstd)
+				if(TARGET PkgConfig::zstd)
+					add_library(zstd::libzstd ALIAS PkgConfig::zstd)
+				endif()
 			endif()
 		endif()
+		# Both find_package and PkgConf set a XXX_FOUND var
+		set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 	endif()
-	# Both find_package and PkgConf set a XXX_FOUND var
-	set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
@@ -317,13 +323,13 @@ if(HTTPLIB_COMPILE)
 			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
 			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/httplib.h>
 	)
-	
+
 	# Add C++20 module support if requested
 	# Include from separate file to prevent parse errors on older CMake versions
 	if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
 		include(cmake/modules.cmake)
 	endif()
-	
+
 	set_target_properties(${PROJECT_NAME}
 		PROPERTIES
 			VERSION ${${PROJECT_NAME}_VERSION}
