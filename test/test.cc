@@ -13712,6 +13712,102 @@ TEST_F(OpenStreamTest, ProhibitedTrailersAreIgnored_Stream) {
   EXPECT_EQ(std::string(""), handle.response->get_header_value("X-Allowed"));
 }
 
+static std::thread serve_single_response(int port,
+                                         const std::string &response) {
+  return std::thread([port, response] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<uint16_t>(port));
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response.c_str()),
+             static_cast<int>(response.size()),
+#else
+             response.c_str(), response.size(),
+#endif
+             0);
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+}
+
+TEST(OpenStreamMalformedContentLength, InvalidArgument) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread =
+      serve_single_response(PORT + 2, "HTTP/1.1 200 OK\r\n"
+                                      "Content-Type: text/plain\r\n"
+                                      "Content-Length: not-a-number\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n"
+                                      "hello");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  Client cli("127.0.0.1", PORT + 2);
+  auto handle = cli.open_stream("GET", "/");
+  EXPECT_FALSE(handle.is_valid());
+
+  server_thread.join();
+}
+
+TEST(OpenStreamMalformedContentLength, OutOfRange) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = serve_single_response(
+      PORT + 2, "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: 99999999999999999999999999\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "hello");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Before the fix, std::stoull would throw std::out_of_range here and
+  // crash the process. After the fix, strtoull silently clamps to
+  // ULLONG_MAX so the stream opens without crashing. The important thing
+  // is that the process does NOT terminate.
+  Client cli("127.0.0.1", PORT + 2);
+  auto handle = cli.open_stream("GET", "/");
+  EXPECT_TRUE(handle.is_valid());
+
+  server_thread.join();
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(OpenStreamTest, Gzip) {
   Client cli("127.0.0.1", port_);
