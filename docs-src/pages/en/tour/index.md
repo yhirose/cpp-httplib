@@ -1,6 +1,6 @@
 ---
 title: "A Tour of cpp-httplib"
-order: 1
+order: 0
 ---
 
 This is a step-by-step tutorial that walks you through the basics of cpp-httplib. Each chapter builds on the previous one, so please read them in order starting from Chapter 1.
