@@ -4,7 +4,7 @@ langs = ["en", "ja"]
 
 [site]
 title = "cpp-httplib"
-version = "0.37.0"
+version = "0.37.1"
 hostname = "https://yhirose.github.io"
 base_path = "/cpp-httplib"
 footer_message = "© 2026 Yuji Hirose. All rights reserved."
