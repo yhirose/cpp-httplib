@@ -12,7 +12,7 @@ if(HTTPLIB_BUILD_MODULES)
 		PUBLIC
 			FILE_SET CXX_MODULES 
 			BASE_DIRS 
-				${_httplib_build_includedir}
+				"${_httplib_build_includedir}"
 			FILES
 				"${_httplib_build_includedir}/httplib.cppm"
 	)
