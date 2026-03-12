@@ -11319,6 +11319,10 @@ inline bool Server::listen_internal() {
       detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
                                   write_timeout_sec_, write_timeout_usec_);
 
+      if (tcp_nodelay_) {
+        detail::set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1);
+      }
+
       if (!task_queue->enqueue(
               [this, sock]() { process_and_close_socket(sock); })) {
         output_error_log(Error::ResourceExhaustion, nullptr);
