@@ -17076,3 +17076,50 @@ TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
   client.close();
 }
 #endif
+
+#if !defined(_WIN32)
+TEST(SymlinkTest, SymlinkEscapeFromBaseDirectory) {
+  auto secret_dir = std::string("./symlink_test_secret");
+  auto served_dir = std::string("./symlink_test_served");
+  auto secret_file = secret_dir + "/secret.txt";
+  auto symlink_path = served_dir + "/escape";
+
+  // Setup: create directories and files
+  mkdir(secret_dir.c_str(), 0755);
+  mkdir(served_dir.c_str(), 0755);
+
+  {
+    std::ofstream ofs(secret_file);
+    ofs << "SECRET_DATA";
+  }
+
+  // Create symlink using absolute path so it resolves correctly
+  char abs_secret[PATH_MAX];
+  ASSERT_NE(nullptr, realpath(secret_dir.c_str(), abs_secret));
+  ASSERT_EQ(0, symlink(abs_secret, symlink_path.c_str()));
+
+  auto se = detail::scope_exit([&] {
+    unlink(symlink_path.c_str());
+    unlink(secret_file.c_str());
+    rmdir(served_dir.c_str());
+    rmdir(secret_dir.c_str());
+  });
+
+  Server svr;
+  svr.set_mount_point("/", served_dir);
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se2 = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  // Symlink pointing outside base dir should be blocked
+  auto res = cli.Get("/escape/secret.txt");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+}
+#endif

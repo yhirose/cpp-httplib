@@ -350,6 +350,11 @@ The following are built-in mappings:
 > [!WARNING]
 > These static file server methods are not thread-safe.
 
+<!-- -->
+
+> [!NOTE]
+> On POSIX systems, the static file server rejects requests that resolve (via symlinks) to a path outside the mounted base directory. Ensure that the served directory has appropriate permissions, as managing access to the served directory is the application developer's responsibility.
+
 ### File request handler
 
 ```cpp

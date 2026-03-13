@@ -1773,6 +1773,7 @@ private:
   struct MountPointEntry {
     std::string mount_point;
     std::string base_dir;
+    std::string resolved_base_dir;
     Headers headers;
   };
   std::vector<MountPointEntry> base_dirs_;
@@ -4834,6 +4835,30 @@ inline bool is_valid_path(const std::string &path) {
   }
 
   return true;
+}
+
+inline bool canonicalize_path(const char *path, std::string &resolved) {
+#if defined(_WIN32)
+  char buf[_MAX_PATH];
+  if (_fullpath(buf, path, _MAX_PATH) == nullptr) { return false; }
+  resolved = buf;
+#else
+  char buf[PATH_MAX];
+  if (realpath(path, buf) == nullptr) { return false; }
+  resolved = buf;
+#endif
+  return true;
+}
+
+inline bool is_path_within_base(const std::string &resolved_path,
+                                const std::string &resolved_base) {
+#if defined(_WIN32)
+  return _strnicmp(resolved_path.c_str(), resolved_base.c_str(),
+                   resolved_base.size()) == 0;
+#else
+  return strncmp(resolved_path.c_str(), resolved_base.c_str(),
+                 resolved_base.size()) == 0;
+#endif
 }
 
 inline FileStat::FileStat(const std::string &path) {
@@ -10550,7 +10575,18 @@ inline bool Server::set_mount_point(const std::string &mount_point,
   if (stat.is_dir()) {
     std::string mnt = !mount_point.empty() ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
-      base_dirs_.push_back({std::move(mnt), dir, std::move(headers)});
+      std::string resolved_base;
+      if (detail::canonicalize_path(dir.c_str(), resolved_base)) {
+#if defined(_WIN32)
+        if (resolved_base.back() != '\\' && resolved_base.back() != '/') {
+          resolved_base += '\\';
+        }
+#else
+        if (resolved_base.back() != '/') { resolved_base += '/'; }
+#endif
+      }
+      base_dirs_.push_back(
+          {std::move(mnt), dir, std::move(resolved_base), std::move(headers)});
       return true;
     }
   }
@@ -11129,6 +11165,18 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
       if (detail::is_valid_path(sub_path)) {
         auto path = entry.base_dir + sub_path;
         if (path.back() == '/') { path += "index.html"; }
+
+        // Defense-in-depth: is_valid_path blocks ".." traversal in the URL,
+        // but symlinks/junctions can still escape the base directory.
+        if (!entry.resolved_base_dir.empty()) {
+          std::string resolved_path;
+          if (detail::canonicalize_path(path.c_str(), resolved_path) &&
+              !detail::is_path_within_base(resolved_path,
+                                           entry.resolved_base_dir)) {
+            res.status = StatusCode::Forbidden_403;
+            return true;
+          }
+        }
 
         detail::FileStat stat(path);
 
