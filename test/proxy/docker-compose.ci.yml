@@ -1,0 +1,8 @@
+services:
+  squid_basic:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  squid_digest:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

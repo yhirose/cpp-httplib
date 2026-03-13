@@ -28,6 +28,10 @@ jobs:
     - name: Run proxy tests (OpenSSL)
       if: matrix.tls_backend == 'openssl'
       run: cd test && make proxy
+      env:
+        COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     - name: Run proxy tests (Mbed TLS)
       if: matrix.tls_backend == 'mbedtls'
       run: cd test && make proxy_mbedtls
+      env:
+        COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
