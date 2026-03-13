@@ -413,6 +413,19 @@ TEST(DecodePathTest, PercentCharacterNUL) {
   EXPECT_EQ(decode_path_component("x%00x"), expected);
 }
 
+TEST(DecodePathTest, UnicodeEncoding) {
+  // %u0041 = 'A' (1-byte UTF-8)
+  EXPECT_EQ("A", decode_path_component("%u0041"));
+  // %u00E9 = 'é' (2-byte UTF-8)
+  EXPECT_EQ(U8("é"), decode_path_component("%u00E9"));
+  // %u3042 = 'あ' (3-byte UTF-8)
+  EXPECT_EQ(U8("あ"), decode_path_component("%u3042"));
+  // %uFFFF = max 4-digit hex (3-byte UTF-8, must not overflow buff[4])
+  EXPECT_FALSE(decode_path_component("%uFFFF").empty());
+  // %uD800 = surrogate (invalid, silently dropped)
+  EXPECT_EQ("", decode_path_component("%uD800"));
+}
+
 TEST(SanitizeFilenameTest, VariousPatterns) {
   // Path traversal
   EXPECT_EQ("passwd", httplib::sanitize_filename("../../../etc/passwd"));
