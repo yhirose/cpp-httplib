@@ -413,6 +413,25 @@ TEST(DecodePathTest, PercentCharacterNUL) {
   EXPECT_EQ(decode_path_component("x%00x"), expected);
 }
 
+TEST(SanitizeFilenameTest, VariousPatterns) {
+  // Path traversal
+  EXPECT_EQ("passwd", httplib::sanitize_filename("../../../etc/passwd"));
+  EXPECT_EQ("passwd", httplib::sanitize_filename("..\\..\\etc\\passwd"));
+  EXPECT_EQ("file.txt", httplib::sanitize_filename("path/to\\..\\file.txt"));
+  // Normal and edge cases
+  EXPECT_EQ("photo.jpg", httplib::sanitize_filename("photo.jpg"));
+  EXPECT_EQ("filename.txt",
+            httplib::sanitize_filename("/path/to/filename.txt"));
+  EXPECT_EQ(".gitignore", httplib::sanitize_filename(".gitignore"));
+  EXPECT_EQ("", httplib::sanitize_filename(".."));
+  EXPECT_EQ("", httplib::sanitize_filename(""));
+  // Null bytes stripped
+  EXPECT_EQ("safe.txt",
+            httplib::sanitize_filename(std::string("safe\0.txt", 9)));
+  // Whitespace-only rejected
+  EXPECT_EQ("", httplib::sanitize_filename("   "));
+}
+
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 

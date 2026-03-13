@@ -2915,6 +2915,8 @@ std::string encode_query_component(const std::string &component,
 std::string decode_query_component(const std::string &component,
                                    bool plus_as_space = true);
 
+std::string sanitize_filename(const std::string &filename);
+
 std::string append_query_params(const std::string &path, const Params &params);
 
 std::pair<std::string, std::string> make_range_header(const Ranges &ranges);
@@ -9392,6 +9394,30 @@ inline std::string decode_query_component(const std::string &component,
       result += component[i];
     }
   }
+  return result;
+}
+
+inline std::string sanitize_filename(const std::string &filename) {
+  // Extract basename: find the last path separator (/ or \)
+  auto pos = filename.find_last_of("/\\");
+  auto result =
+      (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
+
+  // Strip null bytes
+  result.erase(std::remove(result.begin(), result.end(), '\0'), result.end());
+
+  // Trim whitespace
+  {
+    auto start = result.find_first_not_of(" \t");
+    auto end = result.find_last_not_of(" \t");
+    result = (start == std::string::npos)
+                 ? ""
+                 : result.substr(start, end - start + 1);
+  }
+
+  // Reject . and ..
+  if (result == "." || result == "..") { return ""; }
+
   return result;
 }
 

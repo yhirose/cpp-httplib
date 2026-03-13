@@ -541,16 +541,16 @@ svr.Post("/multipart", [&](const Request& req, Response& res) {
     }
 
     // IMPORTANT: file.filename is an untrusted value from the client.
-    // Always extract only the basename to prevent path traversal attacks.
-    auto safe_name = std::filesystem::path(file.filename).filename();
-    if (safe_name.empty() || safe_name == "." || safe_name == "..") {
+    // Always sanitize to prevent path traversal attacks.
+    auto safe_name = httplib::sanitize_filename(file.filename);
+    if (safe_name.empty()) {
       res.status = StatusCode::BadRequest_400;
       res.set_content("Invalid filename", "text/plain");
       return;
     }
 
     // Save to disk
-    std::ofstream ofs(upload_dir / safe_name, std::ios::binary);
+    std::ofstream ofs(upload_dir + "/" + safe_name, std::ios::binary);
     ofs << file.content;
   }
 
@@ -585,6 +585,16 @@ svr.Post("/multipart", [&](const Request& req, Response& res) {
   res.set_content("Upload successful", "text/plain");
 });
 ```
+
+#### Filename Sanitization
+
+`file.filename` in multipart uploads is an untrusted value from the client. Always sanitize before using it in file paths:
+
+```cpp
+auto safe = httplib::sanitize_filename(file.filename);
+```
+
+This function strips path separators (`/`, `\`), null bytes, leading/trailing whitespace, and rejects `.` and `..`. Returns an empty string if the filename is unsafe.
 
 ### Receive content with a content receiver
 
