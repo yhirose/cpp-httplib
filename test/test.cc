@@ -13051,6 +13051,66 @@ TEST(ClientInThreadTest, Issue2068) {
   }
 }
 
+TEST(RequestSmugglingTest, DuplicateContentLengthDifferentValues) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &) { handled = true; });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_FALSE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  // Two Content-Length headers with different values — must be rejected
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Length: 5\r\n"
+             "Content-Length: 10\r\n"
+             "\r\n"
+             "hello";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("HTTP/1.1 400 Bad Request",
+            response.substr(0, response.find("\r\n")));
+}
+
+TEST(RequestSmugglingTest, DuplicateContentLengthSameValues) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &res) {
+    handled = true;
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  // Two Content-Length headers with same value — should be accepted (RFC 9110)
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Content-Length: 5\r\n"
+             "Content-Length: 5\r\n"
+             "\r\n"
+             "hello";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
+}
+
 TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
   Server svr;
 
