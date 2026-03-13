@@ -2330,6 +2330,31 @@ TEST(RedirectToDifferentPort, Redirect) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+TEST(RedirectToDifferentPort, OverflowPortNumber) {
+  Server svr;
+  svr.Get("/redir", [&](const Request & /*req*/, Response &res) {
+    // Port number that overflows int — should not crash
+    res.set_redirect("http://localhost:99999999999999999999/target");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/redir");
+  // Should fail gracefully, not crash (no valid response due to bad port)
+  EXPECT_FALSE(res);
+}
+
 TEST(RedirectFromPageWithContent, Redirect) {
   Server svr;
 
@@ -9441,6 +9466,18 @@ TEST(HostAndPortPropertiesTest, NoSSLWithSimpleAPI) {
   ASSERT_EQ(1234, cli.port());
 }
 
+TEST(HostAndPortPropertiesTest, OverflowPortNumber) {
+  // Port number that overflows int — should not crash, client becomes invalid
+  httplib::Client cli("http://www.google.com:99999999999999999999");
+  ASSERT_FALSE(cli.is_valid());
+}
+
+TEST(HostAndPortPropertiesTest, PortOutOfRange) {
+  // Port 99999 exceeds valid range (1-65535) — should not crash
+  httplib::Client cli("http://www.google.com:99999");
+  ASSERT_FALSE(cli.is_valid());
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(HostAndPortPropertiesTest, SSL) {
   httplib::SSLClient cli("www.google.com");
@@ -16485,6 +16522,14 @@ TEST(WebSocketTest, InvalidURL) {
   // Missing host
   ws::WebSocketClient ws4("ws://:8080/path");
   EXPECT_FALSE(ws4.is_valid());
+
+  // Port number overflow — should not crash
+  ws::WebSocketClient ws5("ws://localhost:99999999999999999999/path");
+  EXPECT_FALSE(ws5.is_valid());
+
+  // Port out of range
+  ws::WebSocketClient ws6("ws://localhost:99999/path");
+  EXPECT_FALSE(ws6.is_valid());
 }
 
 TEST(WebSocketTest, UnsupportedScheme) {

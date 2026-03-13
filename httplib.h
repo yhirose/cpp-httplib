@@ -689,6 +689,14 @@ inline from_chars_result<double> from_chars(const char *first, const char *last,
   return {first + (endptr - s.c_str()), std::errc{}};
 }
 
+inline bool parse_port(const std::string &s, int &port) {
+  int val = 0;
+  auto r = from_chars(s.data(), s.data() + s.size(), val);
+  if (r.ec != std::errc{} || val < 1 || val > 65535) { return false; }
+  port = val;
+  return true;
+}
+
 } // namespace detail
 
 enum SSLVerifierResponse {
@@ -12722,7 +12730,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
   auto next_port = port_;
   if (!port_str.empty()) {
-    next_port = std::stoi(port_str);
+    if (!detail::parse_port(port_str, next_port)) { return false; }
   } else if (!next_scheme.empty()) {
     next_port = next_scheme == "https" ? 443 : 80;
   }
@@ -14493,7 +14501,8 @@ inline Client::Client(const std::string &scheme_host_port,
     if (host.empty()) { host = m[3].str(); }
 
     auto port_str = m[4].str();
-    auto port = !port_str.empty() ? std::stoi(port_str) : (is_ssl ? 443 : 80);
+    auto port = is_ssl ? 443 : 80;
+    if (!port_str.empty() && !detail::parse_port(port_str, port)) { return; }
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_SSL_ENABLED
@@ -19906,7 +19915,8 @@ inline WebSocketClient::WebSocketClient(
     if (host_.empty()) { host_ = m[3].str(); }
 
     auto port_str = m[4].str();
-    port_ = !port_str.empty() ? std::stoi(port_str) : (is_ssl ? 443 : 80);
+    port_ = is_ssl ? 443 : 80;
+    if (!port_str.empty() && !detail::parse_port(port_str, port_)) { return; }
 
     path_ = m[5].str();
 
