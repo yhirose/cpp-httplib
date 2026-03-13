@@ -689,12 +689,16 @@ inline from_chars_result<double> from_chars(const char *first, const char *last,
   return {first + (endptr - s.c_str()), std::errc{}};
 }
 
-inline bool parse_port(const std::string &s, int &port) {
+inline bool parse_port(const char *s, size_t len, int &port) {
   int val = 0;
-  auto r = from_chars(s.data(), s.data() + s.size(), val);
+  auto r = from_chars(s, s + len, val);
   if (r.ec != std::errc{} || val < 1 || val > 65535) { return false; }
   port = val;
   return true;
+}
+
+inline bool parse_port(const std::string &s, int &port) {
+  return parse_port(s.data(), s.size(), port);
 }
 
 } // namespace detail
@@ -5800,9 +5804,9 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
     memcpy((*current)->ai_addr, sockaddr_ptr, sockaddr_len);
 
     // Set port if service is specified
-    if (service && strlen(service) > 0) {
-      int port = atoi(service);
-      if (port > 0) {
+    if (service && *service) {
+      int port = 0;
+      if (parse_port(service, strlen(service), port)) {
         if (sockaddr_ptr->sa_family == AF_INET) {
           reinterpret_cast<struct sockaddr_in *>((*current)->ai_addr)
               ->sin_port = htons(static_cast<uint16_t>(port));
