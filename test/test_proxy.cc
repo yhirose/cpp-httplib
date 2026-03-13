@@ -109,6 +109,55 @@ TEST(RedirectTest, YouTubeSSLDigest) {
 
 // ----------------------------------------------------------------------------
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(RedirectTest, TLSVerificationOnProxyRedirect) {
+  // Untrusted HTTPS server with self-signed cert
+  SSLServer untrusted_svr("cert.pem", "key.pem");
+  untrusted_svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("MITM'd", "text/plain");
+  });
+
+  auto untrusted_port = untrusted_svr.bind_to_any_port("0.0.0.0");
+  auto t1 = thread([&]() { untrusted_svr.listen_after_bind(); });
+  auto se1 = detail::scope_exit([&] {
+    untrusted_svr.stop();
+    t1.join();
+  });
+
+  // HTTP server that redirects to the untrusted HTTPS server
+  // Use host.docker.internal so the proxy container can reach the host
+  Server redirect_svr;
+  redirect_svr.Get("/", [&](const Request &, Response &res) {
+    res.set_redirect(
+        "https://host.docker.internal:" + to_string(untrusted_port) + "/");
+  });
+
+  auto redirect_port = redirect_svr.bind_to_any_port("0.0.0.0");
+  auto t2 = thread([&]() { redirect_svr.listen_after_bind(); });
+  auto se2 = detail::scope_exit([&] {
+    redirect_svr.stop();
+    t2.join();
+  });
+
+  // Wait until servers are up
+  untrusted_svr.wait_until_ready();
+  redirect_svr.wait_until_ready();
+
+  // Client with proxy + follow_location, verification ON (default)
+  Client cli("host.docker.internal", redirect_port);
+  cli.set_proxy("localhost", 3128);
+  cli.set_proxy_basic_auth("hello", "world");
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/");
+
+  // Self-signed cert must be rejected
+  ASSERT_TRUE(res == nullptr);
+}
+#endif
+
+// ----------------------------------------------------------------------------
+
 template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
   cli.set_proxy("localhost", 3128);
   cli.set_proxy_basic_auth("hello", "world");
