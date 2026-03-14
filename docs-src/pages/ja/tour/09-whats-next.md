@@ -60,7 +60,7 @@ svr.Get("/stream", [](const auto &, auto &res) {
 ```cpp
 httplib::Client cli("http://localhost:8080");
 
-auto res = cli.Post("/upload", {}, {
+auto res = cli.Post("/upload", {}, {}, {
     httplib::make_file_provider("file", "/path/to/large-file.zip")
 });
 ```
@@ -160,16 +160,16 @@ svr.set_post_routing_handler([](const auto &req, auto &res) {
 });
 ```
 
-`req.user_data` を使うと、ミドルウェアからハンドラーにデータを渡せます。認証トークンのデコード結果を共有するときに便利です。
+`res.user_data` を使うと、ミドルウェアからハンドラーにデータを渡せます。認証トークンのデコード結果を共有するときに便利です。
 
 ```cpp
 svr.set_pre_routing_handler([](const auto &req, auto &res) {
-    req.user_data["auth_user"] = std::string("alice");
+    res.user_data["auth_user"] = std::string("alice");
     return httplib::Server::HandlerResponse::Unhandled;
 });
 
 svr.Get("/me", [](const auto &req, auto &res) {
-    auto user = std::any_cast<std::string>(req.user_data.at("auth_user"));
+    auto user = std::any_cast<std::string>(res.user_data.at("auth_user"));
     res.set_content("Hello, " + user, "text/plain");
 });
 ```

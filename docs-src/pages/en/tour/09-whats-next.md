@@ -60,7 +60,7 @@ For uploading large files, `make_file_provider()` comes in handy. It streams the
 ```cpp
 httplib::Client cli("http://localhost:8080");
 
-auto res = cli.Post("/upload", {}, {
+auto res = cli.Post("/upload", {}, {}, {
     httplib::make_file_provider("file", "/path/to/large-file.zip")
 });
 ```
@@ -160,16 +160,16 @@ svr.set_post_routing_handler([](const auto &req, auto &res) {
 });
 ```
 
-Use `req.user_data` to pass data from middleware to handlers. This is useful for sharing things like decoded auth tokens.
+Use `res.user_data` to pass data from middleware to handlers. This is useful for sharing things like decoded auth tokens.
 
 ```cpp
 svr.set_pre_routing_handler([](const auto &req, auto &res) {
-    req.user_data["auth_user"] = std::string("alice");
+    res.user_data["auth_user"] = std::string("alice");
     return httplib::Server::HandlerResponse::Unhandled;
 });
 
 svr.Get("/me", [](const auto &req, auto &res) {
-    auto user = std::any_cast<std::string>(req.user_data.at("auth_user"));
+    auto user = std::any_cast<std::string>(res.user_data.at("auth_user"));
     res.set_content("Hello, " + user, "text/plain");
 });
 ```

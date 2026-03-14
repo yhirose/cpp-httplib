@@ -24,7 +24,7 @@ A collection of recipes that answer "How do I...?" questions. Each recipe is sel
 
 ### Streaming & Progress
 - Receive a response as a stream
-- Use the progress callback (`set_progress`)
+- Use the progress callback (`DownloadProgress` / `UploadProgress`)
 
 ### Connection & Performance
 - Set timeouts (`set_connection_timeout` / `set_read_timeout`)
@@ -90,6 +90,6 @@ A collection of recipes that answer "How do I...?" questions. Each recipe is sel
 ## WebSocket
 
 - Implement a WebSocket echo server and client
-- Configure heartbeats (`set_websocket_ping_interval`)
+- Configure heartbeats (`set_websocket_ping_interval` / `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND`)
 - Handle connection close
 - Send and receive binary frames

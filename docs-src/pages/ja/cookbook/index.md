@@ -24,7 +24,7 @@ order: 0
 
 ### ストリーミング・進捗
 - レスポンスをストリーミングで受信する
-- 進捗コールバックを使う（`set_progress`）
+- 進捗コールバックを使う（`DownloadProgress` / `UploadProgress`）
 
 ### 接続・パフォーマンス
 - タイムアウトを設定する（`set_connection_timeout` / `set_read_timeout`）
@@ -90,6 +90,6 @@ order: 0
 ## WebSocket
 
 - WebSocket エコーサーバー／クライアントを実装する
-- ハートビートを設定する（`set_websocket_ping_interval`）
+- ハートビートを設定する（`set_websocket_ping_interval` / `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND`）
 - 接続クローズをハンドリングする
 - バイナリフレームを送受信する
