@@ -2569,7 +2569,7 @@ TEST(PathUrlEncodeTest, IncludePercentEncodingLF) {
   }
 }
 
-TEST(BindServerTest, DISABLED_BindDualStack) {
+TEST(BindServerTest, BindDualStack) {
   Server svr;
 
   svr.Get("/1", [&](const Request & /*req*/, Response &res) {
@@ -10781,38 +10781,6 @@ TEST(ClientImplMethods, GetSocketTest) {
     ASSERT_TRUE(cli.socket() != INVALID_SOCKET);
   }
 }
-
-// Disabled due to out-of-memory problem on GitHub Actions
-#ifdef _WIN64
-TEST(ServerLargeContentTest, DISABLED_SendLargeContent) {
-  // allocate content size larger than 2GB in memory
-  const size_t content_size = 2LL * 1024LL * 1024LL * 1024LL + 1LL;
-  char *content = (char *)malloc(content_size);
-  ASSERT_TRUE(content);
-
-  Server svr;
-  svr.Get("/foo",
-          [=](const httplib::Request & /*req*/, httplib::Response &res) {
-            res.set_content(content, content_size, "application/octet-stream");
-          });
-
-  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    if (content) free(content);
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  Client cli(HOST, PORT);
-  auto res = cli.Get("/foo");
-  ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(content_size, res->body.length());
-}
-#endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(YahooRedirectTest2, SimpleInterface_Online) {
