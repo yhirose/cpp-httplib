@@ -64,26 +64,14 @@ if (auto res = cli.Get("/hi")) {
 
 cpp-httplib supports multiple TLS backends through an abstraction layer:
 
-| Backend | Define | Libraries |
-| :------ | :----- | :-------- |
-| OpenSSL | `CPPHTTPLIB_OPENSSL_SUPPORT` | `libssl`, `libcrypto` |
-| Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` |
-| wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` |
+| Backend | Define | Libraries | Notes |
+| :------ | :----- | :-------- | :---- |
+| OpenSSL | `CPPHTTPLIB_OPENSSL_SUPPORT` | `libssl`, `libcrypto` | [3.0 or later](https://www.openssl.org/policies/releasestrat.html) required |
+| Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` | 2.x and 3.x supported (auto-detected) |
+| wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` | 5.x supported; must build with `--enable-opensslall` |
 
 > [!NOTE]
-> OpenSSL 3.0 or later is required. Please see [this page](https://www.openssl.org/policies/releasestrat.html) for more information.
-
-> [!NOTE]
-> Mbed TLS 2.x and 3.x are supported. The library automatically detects the version and uses the appropriate API.
-
-> [!NOTE]
-> wolfSSL must be built with OpenSSL compatibility layer enabled (`--enable-opensslall`). wolfSSL 5.x is supported.
-
-> [!NOTE]
-> **Mbed TLS / wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()` or `load_ca_cert_store(pem, size)`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable with these backends.
-
-> [!TIP]
-> For macOS: cpp-httplib automatically loads system certs from the Keychain when a TLS backend is enabled. `CoreFoundation` and `Security` must be linked with `-framework`. To disable this, define `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`.
+> **Mbed TLS / wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable.
 
 ```c++
 // Use either OpenSSL, Mbed TLS, or wolfSSL
@@ -197,25 +185,19 @@ svr.Get("/", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
-### Windows Certificate Verification
+### Platform-specific Certificate Handling
 
-On Windows, cpp-httplib automatically performs additional certificate verification using the Windows certificate store via CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`). This works with all TLS backends (OpenSSL, Mbed TLS, and wolfSSL), providing:
+cpp-httplib automatically integrates with the OS certificate store on macOS and Windows. This works with all TLS backends.
 
-- Real-time certificate validation integrated with Windows Update
-- Certificate revocation checking
-- SSL/TLS policy verification using the system certificate store (ROOT and CA)
+| Platform | Behavior | Disable (compile time) |
+| :------- | :------- | :--------------------- |
+| macOS | Loads system certs from Keychain (link `CoreFoundation` and `Security` with `-framework`) | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
+| Windows | Verifies certs via CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`) with revocation checking | `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` |
 
-This feature is enabled by default and can be controlled at runtime:
+On Windows, verification can also be disabled at runtime:
 
 ```c++
-// Disable Windows certificate verification (use only OpenSSL/Mbed TLS/wolfSSL verification)
 cli.enable_windows_certificate_verification(false);
-```
-
-To disable this feature at compile time, define:
-
-```c++
-#define CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 ```
 
 > [!NOTE]
