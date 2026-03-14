@@ -45,7 +45,7 @@ cpp-httplib provides multiple API layers for different use cases:
 
 ```text
 ┌─────────────────────────────────────────────┐
-│  SSEClient (planned)                        │  ← SSE-specific, parsed events
+│  SSEClient                        │  ← SSE-specific, parsed events
 │  - on_message(), on_event()                 │
 │  - Auto-reconnect, Last-Event-ID            │
 ├─────────────────────────────────────────────┤
@@ -61,7 +61,7 @@ cpp-httplib provides multiple API layers for different use cases:
 
 | Use Case | Recommended API |
 |----------|----------------|
-| SSE with auto-reconnect | SSEClient (planned) or `ssecli-stream.cc` example |
+| SSE with auto-reconnect | `SSEClient` (see [README-sse.md](README-sse.md)) |
 | LLM streaming (JSON Lines) | `stream::Get()` |
 | Large file download | `stream::Get()` or `open_stream()` |
 | Reverse proxy | `open_stream()` |

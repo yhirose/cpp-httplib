@@ -344,3 +344,25 @@ TEST(KeepAliveTest, SSLWithDigest) {
   KeepAliveTest(cli, false);
 }
 #endif
+
+// ----------------------------------------------------------------------------
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(ProxyTest, SSLOpenStream) {
+  SSLClient cli("nghttp2.org");
+  cli.set_proxy("localhost", 3128);
+  cli.set_proxy_basic_auth("hello", "world");
+
+  auto handle = cli.open_stream("GET", "/httpbin/get");
+  ASSERT_TRUE(handle.response);
+  EXPECT_EQ(StatusCode::OK_200, handle.response->status);
+
+  std::string body;
+  char buf[8192];
+  ssize_t n;
+  while ((n = handle.read(buf, sizeof(buf))) > 0) {
+    body.append(buf, static_cast<size_t>(n));
+  }
+  EXPECT_FALSE(body.empty());
+}
+#endif

@@ -12413,6 +12413,7 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
   handle.response = detail::make_unique<Response>();
   handle.error = Error::Success;
 
+  auto start_time = std::chrono::steady_clock::now();
   auto query_path = params.empty() ? path : append_query_params(path, params);
   handle.connection_ = detail::make_unique<ClientConnection>();
 
@@ -12446,6 +12447,13 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
       if (is_ssl()) {
         auto &scli = static_cast<SSLClient &>(*this);
         if (!proxy_host_.empty() && proxy_port_ != -1) {
+          auto success = false;
+          if (!scli.connect_with_proxy(socket_, start_time, *handle.response,
+                                       success, handle.error)) {
+            if (!success) { handle.response.reset(); }
+            return handle;
+          }
+
           if (!scli.initialize_ssl(socket_, handle.error)) {
             handle.response.reset();
             return handle;
