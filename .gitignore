@@ -1,4 +1,7 @@
 tags
+AGENTS.md
+docs-src/pages/AGENTS.md
+plans/
 
 # Ignore executables (no extension) but not source files
 example/server
