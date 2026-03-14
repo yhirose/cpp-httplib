@@ -12731,7 +12731,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   if (res.get_header_value("Connection") == "close" ||
       (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
-    // TODO this requires a not-entirely-obvious chain of calls to be correct
+    // NOTE: this requires a not-entirely-obvious chain of calls to be correct
     // for this to be safe.
 
     // This is safe to call because handle_request is only called by send_
