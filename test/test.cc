@@ -13968,7 +13968,7 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
 #endif
 
   auto server_thread = serve_single_response(
-      PORT + 2, "HTTP/1.1 200 OK\r\n"
+      PORT + 4, "HTTP/1.1 200 OK\r\n"
                 "Content-Type: text/plain\r\n"
                 "Content-Length: 99999999999999999999999999\r\n"
                 "Connection: close\r\n"
@@ -13981,7 +13981,7 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   // crash the process. After the fix, strtoull silently clamps to
   // ULLONG_MAX so the stream opens without crashing. The important thing
   // is that the process does NOT terminate.
-  Client cli("127.0.0.1", PORT + 2);
+  Client cli("127.0.0.1", PORT + 4);
   auto handle = cli.open_stream("GET", "/");
   EXPECT_TRUE(handle.is_valid());
 
