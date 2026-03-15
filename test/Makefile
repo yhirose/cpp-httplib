@@ -219,6 +219,16 @@ style_check: $(STYLE_CHECK_FILES)
 		echo "All files are properly formatted."; \
 	fi
 
+BENCHMARK_LIBS = -lpthread
+ifneq ($(OS), Windows_NT)
+	ifeq ($(shell uname -s), Darwin)
+		BENCHMARK_LIBS += -framework CoreFoundation -framework CFNetwork
+	endif
+endif
+
+test_benchmark : test_benchmark.cc ../httplib.h Makefile
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test_benchmark.cc gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(BENCHMARK_LIBS)
+
 test_websocket_heartbeat : test_websocket_heartbeat.cc ../httplib.h Makefile
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_websocket_heartbeat.cc $(TEST_ARGS)
 	@file $@
@@ -254,5 +264,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl test_benchmark server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
 

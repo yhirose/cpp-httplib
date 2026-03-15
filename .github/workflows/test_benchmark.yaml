@@ -1,0 +1,79 @@
+name: benchmark
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: build and run
+        run: cd test && make test_benchmark && ./test_benchmark
+
+  macos:
+    runs-on: macos-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: build and run
+        run: cd test && make test_benchmark && ./test_benchmark
+
+  windows:
+    runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    steps:
+      - name: Prepare Git for Checkout on Windows
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Cache vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: C:/vcpkg/installed
+          key: vcpkg-installed-windows-gtest
+      - name: Install vcpkg dependencies
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: vcpkg install gtest
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          $cmake_content = @"
+          cmake_minimum_required(VERSION 3.14)
+          project(httplib-benchmark CXX)
+          find_package(GTest REQUIRED)
+          add_executable(httplib-benchmark test/test_benchmark.cc)
+          target_include_directories(httplib-benchmark PRIVATE .)
+          target_link_libraries(httplib-benchmark PRIVATE GTest::gtest_main)
+          target_compile_options(httplib-benchmark PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+          "@
+          New-Item -ItemType Directory -Force -Path build_bench/test | Out-Null
+          Set-Content -Path build_bench/CMakeLists.txt -Value $cmake_content
+          Copy-Item -Path httplib.h -Destination build_bench/
+          Copy-Item -Path test/test_benchmark.cc -Destination build_bench/test/
+          cmake -B build_bench/build -S build_bench `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --build build_bench/build --config Release
+      - name: Run with retry
+        run: ctest --output-on-failure --test-dir build_bench/build -C Release --repeat until-pass:5
+    env:
+      VCPKG_ROOT: "C:/vcpkg"
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"

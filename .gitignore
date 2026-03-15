@@ -51,6 +51,7 @@ test/test_split_wolfssl
 test/test_split_no_tls
 test/test_websocket_heartbeat
 test/test_thread_pool
+test/test_benchmark
 test/test.xcodeproj/xcuser*
 test/test.xcodeproj/*/xcuser*
 test/*.o

@@ -36,6 +36,7 @@ others:
     @(cd test && make fuzz_test)
     @(cd test && make test_websocket_heartbeat && ./test_websocket_heartbeat)
     @(cd test && make test_thread_pool && ./test_thread_pool)
+    @(cd test && make test_benchmark && ./test_benchmark)
 
 build:
     @(cd test && make test_split)

@@ -228,7 +228,7 @@ jobs:
         for ($i = 0; $i -lt $shards; $i++) {
           $log = "shard_${i}.log"
           $procs += Start-Process -FilePath ./Release/httplib-test.exe `
-            -ArgumentList "--gtest_color=yes","--gtest_filter=${{ github.event.inputs.gtest_filter || '*' }}-*BenchmarkTest*" `
+            -ArgumentList "--gtest_color=yes","--gtest_filter=${{ github.event.inputs.gtest_filter || '*' }}" `
             -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError "${log}.err" `
             -Environment @{ GTEST_TOTAL_SHARDS="$shards"; GTEST_SHARD_INDEX="$i" }
         }
@@ -248,9 +248,6 @@ jobs:
         }
         if ($failed) { exit 1 }
         Write-Host "All shards passed."
-    - name: Run benchmark tests with retry ${{ matrix.config.name }}
-      if: ${{ matrix.config.run_tests }}
-      run: ctest --output-on-failure --test-dir build -C Release -R "BenchmarkTest" --repeat until-pass:5
 
     env:
       VCPKG_ROOT: "C:/vcpkg"
