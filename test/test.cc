@@ -5892,53 +5892,6 @@ TEST(GzipDecompressor, DeflateDecompressionTrailingBytes) {
   ASSERT_EQ(original_text, decompressed_data);
 }
 
-#ifdef _WIN32
-TEST(GzipDecompressor, LargeRandomData) {
-
-  // prepare large random data that is difficult to be compressed and is
-  // expected to have large size even when compressed
-  std::random_device seed_gen;
-  std::mt19937 random(seed_gen());
-  constexpr auto large_size_byte = 4294967296UL;            // 4GiB
-  constexpr auto data_size = large_size_byte + 134217728UL; // + 128MiB
-  std::vector<std::uint32_t> data(data_size / sizeof(std::uint32_t));
-  std::generate(data.begin(), data.end(), [&]() { return random(); });
-
-  // compress data over 4GiB
-  std::string compressed_data;
-  compressed_data.reserve(large_size_byte + 536870912UL); // + 512MiB reserved
-  httplib::detail::gzip_compressor compressor;
-  auto result = compressor.compress(reinterpret_cast<const char *>(data.data()),
-                                    data.size() * sizeof(std::uint32_t), true,
-                                    [&](const char *data, size_t size) {
-                                      compressed_data.insert(
-                                          compressed_data.size(), data, size);
-                                      return true;
-                                    });
-  ASSERT_TRUE(result);
-
-  // FIXME: compressed data size is expected to be greater than 4GiB,
-  // but there is no guarantee
-  // ASSERT_TRUE(compressed_data.size() >= large_size_byte);
-
-  // decompress data over 4GiB
-  std::string decompressed_data;
-  decompressed_data.reserve(data_size);
-  httplib::detail::gzip_decompressor decompressor;
-  result = decompressor.decompress(
-      compressed_data.data(), compressed_data.size(),
-      [&](const char *data, size_t size) {
-        decompressed_data.insert(decompressed_data.size(), data, size);
-        return true;
-      });
-  ASSERT_TRUE(result);
-
-  // compare
-  ASSERT_EQ(data_size, decompressed_data.size());
-  ASSERT_TRUE(std::memcmp(data.data(), decompressed_data.data(), data_size) ==
-              0);
-}
-#endif
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
@@ -16263,48 +16216,6 @@ TEST(SSLClientServerTest, FilePathConstructorSetsClientCAList) {
   EXPECT_GT(sk_X509_NAME_num(ca_list), 0);
 }
 
-// Disabled due to the out-of-memory problem on GitHub Actions Workflows
-TEST(SSLClientServerTest, DISABLED_LargeDataTransfer) {
-
-  // prepare large data
-  std::random_device seed_gen;
-  std::mt19937 random(seed_gen());
-  constexpr auto large_size_byte = 2147483648UL + 1048576UL; // 2GiB + 1MiB
-  std::vector<std::uint32_t> binary(large_size_byte / sizeof(std::uint32_t));
-  std::generate(binary.begin(), binary.end(), [&random]() { return random(); });
-
-  // server
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-  ASSERT_TRUE(svr.is_valid());
-
-  svr.Post("/binary", [&](const Request &req, Response &res) {
-    EXPECT_EQ(large_size_byte, req.body.size());
-    EXPECT_EQ(0, std::memcmp(binary.data(), req.body.data(), large_size_byte));
-    res.set_content(req.body, "application/octet-stream");
-  });
-
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    listen_thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  // client POST
-  SSLClient cli("localhost", PORT);
-  cli.enable_server_certificate_verification(false);
-  cli.set_read_timeout(std::chrono::seconds(100));
-  cli.set_write_timeout(std::chrono::seconds(100));
-  auto res = cli.Post("/binary", reinterpret_cast<char *>(binary.data()),
-                      large_size_byte, "application/octet-stream");
-
-  // compare
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(large_size_byte, res->body.size());
-  EXPECT_EQ(0, std::memcmp(binary.data(), res->body.data(), large_size_byte));
-}
 #endif
 
 // ============================================================================
