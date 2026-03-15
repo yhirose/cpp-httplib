@@ -6471,33 +6471,114 @@ inline bool can_compress_content_type(const std::string &content_type) {
   }
 }
 
+inline bool parse_quality(const char *b, const char *e, std::string &token,
+                          double &quality) {
+  quality = 1.0;
+  token.clear();
+
+  // Split on first ';': left = token name, right = parameters
+  const char *params_b = nullptr;
+  std::size_t params_len = 0;
+
+  divide(
+      b, static_cast<std::size_t>(e - b), ';',
+      [&](const char *lb, std::size_t llen, const char *rb, std::size_t rlen) {
+        auto r = trim(lb, lb + llen, 0, llen);
+        if (r.first < r.second) { token.assign(lb + r.first, lb + r.second); }
+        params_b = rb;
+        params_len = rlen;
+      });
+
+  if (token.empty()) { return false; }
+  if (params_len == 0) { return true; }
+
+  // Scan parameters for q= (stops on first match)
+  bool invalid = false;
+  split_find(params_b, params_b + params_len, ';',
+             (std::numeric_limits<size_t>::max)(),
+             [&](const char *pb, const char *pe) -> bool {
+               // Match exactly "q=" or "Q=" (not "query=" etc.)
+               auto len = static_cast<size_t>(pe - pb);
+               if (len < 2) { return false; }
+               if ((pb[0] != 'q' && pb[0] != 'Q') || pb[1] != '=') {
+                 return false;
+               }
+
+               // Trim the value portion
+               auto r = trim(pb, pe, 2, len);
+               if (r.first >= r.second) {
+                 invalid = true;
+                 return true;
+               }
+
+               double v = 0.0;
+               auto res = from_chars(pb + r.first, pb + r.second, v);
+               if (res.ec != std::errc{} || v < 0.0 || v > 1.0) {
+                 invalid = true;
+                 return true;
+               }
+               quality = v;
+               return true;
+             });
+
+  return !invalid;
+}
+
 inline EncodingType encoding_type(const Request &req, const Response &res) {
-  auto ret =
-      detail::can_compress_content_type(res.get_header_value("Content-Type"));
-  if (!ret) { return EncodingType::None; }
+  if (!can_compress_content_type(res.get_header_value("Content-Type"))) {
+    return EncodingType::None;
+  }
 
   const auto &s = req.get_header_value("Accept-Encoding");
-  (void)(s);
+  if (s.empty()) { return EncodingType::None; }
 
+  // Single-pass: iterate tokens and track the best supported encoding.
+  // Server preference breaks ties (br > gzip > zstd).
+  EncodingType best = EncodingType::None;
+  double best_q = 0.0; // q=0 means "not acceptable"
+
+  // Server preference: Brotli > Gzip > Zstd (lower = more preferred)
+  auto priority = [](EncodingType t) -> int {
+    switch (t) {
+    case EncodingType::Brotli: return 0;
+    case EncodingType::Gzip: return 1;
+    case EncodingType::Zstd: return 2;
+    default: return 3;
+    }
+  };
+
+  std::string name;
+  split(s.data(), s.data() + s.size(), ',', [&](const char *b, const char *e) {
+    double quality = 1.0;
+    if (!parse_quality(b, e, name, quality)) { return; }
+    if (quality <= 0.0) { return; }
+
+    EncodingType type = EncodingType::None;
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
-  // TODO: 'Accept-Encoding' has br, not br;q=0
-  ret = s.find("br") != std::string::npos;
-  if (ret) { return EncodingType::Brotli; }
+    if (case_ignore::equal(name, "br")) { type = EncodingType::Brotli; }
 #endif
-
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  // TODO: 'Accept-Encoding' has gzip, not gzip;q=0
-  ret = s.find("gzip") != std::string::npos;
-  if (ret) { return EncodingType::Gzip; }
+    if (type == EncodingType::None && case_ignore::equal(name, "gzip")) {
+      type = EncodingType::Gzip;
+    }
 #endif
-
 #ifdef CPPHTTPLIB_ZSTD_SUPPORT
-  // TODO: 'Accept-Encoding' has zstd, not zstd;q=0
-  ret = s.find("zstd") != std::string::npos;
-  if (ret) { return EncodingType::Zstd; }
+    if (type == EncodingType::None && case_ignore::equal(name, "zstd")) {
+      type = EncodingType::Zstd;
+    }
 #endif
 
-  return EncodingType::None;
+    if (type == EncodingType::None) { return; }
+
+    // Higher q-value wins; for equal q, server preference breaks ties
+    if (quality > best_q ||
+        (quality == best_q && priority(type) < priority(best))) {
+      best_q = quality;
+      best = type;
+    }
+  });
+
+  return best;
 }
 
 inline bool nocompressor::compress(const char *data, size_t data_length,
@@ -7613,7 +7694,7 @@ inline bool parse_accept_header(const std::string &s,
   struct AcceptEntry {
     std::string media_type;
     double quality;
-    int order; // Original order in header
+    int order;
   };
 
   std::vector<AcceptEntry> entries;
@@ -7631,48 +7712,12 @@ inline bool parse_accept_header(const std::string &s,
     }
 
     AcceptEntry accept_entry;
-    accept_entry.quality = 1.0; // Default quality
     accept_entry.order = order++;
 
-    // Find q= parameter
-    auto q_pos = entry.find(";q=");
-    if (q_pos == std::string::npos) { q_pos = entry.find("; q="); }
-
-    if (q_pos != std::string::npos) {
-      // Extract media type (before q parameter)
-      accept_entry.media_type = trim_copy(entry.substr(0, q_pos));
-
-      // Extract quality value
-      auto q_start = entry.find('=', q_pos) + 1;
-      auto q_end = entry.find(';', q_start);
-      if (q_end == std::string::npos) { q_end = entry.length(); }
-
-      std::string quality_str =
-          trim_copy(entry.substr(q_start, q_end - q_start));
-      if (quality_str.empty()) {
-        has_invalid_entry = true;
-        return;
-      }
-
-      {
-        double v = 0.0;
-        auto res = detail::from_chars(
-            quality_str.data(), quality_str.data() + quality_str.size(), v);
-        if (res.ec == std::errc{}) {
-          accept_entry.quality = v;
-        } else {
-          has_invalid_entry = true;
-          return;
-        }
-      }
-      // Check if quality is in valid range [0.0, 1.0]
-      if (accept_entry.quality < 0.0 || accept_entry.quality > 1.0) {
-        has_invalid_entry = true;
-        return;
-      }
-    } else {
-      // No quality parameter, use entire entry as media type
-      accept_entry.media_type = entry;
+    if (!parse_quality(entry.data(), entry.data() + entry.size(),
+                       accept_entry.media_type, accept_entry.quality)) {
+      has_invalid_entry = true;
+      return;
     }
 
     // Remove additional parameters from media type

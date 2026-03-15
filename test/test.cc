@@ -1267,6 +1267,89 @@ TEST(ParseAcceptEncoding3, AcceptEncoding) {
 #endif
 }
 
+TEST(ParseAcceptEncoding4, AcceptEncodingQZero) {
+  // All supported encodings rejected with q=0 should return None
+  Request req;
+  req.set_header("Accept-Encoding", "gzip;q=0, br;q=0, zstd;q=0, deflate");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+}
+
+TEST(ParseAcceptEncoding5, AcceptEncodingQZeroVariants) {
+  // q=0.0, q=0.00, q=0.000 should also be treated as rejected
+  Request req;
+  req.set_header("Accept-Encoding", "gzip;q=0.000, br;q=0.0, zstd;q=0.00");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+}
+
+TEST(ParseAcceptEncoding6, AcceptEncodingXGzipQZero) {
+  // x-gzip;q=0 should not cause "gzip" to be incorrectly detected
+  Request req;
+  req.set_header("Accept-Encoding", "x-gzip;q=0");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+}
+
+TEST(ParseAcceptEncoding7, AcceptEncodingCaseInsensitive) {
+  // RFC 7231: Accept-Encoding values are case-insensitive
+  Request req;
+  req.set_header("Accept-Encoding", "GZIP, BR, ZSTD");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Brotli);
+#elif CPPHTTPLIB_ZLIB_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#elif CPPHTTPLIB_ZSTD_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Zstd);
+#else
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+#endif
+}
+
+TEST(ParseAcceptEncoding8, AcceptEncodingQValuePriority) {
+  // q value should determine priority, not hardcoded order
+  Request req;
+  req.set_header("Accept-Encoding", "br;q=0.5, gzip;q=1.0, zstd;q=0.8");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  auto ret = detail::encoding_type(req, res);
+
+  // gzip has highest q=1.0, so it should be selected even though
+  // br and zstd are also supported
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Gzip);
+#elif CPPHTTPLIB_ZSTD_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Zstd);
+#elif CPPHTTPLIB_BROTLI_SUPPORT
+  EXPECT_TRUE(ret == detail::EncodingType::Brotli);
+#else
+  EXPECT_TRUE(ret == detail::EncodingType::None);
+#endif
+}
+
 TEST(BufferStreamTest, read) {
   detail::BufferStream strm1;
   Stream &strm = strm1;
