@@ -1670,6 +1670,11 @@ public:
 
   Server &set_payload_max_length(size_t length);
 
+  Server &set_websocket_ping_interval(time_t sec);
+  template <class Rep, class Period>
+  Server &set_websocket_ping_interval(
+      const std::chrono::duration<Rep, Period> &duration);
+
   bool bind_to_port(const std::string &host, int port, int socket_flags = 0);
   int bind_to_any_port(const std::string &host, int socket_flags = 0);
   bool listen_after_bind();
@@ -1704,6 +1709,8 @@ protected:
   time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+  time_t websocket_ping_interval_sec_ =
+      CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
 
 private:
   using Handlers =
@@ -3729,15 +3736,19 @@ private:
   friend class httplib::Server;
   friend class WebSocketClient;
 
-  WebSocket(Stream &strm, const Request &req, bool is_server)
-      : strm_(strm), req_(req), is_server_(is_server) {
+  WebSocket(
+      Stream &strm, const Request &req, bool is_server,
+      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND)
+      : strm_(strm), req_(req), is_server_(is_server),
+        ping_interval_sec_(ping_interval_sec) {
     start_heartbeat();
   }
 
-  WebSocket(std::unique_ptr<Stream> &&owned_strm, const Request &req,
-            bool is_server)
+  WebSocket(
+      std::unique_ptr<Stream> &&owned_strm, const Request &req, bool is_server,
+      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND)
       : strm_(*owned_strm), owned_strm_(std::move(owned_strm)), req_(req),
-        is_server_(is_server) {
+        is_server_(is_server), ping_interval_sec_(ping_interval_sec) {
     start_heartbeat();
   }
 
@@ -3748,6 +3759,7 @@ private:
   std::unique_ptr<Stream> owned_strm_;
   Request req_;
   bool is_server_;
+  time_t ping_interval_sec_;
   std::atomic<bool> closed_{false};
   std::mutex write_mutex_;
   std::thread ping_thread_;
@@ -3776,6 +3788,7 @@ public:
   const std::string &subprotocol() const;
   void set_read_timeout(time_t sec, time_t usec = 0);
   void set_write_timeout(time_t sec, time_t usec = 0);
+  void set_websocket_ping_interval(time_t sec);
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   void set_ca_cert_path(const std::string &path);
@@ -3799,6 +3812,8 @@ private:
   time_t read_timeout_usec_ = 0;
   time_t write_timeout_sec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_SECOND;
   time_t write_timeout_usec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_USECOND;
+  time_t websocket_ping_interval_sec_ =
+      CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   bool is_ssl_ = false;
@@ -10814,6 +10829,20 @@ inline Server &Server::set_payload_max_length(size_t length) {
   return *this;
 }
 
+inline Server &Server::set_websocket_ping_interval(time_t sec) {
+  websocket_ping_interval_sec_ = sec;
+  return *this;
+}
+
+template <class Rep, class Period>
+inline Server &Server::set_websocket_ping_interval(
+    const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(duration, [&](time_t sec, time_t /*usec*/) {
+    set_websocket_ping_interval(sec);
+  });
+  return *this;
+}
+
 inline bool Server::bind_to_port(const std::string &host, int port,
                                  int socket_flags) {
   auto ret = bind_internal(host, port, socket_flags);
@@ -11964,7 +11993,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         {
           // Use WebSocket-specific read timeout instead of HTTP timeout
           strm.set_read_timeout(CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND, 0);
-          ws::WebSocket ws(strm, req, true);
+          ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_);
           entry.handler(req, ws);
         }
         return true;
@@ -20017,11 +20046,11 @@ inline WebSocket::~WebSocket() {
 }
 
 inline void WebSocket::start_heartbeat() {
+  if (ping_interval_sec_ == 0) { return; }
   ping_thread_ = std::thread([this]() {
     std::unique_lock<std::mutex> lock(ping_mutex_);
     while (!closed_) {
-      ping_cv_.wait_for(lock, std::chrono::seconds(
-                                  CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND));
+      ping_cv_.wait_for(lock, std::chrono::seconds(ping_interval_sec_));
       if (closed_) { break; }
       lock.unlock();
       if (!send_frame(Opcode::Ping, nullptr, 0)) {
@@ -20159,7 +20188,8 @@ inline bool WebSocketClient::connect() {
   Request req;
   req.method = "GET";
   req.path = path_;
-  ws_ = std::unique_ptr<WebSocket>(new WebSocket(std::move(strm), req, false));
+  ws_ = std::unique_ptr<WebSocket>(
+      new WebSocket(std::move(strm), req, false, websocket_ping_interval_sec_));
   return true;
 }
 
@@ -20197,6 +20227,10 @@ inline void WebSocketClient::set_read_timeout(time_t sec, time_t usec) {
 inline void WebSocketClient::set_write_timeout(time_t sec, time_t usec) {
   write_timeout_sec_ = sec;
   write_timeout_usec_ = usec;
+}
+
+inline void WebSocketClient::set_websocket_ping_interval(time_t sec) {
+  websocket_ping_interval_sec_ = sec;
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED

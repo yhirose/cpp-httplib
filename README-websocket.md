@@ -353,6 +353,26 @@ if (ws.connect()) {
 | `CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND` | `5`               | Timeout for waiting peer's Close response (seconds)      |
 | `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND` | `30`              | Automatic Ping interval for heartbeat (seconds)          |
 
+### Runtime Ping Interval
+
+You can override the ping interval at runtime instead of changing the compile-time macro. Set it to `0` to disable automatic pings entirely.
+
+```cpp
+// Server side
+httplib::Server svr;
+svr.set_websocket_ping_interval(10);  // 10 seconds
+
+// Or using std::chrono
+svr.set_websocket_ping_interval(std::chrono::seconds(10));
+
+// Client side
+httplib::ws::WebSocketClient ws("ws://localhost:8080/ws");
+ws.set_websocket_ping_interval(10);  // 10 seconds
+
+// Disable automatic pings
+ws.set_websocket_ping_interval(0);
+```
+
 ## Threading Model
 
 WebSocket connections share the same thread pool as HTTP requests. Each WebSocket connection occupies one thread for its entire lifetime.

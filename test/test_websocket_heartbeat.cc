@@ -57,6 +57,85 @@ TEST_F(WebSocketHeartbeatTest, IdleConnectionStaysAlive) {
   client.close();
 }
 
+// Verify that set_websocket_ping_interval overrides the compile-time default
+TEST_F(WebSocketHeartbeatTest, RuntimePingIntervalOverride) {
+  // The server is already using the compile-time default (1s).
+  // Create a client with a custom runtime interval.
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
+  client.set_websocket_ping_interval(2);
+  ASSERT_TRUE(client.connect());
+
+  // Sleep longer than read timeout (3s). Client heartbeat at 2s keeps alive.
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  ASSERT_TRUE(client.is_open());
+  ASSERT_TRUE(client.send("runtime interval"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("runtime interval", msg);
+
+  client.close();
+}
+
+// Verify that ping_interval=0 disables heartbeat without breaking basic I/O.
+TEST_F(WebSocketHeartbeatTest, ZeroDisablesHeartbeat) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
+  client.set_websocket_ping_interval(0);
+  ASSERT_TRUE(client.connect());
+
+  // Basic send/receive still works with heartbeat disabled
+  ASSERT_TRUE(client.send("no client ping"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("no client ping", msg);
+
+  client.close();
+}
+
+// Verify that Server::set_websocket_ping_interval works at runtime
+class WebSocketServerPingIntervalTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.set_websocket_ping_interval(2);
+    svr_.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      while (ws.read(msg)) {
+        ws.send(msg);
+      }
+    });
+
+    port_ = svr_.bind_to_any_port("localhost");
+    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+  void TearDown() override {
+    svr_.stop();
+    thread_.join();
+  }
+
+  Server svr_;
+  int port_;
+  std::thread thread_;
+};
+
+TEST_F(WebSocketServerPingIntervalTest, ServerRuntimeInterval) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
+  ASSERT_TRUE(client.connect());
+
+  // Server ping interval is 2s; client uses compile-time default (1s).
+  // Both keep the connection alive.
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  ASSERT_TRUE(client.is_open());
+  ASSERT_TRUE(client.send("server interval"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("server interval", msg);
+
+  client.close();
+}
+
 // Verify that multiple heartbeat cycles work
 TEST_F(WebSocketHeartbeatTest, MultipleHeartbeatCycles) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
