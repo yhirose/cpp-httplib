@@ -1886,7 +1886,8 @@ private:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 public:
-  [[deprecated("Use ssl_backend_error() instead")]]
+  [[deprecated("Use ssl_backend_error() instead. "
+               "This function will be removed by v1.0.0.")]]
   uint64_t ssl_openssl_error() const {
     return ssl_backend_error_;
   }
@@ -2366,13 +2367,16 @@ protected:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 public:
-  [[deprecated("Use load_ca_cert_store() instead")]]
+  [[deprecated("Use load_ca_cert_store() instead. "
+               "This function will be removed by v1.0.0.")]]
   void set_ca_cert_store(X509_STORE *ca_cert_store);
 
-  [[deprecated("Use tls::create_ca_store() instead")]]
+  [[deprecated("Use tls::create_ca_store() instead. "
+               "This function will be removed by v1.0.0.")]]
   X509_STORE *create_ca_cert_store(const char *ca_cert, std::size_t size) const;
 
-  [[deprecated("Use set_server_certificate_verifier(VerifyCallback) instead")]]
+  [[deprecated("Use set_server_certificate_verifier(VerifyCallback) instead. "
+               "This function will be removed by v1.0.0.")]]
   virtual void set_server_certificate_verifier(
       std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 #endif
@@ -2601,14 +2605,17 @@ private:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 public:
-  [[deprecated("Use tls_context() instead")]]
+  [[deprecated("Use tls_context() instead. "
+               "This function will be removed by v1.0.0.")]]
   SSL_CTX *ssl_context() const;
 
-  [[deprecated("Use set_session_verifier(session_t) instead")]]
+  [[deprecated("Use set_session_verifier(session_t) instead. "
+               "This function will be removed by v1.0.0.")]]
   void set_server_certificate_verifier(
       std::function<SSLVerifierResponse(SSL *ssl)> verifier);
 
-  [[deprecated("Use Result::ssl_backend_error() instead")]]
+  [[deprecated("Use Result::ssl_backend_error() instead. "
+               "This function will be removed by v1.0.0.")]]
   long get_verify_result() const;
 #endif
 };
@@ -2660,18 +2667,22 @@ private:
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 public:
   [[deprecated("Use SSLServer(PemMemory) or "
-               "SSLServer(ContextSetupCallback) instead")]]
+               "SSLServer(ContextSetupCallback) instead. "
+               "This constructor will be removed by v1.0.0.")]]
   SSLServer(X509 *cert, EVP_PKEY *private_key,
             X509_STORE *client_ca_cert_store = nullptr);
 
-  [[deprecated("Use SSLServer(ContextSetupCallback) instead")]]
+  [[deprecated("Use SSLServer(ContextSetupCallback) instead. "
+               "This constructor will be removed by v1.0.0.")]]
   SSLServer(
       const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback);
 
-  [[deprecated("Use tls_context() instead")]]
+  [[deprecated("Use tls_context() instead. "
+               "This function will be removed by v1.0.0.")]]
   SSL_CTX *ssl_context() const;
 
-  [[deprecated("Use update_certs_pem() instead")]]
+  [[deprecated("Use update_certs_pem() instead. "
+               "This function will be removed by v1.0.0.")]]
   void update_certs(X509 *cert, EVP_PKEY *private_key,
                     X509_STORE *client_ca_cert_store = nullptr);
 #endif
@@ -2756,18 +2767,22 @@ private:
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 public:
-  [[deprecated("Use SSLClient(host, port, PemMemory) instead")]]
+  [[deprecated("Use SSLClient(host, port, PemMemory) instead. "
+               "This constructor will be removed by v1.0.0.")]]
   explicit SSLClient(const std::string &host, int port, X509 *client_cert,
                      EVP_PKEY *client_key,
                      const std::string &private_key_password = std::string());
 
-  [[deprecated("Use Result::ssl_backend_error() instead")]]
+  [[deprecated("Use Result::ssl_backend_error() instead. "
+               "This function will be removed by v1.0.0.")]]
   long get_verify_result() const;
 
-  [[deprecated("Use tls_context() instead")]]
+  [[deprecated("Use tls_context() instead. "
+               "This function will be removed by v1.0.0.")]]
   SSL_CTX *ssl_context() const;
 
-  [[deprecated("Use set_session_verifier(session_t) instead")]]
+  [[deprecated("Use set_session_verifier(session_t) instead. "
+               "This function will be removed by v1.0.0.")]]
   void set_server_certificate_verifier(
       std::function<SSLVerifierResponse(SSL *ssl)> verifier) override;
 
@@ -15260,7 +15275,8 @@ inline void Client::set_follow_location(bool on) {
 
 inline void Client::set_path_encode(bool on) { cli_->set_path_encode(on); }
 
-[[deprecated("Use set_path_encode instead")]]
+[[deprecated("Use set_path_encode() instead. "
+             "This function will be removed by v1.0.0.")]]
 inline void Client::set_url_encode(bool on) {
   cli_->set_path_encode(on);
 }
