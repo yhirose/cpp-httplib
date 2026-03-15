@@ -5745,7 +5745,13 @@ TEST_F(ServerTest, PutLargeFileWithGzip2) {
   // depending on the zlib library.
   EXPECT_LT(res.get_request_header_value_u64("Content-Length"),
             static_cast<uint64_t>(10 * 1024 * 1024));
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+  EXPECT_EQ("br", res.get_request_header_value("Content-Encoding"));
+#elif defined(CPPHTTPLIB_ZLIB_SUPPORT)
   EXPECT_EQ("gzip", res.get_request_header_value("Content-Encoding"));
+#elif defined(CPPHTTPLIB_ZSTD_SUPPORT)
+  EXPECT_EQ("zstd", res.get_request_header_value("Content-Encoding"));
+#endif
 }
 
 TEST_F(ServerTest, PutContentWithDeflate) {
@@ -5954,6 +5960,47 @@ TEST_F(ServerTest, GetStreamedChunkedWithBrotli2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, PutWithContentProviderWithBrotli) {
+  cli_.set_compress(true);
+  auto res = cli_.Put(
+      "/put", 3,
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.os << "PUT";
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, PutWithContentProviderWithoutLengthWithBrotli) {
+  cli_.set_compress(true);
+  auto res = cli_.Put(
+      "/put",
+      [](size_t /*offset*/, DataSink &sink) {
+        sink.os << "PUT";
+        sink.done();
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("PUT", res->body);
+}
+
+TEST_F(ServerTest, PutLargeFileWithBrotli) {
+  cli_.set_compress(true);
+  auto res = cli_.Put("/put-large", LARGE_DATA, "text/plain");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(LARGE_DATA, res->body);
+  EXPECT_EQ("br", res.get_request_header_value("Content-Encoding"));
 }
 #endif
 

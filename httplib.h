@@ -6862,6 +6862,21 @@ create_decompressor(const std::string &encoding) {
   return decompressor;
 }
 
+// Returns the best available compressor and its Content-Encoding name.
+// Priority: Brotli > Gzip > Zstd (matches server-side preference).
+inline std::pair<std::unique_ptr<compressor>, const char *>
+create_compressor() {
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+  return {detail::make_unique<brotli_compressor>(), "br"};
+#elif defined(CPPHTTPLIB_ZLIB_SUPPORT)
+  return {detail::make_unique<gzip_compressor>(), "gzip"};
+#elif defined(CPPHTTPLIB_ZSTD_SUPPORT)
+  return {detail::make_unique<zstd_compressor>(), "zstd"};
+#else
+  return {nullptr, nullptr};
+#endif
+}
+
 inline bool is_prohibited_header_name(const std::string &name) {
   using udl::operator""_t;
 
@@ -13015,14 +13030,9 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
   auto is_shutting_down = []() { return false; };
 
   if (req.is_chunked_content_provider_) {
-    // TODO: Brotli support
-    std::unique_ptr<detail::compressor> compressor;
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-    if (compress_) {
-      compressor = detail::make_unique<detail::gzip_compressor>();
-    } else
-#endif
-    {
+    auto compressor = compress_ ? detail::create_compressor().first
+                                : std::unique_ptr<detail::compressor>();
+    if (!compressor) {
       compressor = detail::make_unique<detail::nocompressor>();
     }
 
@@ -13253,14 +13263,15 @@ ClientImpl::send_with_content_provider_and_receiver(
     Error &error) {
   if (!content_type.empty()) { req.set_header("Content-Type", content_type); }
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  if (compress_) { req.set_header("Content-Encoding", "gzip"); }
-#endif
+  auto enc = compress_
+                 ? detail::create_compressor()
+                 : std::pair<std::unique_ptr<detail::compressor>, const char *>(
+                       nullptr, nullptr);
 
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-  if (compress_ && !content_provider_without_length) {
-    // TODO: Brotli support
-    detail::gzip_compressor compressor;
+  if (enc.second) { req.set_header("Content-Encoding", enc.second); }
+
+  if (enc.first && !content_provider_without_length) {
+    auto &compressor = enc.first;
 
     if (content_provider) {
       auto ok = true;
@@ -13271,7 +13282,7 @@ ClientImpl::send_with_content_provider_and_receiver(
         if (ok) {
           auto last = offset + data_len == content_length;
 
-          auto ret = compressor.compress(
+          auto ret = compressor->compress(
               data, data_len, last,
               [&](const char *compressed_data, size_t compressed_data_len) {
                 req.body.append(compressed_data, compressed_data_len);
@@ -13295,19 +13306,17 @@ ClientImpl::send_with_content_provider_and_receiver(
         }
       }
     } else {
-      if (!compressor.compress(body, content_length, true,
-                               [&](const char *data, size_t data_len) {
-                                 req.body.append(data, data_len);
-                                 return true;
-                               })) {
+      if (!compressor->compress(body, content_length, true,
+                                [&](const char *data, size_t data_len) {
+                                  req.body.append(data, data_len);
+                                  return true;
+                                })) {
         error = Error::Compression;
         output_error_log(error, &req);
         return nullptr;
       }
     }
-  } else
-#endif
-  {
+  } else {
     if (content_provider) {
       req.content_length_ = content_length;
       req.content_provider_ = std::move(content_provider);
