@@ -1,6 +1,7 @@
 ---
 title: "Building a Desktop LLM App with cpp-httplib"
 order: 0
+status: "draft"
 ---
 
 llama.cpp を組み込んだ LLM 翻訳デスクトップアプリを段階的に構築しながら、cpp-httplib のサーバー・クライアント両面の使い方を実践的に学びます。翻訳は一例であり、この部分を差し替えることで要約・コード生成・チャットボットなど自分のアプリに応用できます。

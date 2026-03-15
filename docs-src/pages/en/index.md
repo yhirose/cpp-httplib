@@ -18,5 +18,8 @@ Under the hood, it uses blocking I/O with a thread pool. It's not built for hand
 ## Documentation
 
 - [A Tour of cpp-httplib](tour/) — A step-by-step tutorial covering the basics. Start here if you're new
+
+## Stay Tuned
+
 - [Cookbook](cookbook/) — A collection of recipes organized by topic. Jump to whatever you need
 - [Building a Desktop LLM App](llm-app/) — A hands-on guide to building a desktop app with llama.cpp, step by step

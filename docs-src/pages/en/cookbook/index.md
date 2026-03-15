@@ -1,6 +1,7 @@
 ---
 title: "Cookbook"
 order: 0
+status: "draft"
 ---
 
 A collection of recipes that answer "How do I...?" questions. Each recipe is self-contained — read only what you need.

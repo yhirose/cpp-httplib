@@ -1,6 +1,7 @@
 ---
 title: "Building a Desktop LLM App with cpp-httplib"
 order: 0
+status: "draft"
 ---
 
 Build an LLM-powered translation desktop app step by step, learning both the server and client sides of cpp-httplib along the way. Translation is just an example — swap it out to build your own summarizer, code generator, chatbot, or any other LLM application.
