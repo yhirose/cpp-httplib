@@ -13827,9 +13827,9 @@ TEST_F(OpenStreamTest, ProhibitedTrailersAreIgnored_Stream) {
   EXPECT_EQ(std::string(""), handle.response->get_header_value("X-Allowed"));
 }
 
-static std::thread serve_single_response(int port,
+static std::thread serve_single_response(std::promise<int> &port_promise,
                                          const std::string &response) {
-  return std::thread([port, response] {
+  return std::thread([&port_promise, response] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
     default_socket_options(srv);
     detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
@@ -13837,7 +13837,7 @@ static std::thread serve_single_response(int port,
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(static_cast<uint16_t>(port));
+    addr.sin_port = htons(0); // Let OS assign a free port
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int opt = 1;
@@ -13849,8 +13849,16 @@ static std::thread serve_single_response(int port,
 #endif
                  sizeof(opt));
 
-    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
-    ::listen(srv, 1);
+    if (::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0 ||
+        ::listen(srv, 1) != 0) {
+      port_promise.set_value(-1);
+      detail::close_socket(srv);
+      return;
+    }
+
+    socklen_t addr_len = sizeof(addr);
+    ::getsockname(srv, reinterpret_cast<sockaddr *>(&addr), &addr_len);
+    port_promise.set_value(static_cast<int>(ntohs(addr.sin_port)));
 
     sockaddr_in cli_addr{};
     socklen_t cli_len = sizeof(cli_addr);
@@ -13880,17 +13888,19 @@ TEST(OpenStreamMalformedContentLength, InvalidArgument) {
   signal(SIGPIPE, SIG_IGN);
 #endif
 
+  std::promise<int> port_promise;
+  auto port_future = port_promise.get_future();
   auto server_thread =
-      serve_single_response(PORT + 2, "HTTP/1.1 200 OK\r\n"
-                                      "Content-Type: text/plain\r\n"
-                                      "Content-Length: not-a-number\r\n"
-                                      "Connection: close\r\n"
-                                      "\r\n"
-                                      "hello");
+      serve_single_response(port_promise, "HTTP/1.1 200 OK\r\n"
+                                          "Content-Type: text/plain\r\n"
+                                          "Content-Length: not-a-number\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n"
+                                          "hello");
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-  Client cli("127.0.0.1", PORT + 2);
+  auto port = port_future.get();
+  ASSERT_GT(port, 0);
+  Client cli("127.0.0.1", port);
   auto handle = cli.open_stream("GET", "/");
   EXPECT_FALSE(handle.is_valid());
 
@@ -13902,21 +13912,24 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   signal(SIGPIPE, SIG_IGN);
 #endif
 
+  std::promise<int> port_promise;
+  auto port_future = port_promise.get_future();
   auto server_thread = serve_single_response(
-      PORT + 4, "HTTP/1.1 200 OK\r\n"
-                "Content-Type: text/plain\r\n"
-                "Content-Length: 99999999999999999999999999\r\n"
-                "Connection: close\r\n"
-                "\r\n"
-                "hello");
+      port_promise, "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/plain\r\n"
+                    "Content-Length: 99999999999999999999999999\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    "hello");
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  auto port = port_future.get();
+  ASSERT_GT(port, 0);
 
   // Before the fix, std::stoull would throw std::out_of_range here and
   // crash the process. After the fix, strtoull silently clamps to
   // ULLONG_MAX so the stream opens without crashing. The important thing
   // is that the process does NOT terminate.
-  Client cli("127.0.0.1", PORT + 4);
+  Client cli("127.0.0.1", port);
   auto handle = cli.open_stream("GET", "/");
   EXPECT_TRUE(handle.is_valid());
 
