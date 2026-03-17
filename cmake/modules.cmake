@@ -10,7 +10,10 @@ if(HTTPLIB_BUILD_MODULES)
 	
 	target_sources(${PROJECT_NAME}
 		PUBLIC
-			FILE_SET CXX_MODULES FILES
+			FILE_SET CXX_MODULES 
+			BASE_DIRS 
+				"${_httplib_build_includedir}"
+			FILES
 				"${_httplib_build_includedir}/httplib.cppm"
 	)
 endif()
