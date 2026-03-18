@@ -241,28 +241,34 @@ endif()
 # NOTE:
 # zstd < 1.5.6 does not provide the CMake imported target `zstd::libzstd`.
 # Older versions must be consumed via their pkg-config file.
-if(HTTPLIB_REQUIRE_ZSTD)
-	find_package(zstd 1.5.6 CONFIG)
-	if(NOT zstd_FOUND)
-		find_package(PkgConfig REQUIRED)
-		pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
-		add_library(zstd::libzstd ALIAS PkgConfig::zstd)
-	endif()
-	set(HTTPLIB_IS_USING_ZSTD TRUE)
-elseif(HTTPLIB_USE_ZSTD_IF_AVAILABLE)
-	find_package(zstd 1.5.6 CONFIG QUIET)
-	if(NOT zstd_FOUND)
-		find_package(PkgConfig QUIET)
-		if(PKG_CONFIG_FOUND)
-			pkg_check_modules(zstd QUIET IMPORTED_TARGET libzstd)
+if (HTTPLIB_REQUIRE_ZSTD)
+	set(HTTPLIB_ZSTD_REQUESTED ON)
+	set(HTTPLIB_ZSTD_REQUIRED REQUIRED)
+elseif (HTTPLIB_USE_ZSTD_IF_AVAILABLE)
+	set(HTTPLIB_ZSTD_REQUESTED ON)
+	set(HTTPLIB_ZSTD_REQUIRED QUIET)
+endif()
 
-			if(TARGET PkgConfig::zstd)
+if (HTTPLIB_ZSTD_REQUESTED)
+	if (TARGET zstd::libzstd)
+		set(HTTPLIB_IS_USING_ZSTD TRUE)
+	else()
+		find_package(zstd 1.5.6 CONFIG QUIET)
+
+		if (NOT zstd_FOUND)
+			find_package(PkgConfig ${HTTPLIB_ZSTD_REQUIRED})
+			pkg_check_modules(zstd ${HTTPLIB_ZSTD_REQUIRED} IMPORTED_TARGET libzstd)
+
+			if (TARGET PkgConfig::zstd)
 				add_library(zstd::libzstd ALIAS PkgConfig::zstd)
 			endif()
 		endif()
+
+		# This will always be true if zstd is required.
+		# If zstd *isn't* found when zstd is set to required,
+		# CMake will error out earlier in this block.
+		set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 	endif()
-	# Both find_package and PkgConf set a XXX_FOUND var
-	set(HTTPLIB_IS_USING_ZSTD ${zstd_FOUND})
 endif()
 
 # Used for default, common dirs that the end-user can change (if needed)
@@ -317,13 +323,13 @@ if(HTTPLIB_COMPILE)
 			$<BUILD_INTERFACE:${_httplib_build_includedir}/httplib.h>
 			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/httplib.h>
 	)
-	
+
 	# Add C++20 module support if requested
 	# Include from separate file to prevent parse errors on older CMake versions
 	if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
 		include(cmake/modules.cmake)
 	endif()
-	
+
 	set_target_properties(${PROJECT_NAME}
 		PROPERTIES
 			VERSION ${${PROJECT_NAME}_VERSION}
