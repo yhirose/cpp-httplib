@@ -61,6 +61,8 @@ static int get_base_port() {
   return shard ? 11234 + std::atoi(shard) * 100 : 1234;
 }
 
+// NOTE: PORT is only for legacy fixtures (ServerTest, etc.).
+// New standalone tests MUST use svr.bind_to_any_port() instead.
 const int PORT = get_base_port();
 
 const string LONG_QUERY_VALUE = string(25000, '@');
@@ -8140,6 +8142,56 @@ TEST(LongPollingTest, ClientCloseDetection) {
   svr.wait_until_ready();
 
   Client cli("localhost", PORT);
+
+  auto res = cli.Get("/events", [&](const char *data, size_t data_length) {
+    EXPECT_EQ("hello", string(data, data_length));
+    return false; // close the socket immediately.
+  });
+
+  ASSERT_FALSE(res);
+}
+
+TEST(LongPollingTest, ClientCloseDetectionWithStreamOperator) {
+  Server svr;
+
+  svr.Get("/events", [&](const Request & /*req*/, Response &res) {
+    res.set_chunked_content_provider(
+        "text/plain", [](std::size_t const, DataSink &sink) -> bool {
+          EXPECT_TRUE(sink.is_writable()); // the socket is alive
+          sink.os << "hello";
+          EXPECT_TRUE(sink.os.good());
+
+          // Wait for the client to close the connection
+          auto count = 10;
+          while (count > 0 && sink.is_writable()) {
+            this_thread::sleep_for(chrono::milliseconds(10));
+            count--;
+          }
+
+          // After client disconnect, write repeatedly until the socket
+          // write actually fails (small writes may be absorbed by the
+          // kernel buffer)
+          std::string chunk(1024, 'x');
+          for (int i = 0; i < 1000 && sink.os.good(); i++) {
+            sink.os << chunk;
+          }
+          EXPECT_TRUE(sink.os.fail());
+
+          return true;
+        });
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", port);
 
   auto res = cli.Get("/events", [&](const char *data, size_t data_length) {
     EXPECT_EQ("hello", string(data, data_length));

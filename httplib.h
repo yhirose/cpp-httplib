@@ -1005,8 +1005,8 @@ private:
 
   protected:
     std::streamsize xsputn(const char *s, std::streamsize n) override {
-      sink_.write(s, static_cast<size_t>(n));
-      return n;
+      if (sink_.write(s, static_cast<size_t>(n))) { return n; }
+      return 0;
     }
 
   private:
