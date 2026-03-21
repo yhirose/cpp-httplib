@@ -3808,6 +3808,7 @@ public:
   void set_read_timeout(time_t sec, time_t usec = 0);
   void set_write_timeout(time_t sec, time_t usec = 0);
   void set_websocket_ping_interval(time_t sec);
+  void set_tcp_nodelay(bool on) {tcp_nodelay_ = on;}
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   void set_ca_cert_path(const std::string &path);
@@ -3833,6 +3834,7 @@ private:
   time_t write_timeout_usec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_USECOND;
   time_t websocket_ping_interval_sec_ =
       CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
+  bool tcp_nodelay_ = false;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   bool is_ssl_ = false;
@@ -20195,7 +20197,7 @@ inline bool WebSocketClient::connect() {
 
   Error error;
   sock_ = detail::create_client_socket(
-      host_, std::string(), port_, AF_UNSPEC, false, false, nullptr, 5, 0,
+      host_, std::string(), port_, AF_UNSPEC, tcp_nodelay_, false, nullptr, 5, 0,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_, std::string(), error);
 
