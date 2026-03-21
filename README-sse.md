@@ -74,6 +74,9 @@ sse.set_reconnect_interval(5000);
 
 // Set max reconnect attempts (default: 0 = unlimited)
 sse.set_max_reconnect_attempts(10);
+
+// Update headers at any time (thread-safe)
+sse.set_headers({{"Authorization", "Bearer new_token"}});
 ```
 
 #### Control
@@ -151,6 +154,25 @@ httplib::Headers headers = {
 };
 
 httplib::sse::SSEClient sse(cli, "/events", headers);
+sse.start();
+```
+
+### Refreshing Auth Token on Reconnect
+
+```cpp
+httplib::sse::SSEClient sse(cli, "/events",
+    {{"Authorization", "Bearer " + get_token()}});
+
+// Preemptively refresh token on each successful connection
+sse.on_open([&sse]() {
+    sse.set_headers({{"Authorization", "Bearer " + get_token()}});
+});
+
+// Or reactively refresh on auth failure (401 triggers reconnect)
+sse.on_error([&sse](httplib::Error) {
+    sse.set_headers({{"Authorization", "Bearer " + refresh_token()}});
+});
+
 sse.start();
 ```
 

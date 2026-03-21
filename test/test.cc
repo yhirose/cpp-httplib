@@ -16007,6 +16007,98 @@ TEST_F(SSEIntegrationTest, LastEventIdSentOnReconnect) {
   }
 }
 
+// Test: set_headers updates headers used on reconnect
+TEST_F(SSEIntegrationTest, SetHeadersUpdatesOnReconnect) {
+  std::vector<std::string> received_tokens;
+  std::mutex token_mutex;
+
+  // Endpoint that captures Authorization header
+  server_->Get("/auth-check", [&](const Request &req, Response &res) {
+    {
+      std::lock_guard<std::mutex> lock(token_mutex);
+      received_tokens.push_back(req.get_header_value("Authorization"));
+    }
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string event = "data: hello\n\n";
+            sink.write(event.data(), event.size());
+          }
+          return false; // Close connection to trigger reconnect
+        });
+  });
+
+  Client client("localhost", get_port());
+  Headers headers = {{"Authorization", "Bearer old-token"}};
+  sse::SSEClient sse(client, "/auth-check", headers);
+
+  // Update headers on each successful connection
+  sse.on_open(
+      [&sse]() { sse.set_headers({{"Authorization", "Bearer new-token"}}); });
+
+  sse.set_reconnect_interval(100);
+  sse.set_max_reconnect_attempts(3);
+  sse.start_async();
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(800));
+  sse.stop();
+
+  std::lock_guard<std::mutex> lock(token_mutex);
+  ASSERT_GE(received_tokens.size(), 2u);
+  // First connection uses original header
+  EXPECT_EQ(received_tokens[0], "Bearer old-token");
+  // Second connection uses updated header from set_headers
+  EXPECT_EQ(received_tokens[1], "Bearer new-token");
+}
+
+// Test: 401 allows reconnection (so on_error can refresh headers)
+TEST_F(SSEIntegrationTest, ReconnectOn401WithHeaderRefresh) {
+  std::atomic<int> connection_count{0};
+
+  // Endpoint: returns 401 on first attempt, 200 on second
+  server_->Get("/auth-retry", [&](const Request &req, Response &res) {
+    int conn = connection_count.fetch_add(1);
+    if (conn == 0 || req.get_header_value("Authorization") != "Bearer valid") {
+      res.status = StatusCode::Unauthorized_401;
+      res.set_content("Unauthorized", "text/plain");
+      return;
+    }
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string event = "data: authenticated\n\n";
+            sink.write(event.data(), event.size());
+          }
+          return false;
+        });
+  });
+
+  Client client("localhost", get_port());
+  Headers headers = {{"Authorization", "Bearer expired"}};
+  sse::SSEClient sse(client, "/auth-retry", headers);
+
+  std::atomic<bool> message_received{false};
+
+  // Refresh token on error
+  sse.on_error(
+      [&sse](Error) { sse.set_headers({{"Authorization", "Bearer valid"}}); });
+
+  sse.on_message([&](const sse::SSEMessage &msg) {
+    if (msg.data == "authenticated") { message_received.store(true); }
+  });
+
+  sse.set_reconnect_interval(100);
+  sse.set_max_reconnect_attempts(3);
+  sse.start_async();
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(800));
+  sse.stop();
+
+  // Should have reconnected after 401 and succeeded with new token
+  EXPECT_GE(connection_count.load(), 2);
+  EXPECT_TRUE(message_received.load());
+}
+
 TEST(Issue2318Test, EmptyHostString) {
   {
     httplib::Client cli_empty("", PORT);
