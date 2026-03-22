@@ -46,11 +46,8 @@ build:
 bench:
     @(cd benchmark && make bench-all)
 
-docs:
-    @cargo build --release --manifest-path docs-gen/Cargo.toml
-    @./docs-gen/target/release/docs-gen build docs-src --out docs
-
 docs-serve:
-    @cargo build --release --manifest-path docs-gen/Cargo.toml
-    -@./docs-gen/target/release/docs-gen serve docs-src --open
+    -@docs-gen serve docs-src --open
 
+docs-check:
+    @docs-gen check docs-src

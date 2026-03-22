@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 240" font-family="system-ui, sans-serif" font-size="14">
+  <!-- outer box -->
+  <rect x="0" y="0" width="440" height="240" rx="8" fill="#f5f3ef"/>
+  <text x="20" y="28" font-weight="bold" font-size="16" fill="#333">llama-server</text>
+
+  <!-- slot 0 -->
+  <rect x="20" y="46" width="400" height="32" rx="4" fill="#d1e7dd" stroke="#198754" stroke-width="1"/>
+  <text x="32" y="67" fill="#333">Slot 0: User A's request</text>
+
+  <!-- slot 1 -->
+  <rect x="20" y="86" width="400" height="32" rx="4" fill="#d1e7dd" stroke="#198754" stroke-width="1"/>
+  <text x="32" y="107" fill="#333">Slot 1: User B's request</text>
+
+  <!-- slot 2 -->
+  <rect x="20" y="126" width="400" height="32" rx="4" fill="#e9ecef" stroke="#adb5bd" stroke-width="1"/>
+  <text x="32" y="147" fill="#999">Slot 2: (idle)</text>
+
+  <!-- slot 3 -->
+  <rect x="20" y="166" width="400" height="32" rx="4" fill="#e9ecef" stroke="#adb5bd" stroke-width="1"/>
+  <text x="32" y="187" fill="#999">Slot 3: (idle)</text>
+
+  <!-- arrow + label -->
+  <text x="20" y="224" fill="#333" font-size="13">→ Active slots are inferred together in a single batch</text>
+</svg>

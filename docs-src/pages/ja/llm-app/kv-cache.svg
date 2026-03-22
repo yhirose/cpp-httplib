@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 426 160" font-family="system-ui, sans-serif" font-size="14">
+  <rect x="0" y="0" width="426" height="160" rx="8" fill="#f5f3ef"/>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <polygon points="0,0 7,2.5 0,5" fill="#198754"/>
+    </marker>
+  </defs>
+
+  <!-- request 1 (y=16) -->
+  <text x="94" y="35" fill="#333" font-weight="bold" text-anchor="end">リクエスト1:</text>
+  <rect x="106" y="16" width="138" height="30" rx="4" fill="#d1e7dd" stroke="#198754" stroke-width="1"/>
+  <text x="175" y="36" fill="#333" text-anchor="middle">システムプロンプト</text>
+  <text x="256" y="36" fill="#333" text-anchor="middle">+</text>
+  <rect x="270" y="16" width="138" height="30" rx="4" fill="#cfe2ff" stroke="#0d6efd" stroke-width="1"/>
+  <text x="339" y="36" fill="#333" text-anchor="middle">ユーザーの質問A</text>
+
+  <!-- annotation: cache save -->
+  <text x="175" y="64" fill="#198754" font-size="11" text-anchor="middle">KV キャッシュに保存</text>
+
+  <!-- arrow -->
+  <line x1="175" y1="70" x2="175" y2="90" stroke="#198754" stroke-width="1.2" marker-end="url(#arrowhead)"/>
+  <text x="188" y="85" fill="#198754" font-size="11">再利用</text>
+
+  <!-- request 2 (y=96) -->
+  <text x="94" y="115" fill="#333" font-weight="bold" text-anchor="end">リクエスト2:</text>
+  <rect x="106" y="96" width="138" height="30" rx="4" fill="#d1e7dd" stroke="#198754" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="175" y="116" fill="#333" text-anchor="middle">システムプロンプト</text>
+  <text x="256" y="116" fill="#333" text-anchor="middle">+</text>
+  <rect x="270" y="96" width="138" height="30" rx="4" fill="#cfe2ff" stroke="#0d6efd" stroke-width="1"/>
+  <text x="339" y="116" fill="#333" text-anchor="middle">ユーザーの質問B</text>
+
+  <!-- bottom labels -->
+  <text x="175" y="144" fill="#198754" font-size="11" text-anchor="middle">再計算しない</text>
+  <text x="339" y="144" fill="#0d6efd" font-size="11" text-anchor="middle">ここだけ計算</text>
+</svg>

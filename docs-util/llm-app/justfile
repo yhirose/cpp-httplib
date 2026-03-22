@@ -1,0 +1,28 @@
+# List available targets
+default:
+    @just --list
+
+# Remove build artifacts
+clean:
+    rm -rf build
+
+# Test the Book
+test-book:
+    bash test_book.sh
+
+# Build Web App (Chapter 5)
+build-web-app:
+    bash build_web_app.sh
+
+# Stop any running server, then run Web App
+run-web-app: build-web-app
+    -lsof -ti :8080 | xargs kill 2>/dev/null
+    cd build/web-app && ./build/translate-server
+
+# Build Desktop App (Chapter 6)
+build-desktop-app:
+    bash build_desktop_app.sh
+
+# Run Desktop App
+run-desktop-app: build-desktop-app
+    cd build/desktop-app && ./build/translate-app
