@@ -17088,6 +17088,29 @@ TEST_F(WebSocketIntegrationTest, SubProtocolNotRequested) {
   client.close();
 }
 
+TEST_F(WebSocketIntegrationTest, SocketSettings) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.set_tcp_nodelay(true);
+  client.set_address_family(AF_INET);
+  client.set_connection_timeout(3, 0);
+
+  bool socket_options_called = false;
+  client.set_socket_options([&](socket_t) { socket_options_called = true; });
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.is_open());
+  EXPECT_TRUE(socket_options_called);
+
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  auto result = client.read(msg);
+  EXPECT_EQ(result, ws::ReadResult::Text);
+  EXPECT_EQ(msg, "hello");
+
+  client.close();
+}
+
 TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   Server svr;
 
