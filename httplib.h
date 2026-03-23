@@ -1062,9 +1062,12 @@ make_file_provider(const std::string &name, const std::string &filepath,
 
 inline std::pair<size_t, ContentProvider>
 make_file_body(const std::string &filepath) {
-  std::ifstream f(filepath, std::ios::binary | std::ios::ate);
-  if (!f) { return {0, ContentProvider{}}; }
-  auto size = static_cast<size_t>(f.tellg());
+  size_t size = 0;
+  {
+    std::ifstream f(filepath, std::ios::binary | std::ios::ate);
+    if (!f) { return {0, ContentProvider{}}; }
+    size = static_cast<size_t>(f.tellg());
+  }
 
   ContentProvider provider = [filepath](size_t offset, size_t length,
                                         DataSink &sink) -> bool {
