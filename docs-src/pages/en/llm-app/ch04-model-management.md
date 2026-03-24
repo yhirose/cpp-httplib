@@ -58,21 +58,14 @@ if (res && res->status == 200) {
 }
 ```
 
-To use HTTPS, you need to enable OpenSSL at build time. Add the following to your `CMakeLists.txt`:
+To use HTTPS, you need to enable OpenSSL at build time. Add the following line to your `CMakeLists.txt`:
 
 ```cmake
-find_package(OpenSSL REQUIRED)
-
-target_link_libraries(translate-server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-target_compile_definitions(translate-server PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
-
-# macOS: required for loading system certificates
-if(APPLE)
-  target_link_libraries(translate-server PRIVATE "-framework CoreFoundation" "-framework Security")
-endif()
+set(HTTPLIB_REQUIRE_OPENSSL true)
+FetchContent_Declare(httplib ...)
 ```
 
-Defining `CPPHTTPLIB_OPENSSL_SUPPORT` enables `httplib::Client("https://...")` to make TLS connections. On macOS, you also need to link the CoreFoundation and Security frameworks to access the system certificate store. See Section 4.8 for the complete `CMakeLists.txt`.
+Defining `HTTPLIB_OPENSSL_SUPPORT` enables `httplib::Client("https://...")` to make TLS connections.
 
 ## 4.2 Defining the Model List
 
@@ -349,6 +342,7 @@ FetchContent_Declare(llama
 FetchContent_MakeAvailable(llama)
 
 # cpp-httplib
+set(HTTPLIB_REQUIRE_OPENSSL true)
 FetchContent_Declare(httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib
     GIT_TAG        master
@@ -368,25 +362,13 @@ FetchContent_Declare(cpp_llamalib
 )
 FetchContent_MakeAvailable(cpp_llamalib)
 
-find_package(OpenSSL REQUIRED)
-
 add_executable(translate-server src/main.cpp)
 
 target_link_libraries(translate-server PRIVATE
     httplib::httplib
     nlohmann_json::nlohmann_json
     cpp-llamalib
-    OpenSSL::SSL OpenSSL::Crypto
 )
-
-target_compile_definitions(translate-server PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
-
-if(APPLE)
-    target_link_libraries(translate-server PRIVATE
-        "-framework CoreFoundation"
-        "-framework Security"
-    )
-endif()
 ```
 
 </details>
