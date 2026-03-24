@@ -65,7 +65,7 @@ set(HTTPLIB_REQUIRE_OPENSSL true)
 FetchContent_Declare(httplib ...)
 ```
 
-Defining `HTTPLIB_OPENSSL_SUPPORT` enables `httplib::Client("https://...")` to make TLS connections.
+This makes cpp-httplib find OpenSSL and define `CPPHTTPLIB_OPENSSL_SUPPORT`, which enables usage of `httplib::Client("https://...")` to make TLS connections.
 
 ## 4.2 Defining the Model List
 
