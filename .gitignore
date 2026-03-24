@@ -2,6 +2,7 @@ tags
 AGENTS.md
 docs-src/pages/AGENTS.md
 plans/
+work/
 
 # Ignore executables (no extension) but not source files
 example/server
@@ -59,9 +60,7 @@ test/*.pem
 test/*.srl
 test/*.log
 test/_build_*
-work/
 benchmark/server*
-docs-gen/target/
 
 *.swp
 

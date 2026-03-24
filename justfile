@@ -51,3 +51,6 @@ docs-serve:
 
 docs-check:
     @docs-gen check docs-src
+
+release *args:
+    @./scripts/release.sh {{args}}
