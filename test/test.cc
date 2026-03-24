@@ -2382,6 +2382,65 @@ TEST(RedirectToDifferentPort, Redirect) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+static void
+TestDoNotForwardCredentialsOnRedirect(std::function<void(Client &)> set_auth) {
+  Server svr1;
+  std::string captured_authorization;
+  svr1.Get("/target", [&](const Request &req, Response &res) {
+    captured_authorization = req.get_header_value("Authorization");
+    res.set_content("OK", "text/plain");
+  });
+
+  int svr1_port = 0;
+  auto thread1 = std::thread([&]() {
+    svr1_port = svr1.bind_to_any_port(HOST);
+    svr1.listen_after_bind();
+  });
+
+  Server svr2;
+  svr2.Get("/redir", [&](const Request & /*req*/, Response &res) {
+    res.set_redirect(
+        "http://localhost:" + std::to_string(svr1_port) + "/target", 302);
+  });
+
+  int svr2_port = 0;
+  auto thread2 = std::thread([&]() {
+    svr2_port = svr2.bind_to_any_port(HOST);
+    svr2.listen_after_bind();
+  });
+  auto se = detail::scope_exit([&] {
+    svr2.stop();
+    thread2.join();
+    svr1.stop();
+    thread1.join();
+    ASSERT_FALSE(svr2.is_running());
+    ASSERT_FALSE(svr1.is_running());
+  });
+
+  svr1.wait_until_ready();
+  svr2.wait_until_ready();
+
+  Client cli("localhost", svr2_port);
+  cli.set_follow_location(true);
+  set_auth(cli);
+
+  auto res = cli.Get("/redir");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  // RFC 9110: credentials MUST NOT be forwarded to a different host
+  EXPECT_TRUE(captured_authorization.empty());
+}
+
+TEST(RedirectToDifferentPort, DoNotForwardCredentialsBasicAuth) {
+  TestDoNotForwardCredentialsOnRedirect(
+      [](Client &cli) { cli.set_basic_auth("admin", "secret"); });
+}
+
+TEST(RedirectToDifferentPort, DoNotForwardCredentialsBearerToken) {
+  TestDoNotForwardCredentialsOnRedirect(
+      [](Client &cli) { cli.set_bearer_token_auth("my-secret-token"); });
+}
+
 TEST(RedirectToDifferentPort, OverflowPortNumber) {
   Server svr;
   svr.Get("/redir", [&](const Request & /*req*/, Response &res) {
