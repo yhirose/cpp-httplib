@@ -3228,7 +3228,7 @@ struct ChunkedDecoder {
   Stream &strm;
   size_t chunk_remaining = 0;
   bool finished = false;
-  char line_buf[64];
+  char line_buf[64] = {};
   size_t last_chunk_total = 0;
   size_t last_chunk_offset = 0;
 
@@ -3829,7 +3829,7 @@ private:
   bool create_stream(std::unique_ptr<Stream> &strm);
 
   std::string host_;
-  int port_;
+  int port_ = 0;
   std::string path_;
   Headers headers_;
   std::string subprotocol_;
@@ -7079,7 +7079,7 @@ inline ReadContentResult read_content_with_length(
     Stream &strm, size_t len, DownloadProgress progress,
     ContentReceiverWithProgress out,
     size_t payload_max_length = (std::numeric_limits<size_t>::max)()) {
-  char buf[CPPHTTPLIB_RECV_BUFSIZ];
+  std::vector<char> buf(CPPHTTPLIB_RECV_BUFSIZ);
 
   detail::BodyReader br;
   br.stream = &strm;
@@ -7094,7 +7094,7 @@ inline ReadContentResult read_content_with_length(
   while (r < len) {
     auto read_len = static_cast<size_t>(len - r);
     auto to_read = (std::min)(read_len, CPPHTTPLIB_RECV_BUFSIZ);
-    auto n = detail::read_body_content(&strm, br, buf, to_read);
+    auto n = detail::read_body_content(&strm, br, buf.data(), to_read);
     if (n <= 0) {
       // Check if it was a payload size error
       if (br.last_error == Error::ExceedMaxPayloadSize) {
@@ -7103,7 +7103,7 @@ inline ReadContentResult read_content_with_length(
       return ReadContentResult::Error;
     }
 
-    if (!out(buf, static_cast<size_t>(n), r, len)) {
+     if (!out(buf.data(), static_cast<size_t>(n), r, len)) {
       return ReadContentResult::Error;
     }
     r += static_cast<size_t>(n);
@@ -7119,10 +7119,10 @@ inline ReadContentResult read_content_with_length(
 inline ReadContentResult
 read_content_without_length(Stream &strm, size_t payload_max_length,
                             ContentReceiverWithProgress out) {
-  char buf[CPPHTTPLIB_RECV_BUFSIZ];
+  std::vector<char> buf(CPPHTTPLIB_RECV_BUFSIZ);
   size_t r = 0;
   for (;;) {
-    auto n = strm.read(buf, CPPHTTPLIB_RECV_BUFSIZ);
+    auto n = strm.read(buf.data(), buf.size());
     if (n == 0) { return ReadContentResult::Success; }
     if (n < 0) { return ReadContentResult::Error; }
 
@@ -7132,7 +7132,7 @@ read_content_without_length(Stream &strm, size_t payload_max_length,
       return ReadContentResult::PayloadTooLarge;
     }
 
-    if (!out(buf, static_cast<size_t>(n), r, 0)) {
+    if (!out(buf.data(), static_cast<size_t>(n), r, 0)) {
       return ReadContentResult::Error;
     }
     r += static_cast<size_t>(n);
@@ -7147,13 +7147,13 @@ inline ReadContentResult read_content_chunked(Stream &strm, T &x,
                                               ContentReceiverWithProgress out) {
   detail::ChunkedDecoder dec(strm);
 
-  char buf[CPPHTTPLIB_RECV_BUFSIZ];
+  std::vector<char> buf(CPPHTTPLIB_RECV_BUFSIZ);
   size_t total_len = 0;
 
   for (;;) {
     size_t chunk_offset = 0;
     size_t chunk_total = 0;
-    auto n = dec.read_payload(buf, sizeof(buf), chunk_offset, chunk_total);
+    auto n = dec.read_payload(buf.data(), buf.size(), chunk_offset, chunk_total);
     if (n < 0) { return ReadContentResult::Error; }
 
     if (n == 0) {
@@ -7168,7 +7168,7 @@ inline ReadContentResult read_content_chunked(Stream &strm, T &x,
       return ReadContentResult::PayloadTooLarge;
     }
 
-    if (!out(buf, static_cast<size_t>(n), chunk_offset, chunk_total)) {
+    if (!out(buf.data(), static_cast<size_t>(n), chunk_offset, chunk_total)) {
       return ReadContentResult::Error;
     }
 
@@ -7768,8 +7768,8 @@ inline bool parse_accept_header(const std::string &s,
 
   struct AcceptEntry {
     std::string media_type;
-    double quality;
-    int order;
+    double quality = 0.0;
+    int order = 0;
   };
 
   std::vector<AcceptEntry> entries;
