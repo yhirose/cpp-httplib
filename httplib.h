@@ -9134,13 +9134,7 @@ inline bool setup_client_tls_session(const std::string &host, tls::ctx_t &ctx,
  */
 
 inline void default_socket_options(socket_t sock) {
-  detail::set_socket_opt(sock, SOL_SOCKET,
-#ifdef SO_REUSEPORT
-                         SO_REUSEPORT,
-#else
-                         SO_REUSEADDR,
-#endif
-                         1);
+  detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
 }
 
 inline std::string get_bearer_token_auth(const Request &req) {
