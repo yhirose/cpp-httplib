@@ -1565,6 +1565,8 @@ int close_socket(socket_t sock);
 
 ssize_t write_headers(Stream &strm, const Headers &headers);
 
+bool set_socket_opt(socket_t sock, int level, int optname, int optval);
+
 bool set_socket_opt_time(socket_t sock, int level, int optname, time_t sec,
                          time_t usec);
 
