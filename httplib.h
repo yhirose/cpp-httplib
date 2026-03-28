@@ -1270,6 +1270,7 @@ struct Request {
   bool is_multipart_form_data() const;
 
   // private members...
+  bool body_consumed_ = false;
   size_t redirect_count_ = CPPHTTPLIB_REDIRECT_MAX_COUNT;
   size_t content_length_ = 0;
   ContentProvider content_provider_;
@@ -11288,6 +11289,8 @@ inline bool Server::read_content_core(
     return false;
   }
 
+  req.body_consumed_ = true;
+
   if (req.is_multipart_form_data()) {
     if (!multipart_form_data_parser.is_valid()) {
       res.status = StatusCode::BadRequest_400;
@@ -11906,8 +11909,19 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     return write_response(strm, close_connection, req, res);
   }
 
+  // RFC 9112 §6.3: Reject requests with both a non-zero Content-Length and
+  // any Transfer-Encoding to prevent request smuggling. Content-Length: 0 is
+  // tolerated for compatibility with existing clients.
+  if (req.get_header_value_u64("Content-Length") > 0 &&
+      req.has_header("Transfer-Encoding")) {
+    connection_closed = true;
+    res.status = StatusCode::BadRequest_400;
+    return write_response(strm, close_connection, req, res);
+  }
+
   // Check if the request URI doesn't exceed the limit
   if (req.target.size() > CPPHTTPLIB_REQUEST_URI_MAX_LENGTH) {
+    connection_closed = true;
     res.status = StatusCode::UriTooLong_414;
     output_error_log(Error::ExceedUriMaxLength, &req);
     return write_response(strm, close_connection, req, res);
@@ -11936,6 +11950,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   if (req.has_header("Accept")) {
     const auto &accept_header = req.get_header_value("Accept");
     if (!detail::parse_accept_header(accept_header, req.accept_content_types)) {
+      connection_closed = true;
       res.status = StatusCode::BadRequest_400;
       output_error_log(Error::HTTPParsing, &req);
       return write_response(strm, close_connection, req, res);
@@ -11945,6 +11960,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   if (req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
     if (!detail::parse_range_header(range_header_value, req.ranges)) {
+      connection_closed = true;
       res.status = StatusCode::RangeNotSatisfiable_416;
       output_error_log(Error::InvalidRangeHeader, &req);
       return write_response(strm, close_connection, req, res);
@@ -12072,6 +12088,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
   }
 #endif
+  auto ret = false;
   if (routed) {
     if (res.status == -1) {
       res.status = req.ranges.empty() ? StatusCode::OK_200
@@ -12079,6 +12096,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
 
     // Serve file content by using a content provider
+    auto file_open_error = false;
     if (!res.file_content_path_.empty()) {
       const auto &path = res.file_content_path_;
       auto mm = std::make_shared<detail::mmap>(path.c_str());
@@ -12088,37 +12106,53 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         res.content_provider_ = nullptr;
         res.status = StatusCode::NotFound_404;
         output_error_log(Error::OpenFile, &req);
-        return write_response(strm, close_connection, req, res);
-      }
+        file_open_error = true;
+      } else {
+        auto content_type = res.file_content_content_type_;
+        if (content_type.empty()) {
+          content_type = detail::find_content_type(
+              path, file_extension_and_mimetype_map_, default_file_mimetype_);
+        }
 
-      auto content_type = res.file_content_content_type_;
-      if (content_type.empty()) {
-        content_type = detail::find_content_type(
-            path, file_extension_and_mimetype_map_, default_file_mimetype_);
+        res.set_content_provider(
+            mm->size(), content_type,
+            [mm](size_t offset, size_t length, DataSink &sink) -> bool {
+              sink.write(mm->data() + offset, length);
+              return true;
+            });
       }
-
-      res.set_content_provider(
-          mm->size(), content_type,
-          [mm](size_t offset, size_t length, DataSink &sink) -> bool {
-            sink.write(mm->data() + offset, length);
-            return true;
-          });
     }
 
-    if (detail::range_error(req, res)) {
+    if (file_open_error) {
+      ret = write_response(strm, close_connection, req, res);
+    } else if (detail::range_error(req, res)) {
       res.body.clear();
       res.content_length_ = 0;
       res.content_provider_ = nullptr;
       res.status = StatusCode::RangeNotSatisfiable_416;
-      return write_response(strm, close_connection, req, res);
+      ret = write_response(strm, close_connection, req, res);
+    } else {
+      ret = write_response_with_content(strm, close_connection, req, res);
     }
-
-    return write_response_with_content(strm, close_connection, req, res);
   } else {
     if (res.status == -1) { res.status = StatusCode::NotFound_404; }
-
-    return write_response(strm, close_connection, req, res);
+    ret = write_response(strm, close_connection, req, res);
   }
+
+  // Drain any unconsumed request body to prevent request smuggling on
+  // keep-alive connections.
+  if (!req.body_consumed_ && detail::expect_content(req)) {
+    int drain_status = 200; // required by read_content signature
+    if (!detail::read_content(
+            strm, req, payload_max_length_, drain_status, nullptr,
+            [](const char *, size_t, size_t, size_t) { return true; }, false)) {
+      // Body exceeds payload limit or read error — close the connection
+      // to prevent leftover bytes from being misinterpreted.
+      connection_closed = true;
+    }
+  }
+
+  return ret;
 }
 
 inline bool Server::is_valid() const { return true; }

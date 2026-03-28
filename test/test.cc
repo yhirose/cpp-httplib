@@ -17266,3 +17266,146 @@ TEST(SymlinkTest, SymlinkEscapeFromBaseDirectory) {
   EXPECT_EQ(StatusCode::Forbidden_403, res->status);
 }
 #endif
+
+TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
+  // A GET request with Content-Length to a static file handler must have its
+  // body drained before the keep-alive connection is reused. Otherwise the
+  // unread body bytes are interpreted as the next HTTP request.
+  //
+  // The body is sent AFTER receiving the first response (as in the original
+  // PoC) so that the stream_line_reader cannot buffer it together with the
+  // headers of the first request.
+  Server svr;
+  svr.set_mount_point("/", "./www");
+
+  std::atomic<int> smuggled_count(0);
+  svr.Get("/smuggled", [&](const Request &, Response &res) {
+    smuggled_count++;
+    res.set_content("oops", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      "localhost", "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/2, 0,
+      /*read_timeout_sec=*/2, 0,
+      /*write_timeout_sec=*/2, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  // The "smuggled" request will be sent as the body of the outer GET
+  std::string smuggled = "GET /smuggled HTTP/1.1\r\n"
+                         "Host: localhost\r\n"
+                         "Connection: close\r\n"
+                         "\r\n";
+
+  // Step 1: Send only the outer request headers (no body yet)
+  std::string outer_headers = "GET /file HTTP/1.1\r\n"
+                              "Host: localhost\r\n"
+                              "Content-Length: " +
+                              std::to_string(smuggled.size()) +
+                              "\r\n"
+                              "\r\n";
+
+  auto sent =
+      send(sock, outer_headers.data(), outer_headers.size(), MSG_NOSIGNAL);
+  ASSERT_EQ(static_cast<ssize_t>(outer_headers.size()), sent);
+
+  // Step 2: Read the first response (server serves file without reading body)
+  std::string first_response;
+  char buf[4096];
+  for (;;) {
+    auto n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0) break;
+    first_response.append(buf, static_cast<size_t>(n));
+    // Stop once we have a complete response (headers + body)
+    auto hdr_end = first_response.find("\r\n\r\n");
+    if (hdr_end != std::string::npos) {
+      // Check for Content-Length to know when the body is complete
+      auto cl_pos = first_response.find("Content-Length:");
+      if (cl_pos != std::string::npos) {
+        auto cl_val_start = cl_pos + 15; // length of "Content-Length:"
+        auto cl_val_end = first_response.find("\r\n", cl_val_start);
+        auto cl = std::stoul(
+            first_response.substr(cl_val_start, cl_val_end - cl_val_start));
+        if (first_response.size() >= hdr_end + 4 + cl) { break; }
+      } else {
+        break; // No Content-Length, assume headers-only response
+      }
+    }
+  }
+  ASSERT_TRUE(first_response.find("HTTP/1.1 200") != std::string::npos);
+
+  // Step 3: Now send the body, which looks like a new HTTP request.
+  // On a vulnerable server the keep-alive loop reads this as a second request.
+  sent = send(sock, smuggled.data(), smuggled.size(), MSG_NOSIGNAL);
+  ASSERT_EQ(static_cast<ssize_t>(smuggled.size()), sent);
+
+  // Step 4: Try to read a second response (should NOT exist after fix)
+  std::string second_response;
+  for (;;) {
+    auto n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0) break;
+    second_response.append(buf, static_cast<size_t>(n));
+  }
+
+  // The smuggled request must NOT have been processed
+  EXPECT_EQ(0, smuggled_count.load());
+}
+
+TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
+  // RFC 9112 §6.3: A request with both Content-Length and Transfer-Encoding
+  // must be rejected with 400 Bad Request.
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // Exact "chunked"
+  {
+    auto req = "POST /test HTTP/1.1\r\n"
+               "Host: localhost\r\n"
+               "Content-Length: 5\r\n"
+               "Transfer-Encoding: chunked\r\n"
+               "Connection: close\r\n"
+               "\r\n"
+               "hello";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")));
+  }
+
+  // Multi-valued Transfer-Encoding (e.g., "gzip, chunked")
+  {
+    auto req = "POST /test HTTP/1.1\r\n"
+               "Host: localhost\r\n"
+               "Content-Length: 5\r\n"
+               "Transfer-Encoding: gzip, chunked\r\n"
+               "Connection: close\r\n"
+               "\r\n"
+               "hello";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")));
+  }
+}
