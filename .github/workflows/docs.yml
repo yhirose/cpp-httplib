@@ -4,6 +4,7 @@ on:
     branches: [master]
     paths:
       - 'docs-src/**'
+  workflow_dispatch:
 permissions:
   contents: read
   pages: write
