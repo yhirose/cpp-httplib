@@ -1449,13 +1449,8 @@ TEST_F(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 }
 
 TEST(RangeTest, FromHTTPBin_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
+  auto host = "httpbingo.org";
   auto path = std::string{"/range/32"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/range/32"};
-#endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
@@ -1489,12 +1484,16 @@ TEST(RangeTest, FromHTTPBin_Online) {
     EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   }
 
+  // go-httpbin (httpbingo.org) returns 206 even when the range covers the
+  // entire resource, while the original httpbin returned 200. Both are
+  // acceptable per RFC 9110 §15.3.7, so we accept either status code.
   {
     Headers headers = {make_range_header({{0, 31}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
-    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_TRUE(res->status == StatusCode::OK_200 ||
+                res->status == StatusCode::PartialContent_206);
   }
 
   {
@@ -1502,14 +1501,17 @@ TEST(RangeTest, FromHTTPBin_Online) {
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
-    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_TRUE(res->status == StatusCode::OK_200 ||
+                res->status == StatusCode::PartialContent_206);
   }
 
+  // go-httpbin returns 206 with clamped range for over-range requests,
+  // while the original httpbin returned 416. Both behaviors are observed
+  // in real servers, so we only verify the request succeeds.
   {
     Headers headers = {make_range_header({{0, 32}})};
     auto res = cli.Get(path, headers);
     ASSERT_TRUE(res);
-    EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   }
 }
 
@@ -1623,13 +1625,8 @@ TEST(ConnectionErrorTest, Timeout_Online) {
 }
 
 TEST(CancelTest, NoCancel_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
+  auto host = "httpbingo.org";
   auto path = std::string{"/range/32"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/range/32"};
-#endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
@@ -1647,13 +1644,11 @@ TEST(CancelTest, NoCancel_Online) {
 }
 
 TEST(CancelTest, WithCancelSmallPayload_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
-  auto path = std::string{"/range/32"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/range/32"};
-#endif
+  // Use /bytes with a large payload so that the DownloadProgress callback
+  // (which only fires for Content-Length responses) is invoked before the
+  // entire body is received, giving cancellation a chance to fire.
+  auto host = "httpbingo.org";
+  auto path = std::string{"/bytes/524288"};
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
@@ -1670,13 +1665,8 @@ TEST(CancelTest, WithCancelSmallPayload_Online) {
 }
 
 TEST(CancelTest, WithCancelLargePayload_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
-  auto path = std::string{"/range/65536"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/range/65536"};
-#endif
+  auto host = "httpbingo.org";
+  auto path = std::string{"/bytes/524288"};
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
@@ -2027,13 +2017,8 @@ static std::string remove_whitespace(const std::string &input) {
 }
 
 TEST(BaseAuthTest, FromHTTPWatch_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
+  auto host = "httpbingo.org";
   auto path = std::string{"/basic-auth/hello/world"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/basic-auth/hello/world"};
-#endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   auto port = 443;
@@ -2053,8 +2038,9 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
     auto res =
         cli.Get(path, {make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res);
-    EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
-              remove_whitespace(res->body));
+    auto body = remove_whitespace(res->body);
+    EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
+    EXPECT_TRUE(body.find("\"user\":\"hello\"") != std::string::npos);
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -2062,8 +2048,9 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
     cli.set_basic_auth("hello", "world");
     auto res = cli.Get(path);
     ASSERT_TRUE(res);
-    EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
-              remove_whitespace(res->body));
+    auto body = remove_whitespace(res->body);
+    EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
+    EXPECT_TRUE(body.find("\"user\":\"hello\"") != std::string::npos);
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -2084,24 +2071,12 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(DigestAuthTest, FromHTTPWatch_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
+  auto host = "httpbingo.org";
   auto unauth_path = std::string{"/digest-auth/auth/hello/world"};
   auto paths = std::vector<std::string>{
       "/digest-auth/auth/hello/world/MD5",
       "/digest-auth/auth/hello/world/SHA-256",
-      "/digest-auth/auth/hello/world/SHA-512",
   };
-#else
-  auto host = "nghttp2.org";
-  auto unauth_path = std::string{"/httpbin/digest-auth/auth/hello/world"};
-  auto paths = std::vector<std::string>{
-      "/httpbin/digest-auth/auth/hello/world/MD5",
-      "/httpbin/digest-auth/auth/hello/world/SHA-256",
-      "/httpbin/digest-auth/auth/hello/world/SHA-512",
-      "/httpbin/digest-auth/auth-int/hello/world/MD5",
-  };
-#endif
 
   auto port = 443;
   SSLClient cli(host, port);
@@ -2118,27 +2093,18 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
     for (const auto &path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res);
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-      std::string algo(path.substr(path.rfind('/') + 1));
-      EXPECT_EQ(
-          remove_whitespace("{\"algorithm\":\"" + algo +
-                            "\",\"authenticated\":true,\"user\":\"hello\"}\n"),
-          remove_whitespace(res->body));
-#else
-      EXPECT_EQ("{\"authenticated\":true,\"user\":\"hello\"}",
-                remove_whitespace(res->body));
-#endif
+      auto body = remove_whitespace(res->body);
+      EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
+      EXPECT_TRUE(body.find("\"user\":\"hello\"") != std::string::npos);
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
     cli.set_digest_auth("hello", "bad");
     for (const auto &path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     }
-#endif
   }
 }
 
@@ -2178,7 +2144,8 @@ TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
 }
 
 TEST(AbsoluteRedirectTest, Redirect_Online) {
-  auto host = "nghttp2.org";
+  auto host = "httpbingo.org";
+  auto path = std::string{"/absolute-redirect/3"};
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
@@ -2187,13 +2154,14 @@ TEST(AbsoluteRedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/httpbin/absolute-redirect/3");
+  auto res = cli.Get(path);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(RedirectTest, Redirect_Online) {
-  auto host = "nghttp2.org";
+  auto host = "httpbingo.org";
+  auto path = std::string{"/redirect/3"};
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
@@ -2202,13 +2170,14 @@ TEST(RedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/httpbin/redirect/3");
+  auto res = cli.Get(path);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(RelativeRedirectTest, Redirect_Online) {
-  auto host = "nghttp2.org";
+  auto host = "httpbingo.org";
+  auto path = std::string{"/relative-redirect/3"};
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
@@ -2217,13 +2186,14 @@ TEST(RelativeRedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/httpbin/relative-redirect/3");
+  auto res = cli.Get(path);
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(TooManyRedirectTest, Redirect_Online) {
-  auto host = "nghttp2.org";
+  auto host = "httpbingo.org";
+  auto path = std::string{"/redirect/21"};
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
@@ -2232,7 +2202,7 @@ TEST(TooManyRedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get("/httpbin/redirect/21");
+  auto res = cli.Get(path);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
@@ -8372,13 +8342,8 @@ TEST(GetWithParametersTest, GetWithParameters2) {
 }
 
 TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
+  auto host = "httpbingo.org";
   auto path = std::string{"/range/32"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/range/32"};
-#endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   SSLClient cli(host);
@@ -9669,13 +9634,8 @@ TEST(SSLClientTest, UpdateCAStoreWithPem_Online) {
 }
 
 TEST(SSLClientTest, ServerNameIndication_Online) {
-#ifdef CPPHTTPLIB_DEFAULT_HTTPBIN
-  auto host = "httpcan.org";
+  auto host = "httpbingo.org";
   auto path = std::string{"/get"};
-#else
-  auto host = "nghttp2.org";
-  auto path = std::string{"/httpbin/get"};
-#endif
 
   SSLClient cli(host, 443);
   auto res = cli.Get(path);

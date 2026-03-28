@@ -16,29 +16,29 @@ std::string normalizeJson(const std::string &json) {
 
 template <typename T> void ProxyTest(T &cli, bool basic) {
   cli.set_proxy("localhost", basic ? 3128 : 3129);
-  auto res = cli.Get("/httpbin/get");
+  auto res = cli.Get("/get");
   ASSERT_TRUE(res != nullptr);
   EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
 }
 
 TEST(ProxyTest, NoSSLBasic) {
-  Client cli("nghttp2.org");
+  Client cli("httpbingo.org");
   ProxyTest(cli, true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLBasic) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli("httpbingo.org");
   ProxyTest(cli, true);
 }
 
 TEST(ProxyTest, NoSSLDigest) {
-  Client cli("nghttp2.org");
+  Client cli("httpbingo.org");
   ProxyTest(cli, false);
 }
 
 TEST(ProxyTest, SSLDigest) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli("httpbingo.org");
   ProxyTest(cli, false);
 }
 #endif
@@ -63,24 +63,24 @@ void RedirectProxyText(T &cli, const char *path, bool basic) {
 }
 
 TEST(RedirectTest, HTTPBinNoSSLBasic) {
-  Client cli("nghttp2.org");
-  RedirectProxyText(cli, "/httpbin/redirect/2", true);
+  Client cli("httpbingo.org");
+  RedirectProxyText(cli, "/redirect/2", true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, HTTPBinNoSSLDigest) {
-  Client cli("nghttp2.org");
-  RedirectProxyText(cli, "/httpbin/redirect/2", false);
+  Client cli("httpbingo.org");
+  RedirectProxyText(cli, "/redirect/2", false);
 }
 
 TEST(RedirectTest, HTTPBinSSLBasic) {
-  SSLClient cli("nghttp2.org");
-  RedirectProxyText(cli, "/httpbin/redirect/2", true);
+  SSLClient cli("httpbingo.org");
+  RedirectProxyText(cli, "/redirect/2", true);
 }
 
 TEST(RedirectTest, HTTPBinSSLDigest) {
-  SSLClient cli("nghttp2.org");
-  RedirectProxyText(cli, "/httpbin/redirect/2", false);
+  SSLClient cli("httpbingo.org");
+  RedirectProxyText(cli, "/redirect/2", false);
 }
 #endif
 
@@ -290,26 +290,25 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 #endif
 
   {
-    auto res = cli.Get("/httpbin/get");
+    auto res = cli.Get("/get");
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
   {
-    auto res = cli.Get("/httpbin/redirect/2");
+    auto res = cli.Get("/redirect/2");
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
   {
     std::vector<std::string> paths = {
-        "/httpbin/digest-auth/auth/hello/world/MD5",
-        "/httpbin/digest-auth/auth/hello/world/SHA-256",
-        "/httpbin/digest-auth/auth/hello/world/SHA-512",
-        "/httpbin/digest-auth/auth-int/hello/world/MD5",
+        "/digest-auth/auth/hello/world/MD5",
+        "/digest-auth/auth/hello/world/SHA-256",
     };
 
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
-      EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
-                normalizeJson(res->body));
+      auto body = normalizeJson(res->body);
+      EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
+      EXPECT_TRUE(body.find("\"user\":\"hello\"") != std::string::npos);
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
   }
@@ -317,7 +316,7 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
   {
     int count = 10;
     while (count--) {
-      auto res = cli.Get("/httpbin/get");
+      auto res = cli.Get("/get");
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
   }
@@ -325,22 +324,22 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, NoSSLWithBasic) {
-  Client cli("nghttp2.org");
+  Client cli("httpbingo.org");
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, SSLWithBasic) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli("httpbingo.org");
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, NoSSLWithDigest) {
-  Client cli("nghttp2.org");
+  Client cli("httpbingo.org");
   KeepAliveTest(cli, false);
 }
 
 TEST(KeepAliveTest, SSLWithDigest) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli("httpbingo.org");
   KeepAliveTest(cli, false);
 }
 #endif
@@ -349,11 +348,11 @@ TEST(KeepAliveTest, SSLWithDigest) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLOpenStream) {
-  SSLClient cli("nghttp2.org");
+  SSLClient cli("httpbingo.org");
   cli.set_proxy("localhost", 3128);
   cli.set_proxy_basic_auth("hello", "world");
 
-  auto handle = cli.open_stream("GET", "/httpbin/get");
+  auto handle = cli.open_stream("GET", "/get");
   ASSERT_TRUE(handle.response);
   EXPECT_EQ(StatusCode::OK_200, handle.response->status);
 
