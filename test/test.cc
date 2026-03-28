@@ -274,7 +274,7 @@ TEST(SocketStream, wait_writable_INET) {
   sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(PORT + 1);
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 1));
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
   int disconnected_svr_sock = -1;
@@ -8904,7 +8904,7 @@ TEST(ClientVulnerabilityTest, UnboundedReadWithoutContentLength) {
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 2);
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int opt = 1;
@@ -9010,7 +9010,7 @@ TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 2);
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int opt = 1;
@@ -9121,7 +9121,7 @@ TEST(ClientVulnerabilityTest, ContentReceiverBypassesDefaultPayloadMaxLength) {
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 2);
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int opt = 1;
@@ -9230,7 +9230,7 @@ TEST(ClientVulnerabilityTest,
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 2);
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int opt = 1;
@@ -9338,7 +9338,7 @@ TEST(ClientVulnerabilityTest,
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 2);
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     int opt = 1;
@@ -9474,7 +9474,7 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
 
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(PORT + 3);
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 3));
   ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
   int opt = 1;
@@ -12360,7 +12360,7 @@ TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT + 1);
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 1));
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
     ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
     ::listen(srv, 1);
