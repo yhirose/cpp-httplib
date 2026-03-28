@@ -1480,6 +1480,8 @@ using SocketOptions = std::function<void(socket_t sock)>;
 
 void default_socket_options(socket_t sock);
 
+bool set_socket_opt(socket_t sock, int level, int optname, int optval);
+
 const char *status_message(int status);
 
 std::string to_string(Error error);
@@ -4338,10 +4340,6 @@ inline bool set_socket_opt_impl(socket_t sock, int level, int optname,
                     optlen) == 0;
 }
 
-inline bool set_socket_opt(socket_t sock, int level, int optname, int optval) {
-  return set_socket_opt_impl(sock, level, optname, &optval, sizeof(optval));
-}
-
 inline bool set_socket_opt_time(socket_t sock, int level, int optname,
                                 time_t sec, time_t usec) {
 #ifdef _WIN32
@@ -6089,7 +6087,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 #ifdef _WIN32
       // Setting SO_REUSEADDR seems not to work well with AF_UNIX on windows, so
       // remove the option.
-      detail::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 0);
+      set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 0);
 #endif
 
       bool dummy;
@@ -9135,13 +9133,18 @@ inline bool setup_client_tls_session(const std::string &host, tls::ctx_t &ctx,
  */
 
 inline void default_socket_options(socket_t sock) {
-  detail::set_socket_opt(sock, SOL_SOCKET,
+  set_socket_opt(sock, SOL_SOCKET,
 #ifdef SO_REUSEPORT
-                         SO_REUSEPORT,
+                 SO_REUSEPORT,
 #else
-                         SO_REUSEADDR,
+                 SO_REUSEADDR,
 #endif
-                         1);
+                 1);
+}
+
+inline bool set_socket_opt(socket_t sock, int level, int optname, int optval) {
+  return detail::set_socket_opt_impl(sock, level, optname, &optval,
+                                     sizeof(optval));
 }
 
 inline std::string get_bearer_token_auth(const Request &req) {
@@ -11561,9 +11564,7 @@ inline bool Server::listen_internal() {
       detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
                                   write_timeout_sec_, write_timeout_usec_);
 
-      if (tcp_nodelay_) {
-        detail::set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1);
-      }
+      if (tcp_nodelay_) { set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1); }
 
       if (!task_queue->enqueue(
               [this, sock]() { process_and_close_socket(sock); })) {

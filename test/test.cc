@@ -316,6 +316,19 @@ TEST(SocketStream, wait_writable_INET) {
 }
 #endif // #ifndef _WIN32
 
+TEST(SetSocketOptTest, TcpNoDelay) {
+  auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(sock, INVALID_SOCKET);
+  EXPECT_TRUE(set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1));
+
+  int val = 0;
+  socklen_t len = sizeof(val);
+  ASSERT_EQ(0, ::getsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+                            reinterpret_cast<char *>(&val), &len));
+  EXPECT_NE(val, 0);
+  detail::close_socket(sock);
+}
+
 TEST(ClientTest, MoveConstructible) {
   EXPECT_FALSE(std::is_copy_constructible<Client>::value);
   EXPECT_TRUE(std::is_nothrow_move_constructible<Client>::value);
@@ -17315,8 +17328,7 @@ TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
                               "\r\n"
                               "\r\n";
 
-  auto sent =
-      send(sock, outer_headers.data(), outer_headers.size(), MSG_NOSIGNAL);
+  auto sent = send(sock, outer_headers.data(), outer_headers.size(), 0);
   ASSERT_EQ(static_cast<ssize_t>(outer_headers.size()), sent);
 
   // Step 2: Read the first response (server serves file without reading body)
@@ -17346,7 +17358,7 @@ TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
 
   // Step 3: Now send the body, which looks like a new HTTP request.
   // On a vulnerable server the keep-alive loop reads this as a second request.
-  sent = send(sock, smuggled.data(), smuggled.size(), MSG_NOSIGNAL);
+  sent = send(sock, smuggled.data(), smuggled.size(), 0);
   ASSERT_EQ(static_cast<ssize_t>(smuggled.size()), sent);
 
   // Step 4: Try to read a second response (should NOT exist after fix)
