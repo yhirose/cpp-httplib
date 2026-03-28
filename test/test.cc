@@ -12035,6 +12035,97 @@ TEST(MultipartFormDataTest, UploadItemsHasContentLength) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MultipartFormDataTest, ContentProviderCoalescesWrites) {
+  // Verify that make_multipart_content_provider coalesces many small segments
+  // into fewer sink.write() calls to avoid TCP packet fragmentation (#2410).
+  constexpr size_t kItemCount = 1000;
+
+  UploadFormDataItems items;
+  items.reserve(kItemCount);
+  for (size_t i = 0; i < kItemCount; i++) {
+    items.push_back(
+        {"field" + std::to_string(i), "value" + std::to_string(i), "", ""});
+  }
+
+  const std::string boundary = "----test-boundary";
+  auto content_length = detail::get_multipart_content_length(items, boundary);
+  auto provider = detail::make_multipart_content_provider(items, boundary);
+
+  // Drive the provider the same way write_content_with_progress does
+  size_t write_count = 0;
+  size_t total_bytes = 0;
+
+  DataSink sink;
+  size_t offset = 0;
+  sink.write = [&](const char *d, size_t l) -> bool {
+    (void)d;
+    write_count++;
+    total_bytes += l;
+    offset += l;
+    return true;
+  };
+  sink.is_writable = []() -> bool { return true; };
+
+  while (offset < content_length) {
+    ASSERT_TRUE(provider(offset, content_length - offset, sink));
+  }
+
+  EXPECT_EQ(content_length, total_bytes);
+
+  // The total number of segments is 3 * kItemCount + 1 = 3001.
+  // With buffering into 64KB blocks, write_count should be much smaller.
+  auto segment_count = 3 * kItemCount + 1;
+  EXPECT_LT(write_count, segment_count / 10);
+}
+
+TEST(MultipartFormDataTest, ManyItemsEndToEnd) {
+  // Integration test: send many UploadFormDataItems and verify the server
+  // receives all of them correctly (#2410).
+  constexpr size_t kItemCount = 500;
+
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/upload", [&](const Request &req, Response &res) {
+    EXPECT_EQ(kItemCount, req.form.fields.size());
+    for (size_t i = 0; i < kItemCount; i++) {
+      auto key = "field" + std::to_string(i);
+      auto val = "value" + std::to_string(i);
+      auto it = req.form.fields.find(key);
+      if (it != req.form.fields.end()) {
+        EXPECT_EQ(val, it->second.content);
+      } else {
+        ADD_FAILURE() << "Missing field: " << key;
+      }
+    }
+    res.set_content("ok", "text/plain");
+    handled = true;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  UploadFormDataItems items;
+  items.reserve(kItemCount);
+  for (size_t i = 0; i < kItemCount; i++) {
+    items.push_back(
+        {"field" + std::to_string(i), "value" + std::to_string(i), "", ""});
+  }
+
+  Client cli(HOST, port);
+  auto res = cli.Post("/upload", items);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST(MultipartFormDataTest, MakeFileProvider) {
   // Verify make_file_provider sends a file's contents correctly.
   const std::string file_content(4096, 'Z');

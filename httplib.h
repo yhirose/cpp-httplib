@@ -1571,6 +1571,13 @@ ssize_t write_headers(Stream &strm, const Headers &headers);
 bool set_socket_opt_time(socket_t sock, int level, int optname, time_t sec,
                          time_t usec);
 
+size_t get_multipart_content_length(const UploadFormDataItems &items,
+                                    const std::string &boundary);
+
+ContentProvider
+make_multipart_content_provider(const UploadFormDataItems &items,
+                                const std::string &boundary);
+
 } // namespace detail
 
 class Server {
@@ -8242,6 +8249,7 @@ make_multipart_content_provider(const UploadFormDataItems &items,
   struct MultipartState {
     std::vector<std::string> owned;
     std::vector<MultipartSegment> segs;
+    std::vector<char> buf = std::vector<char>(CPPHTTPLIB_SEND_BUFSIZ);
   };
   auto state = std::make_shared<MultipartState>();
   state->owned = std::move(owned);
@@ -8250,19 +8258,49 @@ make_multipart_content_provider(const UploadFormDataItems &items,
   state->segs = std::move(segs);
 
   return [state](size_t offset, size_t length, DataSink &sink) -> bool {
+    // Buffer multiple small segments into fewer, larger writes to avoid
+    // excessive TCP packets when there are many form data items (#2410)
+    auto &buf = state->buf;
+    auto buf_size = buf.size();
+    size_t buf_len = 0;
+    size_t remaining = length;
+
+    // Find the first segment containing 'offset'
     size_t pos = 0;
-    for (const auto &seg : state->segs) {
-      // Loop invariant: pos <= offset (proven by advancing pos only when
-      // offset - pos >= seg.size, i.e., the segment doesn't contain offset)
-      if (seg.size > 0 && offset - pos < seg.size) {
-        size_t seg_offset = offset - pos;
-        size_t available = seg.size - seg_offset;
-        size_t to_write = (std::min)(available, length);
-        return sink.write(seg.data + seg_offset, to_write);
-      }
+    size_t seg_idx = 0;
+    for (; seg_idx < state->segs.size(); seg_idx++) {
+      const auto &seg = state->segs[seg_idx];
+      if (seg.size > 0 && offset - pos < seg.size) { break; }
       pos += seg.size;
     }
-    return true; // past end (shouldn't be reached when content_length is exact)
+
+    size_t seg_offset = (seg_idx < state->segs.size()) ? offset - pos : 0;
+
+    for (; seg_idx < state->segs.size() && remaining > 0; seg_idx++) {
+      const auto &seg = state->segs[seg_idx];
+      size_t available = seg.size - seg_offset;
+      size_t to_copy = (std::min)(available, remaining);
+      const char *src = seg.data + seg_offset;
+      seg_offset = 0; // only the first segment has a non-zero offset
+
+      while (to_copy > 0) {
+        size_t space = buf_size - buf_len;
+        size_t chunk = (std::min)(to_copy, space);
+        std::memcpy(buf.data() + buf_len, src, chunk);
+        buf_len += chunk;
+        src += chunk;
+        to_copy -= chunk;
+        remaining -= chunk;
+
+        if (buf_len == buf_size) {
+          if (!sink.write(buf.data(), buf_len)) { return false; }
+          buf_len = 0;
+        }
+      }
+    }
+
+    if (buf_len > 0) { return sink.write(buf.data(), buf_len); }
+    return true;
   };
 }
 
