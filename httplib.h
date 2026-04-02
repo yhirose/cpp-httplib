@@ -12999,20 +12999,86 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   auto location = res.get_header_value("location");
   if (location.empty()) { return false; }
 
-  thread_local const std::regex re(
-      R"((?:(https?):)?(?://(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+  std::string next_scheme, next_host, port_str, next_path, next_query;
+  size_t pos = 0;
+  bool has_authority = false;
 
-  std::smatch m;
-  if (!std::regex_match(location, m, re)) { return false; }
+  // Parse scheme and determine if authority is present
+  size_t scheme_end = location.find("://");
+  if (scheme_end != std::string::npos) {
+    // Full URL with scheme: http://host/path
+    next_scheme = location.substr(0, scheme_end);
+    pos = scheme_end + 3;
+    has_authority = true;
+  } else if (location.size() >= 2 && location[0] == '/' && location[1] == '/') {
+    // Scheme-relative URL: //host/path
+    pos = 2;
+    has_authority = true;
+  }
+  // else: relative path without authority: /path or path
+
+  // Skip userinfo if present (RFC 3986: authority = [userinfo"@"]host)
+  if (has_authority && pos < location.size()) {
+    auto delim_pos = location.find_first_of("/?#", pos);
+    auto search_end =
+        (delim_pos != std::string::npos) ? delim_pos : location.size();
+    auto at_pos = location.rfind('@', search_end - 1);
+    if (at_pos != std::string::npos && at_pos >= pos) {
+      pos = at_pos + 1;
+    }
+  }
+
+  // Parse host (only if authority is present)
+  if (has_authority && pos < location.size()) {
+    if (location[pos] == '[') {
+      size_t bracket_end = location.find(']', pos);
+      if (bracket_end != std::string::npos) {
+        next_host = location.substr(pos + 1, bracket_end - pos - 1);
+        pos = bracket_end + 1;
+      } else {
+        return false;
+      }
+    } else {
+      size_t host_end = location.find_first_of(":/?#", pos);
+      if (host_end == std::string::npos) host_end = location.size();
+      next_host = location.substr(pos, host_end - pos);
+      pos = host_end;
+    }
+  }
+
+  // Parse port (only if authority is present)
+  if (has_authority && pos < location.size() && location[pos] == ':') {
+    pos++;
+    size_t port_end = location.find_first_of("/?#", pos);
+    if (port_end == std::string::npos) port_end = location.size();
+    port_str = location.substr(pos, port_end - pos);
+    pos = port_end;
+  }
+
+  if (pos < location.size()) {
+    size_t query_start = location.find('?', pos);
+    size_t fragment_start = location.find('#', pos);
+    size_t path_end = location.size();
+
+    if (query_start != std::string::npos &&
+        (fragment_start == std::string::npos || query_start < fragment_start)) {
+      path_end = query_start;
+    } else if (fragment_start != std::string::npos) {
+      path_end = fragment_start;
+    }
+
+    next_path = location.substr(pos, path_end - pos);
+
+    if (query_start != std::string::npos &&
+        (fragment_start == std::string::npos || query_start < fragment_start)) {
+      size_t query_end = (fragment_start != std::string::npos &&
+                          fragment_start > query_start) ? fragment_start
+                                                        : location.size();
+      next_query = location.substr(query_start, query_end - query_start);
+    }
+  }
 
   auto scheme = is_ssl() ? "https" : "http";
-
-  auto next_scheme = m[1].str();
-  auto next_host = m[2].str();
-  if (next_host.empty()) { next_host = m[3].str(); }
-  auto port_str = m[4].str();
-  auto next_path = m[5].str();
-  auto next_query = m[6].str();
 
   auto next_port = port_;
   if (!port_str.empty()) {
