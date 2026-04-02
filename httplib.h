@@ -13023,9 +13023,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
     auto search_end =
         (delim_pos != std::string::npos) ? delim_pos : location.size();
     auto at_pos = location.rfind('@', search_end - 1);
-    if (at_pos != std::string::npos && at_pos >= pos) {
-      pos = at_pos + 1;
-    }
+    if (at_pos != std::string::npos && at_pos >= pos) { pos = at_pos + 1; }
   }
 
   // Parse host (only if authority is present)
@@ -13071,9 +13069,10 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
     if (query_start != std::string::npos &&
         (fragment_start == std::string::npos || query_start < fragment_start)) {
-      size_t query_end = (fragment_start != std::string::npos &&
-                          fragment_start > query_start) ? fragment_start
-                                                        : location.size();
+      size_t query_end =
+          (fragment_start != std::string::npos && fragment_start > query_start)
+              ? fragment_start
+              : location.size();
       next_query = location.substr(query_start, query_end - query_start);
     }
   }
