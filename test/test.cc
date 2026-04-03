@@ -3120,45 +3120,40 @@ TEST(RequestHandlerTest, PreRequestHandler) {
   }
 }
 
-TEST(AnyTest, BasicOperations) {
-  // Default construction
-  httplib::any a;
-  EXPECT_FALSE(a.has_value());
+TEST(UserDataTest, BasicOperations) {
+  httplib::UserData ud;
 
-  // Value construction and any_cast (pointer form, noexcept)
-  httplib::any b(42);
-  EXPECT_TRUE(b.has_value());
-  auto *p = httplib::any_cast<int>(&b);
+  // Initially empty
+  EXPECT_FALSE(ud.has("key"));
+  EXPECT_EQ(nullptr, ud.get<int>("key"));
+
+  // set and get
+  ud.set("key", 42);
+  EXPECT_TRUE(ud.has("key"));
+  auto *p = ud.get<int>("key");
   ASSERT_NE(nullptr, p);
   EXPECT_EQ(42, *p);
 
   // Type mismatch → nullptr
-  auto *q = httplib::any_cast<std::string>(&b);
-  EXPECT_EQ(nullptr, q);
+  EXPECT_EQ(nullptr, ud.get<std::string>("key"));
 
-  // any_cast (value form) succeeds
-  EXPECT_EQ(42, httplib::any_cast<int>(b));
+  // Overwrite with different type
+  ud.set("key", std::string("hello"));
+  EXPECT_EQ(nullptr, ud.get<int>("key"));
+  auto *s = ud.get<std::string>("key");
+  ASSERT_NE(nullptr, s);
+  EXPECT_EQ("hello", *s);
 
-  // any_cast (value form) throws on type mismatch
-#ifndef CPPHTTPLIB_NO_EXCEPTIONS
-  EXPECT_THROW(httplib::any_cast<std::string>(b), httplib::bad_any_cast);
-#endif
+  // erase
+  ud.erase("key");
+  EXPECT_FALSE(ud.has("key"));
 
-  // Copy
-  httplib::any c = b;
-  EXPECT_EQ(42, httplib::any_cast<int>(c));
-
-  // Move
-  httplib::any d = std::move(c);
-  EXPECT_EQ(42, httplib::any_cast<int>(d));
-
-  // Assignment with different type
-  b = std::string("hello");
-  EXPECT_EQ("hello", httplib::any_cast<std::string>(b));
-
-  // Reset
-  b.reset();
-  EXPECT_FALSE(b.has_value());
+  // clear
+  ud.set("a", 1);
+  ud.set("b", 2);
+  ud.clear();
+  EXPECT_FALSE(ud.has("a"));
+  EXPECT_FALSE(ud.has("b"));
 }
 
 TEST(RequestHandlerTest, ResponseUserDataInPreRouting) {
@@ -3169,12 +3164,12 @@ TEST(RequestHandlerTest, ResponseUserDataInPreRouting) {
   Server svr;
 
   svr.set_pre_routing_handler([](const Request & /*req*/, Response &res) {
-    res.user_data["auth"] = AuthCtx{"alice"};
+    res.user_data.set("auth", AuthCtx{"alice"});
     return Server::HandlerResponse::Unhandled;
   });
 
   svr.Get("/me", [](const Request & /*req*/, Response &res) {
-    auto *ctx = httplib::any_cast<AuthCtx>(&res.user_data["auth"]);
+    auto *ctx = res.user_data.get<AuthCtx>("auth");
     ASSERT_NE(nullptr, ctx);
     res.set_content("Hello " + ctx->user_id, "text/plain");
   });
@@ -3203,12 +3198,12 @@ TEST(RequestHandlerTest, ResponseUserDataInPreRequest) {
   Server svr;
 
   svr.set_pre_request_handler([](const Request & /*req*/, Response &res) {
-    res.user_data["role"] = RoleCtx{"admin"};
+    res.user_data.set("role", RoleCtx{"admin"});
     return Server::HandlerResponse::Unhandled;
   });
 
   svr.Get("/role", [](const Request & /*req*/, Response &res) {
-    auto *ctx = httplib::any_cast<RoleCtx>(&res.user_data["role"]);
+    auto *ctx = res.user_data.get<RoleCtx>("role");
     ASSERT_NE(nullptr, ctx);
     res.set_content(ctx->role, "text/plain");
   });

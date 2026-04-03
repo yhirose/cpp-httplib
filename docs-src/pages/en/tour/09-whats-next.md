@@ -164,13 +164,13 @@ Use `res.user_data` to pass data from middleware to handlers. This is useful for
 
 ```cpp
 svr.set_pre_routing_handler([](const auto &req, auto &res) {
-    res.user_data["auth_user"] = std::string("alice");
+    res.user_data.set("auth_user", std::string("alice"));
     return httplib::Server::HandlerResponse::Unhandled;
 });
 
 svr.Get("/me", [](const auto &req, auto &res) {
-    auto user = std::any_cast<std::string>(res.user_data.at("auth_user"));
-    res.set_content("Hello, " + user, "text/plain");
+    auto *user = res.user_data.get<std::string>("auth_user");
+    res.set_content("Hello, " + *user, "text/plain");
 });
 ```
 

@@ -333,9 +333,6 @@ using socket_t = int;
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#if __cplusplus >= 201703L
-#include <any>
-#endif
 
 // On macOS with a TLS backend, enable Keychain root certificates by default
 // unless the user explicitly opts out.
@@ -797,42 +794,15 @@ using Match = std::smatch;
 using DownloadProgress = std::function<bool(size_t current, size_t total)>;
 using UploadProgress = std::function<bool(size_t current, size_t total)>;
 
-// ----------------------------------------------------------------------------
-// httplib::any — type-erased value container (C++11 compatible)
-// On C++17+ builds, thin wrappers around std::any are provided.
-// ----------------------------------------------------------------------------
-
-#if __cplusplus >= 201703L
-
-using any = std::any;
-using bad_any_cast = std::bad_any_cast;
-
-template <typename T> T any_cast(const any &a) { return std::any_cast<T>(a); }
-template <typename T> T any_cast(any &a) { return std::any_cast<T>(a); }
-template <typename T> T any_cast(any &&a) {
-  return std::any_cast<T>(std::move(a));
-}
-template <typename T> const T *any_cast(const any *a) noexcept {
-  return std::any_cast<T>(a);
-}
-template <typename T> T *any_cast(any *a) noexcept {
-  return std::any_cast<T>(a);
-}
-
-#else // C++11/14 implementation
-
-class bad_any_cast : public std::bad_cast {
-public:
-  const char *what() const noexcept override { return "bad any_cast"; }
-};
-
+/*
+ * detail: type-erased storage used by UserData.
+ * ABI-stable regardless of C++ standard — always uses this custom
+ * implementation instead of std::any.
+ */
 namespace detail {
 
 using any_type_id = const void *;
 
-// Returns a unique per-type ID without RTTI.
-// The static address is stable across TUs because function templates are
-// implicitly inline and the ODR merges their statics into one.
 template <typename T> any_type_id any_typeid() noexcept {
   static const char id = 0;
   return &id;
@@ -855,88 +825,59 @@ template <typename T> struct any_value final : any_storage {
 
 } // namespace detail
 
-class any {
-  std::unique_ptr<detail::any_storage> storage_;
-
+class UserData {
 public:
-  any() noexcept = default;
-  any(const any &o) : storage_(o.storage_ ? o.storage_->clone() : nullptr) {}
-  any(any &&) noexcept = default;
-  any &operator=(const any &o) {
-    storage_ = o.storage_ ? o.storage_->clone() : nullptr;
-    return *this;
-  }
-  any &operator=(any &&) noexcept = default;
+  UserData() = default;
+  UserData(UserData &&) noexcept = default;
+  UserData &operator=(UserData &&) noexcept = default;
 
-  template <
-      typename T, typename D = typename std::decay<T>::type,
-      typename std::enable_if<!std::is_same<D, any>::value, int>::type = 0>
-  any(T &&v) : storage_(new detail::any_value<D>(std::forward<T>(v))) {}
-
-  template <
-      typename T, typename D = typename std::decay<T>::type,
-      typename std::enable_if<!std::is_same<D, any>::value, int>::type = 0>
-  any &operator=(T &&v) {
-    storage_.reset(new detail::any_value<D>(std::forward<T>(v)));
-    return *this;
+  UserData(const UserData &o) {
+    for (const auto &e : o.entries_) {
+      if (e.second) { entries_[e.first] = e.second->clone(); }
+    }
   }
 
-  bool has_value() const noexcept { return storage_ != nullptr; }
-  void reset() noexcept { storage_.reset(); }
+  UserData &operator=(const UserData &o) {
+    if (this != &o) {
+      entries_.clear();
+      for (const auto &e : o.entries_) {
+        if (e.second) { entries_[e.first] = e.second->clone(); }
+      }
+    }
+    return *this;
+  }
 
-  template <typename T> friend T *any_cast(any *a) noexcept;
-  template <typename T> friend const T *any_cast(const any *a) noexcept;
+  template <typename T> void set(const std::string &key, T &&value) {
+    using D = typename std::decay<T>::type;
+    entries_[key].reset(new detail::any_value<D>(std::forward<T>(value)));
+  }
+
+  template <typename T> T *get(const std::string &key) noexcept {
+    auto it = entries_.find(key);
+    if (it == entries_.end() || !it->second) { return nullptr; }
+    if (it->second->type_id() != detail::any_typeid<T>()) { return nullptr; }
+    return &static_cast<detail::any_value<T> *>(it->second.get())->value;
+  }
+
+  template <typename T> const T *get(const std::string &key) const noexcept {
+    auto it = entries_.find(key);
+    if (it == entries_.end() || !it->second) { return nullptr; }
+    if (it->second->type_id() != detail::any_typeid<T>()) { return nullptr; }
+    return &static_cast<const detail::any_value<T> *>(it->second.get())->value;
+  }
+
+  bool has(const std::string &key) const noexcept {
+    return entries_.find(key) != entries_.end();
+  }
+
+  void erase(const std::string &key) { entries_.erase(key); }
+
+  void clear() noexcept { entries_.clear(); }
+
+private:
+  std::unordered_map<std::string, std::unique_ptr<detail::any_storage>>
+      entries_;
 };
-
-template <typename T> T *any_cast(any *a) noexcept {
-  if (!a || !a->storage_) { return nullptr; }
-  if (a->storage_->type_id() != detail::any_typeid<T>()) { return nullptr; }
-  return &static_cast<detail::any_value<T> *>(a->storage_.get())->value;
-}
-
-template <typename T> const T *any_cast(const any *a) noexcept {
-  if (!a || !a->storage_) { return nullptr; }
-  if (a->storage_->type_id() != detail::any_typeid<T>()) { return nullptr; }
-  return &static_cast<const detail::any_value<T> *>(a->storage_.get())->value;
-}
-
-template <typename T> T any_cast(const any &a) {
-  using U =
-      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
-  const U *p = any_cast<U>(&a);
-#ifndef CPPHTTPLIB_NO_EXCEPTIONS
-  if (!p) { throw bad_any_cast{}; }
-#else
-  if (!p) { std::abort(); }
-#endif
-  return static_cast<T>(*p);
-}
-
-template <typename T> T any_cast(any &a) {
-  using U =
-      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
-  U *p = any_cast<U>(&a);
-#ifndef CPPHTTPLIB_NO_EXCEPTIONS
-  if (!p) { throw bad_any_cast{}; }
-#else
-  if (!p) { std::abort(); }
-#endif
-  return static_cast<T>(*p);
-}
-
-template <typename T> T any_cast(any &&a) {
-  using U =
-      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
-  U *p = any_cast<U>(&a);
-#ifndef CPPHTTPLIB_NO_EXCEPTIONS
-  if (!p) { throw bad_any_cast{}; }
-#else
-  if (!p) { std::abort(); }
-#endif
-  return static_cast<T>(std::move(*p));
-}
-
-#endif // __cplusplus >= 201703L
 
 struct Response;
 using ResponseHandler = std::function<bool(const Response &response)>;
@@ -1297,7 +1238,7 @@ struct Response {
 
   // User-defined context — set by pre-routing/pre-request handlers and read
   // by route handlers to pass arbitrary data (e.g. decoded auth tokens).
-  std::map<std::string, any> user_data;
+  UserData user_data;
 
   bool has_header(const std::string &key) const;
   std::string get_header_value(const std::string &key, const char *def = "",
