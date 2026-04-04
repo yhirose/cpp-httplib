@@ -3847,6 +3847,17 @@ protected:
                EXPECT_EQ("value2", req.get_param_value("array", 1));
                EXPECT_EQ("value3", req.get_param_value("array", 2));
              })
+        .Get("/array-param-values",
+             [&](const Request &req, Response & /*res*/) {
+               auto values = req.get_param_values("array");
+               EXPECT_EQ(3u, values.size());
+               EXPECT_EQ("value1", values[0]);
+               EXPECT_EQ("value2", values[1]);
+               EXPECT_EQ("value3", values[2]);
+
+               auto empty = req.get_param_values("nonexistent");
+               EXPECT_TRUE(empty.empty());
+             })
         .Post("/validate-no-multiple-headers",
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(1u, req.get_header_value_count("Content-Length"));
@@ -5968,6 +5979,13 @@ TEST_F(ServerTest, URL) {
 
 TEST_F(ServerTest, ArrayParam) {
   auto res = cli_.Get("/array-param?array=value1&array=value2&array=value3");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, ArrayParamValues) {
+  auto res =
+      cli_.Get("/array-param-values?array=value1&array=value2&array=value3");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }

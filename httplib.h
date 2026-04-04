@@ -787,7 +787,7 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
 
 } // namespace detail
 
-enum SSLVerifierResponse {
+enum class SSLVerifierResponse {
   // no decision has been made, use the built-in certificate verifier
   NoDecisionMade,
   // connection certificate is verified and accepted
@@ -1293,6 +1293,7 @@ struct Request {
 
   bool has_param(const std::string &key) const;
   std::string get_param_value(const std::string &key, size_t id = 0) const;
+  std::vector<std::string> get_param_values(const std::string &key) const;
   size_t get_param_value_count(const std::string &key) const;
 
   bool is_multipart_form_data() const;
@@ -1696,6 +1697,9 @@ public:
 
   Server &set_keep_alive_max_count(size_t count);
   Server &set_keep_alive_timeout(time_t sec);
+  template <class Rep, class Period>
+  Server &
+  set_keep_alive_timeout(const std::chrono::duration<Rep, Period> &duration);
 
   Server &set_read_timeout(time_t sec, time_t usec = 0);
   template <class Rep, class Period>
@@ -9744,6 +9748,17 @@ inline std::string Request::get_param_value(const std::string &key,
   return std::string();
 }
 
+inline std::vector<std::string>
+Request::get_param_values(const std::string &key) const {
+  auto rng = params.equal_range(key);
+  std::vector<std::string> values;
+  values.reserve(static_cast<size_t>(std::distance(rng.first, rng.second)));
+  for (auto it = rng.first; it != rng.second; ++it) {
+    values.push_back(it->second);
+  }
+  return values;
+}
+
 inline size_t Request::get_param_value_count(const std::string &key) const {
   auto r = params.equal_range(key);
   return static_cast<size_t>(std::distance(r.first, r.second));
@@ -10918,6 +10933,15 @@ inline Server &Server::set_keep_alive_max_count(size_t count) {
 
 inline Server &Server::set_keep_alive_timeout(time_t sec) {
   keep_alive_timeout_sec_ = sec;
+  return *this;
+}
+
+template <class Rep, class Period>
+inline Server &Server::set_keep_alive_timeout(
+    const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(duration, [&](time_t sec, time_t /*usec*/) {
+    set_keep_alive_timeout(sec);
+  });
   return *this;
 }
 
