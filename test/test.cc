@@ -12392,6 +12392,38 @@ TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
   }
 }
 
+TEST(RedirectTest, RedirectWithPlusInPath) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("/a+b");
+  });
+
+  // Route pattern uses regex; escape + as \\+
+  svr.Get(R"(/a\+b)", [](const Request &req, Response &res) {
+    res.set_content(req.path, "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("/a+b", res->body);
+  }
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, Issue2185_Online) {
   SSLClient client("github.com");
@@ -12670,6 +12702,196 @@ TEST(PathParamsTest, SemicolonInTheMiddleIsNotAParam) {
 
   const std::unordered_map<std::string, std::string> expected_params = {};
   EXPECT_EQ(request.path_params, expected_params);
+}
+
+TEST(ParseUrlTest, VariousPatterns) {
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("http://example.com:8080/path?q=1#frag", uc));
+    EXPECT_EQ("http", uc.scheme);
+    EXPECT_EQ("example.com", uc.host);
+    EXPECT_EQ("8080", uc.port);
+    EXPECT_EQ("/path", uc.path);
+    EXPECT_EQ("?q=1", uc.query);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("https://example.com/path", uc));
+    EXPECT_EQ("https", uc.scheme);
+    EXPECT_EQ("example.com", uc.host);
+    EXPECT_TRUE(uc.port.empty());
+    EXPECT_EQ("/path", uc.path);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("http://[::1]:8080/path", uc));
+    EXPECT_EQ("::1", uc.host);
+    EXPECT_EQ("8080", uc.port);
+    EXPECT_EQ("/path", uc.path);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("http://[::1/path", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("//example.com/path?q=1", uc));
+    EXPECT_TRUE(uc.scheme.empty());
+    EXPECT_EQ("example.com", uc.host);
+    EXPECT_EQ("/path", uc.path);
+    EXPECT_EQ("?q=1", uc.query);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("/path?q=1", uc));
+    EXPECT_TRUE(uc.host.empty());
+    EXPECT_EQ("/path", uc.path);
+    EXPECT_EQ("?q=1", uc.query);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("example.com:8080", uc));
+    EXPECT_EQ("example.com", uc.host);
+    EXPECT_EQ("8080", uc.port);
+  }
+  {
+    // Unix socket path — must not be parsed as host
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("./httplib-server.sock", uc));
+    EXPECT_TRUE(uc.host.empty());
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("", uc));
+    EXPECT_TRUE(uc.host.empty());
+    EXPECT_TRUE(uc.path.empty());
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("HTTP://example.com/path", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("h2://example.com/path", uc));
+  }
+  {
+    // Accepted by parse_url; callers restrict to http/https
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("ftp://example.com/", uc));
+    EXPECT_EQ("ftp", uc.scheme);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("http://[::1<script>]/path", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("http://[]/path", uc));
+  }
+}
+
+TEST(ParseUrlTest, FragmentHandling) {
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("http://example.com/path#frag", uc));
+    EXPECT_EQ("/path", uc.path);
+    EXPECT_TRUE(uc.query.empty());
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("#frag", uc));
+    EXPECT_TRUE(uc.path.empty());
+    EXPECT_TRUE(uc.query.empty());
+  }
+}
+
+TEST(ParseUrlTest, UserinfoHandling) {
+  // Userinfo with @ but no colon — host includes @
+  detail::UrlComponents uc;
+  ASSERT_TRUE(detail::parse_url("http://user@host.com/path", uc));
+  EXPECT_EQ("user@host.com", uc.host);
+  EXPECT_EQ("/path", uc.path);
+}
+
+TEST(ParseUrlTest, IPv6EdgeCases) {
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("[::1]:8080", uc));
+    EXPECT_TRUE(uc.scheme.empty());
+    EXPECT_EQ("::1", uc.host);
+    EXPECT_EQ("8080", uc.port);
+  }
+  {
+    // Zone ID '%25' is not in [a-fA-F0-9:]
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("http://[fe80::1%25eth0]:443/path", uc));
+  }
+}
+
+TEST(ParseUrlTest, SchemeEdgeCases) {
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("://evil.com/path", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("ht-tp://evil.com/path", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("h.t://evil.com/path", uc));
+  }
+}
+
+TEST(ParseUrlTest, PortEdgeCases) {
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("http://example.com:/path", uc));
+    EXPECT_TRUE(uc.port.empty());
+    EXPECT_EQ("/path", uc.path);
+  }
+  {
+    // parse_url accepts any port string; validation is done by parse_port
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("http://example.com:abc/path", uc));
+    EXPECT_EQ("abc", uc.port);
+  }
+}
+
+TEST(ParseUrlTest, WebSocketPatterns) {
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("ws://echo.example.com:8080/ws", uc));
+    EXPECT_EQ("ws", uc.scheme);
+    EXPECT_EQ("echo.example.com", uc.host);
+    EXPECT_EQ("8080", uc.port);
+    EXPECT_EQ("/ws", uc.path);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("wss://echo.example.com/ws", uc));
+    EXPECT_EQ("wss", uc.scheme);
+    EXPECT_EQ("echo.example.com", uc.host);
+    EXPECT_TRUE(uc.port.empty());
+    EXPECT_EQ("/ws", uc.path);
+  }
+}
+
+TEST(ParseUrlTest, QueryOnly) {
+  detail::UrlComponents uc;
+  ASSERT_TRUE(detail::parse_url("?q=1&r=2", uc));
+  EXPECT_TRUE(uc.host.empty());
+  EXPECT_TRUE(uc.path.empty());
+  EXPECT_EQ("?q=1&r=2", uc.query);
+}
+
+TEST(ParseUrlTest, SchemeRelativeWithPort) {
+  detail::UrlComponents uc;
+  ASSERT_TRUE(detail::parse_url("//example.com:443/path", uc));
+  EXPECT_TRUE(uc.scheme.empty());
+  EXPECT_EQ("example.com", uc.host);
+  EXPECT_EQ("443", uc.port);
+  EXPECT_EQ("/path", uc.path);
 }
 
 TEST(UniversalClientImplTest, Ipv6LiteralAddress) {

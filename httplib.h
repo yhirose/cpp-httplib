@@ -698,6 +698,93 @@ inline bool parse_port(const std::string &s, int &port) {
   return parse_port(s.data(), s.size(), port);
 }
 
+struct UrlComponents {
+  std::string scheme;
+  std::string host;
+  std::string port;
+  std::string path;
+  std::string query;
+};
+
+inline bool parse_url(const std::string &url, UrlComponents &uc) {
+  uc = {};
+  size_t pos = 0;
+
+  auto sep = url.find("://");
+  if (sep != std::string::npos) {
+    uc.scheme = url.substr(0, sep);
+
+    // Scheme must be [a-z]+ only
+    if (uc.scheme.empty()) { return false; }
+    for (auto c : uc.scheme) {
+      if (c < 'a' || c > 'z') { return false; }
+    }
+
+    pos = sep + 3;
+  } else if (url.compare(0, 2, "//") == 0) {
+    pos = 2;
+  }
+
+  auto has_authority_prefix = pos > 0;
+  auto has_authority = has_authority_prefix || (!url.empty() && url[0] != '/' &&
+                                                url[0] != '?' && url[0] != '#');
+  if (has_authority) {
+    if (pos < url.size() && url[pos] == '[') {
+      auto close = url.find(']', pos);
+      if (close == std::string::npos) { return false; }
+      uc.host = url.substr(pos + 1, close - pos - 1);
+
+      // IPv6 host must be [a-fA-F0-9:]+ only
+      if (uc.host.empty()) { return false; }
+      for (auto c : uc.host) {
+        if (!((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') ||
+              (c >= '0' && c <= '9') || c == ':')) {
+          return false;
+        }
+      }
+
+      pos = close + 1;
+    } else {
+      auto end = url.find_first_of(":/?#", pos);
+      if (end == std::string::npos) { end = url.size(); }
+      uc.host = url.substr(pos, end - pos);
+      pos = end;
+    }
+
+    if (pos < url.size() && url[pos] == ':') {
+      ++pos;
+      auto end = url.find_first_of("/?#", pos);
+      if (end == std::string::npos) { end = url.size(); }
+      uc.port = url.substr(pos, end - pos);
+      pos = end;
+    }
+
+    // Without :// or //, the entire input must be consumed as host[:port].
+    // If there is leftover (path, query, etc.), this is not a valid
+    // host[:port] string — clear and reparse as a plain path.
+    if (!has_authority_prefix && pos < url.size()) {
+      uc.host.clear();
+      uc.port.clear();
+      pos = 0;
+    }
+  }
+
+  if (pos < url.size() && url[pos] != '?' && url[pos] != '#') {
+    auto end = url.find_first_of("?#", pos);
+    if (end == std::string::npos) { end = url.size(); }
+    uc.path = url.substr(pos, end - pos);
+    pos = end;
+  }
+
+  if (pos < url.size() && url[pos] == '?') {
+    auto end = url.find('#', pos);
+    if (end == std::string::npos) { end = url.size(); }
+    uc.query = url.substr(pos, end - pos);
+  }
+
+  return true;
+}
+
 } // namespace detail
 
 enum SSLVerifierResponse {
@@ -12940,20 +13027,21 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   auto location = res.get_header_value("location");
   if (location.empty()) { return false; }
 
-  thread_local const std::regex re(
-      R"((?:(https?):)?(?://(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+  detail::UrlComponents uc;
+  if (!detail::parse_url(location, uc)) { return false; }
 
-  std::smatch m;
-  if (!std::regex_match(location, m, re)) { return false; }
+  // Only follow http/https redirects
+  if (!uc.scheme.empty() && uc.scheme != "http" && uc.scheme != "https") {
+    return false;
+  }
 
   auto scheme = is_ssl() ? "https" : "http";
 
-  auto next_scheme = m[1].str();
-  auto next_host = m[2].str();
-  if (next_host.empty()) { next_host = m[3].str(); }
-  auto port_str = m[4].str();
-  auto next_path = m[5].str();
-  auto next_query = m[6].str();
+  auto next_scheme = std::move(uc.scheme);
+  auto next_host = std::move(uc.host);
+  auto port_str = std::move(uc.port);
+  auto next_path = std::move(uc.path);
+  auto next_query = std::move(uc.query);
 
   auto next_port = port_;
   if (!port_str.empty()) {
@@ -12966,7 +13054,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  auto path = decode_query_component(next_path, true) + next_query;
+  auto path = decode_path_component(next_path) + next_query;
 
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
@@ -14690,12 +14778,9 @@ inline Client::Client(const std::string &scheme_host_port)
 inline Client::Client(const std::string &scheme_host_port,
                       const std::string &client_cert_path,
                       const std::string &client_key_path) {
-  const static std::regex re(
-      R"((?:([a-z]+):\/\/)?(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?)");
-
-  std::smatch m;
-  if (std::regex_match(scheme_host_port, m, re)) {
-    auto scheme = m[1].str();
+  detail::UrlComponents uc;
+  if (detail::parse_url(scheme_host_port, uc) && !uc.host.empty()) {
+    auto &scheme = uc.scheme;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
     if (!scheme.empty() && (scheme != "http" && scheme != "https")) {
@@ -14711,12 +14796,10 @@ inline Client::Client(const std::string &scheme_host_port,
 
     auto is_ssl = scheme == "https";
 
-    auto host = m[2].str();
-    if (host.empty()) { host = m[3].str(); }
+    auto host = std::move(uc.host);
 
-    auto port_str = m[4].str();
     auto port = is_ssl ? 443 : 80;
-    if (!port_str.empty() && !detail::parse_port(port_str, port)) { return; }
+    if (!uc.port.empty() && !detail::parse_port(uc.port, port)) { return; }
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_SSL_ENABLED
@@ -20123,12 +20206,10 @@ inline bool WebSocket::is_open() const { return !closed_; }
 inline WebSocketClient::WebSocketClient(
     const std::string &scheme_host_port_path, const Headers &headers)
     : headers_(headers) {
-  const static std::regex re(
-      R"(([a-z]+):\/\/(?:\[([a-fA-F\d:]+)\]|([^:/?#]+))(?::(\d+))?(\/.*))");
-
-  std::smatch m;
-  if (std::regex_match(scheme_host_port_path, m, re)) {
-    auto scheme = m[1].str();
+  detail::UrlComponents uc;
+  if (detail::parse_url(scheme_host_port_path, uc) && !uc.scheme.empty() &&
+      !uc.host.empty() && !uc.path.empty()) {
+    auto &scheme = uc.scheme;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
     if (scheme != "ws" && scheme != "wss") {
@@ -20144,14 +20225,12 @@ inline WebSocketClient::WebSocketClient(
 
     auto is_ssl = scheme == "wss";
 
-    host_ = m[2].str();
-    if (host_.empty()) { host_ = m[3].str(); }
+    host_ = std::move(uc.host);
 
-    auto port_str = m[4].str();
     port_ = is_ssl ? 443 : 80;
-    if (!port_str.empty() && !detail::parse_port(port_str, port_)) { return; }
+    if (!uc.port.empty() && !detail::parse_port(uc.port, port_)) { return; }
 
-    path_ = m[5].str();
+    path_ = std::move(uc.path);
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
     is_ssl_ = is_ssl;
