@@ -1475,12 +1475,6 @@ auto sock = svr.socket();
 httplib::set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1);
 ```
 
-For time-based options, use `set_socket_opt_time` from the `detail` namespace:
-
-```cpp
-httplib::detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 5, 0); // 5 seconds
-```
-
 > [!TIP]
 > For most use cases, prefer `set_tcp_nodelay(true)` or `set_socket_options(callback)` on the Server/Client instead of calling `set_socket_opt` directly.
 
