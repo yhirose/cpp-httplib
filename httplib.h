@@ -336,7 +336,7 @@ using socket_t = int;
 
 // On macOS with a TLS backend, enable Keychain root certificates by default
 // unless the user explicitly opts out.
-#if defined(__APPLE__) &&                                                      \
+#if defined(__APPLE__) && defined(__clang__) &&                                \
     !defined(CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES) &&         \
     (defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                    \
      defined(CPPHTTPLIB_MBEDTLS_SUPPORT) ||                                    \
@@ -355,7 +355,7 @@ using socket_t = int;
 
 #if defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO) ||                        \
     defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-#if TARGET_OS_MAC
+#if TARGET_OS_MAC && defined(__clang__)
 #include <CFNetwork/CFHost.h>
 #include <CoreFoundation/CoreFoundation.h>
 #endif
@@ -5789,7 +5789,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   }
 
   return ret;
-#elif TARGET_OS_MAC
+#elif TARGET_OS_MAC && defined(__clang__)
   if (!node) { return EAI_NONAME; }
   // macOS implementation using CFHost API for asynchronous DNS resolution
   CFStringRef hostname_ref = CFStringCreateWithCString(
