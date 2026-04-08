@@ -17450,7 +17450,6 @@ TEST_F(WebSocketIntegrationTest, SocketSettings) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
                              "/ws-echo");
   client.set_tcp_nodelay(true);
-  client.set_address_family(AF_INET);
   client.set_connection_timeout(3, 0);
 
   bool socket_options_called = false;
