@@ -239,6 +239,8 @@ int main(void)
     if (req.has_param("key")) {
       auto val = req.get_param_value("key");
     }
+    // Get all values for a given key (e.g., ?tag=a&tag=b)
+    auto values = req.get_param_values("tag");
     res.set_content(req.body, "text/plain");
   });
 
@@ -741,6 +743,10 @@ svr.set_keep_alive_timeout(10);  // Default is 5
 svr.set_read_timeout(5, 0); // 5 seconds
 svr.set_write_timeout(5, 0); // 5 seconds
 svr.set_idle_interval(0, 100000); // 100 milliseconds
+
+// std::chrono is also supported
+svr.set_read_timeout(std::chrono::seconds(5));
+svr.set_keep_alive_timeout(std::chrono::seconds(10));
 ```
 
 ### Set maximum payload length for reading a request body
@@ -1051,6 +1057,12 @@ cli.set_write_timeout(5, 0); // 5 seconds
 
 // This method works the same as curl's `--max-time` option
 cli.set_max_timeout(5000); // 5 seconds
+
+// std::chrono is also supported
+cli.set_connection_timeout(std::chrono::milliseconds(300));
+cli.set_read_timeout(std::chrono::seconds(5));
+cli.set_write_timeout(std::chrono::seconds(5));
+cli.set_max_timeout(std::chrono::seconds(5));
 ```
 
 ### Set maximum payload length for reading a response body
@@ -1453,6 +1465,24 @@ SSL is also supported via `wss://` scheme (e.g. `WebSocketClient("wss://example.
 > **Note:** WebSocket connections occupy a thread for their entire lifetime. If you plan to handle many simultaneous WebSocket connections, consider using a dynamic thread pool: `svr.new_task_queue = [] { return new ThreadPool(8, 64); };`
 
 See [README-websocket.md](README-websocket.md) for more details.
+
+## Socket Option Utility
+
+`set_socket_opt` is a convenience wrapper around `setsockopt` for setting integer socket options:
+
+```cpp
+auto sock = svr.socket();
+httplib::set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1);
+```
+
+For time-based options, use `set_socket_opt_time` from the `detail` namespace:
+
+```cpp
+httplib::detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 5, 0); // 5 seconds
+```
+
+> [!TIP]
+> For most use cases, prefer `set_tcp_nodelay(true)` or `set_socket_options(callback)` on the Server/Client instead of calling `set_socket_opt` directly.
 
 ## Split httplib.h into .h and .cc
 
