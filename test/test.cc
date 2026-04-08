@@ -13227,12 +13227,12 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
         size_t (*)(char *ptr, size_t size, size_t nmemb, void *userdata);
     read_callback_t read_callback = [](char *ptr, size_t size, size_t nmemb,
                                        void *userdata) -> size_t {
-      read_data *data = (read_data *)userdata;
+      read_data *d = (read_data *)userdata;
 
-      if (!userdata || data->read_size >= data->total_size) { return 0; }
+      if (!userdata || d->read_size >= d->total_size) { return 0; }
 
       std::fill_n(ptr, size * nmemb, 'A');
-      data->read_size += size * nmemb;
+      d->read_size += size * nmemb;
       return size * nmemb;
     };
     curl_easy_setopt(curl.get(), CURLOPT_READDATA, data);
@@ -13244,9 +13244,9 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
         size_t (*)(char *ptr, size_t size, size_t nmemb, void *userdata);
     write_callback_t write_callback = [](char *ptr, size_t size, size_t nmemb,
                                          void *userdata) -> size_t {
-      std::vector<char> *buffer = (std::vector<char> *)userdata;
-      buffer->reserve(buffer->size() + size * nmemb + 1);
-      buffer->insert(buffer->end(), (char *)ptr, (char *)ptr + size * nmemb);
+      std::vector<char> *buf = (std::vector<char> *)userdata;
+      buf->reserve(buf->size() + size * nmemb + 1);
+      buf->insert(buf->end(), (char *)ptr, (char *)ptr + size * nmemb);
       return size * nmemb;
     };
     curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
