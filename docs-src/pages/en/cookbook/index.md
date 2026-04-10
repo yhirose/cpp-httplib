@@ -75,22 +75,22 @@ A collection of recipes that answer "How do I...?" questions. Each recipe is sel
 
 ## TLS / Security
 
-- T01. Choosing between OpenSSL, mbedTLS, and wolfSSL (build-time `#define` differences)
-- T02. Control SSL certificate verification (disable, custom CA, custom callback)
-- T03. Set up an SSL/TLS server (certificate and private key)
-- T04. Configure mTLS (mutual TLS with client certificates)
-- T05. Access the peer certificate on the server (`req.peer_cert()` / SNI)
+- [T01. Choosing between OpenSSL, mbedTLS, and wolfSSL](t01-tls-backends)
+- [T02. Control SSL certificate verification](t02-cert-verification)
+- [T03. Start an SSL/TLS server](t03-ssl-server)
+- [T04. Configure mTLS](t04-mtls)
+- [T05. Access the peer certificate on the server](t05-peer-cert)
 
 ## SSE
 
-- E01. Implement an SSE server
-- E02. Use event names to distinguish event types
-- E03. Handle reconnection (`Last-Event-ID`)
-- E04. Receive SSE events on the client
+- [E01. Implement an SSE server](e01-sse-server)
+- [E02. Use named events in SSE](e02-sse-event-names)
+- [E03. Handle SSE reconnection](e03-sse-reconnect)
+- [E04. Receive SSE on the client](e04-sse-client)
 
 ## WebSocket
 
-- W01. Implement a WebSocket echo server and client
-- W02. Configure heartbeats (`set_websocket_ping_interval`)
-- W03. Handle connection close
-- W04. Send and receive binary frames
+- [W01. Implement a WebSocket echo server and client](w01-websocket-echo)
+- [W02. Set a WebSocket heartbeat](w02-websocket-ping)
+- [W03. Handle connection close](w03-websocket-close)
+- [W04. Send and receive binary frames](w04-websocket-binary)
