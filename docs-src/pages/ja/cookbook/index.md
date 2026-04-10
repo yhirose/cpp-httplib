@@ -4,93 +4,93 @@ order: 0
 status: "draft"
 ---
 
-「〇〇をするには？」という問いに答えるレシピ集です。各レシピは独立しているので、必要なページだけ読めます。
+「〇〇をするには？」という問いに答えるレシピ集です。各レシピは独立しているので、必要なページだけ読めます。基本的な使い方は[Tour](../tour/)で紹介しています。
 
 ## クライアント
 
 ### 基本
-- レスポンスボディを文字列で取得する / ファイルに保存する
-- JSON を送受信する
-- デフォルトヘッダーを設定する（`set_default_headers`）
-- リダイレクトを追従する（`set_follow_location`）
+- [C01. レスポンスボディを取得する / ファイルに保存する](c01-get-response-body)
+- [C02. JSONを送受信する](c02-json)
+- [C03. デフォルトヘッダーを設定する](c03-default-headers)
+- [C04. リダイレクトを追従する](c04-follow-location)
 
 ### 認証
-- Basic 認証を使う（`set_basic_auth`）
-- Bearer トークンで API を呼ぶ
+- [C05. Basic認証を使う](c05-basic-auth)
+- [C06. BearerトークンでAPIを呼ぶ](c06-bearer-token)
 
 ### ファイル送信
-- ファイルをマルチパートフォームとしてアップロードする（`make_file_provider`）
-- ファイルを生バイナリとして POST する（`make_file_body`）
-- チャンク転送でボディを送る（Content Provider）
+- [C07. ファイルをマルチパートフォームとしてアップロードする](c07-multipart-upload)
+- [C08. ファイルを生バイナリとしてPOSTする](c08-post-file-body)
+- [C09. チャンク転送でボディを送る](c09-chunked-upload)
 
 ### ストリーミング・進捗
-- レスポンスをストリーミングで受信する
-- 進捗コールバックを使う（`DownloadProgress` / `UploadProgress`）
+- [C10. レスポンスをストリーミングで受信する](c10-stream-response)
+- [C11. 進捗コールバックを使う](c11-progress-callback)
 
 ### 接続・パフォーマンス
-- タイムアウトを設定する（`set_connection_timeout` / `set_read_timeout`）
-- 全体タイムアウトを設定する（`set_max_timeout`）
-- 接続の再利用と Keep-Alive の挙動を理解する
-- 圧縮を有効にする（`set_compress` / `set_decompress`）
-- プロキシを経由してリクエストを送る（`set_proxy`）
+- [C12. タイムアウトを設定する](c12-timeouts)
+- [C13. 全体タイムアウトを設定する](c13-max-timeout)
+- [C14. 接続の再利用とKeep-Aliveの挙動を理解する](c14-keep-alive)
+- [C15. 圧縮を有効にする](c15-compression)
+- [C16. プロキシを経由してリクエストを送る](c16-proxy)
 
 ### エラー処理・デバッグ
-- エラーコードをハンドリングする（`Result::error()`）
-- SSL エラーをハンドリングする（`ssl_error()` / `ssl_backend_error()`）
-- クライアントにログを設定する（`set_logger` / `set_error_logger`）
+- [C17. エラーコードをハンドリングする](c17-error-codes)
+- [C18. SSLエラーをハンドリングする](c18-ssl-errors)
+- [C19. クライアントにログを設定する](c19-client-logger)
 
 ## サーバー
 
 ### 基本
-- GET / POST / PUT / DELETE ハンドラを登録する
-- JSON リクエストを受け取り JSON レスポンスを返す
-- パスパラメーターを使う（`/users/:id`）
-- 静的ファイルサーバーを設定する（`set_mount_point`）
+- S01. GET / POST / PUT / DELETEハンドラを登録する
+- S02. JSONリクエストを受け取りJSONレスポンスを返す
+- S03. パスパラメーターを使う（`/users/:id`）
+- S04. 静的ファイルサーバーを設定する（`set_mount_point`）
 
 ### ストリーミング・ファイル
-- 大きなファイルをストリーミングで返す（`ContentProvider`）
-- ファイルダウンロードレスポンスを返す（`Content-Disposition`）
-- マルチパートデータをストリーミングで受け取る（`ContentReader`）
-- レスポンスを圧縮して返す（gzip）
+- S05. 大きなファイルをストリーミングで返す（`ContentProvider`）
+- S06. ファイルダウンロードレスポンスを返す（`Content-Disposition`）
+- S07. マルチパートデータをストリーミングで受け取る（`ContentReader`）
+- S08. レスポンスを圧縮して返す（gzip）
 
 ### ハンドラチェーン
-- 全ルートに共通の前処理をする（Pre-routing handler）
-- Post-routing handler でレスポンスヘッダーを追加する（CORS など）
-- Pre-request handler でルート単位の認証を行う（`matched_route`）
-- `res.user_data` でハンドラ間データを渡す
+- S09. 全ルートに共通の前処理をする（Pre-routing handler）
+- S10. Post-routing handlerでレスポンスヘッダーを追加する（CORSなど）
+- S11. Pre-request handlerでルート単位の認証を行う（`matched_route`）
+- S12. `res.user_data`でハンドラ間データを渡す
 
 ### エラー処理・デバッグ
-- カスタムエラーページを返す（`set_error_handler`）
-- 例外をキャッチする（`set_exception_handler`）
-- リクエストをログに記録する（Logger）
-- クライアントが切断したか検出する（`req.is_connection_closed()`）
+- S13. カスタムエラーページを返す（`set_error_handler`）
+- S14. 例外をキャッチする（`set_exception_handler`）
+- S15. リクエストをログに記録する（Logger）
+- S16. クライアントが切断したか検出する（`req.is_connection_closed()`）
 
 ### 運用・チューニング
-- ポートを動的に割り当てる（`bind_to_any_port`）
-- `listen_after_bind` で起動順序を制御する
-- グレースフルシャットダウンする（`stop()` とシグナルハンドリング）
-- Keep-Alive を調整する（`set_keep_alive_max_count` / `set_keep_alive_timeout`）
-- マルチスレッド数を設定する（`new_task_queue`）
+- S17. ポートを動的に割り当てる（`bind_to_any_port`）
+- S18. `listen_after_bind`で起動順序を制御する
+- S19. グレースフルシャットダウンする（`stop()`とシグナルハンドリング）
+- S20. Keep-Aliveを調整する（`set_keep_alive_max_count` / `set_keep_alive_timeout`）
+- S21. マルチスレッド数を設定する（`new_task_queue`）
+- S22. Unix domain socketで通信する（`set_address_family(AF_UNIX)`）
 
 ## TLS / セキュリティ
 
-- OpenSSL・mbedTLS・wolfSSL の選択指針（ビルド時の `#define` の違い）
-- SSL 証明書の検証を制御する（証明書の無効化・カスタム CA・カスタムコールバック）
-- カスタム証明書検証コールバックを使う（`set_server_certificate_verifier`）
-- SSL/TLS サーバーを立ち上げる（証明書・秘密鍵の設定）
-- mTLS（クライアント証明書による相互認証）を設定する
-- サーバー側でピア証明書を参照する（`req.peer_cert()` / SNI）
+- T01. OpenSSL・mbedTLS・wolfSSLの選択指針（ビルド時の`#define`の違い）
+- T02. SSL証明書の検証を制御する（無効化・カスタムCA・カスタムコールバック）
+- T03. SSL/TLSサーバーを立ち上げる（証明書・秘密鍵の設定）
+- T04. mTLS（クライアント証明書による相互認証）を設定する
+- T05. サーバー側でピア証明書を参照する（`req.peer_cert()` / SNI）
 
 ## SSE
 
-- SSE サーバーを実装する
-- SSE でイベント名を使い分ける
-- SSE の再接続を処理する（`Last-Event-ID`）
-- SSE をクライアントで受信する
+- E01. SSEサーバーを実装する
+- E02. SSEでイベント名を使い分ける
+- E03. SSEの再接続を処理する（`Last-Event-ID`）
+- E04. SSEをクライアントで受信する
 
 ## WebSocket
 
-- WebSocket エコーサーバー／クライアントを実装する
-- ハートビートを設定する（`set_websocket_ping_interval` / `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND`）
-- 接続クローズをハンドリングする
-- バイナリフレームを送受信する
+- W01. WebSocketエコーサーバー／クライアントを実装する
+- W02. ハートビートを設定する（`set_websocket_ping_interval`）
+- W03. 接続クローズをハンドリングする
+- W04. バイナリフレームを送受信する
