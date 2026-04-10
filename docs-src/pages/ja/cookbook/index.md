@@ -42,36 +42,36 @@ status: "draft"
 ## サーバー
 
 ### 基本
-- S01. GET / POST / PUT / DELETEハンドラを登録する
-- S02. JSONリクエストを受け取りJSONレスポンスを返す
-- S03. パスパラメーターを使う（`/users/:id`）
-- S04. 静的ファイルサーバーを設定する（`set_mount_point`）
+- [S01. GET / POST / PUT / DELETEハンドラを登録する](s01-handlers)
+- [S02. JSONリクエストを受け取りJSONレスポンスを返す](s02-json-api)
+- [S03. パスパラメーターを使う](s03-path-params)
+- [S04. 静的ファイルサーバーを設定する](s04-static-files)
 
 ### ストリーミング・ファイル
-- S05. 大きなファイルをストリーミングで返す（`ContentProvider`）
-- S06. ファイルダウンロードレスポンスを返す（`Content-Disposition`）
-- S07. マルチパートデータをストリーミングで受け取る（`ContentReader`）
-- S08. レスポンスを圧縮して返す（gzip）
+- [S05. 大きなファイルをストリーミングで返す](s05-stream-response)
+- [S06. ファイルダウンロードレスポンスを返す](s06-download-response)
+- [S07. マルチパートデータをストリーミングで受け取る](s07-multipart-reader)
+- [S08. レスポンスを圧縮して返す](s08-compress-response)
 
 ### ハンドラチェーン
-- S09. 全ルートに共通の前処理をする（Pre-routing handler）
-- S10. Post-routing handlerでレスポンスヘッダーを追加する（CORSなど）
-- S11. Pre-request handlerでルート単位の認証を行う（`matched_route`）
-- S12. `res.user_data`でハンドラ間データを渡す
+- [S09. 全ルートに共通の前処理をする](s09-pre-routing)
+- [S10. Post-routing handlerでレスポンスヘッダーを追加する](s10-post-routing)
+- [S11. Pre-request handlerでルート単位の認証を行う](s11-pre-request)
+- [S12. `res.user_data`でハンドラ間データを渡す](s12-user-data)
 
 ### エラー処理・デバッグ
-- S13. カスタムエラーページを返す（`set_error_handler`）
-- S14. 例外をキャッチする（`set_exception_handler`）
-- S15. リクエストをログに記録する（Logger）
-- S16. クライアントが切断したか検出する（`req.is_connection_closed()`）
+- [S13. カスタムエラーページを返す](s13-error-handler)
+- [S14. 例外をキャッチする](s14-exception-handler)
+- [S15. リクエストをログに記録する](s15-server-logger)
+- [S16. クライアントが切断したか検出する](s16-disconnect)
 
 ### 運用・チューニング
-- S17. ポートを動的に割り当てる（`bind_to_any_port`）
-- S18. `listen_after_bind`で起動順序を制御する
-- S19. グレースフルシャットダウンする（`stop()`とシグナルハンドリング）
-- S20. Keep-Aliveを調整する（`set_keep_alive_max_count` / `set_keep_alive_timeout`）
-- S21. マルチスレッド数を設定する（`new_task_queue`）
-- S22. Unix domain socketで通信する（`set_address_family(AF_UNIX)`）
+- [S17. ポートを動的に割り当てる](s17-bind-any-port)
+- [S18. `listen_after_bind`で起動順序を制御する](s18-listen-after-bind)
+- [S19. グレースフルシャットダウンする](s19-graceful-shutdown)
+- [S20. Keep-Aliveを調整する](s20-keep-alive)
+- [S21. マルチスレッド数を設定する](s21-thread-pool)
+- [S22. Unix domain socketで通信する](s22-unix-socket)
 
 ## TLS / セキュリティ
 

@@ -42,36 +42,36 @@ A collection of recipes that answer "How do I...?" questions. Each recipe is sel
 ## Server
 
 ### Basics
-- S01. Register GET / POST / PUT / DELETE handlers
-- S02. Receive JSON requests and return JSON responses
-- S03. Use path parameters (`/users/:id`)
-- S04. Set up a static file server (`set_mount_point`)
+- [S01. Register GET / POST / PUT / DELETE handlers](s01-handlers)
+- [S02. Receive JSON requests and return JSON responses](s02-json-api)
+- [S03. Use path parameters](s03-path-params)
+- [S04. Set up a static file server](s04-static-files)
 
 ### Streaming & Files
-- S05. Stream a large file in the response (`ContentProvider`)
-- S06. Return a file download response (`Content-Disposition`)
-- S07. Receive multipart data as a stream (`ContentReader`)
-- S08. Compress responses (gzip)
+- [S05. Stream a large file in the response](s05-stream-response)
+- [S06. Return a file download response](s06-download-response)
+- [S07. Receive multipart data as a stream](s07-multipart-reader)
+- [S08. Return a compressed response](s08-compress-response)
 
 ### Handler Chain
-- S09. Add pre-processing to all routes (Pre-routing handler)
-- S10. Add response headers with a Post-routing handler (CORS, etc.)
-- S11. Authenticate per route with a Pre-request handler (`matched_route`)
-- S12. Pass data between handlers with `res.user_data`
+- [S09. Add pre-processing to all routes](s09-pre-routing)
+- [S10. Add response headers with a post-routing handler](s10-post-routing)
+- [S11. Authenticate per route with a pre-request handler](s11-pre-request)
+- [S12. Pass data between handlers with `res.user_data`](s12-user-data)
 
 ### Error Handling & Debugging
-- S13. Return custom error pages (`set_error_handler`)
-- S14. Catch exceptions (`set_exception_handler`)
-- S15. Log requests (Logger)
-- S16. Detect client disconnection (`req.is_connection_closed()`)
+- [S13. Return custom error pages](s13-error-handler)
+- [S14. Catch exceptions](s14-exception-handler)
+- [S15. Log requests](s15-server-logger)
+- [S16. Detect client disconnection](s16-disconnect)
 
 ### Operations & Tuning
-- S17. Assign a port dynamically (`bind_to_any_port`)
-- S18. Control startup order with `listen_after_bind`
-- S19. Shut down gracefully (`stop()` and signal handling)
-- S20. Tune Keep-Alive (`set_keep_alive_max_count` / `set_keep_alive_timeout`)
-- S21. Configure the thread pool (`new_task_queue`)
-- S22. Communicate over Unix domain sockets (`set_address_family(AF_UNIX)`)
+- [S17. Bind to any available port](s17-bind-any-port)
+- [S18. Control startup order with `listen_after_bind`](s18-listen-after-bind)
+- [S19. Shut down gracefully](s19-graceful-shutdown)
+- [S20. Tune Keep-Alive](s20-keep-alive)
+- [S21. Configure the thread pool](s21-thread-pool)
+- [S22. Talk over a Unix domain socket](s22-unix-socket)
 
 ## TLS / Security
 
