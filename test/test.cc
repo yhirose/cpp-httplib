@@ -16587,41 +16587,6 @@ TEST(BindServerTest, UpdateCerts) {
   EVP_PKEY_free(key);
 }
 
-// Test that SSLServer(X509*, EVP_PKEY*, X509_STORE*) constructor sets
-// client CA list correctly for TLS handshake
-TEST(SSLClientServerTest, X509ConstructorSetsClientCAList) {
-  X509 *cert = readCertificate(SERVER_CERT_FILE);
-  X509 *ca_cert = readCertificate(CLIENT_CA_CERT_FILE);
-  EVP_PKEY *key = readPrivateKey(SERVER_PRIVATE_KEY_FILE);
-
-  ASSERT_TRUE(cert != nullptr);
-  ASSERT_TRUE(ca_cert != nullptr);
-  ASSERT_TRUE(key != nullptr);
-
-  X509_STORE *cert_store = X509_STORE_new();
-  X509_STORE_add_cert(cert_store, ca_cert);
-
-  // Use X509-based constructor (deprecated but should still work correctly)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  SSLServer svr(cert, key, cert_store);
-#pragma GCC diagnostic pop
-
-  ASSERT_TRUE(svr.is_valid());
-
-  // Verify that client CA list is set in SSL_CTX
-  auto ssl_ctx = static_cast<SSL_CTX *>(svr.tls_context());
-  ASSERT_TRUE(ssl_ctx != nullptr);
-
-  STACK_OF(X509_NAME) *ca_list = SSL_CTX_get_client_CA_list(ssl_ctx);
-  ASSERT_TRUE(ca_list != nullptr);
-  EXPECT_GT(sk_X509_NAME_num(ca_list), 0);
-
-  X509_free(cert);
-  X509_free(ca_cert);
-  EVP_PKEY_free(key);
-}
-
 // Test that update_certs() updates client CA list correctly
 TEST(SSLClientServerTest, UpdateCertsSetsClientCAList) {
   // Start with file-based constructor

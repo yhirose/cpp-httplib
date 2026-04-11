@@ -1936,15 +1936,6 @@ private:
   int ssl_error_ = 0;
   uint64_t ssl_backend_error_ = 0;
 #endif
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-public:
-  [[deprecated("Use ssl_backend_error() instead. "
-               "This function will be removed by v1.0.0.")]]
-  uint64_t ssl_openssl_error() const {
-    return ssl_backend_error_;
-  }
-#endif
 };
 
 struct ClientConnection {
@@ -2417,22 +2408,6 @@ protected:
   int last_ssl_error_ = 0;
   uint64_t last_backend_error_ = 0;
 #endif
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-public:
-  [[deprecated("Use load_ca_cert_store() instead. "
-               "This function will be removed by v1.0.0.")]]
-  void set_ca_cert_store(X509_STORE *ca_cert_store);
-
-  [[deprecated("Use tls::create_ca_store() instead. "
-               "This function will be removed by v1.0.0.")]]
-  X509_STORE *create_ca_cert_store(const char *ca_cert, std::size_t size) const;
-
-  [[deprecated("Use set_server_certificate_verifier(VerifyCallback) instead. "
-               "This function will be removed by v1.0.0.")]]
-  virtual void set_server_certificate_verifier(
-      std::function<SSLVerifierResponse(SSL *ssl)> verifier);
-#endif
 };
 
 class Client {
@@ -2607,7 +2582,6 @@ public:
   void set_follow_location(bool on);
 
   void set_path_encode(bool on);
-  void set_url_encode(bool on);
 
   void set_compress(bool on);
 
@@ -2655,22 +2629,6 @@ public:
 private:
   bool is_ssl_ = false;
 #endif
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-public:
-  [[deprecated("Use tls_context() instead. "
-               "This function will be removed by v1.0.0.")]]
-  SSL_CTX *ssl_context() const;
-
-  [[deprecated("Use set_session_verifier(session_t) instead. "
-               "This function will be removed by v1.0.0.")]]
-  void set_server_certificate_verifier(
-      std::function<SSLVerifierResponse(SSL *ssl)> verifier);
-
-  [[deprecated("Use Result::ssl_backend_error() instead. "
-               "This function will be removed by v1.0.0.")]]
-  long get_verify_result() const;
-#endif
 };
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
@@ -2716,29 +2674,6 @@ private:
   std::mutex ctx_mutex_;
 
   int last_ssl_error_ = 0;
-
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-public:
-  [[deprecated("Use SSLServer(PemMemory) or "
-               "SSLServer(ContextSetupCallback) instead. "
-               "This constructor will be removed by v1.0.0.")]]
-  SSLServer(X509 *cert, EVP_PKEY *private_key,
-            X509_STORE *client_ca_cert_store = nullptr);
-
-  [[deprecated("Use SSLServer(ContextSetupCallback) instead. "
-               "This constructor will be removed by v1.0.0.")]]
-  SSLServer(
-      const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback);
-
-  [[deprecated("Use tls_context() instead. "
-               "This function will be removed by v1.0.0.")]]
-  SSL_CTX *ssl_context() const;
-
-  [[deprecated("Use update_certs_pem() instead. "
-               "This function will be removed by v1.0.0.")]]
-  void update_certs(X509 *cert, EVP_PKEY *private_key,
-                    X509_STORE *client_ca_cert_store = nullptr);
-#endif
 };
 
 class SSLClient final : public ClientImpl {
@@ -2822,42 +2757,6 @@ private:
   friend class ClientImpl;
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-public:
-  [[deprecated("Use SSLClient(host, port, PemMemory) instead. "
-               "This constructor will be removed by v1.0.0.")]]
-  explicit SSLClient(const std::string &host, int port, X509 *client_cert,
-                     EVP_PKEY *client_key,
-                     const std::string &private_key_password = std::string());
-
-  [[deprecated("Use Result::ssl_backend_error() instead. "
-               "This function will be removed by v1.0.0.")]]
-  long get_verify_result() const;
-
-  [[deprecated("Use tls_context() instead. "
-               "This function will be removed by v1.0.0.")]]
-  SSL_CTX *ssl_context() const;
-
-  // Override of a deprecated virtual in ClientImpl. Suppress C4996 /
-  // -Wdeprecated-declarations on the override declaration itself so that
-  // MSVC /sdl builds compile cleanly. Will be removed together with the
-  // base virtual by v1.0.0.
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-  [[deprecated("Use set_session_verifier(session_t) instead. "
-               "This function will be removed by v1.0.0.")]]
-  void set_server_certificate_verifier(
-      std::function<SSLVerifierResponse(SSL *ssl)> verifier) override;
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
 private:
   bool verify_host(X509 *server_cert) const;
   bool verify_host_with_subject_alt_name(X509 *server_cert) const;
@@ -14742,38 +14641,6 @@ inline void ClientImpl::enable_server_hostname_verification(bool enabled) {
 }
 #endif
 
-// ClientImpl::set_ca_cert_store is defined after TLS namespace (uses helpers)
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-inline X509_STORE *ClientImpl::create_ca_cert_store(const char *ca_cert,
-                                                    std::size_t size) const {
-  auto mem = BIO_new_mem_buf(ca_cert, static_cast<int>(size));
-  auto se = detail::scope_exit([&] { BIO_free_all(mem); });
-  if (!mem) { return nullptr; }
-
-  auto inf = PEM_X509_INFO_read_bio(mem, nullptr, nullptr, nullptr);
-  if (!inf) { return nullptr; }
-
-  auto cts = X509_STORE_new();
-  if (cts) {
-    for (auto i = 0; i < static_cast<int>(sk_X509_INFO_num(inf)); i++) {
-      auto itmp = sk_X509_INFO_value(inf, i);
-      if (!itmp) { continue; }
-
-      if (itmp->x509) { X509_STORE_add_cert(cts, itmp->x509); }
-      if (itmp->crl) { X509_STORE_add_crl(cts, itmp->crl); }
-    }
-  }
-
-  sk_X509_INFO_pop_free(inf, X509_INFO_free);
-  return cts;
-}
-
-inline void ClientImpl::set_server_certificate_verifier(
-    std::function<SSLVerifierResponse(SSL *ssl)> /*verifier*/) {
-  // Base implementation does nothing - SSLClient overrides this
-}
-#endif
-
 inline void ClientImpl::set_logger(Logger logger) {
   logger_ = std::move(logger);
 }
@@ -15424,12 +15291,6 @@ inline void Client::set_follow_location(bool on) {
 }
 
 inline void Client::set_path_encode(bool on) { cli_->set_path_encode(on); }
-
-[[deprecated("Use set_path_encode() instead. "
-             "This function will be removed by v1.0.0.")]]
-inline void Client::set_url_encode(bool on) {
-  cli_->set_path_encode(on);
-}
 
 inline void Client::set_compress(bool on) { cli_->set_compress(on); }
 
@@ -16402,41 +16263,6 @@ inline std::string Request::sni() const {
  * Group 8: TLS abstraction layer - OpenSSL backend
  */
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-// These wrappers forward to deprecated APIs that will be removed by v1.0.0.
-// Suppress C4996 / -Wdeprecated-declarations so that MSVC /sdl builds (which
-// promote C4996 to an error) compile cleanly even though the wrappers
-// themselves are also marked [[deprecated]].
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-inline SSL_CTX *Client::ssl_context() const {
-  if (is_ssl_) { return static_cast<SSLClient &>(*cli_).ssl_context(); }
-  return nullptr;
-}
-
-inline void Client::set_server_certificate_verifier(
-    std::function<SSLVerifierResponse(SSL *ssl)> verifier) {
-  cli_->set_server_certificate_verifier(verifier);
-}
-
-inline long Client::get_verify_result() const {
-  if (is_ssl_) { return static_cast<SSLClient &>(*cli_).get_verify_result(); }
-  return -1; // NOTE: -1 doesn't match any of X509_V_ERR_???
-}
-
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-#endif // CPPHTTPLIB_OPENSSL_SUPPORT
-
 /*
  * OpenSSL Backend Implementation
  */
@@ -16445,54 +16271,6 @@ inline long Client::get_verify_result() const {
 namespace tls {
 
 namespace impl {
-
-// OpenSSL-specific helpers for converting native types to PEM
-inline std::string x509_to_pem(X509 *cert) {
-  if (!cert) return {};
-  BIO *bio = BIO_new(BIO_s_mem());
-  if (!bio) return {};
-  if (PEM_write_bio_X509(bio, cert) != 1) {
-    BIO_free(bio);
-    return {};
-  }
-  char *data = nullptr;
-  long len = BIO_get_mem_data(bio, &data);
-  std::string pem(data, static_cast<size_t>(len));
-  BIO_free(bio);
-  return pem;
-}
-
-inline std::string evp_pkey_to_pem(EVP_PKEY *key) {
-  if (!key) return {};
-  BIO *bio = BIO_new(BIO_s_mem());
-  if (!bio) return {};
-  if (PEM_write_bio_PrivateKey(bio, key, nullptr, nullptr, 0, nullptr,
-                               nullptr) != 1) {
-    BIO_free(bio);
-    return {};
-  }
-  char *data = nullptr;
-  long len = BIO_get_mem_data(bio, &data);
-  std::string pem(data, static_cast<size_t>(len));
-  BIO_free(bio);
-  return pem;
-}
-
-inline std::string x509_store_to_pem(X509_STORE *store) {
-  if (!store) return {};
-  std::string pem;
-  auto objs = X509_STORE_get0_objects(store);
-  if (!objs) return {};
-  auto count = sk_X509_OBJECT_num(objs);
-  for (decltype(count) i = 0; i < count; i++) {
-    auto obj = sk_X509_OBJECT_value(objs, i);
-    if (X509_OBJECT_get_type(obj) == X509_LU_X509) {
-      auto cert = X509_OBJECT_get0_X509(obj);
-      if (cert) { pem += x509_to_pem(cert); }
-    }
-  }
-  return pem;
-}
 
 // Helper to map OpenSSL SSL_get_error to ErrorCode
 inline ErrorCode map_ssl_error(int ssl_error, int &out_errno) {
@@ -16531,45 +16309,6 @@ inline STACK_OF(X509_NAME) *
     X509_free(cert);
   }
   BIO_free(bio);
-
-  return ca_list;
-}
-
-// Helper: Extract CA names from X509_STORE
-// Returns a new STACK_OF(X509_NAME)* or nullptr on failure
-// Caller takes ownership of returned list
-inline STACK_OF(X509_NAME) *
-    extract_client_ca_list_from_store(X509_STORE *store) {
-  if (!store) { return nullptr; }
-
-  auto ca_list = sk_X509_NAME_new_null();
-  if (!ca_list) { return nullptr; }
-
-  auto objs = X509_STORE_get0_objects(store);
-  if (!objs) {
-    sk_X509_NAME_free(ca_list);
-    return nullptr;
-  }
-
-  auto count = sk_X509_OBJECT_num(objs);
-  for (decltype(count) i = 0; i < count; i++) {
-    auto obj = sk_X509_OBJECT_value(objs, i);
-    if (X509_OBJECT_get_type(obj) == X509_LU_X509) {
-      auto cert = X509_OBJECT_get0_X509(obj);
-      if (cert) {
-        auto subject = X509_get_subject_name(cert);
-        if (subject) {
-          auto name_dup = X509_NAME_dup(subject);
-          if (name_dup) { sk_X509_NAME_push(ca_list, name_dup); }
-        }
-      }
-    }
-  }
-
-  if (sk_X509_NAME_num(ca_list) == 0) {
-    sk_X509_NAME_free(ca_list);
-    return nullptr;
-  }
 
   return ca_list;
 }
@@ -17446,163 +17185,7 @@ inline std::string verify_error_string(long error_code) {
   return str ? str : "unknown error";
 }
 
-namespace impl {
-
-// OpenSSL-specific helpers for public API wrappers
-inline ctx_t create_server_context_from_x509(X509 *cert, EVP_PKEY *key,
-                                             X509_STORE *client_ca_store,
-                                             int &out_error) {
-  out_error = 0;
-  auto cert_pem = x509_to_pem(cert);
-  auto key_pem = evp_pkey_to_pem(key);
-  if (cert_pem.empty() || key_pem.empty()) {
-    out_error = static_cast<int>(ERR_get_error());
-    return nullptr;
-  }
-
-  auto ctx = create_server_context();
-  if (!ctx) {
-    out_error = static_cast<int>(get_error());
-    return nullptr;
-  }
-
-  if (!set_server_cert_pem(ctx, cert_pem.c_str(), key_pem.c_str(), nullptr)) {
-    out_error = static_cast<int>(get_error());
-    free_context(ctx);
-    return nullptr;
-  }
-
-  if (client_ca_store) {
-    // Set cert store for verification (SSL_CTX_set_cert_store takes ownership)
-    SSL_CTX_set_cert_store(static_cast<SSL_CTX *>(ctx), client_ca_store);
-
-    // Extract and set client CA list directly from store (more efficient than
-    // PEM conversion)
-    auto ca_list = extract_client_ca_list_from_store(client_ca_store);
-    if (ca_list) {
-      SSL_CTX_set_client_CA_list(static_cast<SSL_CTX *>(ctx), ca_list);
-    }
-
-    set_verify_client(ctx, true);
-  }
-
-  return ctx;
-}
-
-inline void update_server_certs_from_x509(ctx_t ctx, X509 *cert, EVP_PKEY *key,
-                                          X509_STORE *client_ca_store) {
-  auto cert_pem = x509_to_pem(cert);
-  auto key_pem = evp_pkey_to_pem(key);
-
-  if (!cert_pem.empty() && !key_pem.empty()) {
-    update_server_cert(ctx, cert_pem.c_str(), key_pem.c_str(), nullptr);
-  }
-
-  if (client_ca_store) {
-    auto ca_pem = x509_store_to_pem(client_ca_store);
-    if (!ca_pem.empty()) { update_server_client_ca(ctx, ca_pem.c_str()); }
-    X509_STORE_free(client_ca_store);
-  }
-}
-
-inline ctx_t create_client_context_from_x509(X509 *cert, EVP_PKEY *key,
-                                             const char *password,
-                                             uint64_t &out_error) {
-  out_error = 0;
-  auto ctx = create_client_context();
-  if (!ctx) {
-    out_error = get_error();
-    return nullptr;
-  }
-
-  if (cert && key) {
-    auto cert_pem = x509_to_pem(cert);
-    auto key_pem = evp_pkey_to_pem(key);
-    if (cert_pem.empty() || key_pem.empty()) {
-      out_error = ERR_get_error();
-      free_context(ctx);
-      return nullptr;
-    }
-    if (!set_client_cert_pem(ctx, cert_pem.c_str(), key_pem.c_str(),
-                             password)) {
-      out_error = get_error();
-      free_context(ctx);
-      return nullptr;
-    }
-  }
-
-  return ctx;
-}
-
-} // namespace impl
-
 } // namespace tls
-
-// ClientImpl::set_ca_cert_store - defined here to use
-// tls::impl::x509_store_to_pem Deprecated: converts X509_STORE to PEM and
-// stores for redirect transfer
-inline void ClientImpl::set_ca_cert_store(X509_STORE *ca_cert_store) {
-  if (ca_cert_store) {
-    ca_cert_pem_ = tls::impl::x509_store_to_pem(ca_cert_store);
-  }
-}
-
-inline SSLServer::SSLServer(X509 *cert, EVP_PKEY *private_key,
-                            X509_STORE *client_ca_cert_store) {
-  ctx_ = tls::impl::create_server_context_from_x509(
-      cert, private_key, client_ca_cert_store, last_ssl_error_);
-}
-
-inline SSLServer::SSLServer(
-    const std::function<bool(SSL_CTX &ssl_ctx)> &setup_ssl_ctx_callback) {
-  // Use abstract API to create context
-  ctx_ = tls::create_server_context();
-  if (ctx_) {
-    // Pass to OpenSSL-specific callback (ctx_ is SSL_CTX* internally)
-    auto ssl_ctx = static_cast<SSL_CTX *>(ctx_);
-    if (!setup_ssl_ctx_callback(*ssl_ctx)) {
-      tls::free_context(ctx_);
-      ctx_ = nullptr;
-    }
-  }
-}
-
-inline SSL_CTX *SSLServer::ssl_context() const {
-  return static_cast<SSL_CTX *>(ctx_);
-}
-
-inline void SSLServer::update_certs(X509 *cert, EVP_PKEY *private_key,
-                                    X509_STORE *client_ca_cert_store) {
-  std::lock_guard<std::mutex> guard(ctx_mutex_);
-  tls::impl::update_server_certs_from_x509(ctx_, cert, private_key,
-                                           client_ca_cert_store);
-}
-
-inline SSLClient::SSLClient(const std::string &host, int port,
-                            X509 *client_cert, EVP_PKEY *client_key,
-                            const std::string &private_key_password)
-    : ClientImpl(host, port) {
-  const char *password =
-      private_key_password.empty() ? nullptr : private_key_password.c_str();
-  ctx_ = tls::impl::create_client_context_from_x509(
-      client_cert, client_key, password, last_backend_error_);
-}
-
-inline long SSLClient::get_verify_result() const { return verify_result_; }
-
-inline void SSLClient::set_server_certificate_verifier(
-    std::function<SSLVerifierResponse(SSL *ssl)> verifier) {
-  // Wrap SSL* callback into backend-independent session_verifier_
-  auto v = std::make_shared<std::function<SSLVerifierResponse(SSL *)>>(
-      std::move(verifier));
-  session_verifier_ = [v](tls::session_t session) {
-    return (*v)(static_cast<SSL *>(session));
-  };
-}
-
-inline SSL_CTX *SSLClient::ssl_context() const {
-  return static_cast<SSL_CTX *>(ctx_);
-}
 
 inline bool SSLClient::verify_host(X509 *server_cert) const {
   /* Quote from RFC2818 section 3.1 "Server Identity"
