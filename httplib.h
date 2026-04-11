@@ -2826,10 +2826,26 @@ public:
                "This function will be removed by v1.0.0.")]]
   SSL_CTX *ssl_context() const;
 
+  // Override of a deprecated virtual in ClientImpl. Suppress C4996 /
+  // -Wdeprecated-declarations on the override declaration itself so that
+  // MSVC /sdl builds compile cleanly. Will be removed together with the
+  // base virtual by v1.0.0.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
   [[deprecated("Use set_session_verifier(session_t) instead. "
                "This function will be removed by v1.0.0.")]]
   void set_server_certificate_verifier(
       std::function<SSLVerifierResponse(SSL *ssl)> verifier) override;
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 private:
   bool verify_host(X509 *server_cert) const;
@@ -16394,6 +16410,18 @@ inline std::string Request::sni() const {
  */
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// These wrappers forward to deprecated APIs that will be removed by v1.0.0.
+// Suppress C4996 / -Wdeprecated-declarations so that MSVC /sdl builds (which
+// promote C4996 to an error) compile cleanly even though the wrappers
+// themselves are also marked [[deprecated]].
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 inline SSL_CTX *Client::ssl_context() const {
   if (is_ssl_) { return static_cast<SSLClient &>(*cli_).ssl_context(); }
   return nullptr;
@@ -16408,6 +16436,12 @@ inline long Client::get_verify_result() const {
   if (is_ssl_) { return static_cast<SSLClient &>(*cli_).get_verify_result(); }
   return -1; // NOTE: -1 doesn't match any of X509_V_ERR_???
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 #endif // CPPHTTPLIB_OPENSSL_SUPPORT
 
 /*
