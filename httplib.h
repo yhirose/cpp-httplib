@@ -4786,7 +4786,8 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
     if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
     uint8_t ext[8];
     for (int i = 7; i >= 0; i--) {
-      ext[7 - i] = static_cast<uint8_t>((len >> (i * 8)) & 0xFF);
+      ext[7 - i] =
+          static_cast<uint8_t>((static_cast<uint64_t>(len) >> (i * 8)) & 0xFF);
     }
     if (strm.write(reinterpret_cast<char *>(ext), 8) < 0) { return false; }
   }
