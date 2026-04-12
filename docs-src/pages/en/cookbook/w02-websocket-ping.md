@@ -57,4 +57,4 @@ Too short wastes bandwidth; too long and connections get dropped. As a rule of t
 
 > **Warning:** A very short ping interval spawns background work per connection and increases CPU usage. For servers with many connections, keep the interval modest.
 
-> For handling a closed connection, see W03. Handle Connection Close.
+> For handling a closed connection, see [W03. Handle connection close](w03-websocket-close).

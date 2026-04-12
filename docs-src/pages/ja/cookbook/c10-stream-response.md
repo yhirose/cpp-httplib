@@ -48,5 +48,5 @@ auto res = cli.Get("/events",
 
 > **Warning:** `ContentReceiver`を渡すと、`res->body`は**空のまま**になります。ボディは自分でコールバック内で保存するか処理するかしてください。
 
-> ダウンロードの進捗を知りたい場合はC11. 進捗コールバックを使うと組み合わせましょう。
-> Server-Sent Events（SSE）を扱うときはE04. SSEをクライアントで受信するも参考になります。
+> ダウンロードの進捗を知りたい場合は[C11. 進捗コールバックを使う](c11-progress-callback)と組み合わせましょう。
+> Server-Sent Events（SSE）を扱うときは[E04. SSEをクライアントで受信する](e04-sse-client)も参考になります。

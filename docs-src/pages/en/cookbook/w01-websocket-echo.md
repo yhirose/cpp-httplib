@@ -71,7 +71,7 @@ ws.send("Hello");                        // text frame
 ws.send(binary_data, binary_data_size);  // binary frame
 ```
 
-The `std::string` overload sends as **text**; the `const char*` + size overload sends as **binary**. A bit subtle, but once you know it, it's intuitive. See W04. Send and Receive Binary Frames for details.
+The `std::string` overload sends as **text**; the `const char*` + size overload sends as **binary**. A bit subtle, but once you know it, it's intuitive. See [W04. Send and receive binary frames](w04-websocket-binary) for details.
 
 ## Thread pool implications
 
@@ -83,6 +83,6 @@ svr.new_task_queue = [] {
 };
 ```
 
-See S21. Configure the Thread Pool.
+See [S21. Configure the thread pool](s21-thread-pool).
 
 > **Note:** To run WebSocket over HTTPS, use `httplib::SSLServer` instead of `httplib::Server` — the same `WebSocket()` handler just works. On the client side, use a `wss://` URL.

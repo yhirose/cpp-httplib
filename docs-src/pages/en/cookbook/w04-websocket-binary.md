@@ -56,7 +56,7 @@ Binary frames still come back in a `std::string`, but treat its contents as raw 
 
 ## Ping is binary-ish, but hidden
 
-WebSocket Ping/Pong frames are close cousins of binary frames at the opcode level, but cpp-httplib handles them automatically — you don't touch them. See W02. Set a WebSocket Heartbeat.
+WebSocket Ping/Pong frames are close cousins of binary frames at the opcode level, but cpp-httplib handles them automatically — you don't touch them. See [W02. Set a WebSocket heartbeat](w02-websocket-ping).
 
 ## Example: send an image
 

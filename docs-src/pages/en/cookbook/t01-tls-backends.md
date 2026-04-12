@@ -42,8 +42,8 @@ The usual approach is to treat each backend as a build variant and recompile the
 
 Certificate verification control, standing up an SSLServer, reading the peer certificate — these all share the same API across backends:
 
-- T02. Control SSL Certificate Verification
-- T03. Start an SSL/TLS Server
-- T05. Access the Peer Certificate on the Server Side
+- [T02. Control SSL certificate verification](t02-cert-verification)
+- [T03. Start an SSL/TLS server](t03-ssl-server)
+- [T05. Access the peer certificate on the server](t05-peer-cert)
 
 > **Note:** On macOS with an OpenSSL-family backend, cpp-httplib automatically loads root certificates from the system keychain (via `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`, on by default). To disable this, define `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`.

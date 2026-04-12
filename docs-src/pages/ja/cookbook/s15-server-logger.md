@@ -59,6 +59,6 @@ svr.set_logger([](const auto &req, const auto &res) {
 });
 ```
 
-`user_data`の使い方はS12. `res.user_data`でハンドラ間データを渡すも参照してください。
+`user_data`の使い方は[S12. `res.user_data`でハンドラ間データを渡す](s12-user-data)も参照してください。
 
 > **Note:** ロガーはリクエスト処理と同じスレッドで同期的に呼ばれます。重い処理を直接入れると全体のスループットが落ちるので、必要ならキューに流して非同期で処理しましょう。

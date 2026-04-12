@@ -52,7 +52,7 @@ auto send_event = [](httplib::DataSink &sink,
 send_event(sink, "message", "Hello!", "42");
 ```
 
-IDの付け方は自由です。連番でもUUIDでも、サーバー側で重複せず順序が追えるものを選びましょう。再接続の詳細はE03. SSEの再接続を処理するを参照してください。
+IDの付け方は自由です。連番でもUUIDでも、サーバー側で重複せず順序が追えるものを選びましょう。再接続の詳細は[E03. SSEの再接続を処理する](e03-sse-reconnect)を参照してください。
 
 ## JSONをdataに乗せる
 

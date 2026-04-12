@@ -48,4 +48,4 @@ svr.set_error_handler([](const httplib::Request &req, httplib::Response &res) {
 
 Now every error comes back in a consistent JSON shape.
 
-> **Note:** `set_error_handler()` also fires for 500 responses caused by exceptions thrown from a route handler. To get at the exception itself, combine it with `set_exception_handler()`. See S14. Catch Exceptions.
+> **Note:** `set_error_handler()` also fires for 500 responses caused by exceptions thrown from a route handler. To get at the exception itself, combine it with `set_exception_handler()`. See [S14. Catch exceptions](s14-exception-handler).

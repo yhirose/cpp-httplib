@@ -59,6 +59,6 @@ svr.set_logger([](const auto &req, const auto &res) {
 });
 ```
 
-For more on `user_data`, see S12. Pass Data Between Handlers with `res.user_data`.
+For more on `user_data`, see [S12. Pass data between handlers with `res.user_data`](s12-user-data).
 
 > **Note:** The logger runs synchronously on the same thread as request processing. Heavy work inside it hurts throughput — push it to a queue and process asynchronously if you need anything expensive.

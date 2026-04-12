@@ -52,4 +52,4 @@ auto res = cli.Get("/users", headers);
 
 リクエスト単位で渡したヘッダーはデフォルトヘッダーに**追加**されます。両方がサーバーに送られます。
 
-> Bearerトークンを使った認証の詳細はC06. BearerトークンでAPIを呼ぶを参照してください。
+> Bearerトークンを使った認証の詳細は[C06. BearerトークンでAPIを呼ぶ](c06-bearer-token)を参照してください。

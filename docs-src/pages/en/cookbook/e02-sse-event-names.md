@@ -52,7 +52,7 @@ auto send_event = [](httplib::DataSink &sink,
 send_event(sink, "message", "Hello!", "42");
 ```
 
-The ID format is up to you. Monotonic counters or UUIDs both work — just pick something unique and orderable on the server side. See E03. Handle SSE Reconnection for details.
+The ID format is up to you. Monotonic counters or UUIDs both work — just pick something unique and orderable on the server side. See [E03. Handle SSE reconnection](e03-sse-reconnect) for details.
 
 ## JSON payloads in data
 

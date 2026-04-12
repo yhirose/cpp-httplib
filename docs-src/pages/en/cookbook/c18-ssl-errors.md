@@ -50,4 +50,4 @@ if (res.ssl_backend_error() != 0) {
 
 > **Note:** `ssl_backend_error()` was previously called `ssl_openssl_error()`. The old name is deprecated — use `ssl_backend_error()` now.
 
-> To change certificate verification settings, see T02. Control SSL Certificate Verification.
+> To change certificate verification settings, see [T02. Control SSL certificate verification](t02-cert-verification).

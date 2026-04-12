@@ -47,4 +47,4 @@ if (res && res->status == 401) {
 
 > **Warning:** A Bearer token is itself a credential. Always send it over HTTPS, and never hard-code it into source or config files.
 
-> To set multiple headers at once, see C03. Set Default Headers.
+> To set multiple headers at once, see [C03. Set default headers](c03-default-headers).

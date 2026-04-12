@@ -50,4 +50,4 @@ svr.Get("/events", [](const httplib::Request &req, httplib::Response &res) {
 
 > **Note:** Tiny responses barely benefit from compression and just waste CPU time. cpp-httplib skips compression for bodies that are too small to bother with.
 
-> For the client-side counterpart, see C15. Enable Compression.
+> For the client-side counterpart, see [C15. Enable compression](c15-compression).

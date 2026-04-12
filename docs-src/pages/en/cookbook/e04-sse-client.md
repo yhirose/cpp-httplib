@@ -96,4 +96,4 @@ Use `last_event_id()` to read the current value.
 
 > **Note:** `SSEClient::start()` blocks, which is fine for a one-off command-line tool. For GUI apps or embedded in a server, the `start_async()` + `stop()` pair is the usual pattern.
 
-> For the server side, see E01. Implement an SSE Server.
+> For the server side, see [E01. Implement an SSE server](e01-sse-server).

@@ -61,6 +61,6 @@ svr.Get("/me", [](const httplib::Request &req, httplib::Response &res) {
 
 レスポンスヘッダーを追加したいときは`res.set_header("Name", "Value")`です。
 
-> **Note:** `listen()`はブロックする関数です。別スレッドで動かしたいときは`std::thread`で包むか、ノンブロッキング起動が必要ならS18. `listen_after_bind`で起動順序を制御するを参照してください。
+> **Note:** `listen()`はブロックする関数です。別スレッドで動かしたいときは`std::thread`で包むか、ノンブロッキング起動が必要なら[S18. `listen_after_bind`で起動順序を制御する](s18-listen-after-bind)を参照してください。
 
-> パスパラメーター（`/users/:id`）を使いたい場合はS03. パスパラメーターを使うを参照してください。
+> パスパラメーター（`/users/:id`）を使いたい場合は[S03. パスパラメーターを使う](s03-path-params)を参照してください。

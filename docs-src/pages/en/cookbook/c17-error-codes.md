@@ -60,4 +60,4 @@ std::cout << res->body << std::endl;
 
 Keep them separated in your head: network-layer errors go through `res.error()`, HTTP-level errors through `res->status`.
 
-> To dig deeper into SSL-related errors, see C18. Handle SSL Errors.
+> To dig deeper into SSL-related errors, see [C18. Handle SSL errors](c18-ssl-errors).

@@ -57,4 +57,4 @@ Return `false` from the callback to abort the download. In the example above, if
 >
 > The `ResponseHandler` is called after headers arrive but before the body. Return `false` to skip the download entirely.
 
-> To show download progress, see C11. Use the progress callback.
+> To show download progress, see [C11. Use the progress callback](c11-progress-callback).

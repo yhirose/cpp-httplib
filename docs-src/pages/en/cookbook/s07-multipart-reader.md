@@ -68,4 +68,4 @@ Only a small chunk sits in memory at any moment, so gigabyte-scale files are no 
 
 > **Warning:** When you use `HandlerWithContentReader`, `req.body` stays **empty**. Handle the body yourself inside the callbacks.
 
-> For the client side of multipart uploads, see C07. Upload a File as Multipart Form Data.
+> For the client side of multipart uploads, see [C07. Upload a file as multipart form data](c07-multipart-upload).

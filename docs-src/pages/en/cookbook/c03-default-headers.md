@@ -52,4 +52,4 @@ auto res = cli.Get("/users", headers);
 
 Per-request headers are **added** on top of the defaults. Both are sent to the server.
 
-> For details on Bearer token auth, see C06. Call an API with a Bearer Token.
+> For details on Bearer token auth, see [C06. Call an API with a Bearer token](c06-bearer-token).

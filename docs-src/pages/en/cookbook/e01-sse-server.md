@@ -56,7 +56,7 @@ svr.Get("/time", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
-When the client disconnects, call `sink.done()` to stop. Details in S16. Detect When the Client Has Disconnected.
+When the client disconnects, call `sink.done()` to stop. Details in [S16. Detect client disconnection](s16-disconnect).
 
 ## Heartbeats via comment lines
 
@@ -80,8 +80,8 @@ svr.new_task_queue = [] {
 };
 ```
 
-See S21. Configure the Thread Pool.
+See [S21. Configure the thread pool](s21-thread-pool).
 
 > **Note:** When `data:` contains newlines, split it into multiple `data:` lines — one per line. This is how the SSE spec requires multiline data to be transmitted.
 
-> For event names, see E02. Use Named Events in SSE. For the client side, see E04. Receive SSE on the Client.
+> For event names, see [E02. Use named events in SSE](e02-sse-event-names). For the client side, see [E04. Receive SSE on the client](e04-sse-client).

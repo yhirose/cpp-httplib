@@ -77,7 +77,7 @@ svr.set_pre_request_handler(
   });
 ```
 
-Pre-requestハンドラと組み合わせれば、共通の認可ロジックを一箇所にまとめられます。詳しくはS11. Pre-request handlerでルート単位の認証を行うを参照してください。
+Pre-requestハンドラと組み合わせれば、共通の認可ロジックを一箇所にまとめられます。詳しくは[S11. Pre-request handlerでルート単位の認証を行う](s11-pre-request)を参照してください。
 
 ## SNI（Server Name Indication）
 
@@ -85,4 +85,4 @@ Pre-requestハンドラと組み合わせれば、共通の認可ロジックを
 
 > **Warning:** `req.peer_cert()`は、mTLSが有効で、かつクライアントが証明書を提示した場合のみ有効な値を返します。通常のTLS接続では空の`PeerCert`が返ります。使う前に必ず`bool`チェックしてください。
 
-> mTLSの設定方法はT04. mTLSを設定するを参照してください。
+> mTLSの設定方法は[T04. mTLSを設定する](t04-mtls)を参照してください。

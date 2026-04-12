@@ -50,4 +50,4 @@ if (res.ssl_backend_error() != 0) {
 
 > **Note:** `ssl_backend_error()`は以前は`ssl_openssl_error()`と呼ばれていました。後者はdeprecatedで、現在は`ssl_backend_error()`を使ってください。
 
-> 証明書の検証設定を変えたい場合はT02. SSL証明書の検証を制御するを参照してください。
+> 証明書の検証設定を変えたい場合は[T02. SSL証明書の検証を制御する](t02-cert-verification)を参照してください。

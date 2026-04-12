@@ -31,6 +31,6 @@ if (res && res->status == 200) {
 
 `res->body` is a `std::string`, so you can pass it straight to your JSON library.
 
-> **Note:** Servers sometimes return HTML on errors. Check the status code before parsing to be safe. Some APIs also require an `Accept: application/json` header. If you're calling a JSON API repeatedly, C03. Set default headers can save you some boilerplate.
+> **Note:** Servers sometimes return HTML on errors. Check the status code before parsing to be safe. Some APIs also require an `Accept: application/json` header. If you're calling a JSON API repeatedly, [C03. Set default headers](c03-default-headers) can save you some boilerplate.
 
-> For how to receive and return JSON on the server side, see S02. Receive JSON requests and return JSON responses.
+> For how to receive and return JSON on the server side, see [S02. Receive JSON requests and return JSON responses](s02-json-api).

@@ -34,7 +34,7 @@ httplib::SSLServer svr("cert.pem", "key.pem",
                        nullptr, nullptr, "password");
 ```
 
-The third and fourth arguments are for client certificate verification (mTLS, see T04). For now, pass `nullptr`.
+The third and fourth arguments are for client certificate verification (mTLS, see [T04. Configure mTLS](t04-mtls)). For now, pass `nullptr`.
 
 ## Load PEM data from memory
 
@@ -73,6 +73,6 @@ openssl req -x509 -newkey rsa:2048 -days 365 -nodes \
 
 In production, use certificates from Let's Encrypt or your internal CA.
 
-> **Warning:** Binding an HTTPS server to port 443 requires root. For a safe way to do that, see the privilege-drop pattern in S18. Control Startup Order with `listen_after_bind`.
+> **Warning:** Binding an HTTPS server to port 443 requires root. For a safe way to do that, see the privilege-drop pattern in [S18. Control startup order with `listen_after_bind`](s18-listen-after-bind).
 
-> For mutual TLS (client certificates), see T04. Configure mTLS.
+> For mutual TLS (client certificates), see [T04. Configure mTLS](t04-mtls).

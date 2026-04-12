@@ -38,7 +38,7 @@ cli.set_proxy_digest_auth("user", "password");
 
 ## エンドのサーバー認証と組み合わせる
 
-プロキシ認証と、エンドサーバーへの認証（C05やC06）は別物です。両方が必要なら、両方設定します。
+プロキシ認証と、エンドサーバーへの認証（[C05. Basic認証を使う](c05-basic-auth)や[C06. BearerトークンでAPIを呼ぶ](c06-bearer-token)）は別物です。両方が必要なら、両方設定します。
 
 ```cpp
 cli.set_proxy("proxy.internal", 8080);

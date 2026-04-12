@@ -4,7 +4,7 @@ order: 30
 status: "draft"
 ---
 
-S09で紹介した`set_pre_routing_handler()`はルーティングの**前**に呼ばれるので、「どのルートにマッチしたか」を知れません。ルートによって認証の有無を変えたい場合は、`set_pre_request_handler()`のほうが便利です。
+[S09. 全ルートに共通の前処理をする](s09-pre-routing)で紹介した`set_pre_routing_handler()`はルーティングの**前**に呼ばれるので、「どのルートにマッチしたか」を知れません。ルートによって認証の有無を変えたい場合は、`set_pre_request_handler()`のほうが便利です。
 
 ## Pre-routingとの違い
 
@@ -44,4 +44,4 @@ Pre-routingハンドラと同じく、`HandlerResponse`を返します。
 
 ## 認証情報を後続のハンドラに渡す
 
-認証で取り出したユーザー情報などをルートハンドラに渡したいときは、`res.user_data`を使います。詳しくはS12. `res.user_data`でハンドラ間データを渡すを参照してください。
+認証で取り出したユーザー情報などをルートハンドラに渡したいときは、`res.user_data`を使います。詳しくは[S12. `res.user_data`でハンドラ間データを渡す](s12-user-data)を参照してください。

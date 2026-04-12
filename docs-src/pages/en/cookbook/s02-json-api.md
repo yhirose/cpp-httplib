@@ -69,6 +69,6 @@ svr.Get("/api/health", [&](const auto &req, auto &res) {
 });
 ```
 
-> **Note:** A large JSON body ends up entirely in `req.body`, which means it all sits in memory. For huge payloads, consider streaming reception — see S07. Receive Multipart Data as a Stream.
+> **Note:** A large JSON body ends up entirely in `req.body`, which means it all sits in memory. For huge payloads, consider streaming reception — see [S07. Receive multipart data as a stream](s07-multipart-reader).
 
-> For the client side, see C02. Send and Receive JSON.
+> For the client side, see [C02. Send and receive JSON](c02-json).

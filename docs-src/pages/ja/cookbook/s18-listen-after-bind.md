@@ -54,4 +54,4 @@ if (!svr.bind_to_port("0.0.0.0", 8080)) {
 
 `listen_after_bind()`はサーバーが停止するまでブロックし、正常終了なら`true`を返します。
 
-> **Note:** 空いているポートを自動で選びたいときはS17. ポートを動的に割り当てるを参照してください。こちらも内部では`bind_to_any_port()` + `listen_after_bind()`の組み合わせです。
+> **Note:** 空いているポートを自動で選びたいときは[S17. ポートを動的に割り当てる](s17-bind-any-port)を参照してください。こちらも内部では`bind_to_any_port()` + `listen_after_bind()`の組み合わせです。

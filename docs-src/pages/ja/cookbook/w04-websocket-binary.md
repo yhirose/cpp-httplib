@@ -56,7 +56,7 @@ switch (result) {
 
 ## Pingもバイナリフレームの一種
 
-WebSocketのPing/PongフレームもOpcodeレベルではバイナリに近い扱いですが、cpp-httplibが自動で処理するので、アプリケーションコードで意識する必要はありません。W02. ハートビートを設定するを参照してください。
+WebSocketのPing/PongフレームもOpcodeレベルではバイナリに近い扱いですが、cpp-httplibが自動で処理するので、アプリケーションコードで意識する必要はありません。[W02. ハートビートを設定する](w02-websocket-ping)を参照してください。
 
 ## サンプル: 画像を送る
 

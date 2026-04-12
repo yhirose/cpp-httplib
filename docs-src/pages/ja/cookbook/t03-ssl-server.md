@@ -34,7 +34,7 @@ httplib::SSLServer svr("cert.pem", "key.pem",
                        nullptr, nullptr, "password");
 ```
 
-第3、第4引数はクライアント証明書検証用（mTLS、T04参照）なので、今は`nullptr`を指定します。
+第3、第4引数はクライアント証明書検証用（mTLS、[T04. mTLSを設定する](t04-mtls)参照）なので、今は`nullptr`を指定します。
 
 ## メモリ上のPEMから立ち上げる
 
@@ -73,6 +73,6 @@ openssl req -x509 -newkey rsa:2048 -days 365 -nodes \
 
 本番では、Let's Encryptや社内CAから発行された証明書を使いましょう。
 
-> **Warning:** HTTPSサーバーを443番ポートで立ち上げるにはroot権限が必要です。安全に立ち上げる方法はS18. `listen_after_bind`で起動順序を制御するの「特権降格」を参照してください。
+> **Warning:** HTTPSサーバーを443番ポートで立ち上げるにはroot権限が必要です。安全に立ち上げる方法は[S18. `listen_after_bind`で起動順序を制御する](s18-listen-after-bind)の「特権降格」を参照してください。
 
-> クライアント証明書による相互認証（mTLS）はT04. mTLSを設定するを参照してください。
+> クライアント証明書による相互認証（mTLS）は[T04. mTLSを設定する](t04-mtls)を参照してください。

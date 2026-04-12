@@ -60,4 +60,4 @@ Call `sink.done()` to signal the end.
 
 > **Note:** The provider lambda is called multiple times. Watch out for the lifetime of captured variables — wrap them in a `std::shared_ptr` if needed.
 
-> To serve the file as a download, see S06. Return a File Download Response.
+> To serve the file as a download, see [S06. Return a file download response](s06-download-response).

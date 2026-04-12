@@ -48,4 +48,4 @@ svr.set_error_handler([](const httplib::Request &req, httplib::Response &res) {
 
 これで全エラーが統一されたJSONで返ります。
 
-> **Note:** `set_error_handler()`は、ルートハンドラが例外を投げた場合の500エラーにも呼ばれます。例外そのものの情報を取り出したい場合は`set_exception_handler()`を組み合わせましょう。S14. 例外をキャッチするを参照してください。
+> **Note:** `set_error_handler()`は、ルートハンドラが例外を投げた場合の500エラーにも呼ばれます。例外そのものの情報を取り出したい場合は`set_exception_handler()`を組み合わせましょう。[S14. 例外をキャッチする](s14-exception-handler)を参照してください。

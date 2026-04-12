@@ -77,7 +77,7 @@ svr.set_pre_request_handler(
   });
 ```
 
-Combined with a pre-request handler, you can keep all authorization logic in one place. See S11. Authenticate Per Route with a Pre-Request Handler.
+Combined with a pre-request handler, you can keep all authorization logic in one place. See [S11. Authenticate per route with a pre-request handler](s11-pre-request).
 
 ## SNI (Server Name Indication)
 
@@ -85,4 +85,4 @@ cpp-httplib handles SNI automatically. If one server hosts multiple domains, SNI
 
 > **Warning:** `req.peer_cert()` only returns a meaningful value when mTLS is enabled and the client actually presented a certificate. For plain TLS, you get an empty `PeerCert`. Always do the `bool` check before using it.
 
-> To set up mTLS, see T04. Configure mTLS.
+> To set up mTLS, see [T04. Configure mTLS](t04-mtls).

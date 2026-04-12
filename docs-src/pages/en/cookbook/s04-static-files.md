@@ -52,4 +52,4 @@ svr.set_file_extension_and_mimetype_mapping("wasm", "application/wasm");
 
 > **Warning:** The static file server methods are **not thread-safe**. Don't call them after `listen()` — configure everything before starting the server.
 
-> For download-style responses, see S06. Return a File Download Response.
+> For download-style responses, see [S06. Return a file download response](s06-download-response).

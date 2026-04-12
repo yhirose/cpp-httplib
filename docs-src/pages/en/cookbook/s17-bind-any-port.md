@@ -49,4 +49,4 @@ Because the port is assigned at runtime, parallel test runs don't collide.
 
 > **Note:** `bind_to_any_port()` returns `-1` on failure (permission errors, no available ports, etc.). Always check the return value.
 
-> To stop the server, see S19. Shut Down Gracefully.
+> To stop the server, see [S19. Shut down gracefully](s19-graceful-shutdown).

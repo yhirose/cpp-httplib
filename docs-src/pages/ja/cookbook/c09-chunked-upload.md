@@ -44,4 +44,4 @@ auto res = cli.Post("/upload", total_size,
 
 > **Detail:** `sink.write()`は書き込みが成功したかどうかを`bool`で返します。`false`が返ったら回線が切れています。ラムダはそのまま`false`を返して終了しましょう。
 
-> ファイルをそのまま送るだけなら、`make_file_body()`が便利です。C08. ファイルを生バイナリとしてPOSTするを参照してください。
+> ファイルをそのまま送るだけなら、`make_file_body()`が便利です。[C08. ファイルを生バイナリとしてPOSTする](c08-post-file-body)を参照してください。

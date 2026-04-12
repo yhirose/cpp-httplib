@@ -44,4 +44,4 @@ With a known size, the request carries a Content-Length header — so the server
 
 > **Detail:** `sink.write()` returns a `bool` indicating whether the write succeeded. If it returns `false`, the connection is gone — return `false` from the lambda to stop.
 
-> If you're just sending a file, `make_file_body()` is easier. See C08. POST a File as Raw Binary.
+> If you're just sending a file, `make_file_body()` is easier. See [C08. POST a file as raw binary](c08-post-file-body).

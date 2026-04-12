@@ -48,5 +48,5 @@ Accumulate into a buffer, then pull out and parse one line each time you see a n
 
 > **Warning:** When you pass a `ContentReceiver`, `res->body` stays **empty**. Store or process the body inside the callback yourself.
 
-> To track download progress, combine this with C11. Use the Progress Callback.
-> For Server-Sent Events (SSE), see E04. Receive SSE on the Client.
+> To track download progress, combine this with [C11. Use the progress callback](c11-progress-callback).
+> For Server-Sent Events (SSE), see [E04. Receive SSE on the client](e04-sse-client).

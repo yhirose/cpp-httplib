@@ -31,4 +31,4 @@ If the file can't be opened, `make_file_body()` returns `size` as `0` and `provi
 
 > **Warning:** `make_file_body()` needs to fix the Content-Length up front, so it reads the file size ahead of time. If the file size might change mid-upload, this API isn't the right fit.
 
-> To send the file as multipart form data instead, see C07. Upload a File as Multipart Form Data.
+> To send the file as multipart form data instead, see [C07. Upload a file as multipart form data](c07-multipart-upload).

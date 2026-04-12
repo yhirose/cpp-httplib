@@ -61,6 +61,6 @@ svr.Get("/me", [](const httplib::Request &req, httplib::Response &res) {
 
 To add a response header, use `res.set_header("Name", "Value")`.
 
-> **Note:** `listen()` is a blocking call. To run it on a different thread, wrap it in `std::thread`. If you need non-blocking startup, see S18. Control Startup Order with `listen_after_bind`.
+> **Note:** `listen()` is a blocking call. To run it on a different thread, wrap it in `std::thread`. If you need non-blocking startup, see [S18. Control startup order with `listen_after_bind`](s18-listen-after-bind).
 
-> To use path parameters like `/users/:id`, see S03. Use Path Parameters.
+> To use path parameters like `/users/:id`, see [S03. Use path parameters](s03-path-params).

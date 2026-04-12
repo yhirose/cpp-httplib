@@ -35,4 +35,4 @@ Many sites redirect HTTP traffic to HTTPS. With `set_follow_location(true)` on, 
 
 > **Warning:** To follow redirects to HTTPS, you need to build cpp-httplib with OpenSSL (or another TLS backend). Without TLS support, redirects to HTTPS will fail.
 
-> **Note:** Following redirects adds to the total request time. See C12. Set Timeouts for timeout configuration.
+> **Note:** Following redirects adds to the total request time. See [C12. Set timeouts](c12-timeouts) for timeout configuration.

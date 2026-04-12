@@ -56,4 +56,4 @@ auto res = cli.Get("/large-file",
 
 > **Note:** `ContentReceiver` and the progress callback can be used together. When you want to stream to a file and show progress at the same time, pass both.
 
-> For a concrete example of saving to a file, see C01. Get the Response Body / Save to a File.
+> For a concrete example of saving to a file, see [C01. Get the response body / save to a file](c01-get-response-body).

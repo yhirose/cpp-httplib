@@ -38,7 +38,7 @@ cli.set_proxy_digest_auth("user", "password");
 
 ## Combine with end-server authentication
 
-Proxy authentication is separate from authenticating to the end server (C05, C06). When both are needed, set both.
+Proxy authentication is separate from authenticating to the end server ([C05. Use Basic authentication](c05-basic-auth), [C06. Call an API with a Bearer token](c06-bearer-token)). When both are needed, set both.
 
 ```cpp
 cli.set_proxy("proxy.internal", 8080);

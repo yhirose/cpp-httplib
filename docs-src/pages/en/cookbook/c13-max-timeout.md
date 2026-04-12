@@ -4,7 +4,7 @@ order: 13
 status: "draft"
 ---
 
-The three timeouts from C12. Set Timeouts all apply to a single `send` or `recv` call. To cap the total time a request can take, use `set_max_timeout()`.
+The three timeouts from [C12. Set timeouts](c12-timeouts) all apply to a single `send` or `recv` call. To cap the total time a request can take, use `set_max_timeout()`.
 
 ## Basic usage
 

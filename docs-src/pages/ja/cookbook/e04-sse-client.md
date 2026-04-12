@@ -96,4 +96,4 @@ std::cout << "last id: " << sse.last_event_id() << std::endl;
 
 > **Note:** SSEClientの`start()`はブロッキングなので、単発のツールならそのまま使えますが、GUIアプリやサーバーに組み込むときは`start_async()` + `stop()`の組み合わせが基本です。
 
-> サーバー側の実装はE01. SSEサーバーを実装するを参照してください。
+> サーバー側の実装は[E01. SSEサーバーを実装する](e01-sse-server)を参照してください。

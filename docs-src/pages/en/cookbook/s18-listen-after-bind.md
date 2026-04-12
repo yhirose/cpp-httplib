@@ -54,4 +54,4 @@ if (!svr.bind_to_port("0.0.0.0", 8080)) {
 
 `listen_after_bind()` blocks until the server stops and returns `true` on a clean shutdown.
 
-> **Note:** To auto-pick a free port, see S17. Bind to Any Available Port. Under the hood, that's just `bind_to_any_port()` + `listen_after_bind()`.
+> **Note:** To auto-pick a free port, see [S17. Bind to any available port](s17-bind-any-port). Under the hood, that's just `bind_to_any_port()` + `listen_after_bind()`.

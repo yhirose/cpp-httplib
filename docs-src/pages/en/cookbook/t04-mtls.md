@@ -59,7 +59,7 @@ Note you're using `SSLClient` directly, not `Client`. If the private key has a p
 
 ## Read client info from a handler
 
-To see which client connected from inside a handler, use `req.peer_cert()`. Details in T05. Access the Peer Certificate on the Server Side.
+To see which client connected from inside a handler, use `req.peer_cert()`. Details in [T05. Access the peer certificate on the server](t05-peer-cert).
 
 ## Use cases
 

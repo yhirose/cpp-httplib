@@ -43,4 +43,4 @@ For the more secure Digest authentication scheme, use `set_digest_auth()`. This 
 cli.set_digest_auth("alice", "s3cret");
 ```
 
-> To call an API with a Bearer token, see C06. Call an API with a Bearer Token.
+> To call an API with a Bearer token, see [C06. Call an API with a Bearer token](c06-bearer-token).

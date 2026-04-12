@@ -4,7 +4,7 @@ order: 30
 status: "draft"
 ---
 
-The `set_pre_routing_handler()` from S09 runs **before routing**, so it has no idea which route matched. When you want per-route behavior, `set_pre_request_handler()` is what you need.
+The `set_pre_routing_handler()` from [S09. Add pre-processing to all routes](s09-pre-routing) runs **before routing**, so it has no idea which route matched. When you want per-route behavior, `set_pre_request_handler()` is what you need.
 
 ## Pre-routing vs. pre-request
 
@@ -44,4 +44,4 @@ Same as pre-routing — return `HandlerResponse`.
 
 ## Passing auth info to the route handler
 
-To pass decoded user info into the route handler, use `res.user_data`. See S12. Pass Data Between Handlers with `res.user_data`.
+To pass decoded user info into the route handler, use `res.user_data`. See [S12. Pass data between handlers with `res.user_data`](s12-user-data).

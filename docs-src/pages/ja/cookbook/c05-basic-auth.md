@@ -43,4 +43,4 @@ auto res = cli.Get("/private", headers);
 cli.set_digest_auth("alice", "s3cret");
 ```
 
-> BearerトークンでAPIを呼びたい場合はC06. BearerトークンでAPIを呼ぶを参照してください。
+> BearerトークンでAPIを呼びたい場合は[C06. BearerトークンでAPIを呼ぶ](c06-bearer-token)を参照してください。

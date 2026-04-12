@@ -49,6 +49,6 @@ svr.set_pre_routing_handler(
 
 ## 特定ルートだけに認証をかけたい場合
 
-全ルート共通ではなく、ルート単位で認証を分けたいときは、S11. Pre-request handlerでルート単位の認証を行うのほうが適しています。
+全ルート共通ではなく、ルート単位で認証を分けたいときは、[S11. Pre-request handlerでルート単位の認証を行う](s11-pre-request)のほうが適しています。
 
-> **Note:** レスポンスを加工したいだけなら、`set_post_routing_handler()`のほうが適切です。S10. Post-routing handlerでレスポンスヘッダーを追加するを参照してください。
+> **Note:** レスポンスを加工したいだけなら、`set_post_routing_handler()`のほうが適切です。[S10. Post-routing handlerでレスポンスヘッダーを追加する](s10-post-routing)を参照してください。

@@ -49,4 +49,4 @@ The arguments to `make_file_provider()` are `(form name, file path, file name, c
 
 > **Note:** You can mix `UploadFormDataItems` and `FormDataProviderItems` in the same request. A clean split is: text fields in `UploadFormDataItems`, files in `FormDataProviderItems`.
 
-> To show upload progress, see C11. Use the progress callback.
+> To show upload progress, see [C11. Use the progress callback](c11-progress-callback).

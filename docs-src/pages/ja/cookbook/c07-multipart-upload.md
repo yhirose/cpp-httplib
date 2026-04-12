@@ -49,4 +49,4 @@ auto res = cli.Post("/upload", httplib::Headers{}, items, provider_items);
 
 > **Note:** `UploadFormDataItems`と`FormDataProviderItems`は同じリクエスト内で併用できます。テキストフィールドは`UploadFormDataItems`、ファイルは`FormDataProviderItems`、という使い分けがきれいです。
 
-> アップロードの進捗を表示したい場合はC11. 進捗コールバックを使うを参照してください。
+> アップロードの進捗を表示したい場合は[C11. 進捗コールバックを使う](c11-progress-callback)を参照してください。
