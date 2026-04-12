@@ -4889,9 +4889,14 @@ inline bool canonicalize_path(const char *path, std::string &resolved) {
   char buf[_MAX_PATH];
   if (_fullpath(buf, path, _MAX_PATH) == nullptr) { return false; }
   resolved = buf;
-#else
+#elif defined(PATH_MAX)
   char buf[PATH_MAX];
   if (realpath(path, buf) == nullptr) { return false; }
+  resolved = buf;
+#else
+  auto buf = realpath(path, nullptr);
+  auto guard = scope_exit([&]() { std::free(buf); });
+  if (buf == nullptr) { return false; }
   resolved = buf;
 #endif
   return true;
