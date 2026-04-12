@@ -10136,15 +10136,6 @@ inline void ThreadPool::worker(bool is_dynamic) {
 
     assert(true == static_cast<bool>(fn));
     fn();
-
-    // Dynamic thread: exit if queue is empty after task completion
-    if (is_dynamic) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (jobs_.empty()) {
-        move_to_finished(std::this_thread::get_id());
-        break;
-      }
-    }
   }
 
 #if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(OPENSSL_IS_BORINGSSL) &&   \
