@@ -57,4 +57,24 @@ Too short wastes bandwidth; too long and connections get dropped. As a rule of t
 
 > **Warning:** A very short ping interval spawns background work per connection and increases CPU usage. For servers with many connections, keep the interval modest.
 
+## Detecting an unresponsive peer
+
+Sending pings alone doesn't tell you anything if the peer just silently dies — the TCP socket might still look open while the process on the other end is long gone. To catch that, enable the max-missed-pongs check: if N consecutive pings go unanswered, the connection is closed.
+
+```cpp
+cli.set_websocket_max_missed_pongs(2); // close after 2 consecutive unacked pings
+```
+
+The server side has the same `set_websocket_max_missed_pongs()`.
+
+With a 30-second ping interval and `max_missed_pongs = 2`, a dead peer is detected within roughly 60 seconds and the connection is closed with `CloseStatus::GoingAway` and the reason `"pong timeout"`.
+
+The counter is reset whenever `read()` consumes an incoming Pong frame, so this only works if your code is actively calling `read()` in a loop — which is what a normal WebSocket client does anyway.
+
+### Why the default is 0
+
+`max_missed_pongs` defaults to `0`, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses aren't checked. If you want unresponsive-peer detection, set it explicitly to `1` or higher.
+
+Even with `0`, a dead connection won't linger forever: while your code is inside `read()`, `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop and `read()` fails if no frame arrives in time. Think of `max_missed_pongs` as the knob for detecting an unresponsive peer **faster** than that.
+
 > For handling a closed connection, see [W03. Handle connection close](w03-websocket-close).

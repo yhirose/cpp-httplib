@@ -3,15 +3,19 @@
 A simple, blocking WebSocket implementation for C++11.
 
 > [!IMPORTANT]
-> This is a blocking I/O WebSocket implementation using a thread-per-connection model. If you need high-concurrency WebSocket support with non-blocking/async I/O (e.g., thousands of simultaneous connections), this is not the one that you want.
+> This is a blocking I/O WebSocket implementation using a thread-per-connection model (plus one heartbeat thread per connection). It is intended for small- to mid-scale workloads; handling large numbers of simultaneous WebSocket connections is outside the design target of this library. If you need high-concurrency WebSocket support with non-blocking/async I/O (e.g., thousands of simultaneous connections), this is not the one that you want.
+
+> [!NOTE]
+> WebSocket extensions (`permessage-deflate` and others defined by RFC 6455) are **not supported**. If a client proposes an extension via `Sec-WebSocket-Extensions`, the server silently declines it — the negotiated connection always runs without extensions.
 
 ## Features
 
-- **RFC 6455 compliant**: Full WebSocket protocol support
+- **RFC 6455 compliant**: Full WebSocket protocol support (extensions are not implemented)
 - **Server and Client**: Both sides included
 - **SSL/TLS support**: `wss://` scheme for secure connections
 - **Text and Binary**: Both message types supported
 - **Automatic heartbeat**: Periodic Ping/Pong keeps connections alive
+- **Unresponsive-peer detection**: Opt-in liveness check via `set_websocket_max_missed_pongs()`
 - **Subprotocol negotiation**: `Sec-WebSocket-Protocol` support for GraphQL, MQTT, etc.
 
 ## Quick Start
@@ -352,6 +356,7 @@ if (ws.connect()) {
 | `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND`  | `300`             | Read timeout for WebSocket connections (seconds)         |
 | `CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND` | `5`               | Timeout for waiting peer's Close response (seconds)      |
 | `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND` | `30`              | Automatic Ping interval for heartbeat (seconds)          |
+| `CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS`     | `0` (disabled)    | Close the connection after N consecutive unacked pings   |
 
 ### Runtime Ping Interval
 
@@ -372,6 +377,20 @@ ws.set_websocket_ping_interval(10);  // 10 seconds
 // Disable automatic pings
 ws.set_websocket_ping_interval(0);
 ```
+
+### Unresponsive-Peer Detection (Pong Timeout)
+
+By default the heartbeat only sends pings — it does not enforce that pongs come back. To detect a silently dropped connection faster, enable the max-missed-pongs check. Once `max_missed_pongs` consecutive pings go unanswered, the heartbeat thread closes the connection with `CloseStatus::GoingAway` and the reason `"pong timeout"`.
+
+```cpp
+ws.set_websocket_max_missed_pongs(2); // close after 2 consecutive unacked pings
+```
+
+The server side has the same `set_websocket_max_missed_pongs()`.
+
+With the default ping interval of 30 seconds, `max_missed_pongs = 2` detects a dead peer within ~60 seconds. The counter is reset every time a Pong frame is received, so the mechanism only works when your code is actively calling `read()` — exactly the pattern a normal WebSocket client already uses.
+
+**The default is `0`**, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses are not checked. Even so, a dead connection does not linger forever: while your code is inside `read()`, `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop and `read()` fails if no frame arrives in time. `max_missed_pongs` is the knob for detecting an unresponsive peer faster than that 5-minute fallback.
 
 ## Threading Model
 

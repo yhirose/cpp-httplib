@@ -1462,7 +1462,11 @@ if (ws.connect()) {
 
 SSL is also supported via `wss://` scheme (e.g. `WebSocketClient("wss://example.com/ws")`). Subprotocol negotiation (`Sec-WebSocket-Protocol`) is supported via `SubProtocolSelector` callback.
 
-> **Note:** WebSocket connections occupy a thread for their entire lifetime. If you plan to handle many simultaneous WebSocket connections, consider using a dynamic thread pool: `svr.new_task_queue = [] { return new ThreadPool(8, 64); };`
+> **Note:** WebSocket connections occupy a thread for their entire lifetime (plus an additional thread per connection for heartbeat pings). This thread-per-connection model is intended for small- to mid-scale workloads; large numbers of simultaneous WebSocket connections are outside the design target of this library. If you expect many concurrent WebSocket clients, configure a dynamic thread pool (`svr.new_task_queue = [] { return new ThreadPool(8, 64); };`) and measure carefully.
+
+> **WebSocket extensions are not supported.** `permessage-deflate` and other RFC 6455 extensions are not implemented. If a client proposes them via `Sec-WebSocket-Extensions`, the server silently declines them in its handshake response.
+
+> **Unresponsive-peer detection.** Heartbeat pings also serve as a liveness probe when `set_websocket_max_missed_pongs(n)` is set: if the client sends `n` consecutive pings without receiving a pong, it will close the connection. Disabled by default (`0`).
 
 See [README-websocket.md](README-websocket.md) for more details.
 

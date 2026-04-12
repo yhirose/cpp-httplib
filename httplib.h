@@ -205,6 +205,10 @@
 #define CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND 30
 #endif
 
+#ifndef CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS
+#define CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS 0
+#endif
+
 /*
  * Headers
  */
@@ -1720,6 +1724,8 @@ public:
   Server &set_websocket_ping_interval(
       const std::chrono::duration<Rep, Period> &duration);
 
+  Server &set_websocket_max_missed_pongs(int count);
+
   bool bind_to_port(const std::string &host, int port, int socket_flags = 0);
   int bind_to_any_port(const std::string &host, int socket_flags = 0);
   bool listen_after_bind();
@@ -1756,6 +1762,7 @@ protected:
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
   time_t websocket_ping_interval_sec_ =
       CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
+  int websocket_max_missed_pongs_ = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS;
 
 private:
   using Handlers =
@@ -3728,17 +3735,21 @@ private:
 
   WebSocket(
       Stream &strm, const Request &req, bool is_server,
-      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND)
+      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
+      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS)
       : strm_(strm), req_(req), is_server_(is_server),
-        ping_interval_sec_(ping_interval_sec) {
+        ping_interval_sec_(ping_interval_sec),
+        max_missed_pongs_(max_missed_pongs) {
     start_heartbeat();
   }
 
   WebSocket(
       std::unique_ptr<Stream> &&owned_strm, const Request &req, bool is_server,
-      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND)
+      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
+      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS)
       : strm_(*owned_strm), owned_strm_(std::move(owned_strm)), req_(req),
-        is_server_(is_server), ping_interval_sec_(ping_interval_sec) {
+        is_server_(is_server), ping_interval_sec_(ping_interval_sec),
+        max_missed_pongs_(max_missed_pongs) {
     start_heartbeat();
   }
 
@@ -3750,6 +3761,8 @@ private:
   Request req_;
   bool is_server_;
   time_t ping_interval_sec_;
+  int max_missed_pongs_;
+  int unacked_pings_ = 0;
   std::atomic<bool> closed_{false};
   std::mutex write_mutex_;
   std::thread ping_thread_;
@@ -3779,6 +3792,7 @@ public:
   void set_read_timeout(time_t sec, time_t usec = 0);
   void set_write_timeout(time_t sec, time_t usec = 0);
   void set_websocket_ping_interval(time_t sec);
+  void set_websocket_max_missed_pongs(int count);
   void set_tcp_nodelay(bool on);
   void set_address_family(int family);
   void set_ipv6_v6only(bool on);
@@ -3810,6 +3824,7 @@ private:
   time_t write_timeout_usec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_USECOND;
   time_t websocket_ping_interval_sec_ =
       CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
+  int websocket_max_missed_pongs_ = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS;
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
@@ -10912,6 +10927,11 @@ inline Server &Server::set_payload_max_length(size_t length) {
   return *this;
 }
 
+inline Server &Server::set_websocket_max_missed_pongs(int count) {
+  websocket_max_missed_pongs_ = count;
+  return *this;
+}
+
 inline Server &Server::set_websocket_ping_interval(time_t sec) {
   websocket_ping_interval_sec_ = sec;
   return *this;
@@ -12050,7 +12070,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         {
           // Use WebSocket-specific read timeout instead of HTTP timeout
           strm.set_read_timeout(CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND, 0);
-          ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_);
+          ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_,
+                           websocket_max_missed_pongs_);
           entry.handler(req, ws);
         }
         return true;
@@ -19700,7 +19721,11 @@ inline ReadResult WebSocket::read(std::string &msg) {
                                     payload.size(), true, !is_server_);
       continue;
     }
-    case Opcode::Pong: continue;
+    case Opcode::Pong: {
+      std::lock_guard<std::mutex> lock(ping_mutex_);
+      unacked_pings_ = 0;
+      continue;
+    }
     case Opcode::Close: {
       if (!closed_.exchange(true)) {
         // Echo close frame back
@@ -19734,7 +19759,11 @@ inline ReadResult WebSocket::read(std::string &msg) {
                 true, !is_server_);
             continue;
           }
-          if (cont_opcode == Opcode::Pong) { continue; }
+          if (cont_opcode == Opcode::Pong) {
+            std::lock_guard<std::mutex> lock(ping_mutex_);
+            unacked_pings_ = 0;
+            continue;
+          }
           if (cont_opcode == Opcode::Close) {
             if (!closed_.exchange(true)) {
               std::lock_guard<std::mutex> lock(write_mutex_);
@@ -19822,12 +19851,22 @@ inline void WebSocket::start_heartbeat() {
     while (!closed_) {
       ping_cv_.wait_for(lock, std::chrono::seconds(ping_interval_sec_));
       if (closed_) { break; }
+      // If the peer has failed to respond to the previous pings, give up.
+      // RFC 6455 does not define a pong-timeout mechanism; this is an
+      // opt-in liveness check controlled by max_missed_pongs_.
+      if (max_missed_pongs_ > 0 && unacked_pings_ >= max_missed_pongs_) {
+        lock.unlock();
+        close(CloseStatus::GoingAway, "pong timeout");
+        return;
+      }
       lock.unlock();
       if (!send_frame(Opcode::Ping, nullptr, 0)) {
+        lock.lock();
         closed_ = true;
         break;
       }
       lock.lock();
+      unacked_pings_++;
     }
   });
 }
@@ -19955,8 +19994,9 @@ inline bool WebSocketClient::connect() {
   Request req;
   req.method = "GET";
   req.path = path_;
-  ws_ = std::unique_ptr<WebSocket>(
-      new WebSocket(std::move(strm), req, false, websocket_ping_interval_sec_));
+  ws_ = std::unique_ptr<WebSocket>(new WebSocket(std::move(strm), req, false,
+                                                 websocket_ping_interval_sec_,
+                                                 websocket_max_missed_pongs_));
   return true;
 }
 
@@ -19998,6 +20038,10 @@ inline void WebSocketClient::set_write_timeout(time_t sec, time_t usec) {
 
 inline void WebSocketClient::set_websocket_ping_interval(time_t sec) {
   websocket_ping_interval_sec_ = sec;
+}
+
+inline void WebSocketClient::set_websocket_max_missed_pongs(int count) {
+  websocket_max_missed_pongs_ = count;
 }
 
 inline void WebSocketClient::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }
