@@ -17576,9 +17576,10 @@ TEST(SymlinkTest, SymlinkEscapeFromBaseDirectory) {
   }
 
   // Create symlink using absolute path so it resolves correctly
-  char abs_secret[PATH_MAX];
-  ASSERT_NE(nullptr, realpath(secret_dir.c_str(), abs_secret));
+  char *abs_secret = realpath(secret_dir.c_str(), nullptr);
+  ASSERT_NE(nullptr, abs_secret);
   ASSERT_EQ(0, symlink(abs_secret, symlink_path.c_str()));
+  std::free(abs_secret);
 
   auto se = detail::scope_exit([&] {
     unlink(symlink_path.c_str());

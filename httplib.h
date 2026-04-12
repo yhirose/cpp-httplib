@@ -4949,9 +4949,10 @@ inline bool canonicalize_path(const char *path, std::string &resolved) {
   if (_fullpath(buf, path, _MAX_PATH) == nullptr) { return false; }
   resolved = buf;
 #else
-  char buf[PATH_MAX];
-  if (realpath(path, buf) == nullptr) { return false; }
+  char *buf = realpath(path, nullptr);
+  if (buf == nullptr) { return false; }
   resolved = buf;
+  std::free(buf);
 #endif
   return true;
 }
