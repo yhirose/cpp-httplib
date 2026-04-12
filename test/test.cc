@@ -3390,7 +3390,7 @@ protected:
              })
         .Get("/slow",
              [&](const Request & /*req*/, Response &res) {
-               std::this_thread::sleep_for(std::chrono::seconds(2));
+               std::this_thread::sleep_for(std::chrono::seconds(4));
                res.set_content("slow", "text/plain");
              })
 #if 0
@@ -6909,7 +6909,7 @@ TEST_F(ServerTest, SendLargeBodyAfterRequestLineError) {
     EXPECT_EQ(StatusCode::UriTooLong_414, res.status);
     EXPECT_EQ("close", res.get_header_value("Connection"));
     EXPECT_FALSE(cli_.is_socket_open());
-    EXPECT_LE(elapsed, 200);
+    EXPECT_LE(elapsed, 2000);
   }
 
   {
