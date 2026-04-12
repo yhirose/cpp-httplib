@@ -1564,10 +1564,6 @@ Include `httplib.h` before `Windows.h` or include `Windows.h` by defining `WIN32
 > [!NOTE]
 > cpp-httplib officially supports only the latest Visual Studio. It might work with former versions of Visual Studio, but I can no longer verify it. Pull requests are always welcome for the older versions of Visual Studio unless they break the C++11 conformance.
 
-### Deprecated APIs
-
-A handful of older APIs are marked `[[deprecated]]` and are scheduled to be removed **by v1.0.0**. If you see a deprecation warning at build time, please migrate to the replacement shown in the message — for example, `Client::set_url_encode()` → `set_path_encode()`, `SSLClient::set_ca_cert_store()` → `load_ca_cert_store()`, and `Result::ssl_openssl_error()` → `ssl_backend_error()`. The full list lives alongside the `[[deprecated]]` attributes in `httplib.h`.
-
 > [!NOTE]
 > Windows 8 or lower, Visual Studio 2015 or lower, and Cygwin and MSYS2 including MinGW are neither supported nor tested.
 
