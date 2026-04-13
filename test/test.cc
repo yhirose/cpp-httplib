@@ -14471,6 +14471,46 @@ TEST_F(SSLOpenStreamTest, PostChunked) {
   auto body = read_all(handle);
   EXPECT_EQ("Chunked SSL Data", body);
 }
+
+// RFC 7230 §3.3: a response body with neither chunked Transfer-Encoding nor
+// Content-Length is terminated by the server closing the connection.  When the
+// SSL peer sends a close_notify after the body, the client must treat it as a
+// clean EOF and return a successful response rather than an error.
+TEST(SSLTest, ResponseBodyTerminatedByConnectionClose) {
+  SSLServer svr("cert.pem", "key.pem");
+
+  svr.set_keep_alive_max_count(1);
+
+  const std::string expected_body = "Hello from connection-close response!";
+
+  svr.Get("/no-content-length", [&](const Request & /*req*/, Response &res) {
+    res.set_content_provider("text/plain",
+                             [&](size_t offset, DataSink &sink) -> bool {
+                               if (offset < expected_body.size()) {
+                                 sink.write(expected_body.data() + offset,
+                                            expected_body.size() - offset);
+                               }
+                               sink.done();
+                               return true;
+                             });
+  });
+
+  int port = svr.bind_to_any_port("127.0.0.1");
+  std::thread server_thread([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", port);
+  cli.enable_server_certificate_verification(false);
+
+  auto res = cli.Get("/no-content-length");
+
+  svr.stop();
+  server_thread.join();
+
+  ASSERT_TRUE(res) << "Request failed: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(expected_body, res->body);
+}
 #endif // CPPHTTPLIB_SSL_ENABLED
 
 //==============================================================================
