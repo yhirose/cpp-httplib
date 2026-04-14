@@ -14275,8 +14275,23 @@ static std::thread serve_single_response(std::promise<int> &port_promise,
     auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
 
     if (cli != INVALID_SOCKET) {
-      char buf[4096];
-      ::recv(cli, buf, sizeof(buf), 0);
+      // Read the complete HTTP request (until the blank line that terminates
+      // headers) before sending the response.  If the server closes the socket
+      // while the client's request data is still unread in the kernel receive
+      // buffer, the TCP stack sends RST instead of FIN.  That RST resets the
+      // connection on both sides: it discards the client's receive buffer
+      // (which already holds our response) and causes any in-progress write on
+      // the client to fail with ECONNRESET.  Reading all request data first
+      // ensures close() emits a graceful FIN.
+      {
+        char rbuf[256];
+        std::string req;
+        while (req.find("\r\n\r\n") == std::string::npos) {
+          auto n = ::recv(cli, rbuf, sizeof(rbuf), 0);
+          if (n <= 0) { break; }
+          req.append(rbuf, static_cast<size_t>(n));
+        }
+      }
 
       ::send(cli,
 #ifdef _WIN32

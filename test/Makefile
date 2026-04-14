@@ -18,6 +18,8 @@ ifneq ($(OS), Windows_NT)
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -lssl -lcrypto
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -lmbedcrypto
 		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -lwolfssl
+		# Disable ASLR for ASAN compatibility on WSL2 (high-entropy ASLR conflicts with ASAN shadow memory)
+		SETARCH = setarch $(shell uname -m) -R
 	endif
 endif
 
@@ -59,7 +61,7 @@ STYLE_CHECK_FILES = $(filter-out httplib.h httplib.cc, \
 	$(wildcard example/*.h example/*.cc fuzzing/*.h fuzzing/*.cc *.h *.cc ../httplib.h))
 
 all : test test_split
-	LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test
+	LSAN_OPTIONS=suppressions=lsan_suppressions.txt $(SETARCH) ./test
 
 SHARDS ?= 4
 
@@ -69,7 +71,7 @@ define run_parallel
 	for i in $$(seq 0 $$(($(SHARDS) - 1))); do \
 	  GTEST_TOTAL_SHARDS=$(SHARDS) GTEST_SHARD_INDEX=$$i \
 	  LSAN_OPTIONS=suppressions=lsan_suppressions.txt \
-	  ./$(1) --gtest_color=yes > $(1)_shard_$$i.log 2>&1 & \
+	  $(SETARCH) ./$(1) --gtest_color=yes > $(1)_shard_$$i.log 2>&1 & \
 	done; \
 	wait; \
 	for i in $$(seq 0 $$(($(SHARDS) - 1))); do \
