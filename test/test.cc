@@ -14477,7 +14477,8 @@ TEST_F(SSLOpenStreamTest, PostChunked) {
 // SSL peer sends a close_notify after the body, the client must treat it as a
 // clean EOF and return a successful response rather than an error.
 TEST(SSLTest, ResponseBodyTerminatedByConnectionClose) {
-  SSLServer svr("cert.pem", "key.pem");
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
 
   svr.set_keep_alive_max_count(1);
 
@@ -14495,17 +14496,18 @@ TEST(SSLTest, ResponseBodyTerminatedByConnectionClose) {
                              });
   });
 
-  int port = svr.bind_to_any_port("127.0.0.1");
-  std::thread server_thread([&]() { svr.listen_after_bind(); });
+  auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
   svr.wait_until_ready();
 
-  SSLClient cli("127.0.0.1", port);
+  SSLClient cli(HOST, PORT);
   cli.enable_server_certificate_verification(false);
 
   auto res = cli.Get("/no-content-length");
-
-  svr.stop();
-  server_thread.join();
 
   ASSERT_TRUE(res) << "Request failed: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
