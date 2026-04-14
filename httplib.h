@@ -16766,6 +16766,9 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
 
   auto ssl_err = SSL_get_error(ssl, ret);
   err.code = impl::map_ssl_error(ssl_err, err.sys_errno);
+  if (err.code == ErrorCode::PeerClosed) {
+    return 0;
+  } // Gracefully handle the peer closed state.
   if (err.code == ErrorCode::Fatal) { err.backend_code = ERR_get_error(); }
   return -1;
 }
