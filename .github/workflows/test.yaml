@@ -129,6 +129,11 @@ jobs:
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     name: issue-2431 repro (Linux + ASAN)
+    # The bug manifests as orphan getaddrinfo_a resolver workers that prevent
+    # the runner from completing job teardown ("Cleaning up orphan processes"
+    # hangs for ~1h until forced shutdown). Cap the whole job at 5 min so the
+    # failure surfaces fast: bug present -> killed at 5min, bug fixed -> ~2min.
+    timeout-minutes: 5
     steps:
       - name: checkout
         uses: actions/checkout@v4
