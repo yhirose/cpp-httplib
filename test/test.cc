@@ -1552,6 +1552,18 @@ TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
 #if defined(__linux__) && defined(__GLIBC__) &&                                \
     defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
 
+// Forward declaration: in split builds split.py strips `inline` and moves the
+// definition into httplib.cc, so detail::getaddrinfo_with_timeout is not
+// visible from the public httplib.h. Re-declaring it here lets the tests link
+// against the symbol in both header-only and split builds.
+namespace httplib {
+namespace detail {
+int getaddrinfo_with_timeout(const char *node, const char *service,
+                             const struct addrinfo *hints,
+                             struct addrinfo **res, time_t timeout_sec);
+} // namespace detail
+} // namespace httplib
+
 // Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
 //
 // On Linux/glibc, getaddrinfo_with_timeout() runs the lookup via
