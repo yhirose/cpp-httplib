@@ -114,6 +114,56 @@ jobs:
       - name: build and run ThreadPool test
         run: cd test && make test_thread_pool && ./test_thread_pool
 
+  # Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
+  # On Linux/glibc, getaddrinfo_with_timeout() schedules an asynchronous
+  # DNS lookup with getaddrinfo_a(GAI_NOWAIT) using a stack-local gaicb.
+  # When gai_suspend() hits the connection timeout, gai_cancel() is called
+  # but does not block; the resolver worker can keep writing into the
+  # destroyed stack frame. To exercise that path the runner blocks UDP/53
+  # so DNS hangs and the timeout branch is taken on every call.
+  issue-2431-repro:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    name: issue-2431 repro (Linux + ASAN)
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev zlib1g-dev libbrotli-dev \
+            libzstd-dev libcurl4-openssl-dev iptables util-linux
+      - name: sinkhole DNS
+        run: |
+          # Force the resolver path: Ubuntu's default nsswitch short-circuits
+          # to NOTFOUND through mdns4_minimal before glibc DNS code runs, so
+          # the gai_cancel() branch would never get exercised.
+          sudo sed -i 's/^hosts:.*/hosts: dns/' /etc/nsswitch.conf
+          # Drop UDP/53 in both directions so DNS queries hang silently
+          # rather than failing fast with ICMP unreachable.
+          sudo iptables -I OUTPUT -p udp --dport 53 -j DROP
+          sudo iptables -I INPUT  -p udp --sport 53 -j DROP
+          # Sanity check: a real DNS lookup must hang now.
+          if timeout 2 getent hosts example.com >/dev/null 2>&1; then
+            echo "ERROR: DNS unexpectedly resolved — sinkhole is not in effect" >&2
+            exit 1
+          fi
+          echo "[ok] DNS UDP/53 is being dropped"
+      - name: build test binary
+        run: cd test && make test
+      - name: run GetAddrInfoAsyncCancelTest
+        run: |
+          cd test
+          ARCH=$(uname -m)
+          CPPHTTPLIB_TEST_ISSUE_2431=1 \
+          LSAN_OPTIONS=suppressions=lsan_suppressions.txt \
+          setarch "$ARCH" -R \
+            ./test --gtest_filter='GetAddrInfoAsyncCancelTest.*'
+
   macos:
     runs-on: macos-latest
     if: >

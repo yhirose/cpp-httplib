@@ -1549,6 +1549,128 @@ TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
   std::this_thread::sleep_for(std::chrono::seconds(8));
 }
 
+#if defined(__linux__) && defined(__GLIBC__) &&                                \
+    defined(CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
+
+// Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
+//
+// On Linux/glibc, getaddrinfo_with_timeout() runs the lookup via
+// getaddrinfo_a(GAI_NOWAIT) using a stack-local `struct gaicb`. When the
+// gai_suspend() call hits the connection timeout the function calls
+// gai_cancel() and returns immediately. gai_cancel() is non-blocking and
+// can return EAI_NOTCANCELED, in which case the resolver worker thread is
+// still alive and still references the now-destroyed stack frame.
+//
+// Triggering the bug requires DNS to actually hang (UDP/53 dropped, etc.),
+// so these tests are gated on CPPHTTPLIB_TEST_ISSUE_2431=1 and are skipped
+// during normal runs. test/run_issue_2431_repro.sh sets up the environment
+// and runs them in a container.
+namespace {
+bool should_run_issue_2431_tests() {
+  const char *v = getenv("CPPHTTPLIB_TEST_ISSUE_2431");
+  return v && *v && std::string(v) != "0";
+}
+
+std::string unique_unresolvable_host(int n) {
+  // .invalid is reserved (RFC 6761) and is never served by real DNS, but
+  // glibc still asks the configured nameserver — which is exactly the path
+  // we want to exercise. A unique label per call avoids the resolver cache.
+  auto t = std::chrono::steady_clock::now().time_since_epoch().count();
+  return "h-" + std::to_string(::getpid()) + "-" + std::to_string(t) + "-" +
+         std::to_string(n) + ".invalid";
+}
+} // namespace
+
+TEST(GetAddrInfoAsyncCancelTest, DirectCallSingleThread) {
+  if (!should_run_issue_2431_tests()) {
+    GTEST_SKIP()
+        << "Set CPPHTTPLIB_TEST_ISSUE_2431=1 (and sinkhole DNS) to run";
+  }
+
+  for (int i = 0; i < 8; ++i) {
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    auto host = unique_unresolvable_host(i);
+    struct addrinfo *result = nullptr;
+    int rc = detail::getaddrinfo_with_timeout(host.c_str(), "80", &hints,
+                                              &result, /*timeout_sec=*/1);
+    if (rc == 0 && result) { freeaddrinfo(result); }
+  }
+
+  // Give orphaned getaddrinfo_a worker threads a chance to write into the
+  // stack region they still believe holds their gaicb.
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+}
+
+TEST(GetAddrInfoAsyncCancelTest, DirectCallMultiThread) {
+  if (!should_run_issue_2431_tests()) {
+    GTEST_SKIP()
+        << "Set CPPHTTPLIB_TEST_ISSUE_2431=1 (and sinkhole DNS) to run";
+  }
+
+  std::atomic<bool> stop{false};
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 8; ++t) {
+    threads.emplace_back([t, &stop] {
+      int i = 0;
+      while (!stop.load(std::memory_order_relaxed)) {
+        struct addrinfo hints;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+
+        auto host = unique_unresolvable_host(t * 100000 + i++);
+        struct addrinfo *result = nullptr;
+        int rc = detail::getaddrinfo_with_timeout(host.c_str(), "80", &hints,
+                                                  &result, /*timeout_sec=*/1);
+        if (rc == 0 && result) { freeaddrinfo(result); }
+      }
+    });
+  }
+
+  std::this_thread::sleep_for(std::chrono::seconds(8));
+  stop.store(true, std::memory_order_relaxed);
+  for (auto &th : threads) {
+    th.join();
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+}
+
+TEST(GetAddrInfoAsyncCancelTest, ClientGetMultiThread) {
+  if (!should_run_issue_2431_tests()) {
+    GTEST_SKIP()
+        << "Set CPPHTTPLIB_TEST_ISSUE_2431=1 (and sinkhole DNS) to run";
+  }
+
+  std::atomic<bool> stop{false};
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 8; ++t) {
+    threads.emplace_back([t, &stop] {
+      int i = 0;
+      while (!stop.load(std::memory_order_relaxed)) {
+        auto host = unique_unresolvable_host(t * 100000 + i++);
+        Client cli(host, 80);
+        cli.set_connection_timeout(1, 0);
+        cli.set_read_timeout(1, 0);
+        cli.set_write_timeout(1, 0);
+        (void)cli.Get("/");
+      }
+    });
+  }
+
+  std::this_thread::sleep_for(std::chrono::seconds(8));
+  stop.store(true, std::memory_order_relaxed);
+  for (auto &th : threads) {
+    th.join();
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+}
+
+#endif // __linux__ && __GLIBC__ && CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO
+
 TEST(ConnectionErrorTest, InvalidHost) {
   auto host = "-abcde.com";
 
