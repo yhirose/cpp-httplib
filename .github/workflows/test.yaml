@@ -118,9 +118,13 @@ jobs:
   # On Linux/glibc, getaddrinfo_with_timeout() schedules an asynchronous
   # DNS lookup with getaddrinfo_a(GAI_NOWAIT) using a stack-local gaicb.
   # When gai_suspend() hits the connection timeout, gai_cancel() is called
-  # but does not block; the resolver worker can keep writing into the
-  # destroyed stack frame. To exercise that path the runner blocks UDP/53
-  # so DNS hangs and the timeout branch is taken on every call.
+  # but does not block; the resolver worker can later write back into the
+  # destroyed stack frame. To make the worker actually reach that write,
+  # the test job runs a loopback UDP responder (test/dns_test_fixture.py)
+  # that delays its reply past the test's 1s timeout, and uses an iptables
+  # NAT rule so glibc's lookups land on that fixture instead of a real
+  # nameserver. With ASAN's detect_stack_use_after_return enabled, the
+  # late write-back is reported as a stack-use-after-return.
   issue-2431-repro:
     runs-on: ubuntu-latest
     if: >
@@ -129,11 +133,13 @@ jobs:
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     name: issue-2431 repro (Linux + ASAN)
-    # The bug manifests as orphan getaddrinfo_a resolver workers that prevent
-    # the runner from completing job teardown ("Cleaning up orphan processes"
-    # hangs for ~1h until forced shutdown). Cap the whole job at 5 min so the
-    # failure surfaces fast: bug present -> killed at 5min, bug fixed -> ~2min.
+    # Bound the whole job in case anything in the test harness hangs
+    # unexpectedly. With the fixture in place a normal run is well under
+    # a minute either way (ASAN abort on broken HEAD, clean pass on fix).
     timeout-minutes: 5
+    env:
+      DNS_FIXTURE_PORT: "15353"
+      DNS_FIXTURE_DELAY: "3"
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -141,23 +147,40 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev zlib1g-dev libbrotli-dev \
-            libzstd-dev libcurl4-openssl-dev iptables util-linux
-      - name: sinkhole DNS
+            libzstd-dev libcurl4-openssl-dev iptables util-linux iproute2
+      - name: start loopback DNS test fixture
         run: |
-          # Force the resolver path: Ubuntu's default nsswitch short-circuits
-          # to NOTFOUND through mdns4_minimal before glibc DNS code runs, so
-          # the gai_cancel() branch would never get exercised.
+          # Force glibc through its DNS code path: Ubuntu's default
+          # nsswitch short-circuits to NOTFOUND through mdns4_minimal,
+          # which would skip the buggy code entirely.
           sudo sed -i 's/^hosts:.*/hosts: dns/' /etc/nsswitch.conf
-          # Drop UDP/53 in both directions so DNS queries hang silently
-          # rather than failing fast with ICMP unreachable.
-          sudo iptables -I OUTPUT -p udp --dport 53 -j DROP
-          sudo iptables -I INPUT  -p udp --sport 53 -j DROP
-          # Sanity check: a real DNS lookup must hang now.
-          if timeout 2 getent hosts example.com >/dev/null 2>&1; then
-            echo "ERROR: DNS unexpectedly resolved — sinkhole is not in effect" >&2
+          # Run the loopback fixture (delayed UDP responder).
+          python3 test/dns_test_fixture.py "$DNS_FIXTURE_PORT" "$DNS_FIXTURE_DELAY" \
+            >/tmp/dns_fixture.log 2>&1 &
+          echo $! | sudo tee /tmp/dns_fixture.pid >/dev/null
+          # Wait for the fixture to start listening.
+          for _ in $(seq 1 50); do
+            if ss -lun "( sport = :$DNS_FIXTURE_PORT )" | grep -q ":$DNS_FIXTURE_PORT"; then
+              break
+            fi
+            sleep 0.1
+          done
+          ss -lun "( sport = :$DNS_FIXTURE_PORT )" | grep -q ":$DNS_FIXTURE_PORT" \
+            || { echo "fixture failed to start"; cat /tmp/dns_fixture.log; exit 1; }
+          # Send the test process's DNS lookups to the loopback fixture.
+          # NAT only the local OUTPUT chain; conntrack handles the reply path.
+          sudo iptables -t nat -I OUTPUT -p udp --dport 53 \
+            -j REDIRECT --to-port "$DNS_FIXTURE_PORT"
+          # Sanity check: a query must take at least the fixture delay
+          # and resolve to NXDOMAIN (proving traffic reaches the fixture).
+          start=$(date +%s)
+          getent hosts unresolvable-host.invalid >/dev/null 2>&1 || true
+          elapsed=$(( $(date +%s) - start ))
+          if [ "$elapsed" -lt 2 ]; then
+            echo "ERROR: lookup returned in ${elapsed}s; fixture not in path" >&2
             exit 1
           fi
-          echo "[ok] DNS UDP/53 is being dropped"
+          echo "[ok] DNS lookups are routed to the test fixture (took ${elapsed}s)"
       - name: build test binary
         run: cd test && make test
       - name: run GetAddrInfoAsyncCancelTest
@@ -165,9 +188,17 @@ jobs:
           cd test
           ARCH=$(uname -m)
           CPPHTTPLIB_TEST_ISSUE_2431=1 \
+          ASAN_OPTIONS=detect_stack_use_after_return=1 \
           LSAN_OPTIONS=suppressions=lsan_suppressions.txt \
           setarch "$ARCH" -R \
             ./test --gtest_filter='GetAddrInfoAsyncCancelTest.*'
+      - name: tear down test fixture
+        if: always()
+        run: |
+          sudo iptables -t nat -F OUTPUT || true
+          if [ -f /tmp/dns_fixture.pid ]; then
+            sudo kill "$(cat /tmp/dns_fixture.pid)" 2>/dev/null || true
+          fi
 
   macos:
     runs-on: macos-latest
