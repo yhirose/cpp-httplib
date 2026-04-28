@@ -164,7 +164,13 @@ jobs:
         run: |
           cd test
           ARCH=$(uname -m)
+          # detect_stack_use_after_return=1 is the direct detector for this
+          # bug: when the resolver worker writes back to the destroyed
+          # stack-local gaicb, ASAN aborts immediately with a stack trace
+          # naming getaddrinfo_with_timeout. Without it the bug only shows
+          # up as an orphan-process hang at job teardown.
           CPPHTTPLIB_TEST_ISSUE_2431=1 \
+          ASAN_OPTIONS=detect_stack_use_after_return=1 \
           LSAN_OPTIONS=suppressions=lsan_suppressions.txt \
           setarch "$ARCH" -R \
             ./test --gtest_filter='GetAddrInfoAsyncCancelTest.*'
