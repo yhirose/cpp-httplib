@@ -75,6 +75,7 @@ jobs:
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     strategy:
+      fail-fast: false
       matrix:
         tls_backend: [openssl, mbedtls, wolfssl]
     name: ubuntu (${{ matrix.tls_backend }})
@@ -208,6 +209,7 @@ jobs:
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
     strategy:
+      fail-fast: false
       matrix:
         tls_backend: [openssl, mbedtls, wolfssl]
     name: macos (${{ matrix.tls_backend }})
@@ -248,6 +250,7 @@ jobs:
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_windows == 'true')
     strategy:
+      fail-fast: false
       matrix:
         config:
         - with_ssl: false

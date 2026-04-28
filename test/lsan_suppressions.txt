@@ -1,3 +1,7 @@
 # OpenSSL 3.x internal caches (provider, cipher, keymgmt) are allocated
 # lazily and intentionally kept until process exit. These are not real leaks.
 leak:libcrypto
+
+# wolfSSL keeps ECC point/scratch buffers alive across handshakes; they are
+# released only at library shutdown which the test binaries do not invoke.
+leak:libwolfssl
