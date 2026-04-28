@@ -74,22 +74,24 @@ define run_parallel
 	  $(SETARCH) ./$(1) --gtest_color=yes > $(1)_shard_$$i.log 2>&1 & \
 	  pids="$$pids $$!"; \
 	done; \
-	rc=0; \
+	exits=""; \
 	for pid in $$pids; do \
-	  if ! wait $$pid; then rc=1; fi; \
+	  wait $$pid; exits="$$exits $$?"; \
 	done; \
-	for i in $$(seq 0 $$(($(SHARDS) - 1))); do \
+	i=0; \
+	for ec in $$exits; do \
 	  log=$(1)_shard_$$i.log; \
-	  if grep -q "\[  PASSED  \]" $$log && ! grep -q "\[  FAILED  \]" $$log; then \
+	  if grep -q "\[  PASSED  \]" $$log && ! grep -q "\[  FAILED  \]" $$log && [ $$ec -eq 0 ]; then \
 	    passed=$$(grep "\[  PASSED  \]" $$log); \
 	    echo "Shard $$i: $$passed"; \
 	  else \
-	    echo "=== Shard $$i FAILED ==="; \
+	    echo "=== Shard $$i FAILED (exit=$$ec) ==="; \
 	    cat $$log; \
 	    fail=1; \
 	  fi; \
+	  i=$$((i+1)); \
 	done; \
-	if [ $$fail -ne 0 ] || [ $$rc -ne 0 ]; then exit 1; fi; \
+	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "All shards passed."
 endef
 

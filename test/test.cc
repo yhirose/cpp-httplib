@@ -12276,7 +12276,7 @@ TEST(MultipartFormDataTest, ManyItemsEndToEnd) {
 TEST(MultipartFormDataTest, MakeFileProvider) {
   // Verify make_file_provider sends a file's contents correctly.
   const std::string file_content(4096, 'Z');
-  const std::string tmp_path = "/tmp/httplib_test_make_file_provider.bin";
+  const std::string tmp_path = "./httplib_test_make_file_provider.bin";
   {
     std::ofstream ofs(tmp_path, std::ios::binary);
     ofs.write(file_content.data(),
@@ -12331,7 +12331,7 @@ TEST(MultipartFormDataTest, MakeFileProvider) {
 
 TEST(MakeFileBodyTest, Basic) {
   const std::string file_content(4096, 'Z');
-  const std::string tmp_path = "/tmp/httplib_test_make_file_body.bin";
+  const std::string tmp_path = "./httplib_test_make_file_body.bin";
   {
     std::ofstream ofs(tmp_path, std::ios::binary);
     ofs.write(file_content.data(),
