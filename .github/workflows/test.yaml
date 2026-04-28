@@ -322,11 +322,14 @@ jobs:
         $failed = $false
         for ($i = 0; $i -lt $shards; $i++) {
           $log = "shard_${i}.log"
-          if (Select-String -Path $log -Pattern "\[  PASSED  \]" -Quiet) {
+          $proc = $procs[$i]
+          $hasPassed = Select-String -Path $log -Pattern "\[  PASSED  \]" -Quiet
+          $hasFailed = Select-String -Path $log -Pattern "\[  FAILED  \]" -Quiet
+          if ($hasPassed -and -not $hasFailed -and $proc.ExitCode -eq 0) {
             $passed = (Select-String -Path $log -Pattern "\[  PASSED  \]").Line
             Write-Host "Shard ${i}: $passed"
           } else {
-            Write-Host "=== Shard $i FAILED ==="
+            Write-Host "=== Shard $i FAILED (exit=$($proc.ExitCode)) ==="
             Get-Content $log
             if (Test-Path "${log}.err") { Get-Content "${log}.err" }
             $failed = $true
