@@ -7939,6 +7939,31 @@ TEST(MountTest, MultibytesPathName) {
   EXPECT_EQ(U8("日本語コンテンツ"), res->body);
 }
 
+#ifdef _WIN32
+// Issue #2435: mmap::open() must succeed even when another handle holds
+// the file open for writing (e.g. an active log file).
+TEST(MmapTest, OpenWhileFileHeldForWriting) {
+  const char *path = "mmap_concurrent_writer_test.txt";
+  const char *content = "hello";
+
+  {
+    std::ofstream f(path, std::ios::binary);
+    f.write(content, static_cast<std::streamsize>(strlen(content)));
+  }
+  auto file_cleanup = detail::scope_exit([&] { std::remove(path); });
+
+  HANDLE writer = ::CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  ASSERT_NE(INVALID_HANDLE_VALUE, writer);
+  auto handle_cleanup = detail::scope_exit([&] { ::CloseHandle(writer); });
+
+  detail::mmap m(path);
+  ASSERT_TRUE(m.is_open());
+  EXPECT_EQ(strlen(content), m.size());
+  EXPECT_EQ(0, std::memcmp(content, m.data(), strlen(content)));
+}
+#endif
+
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
 
