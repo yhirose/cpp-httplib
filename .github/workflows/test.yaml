@@ -108,7 +108,10 @@ jobs:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
-        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
+        # Run mbedTLS shards with reduced parallelism — under ASAN+mbedTLS the
+        # default 4 shards overload CI runners enough that timing-sensitive
+        # ServerTest cases flake on first-request keep-alive reuse.
+        run: cd test && make test_split_mbedtls && SHARDS=2 make test_mbedtls_parallel
       - name: build and run tests (wolfSSL)
         if: matrix.tls_backend == 'wolfssl'
         run: cd test && make test_split_wolfssl && make test_wolfssl_parallel
@@ -237,7 +240,10 @@ jobs:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
-        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
+        # Run mbedTLS shards with reduced parallelism — under ASAN+mbedTLS the
+        # default 4 shards overload CI runners enough that timing-sensitive
+        # ServerTest cases flake on first-request keep-alive reuse.
+        run: cd test && make test_split_mbedtls && SHARDS=2 make test_mbedtls_parallel
       - name: build and run tests (wolfSSL)
         if: matrix.tls_backend == 'wolfssl'
         run: cd test && make test_split_wolfssl && make test_wolfssl_parallel
