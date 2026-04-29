@@ -5906,17 +5906,65 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
 
   *res = result_addrinfo;
   return 0;
+#elif defined(_GNU_SOURCE) && defined(__GLIBC__) &&                            \
+    (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2))
+  // Linux implementation using getaddrinfo_a for asynchronous DNS resolution.
+  //
+  // Note on #2431: gai_cancel() is non-blocking and may return EAI_NOTCANCELED
+  // when the resolver worker is in the middle of an operation. Returning while
+  // the worker is still alive would let it write back to the now-destroyed
+  // stack-local request. After cancelling, we therefore wait for the worker
+  // to actually finish before returning.
+  struct gaicb request;
+  struct gaicb *requests[1] = {&request};
+  struct sigevent sevp;
+  struct timespec timeout;
+
+  memset(&request, 0, sizeof(request));
+  request.ar_name = node;
+  request.ar_service = service;
+  request.ar_request = hints;
+
+  timeout.tv_sec = timeout_sec;
+  timeout.tv_nsec = 0;
+
+  memset(&sevp, 0, sizeof(sevp));
+  sevp.sigev_notify = SIGEV_NONE;
+
+  int start_result = getaddrinfo_a(GAI_NOWAIT, requests, 1, &sevp);
+  if (start_result != 0) { return start_result; }
+
+  auto wait_for_request_done = [&]() {
+    // Block until the worker actually finishes touching `request`. Calling
+    // gai_suspend on an already-completed request returns immediately, so
+    // this is also safe to call after a successful gai_suspend above. The
+    // loop handles spurious EAI_INTR returns.
+    while (gai_error(&request) == EAI_INPROGRESS) {
+      gai_suspend(requests, 1, nullptr);
+    }
+  };
+
+  int wait_result =
+      gai_suspend((const struct gaicb *const *)requests, 1, &timeout);
+
+  if (wait_result == 0 || wait_result == EAI_ALLDONE) {
+    int gai_result = gai_error(&request);
+    if (gai_result == 0) {
+      *res = request.ar_result;
+      return 0;
+    }
+    if (request.ar_result) { freeaddrinfo(request.ar_result); }
+    return gai_result;
+  }
+
+  // Timeout or other suspension error: cancel and wait for the worker to
+  // release the stack-local gaicb before returning.
+  gai_cancel(&request);
+  wait_for_request_done();
+  if (request.ar_result) { freeaddrinfo(request.ar_result); }
+  return wait_result;
 #else
   // Fallback implementation using thread-based timeout for other Unix systems.
-  //
-  // The previous Linux/glibc path used getaddrinfo_a(GAI_NOWAIT) with a
-  // stack-local gaicb. On timeout it called gai_cancel(), which is non-
-  // blocking and may return EAI_NOTCANCELED -- the resolver worker would
-  // then write back to the destroyed stack frame after this function had
-  // already returned (#2431). The std::thread + shared_ptr fallback below
-  // is correct for the same reason it works on other platforms: the
-  // worker captures shared ownership of the state, so it stays alive as
-  // long as anyone (caller or worker) still holds a reference.
 
   struct GetAddrInfoState {
     ~GetAddrInfoState() {
