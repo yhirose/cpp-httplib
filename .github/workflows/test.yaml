@@ -25,7 +25,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
+  # Exclude *_Online tests by default — they hit external services and flake on
+  # CI runners. Run with workflow_dispatch + a custom filter to include them.
+  GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '-*_Online' }}
 
 jobs:
   style-check:
@@ -323,7 +325,7 @@ jobs:
         for ($i = 0; $i -lt $shards; $i++) {
           $log = "shard_${i}.log"
           $procs += Start-Process -FilePath ./Release/httplib-test.exe `
-            -ArgumentList "--gtest_color=yes","--gtest_filter=${{ github.event.inputs.gtest_filter || '*' }}" `
+            -ArgumentList "--gtest_color=yes","--gtest_filter=${{ github.event.inputs.gtest_filter || '-*_Online' }}" `
             -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError "${log}.err" `
             -Environment @{ GTEST_TOTAL_SHARDS="$shards"; GTEST_SHARD_INDEX="$i" }
         }
