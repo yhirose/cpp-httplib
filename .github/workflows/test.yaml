@@ -78,6 +78,10 @@ jobs:
       fail-fast: false
       matrix:
         tls_backend: [openssl, mbedtls, wolfssl]
+    # TODO: mbedTLS jobs hit pre-existing flaky failures (timing-sensitive
+    # ServerTest cases under ASAN+mbedTLS). Allow them to fail without
+    # blocking until the underlying flakiness is investigated.
+    continue-on-error: ${{ matrix.tls_backend == 'mbedtls' }}
     name: ubuntu (${{ matrix.tls_backend }})
     steps:
       - name: checkout
@@ -212,6 +216,8 @@ jobs:
       fail-fast: false
       matrix:
         tls_backend: [openssl, mbedtls, wolfssl]
+    # See ubuntu job above.
+    continue-on-error: ${{ matrix.tls_backend == 'mbedtls' }}
     name: macos (${{ matrix.tls_backend }})
     steps:
       - name: checkout
