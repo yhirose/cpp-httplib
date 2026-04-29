@@ -17956,6 +17956,9 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
   err.code = impl::map_mbedtls_error(ret, err.sys_errno);
   err.backend_code = static_cast<uint64_t>(-ret);
   impl::mbedtls_last_error() = ret;
+  // mbedTLS signals a clean close_notify via a negative error code rather
+  // than 0; surface it as a clean EOF the way OpenSSL/wolfSSL do.
+  if (err.code == ErrorCode::PeerClosed) { return 0; }
   return -1;
 }
 

@@ -14626,12 +14626,6 @@ TEST_F(SSLOpenStreamTest, PostChunked) {
 // SSL peer sends a close_notify after the body, the client must treat it as a
 // clean EOF and return a successful response rather than an error.
 TEST(SSLTest, ResponseBodyTerminatedByConnectionClose) {
-#ifdef CPPHTTPLIB_MBEDTLS_SUPPORT
-  // TODO: mbedTLS reports a clean close_notify mid-response as a read error.
-  // Treat the EOF as a successful body terminator the way the OpenSSL/wolfSSL
-  // backends already do.
-  GTEST_SKIP() << "mbedTLS backend treats close_notify mid-response as error";
-#endif
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
 
