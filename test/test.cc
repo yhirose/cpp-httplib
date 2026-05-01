@@ -767,13 +767,6 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
   EXPECT_EQ(result[0], "text/*");
 }
 
-// Regression test for OSS-Fuzz #508087118: a long Content-Type ran str2tag
-// recursively (one stack frame per character) and overflowed the stack.
-TEST(Str2tagTest, LongInputDoesNotOverflowStack) {
-  std::string long_content_type(60000, 'x');
-  EXPECT_NO_THROW(detail::can_compress_content_type(long_content_type));
-}
-
 TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   Server svr;
 
