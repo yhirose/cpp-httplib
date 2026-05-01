@@ -43,6 +43,9 @@ test/test_mbedtls
 test/test_wolfssl
 test/test_no_tls
 test/server_fuzzer
+test/client_fuzzer
+test/header_parser_fuzzer
+test/url_parser_fuzzer
 test/test_proxy
 test/test_proxy_mbedtls
 test/test_proxy_wolfssl

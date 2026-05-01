@@ -251,13 +251,32 @@ test_proxy_mbedtls : test_proxy.cc ../httplib.h Makefile cert.pem
 test_proxy_wolfssl : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS_WOLFSSL)
 
-# Runs server_fuzzer.cc based on value of $(LIB_FUZZING_ENGINE).
-# Usage: make fuzz_test LIB_FUZZING_ENGINE=/path/to/libFuzzer
-fuzz_test: server_fuzzer
-	./server_fuzzer fuzzing/corpus/*
+# Runs all fuzz harnesses based on the value of $(LIB_FUZZING_ENGINE).
+# By default LIB_FUZZING_ENGINE is standalone_fuzz_target_runner.o, so each
+# fuzzer is replayed over its regression corpus.
+# Override for actual fuzzing:
+#   make fuzz_test LIB_FUZZING_ENGINE=/path/to/libFuzzer
+fuzz_test: server_fuzzer client_fuzzer header_parser_fuzzer url_parser_fuzzer
+	./server_fuzzer fuzzing/corpus/[0-9]* fuzzing/corpus/issue1264 fuzzing/corpus/clusterfuzz-testcase-minimized-server_fuzzer-*
+	./client_fuzzer fuzzing/corpus/clusterfuzz-testcase-minimized-client_fuzzer-*
+	./header_parser_fuzzer fuzzing/corpus/clusterfuzz-testcase-minimized-header_parser_fuzzer-*
+	@matches=$$(find fuzzing/corpus -maxdepth 1 -type f -name 'clusterfuzz-testcase-minimized-url_parser_fuzzer-*'); \
+	if [ -n "$$matches" ]; then ./url_parser_fuzzer $$matches; else echo "(no url_parser_fuzzer corpus)"; fi
 
 # Fuzz target, so that you can choose which $(LIB_FUZZING_ENGINE) to use.
 server_fuzzer : fuzzing/server_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
+	$(CXX) -o $@ -I.. $(CXXFLAGS) $< $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(LIB_FUZZING_ENGINE) $(ZSTD_SUPPORT) $(LIBS)
+	@file $@
+
+client_fuzzer : fuzzing/client_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
+	$(CXX) -o $@ -I.. $(CXXFLAGS) $< $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(LIB_FUZZING_ENGINE) $(ZSTD_SUPPORT) $(LIBS)
+	@file $@
+
+header_parser_fuzzer : fuzzing/header_parser_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
+	$(CXX) -o $@ -I.. $(CXXFLAGS) $< $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(LIB_FUZZING_ENGINE) $(ZSTD_SUPPORT) $(LIBS)
+	@file $@
+
+url_parser_fuzzer : fuzzing/url_parser_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
 	$(CXX) -o $@ -I.. $(CXXFLAGS) $< $(OPENSSL_SUPPORT) $(ZLIB_SUPPORT) $(BROTLI_SUPPORT) $(LIB_FUZZING_ENGINE) $(ZSTD_SUPPORT) $(LIBS)
 	@file $@
 
@@ -273,5 +292,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl test_benchmark server_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
+	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl test_benchmark server_fuzzer client_fuzzer header_parser_fuzzer url_parser_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
 
