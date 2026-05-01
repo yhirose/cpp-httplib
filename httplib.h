@@ -6361,6 +6361,10 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
   }
 }
 
+// Recursive form retained so operator""_t below can compute hashes for
+// switch-case labels at compile time (C++11 constexpr forbids loops). Do not
+// call from runtime paths with arbitrary-length inputs — use str2tag()
+// instead, which is iterative and stack-safe.
 inline constexpr unsigned int str2tag_core(const char *s, size_t l,
                                            unsigned int h) {
   return (l == 0)
