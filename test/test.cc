@@ -9288,6 +9288,81 @@ TEST(ClientVulnerabilityTest, PayloadMaxLengthZeroMeansNoLimit) {
       << " bytes without truncation, but only read " << total_read << " bytes.";
 }
 
+// Regression test for OSS-Fuzz issue 508342856: a malicious server sending an
+// enormous Content-Length must not cause the client to pre-allocate a huge
+// response body buffer. The reservation is capped at payload_max_length_, and
+// the read itself fails when the body exceeds the limit.
+TEST(ClientVulnerabilityTest, HugeContentLengthDoesNotPreallocate) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto server_thread = std::thread([] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+
+    if (cli != INVALID_SOCKET) {
+      char buf[4096];
+      ::recv(cli, buf, sizeof(buf), 0);
+
+      // Malicious response: claim a 20GB body but send only a tiny payload.
+      std::string response = "HTTP/1.1 200 OK\r\n"
+                             "Content-Length: 20000000000\r\n"
+                             "\r\n"
+                             "abc";
+      ::send(cli,
+#ifdef _WIN32
+             static_cast<const char *>(response.c_str()),
+             static_cast<int>(response.size()),
+#else
+             response.c_str(), response.size(),
+#endif
+             0);
+
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  {
+    Client cli("127.0.0.1", PORT + 2);
+    cli.set_read_timeout(5, 0);
+    // Default payload_max_length_ is 100MB; a 20GB Content-Length must not
+    // result in a 20GB pre-allocation. The Get() call is expected to fail
+    // (server claims more bytes than payload_max_length permits), but it must
+    // not exhaust memory before getting there.
+    auto res = cli.Get("/malicious");
+    EXPECT_FALSE(res); // Read fails because body exceeds payload_max_length_
+  }
+
+  server_thread.join();
+}
+
 // Verify that content_receiver bypasses the default payload_max_length,
 // allowing streaming downloads larger than 100MB without requiring an explicit
 // set_payload_max_length call.

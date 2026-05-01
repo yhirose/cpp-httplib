@@ -13632,7 +13632,15 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
           output_error_log(error, &req);
           return false;
         }
-        res.body.reserve(static_cast<size_t>(len));
+        // Cap the reservation by payload_max_length_ to avoid OOM when a
+        // hostile or malformed server sends an enormous Content-Length.
+        // The actual body read below is bounded by payload_max_length_,
+        // so reserving more than that is never useful.
+        auto reserve_len = static_cast<size_t>(len);
+        if (payload_max_length_ > 0 && reserve_len > payload_max_length_) {
+          reserve_len = payload_max_length_;
+        }
+        res.body.reserve(reserve_len);
       }
     }
 
