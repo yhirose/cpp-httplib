@@ -257,11 +257,14 @@ test_proxy_wolfssl : test_proxy.cc ../httplib.h Makefile cert.pem
 # Override for actual fuzzing:
 #   make fuzz_test LIB_FUZZING_ENGINE=/path/to/libFuzzer
 fuzz_test: server_fuzzer client_fuzzer header_parser_fuzzer url_parser_fuzzer
-	./server_fuzzer fuzzing/corpus/[0-9]* fuzzing/corpus/issue1264 fuzzing/corpus/clusterfuzz-testcase-minimized-server_fuzzer-*
-	./client_fuzzer fuzzing/corpus/clusterfuzz-testcase-minimized-client_fuzzer-*
-	./header_parser_fuzzer fuzzing/corpus/clusterfuzz-testcase-minimized-header_parser_fuzzer-*
-	@matches=$$(find fuzzing/corpus -maxdepth 1 -type f -name 'clusterfuzz-testcase-minimized-url_parser_fuzzer-*'); \
-	if [ -n "$$matches" ]; then ./url_parser_fuzzer $$matches; else echo "(no url_parser_fuzzer corpus)"; fi
+	@m=""; for f in fuzzing/corpus/[0-9]* fuzzing/corpus/issue1264 fuzzing/corpus/clusterfuzz-testcase-minimized-server_fuzzer-*; do if [ -f "$$f" ]; then m="$$m $$f"; fi; done; \
+	if [ -n "$$m" ]; then echo "./server_fuzzer$$m"; ./server_fuzzer $$m; else echo "(no server_fuzzer corpus)"; fi
+	@m=""; for f in fuzzing/corpus/clusterfuzz-testcase-minimized-client_fuzzer-*; do if [ -f "$$f" ]; then m="$$m $$f"; fi; done; \
+	if [ -n "$$m" ]; then echo "./client_fuzzer$$m"; ./client_fuzzer $$m; else echo "(no client_fuzzer corpus)"; fi
+	@m=""; for f in fuzzing/corpus/clusterfuzz-testcase-minimized-header_parser_fuzzer-*; do if [ -f "$$f" ]; then m="$$m $$f"; fi; done; \
+	if [ -n "$$m" ]; then echo "./header_parser_fuzzer$$m"; ./header_parser_fuzzer $$m; else echo "(no header_parser_fuzzer corpus)"; fi
+	@m=""; for f in fuzzing/corpus/clusterfuzz-testcase-minimized-url_parser_fuzzer-*; do if [ -f "$$f" ]; then m="$$m $$f"; fi; done; \
+	if [ -n "$$m" ]; then echo "./url_parser_fuzzer$$m"; ./url_parser_fuzzer $$m; else echo "(no url_parser_fuzzer corpus)"; fi
 
 # Fuzz target, so that you can choose which $(LIB_FUZZING_ENGINE) to use.
 server_fuzzer : fuzzing/server_fuzzer.cc ../httplib.h standalone_fuzz_target_runner.o
