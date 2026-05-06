@@ -18,8 +18,10 @@ ifneq ($(OS), Windows_NT)
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -lssl -lcrypto
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -lmbedcrypto
 		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -lwolfssl
-		# Disable ASLR for ASAN compatibility on WSL2 (high-entropy ASLR conflicts with ASAN shadow memory)
-		SETARCH = setarch $(shell uname -m) -R
+		ifeq ($(UNAME_S), Linux)
+			# Disable ASLR for ASAN compatibility on WSL2 (high-entropy ASLR conflicts with ASAN shadow memory)
+			SETARCH = setarch $(shell uname -m) -R
+		endif
 	endif
 endif
 
