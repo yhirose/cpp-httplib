@@ -291,10 +291,12 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 
   {
     auto res = cli.Get("/get");
+    ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
   {
     auto res = cli.Get("/redirect/2");
+    ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
@@ -306,6 +308,7 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
+      ASSERT_TRUE(res != nullptr);
       auto body = normalizeJson(res->body);
       EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
       EXPECT_TRUE(body.find("\"user\":\"hello\"") != std::string::npos);
@@ -317,6 +320,7 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
     int count = 10;
     while (count--) {
       auto res = cli.Get("/get");
+      ASSERT_TRUE(res != nullptr);
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
   }
