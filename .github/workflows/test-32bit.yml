@@ -21,7 +21,8 @@ jobs:
       - name: Build (Win32)
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSDIR=%%i
+          call "%VSDIR%\VC\Auxiliary\Build\vcvarsall.bat" x86 || exit /b 1
           cl /std:c++14 /EHsc /W4 /WX /c /Fo:NUL test\test_32bit_build.cpp
 
   test-arm32:
