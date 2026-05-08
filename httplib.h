@@ -2255,6 +2255,8 @@ protected:
       std::chrono::time_point<std::chrono::steady_clock> start_time,
       Response &res, bool &success, Error &error);
 
+  bool is_proxy_enabled_for_host(const std::string &host) const;
+
   // All of:
   //   shutdown_ssl
   //   shutdown_socket
@@ -12324,8 +12326,17 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 #endif
 }
 
+inline bool
+ClientImpl::is_proxy_enabled_for_host(const std::string &host) const {
+  // The host parameter is unused while NO_PROXY support is not yet wired in;
+  // it will be consulted once set_no_proxy() lands. Keeping the signature now
+  // means the call sites do not need to change again later.
+  (void)host;
+  return !proxy_host_.empty() && proxy_port_ != -1;
+}
+
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
-  if (!proxy_host_.empty() && proxy_port_ != -1) {
+  if (is_proxy_enabled_for_host(host_)) {
     return detail::create_client_socket(
         proxy_host_, std::string(), proxy_port_, address_family_, tcp_nodelay_,
         ipv6_v6only_, socket_options_, connection_timeout_sec_,
@@ -12936,7 +12947,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   bool ret;
 
-  if (!is_ssl() && !proxy_host_.empty() && proxy_port_ != -1) {
+  if (!is_ssl() && is_proxy_enabled_for_host(host_)) {
     auto req2 = req;
     req2.path = "http://" +
                 detail::make_host_and_port_string(host_, port_, false) +
@@ -13144,7 +13155,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
 
   // Setup proxy configuration (CRITICAL ORDER - proxy must be set
   // before proxy auth)
-  if (!proxy_host_.empty() && proxy_port_ != -1) {
+  if (is_proxy_enabled_for_host(host_)) {
     // First set proxy host and port
     client.set_proxy(proxy_host_, proxy_port_);
 
@@ -13565,7 +13576,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl() && !expect_100_continue) {
-    auto is_proxy_enabled = !proxy_host_.empty() && proxy_port_ != -1;
+    auto is_proxy_enabled = is_proxy_enabled_for_host(host_);
     if (!is_proxy_enabled) {
       if (tls::is_peer_closed(socket_.ssl, socket_.sock)) {
         error = Error::SSLPeerCouldBeClosed_;
@@ -15608,7 +15619,7 @@ inline bool SSLClient::setup_proxy_connection(
     Socket &socket,
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     Response &res, bool &success, Error &error) {
-  if (proxy_host_.empty() || proxy_port_ == -1) { return true; }
+  if (!is_proxy_enabled_for_host(host_)) { return true; }
 
   if (!connect_with_proxy(socket, start_time, res, success, error)) {
     return false;
@@ -15721,7 +15732,7 @@ inline bool SSLClient::connect_with_proxy(
 inline bool SSLClient::ensure_socket_connection(Socket &socket, Error &error) {
   if (!ClientImpl::ensure_socket_connection(socket, error)) { return false; }
 
-  if (!proxy_host_.empty() && proxy_port_ != -1) { return true; }
+  if (is_proxy_enabled_for_host(host_)) { return true; }
 
   if (!initialize_ssl(socket, error)) {
     shutdown_socket(socket);
