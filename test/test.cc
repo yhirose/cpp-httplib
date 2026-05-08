@@ -18512,7 +18512,6 @@ TEST(NoProxyTest, ProxyAuthorizationSentWhenNotBypassed) {
 // --------------------------------------------------
 
 TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
-  // Default behavior unchanged when set_no_proxy is never called.
   ProxyAndTargetServers s;
   auto cli = make_client("anything.test", s);
 
@@ -18526,8 +18525,6 @@ TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
 // ------------------------------------------------------
 
 TEST(NoProxyTest, PortSpecificEntryRejected) {
-  // "host:port" is intentionally unsupported; must be silently dropped
-  // so it does not match anything.
   ProxyAndTargetServers s;
   auto cli = make_client("example.com", s);
   cli->set_no_proxy({"example.com:8080"});
@@ -18539,8 +18536,6 @@ TEST(NoProxyTest, PortSpecificEntryRejected) {
 }
 
 TEST(NoProxyTest, EmptyAndWhitespaceEntriesDropped) {
-  // Empty/whitespace tokens must not match anything (especially not
-  // every host).
   ProxyAndTargetServers s;
   auto cli = make_client("anything.test", s);
   cli->set_no_proxy({"", "   ", "\t"});
