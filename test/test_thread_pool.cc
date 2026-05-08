@@ -198,6 +198,63 @@ TEST(ThreadPoolTest, InvalidMaxThreadsThrows) {
 }
 #endif
 
+// Issue #2444: ThreadPool constructor must be exception-safe when std::thread
+// construction fails partway (e.g., pthread_create returns EAGAIN under thread
+// resource pressure). Without proper handling, the partially-built threads_
+// vector destroys joinable std::thread objects, calling std::terminate().
+//
+// We reproduce the failure portably by interposing pthread_create at link
+// time: while the counter is armed, the first N calls succeed, the rest
+// return EAGAIN. This is gated to POSIX + exceptions-enabled builds.
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+#if defined(__unix__) || defined(__APPLE__)
+
+#include <dlfcn.h>
+#include <errno.h>
+#include <pthread.h>
+
+namespace {
+// -1 = pass-through (default). >= 0 = number of remaining successful calls
+// before EAGAIN is returned. Reset to -1 after each test that arms it.
+std::atomic<int> g_pthread_create_remaining{-1};
+} // namespace
+
+extern "C" int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                              void *(*start_routine)(void *), void *arg) {
+  using fn_t =
+      int (*)(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
+  static fn_t real = reinterpret_cast<fn_t>(dlsym(RTLD_NEXT, "pthread_create"));
+
+  int n = g_pthread_create_remaining.load(std::memory_order_relaxed);
+  if (n == 0) { return EAGAIN; }
+  if (n > 0) {
+    g_pthread_create_remaining.fetch_sub(1, std::memory_order_relaxed);
+  }
+  return real(thread, attr, start_routine, arg);
+}
+
+TEST(ThreadPoolTest, ConstructorRecoversWhenThreadCreationFails) {
+  // Allow only the first thread to spawn; subsequent pthread_create calls
+  // return EAGAIN, causing std::thread() to throw std::system_error mid-loop.
+  g_pthread_create_remaining.store(1);
+
+  bool caught = false;
+  try {
+    ThreadPool pool(/*n=*/4);
+    (void)pool;
+  } catch (const std::system_error &) { caught = true; } catch (...) {
+    caught = true;
+  }
+
+  // Disarm before any further test runs.
+  g_pthread_create_remaining.store(-1);
+
+  EXPECT_TRUE(caught);
+}
+
+#endif // POSIX
+#endif // CPPHTTPLIB_NO_EXCEPTIONS
+
 TEST(ThreadPoolTest, EnqueueAfterShutdownReturnsFalse) {
   ThreadPool pool(2);
   pool.shutdown();

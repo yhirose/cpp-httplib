@@ -10047,9 +10047,29 @@ inline ThreadPool::ThreadPool(size_t n, size_t max_n, size_t mqr)
 #endif
   max_thread_count_ = max_n == 0 ? n : max_n;
   threads_.reserve(base_thread_count_);
-  for (size_t i = 0; i < base_thread_count_; i++) {
-    threads_.emplace_back(std::thread([this]() { worker(false); }));
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+  try {
+#endif
+    for (size_t i = 0; i < base_thread_count_; i++) {
+      threads_.emplace_back(std::thread([this]() { worker(false); }));
+    }
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+  } catch (...) {
+    // If thread creation fails partway (e.g., pthread_create returns EAGAIN),
+    // signal the workers we already spawned to exit and join them so the
+    // vector destructor does not see joinable threads (which would call
+    // std::terminate). Then rethrow so the caller learns of the failure.
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      shutdown_ = true;
+    }
+    cond_.notify_all();
+    for (auto &t : threads_) {
+      if (t.joinable()) { t.join(); }
+    }
+    throw;
   }
+#endif
 }
 
 inline bool ThreadPool::enqueue(std::function<void()> fn) {
