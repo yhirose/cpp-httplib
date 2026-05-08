@@ -2978,6 +2978,22 @@ private:
 std::string make_host_and_port_string(const std::string &host, int port,
                                       bool is_ssl);
 
+// Parsed representation of an HTTP(S) proxy URL.
+struct ProxyUrl {
+  std::string scheme; // "http" or "https"
+  std::string host;   // bracket-stripped for IPv6 literals
+  int port = -1;
+  std::string username; // empty if absent
+  std::string password; // empty if absent
+};
+
+// Parses "http(s)://[user[:pass]@]host[:port][/...]" into out. Rejects
+// any input containing CR, LF, NUL, or other control characters; rejects
+// schemes other than http/https; rejects ports outside [1, 65535]; for
+// IPv6 literals (in [...]) requires the address to parse via inet_pton.
+// When the port is omitted, defaults to 80 (http) / 443 (https).
+bool parse_proxy_url(const std::string &url, ProxyUrl &out);
+
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -10498,6 +10514,103 @@ inline std::string make_host_and_port_string(const std::string &host, int port,
 inline std::string
 make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
+}
+
+inline bool parse_proxy_url(const std::string &url, ProxyUrl &out) {
+  if (url.empty()) { return false; }
+
+  // Reject control characters anywhere in the input. CRLF/NUL would let a
+  // malicious env value inject extra header lines into a CONNECT request or
+  // a Proxy-Authorization header.
+  for (auto c : url) {
+    auto uc = static_cast<unsigned char>(c);
+    if (uc < 0x20 || uc == 0x7F) { return false; }
+  }
+
+  // Scheme: only http and https are supported.
+  std::size_t scheme_end = 0;
+  if (url.compare(0, 7, "http://") == 0) {
+    out.scheme = "http";
+    scheme_end = 7;
+  } else if (url.compare(0, 8, "https://") == 0) {
+    out.scheme = "https";
+    scheme_end = 8;
+  } else {
+    return false;
+  }
+
+  // Authority terminates at the first '/', '?', or '#', or the end of input.
+  auto authority_end = url.find_first_of("/?#", scheme_end);
+  if (authority_end == std::string::npos) { authority_end = url.size(); }
+  auto authority = url.substr(scheme_end, authority_end - scheme_end);
+  if (authority.empty()) { return false; }
+
+  // Split userinfo from host_port on the LAST '@' so passwords containing '@'
+  // are preserved.
+  std::string userinfo;
+  std::string host_port;
+  auto at_pos = authority.rfind('@');
+  if (at_pos != std::string::npos) {
+    userinfo = authority.substr(0, at_pos);
+    host_port = authority.substr(at_pos + 1);
+  } else {
+    host_port = authority;
+  }
+  if (host_port.empty()) { return false; }
+
+  if (!userinfo.empty()) {
+    auto colon = userinfo.find(':');
+    if (colon == std::string::npos) {
+      out.username = userinfo;
+    } else {
+      out.username = userinfo.substr(0, colon);
+      out.password = userinfo.substr(colon + 1);
+    }
+  }
+
+  // host_port: "[ipv6]:port", "[ipv6]", "host:port", or "host".
+  std::string host;
+  std::string port_str;
+  if (host_port.front() == '[') {
+    auto rb = host_port.find(']');
+    if (rb == std::string::npos) { return false; }
+    host = host_port.substr(1, rb - 1);
+    if (host.empty()) { return false; }
+    struct in6_addr tmp;
+    if (inet_pton(AF_INET6, host.c_str(), &tmp) != 1) { return false; }
+    auto rest = host_port.substr(rb + 1);
+    if (!rest.empty()) {
+      if (rest.front() != ':') { return false; }
+      port_str = rest.substr(1);
+      if (port_str.empty()) { return false; }
+    }
+  } else {
+    auto colon = host_port.find(':');
+    if (colon == std::string::npos) {
+      host = host_port;
+    } else {
+      host = host_port.substr(0, colon);
+      port_str = host_port.substr(colon + 1);
+      if (port_str.empty()) { return false; }
+    }
+    if (host.empty()) { return false; }
+  }
+  out.host = std::move(host);
+
+  if (port_str.empty()) {
+    out.port = (out.scheme == "https") ? 443 : 80;
+  } else {
+    int port = 0;
+    auto r =
+        from_chars(port_str.data(), port_str.data() + port_str.size(), port);
+    if (r.ec != std::errc{} || r.ptr != port_str.data() + port_str.size()) {
+      return false;
+    }
+    if (port < 1 || port > 65535) { return false; }
+    out.port = port;
+  }
+
+  return true;
 }
 
 template <typename T>
