@@ -2994,6 +2994,62 @@ struct ProxyUrl {
 // When the port is omitted, defaults to 80 (http) / 443 (https).
 bool parse_proxy_url(const std::string &url, ProxyUrl &out);
 
+// One parsed NO_PROXY list entry.
+enum class NoProxyKind {
+  Wildcard,       // "*"
+  HostnameSuffix, // "example.com" or ".example.com"
+  IPv4Cidr,       // "10.0.0.0/8" (or single IP, treated as /32)
+  IPv6Cidr,       // "fe80::/10" (or single IP, treated as /128)
+};
+
+struct NoProxyEntry {
+  NoProxyKind kind = NoProxyKind::Wildcard;
+  std::string hostname_pattern; // lowercased, leading/trailing dot stripped
+  struct in_addr v4_net {};
+  struct in6_addr v6_net {};
+  int prefix_bits = 0;
+};
+
+// Parses a single NO_PROXY token (already trimmed, non-empty). Returns
+// false on any malformed input. Port-specific entries ("host:port") are
+// rejected by design: cpp-httplib's other host-keyed APIs (e.g.
+// set_hostname_addr_map) are also keyed on hostname only, so supporting
+// port granularity for NO_PROXY alone would be inconsistent.
+bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
+
+// Parses a comma-separated NO_PROXY value into a vector of entries.
+// Malformed tokens are silently dropped (matching curl/Go behavior;
+// failing loud on a single bad entry would break working deployments).
+std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
+
+// Pre-parsed form of the connection's target host, ready for matching
+// against a NoProxyEntry list without re-running inet_pton on every entry.
+struct NormalizedTarget {
+  std::string hostname; // lowercase; brackets and trailing dot removed
+  bool is_ipv4 = false;
+  bool is_ipv6 = false;
+  struct in_addr v4 {};
+  struct in6_addr v6 {};
+};
+
+NormalizedTarget normalize_target(const std::string &host);
+
+// CIDR membership tests.
+//   prefix_bits in [0, 32] for IPv4, [0, 128] for IPv6.
+//   prefix_bits == 0 always returns true for the matching family.
+bool ipv4_in_cidr(const struct in_addr &ip, const struct in_addr &net,
+                  int prefix_bits);
+bool ipv6_in_cidr(const struct in6_addr &ip, const struct in6_addr &net,
+                  int prefix_bits);
+
+// Returns true if the (already normalized) target matches any NO_PROXY
+// entry. Hostname suffix matching uses the dot-boundary rule so that
+// "evilexample.com" does NOT match "example.com". IPv4 and IPv6 entries
+// match only their own address family; "::ffff:1.2.3.4" is not
+// cross-matched against IPv4 entries.
+bool host_matches_no_proxy(const NormalizedTarget &target,
+                           const std::vector<NoProxyEntry> &entries);
+
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -10611,6 +10667,180 @@ inline bool parse_proxy_url(const std::string &url, ProxyUrl &out) {
   }
 
   return true;
+}
+
+inline bool ipv4_in_cidr(const struct in_addr &ip, const struct in_addr &net,
+                         int prefix_bits) {
+  if (prefix_bits < 0 || prefix_bits > 32) { return false; }
+  // Special-case prefix=0 to avoid undefined behavior of (1u << 32).
+  if (prefix_bits == 0) { return true; }
+  uint32_t mask = htonl(0xFFFFFFFFu << (32 - prefix_bits));
+  return (ip.s_addr & mask) == (net.s_addr & mask);
+}
+
+inline bool ipv6_in_cidr(const struct in6_addr &ip, const struct in6_addr &net,
+                         int prefix_bits) {
+  if (prefix_bits < 0 || prefix_bits > 128) { return false; }
+  if (prefix_bits == 0) { return true; }
+  int full_bytes = prefix_bits / 8;
+  int rem_bits = prefix_bits % 8;
+  if (full_bytes > 0 && std::memcmp(ip.s6_addr, net.s6_addr,
+                                    static_cast<size_t>(full_bytes)) != 0) {
+    return false;
+  }
+  if (rem_bits == 0) { return true; }
+  auto mask = static_cast<uint8_t>(0xFFu << (8 - rem_bits));
+  return (ip.s6_addr[full_bytes] & mask) == (net.s6_addr[full_bytes] & mask);
+}
+
+inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
+  if (token.empty()) { return false; }
+
+  if (token == "*") {
+    out.kind = NoProxyKind::Wildcard;
+    return true;
+  }
+
+  // Split on '/' for optional CIDR prefix.
+  auto slash = token.find('/');
+  std::string addr_part =
+      (slash == std::string::npos) ? token : token.substr(0, slash);
+  std::string prefix_part =
+      (slash == std::string::npos) ? std::string() : token.substr(slash + 1);
+
+  // Try IPv4.
+  struct in_addr v4;
+  if (inet_pton(AF_INET, addr_part.c_str(), &v4) == 1) {
+    int prefix = 32;
+    if (!prefix_part.empty()) {
+      auto r = from_chars(prefix_part.data(),
+                          prefix_part.data() + prefix_part.size(), prefix);
+      if (r.ec != std::errc{} ||
+          r.ptr != prefix_part.data() + prefix_part.size()) {
+        return false;
+      }
+      if (prefix < 0 || prefix > 32) { return false; }
+    }
+    out.kind = NoProxyKind::IPv4Cidr;
+    out.v4_net = v4;
+    out.prefix_bits = prefix;
+    return true;
+  }
+
+  // Try IPv6.
+  struct in6_addr v6;
+  if (inet_pton(AF_INET6, addr_part.c_str(), &v6) == 1) {
+    int prefix = 128;
+    if (!prefix_part.empty()) {
+      auto r = from_chars(prefix_part.data(),
+                          prefix_part.data() + prefix_part.size(), prefix);
+      if (r.ec != std::errc{} ||
+          r.ptr != prefix_part.data() + prefix_part.size()) {
+        return false;
+      }
+      if (prefix < 0 || prefix > 128) { return false; }
+    }
+    out.kind = NoProxyKind::IPv6Cidr;
+    out.v6_net = v6;
+    out.prefix_bits = prefix;
+    return true;
+  }
+
+  // Not an IP. A '/' here means a prefix on a non-IP entry, which is invalid.
+  if (slash != std::string::npos) { return false; }
+
+  // ':' in a non-IP token is a port-specific entry, which we don't support.
+  if (token.find(':') != std::string::npos) { return false; }
+
+  // Hostname suffix. Lowercase, strip leading/trailing dots.
+  std::string hostname = case_ignore::to_lower(token);
+  while (!hostname.empty() && hostname.front() == '.') {
+    hostname.erase(hostname.begin());
+  }
+  while (!hostname.empty() && hostname.back() == '.') {
+    hostname.pop_back();
+  }
+  if (hostname.empty()) { return false; }
+
+  out.kind = NoProxyKind::HostnameSuffix;
+  out.hostname_pattern = std::move(hostname);
+  return true;
+}
+
+inline std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value) {
+  std::vector<NoProxyEntry> entries;
+  if (value.empty()) { return entries; }
+  split(value.data(), value.data() + value.size(), ',',
+        [&](const char *b, const char *e) {
+          auto token = trim_copy(std::string(b, e));
+          if (token.empty()) { return; }
+          NoProxyEntry entry;
+          if (parse_no_proxy_entry(token, entry)) {
+            entries.push_back(std::move(entry));
+          }
+        });
+  return entries;
+}
+
+inline NormalizedTarget normalize_target(const std::string &host) {
+  NormalizedTarget t;
+  std::string h = host;
+
+  // Strip surrounding brackets if present (IPv6 literal in URL form).
+  if (h.size() >= 2 && h.front() == '[' && h.back() == ']') {
+    h = h.substr(1, h.size() - 2);
+  }
+
+  // Strip a single trailing dot (FQDN canonicalization).
+  if (!h.empty() && h.back() == '.') { h.pop_back(); }
+
+  t.hostname = case_ignore::to_lower(h);
+
+  if (!t.hostname.empty()) {
+    if (inet_pton(AF_INET, t.hostname.c_str(), &t.v4) == 1) {
+      t.is_ipv4 = true;
+    } else if (inet_pton(AF_INET6, t.hostname.c_str(), &t.v6) == 1) {
+      t.is_ipv6 = true;
+    }
+  }
+  return t;
+}
+
+inline bool host_matches_no_proxy(const NormalizedTarget &target,
+                                  const std::vector<NoProxyEntry> &entries) {
+  if (target.hostname.empty()) { return false; }
+  for (const auto &e : entries) {
+    switch (e.kind) {
+    case NoProxyKind::Wildcard: return true;
+    case NoProxyKind::IPv4Cidr:
+      if (target.is_ipv4 && ipv4_in_cidr(target.v4, e.v4_net, e.prefix_bits)) {
+        return true;
+      }
+      break;
+    case NoProxyKind::IPv6Cidr:
+      if (target.is_ipv6 && ipv6_in_cidr(target.v6, e.v6_net, e.prefix_bits)) {
+        return true;
+      }
+      break;
+    case NoProxyKind::HostnameSuffix:
+      // IP targets do not match hostname patterns.
+      if (target.is_ipv4 || target.is_ipv6) { break; }
+      // Exact match.
+      if (target.hostname == e.hostname_pattern) { return true; }
+      // Dot-boundary suffix match: target ends with "." + pattern. This is
+      // what prevents "evilexample.com" from matching "example.com".
+      if (target.hostname.size() > e.hostname_pattern.size() + 1) {
+        auto offset = target.hostname.size() - e.hostname_pattern.size();
+        if (target.hostname[offset - 1] == '.' &&
+            target.hostname.compare(offset, e.hostname_pattern.size(),
+                                    e.hostname_pattern) == 0) {
+          return true;
+        }
+      }
+      break;
+    }
+  }
+  return false;
 }
 
 template <typename T>
