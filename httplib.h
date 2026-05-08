@@ -2049,6 +2049,15 @@ struct NormalizedTarget {
   struct in6_addr v6 {};
 };
 
+// Proxy-related environment variables, parsed.
+struct ProxyEnvSettings {
+  bool have_http_proxy = false;
+  bool have_https_proxy = false;
+  ProxyUrl http_proxy;
+  ProxyUrl https_proxy;
+  std::vector<NoProxyEntry> no_proxy;
+};
+
 } // namespace detail
 
 class ClientImpl {
@@ -2279,6 +2288,26 @@ public:
   // string forms. Malformed entries are silently dropped. Calling this
   // method replaces any previously configured list; there is no append.
   void set_no_proxy(const std::vector<std::string> &patterns);
+
+  // Configures the client from proxy-related environment variables:
+  //   - HTTPS clients (SSLClient) read https_proxy / HTTPS_PROXY
+  //   - HTTP clients read http_proxy (lowercase only)
+  //   - Both also read no_proxy / NO_PROXY
+  // Returns true if at least one variable was found and applied.
+  //
+  // Security note: only the lowercase http_proxy is read. The uppercase
+  // form is intentionally ignored to mitigate the httpoxy class of bugs
+  // (CVE-2016-5385): in CGI/FastCGI environments, HTTP_PROXY collides
+  // with the HTTP_* namespace used to expose request headers, allowing
+  // a remote attacker to set the proxy URL via the Proxy: request
+  // header. cpp-httplib follows curl, Go and Python requests in only
+  // honoring the lowercase form. https_proxy/HTTPS_PROXY and
+  // no_proxy/NO_PROXY are safe in either case.
+  //
+  // Threading: this function reads getenv() synchronously; call it once
+  // at startup before issuing any requests. Concurrent setenv from other
+  // threads while this function runs is undefined.
+  bool set_proxy_from_env();
 
   void set_logger(Logger logger);
   void set_error_logger(ErrorLogger error_logger);
@@ -2657,6 +2686,7 @@ public:
                             const std::string &password);
   void set_proxy_bearer_token_auth(const std::string &token);
   void set_no_proxy(const std::vector<std::string> &patterns);
+  bool set_proxy_from_env();
   void set_logger(Logger logger);
   void set_error_logger(ErrorLogger error_logger);
 
@@ -3051,6 +3081,14 @@ bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
 std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
 
 NormalizedTarget normalize_target(const std::string &host);
+
+// Reads proxy-related environment variables. Reads:
+//   https_proxy / HTTPS_PROXY  → ProxyEnvSettings::https_proxy
+//   http_proxy  (lowercase only — see security note in set_proxy_from_env)
+//                              → ProxyEnvSettings::http_proxy
+//   no_proxy / NO_PROXY        → ProxyEnvSettings::no_proxy
+// Variables that fail to parse are treated as unset.
+ProxyEnvSettings read_proxy_env();
 
 // CIDR membership tests.
 //   prefix_bits in [0, 32] for IPv4, [0, 128] for IPv6.
@@ -10861,6 +10899,42 @@ inline bool host_matches_no_proxy(const NormalizedTarget &target,
   return false;
 }
 
+inline ProxyEnvSettings read_proxy_env() {
+  ProxyEnvSettings out;
+
+  auto try_url = [](const char *value, ProxyUrl &dst) -> bool {
+    if (!value || *value == '\0') { return false; }
+    return parse_proxy_url(value, dst);
+  };
+
+  // http_proxy: lowercase ONLY. The uppercase form is ignored to mitigate
+  // httpoxy (CVE-2016-5385): in CGI/FastCGI environments, HTTP_PROXY
+  // collides with the HTTP_* namespace used to expose request headers,
+  // letting a remote attacker control the proxy URL via the "Proxy:"
+  // header.
+  if (try_url(std::getenv("http_proxy"), out.http_proxy)) {
+    out.have_http_proxy = true;
+  }
+
+  // https_proxy is safe in either case: there is no HTTPS_* CGI
+  // collision because the variable does not start with HTTP_.
+  if (try_url(std::getenv("https_proxy"), out.https_proxy)) {
+    out.have_https_proxy = true;
+  } else if (try_url(std::getenv("HTTPS_PROXY"), out.https_proxy)) {
+    out.have_https_proxy = true;
+  }
+
+  const char *no_proxy_value = std::getenv("no_proxy");
+  if (!no_proxy_value || *no_proxy_value == '\0') {
+    no_proxy_value = std::getenv("NO_PROXY");
+  }
+  if (no_proxy_value && *no_proxy_value != '\0') {
+    out.no_proxy = parse_no_proxy_list(no_proxy_value);
+  }
+
+  return out;
+}
+
 template <typename T>
 inline bool check_and_write_headers(Stream &strm, Headers &headers,
                                     T header_writer, Error &error) {
@@ -15078,6 +15152,39 @@ inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
   no_proxy_entries_ = std::move(parsed);
 }
 
+inline bool ClientImpl::set_proxy_from_env() {
+  auto env = detail::read_proxy_env();
+  bool applied = false;
+
+  // is_ssl() is virtual; SSLClient overrides to return true. So an
+  // SSLClient instance picks https_proxy and a plain ClientImpl picks
+  // http_proxy. There is intentionally no cross-scheme fallback —
+  // http_proxy and https_proxy describe different target traffic.
+  const detail::ProxyUrl *picked = nullptr;
+  if (is_ssl() && env.have_https_proxy) {
+    picked = &env.https_proxy;
+  } else if (!is_ssl() && env.have_http_proxy) {
+    picked = &env.http_proxy;
+  }
+
+  if (picked) {
+    proxy_host_ = picked->host;
+    proxy_port_ = picked->port;
+    if (!picked->username.empty()) {
+      proxy_basic_auth_username_ = picked->username;
+      proxy_basic_auth_password_ = picked->password;
+    }
+    applied = true;
+  }
+
+  if (!env.no_proxy.empty()) {
+    no_proxy_entries_ = std::move(env.no_proxy);
+    applied = true;
+  }
+
+  return applied;
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 inline void ClientImpl::set_digest_auth(const std::string &username,
                                         const std::string &password) {
@@ -15782,6 +15889,7 @@ inline void Client::set_proxy_bearer_token_auth(const std::string &token) {
 inline void Client::set_no_proxy(const std::vector<std::string> &patterns) {
   cli_->set_no_proxy(patterns);
 }
+inline bool Client::set_proxy_from_env() { return cli_->set_proxy_from_env(); }
 
 inline void Client::set_logger(Logger logger) {
   cli_->set_logger(std::move(logger));
