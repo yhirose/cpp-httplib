@@ -2014,6 +2014,41 @@ inline ssize_t read_body_content(Stream *stream, BodyReader &br, char *buf,
 
 class decompressor;
 
+// Parsed representation of an HTTP(S) proxy URL.
+struct ProxyUrl {
+  std::string scheme; // "http" or "https"
+  std::string host;   // bracket-stripped for IPv6 literals
+  int port = -1;
+  std::string username; // empty if absent
+  std::string password; // empty if absent
+};
+
+// One parsed NO_PROXY list entry.
+enum class NoProxyKind {
+  Wildcard,       // "*"
+  HostnameSuffix, // "example.com" or ".example.com"
+  IPv4Cidr,       // "10.0.0.0/8" (or single IP, treated as /32)
+  IPv6Cidr,       // "fe80::/10" (or single IP, treated as /128)
+};
+
+struct NoProxyEntry {
+  NoProxyKind kind = NoProxyKind::Wildcard;
+  std::string hostname_pattern; // lowercased, leading/trailing dot stripped
+  struct in_addr v4_net {};
+  struct in6_addr v6_net {};
+  int prefix_bits = 0;
+};
+
+// Pre-parsed form of the connection's target host, ready for matching
+// against a NoProxyEntry list without re-running inet_pton on every entry.
+struct NormalizedTarget {
+  std::string hostname; // lowercase; brackets and trailing dot removed
+  bool is_ipv4 = false;
+  bool is_ipv6 = false;
+  struct in_addr v4 {};
+  struct in6_addr v6 {};
+};
+
 } // namespace detail
 
 class ClientImpl {
@@ -2231,6 +2266,20 @@ public:
                             const std::string &password);
   void set_proxy_bearer_token_auth(const std::string &token);
 
+  // Configures the NO_PROXY bypass list. Each pattern is one of:
+  //   "*"                 — bypass the proxy for every target
+  //   "example.com"       — match example.com and any subdomain (with the
+  //                         dot-boundary rule, so "evilexample.com" does
+  //                         NOT match)
+  //   ".example.com"      — equivalent (leading dot is informational)
+  //   "10.0.0.0/8"        — IPv4 CIDR block (or single IP, treated as /32)
+  //   "fe80::/10"         — IPv6 CIDR block (or single IP, treated as /128)
+  // Hostname matching is case-insensitive. IP comparisons are normalized
+  // through inet_pton so "127.0.0.1" cannot be bypassed via alternate
+  // string forms. Malformed entries are silently dropped. Calling this
+  // method replaces any previously configured list; there is no append.
+  void set_no_proxy(const std::vector<std::string> &patterns);
+
   void set_logger(Logger logger);
   void set_error_logger(ErrorLogger error_logger);
 
@@ -2344,6 +2393,8 @@ protected:
   std::string proxy_basic_auth_password_;
   std::string proxy_bearer_token_auth_token_;
 
+  std::vector<detail::NoProxyEntry> no_proxy_entries_;
+
   mutable std::mutex logger_mutex_;
   Logger logger_;
   ErrorLogger error_logger_;
@@ -2365,7 +2416,8 @@ private:
                               const std::string &host, int port, Request &req,
                               Response &res, const std::string &path,
                               const std::string &location, Error &error);
-  template <typename ClientType> void setup_redirect_client(ClientType &client);
+  template <typename ClientType>
+  void setup_redirect_client(ClientType &client, const std::string &next_host);
   bool handle_request(Stream &strm, Request &req, Response &res,
                       bool close_connection, Error &error);
   std::unique_ptr<Response> send_with_content_provider_and_receiver(
@@ -2604,6 +2656,7 @@ public:
   void set_proxy_basic_auth(const std::string &username,
                             const std::string &password);
   void set_proxy_bearer_token_auth(const std::string &token);
+  void set_no_proxy(const std::vector<std::string> &patterns);
   void set_logger(Logger logger);
   void set_error_logger(ErrorLogger error_logger);
 
@@ -2978,37 +3031,12 @@ private:
 std::string make_host_and_port_string(const std::string &host, int port,
                                       bool is_ssl);
 
-// Parsed representation of an HTTP(S) proxy URL.
-struct ProxyUrl {
-  std::string scheme; // "http" or "https"
-  std::string host;   // bracket-stripped for IPv6 literals
-  int port = -1;
-  std::string username; // empty if absent
-  std::string password; // empty if absent
-};
-
 // Parses "http(s)://[user[:pass]@]host[:port][/...]" into out. Rejects
 // any input containing CR, LF, NUL, or other control characters; rejects
 // schemes other than http/https; rejects ports outside [1, 65535]; for
 // IPv6 literals (in [...]) requires the address to parse via inet_pton.
 // When the port is omitted, defaults to 80 (http) / 443 (https).
 bool parse_proxy_url(const std::string &url, ProxyUrl &out);
-
-// One parsed NO_PROXY list entry.
-enum class NoProxyKind {
-  Wildcard,       // "*"
-  HostnameSuffix, // "example.com" or ".example.com"
-  IPv4Cidr,       // "10.0.0.0/8" (or single IP, treated as /32)
-  IPv6Cidr,       // "fe80::/10" (or single IP, treated as /128)
-};
-
-struct NoProxyEntry {
-  NoProxyKind kind = NoProxyKind::Wildcard;
-  std::string hostname_pattern; // lowercased, leading/trailing dot stripped
-  struct in_addr v4_net {};
-  struct in6_addr v6_net {};
-  int prefix_bits = 0;
-};
 
 // Parses a single NO_PROXY token (already trimmed, non-empty). Returns
 // false on any malformed input. Port-specific entries ("host:port") are
@@ -3021,16 +3049,6 @@ bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
 // Malformed tokens are silently dropped (matching curl/Go behavior;
 // failing loud on a single bad entry would break working deployments).
 std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
-
-// Pre-parsed form of the connection's target host, ready for matching
-// against a NoProxyEntry list without re-running inet_pton on every entry.
-struct NormalizedTarget {
-  std::string hostname; // lowercase; brackets and trailing dot removed
-  bool is_ipv4 = false;
-  bool is_ipv6 = false;
-  struct in_addr v4 {};
-  struct in6_addr v6 {};
-};
 
 NormalizedTarget normalize_target(const std::string &host);
 
@@ -12654,6 +12672,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
   proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
   proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
+  no_proxy_entries_ = rhs.no_proxy_entries_;
   logger_ = rhs.logger_;
   error_logger_ = rhs.error_logger_;
 
@@ -12671,11 +12690,10 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 
 inline bool
 ClientImpl::is_proxy_enabled_for_host(const std::string &host) const {
-  // The host parameter is unused while NO_PROXY support is not yet wired in;
-  // it will be consulted once set_no_proxy() lands. Keeping the signature now
-  // means the call sites do not need to change again later.
-  (void)host;
-  return !proxy_host_.empty() && proxy_port_ != -1;
+  if (proxy_host_.empty() || proxy_port_ == -1) { return false; }
+  if (no_proxy_entries_.empty()) { return true; }
+  auto target = detail::normalize_target(host);
+  return !detail::host_matches_no_proxy(target, no_proxy_entries_);
 }
 
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
@@ -13434,7 +13452,7 @@ inline bool ClientImpl::create_redirect_client(
     SSLClient redirect_client(host, port);
 
     // Setup basic client configuration first
-    setup_redirect_client(redirect_client);
+    setup_redirect_client(redirect_client, host);
 
     redirect_client.enable_server_certificate_verification(
         server_certificate_verification_);
@@ -13468,7 +13486,7 @@ inline bool ClientImpl::create_redirect_client(
     ClientImpl redirect_client(host, port);
 
     // Setup client with robust configuration
-    setup_redirect_client(redirect_client);
+    setup_redirect_client(redirect_client, host);
 
     // Execute the redirect
     return detail::redirect(redirect_client, req, res, path, location, error);
@@ -13478,7 +13496,8 @@ inline bool ClientImpl::create_redirect_client(
 // New method for robust client setup (based on basic_manual_redirect.cpp
 // logic)
 template <typename ClientType>
-inline void ClientImpl::setup_redirect_client(ClientType &client) {
+inline void ClientImpl::setup_redirect_client(ClientType &client,
+                                              const std::string &next_host) {
   // Copy basic settings first
   client.set_connection_timeout(connection_timeout_sec_);
   client.set_read_timeout(read_timeout_sec_, read_timeout_usec_);
@@ -13496,9 +13515,15 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   // host. This function is only called for cross-host redirects; same-host
   // redirects are handled directly in ClientImpl::redirect().
 
+  // Always carry the NO_PROXY policy across redirects so the bypass list is
+  // re-evaluated against the redirect target rather than the original host.
+  client.no_proxy_entries_ = no_proxy_entries_;
+
   // Setup proxy configuration (CRITICAL ORDER - proxy must be set
-  // before proxy auth)
-  if (is_proxy_enabled_for_host(host_)) {
+  // before proxy auth). Gating on is_proxy_enabled_for_host(next_host)
+  // ensures Proxy-Authorization is not forwarded when the redirect target
+  // is in NO_PROXY (analog of the cross-origin auth-leak class of bugs).
+  if (is_proxy_enabled_for_host(next_host)) {
     // First set proxy host and port
     client.set_proxy(proxy_host_, proxy_port_);
 
@@ -13593,11 +13618,16 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!proxy_basic_auth_username_.empty() &&
-      !proxy_basic_auth_password_.empty()) {
-    if (!req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_basic_authentication_header(
-          proxy_basic_auth_username_, proxy_basic_auth_password_, true));
+  // Only inject Proxy-Authorization when the proxy is actually being used
+  // for this target. Otherwise NO_PROXY-matched requests would leak
+  // proxy credentials directly to the destination server.
+  if (is_proxy_enabled_for_host(host_)) {
+    if (!proxy_basic_auth_username_.empty() &&
+        !proxy_basic_auth_password_.empty()) {
+      if (!req.has_header("Proxy-Authorization")) {
+        req.headers.insert(make_basic_authentication_header(
+            proxy_basic_auth_username_, proxy_basic_auth_password_, true));
+      }
     }
   }
 
@@ -13608,10 +13638,12 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!proxy_bearer_token_auth_token_.empty()) {
-    if (!req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_bearer_token_authentication_header(
-          proxy_bearer_token_auth_token_, true));
+  if (is_proxy_enabled_for_host(host_)) {
+    if (!proxy_bearer_token_auth_token_.empty()) {
+      if (!req.has_header("Proxy-Authorization")) {
+        req.headers.insert(make_bearer_token_authentication_header(
+            proxy_bearer_token_auth_token_, true));
+      }
     }
   }
 
@@ -15032,6 +15064,20 @@ inline void ClientImpl::set_proxy_bearer_token_auth(const std::string &token) {
   proxy_bearer_token_auth_token_ = token;
 }
 
+inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
+  std::vector<detail::NoProxyEntry> parsed;
+  parsed.reserve(patterns.size());
+  for (const auto &p : patterns) {
+    auto trimmed = detail::trim_copy(p);
+    if (trimmed.empty()) { continue; }
+    detail::NoProxyEntry entry;
+    if (detail::parse_no_proxy_entry(trimmed, entry)) {
+      parsed.push_back(std::move(entry));
+    }
+  }
+  no_proxy_entries_ = std::move(parsed);
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 inline void ClientImpl::set_digest_auth(const std::string &username,
                                         const std::string &password) {
@@ -15732,6 +15778,9 @@ inline void Client::set_proxy_basic_auth(const std::string &username,
 }
 inline void Client::set_proxy_bearer_token_auth(const std::string &token) {
   cli_->set_proxy_bearer_token_auth(token);
+}
+inline void Client::set_no_proxy(const std::vector<std::string> &patterns) {
+  cli_->set_no_proxy(patterns);
 }
 
 inline void Client::set_logger(Logger logger) {
