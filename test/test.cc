@@ -5146,6 +5146,39 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+// GHSA-h6wq-j5mv-f3q8: the server must reject malformed chunk-size lines
+// rather than treat them as valid lengths.
+template <typename ClientT>
+static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
+  Request req;
+  req.method = "POST";
+  req.path = "/chunked";
+
+  std::string host_and_port;
+  host_and_port += HOST;
+  host_and_port += ":";
+  host_and_port += std::to_string(PORT);
+
+  req.headers.emplace("Host", host_and_port.c_str());
+  req.headers.emplace("Content-Length", "0");
+  req.headers.emplace("Transfer-Encoding", "chunked");
+  req.body = body;
+
+  auto res = std::make_shared<Response>();
+  auto error = Error::Success;
+  ASSERT_TRUE(cli.send(req, *res, error));
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+}
+
+TEST_F(ServerTest, RejectsNegativeChunkSize) {
+  expect_chunked_body_rejected(cli_, "-2\r\nAAAA\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsChunkSizeWithLeadingPlus) {
+  expect_chunked_body_rejected(
+      cli_, "+4\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
 TEST_F(ServerTest, GetStreamed2) {
   auto res = cli_.Get("/streamed", {{make_range_header({{2, 3}})}});
   ASSERT_TRUE(res);
