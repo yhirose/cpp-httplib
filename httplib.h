@@ -2014,9 +2014,8 @@ inline ssize_t read_body_content(Stream *stream, BodyReader &br, char *buf,
 
 class decompressor;
 
-// Types referenced by ClientImpl members. NoProxyEntry is the element
-// type of ClientImpl::no_proxy_entries_; NormalizedTarget is cached on
-// the client for the lifetime of host_.
+// NoProxyEntry / NormalizedTarget are referenced as ClientImpl member
+// types, so they must be defined above the split.py BORDER.
 enum class NoProxyKind {
   Wildcard,       // "*"
   HostnameSuffix, // "example.com" or ".example.com"
@@ -2256,39 +2255,7 @@ public:
   void set_proxy_basic_auth(const std::string &username,
                             const std::string &password);
   void set_proxy_bearer_token_auth(const std::string &token);
-
-  // Configures the NO_PROXY bypass list. Each pattern is one of:
-  //   "*"                 — bypass the proxy for every target
-  //   "example.com"       — match example.com and any subdomain (with the
-  //                         dot-boundary rule, so "evilexample.com" does
-  //                         NOT match)
-  //   ".example.com"      — equivalent (leading dot is informational)
-  //   "10.0.0.0/8"        — IPv4 CIDR block (or single IP, treated as /32)
-  //   "fe80::/10"         — IPv6 CIDR block (or single IP, treated as /128)
-  // Hostname matching is case-insensitive. IP comparisons are normalized
-  // through inet_pton so "127.0.0.1" cannot be bypassed via alternate
-  // string forms. Malformed entries are silently dropped. Calling this
-  // method replaces any previously configured list; there is no append.
   void set_no_proxy(const std::vector<std::string> &patterns);
-
-  // Configures the client from proxy-related environment variables:
-  //   - HTTPS clients (SSLClient) read https_proxy / HTTPS_PROXY
-  //   - HTTP clients read http_proxy (lowercase only)
-  //   - Both also read no_proxy / NO_PROXY
-  // Returns true if at least one variable was found and applied.
-  //
-  // Security note: only the lowercase http_proxy is read. The uppercase
-  // form is intentionally ignored to mitigate the httpoxy class of bugs
-  // (CVE-2016-5385): in CGI/FastCGI environments, HTTP_PROXY collides
-  // with the HTTP_* namespace used to expose request headers, allowing
-  // a remote attacker to set the proxy URL via the Proxy: request
-  // header. cpp-httplib follows curl, Go and Python requests in only
-  // honoring the lowercase form. https_proxy/HTTPS_PROXY and
-  // no_proxy/NO_PROXY are safe in either case.
-  //
-  // Threading: this function reads getenv() synchronously; call it once
-  // at startup before issuing any requests. Concurrent setenv from other
-  // threads while this function runs is undefined.
   bool set_proxy_from_env();
 
   void set_logger(Logger logger);
@@ -2316,6 +2283,12 @@ protected:
       Response &res, bool &success, Error &error);
 
   bool is_proxy_enabled_for_host(const std::string &host) const;
+
+  // Parses "http(s)://[user[:pass]@]host[:port][/...]" and, on success,
+  // applies the result to proxy_host_ / proxy_port_ / proxy_basic_auth_*.
+  // Rejects control characters, non-http(s) schemes, and ports outside
+  // [1, 65535]. Defaults port to 80 / 443 from the scheme.
+  bool apply_proxy_url(const std::string &url);
 
   // All of:
   //   shutdown_ssl
@@ -2406,8 +2379,7 @@ protected:
 
   std::vector<detail::NoProxyEntry> no_proxy_entries_;
 
-  // Cached normalization of host_ (which is const) so the per-request
-  // gate doesn't re-allocate / re-inet_pton on every call.
+  // Memoized normalize_target(host_); host_ is const, so this is invariant.
   mutable detail::NormalizedTarget host_normalized_;
   mutable bool host_normalized_valid_ = false;
 
@@ -10570,132 +10542,16 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
-// Implementation-only types and helpers for #2446. These do not need to
-// be visible to ClientImpl's class definition because they appear only
-// in helper bodies below.
-struct ProxyUrl {
-  std::string host;
-  int port = -1;
-  std::string username;
-  std::string password;
-};
-
-struct ProxyEnvSettings {
-  bool have_http_proxy = false;
-  bool have_https_proxy = false;
-  ProxyUrl http_proxy;
-  ProxyUrl https_proxy;
-  std::vector<NoProxyEntry> no_proxy;
-};
-
-bool parse_proxy_url(const std::string &url, ProxyUrl &out);
+// Implementation-only NO_PROXY helpers.
 bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
 std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
 NormalizedTarget normalize_target(const std::string &host);
-ProxyEnvSettings read_proxy_env();
 bool ipv4_in_cidr(const struct in_addr &ip, const struct in_addr &net,
                   int prefix_bits);
 bool ipv6_in_cidr(const struct in6_addr &ip, const struct in6_addr &net,
                   int prefix_bits);
 bool host_matches_no_proxy(const NormalizedTarget &target,
                            const std::vector<NoProxyEntry> &entries);
-
-inline bool parse_proxy_url(const std::string &url, ProxyUrl &out) {
-  if (url.empty()) { return false; }
-
-  // Reject control characters anywhere in the input. CRLF/NUL would let a
-  // malicious env value inject extra header lines into a CONNECT request or
-  // a Proxy-Authorization header.
-  for (auto c : url) {
-    auto uc = static_cast<unsigned char>(c);
-    if (uc < 0x20 || uc == 0x7F) { return false; }
-  }
-
-  // Scheme: only http and https are supported.
-  std::size_t scheme_end = 0;
-  bool is_https = false;
-  if (url.compare(0, 7, "http://") == 0) {
-    scheme_end = 7;
-  } else if (url.compare(0, 8, "https://") == 0) {
-    is_https = true;
-    scheme_end = 8;
-  } else {
-    return false;
-  }
-
-  // Authority terminates at the first '/', '?', or '#', or the end of input.
-  auto authority_end = url.find_first_of("/?#", scheme_end);
-  if (authority_end == std::string::npos) { authority_end = url.size(); }
-  auto authority = url.substr(scheme_end, authority_end - scheme_end);
-  if (authority.empty()) { return false; }
-
-  // Split userinfo from host_port on the LAST '@' so passwords containing '@'
-  // are preserved.
-  std::string userinfo;
-  std::string host_port;
-  auto at_pos = authority.rfind('@');
-  if (at_pos != std::string::npos) {
-    userinfo = authority.substr(0, at_pos);
-    host_port = authority.substr(at_pos + 1);
-  } else {
-    host_port = authority;
-  }
-  if (host_port.empty()) { return false; }
-
-  if (!userinfo.empty()) {
-    auto colon = userinfo.find(':');
-    if (colon == std::string::npos) {
-      out.username = userinfo;
-    } else {
-      out.username = userinfo.substr(0, colon);
-      out.password = userinfo.substr(colon + 1);
-    }
-  }
-
-  // host_port: "[ipv6]:port", "[ipv6]", "host:port", or "host".
-  std::string host;
-  std::string port_str;
-  if (host_port.front() == '[') {
-    auto rb = host_port.find(']');
-    if (rb == std::string::npos) { return false; }
-    host = host_port.substr(1, rb - 1);
-    if (host.empty()) { return false; }
-    struct in6_addr tmp;
-    if (inet_pton(AF_INET6, host.c_str(), &tmp) != 1) { return false; }
-    auto rest = host_port.substr(rb + 1);
-    if (!rest.empty()) {
-      if (rest.front() != ':') { return false; }
-      port_str = rest.substr(1);
-      if (port_str.empty()) { return false; }
-    }
-  } else {
-    auto colon = host_port.find(':');
-    if (colon == std::string::npos) {
-      host = host_port;
-    } else {
-      host = host_port.substr(0, colon);
-      port_str = host_port.substr(colon + 1);
-      if (port_str.empty()) { return false; }
-    }
-    if (host.empty()) { return false; }
-  }
-  out.host = std::move(host);
-
-  if (port_str.empty()) {
-    out.port = is_https ? 443 : 80;
-  } else {
-    int port = 0;
-    auto r =
-        from_chars(port_str.data(), port_str.data() + port_str.size(), port);
-    if (r.ec != std::errc{} || r.ptr != port_str.data() + port_str.size()) {
-      return false;
-    }
-    if (port < 1 || port > 65535) { return false; }
-    out.port = port;
-  }
-
-  return true;
-}
 
 inline bool ipv4_in_cidr(const struct in_addr &ip, const struct in_addr &net,
                          int prefix_bits) {
@@ -10729,14 +10585,12 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
     return true;
   }
 
-  // Split on '/' for optional CIDR prefix.
   auto slash = token.find('/');
   std::string addr_part =
       (slash == std::string::npos) ? token : token.substr(0, slash);
   std::string prefix_part =
       (slash == std::string::npos) ? std::string() : token.substr(slash + 1);
 
-  // Try IPv4.
   struct in_addr v4;
   if (inet_pton(AF_INET, addr_part.c_str(), &v4) == 1) {
     int prefix = 32;
@@ -10755,7 +10609,6 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
     return true;
   }
 
-  // Try IPv6.
   struct in6_addr v6;
   if (inet_pton(AF_INET6, addr_part.c_str(), &v6) == 1) {
     int prefix = 128;
@@ -10774,13 +10627,11 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
     return true;
   }
 
-  // Not an IP. A '/' here means a prefix on a non-IP entry, which is invalid.
+  // A '/' on a non-IP token means a CIDR prefix without an address. Reject.
   if (slash != std::string::npos) { return false; }
-
-  // ':' in a non-IP token is a port-specific entry, which we don't support.
+  // Port-specific entries (host:port) are not supported.
   if (token.find(':') != std::string::npos) { return false; }
 
-  // Hostname suffix. Lowercase, strip leading/trailing dots.
   std::string hostname = case_ignore::to_lower(token);
   while (!hostname.empty() && hostname.front() == '.') {
     hostname.erase(hostname.begin());
@@ -10813,12 +10664,13 @@ inline NormalizedTarget normalize_target(const std::string &host) {
   NormalizedTarget t;
   std::string h = host;
 
-  // Strip surrounding brackets if present (IPv6 literal in URL form).
+  // Strip "[ipv6]" brackets if the host arrived in URL form.
   if (h.size() >= 2 && h.front() == '[' && h.back() == ']') {
     h = h.substr(1, h.size() - 2);
   }
 
-  // Strip a single trailing dot (FQDN canonicalization).
+  // Strip a single trailing dot so "example.com." canonicalizes to
+  // "example.com".
   if (!h.empty() && h.back() == '.') { h.pop_back(); }
 
   t.hostname = case_ignore::to_lower(h);
@@ -10850,12 +10702,10 @@ inline bool host_matches_no_proxy(const NormalizedTarget &target,
       }
       break;
     case NoProxyKind::HostnameSuffix:
-      // IP targets do not match hostname patterns.
       if (target.is_ipv4 || target.is_ipv6) { break; }
-      // Exact match.
       if (target.hostname == e.hostname_pattern) { return true; }
-      // Dot-boundary suffix match: target ends with "." + pattern. This is
-      // what prevents "evilexample.com" from matching "example.com".
+      // Dot-boundary suffix match: prevents "evilexample.com" from matching
+      // an entry of "example.com".
       if (target.hostname.size() > e.hostname_pattern.size() + 1) {
         auto offset = target.hostname.size() - e.hostname_pattern.size();
         if (target.hostname[offset - 1] == '.' &&
@@ -10868,42 +10718,6 @@ inline bool host_matches_no_proxy(const NormalizedTarget &target,
     }
   }
   return false;
-}
-
-inline ProxyEnvSettings read_proxy_env() {
-  ProxyEnvSettings out;
-
-  auto try_url = [](const char *value, ProxyUrl &dst) -> bool {
-    if (!value || *value == '\0') { return false; }
-    return parse_proxy_url(value, dst);
-  };
-
-  // http_proxy: lowercase ONLY. The uppercase form is ignored to mitigate
-  // httpoxy (CVE-2016-5385): in CGI/FastCGI environments, HTTP_PROXY
-  // collides with the HTTP_* namespace used to expose request headers,
-  // letting a remote attacker control the proxy URL via the "Proxy:"
-  // header.
-  if (try_url(std::getenv("http_proxy"), out.http_proxy)) {
-    out.have_http_proxy = true;
-  }
-
-  // https_proxy is safe in either case: there is no HTTPS_* CGI
-  // collision because the variable does not start with HTTP_.
-  if (try_url(std::getenv("https_proxy"), out.https_proxy)) {
-    out.have_https_proxy = true;
-  } else if (try_url(std::getenv("HTTPS_PROXY"), out.https_proxy)) {
-    out.have_https_proxy = true;
-  }
-
-  const char *no_proxy_value = std::getenv("no_proxy");
-  if (!no_proxy_value || *no_proxy_value == '\0') {
-    no_proxy_value = std::getenv("NO_PROXY");
-  }
-  if (no_proxy_value && *no_proxy_value != '\0') {
-    out.no_proxy = parse_no_proxy_list(no_proxy_value);
-  }
-
-  return out;
 }
 
 template <typename T>
@@ -12737,10 +12551,8 @@ inline bool
 ClientImpl::is_proxy_enabled_for_host(const std::string &host) const {
   if (proxy_host_.empty() || proxy_port_ == -1) { return false; }
   if (no_proxy_entries_.empty()) { return true; }
-  // host_ is const, so its normalization is invariant for the lifetime
-  // of the client. Cache the common case (host == host_) so the gate
-  // stays O(no_proxy_entries_.size()) per call. Cross-host calls (only
-  // setup_redirect_client passing next_host) compute every time.
+  // host_ is const so its normalized form is invariant; cache it. The
+  // cross-host path (setup_redirect_client passing next_host) re-normalizes.
   if (host == host_) {
     if (!host_normalized_valid_) {
       host_normalized_ = detail::normalize_target(host_);
@@ -15127,33 +14939,136 @@ inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
   no_proxy_entries_ = std::move(parsed);
 }
 
+inline bool ClientImpl::apply_proxy_url(const std::string &url) {
+  if (url.empty()) { return false; }
+
+  // CRLF / NUL would let a malicious env value inject extra header lines
+  // into a CONNECT request or a Proxy-Authorization header.
+  for (auto c : url) {
+    auto uc = static_cast<unsigned char>(c);
+    if (uc < 0x20 || uc == 0x7F) { return false; }
+  }
+
+  std::size_t scheme_end = 0;
+  bool is_https = false;
+  if (url.compare(0, 7, "http://") == 0) {
+    scheme_end = 7;
+  } else if (url.compare(0, 8, "https://") == 0) {
+    is_https = true;
+    scheme_end = 8;
+  } else {
+    return false;
+  }
+
+  auto authority_end = url.find_first_of("/?#", scheme_end);
+  if (authority_end == std::string::npos) { authority_end = url.size(); }
+  auto authority = url.substr(scheme_end, authority_end - scheme_end);
+  if (authority.empty()) { return false; }
+
+  // Split on the LAST '@' so passwords containing '@' are preserved.
+  std::string user;
+  std::string pass;
+  std::string host_port;
+  auto at_pos = authority.rfind('@');
+  if (at_pos != std::string::npos) {
+    auto userinfo = authority.substr(0, at_pos);
+    host_port = authority.substr(at_pos + 1);
+    auto colon = userinfo.find(':');
+    if (colon == std::string::npos) {
+      user = std::move(userinfo);
+    } else {
+      user = userinfo.substr(0, colon);
+      pass = userinfo.substr(colon + 1);
+    }
+  } else {
+    host_port = authority;
+  }
+  if (host_port.empty()) { return false; }
+
+  // host_port forms: "[ipv6]:port", "[ipv6]", "host:port", "host".
+  std::string host;
+  std::string port_str;
+  if (host_port.front() == '[') {
+    auto rb = host_port.find(']');
+    if (rb == std::string::npos) { return false; }
+    host = host_port.substr(1, rb - 1);
+    if (host.empty()) { return false; }
+    struct in6_addr tmp;
+    if (inet_pton(AF_INET6, host.c_str(), &tmp) != 1) { return false; }
+    auto rest = host_port.substr(rb + 1);
+    if (!rest.empty()) {
+      if (rest.front() != ':') { return false; }
+      port_str = rest.substr(1);
+      if (port_str.empty()) { return false; }
+    }
+  } else {
+    auto colon = host_port.find(':');
+    if (colon == std::string::npos) {
+      host = host_port;
+    } else {
+      host = host_port.substr(0, colon);
+      port_str = host_port.substr(colon + 1);
+      if (port_str.empty()) { return false; }
+    }
+    if (host.empty()) { return false; }
+  }
+
+  int port;
+  if (port_str.empty()) {
+    port = is_https ? 443 : 80;
+  } else {
+    int parsed = 0;
+    auto r = detail::from_chars(port_str.data(),
+                                port_str.data() + port_str.size(), parsed);
+    if (r.ec != std::errc{} || r.ptr != port_str.data() + port_str.size()) {
+      return false;
+    }
+    if (parsed < 1 || parsed > 65535) { return false; }
+    port = parsed;
+  }
+
+  // Commit only after every check has passed.
+  proxy_host_ = std::move(host);
+  proxy_port_ = port;
+  if (!user.empty()) {
+    proxy_basic_auth_username_ = std::move(user);
+    proxy_basic_auth_password_ = std::move(pass);
+  }
+  return true;
+}
+
 inline bool ClientImpl::set_proxy_from_env() {
-  auto env = detail::read_proxy_env();
   bool applied = false;
 
-  // No cross-scheme fallback: http_proxy and https_proxy describe
-  // different traffic, mixing them could send HTTPS-target credentials
-  // through a proxy the user only authorized for HTTP.
-  const detail::ProxyUrl *picked = nullptr;
-  if (is_ssl() && env.have_https_proxy) {
-    picked = &env.https_proxy;
-  } else if (!is_ssl() && env.have_http_proxy) {
-    picked = &env.http_proxy;
+  // No cross-scheme fallback: http_proxy and https_proxy describe different
+  // traffic, mixing them could send HTTPS-target credentials through a
+  // proxy the user only authorized for HTTP.
+  //
+  // For http_proxy, lowercase ONLY: the uppercase form is poisoned in
+  // CGI/FastCGI environments by the "Proxy:" request header (httpoxy /
+  // CVE-2016-5385). HTTPS_PROXY is safe in either case because the name
+  // does not start with HTTP_.
+  const char *url_env = nullptr;
+  if (is_ssl()) {
+    url_env = std::getenv("https_proxy");
+    if (!url_env || *url_env == '\0') { url_env = std::getenv("HTTPS_PROXY"); }
+  } else {
+    url_env = std::getenv("http_proxy");
+  }
+  if (url_env && *url_env != '\0' && apply_proxy_url(url_env)) {
+    applied = true;
   }
 
-  if (picked) {
-    proxy_host_ = picked->host;
-    proxy_port_ = picked->port;
-    if (!picked->username.empty()) {
-      proxy_basic_auth_username_ = picked->username;
-      proxy_basic_auth_password_ = picked->password;
+  const char *no_proxy_env = std::getenv("no_proxy");
+  if (!no_proxy_env || *no_proxy_env == '\0') {
+    no_proxy_env = std::getenv("NO_PROXY");
+  }
+  if (no_proxy_env && *no_proxy_env != '\0') {
+    auto entries = detail::parse_no_proxy_list(no_proxy_env);
+    if (!entries.empty()) {
+      no_proxy_entries_ = std::move(entries);
+      applied = true;
     }
-    applied = true;
-  }
-
-  if (!env.no_proxy.empty()) {
-    no_proxy_entries_ = std::move(env.no_proxy);
-    applied = true;
   }
 
   return applied;
