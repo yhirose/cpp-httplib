@@ -2014,8 +2014,6 @@ inline ssize_t read_body_content(Stream *stream, BodyReader &br, char *buf,
 
 class decompressor;
 
-// NoProxyEntry / NormalizedTarget are referenced as ClientImpl member
-// types, so they must be defined above the split.py BORDER.
 enum class NoProxyKind {
   Wildcard,       // "*"
   HostnameSuffix, // "example.com" or ".example.com"
@@ -2283,11 +2281,6 @@ protected:
       Response &res, bool &success, Error &error);
 
   bool is_proxy_enabled_for_host(const std::string &host) const;
-
-  // Parses "http(s)://[user[:pass]@]host[:port][/...]" and, on success,
-  // applies the result to proxy_host_ / proxy_port_ / proxy_basic_auth_*.
-  // Rejects control characters, non-http(s) schemes, and ports outside
-  // [1, 65535]. Defaults port to 80 / 443 from the scheme.
   bool apply_proxy_url(const std::string &url);
 
   // All of:
@@ -2379,7 +2372,6 @@ protected:
 
   std::vector<detail::NoProxyEntry> no_proxy_entries_;
 
-  // Memoized normalize_target(host_); host_ is const, so this is invariant.
   mutable detail::NormalizedTarget host_normalized_;
   mutable bool host_normalized_valid_ = false;
 
@@ -10542,7 +10534,6 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
-// Implementation-only NO_PROXY helpers.
 bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
 std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
 NormalizedTarget normalize_target(const std::string &host);
@@ -10664,7 +10655,6 @@ inline NormalizedTarget normalize_target(const std::string &host) {
   NormalizedTarget t;
   std::string h = host;
 
-  // Strip "[ipv6]" brackets if the host arrived in URL form.
   if (h.size() >= 2 && h.front() == '[' && h.back() == ']') {
     h = h.substr(1, h.size() - 2);
   }
@@ -13388,7 +13378,6 @@ inline void ClientImpl::setup_redirect_client(ClientType &client,
   // host would still go through the proxy (and carry Proxy-Authorization).
   client.no_proxy_entries_ = no_proxy_entries_;
 
-  // Proxy host/port must be set BEFORE proxy auth.
   if (is_proxy_enabled_for_host(next_host)) {
     // First set proxy host and port
     client.set_proxy(proxy_host_, proxy_port_);
@@ -14985,7 +14974,6 @@ inline bool ClientImpl::apply_proxy_url(const std::string &url) {
   }
   if (host_port.empty()) { return false; }
 
-  // host_port forms: "[ipv6]:port", "[ipv6]", "host:port", "host".
   std::string host;
   std::string port_str;
   if (host_port.front() == '[') {

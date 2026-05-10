@@ -18158,14 +18158,9 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
   }
 }
 
-// =============================================================================
-// NO_PROXY / set_proxy_from_env (#2446)
-// =============================================================================
-
 namespace no_proxy_test {
 
 #ifndef _WIN32
-// RAII helper that saves, sets, and restores an environment variable.
 class ScopedEnv {
 public:
   ScopedEnv(const char *name, const char *value) : name_(name) {
@@ -18193,9 +18188,6 @@ private:
 };
 #endif // !_WIN32
 
-// In-process proxy mock + direct target. Each request that arrives bumps
-// the corresponding counter, so a test can assert "this request went via
-// the proxy" or "this request bypassed the proxy".
 class ProxyAndTargetServers {
 public:
   ProxyAndTargetServers() {
@@ -18251,8 +18243,6 @@ private:
   std::atomic<bool> last_had_proxy_authz_{false};
 };
 
-// Helper: build a client targeted at `host` with a hostname mapping to
-// 127.0.0.1, the proxy pointed at the mock.
 inline std::unique_ptr<Client> make_client(const std::string &host,
                                            ProxyAndTargetServers &s) {
   auto cli = detail::make_unique<Client>(host, s.target_port());
@@ -18265,9 +18255,6 @@ inline std::unique_ptr<Client> make_client(const std::string &host,
 
 using no_proxy_test::make_client;
 using no_proxy_test::ProxyAndTargetServers;
-
-// ---- Hostname suffix matching: dot-boundary rule
-// -----------------------------
 
 TEST(NoProxyTest, ExactHostnameBypasses) {
   ProxyAndTargetServers s;
@@ -18350,9 +18337,6 @@ TEST(NoProxyTest, TrailingDotIsNormalized) {
   EXPECT_EQ(1, s.target_hits());
 }
 
-// ---- Wildcard
-// ----------------------------------------------------------------
-
 TEST(NoProxyTest, WildcardBypassesEverything) {
   ProxyAndTargetServers s;
   auto cli = make_client("anything.invalid.test", s);
@@ -18363,9 +18347,6 @@ TEST(NoProxyTest, WildcardBypassesEverything) {
   EXPECT_EQ(0, s.proxy_hits());
   EXPECT_EQ(1, s.target_hits());
 }
-
-// ---- IP normalization
-// --------------------------------------------------------
 
 TEST(NoProxyTest, IPv4LiteralExactMatch) {
   ProxyAndTargetServers s;
@@ -18380,9 +18361,6 @@ TEST(NoProxyTest, IPv4LiteralExactMatch) {
 }
 
 TEST(NoProxyTest, IPv6LiteralExactMatchAcrossEquivalentForms) {
-  // Different string forms of the same IPv6 address ("::1" and the
-  // expanded "0:0:0:0:0:0:0:1") must match because both go through
-  // inet_pton during normalization.
   ProxyAndTargetServers s;
   Client cli("0:0:0:0:0:0:0:1", s.target_port());
   cli.set_hostname_addr_map({{"0:0:0:0:0:0:0:1", "127.0.0.1"}});
@@ -18410,9 +18388,6 @@ TEST(NoProxyTest, IPv4MappedIPv6IsNotCrossMatchedAgainstIPv4Entry) {
   EXPECT_GE(s.proxy_hits(), 1);
   EXPECT_EQ(0, s.target_hits());
 }
-
-// ---- CIDR matching
-// -----------------------------------------------------------
 
 TEST(NoProxyTest, IPv4CidrMatch) {
   ProxyAndTargetServers s;
@@ -18453,7 +18428,6 @@ TEST(NoProxyTest, IPv4CidrPrefixZeroMatchesAll) {
 }
 
 TEST(NoProxyTest, IPv4CidrSingleHostNoSlash) {
-  // Bare IP without a /prefix is treated as /32 (single host).
   ProxyAndTargetServers s;
   Client cli("127.0.0.1", s.target_port());
   cli.set_proxy("127.0.0.1", s.proxy_port());
@@ -18466,8 +18440,6 @@ TEST(NoProxyTest, IPv4CidrSingleHostNoSlash) {
 }
 
 TEST(NoProxyTest, MalformedCidrPrefixIsDropped) {
-  // /33 on IPv4 is invalid and must be silently dropped during parsing,
-  // leaving no NO_PROXY effect.
   ProxyAndTargetServers s;
   Client cli("127.0.0.1", s.target_port());
   cli.set_proxy("127.0.0.1", s.proxy_port());
@@ -18478,9 +18450,6 @@ TEST(NoProxyTest, MalformedCidrPrefixIsDropped) {
   EXPECT_GE(s.proxy_hits(), 1);
   EXPECT_EQ(0, s.target_hits());
 }
-
-// ---- Proxy-Authorization handling
-// --------------------------------------------
 
 TEST(NoProxyTest, ProxyAuthorizationSuppressedWhenBypassed) {
   ProxyAndTargetServers s;
@@ -18508,9 +18477,6 @@ TEST(NoProxyTest, ProxyAuthorizationSentWhenNotBypassed) {
   EXPECT_TRUE(s.last_had_proxy_authz());
 }
 
-// ---- Backward compatibility
-// --------------------------------------------------
-
 TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
   ProxyAndTargetServers s;
   auto cli = make_client("anything.test", s);
@@ -18520,9 +18486,6 @@ TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
   EXPECT_GE(s.proxy_hits(), 1);
   EXPECT_EQ(0, s.target_hits());
 }
-
-// ---- Parsing edge cases
-// ------------------------------------------------------
 
 TEST(NoProxyTest, PortSpecificEntryRejected) {
   ProxyAndTargetServers s;
@@ -18546,9 +18509,6 @@ TEST(NoProxyTest, EmptyAndWhitespaceEntriesDropped) {
   EXPECT_EQ(0, s.target_hits());
 }
 
-// ---- Cross-origin redirect honors NO_PROXY
-// -----------------------------------
-
 TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
   // Analog of GHSA-6hrp-7fq9-3qv2: when a redirect targets a host in
   // NO_PROXY, the follow-up request must go direct and must NOT carry
@@ -18563,8 +18523,6 @@ TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
   Server proxy_mock;
   Server target;
 
-  // Proxy mock: redirect /redir to the target's loopback URL; everything
-  // else returns 200.
   int target_port = target.bind_to_any_port("127.0.0.1");
   int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
 
@@ -18597,9 +18555,6 @@ TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
   proxy_mock.wait_until_ready();
   target.wait_until_ready();
 
-  // Initial request goes to a host that is NOT in NO_PROXY → uses the
-  // proxy. The proxy issues a 302 to 127.0.0.1, which IS in NO_PROXY →
-  // the redirect leg must go direct.
   Client cli("public.example", target_port);
   cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy_port);
@@ -18617,10 +18572,6 @@ TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
   // The first leg (going through the proxy) is allowed to carry
   // Proxy-Authorization; we only assert the bypassed leg does not.
 }
-
-// ---- set_proxy_from_env: httpoxy mitigation
-// ---------------------------------- Skipped on Windows because setenv/unsetenv
-// are POSIX-only.
 
 #ifndef _WIN32
 
