@@ -2,10 +2,12 @@
 #
 # Release a new version of cpp-httplib.
 #
-# Usage: ./release.sh [--run]
+# Usage: ./release.sh [--run] [--minor]
 #
 # By default, runs in dry-run mode (no changes made).
 # Pass --run to actually update files, commit, tag, and push.
+# Pass --minor to force a minor bump even when ABI is unchanged
+# (use this for behavioral breaking changes that don't break ABI).
 #
 # This script:
 #   1. Reads the current version from httplib.h
@@ -14,21 +16,30 @@
 #   4. Determines the next version automatically:
 #        - abidiff passed  → patch bump (e.g., 0.38.0 → 0.38.1)
 #        - abidiff failed  → minor bump (e.g., 0.38.1 → 0.39.0)
+#        - --minor passed  → forces minor bump regardless of abidiff
 #   5. Updates httplib.h and docs-src/config.toml
 #   6. Commits, tags (vX.Y.Z), and pushes
 
 set -euo pipefail
 
 DRY_RUN=1
-if [ "${1:-}" = "--run" ]; then
-  DRY_RUN=0
-  shift
-fi
-
-if [ $# -ne 0 ]; then
-  echo "Usage: $0 [--run]"
-  exit 1
-fi
+FORCE_MINOR=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --run)
+      DRY_RUN=0
+      shift
+      ;;
+    --minor)
+      FORCE_MINOR=1
+      shift
+      ;;
+    *)
+      echo "Usage: $0 [--run] [--minor]"
+      exit 1
+      ;;
+  esac
+done
 
 # --- Step 1: Read current version from httplib.h ---
 CURRENT_VERSION=$(sed -n 's/^#define CPPHTTPLIB_VERSION "\([^"]*\)"/\1/p' httplib.h)
@@ -51,8 +62,7 @@ HEAD_SHORT=$(git rev-parse --short HEAD)
 echo "    Latest commit: $HEAD_SHORT"
 
 # Fetch all workflow runs for the HEAD commit
-RUNS=$(gh run list --json name,conclusion,headSha \
-  --jq "[.[] | select(.headSha == \"$HEAD_SHA\")]")
+RUNS=$(gh run list --commit "$HEAD_SHA" --json name,conclusion,headSha)
 
 NUM_RUNS=$(echo "$RUNS" | jq 'length')
 
@@ -95,7 +105,12 @@ fi
 echo "    All non-abidiff CI checks passed."
 
 # --- Step 4: Determine new version ---
-if [ "$ABIDIFF_PASSED" -eq 1 ]; then
+if [ "$FORCE_MINOR" -eq 1 ] && [ "$ABIDIFF_PASSED" -eq 1 ]; then
+  NEW_MINOR=$((V_MINOR + 1))
+  NEW_VERSION="$V_MAJOR.$NEW_MINOR.0"
+  echo ""
+  echo "==> abidiff passed but --minor specified → forced minor bump"
+elif [ "$ABIDIFF_PASSED" -eq 1 ]; then
   NEW_PATCH=$((V_PATCH + 1))
   NEW_VERSION="$V_MAJOR.$V_MINOR.$NEW_PATCH"
   echo ""
@@ -104,7 +119,11 @@ else
   NEW_MINOR=$((V_MINOR + 1))
   NEW_VERSION="$V_MAJOR.$NEW_MINOR.0"
   echo ""
-  echo "==> abidiff failed → minor bump"
+  if [ "$FORCE_MINOR" -eq 1 ]; then
+    echo "==> abidiff failed → minor bump (--minor also specified)"
+  else
+    echo "==> abidiff failed → minor bump"
+  fi
 fi
 
 VERSION_HEX=$(printf "0x%02x%02x%02x" "${NEW_VERSION%%.*}" "$(echo "$NEW_VERSION" | cut -d. -f2)" "${NEW_VERSION##*.}")
