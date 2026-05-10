@@ -7441,6 +7441,122 @@ TEST(ServerRequestParsingTest, EmptyFieldValue) {
   EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
 }
 
+TEST(ServerRequestParsingTest, HeaderValueNotPercentDecoded) {
+  Server svr;
+  std::string x_custom;
+  std::string cookie;
+  std::string xff;
+  std::string x_unicode;
+  std::string x_iis;
+
+  svr.Get("/check", [&](const Request &req, Response &res) {
+    x_custom = req.get_header_value("X-Custom");
+    cookie = req.get_header_value("Cookie");
+    xff = req.get_header_value("X-Forwarded-For");
+    x_unicode = req.get_header_value("X-Unicode");
+    x_iis = req.get_header_value("X-IIS");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET /check HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
+                          "X-Custom: a%0D%0AInjected: b\r\n"
+                          "Cookie: session%3Dvictim%3B%20admin%3Dyes\r\n"
+                          "X-Forwarded-For: 1.2.3.4%2C5.6.7.8\r\n"
+                          "X-Unicode: %E3%81%82\r\n"
+                          "X-IIS: %u00E9\r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
+
+  // Every value must be returned verbatim (wire form), with no decoding.
+  EXPECT_EQ("a%0D%0AInjected: b", x_custom);
+  EXPECT_EQ("session%3Dvictim%3B%20admin%3Dyes", cookie);
+  EXPECT_EQ("1.2.3.4%2C5.6.7.8", xff);
+  EXPECT_EQ("%E3%81%82", x_unicode);
+  EXPECT_EQ("%u00E9", x_iis);
+}
+
+// Applications that previously relied on automatic percent-decoding can
+// reproduce the old behavior by explicitly calling decode_path_component()
+// or, for RFC 3986 conformance, decode_uri_component().
+TEST(ServerRequestParsingTest, HeaderValueExplicitDecodingByApplication) {
+  Server svr;
+  std::string decoded;
+
+  svr.Get("/check", [&](const Request &req, Response &res) {
+    decoded = decode_uri_component(req.get_header_value("X-Custom"));
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET /check HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
+                          "X-Custom: hello%20world\r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
+  EXPECT_EQ("hello world", decoded);
+}
+
+// Regression test for #2033. Browsers send Referer values that include
+// percent-encoded characters such as %0A inside the URL. Decoding the
+// header value would either trip the post-decode CR/LF/NUL guard (the
+// original bug, returning 400) or, after that guard was relaxed, silently
+// store a literal LF — both unacceptable. The wire form must round-trip.
+TEST(ServerRequestParsingTest, RefererWithPercentEncodedNewline) {
+  Server svr;
+  std::string referer;
+
+  svr.Get("/check", [&](const Request &req, Response &res) {
+    referer = req.get_header_value("Referer");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET /check HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
+                          "Referer: http://localhost:1111/?q=Hello%0A\r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
+  EXPECT_EQ("http://localhost:1111/?q=Hello%0A", referer);
+}
+
 TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   Server svr;
 
