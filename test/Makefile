@@ -202,8 +202,25 @@ test_split_no_tls : test.cc ../httplib.h httplib.cc Makefile
 	$(CXX) -o $@ $(CXXFLAGS) test.cc httplib.cc $(TEST_ARGS_NO_TLS)
 
 # ThreadPool unit tests (no TLS, no compression needed)
+#
+# The constructor-exception-safety reproducer test interposes pthread_create
+# at link time. The link flags below enable that interposition. ASAN is also
+# stripped from this target because libasan installs its own pthread_create
+# interceptor; layering our override on top corrupts ASAN's thread bookkeeping
+# and trips "Joining already joined thread" on Linux. ThreadPool memory
+# behavior is still covered by the ASAN-instrumented `test` binary.
+ifneq ($(OS), Windows_NT)
+ifeq ($(shell uname -s), Darwin)
+THREAD_POOL_INTERPOSE_LDFLAGS := -Wl,-flat_namespace
+else
+THREAD_POOL_INTERPOSE_LDFLAGS := -Wl,--export-dynamic
+endif
+endif
+
+THREAD_POOL_CXXFLAGS := $(filter-out -fsanitize=address,$(CXXFLAGS))
+
 test_thread_pool : test_thread_pool.cc ../httplib.h Makefile
-	$(CXX) -o $@ -I.. $(CXXFLAGS) test_thread_pool.cc gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include -lpthread
+	$(CXX) -o $@ -I.. $(THREAD_POOL_CXXFLAGS) test_thread_pool.cc gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include -lpthread $(THREAD_POOL_INTERPOSE_LDFLAGS)
 
 check_abi:
 	@./check-shared-library-abi-compatibility.sh
