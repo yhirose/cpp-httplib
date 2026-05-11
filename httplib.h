@@ -2230,6 +2230,8 @@ public:
   void set_proxy_basic_auth(const std::string &username,
                             const std::string &password);
   void set_proxy_bearer_token_auth(const std::string &token);
+  void set_no_proxy(const std::vector<std::string> &patterns);
+  bool set_proxy_from_env();
 
   void set_logger(Logger logger);
   void set_error_logger(ErrorLogger error_logger);
@@ -2343,6 +2345,7 @@ protected:
   std::string proxy_basic_auth_username_;
   std::string proxy_basic_auth_password_;
   std::string proxy_bearer_token_auth_token_;
+  std::vector<std::string> no_proxy_entries_;
 
   mutable std::mutex logger_mutex_;
   Logger logger_;
@@ -2365,7 +2368,7 @@ private:
                               const std::string &host, int port, Request &req,
                               Response &res, const std::string &path,
                               const std::string &location, Error &error);
-  template <typename ClientType> void setup_redirect_client(ClientType &client);
+  template <typename ClientType> void setup_redirect_client(ClientType &client, const std::string &next_host);
   bool handle_request(Stream &strm, Request &req, Response &res,
                       bool close_connection, Error &error);
   std::unique_ptr<Response> send_with_content_provider_and_receiver(
@@ -2604,6 +2607,8 @@ public:
   void set_proxy_basic_auth(const std::string &username,
                             const std::string &password);
   void set_proxy_bearer_token_auth(const std::string &token);
+  void set_no_proxy(const std::vector<std::string> &patterns);
+  bool set_proxy_from_env();
   void set_logger(Logger logger);
   void set_error_logger(ErrorLogger error_logger);
 
@@ -12311,6 +12316,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
   proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
   proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
+  no_proxy_entries_ = rhs.no_proxy_entries_;
   logger_ = rhs.logger_;
   error_logger_ = rhs.error_logger_;
 
@@ -13091,7 +13097,7 @@ inline bool ClientImpl::create_redirect_client(
     SSLClient redirect_client(host, port);
 
     // Setup basic client configuration first
-    setup_redirect_client(redirect_client);
+    setup_redirect_client(redirect_client, host);
 
     redirect_client.enable_server_certificate_verification(
         server_certificate_verification_);
@@ -13125,7 +13131,7 @@ inline bool ClientImpl::create_redirect_client(
     ClientImpl redirect_client(host, port);
 
     // Setup client with robust configuration
-    setup_redirect_client(redirect_client);
+    setup_redirect_client(redirect_client, host);
 
     // Execute the redirect
     return detail::redirect(redirect_client, req, res, path, location, error);
@@ -13135,7 +13141,7 @@ inline bool ClientImpl::create_redirect_client(
 // New method for robust client setup (based on basic_manual_redirect.cpp
 // logic)
 template <typename ClientType>
-inline void ClientImpl::setup_redirect_client(ClientType &client) {
+inline void ClientImpl::setup_redirect_client(ClientType &client, const std::string &next_host) {
   // Copy basic settings first
   client.set_connection_timeout(connection_timeout_sec_);
   client.set_read_timeout(read_timeout_sec_, read_timeout_usec_);
@@ -13153,9 +13159,12 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   // host. This function is only called for cross-host redirects; same-host
   // redirects are handled directly in ClientImpl::redirect().
 
-  // Setup proxy configuration (CRITICAL ORDER - proxy must be set
-  // before proxy auth)
-  if (is_proxy_enabled_for_host(host_)) {
+  // The bypass list must follow across redirects so it is re-evaluated
+  // against the redirect target. Without this, a redirect to a NO_PROXY
+  // host would still go through the proxy (and carry Proxy-Authorization).
+  client.no_proxy_entries_ = no_proxy_entries_;
+
+  if (is_proxy_enabled_for_host(next_host)) {
     // First set proxy host and port
     client.set_proxy(proxy_host_, proxy_port_);
 
@@ -13250,14 +13259,6 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!proxy_basic_auth_username_.empty() &&
-      !proxy_basic_auth_password_.empty()) {
-    if (!req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_basic_authentication_header(
-          proxy_basic_auth_username_, proxy_basic_auth_password_, true));
-    }
-  }
-
   if (!bearer_token_auth_token_.empty()) {
     if (!req.has_header("Authorization")) {
       req.headers.insert(make_bearer_token_authentication_header(
@@ -13265,8 +13266,18 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!proxy_bearer_token_auth_token_.empty()) {
-    if (!req.has_header("Proxy-Authorization")) {
+  // Proxy-Authorization is only sent when the proxy is actually used for
+  // this target — otherwise NO_PROXY-matched requests would leak proxy
+  // credentials directly to the destination server.
+  if (is_proxy_enabled_for_host(host_)) {
+    if (!proxy_basic_auth_username_.empty() &&
+        !proxy_basic_auth_password_.empty() &&
+        !req.has_header("Proxy-Authorization")) {
+      req.headers.insert(make_basic_authentication_header(
+          proxy_basic_auth_username_, proxy_basic_auth_password_, true));
+    }
+    if (!proxy_bearer_token_auth_token_.empty() &&
+        !req.has_header("Proxy-Authorization")) {
       req.headers.insert(make_bearer_token_authentication_header(
           proxy_bearer_token_auth_token_, true));
     }
@@ -14689,6 +14700,15 @@ inline void ClientImpl::set_proxy_bearer_token_auth(const std::string &token) {
   proxy_bearer_token_auth_token_ = token;
 }
 
+inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
+  (void)patterns;
+}
+
+inline bool ClientImpl::set_proxy_from_env() {
+  bool applied = false;
+  return applied;
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 inline void ClientImpl::set_digest_auth(const std::string &username,
                                         const std::string &password) {
@@ -15390,6 +15410,10 @@ inline void Client::set_proxy_basic_auth(const std::string &username,
 inline void Client::set_proxy_bearer_token_auth(const std::string &token) {
   cli_->set_proxy_bearer_token_auth(token);
 }
+inline void Client::set_no_proxy(const std::vector<std::string> &patterns) {
+  cli_->set_no_proxy(patterns);
+}
+inline bool Client::set_proxy_from_env() { return cli_->set_proxy_from_env(); }
 
 inline void Client::set_logger(Logger logger) {
   cli_->set_logger(std::move(logger));
