@@ -10506,6 +10506,135 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
+inline std::pair<std::string, bool> extract_host(const std::string& host, bool check_ipv6) {
+  // strip schema
+  size_t n = host.find("://");
+  n = (n == std::string::npos) ? 0 : (n + (sizeof("://") - 1));
+  std::string v = host.substr(n);
+
+  // when needed, check if the url contains an ipv6 address
+  if(check_ipv6 && v[0] == '[') {
+    size_t endBracket = v.find(']');
+    if(endBracket != std::string::npos) {
+      v = v.substr(1, endBracket - 1);
+      return {std::string(v), true};
+    }
+  }
+
+  // find end of host string
+  n = v.find(':');
+  if(n == std::string::npos) {
+    n = v.find('/');
+    if(n == std::string::npos) {
+      n = v.size();
+    }
+  }
+
+  // strip trailing dots
+  n -= v[n - 1] == '.' ? 1 : 0;
+  return {std::string(v.substr(0, n)), false};
+}
+
+using IPv6 = std::array<unsigned char, 16>;
+static_assert(sizeof(IPv6) == sizeof(in6_addr), "IPv6 type size mismatch");
+
+inline bool convert_to_ip(const std::string& host, IPv6& ip, bool& is_ipv6) {
+  auto r = extract_host(host, true);
+  is_ipv6 = r.second;
+  ip = IPv6{};
+  if(inet_pton(is_ipv6 ? AF_INET6 : AF_INET, r.first.c_str(), &ip) == 0) {
+    return false; // Not an IP
+  }
+  return true;
+}
+
+inline bool convert_to_cidr(const std::string& entry, IPv6& ip, long& subnet_bits, bool is_ipv6) {
+  std::string stripped;
+  size_t n = entry.find("/");
+  if(n == std::string::npos) {
+    stripped = entry;
+  } else if((n + 1) >= entry.size()) {
+    return false; // slash found but at end is an error
+  } else {
+    stripped = entry.substr(0, n);
+  }
+  ip = IPv6{};
+  if(inet_pton(is_ipv6 ? AF_INET6 : AF_INET, stripped.c_str(), &ip) == 0) {
+    return false; // Not an IP
+  }
+
+  long def = is_ipv6 ? 128 : 32;
+  subnet_bits = def; // default is to check all bits
+  if(n == std::string::npos) {
+    return true;
+  }
+  auto r = from_chars(entry.data() + n + 1, entry.data() + entry.size(), subnet_bits);
+  if (r.ec != std::errc{} || r.ptr != entry.data() + entry.size()) {
+    return false; // corrupt number means no CIDR
+  }
+  // check for out ouf bounds subnet index
+  return subnet_bits >= 0 && subnet_bits <= def;
+}
+
+inline IPv6 create_subnet_mask(long subnet_bits) {
+  IPv6 u{};
+  size_t i = 0;
+  size_t shift_counter = 0;
+  while(subnet_bits > 0) {
+    u[i] >>= 1;
+    u[i] |= 0x80;
+    subnet_bits--;
+    shift_counter++;
+    if(shift_counter == 8) {
+      i++;
+      shift_counter = 0;
+    }
+  }
+  return u;
+}
+
+inline void apply_mask(IPv6& ip, const IPv6& mask) {
+  for(size_t i = 0; i < ip.size(); i++) {
+    ip[i] = ip[i] & mask[i];
+  }
+}
+
+inline bool host_matches_no_proxy_entry(const std::string& host, const std::string& entry) {
+  if(entry.size() == 0) { return false; }
+  if(entry == "*") { return true; }
+
+  IPv6 ip{};
+  bool is_ipv6 = false;
+  if(convert_to_ip(host, ip, is_ipv6)) {
+    // host is an IP, try to convert the entry to an IP and/or CIDR as well
+    IPv6 cidr{};
+    long subnet_bits = 0;
+    if(!convert_to_cidr(entry, cidr, subnet_bits, is_ipv6)) {
+      return false; // no match when filter is not valid CIDR
+    }
+    IPv6 mask = create_subnet_mask(subnet_bits);
+    apply_mask(ip, mask);
+    apply_mask(cidr, mask);
+    return ip == cidr;
+  }
+
+  // host is not an IP, try to match on subdomain
+  auto r = extract_host(host, false);
+  std::string bare_host = case_ignore::to_lower(r.first);
+  std::string stripped_entry = case_ignore::to_lower(entry[0] == '.' ? entry.substr(1) : entry); 
+  size_t n = bare_host.find(stripped_entry);
+  // no match at all
+  if(n == std::string::npos) {
+    return false;
+  }
+  // entry is not matching up to the end, so no subdomain
+  if((n + stripped_entry.size()) != bare_host.size()) {
+    return false;
+  }
+  // is full match or matches on subdomain
+  return n == 0 || bare_host[n - 1] == '.';
+}
+
 template <typename T>
 inline bool check_and_write_headers(Stream &strm, Headers &headers,
                                     T header_writer, Error &error) {
@@ -12335,11 +12464,11 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
 
 inline bool
 ClientImpl::is_proxy_enabled_for_host(const std::string &host) const {
-  // The host parameter is unused while NO_PROXY support is not yet wired in;
-  // it will be consulted once set_no_proxy() lands. Keeping the signature now
-  // means the call sites do not need to change again later.
-  (void)host;
-  return !proxy_host_.empty() && proxy_port_ != -1;
+  if (proxy_host_.empty() || proxy_port_ == -1) { return false; }
+  for(const auto& entry : no_proxy_entries_) {
+    if(detail::host_matches_no_proxy_entry(host, entry)){ return false; }
+  }
+  return true;
 }
 
 inline socket_t ClientImpl::create_client_socket(Error &error) const {
@@ -14702,7 +14831,7 @@ inline void ClientImpl::set_proxy_bearer_token_auth(const std::string &token) {
 }
 
 inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
-  (void)patterns;
+  no_proxy_entries_ = patterns;
 }
 
 inline bool ClientImpl::apply_proxy_url(const std::string &url) {
