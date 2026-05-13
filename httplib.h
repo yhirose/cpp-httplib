@@ -2258,6 +2258,7 @@ protected:
       Response &res, bool &success, Error &error);
 
   bool is_proxy_enabled_for_host(const std::string &host) const;
+  bool apply_proxy_url(const std::string &url);
 
   // All of:
   //   shutdown_ssl
@@ -14704,8 +14705,129 @@ inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
   (void)patterns;
 }
 
+inline bool ClientImpl::apply_proxy_url(const std::string &url) {
+  if (url.empty()) { return false; }
+
+  // CRLF / NUL would let a malicious env value inject extra header lines
+  // into a CONNECT request or a Proxy-Authorization header.
+  for (auto c : url) {
+    auto uc = static_cast<unsigned char>(c);
+    if (uc < 0x20 || uc == 0x7F) { return false; }
+  }
+
+  std::size_t scheme_end = 0;
+  bool is_https = false;
+  if (url.compare(0, 7, "http://") == 0) {
+    scheme_end = 7;
+  } else if (url.compare(0, 8, "https://") == 0) {
+    is_https = true;
+    scheme_end = 8;
+  } else {
+    return false;
+  }
+
+  auto authority_end = url.find_first_of("/?#", scheme_end);
+  if (authority_end == std::string::npos) { authority_end = url.size(); }
+  auto authority = url.substr(scheme_end, authority_end - scheme_end);
+  if (authority.empty()) { return false; }
+
+  // Split on the LAST '@' so passwords containing '@' are preserved.
+  std::string user;
+  std::string pass;
+  std::string host_port;
+  auto at_pos = authority.rfind('@');
+  if (at_pos != std::string::npos) {
+    auto userinfo = authority.substr(0, at_pos);
+    host_port = authority.substr(at_pos + 1);
+    auto colon = userinfo.find(':');
+    if (colon == std::string::npos) {
+      user = std::move(userinfo);
+    } else {
+      user = userinfo.substr(0, colon);
+      pass = userinfo.substr(colon + 1);
+    }
+  } else {
+    host_port = authority;
+  }
+  if (host_port.empty()) { return false; }
+
+  std::string host;
+  std::string port_str;
+  if (host_port.front() == '[') {
+    auto rb = host_port.find(']');
+    if (rb == std::string::npos) { return false; }
+    host = host_port.substr(1, rb - 1);
+    if (host.empty()) { return false; }
+    struct in6_addr tmp;
+    if (inet_pton(AF_INET6, host.c_str(), &tmp) != 1) { return false; }
+    auto rest = host_port.substr(rb + 1);
+    if (!rest.empty()) {
+      if (rest.front() != ':') { return false; }
+      port_str = rest.substr(1);
+      if (port_str.empty()) { return false; }
+    }
+  } else {
+    auto colon = host_port.find(':');
+    if (colon == std::string::npos) {
+      host = host_port;
+    } else {
+      host = host_port.substr(0, colon);
+      port_str = host_port.substr(colon + 1);
+      if (port_str.empty()) { return false; }
+    }
+    if (host.empty()) { return false; }
+  }
+
+  int port;
+  if (port_str.empty()) {
+    port = is_https ? 443 : 80;
+  } else {
+    int parsed = 0;
+    auto r = detail::from_chars(port_str.data(),
+                                port_str.data() + port_str.size(), parsed);
+    if (r.ec != std::errc{} || r.ptr != port_str.data() + port_str.size()) {
+      return false;
+    }
+    if (parsed < 1 || parsed > 65535) { return false; }
+    port = parsed;
+  }
+
+  // Commit only after every check has passed.
+  proxy_host_ = std::move(host);
+  proxy_port_ = port;
+  if (!user.empty()) {
+    proxy_basic_auth_username_ = std::move(user);
+    proxy_basic_auth_password_ = std::move(pass);
+  }
+  return true;
+}
+
 inline bool ClientImpl::set_proxy_from_env() {
   bool applied = false;
+
+  const char *url_env = nullptr;
+  if (is_ssl()) {
+    url_env = std::getenv("https_proxy");
+  } else {
+    url_env = std::getenv("http_proxy");
+  }
+  if (url_env && *url_env != '\0' && apply_proxy_url(url_env)) {
+    applied = true;
+  }
+
+  const char *no_proxy_env = std::getenv("no_proxy");
+  if (no_proxy_env && *no_proxy_env != '\0') {
+    std::vector<std::string> entries;
+    detail::split(no_proxy_env,  no_proxy_env + strlen(no_proxy_env), ',',
+      [&](const char *b, const char *e) {
+          entries.push_back(std::string(b, e));
+      });
+
+    if (!entries.empty()) {
+      no_proxy_entries_ = std::move(entries);
+      applied = true;
+    }
+  }
   return applied;
 }
 
