@@ -18157,3 +18157,544 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
               response.substr(0, response.find("\r\n")));
   }
 }
+
+// =============================================================================
+// NO_PROXY / set_proxy_from_env (#2446)
+// =============================================================================
+
+namespace no_proxy_test {
+
+#ifndef _WIN32
+// RAII helper that saves, sets, and restores an environment variable.
+class ScopedEnv {
+public:
+  ScopedEnv(const char *name, const char *value) : name_(name) {
+    auto p = std::getenv(name);
+    had_prev_ = (p != nullptr);
+    if (had_prev_) { prev_ = p; }
+    if (value) {
+      ::setenv(name, value, 1);
+    } else {
+      ::unsetenv(name);
+    }
+  }
+  ~ScopedEnv() {
+    if (had_prev_) {
+      ::setenv(name_.c_str(), prev_.c_str(), 1);
+    } else {
+      ::unsetenv(name_.c_str());
+    }
+  }
+
+private:
+  std::string name_;
+  std::string prev_;
+  bool had_prev_ = false;
+};
+#endif // !_WIN32
+
+// In-process proxy mock + direct target. Each request that arrives bumps
+// the corresponding counter, so a test can assert "this request went via
+// the proxy" or "this request bypassed the proxy".
+class ProxyAndTargetServers {
+public:
+  ProxyAndTargetServers() {
+    proxy_mock_.Get(".*", [this](const Request &req, Response &res) {
+      proxy_hits_++;
+      last_had_proxy_authz_ = req.has_header("Proxy-Authorization");
+      res.set_content("via-proxy", "text/plain");
+    });
+    target_.Get(".*", [this](const Request &req, Response &res) {
+      target_hits_++;
+      last_had_proxy_authz_ = req.has_header("Proxy-Authorization");
+      res.set_content("direct", "text/plain");
+    });
+
+    proxy_port_ = proxy_mock_.bind_to_any_port("127.0.0.1");
+    target_port_ = target_.bind_to_any_port("127.0.0.1");
+    proxy_thread_ = std::thread([this] { proxy_mock_.listen_after_bind(); });
+    target_thread_ = std::thread([this] { target_.listen_after_bind(); });
+    proxy_mock_.wait_until_ready();
+    target_.wait_until_ready();
+  }
+
+  ~ProxyAndTargetServers() {
+    proxy_mock_.stop();
+    target_.stop();
+    if (proxy_thread_.joinable()) { proxy_thread_.join(); }
+    if (target_thread_.joinable()) { target_thread_.join(); }
+  }
+
+  Server &proxy_mock() { return proxy_mock_; }
+  Server &target() { return target_; }
+  int proxy_port() const { return proxy_port_; }
+  int target_port() const { return target_port_; }
+  int proxy_hits() const { return proxy_hits_.load(); }
+  int target_hits() const { return target_hits_.load(); }
+  bool last_had_proxy_authz() const { return last_had_proxy_authz_.load(); }
+
+  void reset_counters() {
+    proxy_hits_ = 0;
+    target_hits_ = 0;
+    last_had_proxy_authz_ = false;
+  }
+
+private:
+  Server proxy_mock_;
+  Server target_;
+  std::thread proxy_thread_;
+  std::thread target_thread_;
+  int proxy_port_ = 0;
+  int target_port_ = 0;
+  std::atomic<int> proxy_hits_{0};
+  std::atomic<int> target_hits_{0};
+  std::atomic<bool> last_had_proxy_authz_{false};
+};
+
+// Helper: build a client targeted at `host` with a hostname mapping to
+// 127.0.0.1, the proxy pointed at the mock.
+inline std::unique_ptr<Client> make_client(const std::string &host,
+                                           ProxyAndTargetServers &s) {
+  auto cli = detail::make_unique<Client>(host, s.target_port());
+  cli->set_hostname_addr_map({{host, "127.0.0.1"}});
+  cli->set_proxy("127.0.0.1", s.proxy_port());
+  return cli;
+}
+
+} // namespace no_proxy_test
+
+using no_proxy_test::make_client;
+using no_proxy_test::ProxyAndTargetServers;
+
+// ---- Hostname suffix matching: dot-boundary rule
+// -----------------------------
+
+TEST(NoProxyTest, ExactHostnameBypasses) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("example.com", s);
+  cli->set_no_proxy({"example.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, SubdomainBypasses) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("foo.example.com", s);
+  cli->set_no_proxy({"example.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, EvilExampleDoesNotMatchExample) {
+  // Regression guard: "evilexample.com" must not be considered a subdomain
+  // of "example.com". Without the dot-boundary rule, a naive endsWith
+  // check would let traffic bypass the proxy and leak credentials direct
+  // to the attacker host.
+  ProxyAndTargetServers s;
+  auto cli = make_client("evilexample.com", s);
+  cli->set_no_proxy({"example.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+TEST(NoProxyTest, ExampleDotEvilDoesNotMatchExample) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("example.com.evil.com", s);
+  cli->set_no_proxy({"example.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+TEST(NoProxyTest, LeadingDotPatternMatchesBareDomain) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("example.com", s);
+  cli->set_no_proxy({".example.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, CaseInsensitiveHostname) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("Example.COM", s);
+  cli->set_no_proxy({"EXAMPLE.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, TrailingDotIsNormalized) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("example.com.", s);
+  cli->set_no_proxy({"example.com"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+// ---- Wildcard
+// ----------------------------------------------------------------
+
+TEST(NoProxyTest, WildcardBypassesEverything) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("anything.invalid.test", s);
+  cli->set_no_proxy({"*"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+// ---- IP normalization
+// --------------------------------------------------------
+
+TEST(NoProxyTest, IPv4LiteralExactMatch) {
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"127.0.0.1"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, IPv6LiteralExactMatchAcrossEquivalentForms) {
+  // Different string forms of the same IPv6 address ("::1" and the
+  // expanded "0:0:0:0:0:0:0:1") must match because both go through
+  // inet_pton during normalization.
+  ProxyAndTargetServers s;
+  Client cli("0:0:0:0:0:0:0:1", s.target_port());
+  cli.set_hostname_addr_map({{"0:0:0:0:0:0:0:1", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"::1"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, IPv4MappedIPv6IsNotCrossMatchedAgainstIPv4Entry) {
+  // Policy: keep address families separate. "::ffff:1.2.3.4" must NOT
+  // satisfy a NO_PROXY entry of "1.2.3.4". This avoids subtle bypass
+  // tricks via address-family conversion.
+  ProxyAndTargetServers s;
+  Client cli("::ffff:127.0.0.1", s.target_port());
+  cli.set_hostname_addr_map({{"::ffff:127.0.0.1", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"127.0.0.1"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+// ---- CIDR matching
+// -----------------------------------------------------------
+
+TEST(NoProxyTest, IPv4CidrMatch) {
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"127.0.0.0/8"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, IPv4CidrNonMatch) {
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"10.0.0.0/8"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+TEST(NoProxyTest, IPv4CidrPrefixZeroMatchesAll) {
+  // Prefix 0 must not trigger the (1u << 32) shift UB. Result: every
+  // IPv4 target matches.
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"0.0.0.0/0"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, IPv4CidrSingleHostNoSlash) {
+  // Bare IP without a /prefix is treated as /32 (single host).
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"127.0.0.1"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, MalformedCidrPrefixIsDropped) {
+  // /33 on IPv4 is invalid and must be silently dropped during parsing,
+  // leaving no NO_PROXY effect.
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"127.0.0.0/33"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+// ---- Proxy-Authorization handling
+// --------------------------------------------
+
+TEST(NoProxyTest, ProxyAuthorizationSuppressedWhenBypassed) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("internal.corp", s);
+  cli->set_proxy_basic_auth("u", "p");
+  cli->set_no_proxy({"internal.corp"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(1, s.target_hits());
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_FALSE(s.last_had_proxy_authz())
+      << "Proxy-Authorization must not be sent direct to the target";
+}
+
+TEST(NoProxyTest, ProxyAuthorizationSentWhenNotBypassed) {
+  ProxyAndTargetServers s;
+  auto cli = make_client("public.example", s);
+  cli->set_proxy_basic_auth("u", "p");
+  cli->set_no_proxy({"internal.corp"}); // does not match
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_TRUE(s.last_had_proxy_authz());
+}
+
+// ---- Backward compatibility
+// --------------------------------------------------
+
+TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
+  // Default behavior unchanged when set_no_proxy is never called.
+  ProxyAndTargetServers s;
+  auto cli = make_client("anything.test", s);
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+// ---- Parsing edge cases
+// ------------------------------------------------------
+
+TEST(NoProxyTest, PortSpecificEntryRejected) {
+  // "host:port" is intentionally unsupported; must be silently dropped
+  // so it does not match anything.
+  ProxyAndTargetServers s;
+  auto cli = make_client("example.com", s);
+  cli->set_no_proxy({"example.com:8080"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+TEST(NoProxyTest, EmptyAndWhitespaceEntriesDropped) {
+  // Empty/whitespace tokens must not match anything (especially not
+  // every host).
+  ProxyAndTargetServers s;
+  auto cli = make_client("anything.test", s);
+  cli->set_no_proxy({"", "   ", "\t"});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+// ---- Cross-origin redirect honors NO_PROXY
+// -----------------------------------
+
+TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
+  // Analog of GHSA-6hrp-7fq9-3qv2: when a redirect targets a host in
+  // NO_PROXY, the follow-up request must go direct and must NOT carry
+  // Proxy-Authorization. Built without the ProxyAndTargetServers helper
+  // so the proxy mock can issue a 302 specifically for the /redir path.
+
+  std::atomic<int> proxy_hits{0};
+  std::atomic<int> target_hits{0};
+  std::atomic<bool> proxy_saw_authz{false};
+  std::atomic<bool> target_saw_authz{false};
+
+  Server proxy_mock;
+  Server target;
+
+  // Proxy mock: redirect /redir to the target's loopback URL; everything
+  // else returns 200.
+  int target_port = target.bind_to_any_port("127.0.0.1");
+  int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
+
+  proxy_mock.Get(".*", [&](const Request &req, Response &res) {
+    proxy_hits++;
+    if (req.has_header("Proxy-Authorization")) { proxy_saw_authz = true; }
+    if (req.path.find("/redir") != std::string::npos) {
+      res.status = 302;
+      res.set_header("Location", "http://127.0.0.1:" +
+                                     std::to_string(target_port) + "/landed");
+      return;
+    }
+    res.set_content("via-proxy", "text/plain");
+  });
+
+  target.Get(".*", [&](const Request &req, Response &res) {
+    target_hits++;
+    if (req.has_header("Proxy-Authorization")) { target_saw_authz = true; }
+    res.set_content("direct", "text/plain");
+  });
+
+  std::thread proxy_thread([&] { proxy_mock.listen_after_bind(); });
+  std::thread target_thread([&] { target.listen_after_bind(); });
+  auto cleanup = detail::scope_exit([&] {
+    proxy_mock.stop();
+    target.stop();
+    if (proxy_thread.joinable()) { proxy_thread.join(); }
+    if (target_thread.joinable()) { target_thread.join(); }
+  });
+  proxy_mock.wait_until_ready();
+  target.wait_until_ready();
+
+  // Initial request goes to a host that is NOT in NO_PROXY → uses the
+  // proxy. The proxy issues a 302 to 127.0.0.1, which IS in NO_PROXY →
+  // the redirect leg must go direct.
+  Client cli("public.example", target_port);
+  cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", proxy_port);
+  cli.set_proxy_basic_auth("u", "p");
+  cli.set_no_proxy({"127.0.0.1"});
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/redir");
+  ASSERT_TRUE(res);
+  EXPECT_GE(proxy_hits.load(), 1) << "first leg must hit the proxy";
+  EXPECT_GE(target_hits.load(), 1)
+      << "redirect leg must reach the target directly";
+  EXPECT_FALSE(target_saw_authz.load())
+      << "Proxy-Authorization must not be sent on the bypassed redirect leg";
+  // The first leg (going through the proxy) is allowed to carry
+  // Proxy-Authorization; we only assert the bypassed leg does not.
+}
+
+// ---- set_proxy_from_env: httpoxy mitigation
+// ---------------------------------- Skipped on Windows because setenv/unsetenv
+// are POSIX-only.
+
+#ifndef _WIN32
+
+TEST(NoProxyTest, SetProxyFromEnv_LowercaseHttpProxy_Applied) {
+  no_proxy_test::ScopedEnv h("http_proxy", "http://proxy.test:3128");
+  no_proxy_test::ScopedEnv H("HTTP_PROXY", nullptr);
+  no_proxy_test::ScopedEnv n("no_proxy", nullptr);
+  no_proxy_test::ScopedEnv N("NO_PROXY", nullptr);
+  no_proxy_test::ScopedEnv s("https_proxy", nullptr);
+  no_proxy_test::ScopedEnv S("HTTPS_PROXY", nullptr);
+
+  Client cli("example.com");
+  EXPECT_TRUE(cli.set_proxy_from_env());
+}
+
+TEST(NoProxyTest, SetProxyFromEnv_UppercaseHTTPProxy_Ignored) {
+  // Httpoxy mitigation: HTTP_PROXY (uppercase) must NOT be honored,
+  // because in CGI environments it is set from the client-supplied
+  // "Proxy:" header.
+  no_proxy_test::ScopedEnv h("http_proxy", nullptr);
+  no_proxy_test::ScopedEnv H("HTTP_PROXY", "http://attacker.invalid:9999");
+  no_proxy_test::ScopedEnv n("no_proxy", nullptr);
+  no_proxy_test::ScopedEnv N("NO_PROXY", nullptr);
+  no_proxy_test::ScopedEnv s("https_proxy", nullptr);
+  no_proxy_test::ScopedEnv S("HTTPS_PROXY", nullptr);
+
+  Client cli("example.com");
+  EXPECT_FALSE(cli.set_proxy_from_env())
+      << "Uppercase HTTP_PROXY must be ignored (CVE-2016-5385)";
+}
+
+TEST(NoProxyTest, SetProxyFromEnv_NoProxyApplied) {
+  no_proxy_test::ScopedEnv h("http_proxy", nullptr);
+  no_proxy_test::ScopedEnv H("HTTP_PROXY", nullptr);
+  no_proxy_test::ScopedEnv s("https_proxy", nullptr);
+  no_proxy_test::ScopedEnv S("HTTPS_PROXY", nullptr);
+  no_proxy_test::ScopedEnv n("no_proxy", "example.com");
+  no_proxy_test::ScopedEnv N("NO_PROXY", nullptr);
+
+  Client cli("example.com");
+  EXPECT_TRUE(cli.set_proxy_from_env())
+      << "set_proxy_from_env returns true when only NO_PROXY is set";
+}
+
+TEST(NoProxyTest, SetProxyFromEnv_CRLFInProxyValueRejected) {
+  // CR/LF in env values must be rejected at parse time so they cannot
+  // inject extra header lines into a CONNECT request or
+  // Proxy-Authorization (cf. CVE-2026-21428, CRLF injection).
+  no_proxy_test::ScopedEnv h("http_proxy", "http://host:8080\r\nInjected: yes");
+  no_proxy_test::ScopedEnv H("HTTP_PROXY", nullptr);
+  no_proxy_test::ScopedEnv n("no_proxy", nullptr);
+  no_proxy_test::ScopedEnv N("NO_PROXY", nullptr);
+  no_proxy_test::ScopedEnv s("https_proxy", nullptr);
+  no_proxy_test::ScopedEnv S("HTTPS_PROXY", nullptr);
+
+  Client cli("example.com");
+  EXPECT_FALSE(cli.set_proxy_from_env());
+}
+
+TEST(NoProxyTest, SetProxyFromEnv_EmptyEnvValueIgnored) {
+  no_proxy_test::ScopedEnv h("http_proxy", "");
+  no_proxy_test::ScopedEnv H("HTTP_PROXY", nullptr);
+  no_proxy_test::ScopedEnv n("no_proxy", "");
+  no_proxy_test::ScopedEnv N("NO_PROXY", nullptr);
+  no_proxy_test::ScopedEnv s("https_proxy", nullptr);
+  no_proxy_test::ScopedEnv S("HTTPS_PROXY", nullptr);
+
+  Client cli("example.com");
+  EXPECT_FALSE(cli.set_proxy_from_env());
+}
+
+#endif // !_WIN32
