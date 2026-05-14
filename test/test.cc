@@ -14251,6 +14251,53 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
 
+// An X-Forwarded-For header whose value parses to zero IP segments must not
+// crash the server (it used to call front() on an empty vector inside
+// get_client_ip). The connection-level remote address must be retained instead.
+static void run_malformed_xff_test(const std::string &xff_value) {
+  Server svr;
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    res.set_content("ok", "text/plain");
+  });
+
+  int port = 0;
+  thread t = thread([&]() {
+    port = svr.bind_to_any_port(HOST);
+    svr.listen_after_bind();
+  });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For", xff_value}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, EmptyXForwardedFor_DoesNotCrash) {
+  run_malformed_xff_test("");
+}
+
+TEST(ForwardedHeadersTest, CommaOnlyXForwardedFor_DoesNotCrash) {
+  run_malformed_xff_test(",");
+}
+
+TEST(ForwardedHeadersTest, MultipleCommasXForwardedFor_DoesNotCrash) {
+  run_malformed_xff_test(", , ,");
+}
+
 #ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
   Server svr;
