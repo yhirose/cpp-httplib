@@ -18337,6 +18337,21 @@ TEST(NoProxyTest, TrailingDotIsNormalized) {
   EXPECT_EQ(1, s.target_hits());
 }
 
+TEST(NoProxyTest, TrailingDotOnEntryIsNormalized) {
+  // Trailing dots must be normalized on BOTH sides — host and entry.
+  // An implementation that only strips the host-side trailing dot would
+  // fail to match host "example.com" against entry "example.com." because
+  // a literal substring search would compare 11 chars against 12.
+  ProxyAndTargetServers s;
+  auto cli = make_client("example.com", s);
+  cli->set_no_proxy({"example.com."});
+
+  auto res = cli->Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
 TEST(NoProxyTest, WildcardBypassesEverything) {
   ProxyAndTargetServers s;
   auto cli = make_client("anything.invalid.test", s);
@@ -18366,6 +18381,23 @@ TEST(NoProxyTest, IPv6LiteralExactMatchAcrossEquivalentForms) {
   cli.set_hostname_addr_map({{"0:0:0:0:0:0:0:1", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", s.proxy_port());
   cli.set_no_proxy({"::1"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, BareIPv6LiteralMatchesIPv6Cidr) {
+  // Regression guard: a bare IPv6 host literal (no surrounding brackets)
+  // must still be recognized as IPv6 for CIDR matching. Implementations
+  // that detect IPv6 only when the host begins with '[' would parse the
+  // host as a hostname and miss the match.
+  ProxyAndTargetServers s;
+  Client cli("fe80::1", s.target_port());
+  cli.set_hostname_addr_map({{"fe80::1", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"fe80::/10"});
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
@@ -18507,6 +18539,22 @@ TEST(NoProxyTest, EmptyAndWhitespaceEntriesDropped) {
   ASSERT_TRUE(res);
   EXPECT_GE(s.proxy_hits(), 1);
   EXPECT_EQ(0, s.target_hits());
+}
+
+TEST(NoProxyTest, ValidEntryWithSurroundingWhitespaceStillMatches) {
+  // An entry with leading/trailing whitespace must still match — env-style
+  // values are commonly pasted with stray spaces and an implementation
+  // that feeds the raw token directly to inet_pton would fail to match
+  // valid CIDRs because of the spaces.
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"  127.0.0.0/8  "});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
 }
 
 TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
