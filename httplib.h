@@ -2021,11 +2021,14 @@ enum class NoProxyKind {
   IPv6Cidr,       // "fe80::/10" (or single IP, treated as /128)
 };
 
+// Unified 16-byte buffer holding either a v4 (first 4 bytes) or v6 address.
+// Lets one CIDR matcher cover both families.
+using IPBytes = std::array<uint8_t, 16>;
+
 struct NoProxyEntry {
   NoProxyKind kind = NoProxyKind::Wildcard;
   std::string hostname_pattern; // lowercased, leading/trailing dot stripped
-  struct in_addr v4_net {};
-  struct in6_addr v6_net {};
+  IPBytes net{};
   int prefix_bits = 0;
 };
 
@@ -2033,8 +2036,7 @@ struct NormalizedTarget {
   std::string hostname; // lowercase; brackets and trailing dot removed
   bool is_ipv4 = false;
   bool is_ipv6 = false;
-  struct in_addr v4 {};
-  struct in6_addr v6 {};
+  IPBytes ip{};
 };
 
 } // namespace detail
@@ -10537,35 +10539,23 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
 bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
 std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
 NormalizedTarget normalize_target(const std::string &host);
-bool ipv4_in_cidr(const struct in_addr &ip, const struct in_addr &net,
-                  int prefix_bits);
-bool ipv6_in_cidr(const struct in6_addr &ip, const struct in6_addr &net,
-                  int prefix_bits);
+bool ip_in_cidr(const IPBytes &ip, const IPBytes &net, int prefix_bits);
 bool host_matches_no_proxy(const NormalizedTarget &target,
                            const std::vector<NoProxyEntry> &entries);
 
-inline bool ipv4_in_cidr(const struct in_addr &ip, const struct in_addr &net,
-                         int prefix_bits) {
-  if (prefix_bits < 0 || prefix_bits > 32) { return false; }
-  // Special-case prefix=0 to avoid undefined behavior of (1u << 32).
-  if (prefix_bits == 0) { return true; }
-  uint32_t mask = htonl(0xFFFFFFFFu << (32 - prefix_bits));
-  return (ip.s_addr & mask) == (net.s_addr & mask);
-}
-
-inline bool ipv6_in_cidr(const struct in6_addr &ip, const struct in6_addr &net,
-                         int prefix_bits) {
+inline bool ip_in_cidr(const IPBytes &ip, const IPBytes &net, int prefix_bits) {
   if (prefix_bits < 0 || prefix_bits > 128) { return false; }
   if (prefix_bits == 0) { return true; }
   int full_bytes = prefix_bits / 8;
   int rem_bits = prefix_bits % 8;
-  if (full_bytes > 0 && std::memcmp(ip.s6_addr, net.s6_addr,
+  if (full_bytes > 0 && std::memcmp(ip.data(), net.data(),
                                     static_cast<size_t>(full_bytes)) != 0) {
     return false;
   }
   if (rem_bits == 0) { return true; }
+  auto i = static_cast<size_t>(full_bytes);
   auto mask = static_cast<uint8_t>(0xFFu << (8 - rem_bits));
-  return (ip.s6_addr[full_bytes] & mask) == (net.s6_addr[full_bytes] & mask);
+  return (ip[i] & mask) == (net[i] & mask);
 }
 
 inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
@@ -10595,7 +10585,7 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
       if (prefix < 0 || prefix > 32) { return false; }
     }
     out.kind = NoProxyKind::IPv4Cidr;
-    out.v4_net = v4;
+    std::memcpy(out.net.data(), &v4, sizeof(v4));
     out.prefix_bits = prefix;
     return true;
   }
@@ -10613,7 +10603,7 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
       if (prefix < 0 || prefix > 128) { return false; }
     }
     out.kind = NoProxyKind::IPv6Cidr;
-    out.v6_net = v6;
+    std::memcpy(out.net.data(), &v6, sizeof(v6));
     out.prefix_bits = prefix;
     return true;
   }
@@ -10666,10 +10656,14 @@ inline NormalizedTarget normalize_target(const std::string &host) {
   t.hostname = case_ignore::to_lower(h);
 
   if (!t.hostname.empty()) {
-    if (inet_pton(AF_INET, t.hostname.c_str(), &t.v4) == 1) {
+    struct in_addr v4;
+    struct in6_addr v6;
+    if (inet_pton(AF_INET, t.hostname.c_str(), &v4) == 1) {
       t.is_ipv4 = true;
-    } else if (inet_pton(AF_INET6, t.hostname.c_str(), &t.v6) == 1) {
+      std::memcpy(t.ip.data(), &v4, sizeof(v4));
+    } else if (inet_pton(AF_INET6, t.hostname.c_str(), &v6) == 1) {
       t.is_ipv6 = true;
+      std::memcpy(t.ip.data(), &v6, sizeof(v6));
     }
   }
   return t;
@@ -10682,12 +10676,12 @@ inline bool host_matches_no_proxy(const NormalizedTarget &target,
     switch (e.kind) {
     case NoProxyKind::Wildcard: return true;
     case NoProxyKind::IPv4Cidr:
-      if (target.is_ipv4 && ipv4_in_cidr(target.v4, e.v4_net, e.prefix_bits)) {
+      if (target.is_ipv4 && ip_in_cidr(target.ip, e.net, e.prefix_bits)) {
         return true;
       }
       break;
     case NoProxyKind::IPv6Cidr:
-      if (target.is_ipv6 && ipv6_in_cidr(target.v6, e.v6_net, e.prefix_bits)) {
+      if (target.is_ipv6 && ip_in_cidr(target.ip, e.net, e.prefix_bits)) {
         return true;
       }
       break;
