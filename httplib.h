@@ -8578,17 +8578,24 @@ write_multipart_ranges_data(Stream &strm, const Request &req, Response &res,
       });
 }
 
+inline bool has_framed_body(const Request &req) {
+  return is_chunked_transfer_encoding(req.headers) ||
+         req.get_header_value_u64("Content-Length") > 0;
+}
+
+inline bool is_connection_persistent(const Request &req) {
+  auto conn = req.get_header_value("Connection");
+  if (conn == "close") { return false; }
+  if (req.version == "HTTP/1.0" && conn != "Keep-Alive") { return false; }
+  return true;
+}
+
 inline bool expect_content(const Request &req) {
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
       req.method == "DELETE") {
     return true;
   }
-  if (req.has_header("Content-Length") &&
-      req.get_header_value_u64("Content-Length") > 0) {
-    return true;
-  }
-  if (is_chunked_transfer_encoding(req.headers)) { return true; }
-  return false;
+  return has_framed_body(req);
 }
 
 #ifdef _WIN32
