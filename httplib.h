@@ -1734,7 +1734,7 @@ public:
 
   bool is_running() const;
   void wait_until_ready() const;
-  void stop();
+  void stop() noexcept;
   void decommission();
 
   std::function<TaskQueue *(void)> new_task_queue;
@@ -5422,7 +5422,7 @@ inline void mmap::close() {
 #endif
   size_ = 0;
 }
-inline int close_socket(socket_t sock) {
+inline int close_socket(socket_t sock) noexcept {
 #ifdef _WIN32
   return closesocket(sock);
 #else
@@ -5649,7 +5649,7 @@ inline bool process_client_socket(
   return callback(strm);
 }
 
-inline int shutdown_socket(socket_t sock) {
+inline int shutdown_socket(socket_t sock) noexcept {
 #ifdef _WIN32
   return shutdown(sock, SD_BOTH);
 #else
@@ -10997,7 +10997,7 @@ inline void Server::wait_until_ready() const {
   }
 }
 
-inline void Server::stop() {
+inline void Server::stop() noexcept {
   if (is_running_) {
     assert(svr_sock_ != INVALID_SOCKET);
     std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
