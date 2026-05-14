@@ -11311,29 +11311,18 @@ inline bool Server::read_content_core(
                      size_t /*len*/) { return receiver(buf, n); };
   }
 
-  // RFC 7230 Section 3.3.3: If this is a request message and none of the above
-  // are true (no Transfer-Encoding and no Content-Length), then the message
-  // body length is zero (no message body is present).
-  //
-  // For non-SSL builds, detect clients that send a body without a
-  // Content-Length header (raw HTTP over TCP). Check both the stream's
-  // internal read buffer (data already read from the socket during header
-  // parsing) and the socket itself for pending data. If data is found and
-  // exceeds the configured payload limit, reject with 413.
-  // For SSL builds we cannot reliably peek the decrypted application bytes,
-  // so keep the original behaviour.
+  // RFC 9112 §6: no Transfer-Encoding and no Content-Length means no body.
+  // For non-SSL builds we still scan non-persistent connections for stray
+  // body bytes so the payload limit is enforced (413). On keep-alive,
+  // pending bytes may be the next request (issue #2450), so skip.
 #if !defined(CPPHTTPLIB_SSL_ENABLED)
   if (!req.has_header("Content-Length") &&
       !detail::is_chunked_transfer_encoding(req.headers)) {
-    // Only check if payload_max_length is set to a finite value
-    if (payload_max_length_ > 0 &&
+    if (!detail::is_connection_persistent(req) && payload_max_length_ > 0 &&
         payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
-      // Check if there is data already buffered in the stream (read during
-      // header parsing) or pending on the socket. Use a non-blocking socket
-      // check to avoid deadlock when the client sends no body.
-      bool has_data = strm.is_readable();
+      auto has_data = strm.is_readable();
       if (!has_data) {
-        socket_t s = strm.socket();
+        auto s = strm.socket();
         if (s != INVALID_SOCKET) {
           has_data = detail::select_read(s, 0, 0) > 0;
         }
@@ -12193,15 +12182,14 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     ret = write_response(strm, close_connection, req, res);
   }
 
-  // Drain any unconsumed request body to prevent request smuggling on
-  // keep-alive connections.
-  if (!req.body_consumed_ && detail::expect_content(req)) {
-    int drain_status = 200; // required by read_content signature
+  // Drain any unconsumed framed body to prevent request smuggling on
+  // keep-alive. Without framing there is no body to drain — reading would
+  // consume the next request (issue #2450).
+  if (!req.body_consumed_ && detail::has_framed_body(req)) {
+    int dummy_status;
     if (!detail::read_content(
-            strm, req, payload_max_length_, drain_status, nullptr,
+            strm, req, payload_max_length_, dummy_status, nullptr,
             [](const char *, size_t, size_t, size_t) { return true; }, false)) {
-      // Body exceeds payload limit or read error — close the connection
-      // to prevent leftover bytes from being misinterpreted.
       connection_closed = true;
     }
   }

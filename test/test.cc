@@ -18204,3 +18204,63 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
               response.substr(0, response.find("\r\n")));
   }
 }
+
+// Regression for issue #2450: a DELETE without Content-Length on a
+// keep-alive connection must not let the post-response drain consume the
+// next request's bytes.
+TEST(KeepAliveTest, DeleteWithoutContentLengthDoesNotEatNextRequest) {
+  Server svr;
+
+  std::atomic<int> delete_count(0);
+  svr.Delete("/items/:id", [&](const Request &, Response &res) {
+    delete_count++;
+    res.status = StatusCode::NoContent_204;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/2, 0,
+      /*read_timeout_sec=*/2, 0,
+      /*write_timeout_sec=*/2, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  auto send_request_and_read_response = [&](const std::string &req,
+                                            std::string &out) -> bool {
+    auto sent = send(sock, req.data(), req.size(), 0);
+    if (sent != static_cast<ssize_t>(req.size())) { return false; }
+    char buf[4096];
+    for (;;) {
+      auto n = recv(sock, buf, sizeof(buf), 0);
+      if (n <= 0) { return !out.empty(); }
+      out.append(buf, static_cast<size_t>(n));
+      if (out.find("\r\n\r\n") != std::string::npos) { return true; }
+    }
+  };
+
+  std::string req1 = "DELETE /items/1 HTTP/1.1\r\n"
+                     "Host: localhost\r\n"
+                     "\r\n";
+  std::string resp1;
+  ASSERT_TRUE(send_request_and_read_response(req1, resp1));
+  EXPECT_NE(std::string::npos, resp1.find("HTTP/1.1 204"));
+
+  std::string req2 = "DELETE /items/2 HTTP/1.1\r\n"
+                     "Host: localhost\r\n"
+                     "Connection: close\r\n"
+                     "\r\n";
+  std::string resp2;
+  ASSERT_TRUE(send_request_and_read_response(req2, resp2));
+  EXPECT_NE(std::string::npos, resp2.find("HTTP/1.1 204"));
+
+  EXPECT_EQ(2, delete_count.load());
+}
