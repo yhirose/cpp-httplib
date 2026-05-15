@@ -1597,7 +1597,7 @@ private:
   std::regex regex_;
 };
 
-int close_socket(socket_t sock);
+int close_socket(socket_t sock) noexcept;
 
 ssize_t write_headers(Stream &strm, const Headers &headers);
 
@@ -3027,8 +3027,6 @@ bool parse_range_header(const std::string &s, Ranges &ranges);
 
 bool parse_accept_header(const std::string &s,
                          std::vector<std::string> &content_types);
-
-int close_socket(socket_t sock);
 
 ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags);
 
