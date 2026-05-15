@@ -14251,6 +14251,53 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
 
+// An X-Forwarded-For header whose value parses to zero IP segments must not
+// crash the server (it used to call front() on an empty vector inside
+// get_client_ip). The connection-level remote address must be retained instead.
+static void run_malformed_xff_test(const std::string &xff_value) {
+  Server svr;
+  svr.set_trusted_proxies({"192.0.2.45"});
+
+  std::string observed_remote_addr;
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    res.set_content("ok", "text/plain");
+  });
+
+  int port = 0;
+  thread t = thread([&]() {
+    port = svr.bind_to_any_port(HOST);
+    svr.listen_after_bind();
+  });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/ip", {{"X-Forwarded-For", xff_value}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
+TEST(ForwardedHeadersTest, EmptyXForwardedFor_DoesNotCrash) {
+  run_malformed_xff_test("");
+}
+
+TEST(ForwardedHeadersTest, CommaOnlyXForwardedFor_DoesNotCrash) {
+  run_malformed_xff_test(",");
+}
+
+TEST(ForwardedHeadersTest, MultipleCommasXForwardedFor_DoesNotCrash) {
+  run_malformed_xff_test(", , ,");
+}
+
 #ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
   Server svr;
@@ -18156,4 +18203,64 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
     EXPECT_EQ("HTTP/1.1 400 Bad Request",
               response.substr(0, response.find("\r\n")));
   }
+}
+
+// Regression for issue #2450: a DELETE without Content-Length on a
+// keep-alive connection must not let the post-response drain consume the
+// next request's bytes.
+TEST(KeepAliveTest, DeleteWithoutContentLengthDoesNotEatNextRequest) {
+  Server svr;
+
+  std::atomic<int> delete_count(0);
+  svr.Delete("/items/:id", [&](const Request &, Response &res) {
+    delete_count++;
+    res.status = StatusCode::NoContent_204;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/2, 0,
+      /*read_timeout_sec=*/2, 0,
+      /*write_timeout_sec=*/2, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  auto send_request_and_read_response = [&](const std::string &req,
+                                            std::string &out) -> bool {
+    auto sent = send(sock, req.data(), req.size(), 0);
+    if (sent != static_cast<ssize_t>(req.size())) { return false; }
+    char buf[4096];
+    for (;;) {
+      auto n = recv(sock, buf, sizeof(buf), 0);
+      if (n <= 0) { return !out.empty(); }
+      out.append(buf, static_cast<size_t>(n));
+      if (out.find("\r\n\r\n") != std::string::npos) { return true; }
+    }
+  };
+
+  std::string req1 = "DELETE /items/1 HTTP/1.1\r\n"
+                     "Host: localhost\r\n"
+                     "\r\n";
+  std::string resp1;
+  ASSERT_TRUE(send_request_and_read_response(req1, resp1));
+  EXPECT_NE(std::string::npos, resp1.find("HTTP/1.1 204"));
+
+  std::string req2 = "DELETE /items/2 HTTP/1.1\r\n"
+                     "Host: localhost\r\n"
+                     "Connection: close\r\n"
+                     "\r\n";
+  std::string resp2;
+  ASSERT_TRUE(send_request_and_read_response(req2, resp2));
+  EXPECT_NE(std::string::npos, resp2.find("HTTP/1.1 204"));
+
+  EXPECT_EQ(2, delete_count.load());
 }
