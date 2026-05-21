@@ -16142,6 +16142,11 @@ inline bool enumerate_windows_system_certs(Callback cb) {
 // Enumerate macOS Keychain certificates and call callback with DER data
 template <typename Callback>
 inline bool enumerate_macos_keychain_certs(Callback cb) {
+#if TARGET_OS_IOS && __IPHONE_OS_VERSION_MAX_ALLOWED >= 160000
+  return false;
+#elif TARGET_OS_OSX && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_13_0
+  return false;
+#else
   bool loaded = false;
   CFArrayRef certs = nullptr;
   OSStatus status = SecTrustCopyAnchorCertificates(&certs);
@@ -16162,6 +16167,7 @@ inline bool enumerate_macos_keychain_certs(Callback cb) {
     CFRelease(certs);
   }
   return loaded;
+#endif
 }
 #endif
 
@@ -16504,7 +16510,12 @@ inline bool load_system_certs(ctx_t ctx) {
 
 #elif defined(__APPLE__)
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-  // macOS: Load from Keychain
+#if TARGET_OS_IOS && __IPHONE_OS_VERSION_MAX_ALLOWED >= 160000
+  return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
+#elif TARGET_OS_OSX && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_13_0
+  return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
+#else
+  // macOS/iOS: Load from Keychain
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) return false;
 
@@ -16531,6 +16542,7 @@ inline bool load_system_certs(ctx_t ctx) {
   }
   CFRelease(certs);
   return loaded_any || SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
+#endif
 #else
   return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
 #endif
