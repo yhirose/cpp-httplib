@@ -339,15 +339,25 @@ using socket_t = int;
 #include <utility>
 
 // On macOS with a TLS backend, enable Keychain root certificates by default
-// unless the user explicitly opts out.
+// unless the user explicitly opts out. Not enabled on iOS/tvOS/watchOS since
+// the SecTrustSettings APIs used to enumerate anchor certificates are macOS
+// only; on those platforms the user must provide a CA bundle explicitly.
 #if defined(__APPLE__) && defined(__clang__) &&                                \
     !defined(CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES) &&         \
     (defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                    \
      defined(CPPHTTPLIB_MBEDTLS_SUPPORT) ||                                    \
      defined(CPPHTTPLIB_WOLFSSL_SUPPORT))
+#if TARGET_OS_OSX
 #ifndef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #define CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #endif
+#endif
+#endif
+
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) &&                      \
+    defined(__APPLE__) && !TARGET_OS_OSX
+#error                                                                         \
+    "CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN is only supported on macOS. On iOS/tvOS/watchOS, supply a CA bundle via set_ca_cert_path()."
 #endif
 
 // On Windows, enable Schannel certificate verification by default
@@ -382,7 +392,7 @@ using socket_t = int;
 #endif // _WIN32
 
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#if TARGET_OS_MAC
+#if TARGET_OS_OSX
 #include <Security/Security.h>
 #endif
 #endif
@@ -430,7 +440,7 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#if TARGET_OS_MAC
+#if TARGET_OS_OSX
 #include <Security/Security.h>
 #endif
 #endif
@@ -473,7 +483,7 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#if TARGET_OS_MAC
+#if TARGET_OS_OSX
 #include <Security/Security.h>
 #endif
 #endif
