@@ -339,15 +339,25 @@ using socket_t = int;
 #include <utility>
 
 // On macOS with a TLS backend, enable Keychain root certificates by default
-// unless the user explicitly opts out.
+// unless the user explicitly opts out. Not enabled on iOS/tvOS/watchOS since
+// the SecTrustSettings APIs used to enumerate anchor certificates are macOS
+// only; on those platforms the user must provide a CA bundle explicitly.
 #if defined(__APPLE__) && defined(__clang__) &&                                \
     !defined(CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES) &&         \
     (defined(CPPHTTPLIB_OPENSSL_SUPPORT) ||                                    \
      defined(CPPHTTPLIB_MBEDTLS_SUPPORT) ||                                    \
      defined(CPPHTTPLIB_WOLFSSL_SUPPORT))
+#if TARGET_OS_OSX
 #ifndef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #define CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 #endif
+#endif
+#endif
+
+#if defined(CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN) &&                      \
+    defined(__APPLE__) && !TARGET_OS_OSX
+#error                                                                         \
+    "CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN is only supported on macOS. On iOS/tvOS/watchOS, supply a CA bundle via set_ca_cert_path()."
 #endif
 
 // On Windows, enable Schannel certificate verification by default
@@ -382,7 +392,7 @@ using socket_t = int;
 #endif // _WIN32
 
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#if TARGET_OS_MAC
+#if TARGET_OS_OSX
 #include <Security/Security.h>
 #endif
 #endif
@@ -430,7 +440,7 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#if TARGET_OS_MAC
+#if TARGET_OS_OSX
 #include <Security/Security.h>
 #endif
 #endif
@@ -473,7 +483,7 @@ using socket_t = int;
 #endif
 #endif // _WIN32
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-#if TARGET_OS_MAC
+#if TARGET_OS_OSX
 #include <Security/Security.h>
 #endif
 #endif
@@ -16143,9 +16153,18 @@ inline bool enumerate_windows_system_certs(Callback cb) {
 template <typename Callback>
 inline bool enumerate_macos_keychain_certs(Callback cb) {
   bool loaded = false;
-  CFArrayRef certs = nullptr;
-  OSStatus status = SecTrustCopyAnchorCertificates(&certs);
-  if (status == errSecSuccess && certs) {
+  const SecTrustSettingsDomain domains[] = {
+      kSecTrustSettingsDomainSystem,
+      kSecTrustSettingsDomainAdmin,
+      kSecTrustSettingsDomainUser,
+  };
+  for (auto domain : domains) {
+    CFArrayRef certs = nullptr;
+    OSStatus status = SecTrustSettingsCopyCertificates(domain, &certs);
+    if (status != errSecSuccess || !certs) {
+      if (certs) CFRelease(certs);
+      continue;
+    }
     CFIndex count = CFArrayGetCount(certs);
     for (CFIndex i = 0; i < count; i++) {
       SecCertificateRef cert =
@@ -16508,28 +16527,36 @@ inline bool load_system_certs(ctx_t ctx) {
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) return false;
 
-  CFArrayRef certs = nullptr;
-  if (SecTrustCopyAnchorCertificates(&certs) != errSecSuccess || !certs) {
-    return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
-  }
-
   bool loaded_any = false;
-  auto count = CFArrayGetCount(certs);
-  for (CFIndex i = 0; i < count; i++) {
-    auto cert = reinterpret_cast<SecCertificateRef>(
-        const_cast<void *>(CFArrayGetValueAtIndex(certs, i)));
-    CFDataRef der = SecCertificateCopyData(cert);
-    if (der) {
-      const unsigned char *data = CFDataGetBytePtr(der);
-      auto x509 = d2i_X509(nullptr, &data, CFDataGetLength(der));
-      if (x509) {
-        if (X509_STORE_add_cert(store, x509) == 1) { loaded_any = true; }
-        X509_free(x509);
-      }
-      CFRelease(der);
+  const SecTrustSettingsDomain domains[] = {
+      kSecTrustSettingsDomainSystem,
+      kSecTrustSettingsDomainAdmin,
+      kSecTrustSettingsDomainUser,
+  };
+  for (auto domain : domains) {
+    CFArrayRef certs = nullptr;
+    if (SecTrustSettingsCopyCertificates(domain, &certs) != errSecSuccess ||
+        !certs) {
+      if (certs) CFRelease(certs);
+      continue;
     }
+    auto count = CFArrayGetCount(certs);
+    for (CFIndex i = 0; i < count; i++) {
+      auto cert = reinterpret_cast<SecCertificateRef>(
+          const_cast<void *>(CFArrayGetValueAtIndex(certs, i)));
+      CFDataRef der = SecCertificateCopyData(cert);
+      if (der) {
+        const unsigned char *data = CFDataGetBytePtr(der);
+        auto x509 = d2i_X509(nullptr, &data, CFDataGetLength(der));
+        if (x509) {
+          if (X509_STORE_add_cert(store, x509) == 1) { loaded_any = true; }
+          X509_free(x509);
+        }
+        CFRelease(der);
+      }
+    }
+    CFRelease(certs);
   }
-  CFRelease(certs);
   return loaded_any || SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
 #else
   return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;

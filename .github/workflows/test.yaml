@@ -250,6 +250,54 @@ jobs:
       - name: build and run ThreadPool test
         run: cd test && make test_thread_pool && ./test_thread_pool
 
+  ios-parse-check:
+    runs-on: macos-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
+    name: ios header parse check (not officially supported)
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install OpenSSL headers
+        run: brew install openssl@3
+      - name: verify header parses on iOS target
+        run: |
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          OPENSSL_INC=$(brew --prefix openssl@3)/include
+          echo "Using iOS SDK: $IOS_SDK"
+          echo '#include "httplib.h"' | clang++ \
+            -isysroot "$IOS_SDK" \
+            -target arm64-apple-ios16.0 \
+            -std=c++11 \
+            -DCPPHTTPLIB_OPENSSL_SUPPORT \
+            -I"$OPENSSL_INC" \
+            -I. -Wall -Wextra \
+            -fsyntax-only -x c++ -
+      - name: verify CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN is rejected on iOS
+        run: |
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          OPENSSL_INC=$(brew --prefix openssl@3)/include
+          out=$(echo '#include "httplib.h"' | clang++ \
+            -isysroot "$IOS_SDK" \
+            -target arm64-apple-ios16.0 \
+            -std=c++11 \
+            -DCPPHTTPLIB_OPENSSL_SUPPORT \
+            -DCPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN \
+            -I"$OPENSSL_INC" \
+            -I. \
+            -fsyntax-only -x c++ - 2>&1 || true)
+          if echo "$out" | grep -q "only supported on macOS"; then
+            echo "OK: #error fired as expected"
+          else
+            echo "FAIL: expected #error did not fire"
+            echo "--- compiler output ---"
+            echo "$out"
+            exit 1
+          fi
+
   windows:
     runs-on: windows-latest
     if: >
