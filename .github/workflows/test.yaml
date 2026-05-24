@@ -120,6 +120,73 @@ jobs:
       - name: build and run ThreadPool test
         run: cd test && make test_thread_pool && ./test_thread_pool
 
+  # BoringSSL is Google's fork of OpenSSL. It has no API stability guarantee
+  # and is not packaged by distros, so we build it from source. cpp-httplib
+  # treats it as an OpenSSL backend variant via the OPENSSL_IS_BORINGSSL
+  # macro (see httplib.h). This job is best-effort: continue-on-error keeps
+  # upstream API drift from blocking PRs while still surfacing breakage.
+  ubuntu-boringssl:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    continue-on-error: true
+    name: ubuntu (boringssl, best-effort)
+    env:
+      # Tracking master keeps us honest about upstream churn. If breakage
+      # becomes routine, pin a specific SHA here and update intentionally.
+      BORINGSSL_REF: master
+      BORINGSSL_PREFIX: ${{ github.workspace }}/boringssl-install
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install common libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
+      - name: resolve BoringSSL commit
+        id: boringssl-rev
+        run: |
+          sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
+          if [ -z "$sha" ]; then
+            echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${BORINGSSL_REF} -> ${sha}"
+      - name: cache BoringSSL build
+        id: boringssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BORINGSSL_PREFIX }}
+          key: boringssl-${{ runner.os }}-${{ steps.boringssl-rev.outputs.sha }}
+      - name: build BoringSSL
+        if: steps.boringssl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          git clone https://boringssl.googlesource.com/boringssl boringssl
+          cd boringssl
+          git checkout "${{ steps.boringssl-rev.outputs.sha }}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="${BORINGSSL_PREFIX}"
+          cmake --build build -j"$(nproc)" --target install
+      - name: build and run tests (BoringSSL)
+        # Override OPENSSL_SUPPORT to point the existing OpenSSL Makefile path
+        # at BoringSSL's prefix. BoringSSL defines OPENSSL_IS_BORINGSSL in
+        # <openssl/base.h>, which httplib.h uses to switch on API differences.
+        run: |
+          cd test
+          BORINGSSL_FLAGS="-DCPPHTTPLIB_OPENSSL_SUPPORT -I${BORINGSSL_PREFIX}/include -L${BORINGSSL_PREFIX}/lib -lssl -lcrypto -lpthread"
+          make test_split OPENSSL_SUPPORT="${BORINGSSL_FLAGS}"
+          make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}"
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+
   # Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
   # On Linux/glibc, getaddrinfo_with_timeout() schedules an asynchronous
   # DNS lookup with getaddrinfo_a(GAI_NOWAIT) using a stack-local gaicb.
