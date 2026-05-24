@@ -135,9 +135,9 @@ jobs:
     continue-on-error: true
     name: ubuntu (boringssl, best-effort)
     env:
-      # Tracking master keeps us honest about upstream churn. If breakage
+      # Tracking HEAD keeps us honest about upstream churn. If breakage
       # becomes routine, pin a specific SHA here and update intentionally.
-      BORINGSSL_REF: master
+      BORINGSSL_REF: HEAD
       BORINGSSL_PREFIX: ${{ github.workspace }}/boringssl-install
     steps:
       - name: checkout
