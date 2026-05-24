@@ -178,7 +178,8 @@ jobs:
       - name: build and run tests (BoringSSL)
         # Override OPENSSL_SUPPORT to point the existing OpenSSL Makefile path
         # at BoringSSL's prefix. BoringSSL defines OPENSSL_IS_BORINGSSL in
-        # <openssl/base.h>, which httplib.h uses to switch on API differences.
+        # <openssl/base.h>, which httplib.h and test.cc use to switch on API
+        # differences (e.g. SAN-only hostname verification, no CN fallback).
         #
         # BoringSSL's public headers (<openssl/stack.h>) use std::enable_if_t,
         # so consumers must compile with C++14 or later. cpp-httplib itself
@@ -192,12 +193,64 @@ jobs:
           make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
-          # BoringSSL intentionally dropped CN-based hostname verification
-          # (RFC 6125 §6.4.4 deprecates falling back from SAN to CN). The
-          # TlsVerifyHostname test asserts CN matching, so it can never
-          # pass under BoringSSL — exclude it here rather than branching
-          # the test. A follow-up may make the test backend-aware.
-          GTEST_FILTER: "-*_Online:SSLClientServerTest.TlsVerifyHostname"
+
+  # macOS counterpart of the BoringSSL job. Same best-effort posture; the
+  # extra framework links cover the macOS Keychain integration that
+  # httplib.h auto-enables for any TLS backend on macOS.
+  macos-boringssl:
+    runs-on: macos-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
+    continue-on-error: true
+    name: macos (boringssl, best-effort)
+    env:
+      BORINGSSL_REF: HEAD
+      BORINGSSL_PREFIX: ${{ github.workspace }}/boringssl-install
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: resolve BoringSSL commit
+        id: boringssl-rev
+        run: |
+          sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
+          if [ -z "$sha" ]; then
+            echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${BORINGSSL_REF} -> ${sha}"
+      - name: cache BoringSSL build
+        id: boringssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BORINGSSL_PREFIX }}
+          key: boringssl-${{ runner.os }}-${{ steps.boringssl-rev.outputs.sha }}
+      - name: build BoringSSL
+        if: steps.boringssl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          git clone https://boringssl.googlesource.com/boringssl boringssl
+          cd boringssl
+          git checkout "${{ steps.boringssl-rev.outputs.sha }}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="${BORINGSSL_PREFIX}"
+          cmake --build build -j"$(sysctl -n hw.ncpu)" --target install
+      - name: build and run tests (BoringSSL)
+        run: |
+          cd test
+          # CoreFoundation/Security frameworks satisfy the Keychain integration
+          # auto-enabled in httplib.h for macOS TLS builds.
+          BORINGSSL_FLAGS="-DCPPHTTPLIB_OPENSSL_SUPPORT -I${BORINGSSL_PREFIX}/include -L${BORINGSSL_PREFIX}/lib -lssl -lcrypto -framework CoreFoundation -framework Security"
+          make test_split OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+          make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
 
   # Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
   # On Linux/glibc, getaddrinfo_with_timeout() schedules an asynchronous

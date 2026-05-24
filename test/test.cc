@@ -10673,8 +10673,20 @@ TEST(SSLClientServerTest, TlsVerifyHostname) {
       << "Verify callback should have been called";
 
   // CN="Common Name" should match our test certificate
+  //
+  // BoringSSL intentionally drops CN-based hostname matching per RFC 6125
+  // §6.4.4 — only SubjectAltName is consulted. Other backends (OpenSSL,
+  // MbedTLS, wolfSSL) still honor the CN fallback, so flip the expectation
+  // for BoringSSL builds. OPENSSL_IS_BORINGSSL is defined by BoringSSL's
+  // <openssl/base.h>, which is included transitively when
+  // CPPHTTPLIB_OPENSSL_SUPPORT is set against a BoringSSL install.
+#if defined(OPENSSL_IS_BORINGSSL)
+  EXPECT_FALSE(verify_result_cn)
+      << "BoringSSL should reject CN-based hostname matching (SAN-only)";
+#else
   EXPECT_TRUE(verify_result_cn)
       << "verify_hostname should match 'Common Name' (certificate CN)";
+#endif
 
   // Wrong hostname should not match
   EXPECT_FALSE(verify_result_wrong)
