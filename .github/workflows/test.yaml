@@ -136,7 +136,8 @@ jobs:
     name: ubuntu (boringssl, best-effort)
     env:
       # Tracking HEAD keeps us honest about upstream churn. If breakage
-      # becomes routine, pin a specific SHA here and update intentionally.
+      # becomes routine, replace HEAD with a 40-char commit SHA; the
+      # resolve step uses the SHA directly when it matches that shape.
       BORINGSSL_REF: HEAD
       BORINGSSL_PREFIX: ${{ github.workspace }}/boringssl-install
     steps:
@@ -148,14 +149,22 @@ jobs:
           sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
       - name: resolve BoringSSL commit
         id: boringssl-rev
+        # Accept either a ref name (resolved via git ls-remote) or a full
+        # 40-char SHA used directly. ls-remote does not list arbitrary
+        # commit SHAs, so pinning requires the second path.
         run: |
-          sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
-          if [ -z "$sha" ]; then
-            echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
-            exit 1
+          if [[ "${BORINGSSL_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            sha="${BORINGSSL_REF}"
+            echo "Using pinned BoringSSL SHA: ${sha}"
+          else
+            sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
+            if [ -z "$sha" ]; then
+              echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
+              exit 1
+            fi
+            echo "Resolved ${BORINGSSL_REF} -> ${sha}"
           fi
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "Resolved ${BORINGSSL_REF} -> ${sha}"
       - name: cache BoringSSL build
         id: boringssl-cache
         uses: actions/cache@v4
@@ -214,14 +223,22 @@ jobs:
         uses: actions/checkout@v4
       - name: resolve BoringSSL commit
         id: boringssl-rev
+        # Accept either a ref name (resolved via git ls-remote) or a full
+        # 40-char SHA used directly. ls-remote does not list arbitrary
+        # commit SHAs, so pinning requires the second path.
         run: |
-          sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
-          if [ -z "$sha" ]; then
-            echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
-            exit 1
+          if [[ "${BORINGSSL_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            sha="${BORINGSSL_REF}"
+            echo "Using pinned BoringSSL SHA: ${sha}"
+          else
+            sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
+            if [ -z "$sha" ]; then
+              echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
+              exit 1
+            fi
+            echo "Resolved ${BORINGSSL_REF} -> ${sha}"
           fi
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "Resolved ${BORINGSSL_REF} -> ${sha}"
       - name: cache BoringSSL build
         id: boringssl-cache
         uses: actions/cache@v4
