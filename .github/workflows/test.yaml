@@ -179,11 +179,17 @@ jobs:
         # Override OPENSSL_SUPPORT to point the existing OpenSSL Makefile path
         # at BoringSSL's prefix. BoringSSL defines OPENSSL_IS_BORINGSSL in
         # <openssl/base.h>, which httplib.h uses to switch on API differences.
+        #
+        # BoringSSL's public headers (<openssl/stack.h>) use std::enable_if_t,
+        # so consumers must compile with C++14 or later. cpp-httplib itself
+        # supports C++11, but anyone pairing it with BoringSSL inherits this
+        # constraint. EXTRA_CXXFLAGS appends after the Makefile's -std=c++11
+        # and the later flag wins.
         run: |
           cd test
           BORINGSSL_FLAGS="-DCPPHTTPLIB_OPENSSL_SUPPORT -I${BORINGSSL_PREFIX}/include -L${BORINGSSL_PREFIX}/lib -lssl -lcrypto -lpthread"
-          make test_split OPENSSL_SUPPORT="${BORINGSSL_FLAGS}"
-          make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}"
+          make test_split OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+          make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
 
