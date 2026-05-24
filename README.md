@@ -73,6 +73,9 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 > [!NOTE]
 > **Mbed TLS / wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable.
 
+> [!NOTE]
+> **BoringSSL (best-effort):** BoringSSL builds under `CPPHTTPLIB_OPENSSL_SUPPORT` and is exercised by CI against current upstream. Because BoringSSL does not guarantee API stability, support is best-effort — breakage may occasionally land. Two known behavioral differences vs OpenSSL: (1) BoringSSL's public headers require C++14 or later, so consumers must compile accordingly; (2) hostname verification is SAN-only per RFC 6125 §6.4.4 (no CN fallback).
+
 ```c++
 // Use either OpenSSL, Mbed TLS, or wolfSSL
 #define CPPHTTPLIB_OPENSSL_SUPPORT   // or CPPHTTPLIB_MBEDTLS_SUPPORT or CPPHTTPLIB_WOLFSSL_SUPPORT

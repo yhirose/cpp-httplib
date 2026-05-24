@@ -120,6 +120,155 @@ jobs:
       - name: build and run ThreadPool test
         run: cd test && make test_thread_pool && ./test_thread_pool
 
+  # BoringSSL is Google's fork of OpenSSL. It has no API stability guarantee
+  # and is not packaged by distros, so we build it from source. cpp-httplib
+  # treats it as an OpenSSL backend variant via the OPENSSL_IS_BORINGSSL
+  # macro (see httplib.h). This job is best-effort: continue-on-error keeps
+  # upstream API drift from blocking PRs while still surfacing breakage.
+  ubuntu-boringssl:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    continue-on-error: true
+    name: ubuntu (boringssl, best-effort)
+    env:
+      # Tracking HEAD keeps us honest about upstream churn. If breakage
+      # becomes routine, replace HEAD with a 40-char commit SHA; the
+      # resolve step uses the SHA directly when it matches that shape.
+      BORINGSSL_REF: HEAD
+      BORINGSSL_PREFIX: ${{ github.workspace }}/boringssl-install
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install common libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
+      - name: resolve BoringSSL commit
+        id: boringssl-rev
+        # Accept either a ref name (resolved via git ls-remote) or a full
+        # 40-char SHA used directly. ls-remote does not list arbitrary
+        # commit SHAs, so pinning requires the second path.
+        run: |
+          if [[ "${BORINGSSL_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            sha="${BORINGSSL_REF}"
+            echo "Using pinned BoringSSL SHA: ${sha}"
+          else
+            sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
+            if [ -z "$sha" ]; then
+              echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
+              exit 1
+            fi
+            echo "Resolved ${BORINGSSL_REF} -> ${sha}"
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+      - name: cache BoringSSL build
+        id: boringssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BORINGSSL_PREFIX }}
+          key: boringssl-${{ runner.os }}-${{ steps.boringssl-rev.outputs.sha }}
+      - name: build BoringSSL
+        if: steps.boringssl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          git clone https://boringssl.googlesource.com/boringssl boringssl
+          cd boringssl
+          git checkout "${{ steps.boringssl-rev.outputs.sha }}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="${BORINGSSL_PREFIX}"
+          cmake --build build -j"$(nproc)" --target install
+      - name: build and run tests (BoringSSL)
+        # Override OPENSSL_SUPPORT to point the existing OpenSSL Makefile path
+        # at BoringSSL's prefix. BoringSSL defines OPENSSL_IS_BORINGSSL in
+        # <openssl/base.h>, which httplib.h and test.cc use to switch on API
+        # differences (e.g. SAN-only hostname verification, no CN fallback).
+        #
+        # BoringSSL's public headers (<openssl/stack.h>) use std::enable_if_t,
+        # so consumers must compile with C++14 or later. cpp-httplib itself
+        # supports C++11, but anyone pairing it with BoringSSL inherits this
+        # constraint. EXTRA_CXXFLAGS appends after the Makefile's -std=c++11
+        # and the later flag wins.
+        run: |
+          cd test
+          BORINGSSL_FLAGS="-DCPPHTTPLIB_OPENSSL_SUPPORT -I${BORINGSSL_PREFIX}/include -L${BORINGSSL_PREFIX}/lib -lssl -lcrypto -lpthread"
+          make test_split OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+          make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+
+  # macOS counterpart of the BoringSSL job. Same best-effort posture; the
+  # extra framework links cover the macOS Keychain integration that
+  # httplib.h auto-enables for any TLS backend on macOS.
+  macos-boringssl:
+    runs-on: macos-latest
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_macos == 'true')
+    continue-on-error: true
+    name: macos (boringssl, best-effort)
+    env:
+      BORINGSSL_REF: HEAD
+      BORINGSSL_PREFIX: ${{ github.workspace }}/boringssl-install
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: resolve BoringSSL commit
+        id: boringssl-rev
+        # Accept either a ref name (resolved via git ls-remote) or a full
+        # 40-char SHA used directly. ls-remote does not list arbitrary
+        # commit SHAs, so pinning requires the second path.
+        run: |
+          if [[ "${BORINGSSL_REF}" =~ ^[0-9a-f]{40}$ ]]; then
+            sha="${BORINGSSL_REF}"
+            echo "Using pinned BoringSSL SHA: ${sha}"
+          else
+            sha=$(git ls-remote https://boringssl.googlesource.com/boringssl "${BORINGSSL_REF}" | awk '{print $1}')
+            if [ -z "$sha" ]; then
+              echo "Failed to resolve BoringSSL ref ${BORINGSSL_REF}" >&2
+              exit 1
+            fi
+            echo "Resolved ${BORINGSSL_REF} -> ${sha}"
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+      - name: cache BoringSSL build
+        id: boringssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BORINGSSL_PREFIX }}
+          key: boringssl-${{ runner.os }}-${{ steps.boringssl-rev.outputs.sha }}
+      - name: build BoringSSL
+        if: steps.boringssl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          git clone https://boringssl.googlesource.com/boringssl boringssl
+          cd boringssl
+          git checkout "${{ steps.boringssl-rev.outputs.sha }}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="${BORINGSSL_PREFIX}"
+          cmake --build build -j"$(sysctl -n hw.ncpu)" --target install
+      - name: build and run tests (BoringSSL)
+        run: |
+          cd test
+          # CoreFoundation/Security frameworks satisfy the Keychain integration
+          # auto-enabled in httplib.h for macOS TLS builds.
+          BORINGSSL_FLAGS="-DCPPHTTPLIB_OPENSSL_SUPPORT -I${BORINGSSL_PREFIX}/include -L${BORINGSSL_PREFIX}/lib -lssl -lcrypto -framework CoreFoundation -framework Security"
+          make test_split OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+          make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+
   # Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
   # On Linux/glibc, getaddrinfo_with_timeout() schedules an asynchronous
   # DNS lookup with getaddrinfo_a(GAI_NOWAIT) using a stack-local gaicb.
