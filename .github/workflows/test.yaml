@@ -192,6 +192,12 @@ jobs:
           make test_openssl_parallel OPENSSL_SUPPORT="${BORINGSSL_FLAGS}" EXTRA_CXXFLAGS="-std=c++17"
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+          # BoringSSL intentionally dropped CN-based hostname verification
+          # (RFC 6125 §6.4.4 deprecates falling back from SAN to CN). The
+          # TlsVerifyHostname test asserts CN matching, so it can never
+          # pass under BoringSSL — exclude it here rather than branching
+          # the test. A follow-up may make the test backend-aware.
+          GTEST_FILTER: "-*_Online:SSLClientServerTest.TlsVerifyHostname"
 
   # Reproducer for https://github.com/yhirose/cpp-httplib/issues/2431.
   # On Linux/glibc, getaddrinfo_with_timeout() schedules an asynchronous
