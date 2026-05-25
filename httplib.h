@@ -2310,6 +2310,12 @@ protected:
   bool write_content_with_provider(Stream &strm, const Request &req,
                                    Error &error) const;
 
+  // Invalidate the keep-alive socket after a configuration change that
+  // affects which endpoint the next request should target (proxy/no_proxy).
+  // Safe to call regardless of in-flight state — falls back to deferred
+  // close via socket_should_be_closed_when_request_is_done_.
+  void invalidate_keep_alive_socket();
+
   void copy_settings(const ClientImpl &rhs);
 
   void output_log(const Request &req, const Response &res) const;
@@ -2406,8 +2412,7 @@ private:
                               const std::string &host, int port, Request &req,
                               Response &res, const std::string &path,
                               const std::string &location, Error &error);
-  template <typename ClientType>
-  void setup_redirect_client(ClientType &client, const std::string &next_host);
+  template <typename ClientType> void setup_redirect_client(ClientType &client);
   bool handle_request(Stream &strm, Request &req, Response &res,
                       bool close_connection, Error &error);
   std::unique_ptr<Response> send_with_content_provider_and_receiver(
@@ -13316,7 +13321,7 @@ inline bool ClientImpl::create_redirect_client(
     SSLClient redirect_client(host, port);
 
     // Setup basic client configuration first
-    setup_redirect_client(redirect_client, host);
+    setup_redirect_client(redirect_client);
 
     redirect_client.enable_server_certificate_verification(
         server_certificate_verification_);
@@ -13350,7 +13355,7 @@ inline bool ClientImpl::create_redirect_client(
     ClientImpl redirect_client(host, port);
 
     // Setup client with robust configuration
-    setup_redirect_client(redirect_client, host);
+    setup_redirect_client(redirect_client);
 
     // Execute the redirect
     return detail::redirect(redirect_client, req, res, path, location, error);
@@ -13360,8 +13365,7 @@ inline bool ClientImpl::create_redirect_client(
 // New method for robust client setup (based on basic_manual_redirect.cpp
 // logic)
 template <typename ClientType>
-inline void ClientImpl::setup_redirect_client(ClientType &client,
-                                              const std::string &next_host) {
+inline void ClientImpl::setup_redirect_client(ClientType &client) {
   // Copy basic settings first
   client.set_connection_timeout(connection_timeout_sec_);
   client.set_read_timeout(read_timeout_sec_, read_timeout_usec_);
@@ -13379,16 +13383,17 @@ inline void ClientImpl::setup_redirect_client(ClientType &client,
   // host. This function is only called for cross-host redirects; same-host
   // redirects are handled directly in ClientImpl::redirect().
 
-  // The bypass list must follow across redirects so it is re-evaluated
-  // against the redirect target. Without this, a redirect to a NO_PROXY
-  // host would still go through the proxy (and carry Proxy-Authorization).
+  // Copy the full proxy configuration (including the bypass list)
+  // unconditionally. The per-target proxy/bypass decision is re-evaluated at
+  // send time by is_proxy_enabled_for_host(host_). Skipping the proxy copy
+  // when next_host happens to be bypassed would permanently strand the proxy
+  // configuration: a subsequent redirect from the new client to a
+  // non-bypassed host would have no proxy_host_ to fall back on and would
+  // silently go direct.
   client.no_proxy_entries_ = no_proxy_entries_;
-
-  if (is_proxy_enabled_for_host(next_host)) {
-    // First set proxy host and port
+  if (!proxy_host_.empty() && proxy_port_ != -1) {
     client.set_proxy(proxy_host_, proxy_port_);
 
-    // Then set proxy authentication (order matters!)
     if (!proxy_basic_auth_username_.empty()) {
       client.set_proxy_basic_auth(proxy_basic_auth_username_,
                                   proxy_basic_auth_password_);
@@ -14820,6 +14825,20 @@ inline void ClientImpl::stop() {
   close_socket(socket_);
 }
 
+inline void ClientImpl::invalidate_keep_alive_socket() {
+  std::lock_guard<std::mutex> guard(socket_mutex_);
+  if (!socket_.is_open()) { return; }
+  if (socket_requests_in_flight_ > 0) {
+    // A request is currently using the socket — defer the close so the
+    // in-flight thread completes cleanly and the next request reconnects.
+    socket_should_be_closed_when_request_is_done_ = true;
+    return;
+  }
+  shutdown_ssl(socket_, true);
+  shutdown_socket(socket_);
+  close_socket(socket_);
+}
+
 inline std::string ClientImpl::host() const { return host_; }
 
 inline int ClientImpl::port() const { return port_; }
@@ -14908,6 +14927,9 @@ inline void ClientImpl::set_interface(const std::string &intf) {
 inline void ClientImpl::set_proxy(const std::string &host, int port) {
   proxy_host_ = host;
   proxy_port_ = port;
+  // Any keep-alive socket may be pointed at the previous proxy (or at the
+  // origin if proxy was unset); drop it so the next request reconnects.
+  invalidate_keep_alive_socket();
 }
 
 inline void ClientImpl::set_proxy_basic_auth(const std::string &username,
@@ -14932,6 +14954,10 @@ inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
     }
   }
   no_proxy_entries_ = std::move(parsed);
+  // The bypass decision may have flipped for the keep-alive target; drop the
+  // existing socket so the next request reconnects to the correct endpoint
+  // (proxy vs origin) and emits the matching request-line form.
+  invalidate_keep_alive_socket();
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED

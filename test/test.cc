@@ -18758,3 +18758,132 @@ TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
       << "proxy digest credentials must never reach a bypassed origin";
 }
 #endif
+
+TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
+  // A → (via proxy) → 302 → B (NO_PROXY-matched, direct) → 302 → C (must
+  // re-engage the proxy). With the bug, the redirect client built for B is
+  // created without proxy_host_ because is_proxy_enabled_for_host(B) is
+  // false; the subsequent B→C redirect then loses the proxy entirely and
+  // either hits DNS (and fails on an unresolvable name) or quietly goes
+  // direct to a host the user expected to be proxied.
+
+  std::atomic<int> proxy_hits{0};
+  std::atomic<int> bypass_hits{0};
+  std::atomic<bool> proxy_saw_c_url{false};
+
+  Server proxy_mock;
+  Server bypass_server;
+
+  int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
+  int bypass_port = bypass_server.bind_to_any_port("127.0.0.1");
+
+  proxy_mock.Get(".*", [&](const Request &req, Response &res) {
+    proxy_hits++;
+    if (req.path.find("/start") != std::string::npos) {
+      res.status = 302;
+      res.set_header("Location", "http://localhost:" +
+                                     std::to_string(bypass_port) + "/middle");
+      return;
+    }
+    if (req.path.find("/end") != std::string::npos) {
+      proxy_saw_c_url = true;
+      res.set_content("c-via-proxy", "text/plain");
+      return;
+    }
+    res.set_content("unexpected", "text/plain");
+  });
+
+  bypass_server.Get(".*", [&](const Request & /*req*/, Response &res) {
+    bypass_hits++;
+    // Redirect to an unresolvable hostname. The final leg can ONLY succeed if
+    // the redirect client still has the proxy configured and goes via it
+    // (absolute-URL form to the proxy, no DNS lookup for public.example).
+    res.status = 302;
+    res.set_header("Location", "http://public.example:80/end");
+  });
+
+  std::thread proxy_thread([&] { proxy_mock.listen_after_bind(); });
+  std::thread bypass_thread([&] { bypass_server.listen_after_bind(); });
+  auto cleanup = detail::scope_exit([&] {
+    proxy_mock.stop();
+    bypass_server.stop();
+    if (proxy_thread.joinable()) { proxy_thread.join(); }
+    if (bypass_thread.joinable()) { bypass_thread.join(); }
+  });
+  proxy_mock.wait_until_ready();
+  bypass_server.wait_until_ready();
+
+  Client cli("public.example", 80);
+  cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", proxy_port);
+  cli.set_no_proxy({"localhost"});
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/start");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("c-via-proxy", res->body)
+      << "final leg must have been served by the proxy, not lost to DNS";
+  EXPECT_GE(proxy_hits.load(), 2) << "proxy must be hit twice (start + end)";
+  EXPECT_GE(bypass_hits.load(), 1) << "bypassed middle leg must go direct";
+  EXPECT_TRUE(proxy_saw_c_url.load())
+      << "final leg must be the one served by the proxy";
+}
+
+TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
+  // Toggling NO_PROXY mid-session with keep-alive enabled must drop the
+  // existing socket. Without that, the next request reuses a socket pointed
+  // at the previous endpoint (proxy vs origin) and write_request emits the
+  // wrong request-line form (absolute vs relative URL).
+
+  std::atomic<int> proxy_hits{0};
+  std::atomic<int> target_hits{0};
+
+  Server proxy_mock;
+  Server target;
+
+  int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
+  int target_port = target.bind_to_any_port("127.0.0.1");
+
+  proxy_mock.Get(".*", [&](const Request & /*req*/, Response &res) {
+    proxy_hits++;
+    res.set_content("via-proxy", "text/plain");
+  });
+  target.Get(".*", [&](const Request & /*req*/, Response &res) {
+    target_hits++;
+    res.set_content("direct", "text/plain");
+  });
+
+  std::thread proxy_thread([&] { proxy_mock.listen_after_bind(); });
+  std::thread target_thread([&] { target.listen_after_bind(); });
+  auto cleanup = detail::scope_exit([&] {
+    proxy_mock.stop();
+    target.stop();
+    if (proxy_thread.joinable()) { proxy_thread.join(); }
+    if (target_thread.joinable()) { target_thread.join(); }
+  });
+  proxy_mock.wait_until_ready();
+  target.wait_until_ready();
+
+  Client cli("public.example", target_port);
+  cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", proxy_port);
+  cli.set_keep_alive(true);
+
+  auto res1 = cli.Get("/a");
+  ASSERT_TRUE(res1);
+  EXPECT_EQ("via-proxy", res1->body);
+  EXPECT_EQ(1, proxy_hits.load());
+  EXPECT_EQ(0, target_hits.load());
+
+  // Flip to bypass-everything. The next request must reach target directly,
+  // not reuse the keep-alive socket that's connected to the proxy.
+  cli.set_no_proxy({"public.example"});
+
+  auto res2 = cli.Get("/b");
+  ASSERT_TRUE(res2);
+  EXPECT_EQ("direct", res2->body)
+      << "second request must bypass the proxy and reach the target directly";
+  EXPECT_EQ(1, proxy_hits.load()) << "proxy must not see the second request";
+  EXPECT_EQ(1, target_hits.load()) << "target must see exactly one request";
+}
