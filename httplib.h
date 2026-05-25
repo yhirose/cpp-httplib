@@ -13200,10 +13200,12 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
       req.authorization_count_ < 5) {
     auto is_proxy = res.status == StatusCode::ProxyAuthenticationRequired_407;
 
-    // A 407 from a direct (NO_PROXY-bypassed) origin is meaningless and
-    // must not trigger a retry — that would let the origin extract the
-    // user's proxy digest credentials.
-    if (is_proxy && !is_proxy_enabled_for_host(host_)) { return ret; }
+    // Only retry when the 407 actually came from a proxy hop: plain HTTP
+    // through an enabled proxy. HTTPS via CONNECT tunnels the 407 from the
+    // origin (#2457); direct/bypassed origins have no proxy hop at all.
+    if (is_proxy && !(!is_ssl() && is_proxy_enabled_for_host(host_))) {
+      return ret;
+    }
 
     const auto &username =
         is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;

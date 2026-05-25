@@ -18873,3 +18873,180 @@ TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
   EXPECT_EQ(1, proxy_hits.load());
   EXPECT_EQ(1, target_hits.load());
 }
+
+#if defined(CPPHTTPLIB_SSL_ENABLED) && !defined(_WIN32)
+namespace proxy_tunnel_test {
+
+// SSLServer counterpart to no_proxy_test::ScopedServer.
+class ScopedSSLServer {
+public:
+  ScopedSSLServer() : svr_(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE) {
+    port_ = svr_.bind_to_any_port("127.0.0.1");
+  }
+  ~ScopedSSLServer() {
+    svr_.stop();
+    if (th_.joinable()) { th_.join(); }
+  }
+  SSLServer &svr() { return svr_; }
+  int port() const { return port_; }
+  void listen() {
+    th_ = std::thread([this] { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+private:
+  SSLServer svr_;
+  std::thread th_;
+  int port_ = 0;
+};
+
+// Accepts CONNECT, replies 200, byte-forwards to forward_port.
+class ScopedConnectProxy {
+public:
+  explicit ScopedConnectProxy(int forward_port) : forward_port_(forward_port) {
+    listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd_ < 0) { return; }
+    int yes = 1;
+    ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = 0;
+    if (::bind(listen_fd_, reinterpret_cast<sockaddr *>(&a), sizeof(a)) != 0) {
+      return;
+    }
+    socklen_t alen = sizeof(a);
+    if (::getsockname(listen_fd_, reinterpret_cast<sockaddr *>(&a), &alen) !=
+        0) {
+      return;
+    }
+    port_ = ntohs(a.sin_port);
+    if (::listen(listen_fd_, 1) != 0) { return; }
+    th_ = std::thread([this] { run(); });
+  }
+
+  ~ScopedConnectProxy() {
+    stop_ = true;
+    if (listen_fd_ >= 0) {
+      ::shutdown(listen_fd_, SHUT_RDWR);
+      ::close(listen_fd_);
+    }
+    if (th_.joinable()) { th_.join(); }
+  }
+
+  int port() const { return port_; }
+  int connect_hits() const { return connect_hits_.load(); }
+
+private:
+  void run() {
+    while (!stop_.load()) {
+      fd_set rfds;
+      FD_ZERO(&rfds);
+      FD_SET(listen_fd_, &rfds);
+      timeval tv{0, 100 * 1000};
+      int sel = ::select(listen_fd_ + 1, &rfds, nullptr, nullptr, &tv);
+      if (sel <= 0) { continue; }
+
+      int client_fd = ::accept(listen_fd_, nullptr, nullptr);
+      if (client_fd < 0) { continue; }
+
+      std::string req;
+      char buf[2048];
+      while (req.find("\r\n\r\n") == std::string::npos) {
+        ssize_t n = ::recv(client_fd, buf, sizeof(buf), 0);
+        if (n <= 0) { break; }
+        req.append(buf, static_cast<size_t>(n));
+      }
+      if (req.compare(0, 7, "CONNECT") != 0) {
+        ::close(client_fd);
+        continue;
+      }
+      connect_hits_++;
+
+      const char *ok = "HTTP/1.1 200 Connection established\r\n\r\n";
+      ::send(client_fd, ok, std::strlen(ok), 0);
+
+      int origin_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+      sockaddr_in o{};
+      o.sin_family = AF_INET;
+      o.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+      o.sin_port = htons(static_cast<unsigned short>(forward_port_));
+      if (::connect(origin_fd, reinterpret_cast<sockaddr *>(&o), sizeof(o)) !=
+          0) {
+        ::close(client_fd);
+        ::close(origin_fd);
+        continue;
+      }
+
+      auto forward = [](int from, int to) {
+        char b[8192];
+        for (;;) {
+          ssize_t n = ::recv(from, b, sizeof(b), 0);
+          if (n <= 0) { break; }
+          ssize_t off = 0;
+          while (off < n) {
+            ssize_t s = ::send(to, b + off, static_cast<size_t>(n - off), 0);
+            if (s <= 0) {
+              off = n;
+              break;
+            }
+            off += s;
+          }
+        }
+        ::shutdown(to, SHUT_WR);
+      };
+
+      std::thread t1([&] { forward(client_fd, origin_fd); });
+      std::thread t2([&] { forward(origin_fd, client_fd); });
+      t1.join();
+      t2.join();
+      ::close(client_fd);
+      ::close(origin_fd);
+    }
+  }
+
+  int forward_port_ = -1;
+  int listen_fd_ = -1;
+  int port_ = 0;
+  std::thread th_;
+  std::atomic<bool> stop_{false};
+  std::atomic<int> connect_hits_{0};
+};
+
+} // namespace proxy_tunnel_test
+
+TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
+  // Origin inside a CONNECT tunnel replying 407 must not trigger the digest
+  // retry; otherwise proxy creds would be sent to the origin.
+  std::atomic<int> origin_hits{0};
+  std::atomic<bool> origin_saw_proxy_authz{false};
+
+  proxy_tunnel_test::ScopedSSLServer origin;
+  origin.svr().Get(".*", [&](const Request &req, Response &res) {
+    origin_hits++;
+    if (req.has_header("Proxy-Authorization")) {
+      origin_saw_proxy_authz = true;
+    }
+    res.status = StatusCode::ProxyAuthenticationRequired_407;
+    res.set_header("Proxy-Authenticate",
+                   "Digest realm=\"evil\", qop=\"auth\", nonce=\"abc\", "
+                   "algorithm=MD5");
+  });
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  SSLClient cli(HOST, origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_proxy(HOST, proxy.port());
+  cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
+  EXPECT_EQ(1, origin_hits.load());
+  EXPECT_FALSE(origin_saw_proxy_authz.load());
+  EXPECT_EQ(1, proxy.connect_hits());
+}
+#endif
