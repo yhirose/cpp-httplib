@@ -1218,38 +1218,30 @@ Limitations:
 - `set_no_proxy` replaces any previously configured list; there is no
   append API.
 
-#### Read proxy settings from the environment
-
-`set_proxy_from_env` configures the client from proxy-related
-environment variables.
+cpp-httplib does **not** read `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
+itself — this is consistent with `set_ca_cert_path()` and the rest of
+the configuration API. If you want that behavior, parse the variables
+in your application and pass the bypass patterns to `set_no_proxy()`:
 
 ```cpp
-httplib::Client cli("https://api.example.com");
-cli.set_proxy_from_env();
+if (auto *v = std::getenv("no_proxy"); v && *v) {
+  std::vector<std::string> patterns;
+  std::stringstream ss(v);
+  for (std::string item; std::getline(ss, item, ',');) {
+    // trim whitespace as needed
+    if (!item.empty()) { patterns.push_back(std::move(item)); }
+  }
+  cli.set_no_proxy(patterns);
+}
 ```
 
-Variables read:
-
-- `https_proxy` / `HTTPS_PROXY` — used by HTTPS clients (`SSLClient`)
-- `http_proxy` (lowercase only — see security note below) — used by HTTP clients
-- `no_proxy` / `NO_PROXY` — comma-separated list of bypass patterns
-
-Returns `true` if at least one variable was found and applied.
-
 > [!IMPORTANT]
-> The uppercase `HTTP_PROXY` is intentionally ignored to mitigate the
-> "httpoxy" class of bugs ([CVE-2016-5385](https://httpoxy.org/)). In
-> CGI / FastCGI environments the variable name collides with the
-> `HTTP_*` namespace used to expose request headers, allowing a remote
-> attacker to set the proxy URL via the `Proxy:` request header.
-> cpp-httplib follows curl, Go, and Python `requests` in honoring only
-> the lowercase `http_proxy`. `HTTPS_PROXY` and `NO_PROXY` are safe in
-> either case because their names do not begin with `HTTP_`.
-
-> [!NOTE]
-> `set_proxy_from_env` reads `getenv` synchronously. Call it once at
-> startup before issuing any requests; concurrent `setenv` from other
-> threads is undefined.
+> If you also read `HTTP_PROXY` from the environment, prefer the
+> lowercase `http_proxy` only. The uppercase form is poisoned in
+> CGI / FastCGI environments by the `Proxy:` request header
+> ([CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)). `HTTPS_PROXY`
+> and `NO_PROXY` are safe in either case because their names do not
+> begin with `HTTP_`.
 
 ### Range
 

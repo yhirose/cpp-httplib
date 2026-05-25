@@ -69,23 +69,19 @@ Hostname matching is case-insensitive and uses a dot-boundary rule, so an entry 
 
 Malformed entries are silently dropped. Port-specific entries such as `example.com:8080` are not supported (cpp-httplib's other host-keyed APIs are also keyed on hostname only).
 
-## Read proxy settings from the environment
+## Reading proxy settings from the environment
 
-Call `set_proxy_from_env()` at startup to pick up proxy configuration from environment variables.
+cpp-httplib does not read `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` itself. The library's configuration API is explicit by design — `set_ca_cert_path()` is the same way. If you want that behavior, parse the variables in your application and feed them to `set_proxy()` and `set_no_proxy()`.
 
 ```cpp
-httplib::Client cli("https://api.example.com");
-cli.set_proxy_from_env();
+if (auto *v = std::getenv("no_proxy"); v && *v) {
+  std::vector<std::string> patterns;
+  std::stringstream ss(v);
+  for (std::string item; std::getline(ss, item, ',');) {
+    if (!item.empty()) { patterns.push_back(std::move(item)); }
+  }
+  cli.set_no_proxy(patterns);
+}
 ```
 
-Variables read:
-
-- `https_proxy` / `HTTPS_PROXY` — used by HTTPS clients
-- `http_proxy` (**lowercase only**, see below) — used by HTTP clients
-- `no_proxy` / `NO_PROXY` — comma-separated bypass list
-
-Returns `true` if at least one variable was found and applied.
-
-> **Security Note:** The uppercase `HTTP_PROXY` is intentionally **not** read. In CGI/FastCGI environments, the `HTTP_*` namespace is used to expose HTTP request headers, which lets a remote attacker inject an arbitrary proxy URL via the `Proxy:` request header ([CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)). cpp-httplib follows curl, Go, and Python `requests` in honoring only the lowercase `http_proxy`. `HTTPS_PROXY` and `NO_PROXY` are safe in either case because their names do not begin with `HTTP_`.
-
-> **Note:** `set_proxy_from_env()` reads `getenv` synchronously; call it once at startup. Concurrent `setenv` from other threads while this function runs is undefined.
+> **Security Note:** If you also read `HTTP_PROXY` from the environment, prefer the lowercase `http_proxy` only. The uppercase form is poisoned in CGI/FastCGI environments by the `Proxy:` request header ([CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)). `HTTPS_PROXY` and `NO_PROXY` are safe in either case because their names do not begin with `HTTP_`.

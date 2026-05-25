@@ -71,21 +71,17 @@ cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
 
 ## 環境変数からプロキシ設定を読み込む
 
-`set_proxy_from_env()`を呼ぶと、起動時の環境変数からプロキシ設定をまとめて取り込めます。
+cpp-httplib本体は`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`を読みません。設定APIを明示的に保つ方針で、`set_ca_cert_path()`なども同様です。必要なら、アプリ側で環境変数を読んで`set_proxy()`や`set_no_proxy()`に渡します。
 
 ```cpp
-httplib::Client cli("https://api.example.com");
-cli.set_proxy_from_env();
+if (auto *v = std::getenv("no_proxy"); v && *v) {
+  std::vector<std::string> patterns;
+  std::stringstream ss(v);
+  for (std::string item; std::getline(ss, item, ',');) {
+    if (!item.empty()) { patterns.push_back(std::move(item)); }
+  }
+  cli.set_no_proxy(patterns);
+}
 ```
 
-読み込まれる変数:
-
-- `https_proxy` / `HTTPS_PROXY` — HTTPSクライアントが使用
-- `http_proxy`（**小文字のみ**、後述）— HTTPクライアントが使用
-- `no_proxy` / `NO_PROXY` — カンマ区切りのバイパスリスト
-
-少なくとも1つの変数が見つかって適用されたら`true`を返します。
-
-> **Security Note:** 大文字の`HTTP_PROXY`は意図的に**読まれません**。CGI/FastCGI環境では`HTTP_*`という名前空間がHTTPリクエストヘッダーの公開に使われており、攻撃者が`Proxy:`リクエストヘッダーで任意のプロキシURLを差し込めてしまうためです（[CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)）。curl・Go・Python `requests`と同じく、cpp-httplibも小文字の`http_proxy`しか採用しません。`HTTPS_PROXY`や`NO_PROXY`は名前が`HTTP_`で始まらないので、どちらの大文字小文字でも安全です。
-
-> **Note:** `set_proxy_from_env()`は同期的に`getenv`を呼ぶだけなので、起動時に1回呼ぶことを想定しています。他スレッドが同時に`setenv`しているケースは未定義です。
+> **Security Note:** `HTTP_PROXY`をアプリ側で読む場合は、小文字の`http_proxy`だけを採用してください。大文字の方はCGI/FastCGI環境で`Proxy:`リクエストヘッダーから汚染される可能性があります（[CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)）。`HTTPS_PROXY`や`NO_PROXY`は名前が`HTTP_`で始まらないので、どちらの大文字小文字でも安全です。
