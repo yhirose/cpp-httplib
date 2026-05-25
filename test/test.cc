@@ -18497,9 +18497,6 @@ TEST(NoProxyTest, BareIPv6LiteralMatchesIPv6Cidr) {
 }
 
 TEST(NoProxyTest, BracketedIPv6EntryAccepted) {
-  // Users coming from URL syntax naturally write "[::1]"; the entry must
-  // be accepted, not silently dropped (which would otherwise route the
-  // request through the proxy).
   ProxyAndTargetServers s;
   Client cli("::1", s.target_port());
   cli.set_hostname_addr_map({{"::1", "127.0.0.1"}});
@@ -18604,9 +18601,7 @@ TEST(NoProxyTest, MalformedCidrPrefixIsDropped) {
 }
 
 TEST(NoProxyTest, TrailingSlashCidrIsRejected) {
-  // "127.0.0.1/" (empty prefix after the slash) is malformed — must not
-  // be silently narrowed to /32, otherwise a typoed entry quietly turns
-  // into an unintended single-host bypass.
+  // Empty prefix after the slash must be rejected, not silently treated as /32.
   ProxyAndTargetServers s;
   Client cli("127.0.0.1", s.target_port());
   cli.set_proxy("127.0.0.1", s.proxy_port());
@@ -18614,7 +18609,7 @@ TEST(NoProxyTest, TrailingSlashCidrIsRejected) {
 
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
-  EXPECT_GE(s.proxy_hits(), 1) << "trailing-slash CIDR must be dropped";
+  EXPECT_GE(s.proxy_hits(), 1);
   EXPECT_EQ(0, s.target_hits());
 }
 
@@ -18758,11 +18753,8 @@ TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
-  // A NO_PROXY-bypassed target that replies 407 + Digest challenge must not
-  // trigger the digest retry — otherwise the client would compute a
-  // Proxy-Authorization header from proxy_digest_auth_* and send it
-  // directly to the (potentially hostile) origin.
-
+  // Direct origin replying 407 must not trigger the digest retry; otherwise
+  // proxy creds would be sent to the (possibly hostile) origin.
   std::atomic<int> target_hits{0};
   std::atomic<bool> target_saw_proxy_authz{false};
 
@@ -18788,29 +18780,20 @@ TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
 
   Client cli("evil.example", target_port);
   cli.set_hostname_addr_map({{"evil.example", "127.0.0.1"}});
-  cli.set_proxy("127.0.0.1", 1); // unreachable port — proxy must NOT be used
+  cli.set_proxy("127.0.0.1", 1);
   cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
   cli.set_no_proxy({"evil.example"});
 
   auto res = cli.Get("/x");
   ASSERT_TRUE(res);
-  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status)
-      << "the 407 must be propagated to the caller, not silently swallowed";
-  EXPECT_EQ(1, target_hits.load())
-      << "the client must not retry; exactly one request to target";
-  EXPECT_FALSE(target_saw_proxy_authz.load())
-      << "proxy digest credentials must never reach a bypassed origin";
+  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
+  EXPECT_EQ(1, target_hits.load());
+  EXPECT_FALSE(target_saw_proxy_authz.load());
 }
 #endif
 
 TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
-  // A → (via proxy) → 302 → B (NO_PROXY-matched, direct) → 302 → C (must
-  // re-engage the proxy). With the bug, the redirect client built for B is
-  // created without proxy_host_ because is_proxy_enabled_for_host(B) is
-  // false; the subsequent B→C redirect then loses the proxy entirely and
-  // either hits DNS (and fails on an unresolvable name) or quietly goes
-  // direct to a host the user expected to be proxied.
-
+  // A (via proxy) → B (NO_PROXY-matched, direct) → C must re-engage the proxy.
   std::atomic<int> proxy_hits{0};
   std::atomic<int> bypass_hits{0};
   std::atomic<bool> proxy_saw_c_url{false};
@@ -18825,7 +18808,7 @@ TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
     proxy_hits++;
     if (req.path.find("/start") != std::string::npos) {
       res.status = 302;
-      res.set_header("Location", "http://localhost:" +
+      res.set_header("Location", "http://127.0.0.1:" +
                                      std::to_string(bypass_port) + "/middle");
       return;
     }
@@ -18839,9 +18822,6 @@ TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
 
   bypass_server.Get(".*", [&](const Request & /*req*/, Response &res) {
     bypass_hits++;
-    // Redirect to an unresolvable hostname. The final leg can ONLY succeed if
-    // the redirect client still has the proxy configured and goes via it
-    // (absolute-URL form to the proxy, no DNS lookup for public.example).
     res.status = 302;
     res.set_header("Location", "http://public.example:80/end");
   });
@@ -18860,26 +18840,21 @@ TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
   Client cli("public.example", 80);
   cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy_port);
-  cli.set_no_proxy({"localhost"});
+  cli.set_no_proxy({"127.0.0.1"});
   cli.set_follow_location(true);
 
   auto res = cli.Get("/start");
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ("c-via-proxy", res->body)
-      << "final leg must have been served by the proxy, not lost to DNS";
-  EXPECT_GE(proxy_hits.load(), 2) << "proxy must be hit twice (start + end)";
-  EXPECT_GE(bypass_hits.load(), 1) << "bypassed middle leg must go direct";
-  EXPECT_TRUE(proxy_saw_c_url.load())
-      << "final leg must be the one served by the proxy";
+  EXPECT_EQ("c-via-proxy", res->body);
+  EXPECT_GE(proxy_hits.load(), 2);
+  EXPECT_GE(bypass_hits.load(), 1);
+  EXPECT_TRUE(proxy_saw_c_url.load());
 }
 
 TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
-  // Toggling NO_PROXY mid-session with keep-alive enabled must drop the
-  // existing socket. Without that, the next request reuses a socket pointed
-  // at the previous endpoint (proxy vs origin) and write_request emits the
-  // wrong request-line form (absolute vs relative URL).
-
+  // Mid-session set_no_proxy must drop any keep-alive socket so the next
+  // request reconnects to the correct endpoint.
   std::atomic<int> proxy_hits{0};
   std::atomic<int> target_hits{0};
 
@@ -18920,14 +18895,11 @@ TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
   EXPECT_EQ(1, proxy_hits.load());
   EXPECT_EQ(0, target_hits.load());
 
-  // Flip to bypass-everything. The next request must reach target directly,
-  // not reuse the keep-alive socket that's connected to the proxy.
   cli.set_no_proxy({"public.example"});
 
   auto res2 = cli.Get("/b");
   ASSERT_TRUE(res2);
-  EXPECT_EQ("direct", res2->body)
-      << "second request must bypass the proxy and reach the target directly";
-  EXPECT_EQ(1, proxy_hits.load()) << "proxy must not see the second request";
-  EXPECT_EQ(1, target_hits.load()) << "target must see exactly one request";
+  EXPECT_EQ("direct", res2->body);
+  EXPECT_EQ(1, proxy_hits.load());
+  EXPECT_EQ(1, target_hits.load());
 }
