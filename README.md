@@ -1183,65 +1183,14 @@ cli.set_proxy_bearer_token_auth("pass");
 
 #### Bypass the proxy for specific hosts (`NO_PROXY`)
 
-`set_no_proxy` configures a bypass list. Each pattern is one of:
-
-- `*` — bypass the proxy for every target
-- a hostname suffix, e.g. `example.com` — matches `example.com` and any
-  subdomain (`foo.example.com`). A leading dot (`.example.com`) is
-  permitted but informational; both forms are equivalent.
-- a single IP literal, e.g. `192.168.1.1`, `::1`
-- a CIDR block, e.g. `10.0.0.0/8`, `fe80::/10`
-
 ```cpp
-cli.set_proxy("proxy.corp", 3128);
 cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
 ```
 
-When a NO_PROXY entry matches the target host, the request is sent
-directly and the corresponding `Proxy-Authorization` header is
-suppressed.
-
-Hostname matching is **case-insensitive** and uses a dot-boundary rule,
-so `evilexample.com` does **not** match an entry of `example.com`. IP
-comparisons are normalized through `inet_pton`, so `127.0.0.1` cannot
-be bypassed via alternate string forms (e.g. leading-zero octets or
-decimal-form integers). Malformed entries are silently dropped.
-
-Limitations:
-
-- Port-specific entries (`example.com:8080`) are not supported. cpp-httplib's
-  other host-keyed APIs (e.g. `set_hostname_addr_map`) are also keyed on
-  hostname only; supporting host:port for NO_PROXY alone would be
-  inconsistent.
-- IPv4-mapped IPv6 addresses (`::ffff:1.2.3.4`) are not cross-matched
-  against IPv4 NO_PROXY entries.
-- `set_no_proxy` replaces any previously configured list; there is no
-  append API.
-
-cpp-httplib does **not** read `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
-itself — this is consistent with `set_ca_cert_path()` and the rest of
-the configuration API. If you want that behavior, parse the variables
-in your application and pass the bypass patterns to `set_no_proxy()`:
-
-```cpp
-if (auto *v = std::getenv("no_proxy"); v && *v) {
-  std::vector<std::string> patterns;
-  std::stringstream ss(v);
-  for (std::string item; std::getline(ss, item, ',');) {
-    // trim whitespace as needed
-    if (!item.empty()) { patterns.push_back(std::move(item)); }
-  }
-  cli.set_no_proxy(patterns);
-}
-```
-
-> [!IMPORTANT]
-> If you also read `HTTP_PROXY` from the environment, prefer the
-> lowercase `http_proxy` only. The uppercase form is poisoned in
-> CGI / FastCGI environments by the `Proxy:` request header
-> ([CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)). `HTTPS_PROXY`
-> and `NO_PROXY` are safe in either case because their names do not
-> begin with `HTTP_`.
+Each pattern is `*`, a hostname suffix, an IP literal, or a CIDR block.
+Hostname matching is case-insensitive with a dot-boundary rule. See the
+[NO_PROXY cookbook](https://yhirose.github.io/cpp-httplib/en/cookbook/c16-proxy)
+for details and for reading the variable from the environment.
 
 ### Range
 
