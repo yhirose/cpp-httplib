@@ -2297,24 +2297,19 @@ protected:
   //   shutdown_ssl
   //   shutdown_socket
   //   close_socket
-  // should ONLY be called when socket_mutex_ is locked.
-  // Also, shutdown_ssl and close_socket should also NOT be called concurrently
-  // with a DIFFERENT thread sending requests using that socket.
+  //   disconnect
+  // should ONLY be called when socket_mutex_ is locked, and only when
+  // no other thread is using the socket.
   virtual void shutdown_ssl(Socket &socket, bool shutdown_gracefully);
   void shutdown_socket(Socket &socket) const;
   void close_socket(Socket &socket);
+  void disconnect(bool gracefully);
 
   bool process_request(Stream &strm, Request &req, Response &res,
                        bool close_connection, Error &error);
 
   bool write_content_with_provider(Stream &strm, const Request &req,
                                    Error &error) const;
-
-  // Invalidate the keep-alive socket after a configuration change that
-  // affects which endpoint the next request should target (proxy/no_proxy).
-  // Safe to call regardless of in-flight state — falls back to deferred
-  // close via socket_should_be_closed_when_request_is_done_.
-  void invalidate_keep_alive_socket();
 
   void copy_settings(const ClientImpl &rhs);
 
@@ -12634,6 +12629,12 @@ inline void ClientImpl::close_socket(Socket &socket) {
   socket.sock = INVALID_SOCKET;
 }
 
+inline void ClientImpl::disconnect(bool gracefully) {
+  shutdown_ssl(socket_, gracefully);
+  shutdown_socket(socket_);
+  close_socket(socket_);
+}
+
 inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
                                            Response &res,
                                            bool skip_100_continue) const {
@@ -12705,14 +12706,8 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 #endif
 
       if (!is_alive) {
-        // Attempt to avoid sigpipe by shutting down non-gracefully if it
-        // seems like the other side has already closed the connection Also,
-        // there cannot be any requests in flight from other threads since we
-        // locked request_mutex_, so safe to close everything immediately
-        const bool shutdown_gracefully = false;
-        shutdown_ssl(socket_, shutdown_gracefully);
-        shutdown_socket(socket_);
-        close_socket(socket_);
+        // Peer seems gone — non-graceful shutdown to avoid SIGPIPE.
+        disconnect(/*gracefully=*/false);
       }
     }
 
@@ -12762,9 +12757,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
 
     if (socket_should_be_closed_when_request_is_done_ || close_connection ||
         !ret) {
-      shutdown_ssl(socket_, true);
-      shutdown_socket(socket_);
-      close_socket(socket_);
+      disconnect(/*gracefully=*/true);
     }
   });
 
@@ -12877,11 +12870,7 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
         }
       }
 #endif
-      if (!is_alive) {
-        shutdown_ssl(socket_, false);
-        shutdown_socket(socket_);
-        close_socket(socket_);
-      }
+      if (!is_alive) { disconnect(/*gracefully=*/false); }
     }
 
     if (!is_alive) {
@@ -13197,9 +13186,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     // to call it from a different thread since it's a thread-safety issue
     // to do these things to the socket if another thread is using the socket.
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    shutdown_ssl(socket_, true);
-    shutdown_socket(socket_);
-    close_socket(socket_);
+    disconnect(/*gracefully=*/true);
   }
 
   if (300 < res.status && res.status < 400 && follow_location_) {
@@ -13385,13 +13372,9 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   // host. This function is only called for cross-host redirects; same-host
   // redirects are handled directly in ClientImpl::redirect().
 
-  // Copy the full proxy configuration (including the bypass list)
-  // unconditionally. The per-target proxy/bypass decision is re-evaluated at
-  // send time by is_proxy_enabled_for_host(host_). Skipping the proxy copy
-  // when next_host happens to be bypassed would permanently strand the proxy
-  // configuration: a subsequent redirect from the new client to a
-  // non-bypassed host would have no proxy_host_ to fall back on and would
-  // silently go direct.
+  // Copy the proxy configuration unconditionally; the per-target bypass is
+  // re-evaluated at send time, so a later hop to a non-bypassed host can
+  // still use the proxy.
   client.no_proxy_entries_ = no_proxy_entries_;
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     client.set_proxy(proxy_host_, proxy_port_);
@@ -14821,24 +14804,7 @@ inline void ClientImpl::stop() {
     return;
   }
 
-  // Otherwise, still holding the mutex, we can shut everything down ourselves
-  shutdown_ssl(socket_, true);
-  shutdown_socket(socket_);
-  close_socket(socket_);
-}
-
-inline void ClientImpl::invalidate_keep_alive_socket() {
-  std::lock_guard<std::mutex> guard(socket_mutex_);
-  if (!socket_.is_open()) { return; }
-  if (socket_requests_in_flight_ > 0) {
-    // A request is currently using the socket — defer the close so the
-    // in-flight thread completes cleanly and the next request reconnects.
-    socket_should_be_closed_when_request_is_done_ = true;
-    return;
-  }
-  shutdown_ssl(socket_, true);
-  shutdown_socket(socket_);
-  close_socket(socket_);
+  disconnect(/*gracefully=*/true);
 }
 
 inline std::string ClientImpl::host() const { return host_; }
@@ -14929,9 +14895,8 @@ inline void ClientImpl::set_interface(const std::string &intf) {
 inline void ClientImpl::set_proxy(const std::string &host, int port) {
   proxy_host_ = host;
   proxy_port_ = port;
-  // Any keep-alive socket may be pointed at the previous proxy (or at the
-  // origin if proxy was unset); drop it so the next request reconnects.
-  invalidate_keep_alive_socket();
+  std::lock_guard<std::mutex> guard(socket_mutex_);
+  disconnect(/*gracefully=*/true);
 }
 
 inline void ClientImpl::set_proxy_basic_auth(const std::string &username,
@@ -14956,10 +14921,8 @@ inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
     }
   }
   no_proxy_entries_ = std::move(parsed);
-  // The bypass decision may have flipped for the keep-alive target; drop the
-  // existing socket so the next request reconnects to the correct endpoint
-  // (proxy vs origin) and emits the matching request-line form.
-  invalidate_keep_alive_socket();
+  std::lock_guard<std::mutex> guard(socket_mutex_);
+  disconnect(/*gracefully=*/true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
