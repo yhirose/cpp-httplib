@@ -10554,7 +10554,6 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
 }
 
 bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
-std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value);
 NormalizedTarget normalize_target(const std::string &host);
 bool ip_in_cidr(const IPBytes &ip, const IPBytes &net, int prefix_bits);
 bool host_matches_no_proxy(const NormalizedTarget &target,
@@ -10589,22 +10588,35 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
   std::string prefix_part =
       (slash == std::string::npos) ? std::string() : token.substr(slash + 1);
 
-  struct in_addr v4;
-  if (inet_pton(AF_INET, addr_part.c_str(), &v4) == 1) {
-    int prefix = 32;
-    if (!prefix_part.empty()) {
-      auto r = from_chars(prefix_part.data(),
-                          prefix_part.data() + prefix_part.size(), prefix);
-      if (r.ec != std::errc{} ||
-          r.ptr != prefix_part.data() + prefix_part.size()) {
-        return false;
+  // A bare slash or trailing-slash CIDR like "10.0.0.0/" is malformed;
+  // don't silently treat it as a /32 (or /128).
+  if (slash != std::string::npos && prefix_part.empty()) { return false; }
+
+  // Accept the bracketed IPv6 form ("[::1]", "[fe80::]/10") as well as the
+  // bare form. Brackets have no meaning for IPv4, so skip the IPv4 attempt
+  // when brackets are present.
+  bool bracketed = addr_part.size() >= 2 && addr_part.front() == '[' &&
+                   addr_part.back() == ']';
+  if (bracketed) { addr_part = addr_part.substr(1, addr_part.size() - 2); }
+
+  if (!bracketed) {
+    struct in_addr v4;
+    if (inet_pton(AF_INET, addr_part.c_str(), &v4) == 1) {
+      int prefix = 32;
+      if (!prefix_part.empty()) {
+        auto r = from_chars(prefix_part.data(),
+                            prefix_part.data() + prefix_part.size(), prefix);
+        if (r.ec != std::errc{} ||
+            r.ptr != prefix_part.data() + prefix_part.size()) {
+          return false;
+        }
+        if (prefix < 0 || prefix > 32) { return false; }
       }
-      if (prefix < 0 || prefix > 32) { return false; }
+      out.kind = NoProxyKind::IPv4Cidr;
+      std::memcpy(out.net.data(), &v4, sizeof(v4));
+      out.prefix_bits = prefix;
+      return true;
     }
-    out.kind = NoProxyKind::IPv4Cidr;
-    std::memcpy(out.net.data(), &v4, sizeof(v4));
-    out.prefix_bits = prefix;
-    return true;
   }
 
   struct in6_addr v6;
@@ -10625,6 +10637,10 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
     return true;
   }
 
+  // Bracketed entries can only be IPv6. If the IPv6 parse above failed,
+  // the entry is malformed — don't fall through to the hostname branch.
+  if (bracketed) { return false; }
+
   // A '/' on a non-IP token means a CIDR prefix without an address. Reject.
   if (slash != std::string::npos) { return false; }
   // Port-specific entries (host:port) are not supported.
@@ -10642,20 +10658,6 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
   out.kind = NoProxyKind::HostnameSuffix;
   out.hostname_pattern = std::move(hostname);
   return true;
-}
-
-inline std::vector<NoProxyEntry> parse_no_proxy_list(const std::string &value) {
-  std::vector<NoProxyEntry> entries;
-  if (value.empty()) { return entries; }
-  // detail::split already trims each token and skips empty ones.
-  split(value.data(), value.data() + value.size(), ',',
-        [&](const char *b, const char *e) {
-          NoProxyEntry entry;
-          if (parse_no_proxy_entry(std::string(b, e), entry)) {
-            entries.push_back(std::move(entry));
-          }
-        });
-  return entries;
 }
 
 inline NormalizedTarget normalize_target(const std::string &host) {

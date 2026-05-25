@@ -18496,6 +18496,35 @@ TEST(NoProxyTest, BareIPv6LiteralMatchesIPv6Cidr) {
   EXPECT_EQ(1, s.target_hits());
 }
 
+TEST(NoProxyTest, BracketedIPv6EntryAccepted) {
+  // Users coming from URL syntax naturally write "[::1]"; the entry must
+  // be accepted, not silently dropped (which would otherwise route the
+  // request through the proxy).
+  ProxyAndTargetServers s;
+  Client cli("::1", s.target_port());
+  cli.set_hostname_addr_map({{"::1", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"[::1]"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
+TEST(NoProxyTest, BracketedIPv6CidrEntryAccepted) {
+  ProxyAndTargetServers s;
+  Client cli("fe80::1", s.target_port());
+  cli.set_hostname_addr_map({{"fe80::1", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"[fe80::]/10"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(0, s.proxy_hits());
+  EXPECT_EQ(1, s.target_hits());
+}
+
 TEST(NoProxyTest, IPv4MappedIPv6IsNotCrossMatchedAgainstIPv4Entry) {
   // Policy: keep address families separate. "::ffff:1.2.3.4" must NOT
   // satisfy a NO_PROXY entry of "1.2.3.4". This avoids subtle bypass
@@ -18571,6 +18600,21 @@ TEST(NoProxyTest, MalformedCidrPrefixIsDropped) {
   auto res = cli.Get("/");
   ASSERT_TRUE(res);
   EXPECT_GE(s.proxy_hits(), 1);
+  EXPECT_EQ(0, s.target_hits());
+}
+
+TEST(NoProxyTest, TrailingSlashCidrIsRejected) {
+  // "127.0.0.1/" (empty prefix after the slash) is malformed — must not
+  // be silently narrowed to /32, otherwise a typoed entry quietly turns
+  // into an unintended single-host bypass.
+  ProxyAndTargetServers s;
+  Client cli("127.0.0.1", s.target_port());
+  cli.set_proxy("127.0.0.1", s.proxy_port());
+  cli.set_no_proxy({"127.0.0.1/"});
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_GE(s.proxy_hits(), 1) << "trailing-slash CIDR must be dropped";
   EXPECT_EQ(0, s.target_hits());
 }
 
