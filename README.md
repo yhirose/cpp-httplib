@@ -1181,6 +1181,17 @@ cli.set_proxy_bearer_token_auth("pass");
 > [!NOTE]
 > OpenSSL is required for Digest Authentication.
 
+#### Bypass the proxy for specific hosts (`NO_PROXY`)
+
+```cpp
+cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
+```
+
+Each pattern is `*`, a hostname suffix, an IP literal, or a CIDR block.
+Hostname matching is case-insensitive with a dot-boundary rule. See the
+[NO_PROXY cookbook](https://yhirose.github.io/cpp-httplib/en/cookbook/c16-proxy)
+for details and for reading the variable from the environment.
+
 ### Range
 
 ```cpp

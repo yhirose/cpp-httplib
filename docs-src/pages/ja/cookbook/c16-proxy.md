@@ -49,4 +49,39 @@ cli.set_bearer_token_auth("api-token"); // エンドサーバー向け
 
 プロキシには`Proxy-Authorization`、エンドサーバーには`Authorization`ヘッダーが送られます。
 
-> **Note:** 環境変数の`HTTP_PROXY`や`HTTPS_PROXY`は自動的には読まれません。必要ならアプリケーション側で読み取って`set_proxy()`に渡してください。
+## 特定のホストだけプロキシをバイパスする
+
+社内エンドポイントなどはプロキシを経由させたくないことがあります。`set_no_proxy()`で除外リストを指定できます。
+
+```cpp
+cli.set_proxy("proxy.internal", 8080);
+cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
+```
+
+エントリは次のいずれかです。
+
+- `*` — すべてのホストでバイパス
+- ホスト名サフィックス（例: `example.com`）— `example.com`本体と任意のサブドメイン（`foo.example.com`）にマッチ。先頭にドットを付けても同じ意味です（`.example.com`）。
+- 単一のIPリテラル（例: `192.168.1.1`、`::1`）
+- CIDRブロック（例: `10.0.0.0/8`、`fe80::/10`）
+
+ホスト名のマッチは大文字小文字を区別せず、ドット境界でしか一致しません。たとえば`example.com`というエントリは`evilexample.com`にはマッチしません。IPの比較は`inet_pton`で正規化されるので、`127.0.0.1`を`127.000.000.001`のような別表記でバイパスすることはできません。マッチした場合、`Proxy-Authorization`ヘッダーも自動的に外れます。
+
+不正な書式のエントリは黙って捨てられます。`example.com:8080`のようなポート指定エントリはサポート外です（cpp-httplibの他のホストキーAPIもホスト名のみを扱う設計のため）。
+
+## 環境変数からプロキシ設定を読み込む
+
+cpp-httplib本体は`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`を読みません。`set_ca_cert_path()`と同じで、設定APIは常に明示的にしています。環境変数を反映させたい場合は、アプリ側で読んで`set_proxy()`や`set_no_proxy()`に渡してください。
+
+```cpp
+if (const char *v = std::getenv("no_proxy")) {
+  std::vector<std::string> patterns;
+  std::stringstream ss(v);
+  for (std::string item; std::getline(ss, item, ',');) {
+    if (!item.empty()) { patterns.push_back(item); }
+  }
+  cli.set_no_proxy(patterns);
+}
+```
+
+`HTTP_PROXY`も自分で読むなら、小文字の`http_proxy`だけを採用してください。大文字の方はCGI/FastCGI環境で`Proxy:`リクエストヘッダーから汚染される可能性があります（[CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)）。`HTTPS_PROXY`と`NO_PROXY`は名前が`HTTP_`で始まらないので、どちらの大文字小文字でも安全です。
