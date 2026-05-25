@@ -71,17 +71,17 @@ cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
 
 ## 環境変数からプロキシ設定を読み込む
 
-cpp-httplib本体は`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`を読みません。設定APIを明示的に保つ方針で、`set_ca_cert_path()`なども同様です。必要なら、アプリ側で環境変数を読んで`set_proxy()`や`set_no_proxy()`に渡します。
+cpp-httplib本体は`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`を読みません。`set_ca_cert_path()`と同じで、設定APIは常に明示的にしています。環境変数を反映させたい場合は、アプリ側で読んで`set_proxy()`や`set_no_proxy()`に渡してください。
 
 ```cpp
-if (auto *v = std::getenv("no_proxy"); v && *v) {
+if (const char *v = std::getenv("no_proxy")) {
   std::vector<std::string> patterns;
   std::stringstream ss(v);
   for (std::string item; std::getline(ss, item, ',');) {
-    if (!item.empty()) { patterns.push_back(std::move(item)); }
+    if (!item.empty()) { patterns.push_back(item); }
   }
   cli.set_no_proxy(patterns);
 }
 ```
 
-> **Security Note:** `HTTP_PROXY`をアプリ側で読む場合は、小文字の`http_proxy`だけを採用してください。大文字の方はCGI/FastCGI環境で`Proxy:`リクエストヘッダーから汚染される可能性があります（[CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)）。`HTTPS_PROXY`や`NO_PROXY`は名前が`HTTP_`で始まらないので、どちらの大文字小文字でも安全です。
+`HTTP_PROXY`も自分で読むなら、小文字の`http_proxy`だけを採用してください。大文字の方はCGI/FastCGI環境で`Proxy:`リクエストヘッダーから汚染される可能性があります（[CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)）。`HTTPS_PROXY`と`NO_PROXY`は名前が`HTTP_`で始まらないので、どちらの大文字小文字でも安全です。

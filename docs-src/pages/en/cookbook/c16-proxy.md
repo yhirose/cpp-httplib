@@ -69,19 +69,19 @@ Hostname matching is case-insensitive and uses a dot-boundary rule, so an entry 
 
 Malformed entries are silently dropped. Port-specific entries such as `example.com:8080` are not supported (cpp-httplib's other host-keyed APIs are also keyed on hostname only).
 
-## Reading proxy settings from the environment
+## Read proxy settings from the environment
 
-cpp-httplib does not read `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` itself. The library's configuration API is explicit by design — `set_ca_cert_path()` is the same way. If you want that behavior, parse the variables in your application and feed them to `set_proxy()` and `set_no_proxy()`.
+cpp-httplib doesn't touch `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` on its own — the config API is always explicit, the same way `set_ca_cert_path()` is. If you'd like that behavior, read the variables in your application and feed them to `set_proxy()` and `set_no_proxy()`.
 
 ```cpp
-if (auto *v = std::getenv("no_proxy"); v && *v) {
+if (const char *v = std::getenv("no_proxy")) {
   std::vector<std::string> patterns;
   std::stringstream ss(v);
   for (std::string item; std::getline(ss, item, ',');) {
-    if (!item.empty()) { patterns.push_back(std::move(item)); }
+    if (!item.empty()) { patterns.push_back(item); }
   }
   cli.set_no_proxy(patterns);
 }
 ```
 
-> **Security Note:** If you also read `HTTP_PROXY` from the environment, prefer the lowercase `http_proxy` only. The uppercase form is poisoned in CGI/FastCGI environments by the `Proxy:` request header ([CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)). `HTTPS_PROXY` and `NO_PROXY` are safe in either case because their names do not begin with `HTTP_`.
+If you also read `HTTP_PROXY` yourself, honor the lowercase `http_proxy` only. The uppercase form is poisoned in CGI/FastCGI environments by the `Proxy:` request header ([CVE-2016-5385 / "httpoxy"](https://httpoxy.org/)). `HTTPS_PROXY` and `NO_PROXY` are safe in either case because their names don't begin with `HTTP_`.
