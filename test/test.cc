@@ -18279,6 +18279,29 @@ TEST(KeepAliveTest, DeleteWithoutContentLengthDoesNotEatNextRequest) {
 
 namespace no_proxy_test {
 
+// Server bound to 127.0.0.1:<dynamic>, listen thread spawned by listen(),
+// auto-stopped + joined on scope exit. Register handlers via svr() BEFORE
+// calling listen().
+class ScopedServer {
+public:
+  ScopedServer() { port_ = svr_.bind_to_any_port("127.0.0.1"); }
+  ~ScopedServer() {
+    svr_.stop();
+    if (th_.joinable()) { th_.join(); }
+  }
+  Server &svr() { return svr_; }
+  int port() const { return port_; }
+  void listen() {
+    th_ = std::thread([this] { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+private:
+  Server svr_;
+  std::thread th_;
+  int port_ = 0;
+};
+
 class ProxyAndTargetServers {
 public:
   ProxyAndTargetServers() {
@@ -18688,67 +18711,40 @@ TEST(NoProxyTest, ValidEntryWithSurroundingWhitespaceStillMatches) {
 }
 
 TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
-  // Analog of GHSA-6hrp-7fq9-3qv2: when a redirect targets a host in
-  // NO_PROXY, the follow-up request must go direct and must NOT carry
-  // Proxy-Authorization. Built without the ProxyAndTargetServers helper
-  // so the proxy mock can issue a 302 specifically for the /redir path.
-
+  // Analog of GHSA-6hrp-7fq9-3qv2: redirect to a NO_PROXY-matched host must
+  // go direct and must NOT carry Proxy-Authorization.
   std::atomic<int> proxy_hits{0};
   std::atomic<int> target_hits{0};
-  std::atomic<bool> proxy_saw_authz{false};
   std::atomic<bool> target_saw_authz{false};
 
-  Server proxy_mock;
-  Server target;
+  no_proxy_test::ScopedServer proxy_mock, target;
 
-  int target_port = target.bind_to_any_port("127.0.0.1");
-  int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
-
-  proxy_mock.Get(".*", [&](const Request &req, Response &res) {
+  proxy_mock.svr().Get(".*", [&](const Request &, Response &res) {
     proxy_hits++;
-    if (req.has_header("Proxy-Authorization")) { proxy_saw_authz = true; }
-    if (req.path.find("/redir") != std::string::npos) {
-      res.status = 302;
-      res.set_header("Location", "http://127.0.0.1:" +
-                                     std::to_string(target_port) + "/landed");
-      return;
-    }
-    res.set_content("via-proxy", "text/plain");
+    res.status = 302;
+    res.set_header("Location", "http://127.0.0.1:" +
+                                   std::to_string(target.port()) + "/landed");
   });
-
-  target.Get(".*", [&](const Request &req, Response &res) {
+  target.svr().Get(".*", [&](const Request &req, Response &res) {
     target_hits++;
     if (req.has_header("Proxy-Authorization")) { target_saw_authz = true; }
     res.set_content("direct", "text/plain");
   });
+  proxy_mock.listen();
+  target.listen();
 
-  std::thread proxy_thread([&] { proxy_mock.listen_after_bind(); });
-  std::thread target_thread([&] { target.listen_after_bind(); });
-  auto cleanup = detail::scope_exit([&] {
-    proxy_mock.stop();
-    target.stop();
-    if (proxy_thread.joinable()) { proxy_thread.join(); }
-    if (target_thread.joinable()) { target_thread.join(); }
-  });
-  proxy_mock.wait_until_ready();
-  target.wait_until_ready();
-
-  Client cli("public.example", target_port);
+  Client cli("public.example", target.port());
   cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
-  cli.set_proxy("127.0.0.1", proxy_port);
+  cli.set_proxy("127.0.0.1", proxy_mock.port());
   cli.set_proxy_basic_auth("u", "p");
   cli.set_no_proxy({"127.0.0.1"});
   cli.set_follow_location(true);
 
   auto res = cli.Get("/redir");
   ASSERT_TRUE(res);
-  EXPECT_GE(proxy_hits.load(), 1) << "first leg must hit the proxy";
-  EXPECT_GE(target_hits.load(), 1)
-      << "redirect leg must reach the target directly";
-  EXPECT_FALSE(target_saw_authz.load())
-      << "Proxy-Authorization must not be sent on the bypassed redirect leg";
-  // The first leg (going through the proxy) is allowed to carry
-  // Proxy-Authorization; we only assert the bypassed leg does not.
+  EXPECT_GE(proxy_hits.load(), 1);
+  EXPECT_GE(target_hits.load(), 1);
+  EXPECT_FALSE(target_saw_authz.load());
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
@@ -18758,10 +18754,8 @@ TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
   std::atomic<int> target_hits{0};
   std::atomic<bool> target_saw_proxy_authz{false};
 
-  Server target;
-  int target_port = target.bind_to_any_port("127.0.0.1");
-
-  target.Get(".*", [&](const Request &req, Response &res) {
+  no_proxy_test::ScopedServer target;
+  target.svr().Get(".*", [&](const Request &req, Response &res) {
     target_hits++;
     if (req.has_header("Proxy-Authorization")) {
       target_saw_proxy_authz = true;
@@ -18770,17 +18764,14 @@ TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
     res.set_header("Proxy-Authenticate", "Digest realm=\"evil\", qop=\"auth\", "
                                          "nonce=\"abc\", algorithm=MD5");
   });
+  target.listen();
 
-  std::thread target_thread([&] { target.listen_after_bind(); });
-  auto cleanup = detail::scope_exit([&] {
-    target.stop();
-    if (target_thread.joinable()) { target_thread.join(); }
-  });
-  target.wait_until_ready();
-
-  Client cli("evil.example", target_port);
+  // The proxy address is set to the target's port: the bypass MUST kick in;
+  // if it doesn't, the test still routes "via proxy" to the same server and
+  // the Proxy-Authorization assertion below catches the leak.
+  Client cli("evil.example", target.port());
   cli.set_hostname_addr_map({{"evil.example", "127.0.0.1"}});
-  cli.set_proxy("127.0.0.1", 1);
+  cli.set_proxy("127.0.0.1", target.port());
   cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
   cli.set_no_proxy({"evil.example"});
 
@@ -18798,18 +18789,15 @@ TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
   std::atomic<int> bypass_hits{0};
   std::atomic<bool> proxy_saw_c_url{false};
 
-  Server proxy_mock;
-  Server bypass_server;
+  no_proxy_test::ScopedServer proxy_mock, bypass_server;
 
-  int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
-  int bypass_port = bypass_server.bind_to_any_port("127.0.0.1");
-
-  proxy_mock.Get(".*", [&](const Request &req, Response &res) {
+  proxy_mock.svr().Get(".*", [&](const Request &req, Response &res) {
     proxy_hits++;
     if (req.path.find("/start") != std::string::npos) {
       res.status = 302;
       res.set_header("Location", "http://127.0.0.1:" +
-                                     std::to_string(bypass_port) + "/middle");
+                                     std::to_string(bypass_server.port()) +
+                                     "/middle");
       return;
     }
     if (req.path.find("/end") != std::string::npos) {
@@ -18819,27 +18807,22 @@ TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
     }
     res.set_content("unexpected", "text/plain");
   });
-
-  bypass_server.Get(".*", [&](const Request & /*req*/, Response &res) {
+  // public.example's "advertised" port is arbitrary (the request never lands
+  // there — it goes through the proxy), but use a dynamic value to stay
+  // friendly with sharded parallel runs.
+  int public_port = bypass_server.port();
+  bypass_server.svr().Get(".*", [&](const Request &, Response &res) {
     bypass_hits++;
     res.status = 302;
-    res.set_header("Location", "http://public.example:80/end");
+    res.set_header("Location", "http://public.example:" +
+                                   std::to_string(public_port) + "/end");
   });
+  proxy_mock.listen();
+  bypass_server.listen();
 
-  std::thread proxy_thread([&] { proxy_mock.listen_after_bind(); });
-  std::thread bypass_thread([&] { bypass_server.listen_after_bind(); });
-  auto cleanup = detail::scope_exit([&] {
-    proxy_mock.stop();
-    bypass_server.stop();
-    if (proxy_thread.joinable()) { proxy_thread.join(); }
-    if (bypass_thread.joinable()) { bypass_thread.join(); }
-  });
-  proxy_mock.wait_until_ready();
-  bypass_server.wait_until_ready();
-
-  Client cli("public.example", 80);
+  Client cli("public.example", public_port);
   cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
-  cli.set_proxy("127.0.0.1", proxy_port);
+  cli.set_proxy("127.0.0.1", proxy_mock.port());
   cli.set_no_proxy({"127.0.0.1"});
   cli.set_follow_location(true);
 
@@ -18858,35 +18841,22 @@ TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
   std::atomic<int> proxy_hits{0};
   std::atomic<int> target_hits{0};
 
-  Server proxy_mock;
-  Server target;
+  no_proxy_test::ScopedServer proxy_mock, target;
 
-  int proxy_port = proxy_mock.bind_to_any_port("127.0.0.1");
-  int target_port = target.bind_to_any_port("127.0.0.1");
-
-  proxy_mock.Get(".*", [&](const Request & /*req*/, Response &res) {
+  proxy_mock.svr().Get(".*", [&](const Request &, Response &res) {
     proxy_hits++;
     res.set_content("via-proxy", "text/plain");
   });
-  target.Get(".*", [&](const Request & /*req*/, Response &res) {
+  target.svr().Get(".*", [&](const Request &, Response &res) {
     target_hits++;
     res.set_content("direct", "text/plain");
   });
+  proxy_mock.listen();
+  target.listen();
 
-  std::thread proxy_thread([&] { proxy_mock.listen_after_bind(); });
-  std::thread target_thread([&] { target.listen_after_bind(); });
-  auto cleanup = detail::scope_exit([&] {
-    proxy_mock.stop();
-    target.stop();
-    if (proxy_thread.joinable()) { proxy_thread.join(); }
-    if (target_thread.joinable()) { target_thread.join(); }
-  });
-  proxy_mock.wait_until_ready();
-  target.wait_until_ready();
-
-  Client cli("public.example", target_port);
+  Client cli("public.example", target.port());
   cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
-  cli.set_proxy("127.0.0.1", proxy_port);
+  cli.set_proxy("127.0.0.1", proxy_mock.port());
   cli.set_keep_alive(true);
 
   auto res1 = cli.Get("/a");
