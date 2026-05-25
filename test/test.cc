@@ -18711,3 +18711,50 @@ TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
   // The first leg (going through the proxy) is allowed to carry
   // Proxy-Authorization; we only assert the bypassed leg does not.
 }
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
+  // A NO_PROXY-bypassed target that replies 407 + Digest challenge must not
+  // trigger the digest retry — otherwise the client would compute a
+  // Proxy-Authorization header from proxy_digest_auth_* and send it
+  // directly to the (potentially hostile) origin.
+
+  std::atomic<int> target_hits{0};
+  std::atomic<bool> target_saw_proxy_authz{false};
+
+  Server target;
+  int target_port = target.bind_to_any_port("127.0.0.1");
+
+  target.Get(".*", [&](const Request &req, Response &res) {
+    target_hits++;
+    if (req.has_header("Proxy-Authorization")) {
+      target_saw_proxy_authz = true;
+    }
+    res.status = StatusCode::ProxyAuthenticationRequired_407;
+    res.set_header("Proxy-Authenticate", "Digest realm=\"evil\", qop=\"auth\", "
+                                         "nonce=\"abc\", algorithm=MD5");
+  });
+
+  std::thread target_thread([&] { target.listen_after_bind(); });
+  auto cleanup = detail::scope_exit([&] {
+    target.stop();
+    if (target_thread.joinable()) { target_thread.join(); }
+  });
+  target.wait_until_ready();
+
+  Client cli("evil.example", target_port);
+  cli.set_hostname_addr_map({{"evil.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", 1); // unreachable port — proxy must NOT be used
+  cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
+  cli.set_no_proxy({"evil.example"});
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status)
+      << "the 407 must be propagated to the caller, not silently swallowed";
+  EXPECT_EQ(1, target_hits.load())
+      << "the client must not retry; exactly one request to target";
+  EXPECT_FALSE(target_saw_proxy_authz.load())
+      << "proxy digest credentials must never reach a bypassed origin";
+}
+#endif

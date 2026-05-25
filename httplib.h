@@ -13205,6 +13205,12 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
        res.status == StatusCode::ProxyAuthenticationRequired_407) &&
       req.authorization_count_ < 5) {
     auto is_proxy = res.status == StatusCode::ProxyAuthenticationRequired_407;
+
+    // A 407 from a direct (NO_PROXY-bypassed) origin is meaningless and
+    // must not trigger a retry — that would let the origin extract the
+    // user's proxy digest credentials.
+    if (is_proxy && !is_proxy_enabled_for_host(host_)) { return ret; }
+
     const auto &username =
         is_proxy ? proxy_digest_auth_username_ : digest_auth_username_;
     const auto &password =
