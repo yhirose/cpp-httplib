@@ -13675,6 +13675,110 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
 }
 #endif
 
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT) && !defined(_WIN32)
+// Regression test for #2458.
+//
+// A large request body (>= CPPHTTPLIB_EXPECT_100_THRESHOLD) makes the client
+// auto-add `Expect: 100-continue`. Over TLS, the server's TLS 1.3 session
+// ticket can make the client socket spuriously readable during the
+// 100-continue wait. If the readiness is mistaken for an incoming response,
+// the client withholds the body and then blocks reading a response that never
+// comes, failing with `Failed to read connection`.
+//
+// A correct client (like curl) sends the body once no `100 Continue` arrives
+// within the timeout. This raw OpenSSL server deliberately never sends
+// `100 Continue`; the client must still deliver the body and receive 200.
+TEST(Expect100ContinueTest, TLSServerOmits100Continue) {
+  signal(SIGPIPE, SIG_IGN);
+
+  const auto port = PORT + 4;
+
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(srv, INVALID_SOCKET);
+
+  int opt = 1;
+  ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(port));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 1));
+
+  std::atomic<size_t> server_body_bytes{0};
+
+  auto server_thread = std::thread([&] {
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+    if (cli == INVALID_SOCKET) { return; }
+
+    // Bound the lifetime of the server side so a buggy client (which never
+    // sends the body) cannot make this thread block forever on join.
+    detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 4, 0);
+
+    SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
+    SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+    SSL_CTX_use_certificate_file(ctx, SERVER_CERT_FILE, SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(ctx, SERVER_PRIVATE_KEY_FILE, SSL_FILETYPE_PEM);
+
+    SSL *ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, static_cast<int>(cli));
+
+    if (SSL_accept(ssl) > 0) {
+      // Read the request headers. Reading here also flushes the TLS 1.3
+      // session tickets to the client. Deliberately do NOT send
+      // `100 Continue`.
+      std::string buf;
+      char tmp[1024];
+      while (buf.find("\r\n\r\n") == std::string::npos) {
+        auto n = SSL_read(ssl, tmp, sizeof(tmp));
+        if (n <= 0) { break; }
+        buf.append(tmp, static_cast<size_t>(n));
+      }
+
+      // A correct client sends the body now; count what arrives.
+      auto pos = buf.find("\r\n\r\n");
+      size_t body = (pos == std::string::npos) ? 0 : buf.size() - (pos + 4);
+      while (body < 4096) {
+        auto n = SSL_read(ssl, tmp, sizeof(tmp));
+        if (n <= 0) { break; }
+        body += static_cast<size_t>(n);
+      }
+      server_body_bytes = body;
+
+      std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+      SSL_write(ssl, resp.data(), static_cast<int>(resp.size()));
+      SSL_shutdown(ssl);
+    }
+
+    SSL_free(ssl);
+    detail::close_socket(cli);
+    SSL_CTX_free(ctx);
+  });
+
+  auto se = detail::scope_exit([&] {
+    server_thread.join();
+    detail::close_socket(srv);
+  });
+
+  SSLClient cli("127.0.0.1", port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(5, 0);
+  cli.set_read_timeout(3, 0); // short, so a hang surfaces quickly
+
+  // Body larger than CPPHTTPLIB_EXPECT_100_THRESHOLD (1024) -> auto Expect.
+  std::string body(4096, 'A');
+  auto res = cli.Put("/api/test", body, "application/json");
+
+  ASSERT_TRUE(res) << "request failed: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(body.size(), server_body_bytes.load());
+}
+#endif
+
 template <typename S, typename C>
 inline void max_timeout_test(S &svr, C &cli, time_t timeout, time_t threshold) {
   svr.Get("/stream", [&](const Request &, Response &res) {
