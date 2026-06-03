@@ -3589,6 +3589,23 @@ protected:
                      return true;
                    });
              })
+        .Get("/streamed-without-length",
+             [&](const Request & /*req*/, Response &res) {
+               auto data = new std::string("abcdefg");
+               res.set_content_provider(
+                   "text/plain",
+                   [data](size_t offset, DataSink &sink) {
+                     if (offset < data->size()) {
+                       sink.os << data->substr(offset);
+                     }
+                     sink.done();
+                     return true;
+                   },
+                   [data](bool success) {
+                     EXPECT_TRUE(success);
+                     delete data;
+                   });
+             })
         .Get("/streamed-with-range",
              [&](const Request &req, Response &res) {
                auto data = new std::string("abcdefg");
@@ -5022,6 +5039,16 @@ TEST_F(ServerTest, GetStreamed) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(std::string("aaabbb"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedWithoutLengthWithRange) {
+  auto res =
+      cli_.Get("/streamed-without-length", {make_range_header({{0, -1}})});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(false, res->has_header("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
 }
 
 TEST_F(ServerTest, GetStreamedWithRange1) {
