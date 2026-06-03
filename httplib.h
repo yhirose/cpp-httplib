@@ -3842,6 +3842,7 @@ public:
   void set_socket_options(SocketOptions socket_options);
   void set_connection_timeout(time_t sec, time_t usec = 0);
   void set_interface(const std::string &intf);
+  void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   void set_ca_cert_path(const std::string &path);
@@ -3875,6 +3876,9 @@ private:
   time_t connection_timeout_sec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND;
   time_t connection_timeout_usec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND;
   std::string interface_;
+
+  // Hostname-IP map
+  std::map<std::string, std::string> addr_map_;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   bool is_ssl_ = false;
@@ -20305,9 +20309,14 @@ inline bool WebSocketClient::connect() {
   if (!is_valid_) { return false; }
   shutdown_and_close();
 
+  // Check is custom IP specified for host_
+  std::string ip;
+  auto it = addr_map_.find(host_);
+  if (it != addr_map_.end()) { ip = it->second; }
+
   Error error;
   sock_ = detail::create_client_socket(
-      host_, std::string(), port_, address_family_, tcp_nodelay_, ipv6_v6only_,
+      host_, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
       socket_options_, connection_timeout_sec_, connection_timeout_usec_,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_, interface_, error);
@@ -20400,6 +20409,10 @@ inline void WebSocketClient::set_connection_timeout(time_t sec, time_t usec) {
 
 inline void WebSocketClient::set_interface(const std::string &intf) {
   interface_ = intf;
+}
+
+inline void WebSocketClient::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
+  addr_map_ = std::move(addr_map);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
