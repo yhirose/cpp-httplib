@@ -17644,6 +17644,56 @@ TEST(WebSocketTest, ComplexPath) {
   EXPECT_TRUE(ws2.is_valid());
 }
 
+TEST(WebSocketTest, SpecifyServerIPAddress_AnotherHostname) {
+  Server svr;
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  auto another_host = "example.com";
+  auto wrong_ip = "0.0.0.0";
+
+  ws::WebSocketClient client(
+      "ws://localhost:" + std::to_string(port) + "/ws");
+  client.set_hostname_addr_map({{another_host, wrong_ip}});
+
+  ASSERT_TRUE(client.connect());
+  EXPECT_TRUE(client.is_open());
+  client.close();
+
+  svr.stop();
+  t.join();
+}
+
+TEST(WebSocketTest, SpecifyServerIPAddress_RealHostname) {
+  Server svr;
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  auto wrong_ip = "0.0.0.0";
+
+  ws::WebSocketClient client(
+      "ws://localhost:" + std::to_string(port) + "/ws");
+  client.set_hostname_addr_map({{"localhost", wrong_ip}});
+
+  EXPECT_FALSE(client.connect());
+  EXPECT_FALSE(client.is_open());
+
+  svr.stop();
+  t.join();
+}
+
 class WebSocketIntegrationTest : public ::testing::Test {
 protected:
   void SetUp() override {
