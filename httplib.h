@@ -8443,6 +8443,14 @@ inline void coalesce_ranges(Ranges &ranges, size_t content_length) {
 
 inline bool range_error(Request &req, Response &res) {
   if (!req.ranges.empty() && 200 <= res.status && res.status < 300) {
+    if (res.body.empty() && res.content_provider_ && res.content_length_ == 0) {
+      req.ranges.clear();
+      if (res.status == StatusCode::PartialContent_206) {
+        res.status = StatusCode::OK_200;
+      }
+      return false;
+    }
+
     ssize_t content_len = static_cast<ssize_t>(
         res.content_length_ ? res.content_length_ : res.body.size());
 
