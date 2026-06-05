@@ -17684,6 +17684,9 @@ TEST(WebSocketTest, SpecifyServerIPAddress_RealHostname) {
 
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
   client.set_hostname_addr_map({{"localhost", wrong_ip}});
+  client.set_connection_timeout(1);
+  client.set_read_timeout(1);
+  client.set_write_timeout(1);
 
   EXPECT_FALSE(client.connect());
   EXPECT_FALSE(client.is_open());
