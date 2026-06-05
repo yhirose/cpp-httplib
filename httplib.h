@@ -1643,6 +1643,8 @@ public:
   using Expect100ContinueHandler =
       std::function<int(const Request &, Response &)>;
 
+  using StartHandler = std::function<void()>;
+
   using WebSocketHandler =
       std::function<void(const Request &, ws::WebSocket &)>;
   using SubProtocolSelector =
@@ -1694,6 +1696,9 @@ public:
   Server &set_pre_request_handler(HandlerWithResponse handler);
 
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
+
+  Server &set_start_handler(StartHandler handler);
+
   Server &set_logger(Logger logger);
   Server &set_pre_compression_logger(Logger logger);
   Server &set_error_logger(ErrorLogger error_logger);
@@ -1883,6 +1888,7 @@ private:
   Handler post_routing_handler_;
   HandlerWithResponse pre_request_handler_;
   Expect100ContinueHandler expect_100_continue_handler_;
+  StartHandler start_handler_;
 
   mutable std::mutex logger_mutex_;
   Logger logger_;
@@ -11100,6 +11106,11 @@ Server::set_expect_100_continue_handler(Expect100ContinueHandler handler) {
   return *this;
 }
 
+inline Server &Server::set_start_handler(StartHandler handler) {
+  start_handler_ = std::move(handler);
+  return *this;
+}
+
 inline Server &Server::set_address_family(int family) {
   address_family_ = family;
   return *this;
@@ -11794,6 +11805,8 @@ inline bool Server::listen_internal() {
   auto ret = true;
   is_running_ = true;
   auto se = detail::scope_exit([&]() { is_running_ = false; });
+
+  if (start_handler_) { start_handler_(); }
 
   {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());

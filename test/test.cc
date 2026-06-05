@@ -810,6 +810,41 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   }
 }
 
+TEST(ServerStartHandlerTest, CalledOnceWhenReady) {
+  Server svr;
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  std::atomic<int> start_count{0};
+  std::atomic<bool> running_when_called{false};
+  svr.set_start_handler([&]() {
+    running_when_called = svr.is_running();
+    start_count++;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // A successful request proves the accept loop is running, which the start
+  // handler precedes; so by now the handler must have run exactly once.
+  Client cli(HOST, port);
+  cli.set_connection_timeout(std::chrono::seconds(5));
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_EQ(1, start_count.load());
+  EXPECT_TRUE(running_when_called.load());
+}
+
 TEST(DivideTest, DivideStringTests) {
   auto divide = [](const std::string &str, char d) {
     std::string lhs;
