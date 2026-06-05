@@ -17656,7 +17656,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_AnotherHostname) {
   svr.wait_until_ready();
 
   auto another_host = "example.com";
-  auto wrong_ip = "0.0.0.0";
+  auto wrong_ip = "192.0.2.1";
 
   ws::WebSocketClient client(
       "ws://localhost:" + std::to_string(port) + "/ws");
@@ -17681,7 +17681,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_RealHostname) {
   std::thread t([&]() { svr.listen_after_bind(); });
   svr.wait_until_ready();
 
-  auto wrong_ip = "0.0.0.0";
+  auto wrong_ip = "192.0.2.1";
 
   ws::WebSocketClient client(
       "ws://localhost:" + std::to_string(port) + "/ws");
