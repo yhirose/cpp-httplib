@@ -20411,7 +20411,8 @@ inline void WebSocketClient::set_interface(const std::string &intf) {
   interface_ = intf;
 }
 
-inline void WebSocketClient::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
+inline void WebSocketClient::set_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
   addr_map_ = std::move(addr_map);
 }
 

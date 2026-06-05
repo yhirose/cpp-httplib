@@ -17658,8 +17658,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_AnotherHostname) {
   auto another_host = "example.com";
   auto wrong_ip = "192.0.2.1";
 
-  ws::WebSocketClient client(
-      "ws://localhost:" + std::to_string(port) + "/ws");
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
   client.set_hostname_addr_map({{another_host, wrong_ip}});
 
   ASSERT_TRUE(client.connect());
@@ -17683,8 +17682,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_RealHostname) {
 
   auto wrong_ip = "192.0.2.1";
 
-  ws::WebSocketClient client(
-      "ws://localhost:" + std::to_string(port) + "/ws");
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
   client.set_hostname_addr_map({{"localhost", wrong_ip}});
 
   EXPECT_FALSE(client.connect());
