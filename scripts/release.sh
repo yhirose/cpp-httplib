@@ -62,7 +62,7 @@ HEAD_SHORT=$(git rev-parse --short HEAD)
 echo "    Latest commit: $HEAD_SHORT"
 
 # Fetch all workflow runs for the HEAD commit
-RUNS=$(gh run list --commit "$HEAD_SHA" --json name,conclusion,headSha)
+RUNS=$(gh run list --commit "$HEAD_SHA" --json name,status,conclusion,headSha)
 
 NUM_RUNS=$(echo "$RUNS" | jq 'length')
 
@@ -75,8 +75,17 @@ fi
 echo "    Found $NUM_RUNS workflow run(s):"
 
 FAILED=0
+RUNNING=0
 ABIDIFF_PASSED=0
-while IFS=$'\t' read -r name conclusion; do
+while IFS=$'\t' read -r name status conclusion; do
+  # A run that hasn't completed yet has an empty conclusion; don't treat it
+  # as a failure — the release should wait until CI finishes.
+  if [ "$status" != "completed" ]; then
+    echo "      [ .. ] $name (still running)"
+    RUNNING=1
+    continue
+  fi
+
   if [[ "$name" == *abidiff* ]] || [[ "$name" == *abi* && "$name" != *stability* ]]; then
     if [ "$conclusion" = "success" ]; then
       echo "      [ OK ] $name"
@@ -94,7 +103,13 @@ while IFS=$'\t' read -r name conclusion; do
     echo "      [FAIL] $name ($conclusion)"
     FAILED=1
   fi
-done < <(echo "$RUNS" | jq -r '.[] | [.name, .conclusion] | @tsv')
+done < <(echo "$RUNS" | jq -r '.[] | [.name, .status, .conclusion] | @tsv')
+
+if [ "$RUNNING" -eq 1 ]; then
+  echo ""
+  echo "Error: Some CI checks are still running. Wait for them to complete before releasing."
+  exit 1
+fi
 
 if [ "$FAILED" -eq 1 ]; then
   echo ""
