@@ -18191,6 +18191,51 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   t.join();
 }
 
+TEST(WebSocketTest, QueryStringInHandshake) {
+  Server svr;
+
+  std::mutex mtx;
+  std::string received_target;
+  std::string received_token;
+
+  svr.WebSocket("/ws", [&](const Request &req, ws::WebSocket &ws) {
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      received_target = req.target;
+      if (req.has_param("token")) {
+        received_token = req.get_param_value("token");
+      }
+    }
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) +
+                             "/ws?token=ABC&session=123");
+  ASSERT_TRUE(client.connect());
+  // Round-trip ensures the handler has run and captured the request.
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    EXPECT_EQ("/ws?token=ABC&session=123", received_target);
+    EXPECT_EQ("ABC", received_token);
+  }
+
+  svr.stop();
+  t.join();
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class WebSocketSSLIntegrationTest : public ::testing::Test {
 protected:

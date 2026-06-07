@@ -20266,6 +20266,7 @@ inline WebSocketClient::WebSocketClient(
     if (!uc.port.empty() && !detail::parse_port(uc.port, port_)) { return; }
 
     path_ = std::move(uc.path);
+    if (!uc.query.empty()) { path_ += uc.query; }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
     is_ssl_ = is_ssl;
