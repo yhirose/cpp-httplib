@@ -4386,7 +4386,7 @@ inline bool set_socket_opt_time(socket_t sock, int level, int optname,
 }
 
 inline bool is_hex(char c, int &v) {
-  if (isdigit(c)) {
+  if (isdigit(static_cast<unsigned char>(c))) {
     v = c - '0';
     return true;
   } else if ('A' <= c && c <= 'F') {
@@ -8244,7 +8244,7 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
   auto valid = true;
   for (size_t i = 0; i < boundary.size(); i++) {
     auto c = boundary[i];
-    if (!std::isalnum(c) && c != '-' && c != '_') {
+    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') {
       valid = false;
       break;
     }
@@ -8729,9 +8729,10 @@ private:
 namespace fields {
 
 inline bool is_token_char(char c) {
-  return std::isalnum(c) || c == '!' || c == '#' || c == '$' || c == '%' ||
-         c == '&' || c == '\'' || c == '*' || c == '+' || c == '-' ||
-         c == '.' || c == '^' || c == '_' || c == '`' || c == '|' || c == '~';
+  return std::isalnum(static_cast<unsigned char>(c)) || c == '!' || c == '#' ||
+         c == '$' || c == '%' || c == '&' || c == '\'' || c == '*' ||
+         c == '+' || c == '-' || c == '.' || c == '^' || c == '_' || c == '`' ||
+         c == '|' || c == '~';
 }
 
 inline bool is_token(const std::string &s) {
