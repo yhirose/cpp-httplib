@@ -8,12 +8,14 @@ The `set_pre_routing_handler()` from [S09. Add pre-processing to all routes](s09
 
 ## Pre-routing vs. pre-request
 
-| Hook | When it runs | Route info |
-| --- | --- | --- |
-| `set_pre_routing_handler` | Before routing | Not available |
-| `set_pre_request_handler` | After routing, right before the route handler | Available via `req.matched_route` |
+| Hook | When it runs | Route info | Request body |
+| --- | --- | --- | --- |
+| `set_pre_routing_handler` | Before routing | Not available | Not read yet |
+| `set_pre_request_handler` | After routing, right before the route handler | Available via `req.matched_route` | Not read yet |
 
 In a pre-request handler, `req.matched_route` holds the **pattern string** that matched. You can vary behavior based on the route definition itself.
+
+Because the body has not been read when the pre-request handler runs, you can reject a request — for example on a failed auth check — without consuming a (potentially large) request body. Note that this also means `req.body` and form fields parsed from the body are not available here; inspect headers, the path, query parameters, or `req.matched_route` instead.
 
 ## Switch auth per route
 

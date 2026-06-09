@@ -3289,6 +3289,64 @@ TEST(RequestHandlerTest, PreRequestHandler) {
   }
 }
 
+// The pre-request handler must run before the request body is read, so a
+// rejected request never forces the server to buffer a (potentially large)
+// body. Here the posted body is larger than the payload limit: if the body
+// were read first the server would answer 413, but because the pre-request
+// handler runs first it answers 403 and the body is never read.
+TEST(RequestHandlerTest, PreRequestHandlerRunsBeforeBodyIsRead) {
+  Server svr;
+
+  svr.set_payload_max_length(8);
+
+  auto handler_ran = false;
+  svr.Post("/reject", [&](const Request &req, Response &res) {
+    handler_ran = true;
+    res.set_content(req.body, "text/plain");
+  });
+
+  svr.Post("/accept", [](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  svr.set_pre_request_handler([](const Request &req, Response &res) {
+    if (req.matched_route == "/reject") {
+      res.status = StatusCode::Forbidden_403;
+      res.set_content("denied", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  // Body (10 bytes) exceeds the 8-byte limit, yet the pre-request handler
+  // rejects with 403 before the body is read, so 413 is never reached.
+  {
+    auto res = cli.Post("/reject", "0123456789", "text/plain");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+    EXPECT_EQ("denied", res->body);
+    EXPECT_FALSE(handler_ran);
+  }
+
+  // An approved route still reads the body and enforces the payload limit.
+  {
+    auto res = cli.Post("/accept", "0123456789", "text/plain");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
+  }
+}
+
 TEST(UserDataTest, BasicOperations) {
   httplib::UserData ud;
 

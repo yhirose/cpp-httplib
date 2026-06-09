@@ -450,6 +450,8 @@ svr.set_post_routing_handler([](const auto& req, auto& res) {
 
 ### Pre request handler
 
+The pre-request handler runs after the route has been matched (so `req.matched_route` and `req.path_params` are available) but **before the request body is read**. This means you can reject a request — for example on a failed authentication or authorization check — without forcing the server to buffer a potentially large body.
+
 ```cpp
 svr.set_pre_request_handler([](const auto& req, auto& res) {
   if (req.matched_route == "/user/:user") {
@@ -463,6 +465,38 @@ svr.set_pre_request_handler([](const auto& req, auto& res) {
   return Server::HandlerResponse::Unhandled;
 });
 ```
+
+> [!NOTE]
+> Because the body has not been read yet, `req.body` and form fields parsed from the body are not available in the pre-request handler. Inspect headers, the path, query parameters, or `req.matched_route` instead.
+
+### Handler execution order
+
+`set_start_handler` runs once when the server starts. For each request, handlers run in the following order:
+
+```
+Request received
+  │
+  ├─ pre_routing_handler          route not matched yet, body not read
+  │     └─ returns Handled → stop here
+  │
+  ├─ file_request_handler         (GET/HEAD, static file serving)
+  │
+  ├─ expect_100_continue_handler  (when the request has "Expect: 100-continue")
+  │
+  ├─ route matching → req.matched_route is set
+  │
+  ├─ pre_request_handler          route matched, body NOT read yet
+  │     └─ returns Handled → stop here (route handler is skipped)
+  │
+  ├─ route handler                Get/Post/...; the request body is read first
+  │
+  └─ post_routing_handler         after routing completes
+
+  On a thrown exception → exception_handler
+  On an error status (4xx/5xx) → error_handler
+```
+
+Use `pre_routing_handler` to reject a request as early as possible, before the route is known. Use `pre_request_handler` for route-specific checks, since `req.matched_route` is available and the body has not been read yet.
 
 ### Response user data
 
