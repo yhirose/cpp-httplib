@@ -9283,20 +9283,25 @@ inline bool setup_client_tls_session(const std::string &host, tls::ctx_t ctx,
 
   bool is_ip = is_ip_address(host);
 
-#ifdef CPPHTTPLIB_MBEDTLS_SUPPORT
-  if (is_ip && server_certificate_verification) {
-    set_verify_client(ctx, false);
-  } else {
-    set_verify_client(ctx, server_certificate_verification);
-  }
+#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+  // Chain verification happens during the handshake even for IP hosts; the
+  // certificate identity is verified post-handshake via verify_hostname()
+  set_verify_client(ctx, server_certificate_verification);
 #endif
 
   session = create_session(ctx, sock);
   if (!session) { return false; }
 
-  // RFC 6066: SNI must not be set for IP addresses
-  if (!is_ip) { set_sni(session, host.c_str()); }
-  if (server_certificate_verification) { set_hostname(session, host.c_str()); }
+  // RFC 6066: SNI must not be set for IP addresses. On Mbed TLS and wolfSSL
+  // set_hostname also sets SNI, so it must be skipped for IP hosts as well;
+  // their identity is checked post-handshake below instead.
+  if (!is_ip) {
+    if (server_certificate_verification) {
+      set_hostname(session, host.c_str());
+    } else {
+      set_sni(session, host.c_str());
+    }
+  }
 
   if (!connect_nonblocking(session, sock, timeout_sec, timeout_usec, nullptr)) {
     return false;
@@ -9304,6 +9309,14 @@ inline bool setup_client_tls_session(const std::string &host, tls::ctx_t ctx,
 
   if (server_certificate_verification) {
     if (get_verify_result(session) != 0) { return false; }
+
+    // Identity check against the peer certificate, post-handshake for all
+    // backends (same as SSLClient). For IP hosts this is the only identity
+    // verification since no hostname is bound during the handshake.
+    auto server_cert = get_peer_cert(session);
+    if (!server_cert) { return false; }
+    auto cert_guard = detail::scope_exit([&] { free_cert(server_cert); });
+    if (!verify_hostname(server_cert, host.c_str())) { return false; }
   }
 
   return true;
@@ -16200,13 +16213,9 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
 #if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
   // MbedTLS/wolfSSL need explicit verification mode (OpenSSL uses
   // SSL_VERIFY_NONE by default and performs all verification post-handshake).
-  // For IP addresses with verification enabled, use OPTIONAL mode since
-  // these backends require hostname for strict verification.
-  if (is_ip && server_certificate_verification_) {
-    set_verify_client(ctx_, false);
-  } else {
-    set_verify_client(ctx_, server_certificate_verification_);
-  }
+  // Chain verification happens during the handshake even for IP hosts; the
+  // certificate identity is verified post-handshake via verify_hostname().
+  set_verify_client(ctx_, server_certificate_verification_);
 #endif
 
   // Create TLS session
@@ -18266,6 +18275,14 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
     delete session;
     return nullptr;
   }
+
+  // Explicitly opt out of in-handshake hostname verification by default;
+  // since Mbed TLS 3.6.4 a client handshake with certificate verification
+  // fails outright when no hostname was set. set_sni() installs the real
+  // hostname for DNS hosts; for IP hosts (where SNI must not be set) the
+  // caller verifies the certificate identity post-handshake via
+  // verify_hostname().
+  mbedtls_ssl_set_hostname(&session->ssl, nullptr);
 
   // Set BIO callbacks
   mbedtls_ssl_set_bio(&session->ssl, &session->sock, impl::mbedtls_net_send_cb,

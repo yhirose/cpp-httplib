@@ -11774,6 +11774,40 @@ TEST(SSLClientTest, EnableSystemCaCustomCaVerifiesLocalServer) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+// Regression test: for IP hosts the Mbed TLS and wolfSSL backends used to
+// skip chain verification entirely (only the certificate identity was
+// checked), so a server presenting an untrusted certificate with a matching
+// IP SAN was accepted. The chain must be validated for IP hosts too.
+TEST(SSLClientTest, IpHostUntrustedChainFails) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  // A trusted CA that did not sign the server certificate. The server cert
+  // (cert2) carries the matching IP SAN, so only chain validation can reject
+  // this connection.
+  read_file(CLIENT_CA_CERT_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_FALSE(res);
+}
+
 // enable_system_ca(false) prevents system CA loading entirely
 TEST(SSLClientTest, DisableSystemCa_Online) {
   SSLClient cli("google.com");
@@ -18553,10 +18587,7 @@ TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
 }
 #endif
 
-// Limited to the OpenSSL backend (like WebSocketSSLIntegrationTest above):
-// Mbed TLS and wolfSSL disable certificate verification for IP hosts in
-// setup_client_tls_session, so the assertions below would not hold there.
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 class WebSocketSSLCATest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -18632,6 +18663,37 @@ TEST_F(WebSocketSSLCATest, ReconnectWithCustomCaStore) {
   EXPECT_EQ(ws::Text, client.read(msg));
   EXPECT_EQ("again", msg);
   client.close();
+}
+
+// Regression test: a certificate with a trusted chain but no identity match
+// for the server IP must be rejected. The Mbed TLS backend used to skip
+// verification entirely for IP hosts, so this connection succeeded there.
+// SERVER_CERT_FILE has no IP SAN (CN only), so trusting it as a CA satisfies
+// chain verification while the identity check must still fail.
+TEST(WebSocketSSLVerifyTest, TrustedChainWrongIdentityFails) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.WebSocket("/echo", [](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("wss://127.0.0.1:" + std::to_string(port) +
+                             "/echo");
+  std::string cert;
+  read_file(SERVER_CERT_FILE, cert);
+  client.load_ca_cert_store(cert.c_str(), cert.size());
+
+  ASSERT_FALSE(client.connect());
 }
 #endif
 
