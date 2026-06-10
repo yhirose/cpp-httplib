@@ -810,6 +810,11 @@ enum class SSLVerifierResponse {
   CertificateRejected
 };
 
+// System CA loading policy for SSL clients. Auto (the default) loads system
+// CA certs only when no custom CA is configured; enable_system_ca() switches
+// to an explicit policy.
+enum class SystemCAMode { Auto, Enabled, Disabled };
+
 enum StatusCode {
   // Information responses
   Continue_100 = 100,
@@ -2451,6 +2456,7 @@ public:
                         const std::string &ca_cert_dir_path = std::string());
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
+  void enable_system_ca(bool enabled);
 
 protected:
   std::string digest_auth_username_;
@@ -2461,6 +2467,7 @@ protected:
   std::string ca_cert_dir_path_;
   bool server_certificate_verification_ = true;
   bool server_hostname_verification_ = true;
+  SystemCAMode system_ca_mode_ = SystemCAMode::Auto;
   std::string ca_cert_pem_; // Store CA cert PEM for redirect transfer
   int last_ssl_error_ = 0;
   uint64_t last_backend_error_ = 0;
@@ -2667,6 +2674,7 @@ public:
                              const std::string &password);
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
+  void enable_system_ca(bool enabled);
   void set_ca_cert_path(const std::string &ca_cert_file_path,
                         const std::string &ca_cert_dir_path = std::string());
 
@@ -3858,7 +3866,9 @@ public:
 #ifdef CPPHTTPLIB_SSL_ENABLED
   void set_ca_cert_path(const std::string &path);
   void set_ca_cert_store(tls::ca_store_t store);
+  void load_ca_cert_store(const char *ca_cert, std::size_t size);
   void enable_server_certificate_verification(bool enabled);
+  void enable_system_ca(bool enabled);
 #endif
 
 private:
@@ -3896,7 +3906,9 @@ private:
   tls::ctx_t tls_ctx_ = nullptr;
   tls::session_t tls_session_ = nullptr;
   std::string ca_cert_file_path_;
-  tls::ca_store_t ca_cert_store_ = nullptr;
+  bool custom_ca_loaded_ = false;
+  bool certs_loaded_ = false;
+  SystemCAMode system_ca_mode_ = SystemCAMode::Auto;
   bool server_certificate_verification_ = true;
 #endif
 };
@@ -9228,24 +9240,46 @@ verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
 }
 #endif // _WIN32
 
-inline bool setup_client_tls_session(const std::string &host, tls::ctx_t &ctx,
+// Loads CA file/dir configuration and applies the system CA policy to a
+// client TLS context. PEM data and native stores are applied to the context
+// directly at set time; has_custom_store reflects them for the Auto policy
+// decision.
+inline bool load_client_ca_config(tls::ctx_t ctx,
+                                  const std::string &ca_cert_file_path,
+                                  const std::string &ca_cert_dir_path,
+                                  bool has_custom_store, SystemCAMode mode,
+                                  uint64_t &backend_error) {
+  auto ret = true;
+
+  if (!ca_cert_file_path.empty()) {
+    if (!tls::load_ca_file(ctx, ca_cert_file_path.c_str())) {
+      backend_error = tls::get_error();
+      ret = false;
+    }
+  } else if (!ca_cert_dir_path.empty()) {
+    if (!tls::load_ca_dir(ctx, ca_cert_dir_path.c_str())) {
+      backend_error = tls::get_error();
+      ret = false;
+    }
+  }
+
+  auto has_custom_ca = !ca_cert_file_path.empty() ||
+                       !ca_cert_dir_path.empty() || has_custom_store;
+  if (mode == SystemCAMode::Enabled ||
+      (mode == SystemCAMode::Auto && !has_custom_ca)) {
+    if (!tls::load_system_certs(ctx)) { backend_error = tls::get_error(); }
+  }
+
+  return ret;
+}
+
+inline bool setup_client_tls_session(const std::string &host, tls::ctx_t ctx,
                                      tls::session_t &session, socket_t sock,
                                      bool server_certificate_verification,
-                                     const std::string &ca_cert_file_path,
-                                     tls::ca_store_t ca_cert_store,
                                      time_t timeout_sec, time_t timeout_usec) {
   using namespace tls;
 
-  ctx = create_client_context();
   if (!ctx) { return false; }
-
-  if (server_certificate_verification) {
-    if (!ca_cert_file_path.empty()) {
-      load_ca_file(ctx, ca_cert_file_path.c_str());
-    }
-    if (ca_cert_store) { set_ca_store(ctx, ca_cert_store); }
-    load_system_certs(ctx);
-  }
 
   bool is_ip = is_ip_address(host);
 
@@ -12579,6 +12613,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   ca_cert_dir_path_ = rhs.ca_cert_dir_path_;
   server_certificate_verification_ = rhs.server_certificate_verification_;
   server_hostname_verification_ = rhs.server_hostname_verification_;
+  system_ca_mode_ = rhs.system_ca_mode_;
 #endif
 }
 
@@ -13361,6 +13396,7 @@ inline bool ClientImpl::create_redirect_client(
         server_certificate_verification_);
     redirect_client.enable_server_hostname_verification(
         server_hostname_verification_);
+    redirect_client.system_ca_mode_ = system_ca_mode_;
 
     // Transfer CA certificate to redirect client
     if (!ca_cert_pem_.empty()) {
@@ -15012,6 +15048,10 @@ inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
 inline void ClientImpl::enable_server_hostname_verification(bool enabled) {
   server_hostname_verification_ = enabled;
 }
+
+inline void ClientImpl::enable_system_ca(bool enabled) {
+  system_ca_mode_ = enabled ? SystemCAMode::Enabled : SystemCAMode::Disabled;
+}
 #endif
 
 inline void ClientImpl::set_logger(Logger logger) {
@@ -16134,21 +16174,10 @@ inline bool SSLClient::load_certs() {
   std::call_once(initialize_cert_, [&]() {
     std::lock_guard<std::mutex> guard(ctx_mutex_);
 
-    if (!ca_cert_file_path_.empty()) {
-      if (!tls::load_ca_file(ctx_, ca_cert_file_path_.c_str())) {
-        last_backend_error_ = tls::get_error();
-        ret = false;
-      }
-    } else if (!ca_cert_dir_path_.empty()) {
-      if (!tls::load_ca_dir(ctx_, ca_cert_dir_path_.c_str())) {
-        last_backend_error_ = tls::get_error();
-        ret = false;
-      }
-    } else if (ca_cert_pem_.empty() && !ca_cert_store_set_) {
-      if (!tls::load_system_certs(ctx_)) {
-        last_backend_error_ = tls::get_error();
-      }
-    }
+    ret = detail::load_client_ca_config(
+        ctx_, ca_cert_file_path_, ca_cert_dir_path_,
+        !ca_cert_pem_.empty() || ca_cert_store_set_, system_ca_mode_,
+        last_backend_error_);
   });
 
   return ret;
@@ -16277,10 +16306,12 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     // This provides real-time certificate validation with Windows Update
     // integration, working with both OpenSSL and MbedTLS backends.
     // Skip when a custom CA cert is specified, as the Windows certificate
-    // store would not know about user-provided CA certificates.
-    if (enable_windows_cert_verification_ && ca_cert_file_path_.empty() &&
-        ca_cert_dir_path_.empty() && ca_cert_pem_.empty() &&
-        !ca_cert_store_set_) {
+    // store would not know about user-provided CA certificates. Also skip
+    // when system CA trust is explicitly disabled.
+    if (enable_windows_cert_verification_ &&
+        system_ca_mode_ != SystemCAMode::Disabled &&
+        ca_cert_file_path_.empty() && ca_cert_dir_path_.empty() &&
+        ca_cert_pem_.empty() && !ca_cert_store_set_) {
       std::vector<unsigned char> der;
       if (get_cert_der(server_cert, der)) {
         uint64_t wincrypt_error = 0;
@@ -16317,6 +16348,10 @@ inline void Client::enable_server_certificate_verification(bool enabled) {
 
 inline void Client::enable_server_hostname_verification(bool enabled) {
   cli_->enable_server_hostname_verification(enabled);
+}
+
+inline void Client::enable_system_ca(bool enabled) {
+  cli_->enable_system_ca(enabled);
 }
 
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
@@ -16987,15 +17022,22 @@ inline bool set_hostname(session_t session, const char *hostname) {
 
   auto ssl = static_cast<SSL *>(session);
 
-  // Set SNI (Server Name Indication)
-  if (!set_sni(session, hostname)) { return false; }
-
   // Enable hostname verification
   auto param = SSL_get0_param(ssl);
   if (!param) return false;
 
-  X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-  if (X509_VERIFY_PARAM_set1_host(param, hostname, 0) != 1) { return false; }
+  if (detail::is_ip_address(hostname)) {
+    // RFC 6066: SNI must not be set for IP addresses; verify against the
+    // certificate's IP SANs instead of its DNS names
+    if (X509_VERIFY_PARAM_set1_ip_asc(param, hostname) != 1) { return false; }
+  } else {
+    // Set SNI (Server Name Indication)
+    if (!set_sni(session, hostname)) { return false; }
+
+    X509_VERIFY_PARAM_set_hostflags(param,
+                                    X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (X509_VERIFY_PARAM_set1_host(param, hostname, 0) != 1) { return false; }
+  }
 
   SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
   return true;
@@ -18784,9 +18826,16 @@ inline bool set_ca_store(ctx_t ctx, ca_store_t store) {
   while (src != nullptr) {
     int ret = mbedtls_x509_crt_parse_der(&mbed_ctx->ca_chain, src->raw.p,
                                          src->raw.len);
-    if (ret != 0) { return false; }
+    if (ret != 0) {
+      free_ca_store(store);
+      return false;
+    }
     src = src->next;
   }
+
+  // This function takes ownership of the store; the chain was deep-copied
+  // above, so release the source
+  free_ca_store(store);
 
   // Update the SSL config to use the new CA chain
   mbedtls_ssl_conf_ca_chain(&mbed_ctx->conf, &mbed_ctx->ca_chain, nullptr);
@@ -19931,6 +19980,9 @@ inline bool set_ca_store(ctx_t ctx, ca_store_t store) {
       wctx->ctx, reinterpret_cast<const unsigned char *>(ca->pem_data.data()),
       static_cast<long>(ca->pem_data.size()), SSL_FILETYPE_PEM);
   if (ret == SSL_SUCCESS) { wctx->ca_pem_data_ += ca->pem_data; }
+  // This function takes ownership of the store; the PEM data was copied into
+  // the context, so release the source
+  free_ca_store(store);
   return ret == SSL_SUCCESS;
 }
 
@@ -20293,6 +20345,12 @@ inline WebSocketClient::WebSocketClient(
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
     is_ssl_ = is_ssl;
+    if (is_ssl_) {
+      // The context lives as long as the client so that CA configuration
+      // survives reconnects; sessions are created per connection.
+      tls_ctx_ = tls::create_client_context();
+      if (!tls_ctx_) { return; }
+    }
 #else
     if (is_ssl) { return; }
 #endif
@@ -20301,7 +20359,15 @@ inline WebSocketClient::WebSocketClient(
   }
 }
 
-inline WebSocketClient::~WebSocketClient() { shutdown_and_close(); }
+inline WebSocketClient::~WebSocketClient() {
+  shutdown_and_close();
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  if (tls_ctx_) {
+    tls::free_context(tls_ctx_);
+    tls_ctx_ = nullptr;
+  }
+#endif
+}
 
 inline bool WebSocketClient::is_valid() const { return is_valid_; }
 
@@ -20312,10 +20378,6 @@ inline void WebSocketClient::shutdown_and_close() {
       tls::shutdown(tls_session_, true);
       tls::free_session(tls_session_);
       tls_session_ = nullptr;
-    }
-    if (tls_ctx_) {
-      tls::free_context(tls_ctx_);
-      tls_ctx_ = nullptr;
     }
   }
 #endif
@@ -20331,10 +20393,18 @@ inline void WebSocketClient::shutdown_and_close() {
 inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm) {
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl_) {
-    if (!detail::setup_client_tls_session(
-            host_, tls_ctx_, tls_session_, sock_,
-            server_certificate_verification_, ca_cert_file_path_,
-            ca_cert_store_, read_timeout_sec_, read_timeout_usec_)) {
+    if (server_certificate_verification_ && !certs_loaded_) {
+      uint64_t backend_error = 0;
+      detail::load_client_ca_config(tls_ctx_, ca_cert_file_path_, std::string(),
+                                    custom_ca_loaded_, system_ca_mode_,
+                                    backend_error);
+      certs_loaded_ = true;
+    }
+
+    if (!detail::setup_client_tls_session(host_, tls_ctx_, tls_session_, sock_,
+                                          server_certificate_verification_,
+                                          read_timeout_sec_,
+                                          read_timeout_usec_)) {
       return false;
     }
 
@@ -20468,12 +20538,30 @@ inline void WebSocketClient::set_ca_cert_path(const std::string &path) {
 }
 
 inline void WebSocketClient::set_ca_cert_store(tls::ca_store_t store) {
-  ca_cert_store_ = store;
+  if (store && tls_ctx_) {
+    // set_ca_store takes ownership of store
+    tls::set_ca_store(tls_ctx_, store);
+    custom_ca_loaded_ = true;
+  } else if (store) {
+    tls::free_ca_store(store);
+  }
+}
+
+inline void WebSocketClient::load_ca_cert_store(const char *ca_cert,
+                                                std::size_t size) {
+  if (tls_ctx_ && ca_cert && size > 0) {
+    tls::load_ca_pem(tls_ctx_, ca_cert, size);
+    custom_ca_loaded_ = true;
+  }
 }
 
 inline void
 WebSocketClient::enable_server_certificate_verification(bool enabled) {
   server_certificate_verification_ = enabled;
+}
+
+inline void WebSocketClient::enable_system_ca(bool enabled) {
+  system_ca_mode_ = enabled ? SystemCAMode::Enabled : SystemCAMode::Disabled;
 }
 
 #endif // CPPHTTPLIB_SSL_ENABLED

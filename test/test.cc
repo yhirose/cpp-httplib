@@ -11728,6 +11728,114 @@ TEST(UniversalClientRedirectTest, LoadCaCertStore) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+// enable_system_ca(true) loads system CA certs in addition to a custom CA,
+// so a host signed by a system CA verifies even though a custom CA is set
+TEST(SSLClientTest, EnableSystemCaWithCustomCa_Online) {
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+
+  SSLClient cli("google.com");
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_system_ca(true);
+  cli.enable_server_certificate_verification(true);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::MovedPermanently_301, res->status);
+}
+
+// The custom CA remains effective when combined with the system CA
+TEST(SSLClientTest, EnableSystemCaCustomCaVerifiesLocalServer) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_system_ca(true);
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+// enable_system_ca(false) prevents system CA loading entirely
+TEST(SSLClientTest, DisableSystemCa_Online) {
+  SSLClient cli("google.com");
+  cli.enable_system_ca(false);
+  cli.enable_server_certificate_verification(true);
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  // OpenSSL reports a verification failure; Mbed TLS fails the handshake
+  // itself when the CA chain is empty
+  EXPECT_TRUE(res.error() == Error::SSLServerVerification ||
+              res.error() == Error::SSLConnection);
+}
+
+// The universal Client forwards enable_system_ca()
+TEST(UniversalClientTest, EnableSystemCaWithCustomCa_Online) {
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+
+  Client cli("https://google.com");
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_system_ca(true);
+  cli.enable_server_certificate_verification(true);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::MovedPermanently_301, res->status);
+}
+
+// The system CA policy must carry over to the client created internally for
+// following a cross-host HTTPS redirect
+TEST(UniversalClientRedirectTest, EnableSystemCaCarriesOver_Online) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://www.google.com/");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("https://127.0.0.1:" + std::to_string(PORT));
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_system_ca(true);
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  // Receiving any response proves the redirect client completed the TLS
+  // handshake with a system-CA-signed host
+  auto res = cli.Get("/index");
+  ASSERT_TRUE(res);
+}
+
 TEST(MultipartFormDataTest, LargeData) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
 
@@ -18441,6 +18549,88 @@ TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
   EXPECT_EQ(ws::Text, client.read(msg));
   EXPECT_EQ("Hello WSS", msg);
 
+  client.close();
+}
+#endif
+
+// Limited to the OpenSSL backend (like WebSocketSSLIntegrationTest above):
+// Mbed TLS and wolfSSL disable certificate verification for IP hosts in
+// setup_client_tls_session, so the assertions below would not hold there.
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+class WebSocketSSLCATest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    server_ = httplib::detail::make_unique<SSLServer>(SERVER_CERT2_FILE,
+                                                      SERVER_PRIVATE_KEY_FILE);
+    server_->WebSocket("/echo", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      while (ws.read(msg)) {
+        ws.send(msg);
+      }
+    });
+    port_ = server_->bind_to_any_port("127.0.0.1");
+    server_thread_ = std::thread([this]() { server_->listen_after_bind(); });
+    server_->wait_until_ready();
+  }
+
+  void TearDown() override {
+    server_->stop();
+    if (server_thread_.joinable()) { server_thread_.join(); }
+  }
+
+  std::string url() const {
+    return "wss://127.0.0.1:" + std::to_string(port_) + "/echo";
+  }
+
+  std::unique_ptr<SSLServer> server_;
+  std::thread server_thread_;
+  int port_ = 0;
+};
+
+// A custom CA loaded as PEM verifies the server with full certificate
+// verification enabled
+TEST_F(WebSocketSSLCATest, LoadCaCertStoreVerifiesServer) {
+  ws::WebSocketClient client(url());
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  client.load_ca_cert_store(cert.c_str(), cert.size());
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+}
+
+// A custom CA that does not cover the server must fail verification (the
+// custom CA is exclusive; system certs are not loaded alongside it)
+TEST_F(WebSocketSSLCATest, WrongCustomCaFailsVerification) {
+  ws::WebSocketClient client(url());
+  std::string cert;
+  read_file(CLIENT_CA_CERT_FILE, cert);
+  client.load_ca_cert_store(cert.c_str(), cert.size());
+
+  ASSERT_FALSE(client.connect());
+}
+
+// Regression test: reconnecting with a native custom CA store used to reuse
+// a store handle the previous TLS context had already freed (use-after-free
+// under the OpenSSL backend). The context now lives as long as the client.
+TEST_F(WebSocketSSLCATest, ReconnectWithCustomCaStore) {
+  ws::WebSocketClient client(url());
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  client.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+
+  ASSERT_TRUE(client.connect());
+  client.close();
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("again"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("again", msg);
   client.close();
 }
 #endif
