@@ -7,11 +7,12 @@ CPPHTTPLIB_FLAGS = -DCPPHTTPLIB_THREAD_POOL_COUNT=16
 
 BENCH = bombardier -c 10 -d 5s localhost:8080
 MONITOR = ali http://localhost:8080
+WAIT = while ! nc -z localhost 8080 >/dev/null 2>&1; do sleep 0.05; done
 
 # cpp-httplib
 bench: server
 	@echo "--------------------\n cpp-httplib latest\n--------------------\n"
-	@./server & export PID=$$!; $(BENCH); kill $${PID}
+	@./server & export PID=$$!; $(WAIT); $(BENCH); kill $${PID}
 	@echo ""
 
 monitor: server
@@ -26,7 +27,7 @@ server : cpp-httplib/main.cpp ../httplib.h
 # crow
 bench-crow: server-crow
 	@echo "-------------\n Crow v1.3.1\n-------------\n"
-	@./server-crow & export PID=$$!; $(BENCH); kill $${PID}
+	@./server-crow & export PID=$$!; $(WAIT); $(BENCH); kill $${PID}
 	@echo ""
 
 monitor-crow: server-crow
