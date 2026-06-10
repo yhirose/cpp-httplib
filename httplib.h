@@ -2804,6 +2804,11 @@ private:
   std::mutex ctx_mutex_;
   std::once_flag initialize_cert_;
 
+  // Tracks whether a custom CA store was applied via set_ca_cert_store(),
+  // since the store handle itself is owned by ctx_ and leaves no other trace.
+  // Used to keep custom CA configuration exclusive with system CA loading.
+  bool ca_cert_store_set_ = false;
+
   long verify_result_ = 0;
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
@@ -16092,6 +16097,7 @@ inline void SSLClient::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
   if (ca_cert_store && ctx_) {
     // set_ca_store takes ownership of ca_cert_store
     tls::set_ca_store(ctx_, ca_cert_store);
+    ca_cert_store_set_ = true;
   } else if (ca_cert_store) {
     tls::free_ca_store(ca_cert_store);
   }
@@ -16138,7 +16144,7 @@ inline bool SSLClient::load_certs() {
         last_backend_error_ = tls::get_error();
         ret = false;
       }
-    } else if (ca_cert_pem_.empty()) {
+    } else if (ca_cert_pem_.empty() && !ca_cert_store_set_) {
       if (!tls::load_system_certs(ctx_)) {
         last_backend_error_ = tls::get_error();
       }
@@ -16273,7 +16279,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     // Skip when a custom CA cert is specified, as the Windows certificate
     // store would not know about user-provided CA certificates.
     if (enable_windows_cert_verification_ && ca_cert_file_path_.empty() &&
-        ca_cert_dir_path_.empty() && ca_cert_pem_.empty()) {
+        ca_cert_dir_path_.empty() && ca_cert_pem_.empty() &&
+        !ca_cert_store_set_) {
       std::vector<unsigned char> der;
       if (get_cert_der(server_cert, der)) {
         uint64_t wincrypt_error = 0;
@@ -16335,7 +16342,10 @@ inline void Client::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
 }
 
 inline void Client::load_ca_cert_store(const char *ca_cert, std::size_t size) {
-  set_ca_cert_store(tls::create_ca_store(ca_cert, size));
+  if (is_ssl_) {
+    // Use the PEM-based path so the CA data is retained for redirect transfer
+    static_cast<SSLClient &>(*cli_).load_ca_cert_store(ca_cert, size);
+  }
 }
 
 inline void

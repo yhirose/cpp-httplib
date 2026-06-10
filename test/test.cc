@@ -51,6 +51,16 @@ inline std::string u8_to_string(const char8_t *s) {
 #define SERVER_ENCRYPTED_PRIVATE_KEY_FILE "./key_encrypted.pem"
 #define SERVER_ENCRYPTED_PRIVATE_KEY_PASS "test123!"
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+namespace httplib {
+namespace tls {
+// Declared here for the split build, where the TLS abstraction declarations
+// live below the split border; the definition is linked from httplib.cc.
+ca_store_t create_ca_store(const char *pem, size_t len);
+} // namespace tls
+} // namespace httplib
+#endif
+
 using namespace std;
 using namespace httplib;
 
@@ -11623,6 +11633,99 @@ TEST(SSLClientTest, SetCaCertStoreSkipsSystemCerts_Online) {
   auto res = cli.Get("/");
   ASSERT_FALSE(res);
   EXPECT_EQ(Error::SSLServerVerification, res.error());
+}
+
+// Same as above, but through the native store handle path. Regression test:
+// set_ca_cert_store() used to leave no trace on the client, so load_certs()
+// merged system certs into the user-provided store.
+TEST(SSLClientTest, SetCaCertStoreNativeSkipsSystemCerts_Online) {
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+
+  SSLClient cli("google.com");
+  cli.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+  cli.enable_server_certificate_verification(true);
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+}
+
+// A custom store set via the native handle must still verify a server whose
+// cert it does contain.
+TEST(SSLClientTest, SetCaCertStoreNativeVerifiesLocalServer) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+// CA certs loaded through the universal Client must be transferred to the
+// client created internally for following an HTTPS redirect. Regression test:
+// Client::load_ca_cert_store() used to bypass the PEM-based path that stores
+// the CA data for redirect transfer.
+TEST(UniversalClientRedirectTest, LoadCaCertStore) {
+  auto ssl_port = PORT + 1;
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  Client cli("https://127.0.0.1:" + std::to_string(PORT));
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/index");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(MultipartFormDataTest, LargeData) {
