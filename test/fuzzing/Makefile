@@ -13,7 +13,7 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 BROTLI_DIR = /usr/local/opt/brotli
 # BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
-FUZZERS = server_fuzzer url_parser_fuzzer header_parser_fuzzer client_fuzzer
+FUZZERS = server_fuzzer url_parser_fuzzer header_parser_fuzzer client_fuzzer multipart_parser_fuzzer
 
 # Runs all the tests and also fuzz tests against seed corpus.
 all : $(FUZZERS)
@@ -33,6 +33,9 @@ header_parser_fuzzer : header_parser_fuzzer.cc ../../httplib.h
 	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
 
 url_parser_fuzzer : url_parser_fuzzer.cc ../../httplib.h
+	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
+
+multipart_parser_fuzzer : multipart_parser_fuzzer.cc ../../httplib.h
 	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
 
 clean:
