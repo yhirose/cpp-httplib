@@ -386,6 +386,19 @@ TEST(DecodePathTest, UnicodeEncoding) {
   EXPECT_EQ("", decode_path_component("%uD800"));
 }
 
+TEST(DecodeQueryTest, RejectsNonHexEscapes) {
+  // A sign or whitespace inside the two-character escape window must not be
+  // accepted as a valid percent-encoding; the sequence is passed through
+  // literally, matching decode_uri_component / decode_path_component.
+  EXPECT_EQ("%-1", decode_query_component("%-1", false));
+  EXPECT_EQ("%-0", decode_query_component("%-0", false));
+  EXPECT_EQ("%+5", decode_query_component("%+5", false));
+  EXPECT_EQ("% 5", decode_query_component("% 5", false));
+  // Well-formed escapes still decode.
+  EXPECT_EQ("-", decode_query_component("%2D", false));
+  EXPECT_EQ("A", decode_query_component("%41", false));
+}
+
 TEST(SanitizeFilenameTest, VariousPatterns) {
   // Path traversal
   EXPECT_EQ("passwd", httplib::sanitize_filename("../../../etc/passwd"));
