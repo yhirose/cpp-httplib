@@ -22,12 +22,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   httplib::detail::FormDataParser parser;
   parser.set_boundary(std::move(boundary));
 
-  auto header_cb = [](const httplib::FormData &) -> bool {
-    return true;
-  };
-  auto content_cb = [](const char *, size_t) -> bool {
-    return true;
-  };
+  auto header_cb = [](const httplib::FormData &) -> bool { return true; };
+  auto content_cb = [](const char *, size_t) -> bool { return true; };
 
   size_t chunk = (static_cast<size_t>(data[1]) % 64) + 1;
   for (size_t off = 0; off < body_size; off += chunk) {
