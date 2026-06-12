@@ -9734,11 +9734,9 @@ inline std::string decode_query_component(const std::string &component,
 
   for (size_t i = 0; i < component.size(); i++) {
     if (component[i] == '%' && i + 2 < component.size()) {
-      std::string hex = component.substr(i + 1, 2);
-      char *end;
-      unsigned long value = std::strtoul(hex.c_str(), &end, 16);
-      if (end == hex.c_str() + 2) {
-        result += static_cast<char>(value);
+      auto val = 0;
+      if (detail::from_hex_to_i(component, i + 1, 2, val)) {
+        result += static_cast<char>(val);
         i += 2;
       } else {
         result += component[i];
