@@ -16777,6 +16777,30 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   return callback(verify_ctx) ? 1 : 0;
 }
 
+// X509_STORE_get0_objects is deprecated since OpenSSL 4.0 because it is not
+// thread-safe; X509_STORE_get1_objects (OpenSSL 3.3+) returns a snapshot
+// that must be released with release_store_objects
+#if !defined(OPENSSL_IS_BORINGSSL) && !defined(LIBRESSL_VERSION_NUMBER) &&     \
+    OPENSSL_VERSION_NUMBER >= 0x30300000L
+#define CPPHTTPLIB_HAS_X509_STORE_GET1_OBJECTS
+#endif
+
+inline STACK_OF(X509_OBJECT) * get_store_objects(X509_STORE *store) {
+#ifdef CPPHTTPLIB_HAS_X509_STORE_GET1_OBJECTS
+  return X509_STORE_get1_objects(store);
+#else
+  return X509_STORE_get0_objects(store);
+#endif
+}
+
+inline void release_store_objects(STACK_OF(X509_OBJECT) * objs) {
+#ifdef CPPHTTPLIB_HAS_X509_STORE_GET1_OBJECTS
+  sk_X509_OBJECT_pop_free(objs, X509_OBJECT_free);
+#else
+  (void)objs; // get0 variant returns an internal pointer; nothing to free
+#endif
+}
+
 } // namespace impl
 
 inline ctx_t create_client_context() {
@@ -17298,11 +17322,19 @@ inline std::string get_cert_subject_cn(cert_t cert) {
   auto subject_name = X509_get_subject_name(x509);
   if (!subject_name) return "";
 
-  char buf[256];
-  auto len =
-      X509_NAME_get_text_by_NID(subject_name, NID_commonName, buf, sizeof(buf));
-  if (len < 0) return "";
-  return std::string(buf, static_cast<size_t>(len));
+  // X509_NAME_get_text_by_NID is deprecated since OpenSSL 4.0
+  auto idx = X509_NAME_get_index_by_NID(subject_name, NID_commonName, -1);
+  if (idx < 0) return "";
+
+  auto entry = X509_NAME_get_entry(subject_name, idx);
+  if (!entry) return "";
+
+  auto data = X509_NAME_ENTRY_get_data(entry);
+  if (!data) return "";
+
+  return std::string(
+      reinterpret_cast<const char *>(ASN1_STRING_get0_data(data)),
+      static_cast<size_t>(ASN1_STRING_length(data)));
 }
 
 inline std::string get_cert_issuer_name(cert_t cert) {
@@ -17507,8 +17539,9 @@ inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) { return 0; }
 
-  auto objs = X509_STORE_get0_objects(store);
+  auto objs = impl::get_store_objects(store);
   if (!objs) { return 0; }
+  auto se = detail::scope_exit([&] { impl::release_store_objects(objs); });
 
   auto count = sk_X509_OBJECT_num(objs);
   for (decltype(count) i = 0; i < count; i++) {
@@ -17534,8 +17567,9 @@ inline std::vector<std::string> get_ca_names(ctx_t ctx) {
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) { return names; }
 
-  auto objs = X509_STORE_get0_objects(store);
+  auto objs = impl::get_store_objects(store);
   if (!objs) { return names; }
+  auto se = detail::scope_exit([&] { impl::release_store_objects(objs); });
 
   auto count = sk_X509_OBJECT_num(objs);
   for (decltype(count) i = 0; i < count; i++) {
@@ -17729,20 +17763,9 @@ SSLClient::verify_host_with_subject_alt_name(X509 *server_cert) const {
 }
 
 inline bool SSLClient::verify_host_with_common_name(X509 *server_cert) const {
-  const auto subject_name = X509_get_subject_name(server_cert);
-
-  if (subject_name != nullptr) {
-    char name[BUFSIZ];
-    auto name_len = X509_NAME_get_text_by_NID(subject_name, NID_commonName,
-                                              name, sizeof(name));
-
-    if (name_len != -1) {
-      return detail::match_hostname(
-          std::string(name, static_cast<size_t>(name_len)), host_);
-    }
-  }
-
-  return false;
+  auto cn = tls::get_cert_subject_cn(static_cast<tls::cert_t>(server_cert));
+  if (cn.empty()) { return false; }
+  return detail::match_hostname(cn, host_);
 }
 
 #endif // CPPHTTPLIB_OPENSSL_SUPPORT
