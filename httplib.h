@@ -312,6 +312,7 @@ using socket_t = int;
 #include <cctype>
 #include <chrono>
 #include <climits>
+#include <clocale>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
@@ -686,10 +687,21 @@ inline from_chars_result<T> from_chars(const char *first, const char *last,
   return {p, std::errc{}};
 }
 
-// from_chars for double (simple wrapper for strtod)
+// from_chars for double (locale-independent wrapper for strtod)
 inline from_chars_result<double> from_chars(const char *first, const char *last,
                                             double &value) {
   std::string s(first, last);
+  // strtod reads the decimal point according to the global C locale, but the
+  // textual numbers parsed here (e.g. HTTP quality values) always use '.'.
+  // When the active locale uses a different single-character separator,
+  // translate '.' to it so the result does not depend on the host locale,
+  // matching the integer overload above. A one-for-one substitution keeps the
+  // byte offsets used below valid.
+  const char *point = std::localeconv()->decimal_point;
+  if (point != nullptr && point[0] != '\0' && point[1] == '\0' &&
+      point[0] != '.') {
+    std::replace(s.begin(), s.end(), '.', point[0]);
+  }
   char *endptr = nullptr;
   errno = 0;
   value = std::strtod(s.c_str(), &endptr);

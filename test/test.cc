@@ -745,6 +745,41 @@ TEST(ParseAcceptHeaderTest, SpecialCases) {
   EXPECT_EQ(no_space_result[2], "text/plain");
 }
 
+TEST(ParseAcceptHeaderTest, QualityValueLocaleIndependence) {
+  // Quality values always use '.' as the decimal separator, so parsing must
+  // not depend on the process locale. An embedding application may have
+  // switched to a locale that uses ',' via setlocale(LC_ALL, "").
+  const char *cur = std::setlocale(LC_NUMERIC, nullptr);
+  std::string saved = cur ? cur : "C";
+
+  const char *comma_locales[] = {"de_DE.UTF-8", "de_DE.utf8", "nl_NL.UTF-8",
+                                 "fr_FR.UTF-8"};
+  bool switched = false;
+  for (const auto loc : comma_locales) {
+    if (std::setlocale(LC_NUMERIC, loc) != nullptr &&
+        std::localeconv()->decimal_point[0] == ',') {
+      switched = true;
+      break;
+    }
+  }
+  if (!switched) {
+    std::setlocale(LC_NUMERIC, saved.c_str());
+    GTEST_SKIP() << "no comma-decimal locale available on this host";
+  }
+
+  // The higher-weighted type appears later in the list, so a correct parse
+  // must reorder it ahead of the earlier, lower-weighted one. A locale-
+  // sensitive parse reads both weights as 0 and leaves the original order.
+  std::vector<std::string> result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "application/json;q=0.1,text/html;q=0.9", result));
+  ASSERT_EQ(result.size(), 2U);
+  EXPECT_EQ(result[0], "text/html");
+  EXPECT_EQ(result[1], "application/json");
+
+  std::setlocale(LC_NUMERIC, saved.c_str());
+}
+
 TEST(ParseAcceptHeaderTest, InvalidCases) {
   std::vector<std::string> result;
 
