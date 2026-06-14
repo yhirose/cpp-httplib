@@ -18600,10 +18600,12 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
     san = san->next;
   }
 
-  // Fallback: Check Common Name (CN) in subject
+  // Fallback: Check Common Name (CN) in subject. Skipped for IP-literal hosts:
+  // an IP identity is only valid via an iPAddress SAN, never the CN (RFC 9110;
+  // the OpenSSL backend's X509_check_ip behaves the same way).
   char cn[256];
   int ret = mbedtls_x509_dn_gets(cn, sizeof(cn), &mcert->subject);
-  if (ret > 0) {
+  if (!is_ip && ret > 0) {
     std::string cn_str(cn);
 
     // Look for "CN=" in the DN string
@@ -19762,9 +19764,11 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
     wolfSSL_sk_free(san_names);
   }
 
-  // Fallback: Check Common Name (CN) in subject
+  // Fallback: Check Common Name (CN) in subject. Skipped for IP-literal hosts:
+  // an IP identity is only valid via an iPAddress SAN, never the CN (RFC 9110;
+  // the OpenSSL backend's X509_check_ip behaves the same way).
   WOLFSSL_X509_NAME *subject = wolfSSL_X509_get_subject_name(x509);
-  if (subject) {
+  if (!is_ip && subject) {
     char cn[256] = {};
     int cn_len = wolfSSL_X509_NAME_get_text_by_NID(subject, NID_commonName, cn,
                                                    sizeof(cn));
