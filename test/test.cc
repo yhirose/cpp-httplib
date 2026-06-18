@@ -38,6 +38,8 @@ inline std::string u8_to_string(const char8_t *s) {
 
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
+#define SERVER_CERT_IP_CN_FILE "./cert_ip_cn.pem"
+#define SERVER_CERT_IPV6_FILE "./cert_ipv6.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
 #define CA_CERT_FILE "./ca-bundle.crt"
 #define CLIENT_CA_CERT_FILE "./rootCA.cert.pem"
@@ -10938,6 +10940,108 @@ TEST(SSLClientServerTest, TlsVerifyHostname) {
   // Wrong hostname should not match
   EXPECT_FALSE(verify_result_wrong)
       << "verify_hostname should not match 'wronghost.example.com'";
+}
+
+// An IP-literal host must only be authenticated via an iPAddress SAN, never via
+// the certificate's Common Name (RFC 9110). This mirrors the OpenSSL backend's
+// X509_check_ip behavior and must hold for every backend.
+TEST(SSLClientServerTest, TlsVerifyHostnameIpNotMatchedByCommonName) {
+  using namespace httplib::tls;
+
+  // Certificate CN is the IPv4 literal "127.0.0.1" and it carries no SAN.
+  SSLServer svr(SERVER_CERT_IP_CN_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  bool verify_callback_called = false;
+  bool ip_matched_via_cn = true;
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.set_connection_timeout(5);
+
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    verify_callback_called = true;
+    if (!ctx.cert) return false;
+
+    // The IP appears only in the CN, so it must NOT be accepted.
+    ip_matched_via_cn = ctx.check_hostname("127.0.0.1");
+
+    return true; // Accept for the purpose of this test
+  });
+
+  cli.Get("/test");
+
+  ASSERT_TRUE(verify_callback_called)
+      << "Verify callback should have been called";
+  EXPECT_FALSE(ip_matched_via_cn)
+      << "An IP host must not be authenticated via the certificate CN";
+}
+
+// IPv6 hosts must be matched against IPv6 iPAddress SANs (and only those).
+TEST(SSLClientServerTest, TlsVerifyHostnameIpv6San) {
+  using namespace httplib::tls;
+
+  // Certificate CN is "::1" and it carries an IPv6 SAN for "2001:db8::1".
+  SSLServer svr(SERVER_CERT_IPV6_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  bool verify_callback_called = false;
+  bool san_matched = false;
+  bool wrong_ipv6_matched = true;
+  bool cn_ipv6_matched = true;
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.set_connection_timeout(5);
+
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    verify_callback_called = true;
+    if (!ctx.cert) return false;
+
+    // Matches the IPv6 iPAddress SAN.
+    san_matched = ctx.check_hostname("2001:db8::1");
+    // A different IPv6 address must not match.
+    wrong_ipv6_matched = ctx.check_hostname("2001:db8::2");
+    // "::1" lives only in the CN, so it must not be accepted.
+    cn_ipv6_matched = ctx.check_hostname("::1");
+
+    return true; // Accept for the purpose of this test
+  });
+
+  cli.Get("/test");
+
+  ASSERT_TRUE(verify_callback_called)
+      << "Verify callback should have been called";
+  EXPECT_TRUE(san_matched)
+      << "verify_hostname should match an IPv6 iPAddress SAN";
+  EXPECT_FALSE(wrong_ipv6_matched)
+      << "verify_hostname should not match a non-matching IPv6 address";
+  EXPECT_FALSE(cn_ipv6_matched)
+      << "An IPv6 host must not be authenticated via the certificate CN";
 }
 #endif
 
