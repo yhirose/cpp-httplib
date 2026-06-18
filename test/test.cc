@@ -638,6 +638,75 @@ TEST(TrimTests, TrimStringTests) {
   EXPECT_TRUE(detail::trim_copy("").empty());
 }
 
+TEST(FromCharsTest, Double) {
+  // detail::from_chars(double) recognizes exactly the HTTP quality-value
+  // grammar (RFC 9110 12.4.2): a non-negative decimal "1*DIGIT [ '.' *DIGIT ]"
+  // with no sign, exponent, or "inf"/"nan", parsed locale-independently.
+  auto parse = [](const std::string &s, double &v) {
+    return detail::from_chars(s.data(), s.data() + s.size(), v);
+  };
+
+  double v = -1.0;
+
+  // Representative quality values.
+  EXPECT_EQ(parse("0", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 0.0);
+  EXPECT_EQ(parse("1", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 1.0);
+  EXPECT_EQ(parse("0.8", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 0.8);
+  EXPECT_EQ(parse("0.001", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 0.001);
+  EXPECT_EQ(parse("1.000", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 1.0);
+
+  // A missing integer or fractional part is tolerated.
+  EXPECT_EQ(parse(".5", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 0.5);
+  EXPECT_EQ(parse("5.", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 5.0);
+
+  // Values outside [0, 1] still parse; the caller range-checks them.
+  EXPECT_EQ(parse("123.456", v).ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 123.456);
+
+  // Stops at the first byte that is not part of the number and reports where.
+  std::string trailing = "0.9, text/html";
+  auto r = parse(trailing, v);
+  EXPECT_EQ(r.ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 0.9);
+  EXPECT_EQ(*r.ptr, ',');
+
+  // Sign and exponent are NOT part of the grammar: '+'/'-' are rejected
+  // outright, and an 'e'/'E' simply ends the number.
+  EXPECT_EQ(parse("-3.25", v).ec, std::errc::invalid_argument);
+  EXPECT_EQ(parse("+2.5", v).ec, std::errc::invalid_argument);
+  std::string exp_input = "1.5e3";
+  r = parse(exp_input, v);
+  EXPECT_EQ(r.ec, std::errc{});
+  EXPECT_DOUBLE_EQ(v, 1.5);
+  EXPECT_EQ(*r.ptr, 'e');
+
+  // Invalid inputs.
+  EXPECT_EQ(parse("", v).ec, std::errc::invalid_argument);
+  EXPECT_EQ(parse(".", v).ec, std::errc::invalid_argument);
+  EXPECT_EQ(parse("abc", v).ec, std::errc::invalid_argument);
+  EXPECT_EQ(parse("nan", v).ec, std::errc::invalid_argument);
+  EXPECT_EQ(parse("inf", v).ec, std::errc::invalid_argument);
+
+  // Pathological but well-formed inputs must stay bounded (no overflow, no
+  // out-of-bounds table access) and stay within [0, 1] for the caller.
+  EXPECT_EQ(parse(std::string("0.") + std::string(500, '0'), v).ec,
+            std::errc{});
+  EXPECT_DOUBLE_EQ(v, 0.0);
+  EXPECT_EQ(parse(std::string("0.") + std::string(500, '9'), v).ec,
+            std::errc{});
+  EXPECT_GE(v, 0.0);
+  EXPECT_LE(v, 1.0);
+  EXPECT_EQ(parse(std::string(500, '9'), v).ec, std::errc{});
+  EXPECT_GT(v, 1.0); // huge integer: finite, > 1, so the caller rejects it
+}
+
 TEST(ParseAcceptHeaderTest, BasicAcceptParsing) {
   // Simple case without quality values
   std::vector<std::string> result1;
@@ -743,6 +812,41 @@ TEST(ParseAcceptHeaderTest, SpecialCases) {
   EXPECT_EQ(no_space_result[0], "text/html");
   EXPECT_EQ(no_space_result[1], "application/json");
   EXPECT_EQ(no_space_result[2], "text/plain");
+}
+
+TEST(ParseAcceptHeaderTest, QualityValueLocaleIndependence) {
+  // Quality values always use '.' as the decimal separator, so parsing must
+  // not depend on the process locale. An embedding application may have
+  // switched to a locale that uses ',' via setlocale(LC_ALL, "").
+  const char *cur = std::setlocale(LC_NUMERIC, nullptr);
+  std::string saved = cur ? cur : "C";
+
+  const char *comma_locales[] = {"de_DE.UTF-8", "de_DE.utf8", "nl_NL.UTF-8",
+                                 "fr_FR.UTF-8"};
+  bool switched = false;
+  for (const auto loc : comma_locales) {
+    if (std::setlocale(LC_NUMERIC, loc) != nullptr &&
+        std::localeconv()->decimal_point[0] == ',') {
+      switched = true;
+      break;
+    }
+  }
+  if (!switched) {
+    std::setlocale(LC_NUMERIC, saved.c_str());
+    GTEST_SKIP() << "no comma-decimal locale available on this host";
+  }
+
+  // The higher-weighted type appears later in the list, so a correct parse
+  // must reorder it ahead of the earlier, lower-weighted one. A locale-
+  // sensitive parse reads both weights as 0 and leaves the original order.
+  std::vector<std::string> result;
+  EXPECT_TRUE(detail::parse_accept_header(
+      "application/json;q=0.1,text/html;q=0.9", result));
+  ASSERT_EQ(result.size(), 2U);
+  EXPECT_EQ(result[0], "text/html");
+  EXPECT_EQ(result[1], "application/json");
+
+  std::setlocale(LC_NUMERIC, saved.c_str());
 }
 
 TEST(ParseAcceptHeaderTest, InvalidCases) {
