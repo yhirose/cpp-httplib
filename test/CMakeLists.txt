@@ -116,6 +116,23 @@ if(HTTPLIB_IS_USING_OPENSSL)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
+    # Certificates for IP-host hostname verification regression tests.
+    # cert_ip_cn.pem: CN is an IPv4 literal with NO subjectAltName. An IP host
+    #                 must NOT be authenticated via the CN, so verifying it
+    #                 against this cert must fail.
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} req -x509 -key key.pem -sha256 -days 3650 -nodes -subj /CN=127.0.0.1 -out cert_ip_cn.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    # cert_ipv6.pem:  CN is an IPv6 literal plus an IPv6 iPAddress SAN for a
+    #                 different address. The SAN address must match; the CN
+    #                 address must be ignored.
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} req -x509 -key key.pem -sha256 -days 3650 -nodes -subj /CN=::1 -addext subjectAltName=IP:2001:db8::1 -out cert_ipv6.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 endif()
 
 add_subdirectory(fuzzing)
