@@ -420,6 +420,22 @@ TEST(SanitizeFilenameTest, VariousPatterns) {
   EXPECT_EQ("", httplib::sanitize_filename("   "));
 }
 
+TEST(Base64EncodeTest, KnownAnswers) {
+  // RFC 4648 test vectors. Inputs of four bytes or more exercise the round
+  // where the accumulator's top bit is already set before the next shift.
+  EXPECT_EQ("", detail::base64_encode(""));
+  EXPECT_EQ("Zg==", detail::base64_encode("f"));
+  EXPECT_EQ("Zm8=", detail::base64_encode("fo"));
+  EXPECT_EQ("Zm9v", detail::base64_encode("foo"));
+  EXPECT_EQ("Zm9vYg==", detail::base64_encode("foob"));
+  EXPECT_EQ("Zm9vYmE=", detail::base64_encode("fooba"));
+  EXPECT_EQ("Zm9vYmFy", detail::base64_encode("foobar"));
+
+  // High bytes keep the top bit set across several rounds.
+  EXPECT_EQ("AAECA//+wIB/", detail::base64_encode(std::string(
+                                "\x00\x01\x02\x03\xff\xfe\xc0\x80\x7f", 9)));
+}
+
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 

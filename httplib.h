@@ -4665,7 +4665,9 @@ inline std::string base64_encode(const std::string &in) {
   std::string out;
   out.reserve(in.size());
 
-  auto val = 0;
+  // Unsigned: once four bytes are folded in the top bit is set, so the next
+  // `val << 8` would left-shift a negative int (undefined behaviour).
+  uint32_t val = 0;
   auto valb = -6;
 
   for (auto c : in) {
