@@ -420,6 +420,16 @@ TEST(SanitizeFilenameTest, VariousPatterns) {
   EXPECT_EQ("", httplib::sanitize_filename("   "));
 }
 
+// Forward declaration: in split builds split.py strips `inline` and moves the
+// definition into httplib.cc, so detail::base64_encode is not visible from the
+// public httplib.h. Re-declaring it here lets the tests link against the symbol
+// in both header-only and split builds.
+namespace httplib {
+namespace detail {
+std::string base64_encode(const std::string &in);
+} // namespace detail
+} // namespace httplib
+
 TEST(Base64EncodeTest, KnownAnswers) {
   // RFC 4648 test vectors. Inputs of four bytes or more exercise the round
   // where the accumulator's top bit is already set before the next shift.
