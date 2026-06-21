@@ -8314,18 +8314,37 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
   return valid;
 }
 
+// RFC 7578 §5.1.1: escape CR, LF and the double quote so a caller-supplied
+// field name or filename cannot break out of the quoted-string or inject extra
+// part headers. Mirrors the WHATWG form-data escaping used by browsers.
+inline std::string escape_multipart_field(const std::string &s) {
+  std::string r;
+  r.reserve(s.size());
+  for (auto c : s) {
+    switch (c) {
+    case '\r': r += "%0D"; break;
+    case '\n': r += "%0A"; break;
+    case '"': r += "%22"; break;
+    default: r += c; break;
+    }
+  }
+  return r;
+}
+
 template <typename T>
 inline std::string
 serialize_multipart_formdata_item_begin(const T &item,
                                         const std::string &boundary) {
   std::string body = "--" + boundary + "\r\n";
-  body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+  body += "Content-Disposition: form-data; name=\"" +
+          escape_multipart_field(item.name) + "\"";
   if (!item.filename.empty()) {
-    body += "; filename=\"" + item.filename + "\"";
+    body += "; filename=\"" + escape_multipart_field(item.filename) + "\"";
   }
   body += "\r\n";
   if (!item.content_type.empty()) {
-    body += "Content-Type: " + item.content_type + "\r\n";
+    body +=
+        "Content-Type: " + escape_multipart_field(item.content_type) + "\r\n";
   }
   body += "\r\n";
 

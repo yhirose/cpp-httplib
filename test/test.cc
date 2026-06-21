@@ -12398,6 +12398,30 @@ TEST(MultipartFormDataTest, BadHeader) {
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
 }
 
+TEST(MultipartFormDataTest, EscapesFieldInjection) {
+  UploadFormDataItems items = {
+      {"field", "data", "evil\r\nContent-Type: text/x-injected\r\n\r\nSMUGGLED",
+       "text/plain"},
+      {"na\"me", "x", "fi\"le", ""},
+  };
+
+  auto body = detail::serialize_multipart_formdata(items, "BOUNDARY");
+
+  // CR/LF in a filename must not introduce extra part headers or a body.
+  EXPECT_EQ(std::string::npos,
+            body.find("\r\nContent-Type: text/x-injected\r\n"));
+  EXPECT_NE(std::string::npos,
+            body.find("filename=\"evil%0D%0AContent-Type: "
+                      "text/x-injected%0D%0A%0D%0ASMUGGLED\""));
+
+  // A double quote must not break out of the quoted-string.
+  EXPECT_NE(std::string::npos, body.find("name=\"na%22me\""));
+  EXPECT_NE(std::string::npos, body.find("filename=\"fi%22le\""));
+
+  // Well-formed values are left untouched.
+  EXPECT_NE(std::string::npos, body.find("Content-Type: text/plain\r\n"));
+}
+
 TEST(MultipartFormDataTest, WithPreamble) {
   Server svr;
   svr.Post("/post", [&](const Request & /*req*/, Response &res) {
