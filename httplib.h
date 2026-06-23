@@ -13657,9 +13657,18 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
 
     if (!query_part.empty()) {
       // Normalize the query string (decode then re-encode) while preserving
-      // the original parameter order.
-      auto normalized = detail::normalize_query_string(query_part);
-      if (!normalized.empty()) { path_with_query += '?' + normalized; }
+      // the original parameter order. When path encoding is disabled the
+      // caller has supplied an already-encoded target and expects the exact
+      // bytes to be sent on the wire, so skip normalization for the query
+      // too. Normalizing here would decode-then-re-encode the query and
+      // corrupt pre-encoded binary payloads (e.g. turning `%20` into `+`,
+      // which a strict RFC 3986 server decodes back as `+`, not a space).
+      if (path_encode_) {
+        auto normalized = detail::normalize_query_string(query_part);
+        if (!normalized.empty()) { path_with_query += '?' + normalized; }
+      } else {
+        path_with_query += '?' + query_part;
+      }
 
       // Still populate req.params for handlers/users who read them.
       detail::parse_query_text(query_part, req.params);

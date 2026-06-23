@@ -2903,6 +2903,40 @@ TEST(PathUrlEncodeTest, PathUrlEncode) {
   }
 }
 
+TEST(PathUrlEncodeTest, PreEncodedQueryNotReencoded) {
+  // When path encoding is disabled the client must transmit the supplied
+  // query verbatim. Decoding-then-re-encoding it (the previous behavior)
+  // corrupts pre-encoded binary payloads: e.g. `%20` would be turned into
+  // `+`, which a strict RFC 3986 server decodes back as `+` (0x2B) rather
+  // than a space (0x20). Assert on the raw wire target to catch this.
+  Server svr;
+
+  const std::string expected_target = "/foo?q=a%20b%2Cc%24d%3Bx&a=%00%FF";
+
+  svr.Get("/foo", [&](const Request &req, Response &res) {
+    EXPECT_EQ(expected_target, req.target);
+    res.status = StatusCode::OK_200;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_path_encode(false);
+
+    auto res = cli.Get(expected_target.c_str());
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+}
+
 TEST(PathUrlEncodeTest, IncludePercentEncodingLF) {
   Server svr;
 
