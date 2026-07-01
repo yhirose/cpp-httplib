@@ -8302,11 +8302,17 @@ inline std::string make_multipart_data_boundary() {
   return "--cpp-httplib-multipart-data-" + detail::random_string(16);
 }
 
+inline bool is_ascii_alnum(unsigned char c) {
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+         (c >= '0' && c <= '9');
+}
+
 inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
   auto valid = true;
   for (size_t i = 0; i < boundary.size(); i++) {
     auto c = boundary[i];
-    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') {
+    if (!is_ascii_alnum(static_cast<unsigned char>(c)) && c != '-' &&
+        c != '_') {
       valid = false;
       break;
     }
@@ -8791,10 +8797,10 @@ private:
 namespace fields {
 
 inline bool is_token_char(char c) {
-  return std::isalnum(static_cast<unsigned char>(c)) || c == '!' || c == '#' ||
-         c == '$' || c == '%' || c == '&' || c == '\'' || c == '*' ||
-         c == '+' || c == '-' || c == '.' || c == '^' || c == '_' || c == '`' ||
-         c == '|' || c == '~';
+  return is_ascii_alnum(static_cast<unsigned char>(c)) || c == '!' ||
+         c == '#' || c == '$' || c == '%' || c == '&' || c == '\'' ||
+         c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_' ||
+         c == '`' || c == '|' || c == '~';
 }
 
 inline bool is_token(const std::string &s) {
@@ -9569,9 +9575,9 @@ inline std::string encode_uri_component(const std::string &value) {
   escaped << std::hex;
 
   for (auto c : value) {
-    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
-        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-        c == ')') {
+    if (detail::is_ascii_alnum(static_cast<uint8_t>(c)) || c == '-' ||
+        c == '_' || c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' ||
+        c == '(' || c == ')') {
       escaped << c;
     } else {
       escaped << std::uppercase;
@@ -9590,10 +9596,11 @@ inline std::string encode_uri(const std::string &value) {
   escaped << std::hex;
 
   for (auto c : value) {
-    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
-        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-        c == ')' || c == ';' || c == '/' || c == '?' || c == ':' || c == '@' ||
-        c == '&' || c == '=' || c == '+' || c == '$' || c == ',' || c == '#') {
+    if (detail::is_ascii_alnum(static_cast<uint8_t>(c)) || c == '-' ||
+        c == '_' || c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' ||
+        c == '(' || c == ')' || c == ';' || c == '/' || c == '?' || c == ':' ||
+        c == '@' || c == '&' || c == '=' || c == '+' || c == '$' || c == ',' ||
+        c == '#') {
       escaped << c;
     } else {
       escaped << std::uppercase;
@@ -9654,7 +9661,8 @@ inline std::string encode_path_component(const std::string &component) {
     auto c = static_cast<unsigned char>(component[i]);
 
     // Unreserved characters per RFC 3986: ALPHA / DIGIT / "-" / "." / "_" / "~"
-    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
+    if (detail::is_ascii_alnum(c) || c == '-' || c == '.' || c == '_' ||
+        c == '~') {
       result += static_cast<char>(c);
     }
     // Path-safe sub-delimiters: "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" /
@@ -9727,7 +9735,8 @@ inline std::string encode_query_component(const std::string &component,
     auto c = static_cast<unsigned char>(component[i]);
 
     // Unreserved characters per RFC 3986
-    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
+    if (detail::is_ascii_alnum(c) || c == '-' || c == '.' || c == '_' ||
+        c == '~') {
       result += static_cast<char>(c);
     }
     // Space handling
