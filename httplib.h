@@ -8905,7 +8905,8 @@ inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 } // namespace fields
 
 inline bool perform_websocket_handshake(Stream &strm, const std::string &host,
-                                        int port, const std::string &path,
+                                        int port, bool is_ssl,
+                                        const std::string &path,
                                         const Headers &headers,
                                         std::string &selected_subprotocol) {
   // Validate path and host
@@ -8931,7 +8932,7 @@ inline bool perform_websocket_handshake(Stream &strm, const std::string &host,
 
   // Build upgrade request
   std::string req_str = "GET " + path + " HTTP/1.1\r\n";
-  req_str += "Host: " + host + ":" + std::to_string(port) + "\r\n";
+  req_str += "Host: " + make_host_and_port_string(host, port, is_ssl) + "\r\n";
   req_str += "Upgrade: websocket\r\n";
   req_str += "Connection: Upgrade\r\n";
   req_str += "Sec-WebSocket-Key: " + client_key + "\r\n";
@@ -20570,9 +20571,15 @@ inline bool WebSocketClient::connect() {
     return false;
   }
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  auto is_ssl = is_ssl_;
+#else
+  auto is_ssl = false;
+#endif
+
   std::string selected_subprotocol;
-  if (!detail::perform_websocket_handshake(*strm, host_, port_, path_, headers_,
-                                           selected_subprotocol)) {
+  if (!detail::perform_websocket_handshake(*strm, host_, port_, is_ssl, path_,
+                                           headers_, selected_subprotocol)) {
     shutdown_and_close();
     return false;
   }

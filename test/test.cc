@@ -18975,6 +18975,47 @@ TEST(WebSocketTest, QueryStringInHandshake) {
   t.join();
 }
 
+TEST(WebSocketTest, HostHeaderInHandshake) {
+  Server svr;
+
+  std::mutex mtx;
+  std::string received_host;
+
+  svr.WebSocket("/ws", [&](const Request &req, ws::WebSocket &ws) {
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      received_host = req.get_header_value("Host");
+    }
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+  ASSERT_TRUE(client.connect());
+  // Round-trip ensures the handler has run and captured the request.
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  client.close();
+
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    // Non-default port must be present in the Host header. Default ports
+    // (80/443) are omitted; that logic is covered by
+    // MakeHostAndPortStringTest.
+    EXPECT_EQ("localhost:" + std::to_string(port), received_host);
+  }
+
+  svr.stop();
+  t.join();
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class WebSocketSSLIntegrationTest : public ::testing::Test {
 protected:
