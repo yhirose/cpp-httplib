@@ -6591,6 +6591,93 @@ TEST(MultipartFormDataTest, FieldEscaping) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MultipartFormDataTest, PublicWriterAPI) {
+  const UploadFormDataItems items = {
+      {"name1", "Content 1", "", ""},
+      {"name2", "Content 2", "file2.txt", "text/plain"},
+  };
+
+  Server svr;
+
+  svr.Post("/post", [&](const Request &req, Response & /*res*/,
+                        const ContentReader &content_reader) {
+    ASSERT_TRUE(req.is_multipart_form_data());
+    std::vector<FormData> received;
+    content_reader(
+        [&](const FormData &file) {
+          received.push_back(file);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          received.back().content.append(data, data_length);
+          return true;
+        });
+
+    ASSERT_EQ(2U, received.size());
+    EXPECT_EQ("name1", received[0].name);
+    EXPECT_EQ("Content 1", received[0].content);
+    EXPECT_EQ("name2", received[1].name);
+    EXPECT_EQ("Content 2", received[1].content);
+    EXPECT_EQ("file2.txt", received[1].filename);
+    EXPECT_EQ("text/plain", received[1].content_type);
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", port);
+
+  // Whole-body serialization with a generated boundary
+  {
+    MultipartFormDataWriter writer;
+    EXPECT_TRUE(is_valid_multipart_boundary(writer.boundary()));
+    EXPECT_EQ("multipart/form-data; boundary=" + writer.boundary(),
+              writer.content_type());
+
+    auto body = writer.serialize(items);
+    EXPECT_EQ(body.size(), writer.content_length(items));
+
+    auto res = cli.Post("/post", body, writer.content_type());
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  // Per-part framing with a custom boundary via a content provider
+  {
+    EXPECT_FALSE(is_valid_multipart_boundary("bad boundary"));
+    ASSERT_TRUE(is_valid_multipart_boundary("custom-boundary_123"));
+
+    MultipartFormDataWriter writer("custom-boundary_123");
+    EXPECT_EQ("custom-boundary_123", writer.boundary());
+
+    std::string body;
+    for (const auto &item : items) {
+      body += writer.item_begin(item);
+      body += item.content;
+      body += MultipartFormDataWriter::item_end();
+    }
+    body += writer.finish();
+    EXPECT_EQ(body.size(), writer.content_length(items));
+
+    auto res = cli.Post(
+        "/post", body.size(),
+        [&](size_t offset, size_t length, DataSink &sink) {
+          sink.write(body.data() + offset, length);
+          return true;
+        },
+        writer.content_type());
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+}
+
 TEST_F(ServerTest, PostContentReceiverGzip) {
   cli_.set_compress(true);
   auto res = cli_.Post("/content_receiver", "content", "text/plain");

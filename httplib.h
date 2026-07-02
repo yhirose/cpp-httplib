@@ -1680,6 +1680,34 @@ make_multipart_content_provider(const UploadFormDataItems &items,
 
 } // namespace detail
 
+bool is_valid_multipart_boundary(const std::string &boundary);
+
+// Serializer for multipart/form-data request bodies. The boundary is owned
+// by the writer so that per-part framing and the final terminator always
+// agree. Field names and filenames are escaped following the WHATWG HTML
+// standard ('"' -> %22, CR -> %0D, LF -> %0A).
+class MultipartFormDataWriter {
+public:
+  MultipartFormDataWriter();
+  // precondition: is_valid_multipart_boundary(boundary)
+  explicit MultipartFormDataWriter(std::string boundary);
+
+  const std::string &boundary() const;
+  std::string content_type() const;
+
+  // In-memory items -> whole body (known length)
+  std::string serialize(const UploadFormDataItems &items) const;
+  size_t content_length(const UploadFormDataItems &items) const;
+
+  // Per-part framing for streaming via a content provider
+  std::string item_begin(const UploadFormData &item) const;
+  static std::string item_end();
+  std::string finish() const;
+
+private:
+  std::string boundary_;
+};
+
 class Server {
 public:
   using Handler = std::function<void(const Request &, Response &)>;
@@ -10000,6 +10028,48 @@ inline bool MultipartFormData::has_file(const std::string &key) const {
 inline size_t MultipartFormData::get_file_count(const std::string &key) const {
   auto r = files.equal_range(key);
   return static_cast<size_t>(std::distance(r.first, r.second));
+}
+
+// Multipart FormData writer implementation
+inline bool is_valid_multipart_boundary(const std::string &boundary) {
+  return detail::is_multipart_boundary_chars_valid(boundary);
+}
+
+inline MultipartFormDataWriter::MultipartFormDataWriter()
+    : boundary_(detail::make_multipart_data_boundary()) {}
+
+inline MultipartFormDataWriter::MultipartFormDataWriter(std::string boundary)
+    : boundary_(std::move(boundary)) {}
+
+inline const std::string &MultipartFormDataWriter::boundary() const {
+  return boundary_;
+}
+
+inline std::string MultipartFormDataWriter::content_type() const {
+  return detail::serialize_multipart_formdata_get_content_type(boundary_);
+}
+
+inline std::string
+MultipartFormDataWriter::serialize(const UploadFormDataItems &items) const {
+  return detail::serialize_multipart_formdata(items, boundary_);
+}
+
+inline size_t MultipartFormDataWriter::content_length(
+    const UploadFormDataItems &items) const {
+  return detail::get_multipart_content_length(items, boundary_);
+}
+
+inline std::string
+MultipartFormDataWriter::item_begin(const UploadFormData &item) const {
+  return detail::serialize_multipart_formdata_item_begin(item, boundary_);
+}
+
+inline std::string MultipartFormDataWriter::item_end() {
+  return detail::serialize_multipart_formdata_item_end();
+}
+
+inline std::string MultipartFormDataWriter::finish() const {
+  return detail::serialize_multipart_formdata_finish(boundary_);
 }
 
 // Response implementation
