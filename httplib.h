@@ -8318,14 +8318,32 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
   return valid;
 }
 
+// Escape a multipart field name/filename following the WHATWG HTML standard
+// ("escape a multipart form-data name"), which is what browsers send:
+// '"' -> %22, CR -> %0D, LF -> %0A
+inline std::string escape_multipart_field(const std::string &s) {
+  std::string result;
+  result.reserve(s.size());
+  for (auto c : s) {
+    switch (c) {
+    case '"': result += "%22"; break;
+    case '\r': result += "%0D"; break;
+    case '\n': result += "%0A"; break;
+    default: result += c; break;
+    }
+  }
+  return result;
+}
+
 template <typename T>
 inline std::string
 serialize_multipart_formdata_item_begin(const T &item,
                                         const std::string &boundary) {
   std::string body = "--" + boundary + "\r\n";
-  body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+  body += "Content-Disposition: form-data; name=\"" +
+          escape_multipart_field(item.name) + "\"";
   if (!item.filename.empty()) {
-    body += "; filename=\"" + item.filename + "\"";
+    body += "; filename=\"" + escape_multipart_field(item.filename) + "\"";
   }
   body += "\r\n";
   if (!item.content_type.empty()) {

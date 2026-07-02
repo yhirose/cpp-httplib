@@ -6531,6 +6531,66 @@ TEST_F(ServerTest, PostMultipartPlusBoundary) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MultipartFormDataTest, FieldEscaping) {
+  Server svr;
+
+  svr.Post("/post", [&](const Request &req, Response & /*res*/,
+                        const ContentReader &content_reader) {
+    ASSERT_TRUE(req.is_multipart_form_data());
+    std::vector<FormData> received;
+    content_reader(
+        [&](const FormData &file) {
+          received.push_back(file);
+          return true;
+        },
+        [&](const char *data, size_t data_length) {
+          received.back().content.append(data, data_length);
+          return true;
+        });
+
+    // '"', CR and LF in names and filenames are escaped following the
+    // WHATWG HTML standard, so each part still parses as a single part
+    // with no injected headers.
+    ASSERT_EQ(3U, received.size());
+
+    EXPECT_EQ("na%22me", received[0].name);
+    EXPECT_EQ("quoted name", received[0].content);
+
+    EXPECT_EQ("file", received[1].name);
+    EXPECT_EQ("evil%0D%0AContent-Type: text/evil%0D%0A%0D%0A.pdf",
+              received[1].filename);
+    EXPECT_EQ("application/octet-stream", received[1].content_type);
+    EXPECT_EQ("injected", received[1].content);
+
+    EXPECT_EQ("my%0Dna%0Ame", received[2].name);
+    EXPECT_EQ("my%22file.txt", received[2].filename);
+    EXPECT_EQ("cr lf name", received[2].content);
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", port);
+
+  UploadFormDataItems items = {
+      {"na\"me", "quoted name", "", ""},
+      {"file", "injected", "evil\r\nContent-Type: text/evil\r\n\r\n.pdf",
+       "application/octet-stream"},
+      {"my\rna\nme", "cr lf name", "my\"file.txt", "text/plain"},
+  };
+
+  auto res = cli.Post("/post", items);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST_F(ServerTest, PostContentReceiverGzip) {
   cli_.set_compress(true);
   auto res = cli_.Post("/content_receiver", "content", "text/plain");
