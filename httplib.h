@@ -1541,7 +1541,9 @@ public:
 
 class ThreadPool final : public TaskQueue {
 public:
-  explicit ThreadPool(size_t n, size_t max_n = 0, size_t mqr = 0);
+  explicit ThreadPool(
+      size_t n, size_t max_n = 0, size_t mqr = 0,
+      time_t idle_timeout_sec = CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT);
   ThreadPool(const ThreadPool &) = delete;
   ~ThreadPool() override = default;
 
@@ -1556,6 +1558,7 @@ private:
   size_t base_thread_count_;
   size_t max_thread_count_;
   size_t max_queued_requests_;
+  time_t idle_timeout_sec_;
   size_t idle_thread_count_;
 
   bool shutdown_;
@@ -10304,8 +10307,10 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
 }
 
 // ThreadPool implementation
-inline ThreadPool::ThreadPool(size_t n, size_t max_n, size_t mqr)
-    : base_thread_count_(n), max_queued_requests_(mqr), idle_thread_count_(0),
+inline ThreadPool::ThreadPool(size_t n, size_t max_n, size_t mqr,
+                              time_t idle_timeout_sec)
+    : base_thread_count_(n), max_queued_requests_(mqr),
+      idle_timeout_sec_(idle_timeout_sec), idle_thread_count_(0),
       shutdown_(false) {
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
   if (max_n != 0 && max_n < n) {
@@ -10415,9 +10420,9 @@ inline void ThreadPool::worker(bool is_dynamic) {
       idle_thread_count_++;
 
       if (is_dynamic) {
-        auto has_work = cond_.wait_for(
-            lock, std::chrono::seconds(CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT),
-            [&] { return !jobs_.empty() || shutdown_; });
+        auto has_work =
+            cond_.wait_for(lock, std::chrono::seconds(idle_timeout_sec_),
+                           [&] { return !jobs_.empty() || shutdown_; });
         if (!has_work) {
           // Timed out with no work - exit this dynamic thread
           idle_thread_count_--;

@@ -13476,6 +13476,44 @@ TEST(TaskQueueTest, IncreaseAtomicIntegerWithQueueLimit) {
   EXPECT_TRUE(queued_count >= qlimit);
 }
 
+TEST(TaskQueueTest, IdleTimeoutAtRuntime) {
+  // Use a short idle timeout so a dynamic thread spawns, times out and
+  // exits during the test, and the pool keeps working afterwards.
+  std::unique_ptr<TaskQueue> task_queue{new ThreadPool{
+      /*num_threads=*/1, /*max_threads=*/2, /*max_queued_requests=*/0,
+      /*idle_timeout_sec=*/1}};
+
+  std::atomic_uint count{0};
+  std::condition_variable cv;
+  std::mutex mtx;
+  bool release = false;
+
+  // Block the base thread so the second task spawns a dynamic thread.
+  EXPECT_TRUE(task_queue->enqueue([&] {
+    std::unique_lock<std::mutex> lock(mtx);
+    while (!release) {
+      cv.wait(lock);
+    }
+    count++;
+  }));
+  EXPECT_TRUE(task_queue->enqueue([&] { count++; }));
+
+  // Let the dynamic thread finish its task and exceed the idle timeout.
+  std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+  {
+    std::unique_lock<std::mutex> lock(mtx);
+    release = true;
+  }
+  cv.notify_all();
+
+  // The pool must still accept and run tasks after the dynamic thread exited.
+  EXPECT_TRUE(task_queue->enqueue([&] { count++; }));
+
+  task_queue->shutdown();
+  EXPECT_EQ(3u, count.load());
+}
+
 TEST(TaskQueueTest, MaxQueuedRequests) {
   static constexpr unsigned int qlimit{3};
   std::unique_ptr<TaskQueue> task_queue{new ThreadPool{1, 1, qlimit}};

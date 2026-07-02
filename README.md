@@ -824,6 +824,15 @@ svr.new_task_queue = [] { return new ThreadPool(/*base_threads=*/12, /*max_threa
 Default limit is 0 (unlimited). Once the limit is reached, the listener
 will shutdown the client connection.
 
+#### Idle timeout for dynamic threads
+
+The idle timeout for dynamic threads can also be set at runtime via the
+fourth parameter (in seconds):
+
+```cpp
+svr.new_task_queue = [] { return new ThreadPool(/*base_threads=*/8, /*max_threads=*/64, /*max_queued_requests=*/0, /*idle_timeout_sec=*/10); };
+```
+
 ### Override the default thread pool with yours
 
 You can supply your own thread pool implementation according to your need.
