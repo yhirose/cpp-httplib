@@ -6550,8 +6550,9 @@ TEST(MultipartFormDataTest, FieldEscaping) {
 
     // '"', CR and LF in names and filenames are escaped following the
     // WHATWG HTML standard, so each part still parses as a single part
-    // with no injected headers.
-    ASSERT_EQ(3U, received.size());
+    // with no injected headers. Content types get CR/LF escaped too,
+    // while '"' (legal there, e.g. quoted charset) is preserved.
+    ASSERT_EQ(4U, received.size());
 
     EXPECT_EQ("na%22me", received[0].name);
     EXPECT_EQ("quoted name", received[0].content);
@@ -6565,6 +6566,11 @@ TEST(MultipartFormDataTest, FieldEscaping) {
     EXPECT_EQ("my%0Dna%0Ame", received[2].name);
     EXPECT_EQ("my%22file.txt", received[2].filename);
     EXPECT_EQ("cr lf name", received[2].content);
+
+    EXPECT_EQ("typed", received[3].name);
+    EXPECT_EQ("text/plain; charset=\"utf-8\"%0D%0AX-Evil: 1",
+              received[3].content_type);
+    EXPECT_EQ("typed content", received[3].content);
   });
 
   auto port = svr.bind_to_any_port("localhost");
@@ -6584,6 +6590,8 @@ TEST(MultipartFormDataTest, FieldEscaping) {
       {"file", "injected", "evil\r\nContent-Type: text/evil\r\n\r\n.pdf",
        "application/octet-stream"},
       {"my\rna\nme", "cr lf name", "my\"file.txt", "text/plain"},
+      {"typed", "typed content", "",
+       "text/plain; charset=\"utf-8\"\r\nX-Evil: 1"},
   };
 
   auto res = cli.Post("/post", items);

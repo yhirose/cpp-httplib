@@ -1685,7 +1685,8 @@ bool is_valid_multipart_boundary(const std::string &boundary);
 // Serializer for multipart/form-data request bodies. The boundary is owned
 // by the writer so that per-part framing and the final terminator always
 // agree. Field names and filenames are escaped following the WHATWG HTML
-// standard ('"' -> %22, CR -> %0D, LF -> %0A).
+// standard ('"' -> %22, CR -> %0D, LF -> %0A); CR and LF are also escaped
+// in content types.
 class MultipartFormDataWriter {
 public:
   MultipartFormDataWriter();
@@ -8349,12 +8350,21 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
 // Escape a multipart field name/filename following the WHATWG HTML standard
 // ("escape a multipart form-data name"), which is what browsers send:
 // '"' -> %22, CR -> %0D, LF -> %0A
-inline std::string escape_multipart_field(const std::string &s) {
+// With escape_quote = false, only CR and LF are escaped; this is for header
+// values outside a quoted-string (e.g. Content-Type), where '"' is legal.
+inline std::string escape_multipart_field(const std::string &s,
+                                          bool escape_quote = true) {
   std::string result;
   result.reserve(s.size());
   for (auto c : s) {
     switch (c) {
-    case '"': result += "%22"; break;
+    case '"':
+      if (escape_quote) {
+        result += "%22";
+      } else {
+        result += c;
+      }
+      break;
     case '\r': result += "%0D"; break;
     case '\n': result += "%0A"; break;
     default: result += c; break;
@@ -8375,7 +8385,9 @@ serialize_multipart_formdata_item_begin(const T &item,
   }
   body += "\r\n";
   if (!item.content_type.empty()) {
-    body += "Content-Type: " + item.content_type + "\r\n";
+    body +=
+        "Content-Type: " + escape_multipart_field(item.content_type, false) +
+        "\r\n";
   }
   body += "\r\n";
 
