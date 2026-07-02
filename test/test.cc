@@ -5753,7 +5753,7 @@ TEST_F(ServerTest, GetWithRange1) {
                                          make_range_header({{3, 5}}),
                                          {"Accept-Encoding", ""},
                                      });
-  ASSERT_TRUE(res);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -5766,7 +5766,7 @@ TEST_F(ServerTest, GetWithRange2) {
                                          make_range_header({{1, -1}}),
                                          {"Accept-Encoding", ""},
                                      });
-  ASSERT_TRUE(res);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -5779,7 +5779,7 @@ TEST_F(ServerTest, GetWithRange3) {
                                          make_range_header({{0, 0}}),
                                          {"Accept-Encoding", ""},
                                      });
-  ASSERT_TRUE(res);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("1", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -5792,7 +5792,7 @@ TEST_F(ServerTest, GetWithRange4) {
                                          make_range_header({{-1, 2}}),
                                          {"Accept-Encoding", ""},
                                      });
-  ASSERT_TRUE(res);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -5805,7 +5805,7 @@ TEST_F(ServerTest, GetWithRange5) {
                                          make_range_header({{0, 5}}),
                                          {"Accept-Encoding", ""},
                                      });
-  ASSERT_TRUE(res);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
