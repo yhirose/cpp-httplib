@@ -666,6 +666,31 @@ TEST(TrimTests, TrimStringTests) {
   EXPECT_TRUE(detail::trim_copy("").empty());
 }
 
+TEST(AsciiTest, LocaleIndependentClassification) {
+  // detail::is_ascii_digit/alpha/alnum replace the <cctype> classifiers,
+  // which consult the global C locale: std::isalnum(0xC5) can return true
+  // once an embedder calls setlocale() (observed on macOS). The is_ascii_*
+  // helpers must classify every byte by the ASCII grammar alone.
+  for (int i = 0; i < 256; i++) {
+    auto c = static_cast<char>(i);
+    auto is_digit = i >= '0' && i <= '9';
+    auto is_upper = i >= 'A' && i <= 'Z';
+    auto is_lower = i >= 'a' && i <= 'z';
+
+    EXPECT_EQ(is_digit, detail::is_ascii_digit(c)) << "byte " << i;
+    EXPECT_EQ(is_upper || is_lower, detail::is_ascii_alpha(c)) << "byte " << i;
+    EXPECT_EQ(is_digit || is_upper || is_lower, detail::is_ascii_alnum(c))
+        << "byte " << i;
+  }
+
+  // Regression check for the reported byte: 0xC5 is not alphanumeric.
+  EXPECT_FALSE(detail::is_ascii_alnum(static_cast<char>(0xC5)));
+
+  // Non-ASCII bytes must be percent-encoded, never passed through as
+  // alphanumeric.
+  EXPECT_EQ("%C5", httplib::encode_uri_component("\xC5"));
+}
+
 TEST(FromCharsTest, Double) {
   // detail::from_chars(double) recognizes exactly the HTTP quality-value
   // grammar (RFC 9110 12.4.2): a non-negative decimal "1*DIGIT [ '.' *DIGIT ]"

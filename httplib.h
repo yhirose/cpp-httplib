@@ -309,7 +309,6 @@ using socket_t = int;
 #include <array>
 #include <atomic>
 #include <cassert>
-#include <cctype>
 #include <chrono>
 #include <climits>
 #include <condition_variable>
@@ -540,6 +539,21 @@ make_unique(std::size_t n) {
   return std::unique_ptr<T>(new RT[n]);
 }
 
+// Locale-independent ASCII character classification. The <cctype>
+// counterparts (std::isalnum, std::isdigit, ...) consult the global C locale,
+// so e.g. std::isalnum(0xC5) can return true once an embedder calls
+// setlocale(). HTTP grammars are defined over ASCII, so raw bytes must be
+// classified without regard to the locale.
+inline bool is_ascii_digit(char c) { return '0' <= c && c <= '9'; }
+
+inline bool is_ascii_alpha(char c) {
+  return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
+}
+
+inline bool is_ascii_alnum(char c) {
+  return is_ascii_digit(c) || is_ascii_alpha(c);
+}
+
 namespace case_ignore {
 
 inline unsigned char to_lower(int c) {
@@ -661,7 +675,7 @@ inline from_chars_result<T> from_chars(const char *first, const char *last,
   for (; p != last; ++p) {
     char c = *p;
     int digit = -1;
-    if ('0' <= c && c <= '9') {
+    if (is_ascii_digit(c)) {
       digit = c - '0';
     } else if ('a' <= c && c <= 'z') {
       digit = c - 'a' + 10;
@@ -733,14 +747,14 @@ inline from_chars_result<double> from_chars(const char *first, const char *last,
     return false;
   };
 
-  for (; p != last && '0' <= *p && *p <= '9'; ++p) {
+  for (; p != last && is_ascii_digit(*p); ++p) {
     seen_digit = true;
     accumulate(*p);
   }
 
   if (p != last && *p == '.') {
     ++p;
-    for (; p != last && '0' <= *p && *p <= '9'; ++p) {
+    for (; p != last && is_ascii_digit(*p); ++p) {
       seen_digit = true;
       if (frac_digits < max_frac_digits && accumulate(*p)) { ++frac_digits; }
     }
@@ -803,8 +817,8 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
       // IPv6 host must be [a-fA-F0-9:]+ only
       if (uc.host.empty()) { return false; }
       for (auto c : uc.host) {
-        if (!((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') ||
-              (c >= '0' && c <= '9') || c == ':')) {
+        if (!(is_ascii_digit(c) || (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F') || c == ':')) {
           return false;
         }
       }
@@ -2929,9 +2943,7 @@ template <size_t N> inline constexpr size_t str_len(const char (&)[N]) {
 }
 
 inline bool is_numeric(const std::string &str) {
-  return !str.empty() &&
-         std::all_of(str.cbegin(), str.cend(),
-                     [](unsigned char c) { return std::isdigit(c); });
+  return !str.empty() && std::all_of(str.cbegin(), str.cend(), is_ascii_digit);
 }
 
 inline size_t get_header_value_u64(const Headers &headers,
@@ -4480,7 +4492,7 @@ inline bool set_socket_opt_time(socket_t sock, int level, int optname,
 }
 
 inline bool is_hex(char c, int &v) {
-  if (isdigit(static_cast<unsigned char>(c))) {
+  if (is_ascii_digit(c)) {
     v = c - '0';
     return true;
   } else if ('A' <= c && c <= 'F') {
@@ -7893,8 +7905,7 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) {
 inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
 #endif
   auto is_valid = [](const std::string &str) {
-    return std::all_of(str.cbegin(), str.cend(),
-                       [](unsigned char c) { return std::isdigit(c); });
+    return std::all_of(str.cbegin(), str.cend(), is_ascii_digit);
   };
 
   if (s.size() > 7 && s.compare(0, 6, "bytes=") == 0) {
@@ -8342,7 +8353,7 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
   auto valid = true;
   for (size_t i = 0; i < boundary.size(); i++) {
     auto c = boundary[i];
-    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') {
+    if (!is_ascii_alnum(c) && c != '-' && c != '_') {
       valid = false;
       break;
     }
@@ -8856,10 +8867,9 @@ private:
 namespace fields {
 
 inline bool is_token_char(char c) {
-  return std::isalnum(static_cast<unsigned char>(c)) || c == '!' || c == '#' ||
-         c == '$' || c == '%' || c == '&' || c == '\'' || c == '*' ||
-         c == '+' || c == '-' || c == '.' || c == '^' || c == '_' || c == '`' ||
-         c == '|' || c == '~';
+  return is_ascii_alnum(c) || c == '!' || c == '#' || c == '$' || c == '%' ||
+         c == '&' || c == '\'' || c == '*' || c == '+' || c == '-' ||
+         c == '.' || c == '^' || c == '_' || c == '`' || c == '|' || c == '~';
 }
 
 inline bool is_token(const std::string &s) {
@@ -9635,9 +9645,8 @@ inline std::string encode_uri_component(const std::string &value) {
   escaped << std::hex;
 
   for (auto c : value) {
-    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
-        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-        c == ')') {
+    if (detail::is_ascii_alnum(c) || c == '-' || c == '_' || c == '.' ||
+        c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' || c == ')') {
       escaped << c;
     } else {
       escaped << std::uppercase;
@@ -9656,10 +9665,10 @@ inline std::string encode_uri(const std::string &value) {
   escaped << std::hex;
 
   for (auto c : value) {
-    if (std::isalnum(static_cast<uint8_t>(c)) || c == '-' || c == '_' ||
-        c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-        c == ')' || c == ';' || c == '/' || c == '?' || c == ':' || c == '@' ||
-        c == '&' || c == '=' || c == '+' || c == '$' || c == ',' || c == '#') {
+    if (detail::is_ascii_alnum(c) || c == '-' || c == '_' || c == '.' ||
+        c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' || c == ')' ||
+        c == ';' || c == '/' || c == '?' || c == ':' || c == '@' || c == '&' ||
+        c == '=' || c == '+' || c == '$' || c == ',' || c == '#') {
       escaped << c;
     } else {
       escaped << std::uppercase;
@@ -9720,7 +9729,8 @@ inline std::string encode_path_component(const std::string &component) {
     auto c = static_cast<unsigned char>(component[i]);
 
     // Unreserved characters per RFC 3986: ALPHA / DIGIT / "-" / "." / "_" / "~"
-    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
+    if (detail::is_ascii_alnum(static_cast<char>(c)) || c == '-' || c == '.' ||
+        c == '_' || c == '~') {
       result += static_cast<char>(c);
     }
     // Path-safe sub-delimiters: "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" /
@@ -9793,7 +9803,8 @@ inline std::string encode_query_component(const std::string &component,
     auto c = static_cast<unsigned char>(component[i]);
 
     // Unreserved characters per RFC 3986
-    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
+    if (detail::is_ascii_alnum(static_cast<char>(c)) || c == '-' || c == '.' ||
+        c == '_' || c == '~') {
       result += static_cast<char>(c);
     }
     // Space handling
@@ -16607,7 +16618,7 @@ inline bool is_ipv4_address(const std::string &str) {
   for (char c : str) {
     if (c == '.') {
       dots++;
-    } else if (!isdigit(static_cast<unsigned char>(c))) {
+    } else if (!detail::is_ascii_digit(c)) {
       return false;
     }
   }
@@ -16624,7 +16635,7 @@ inline bool parse_ipv4(const std::string &str, unsigned char *out) {
     }
     int val = 0;
     int digits = 0;
-    while (*p >= '0' && *p <= '9') {
+    while (detail::is_ascii_digit(*p)) {
       val = val * 10 + (*p - '0');
       if (val > 255) { return false; }
       p++;
