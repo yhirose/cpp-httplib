@@ -4665,8 +4665,10 @@ inline std::string base64_encode(const std::string &in) {
   std::string out;
   out.reserve(in.size());
 
-  // Unsigned: once four bytes are folded in the top bit is set, so the next
-  // `val << 8` would left-shift a negative int (undefined behaviour).
+  // Unsigned: the accumulator is never masked, so with a signed int the
+  // `val << 8` below overflows once enough bytes are folded in (undefined
+  // behaviour before C++20). Only the low bits are ever emitted, so the
+  // wrap-around of an unsigned accumulator does not affect the output.
   uint32_t val = 0;
   auto valb = -6;
 
