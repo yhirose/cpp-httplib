@@ -11976,8 +11976,8 @@ TEST(YahooRedirectTest3, NewResultInterface_Online) {
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding_Online) {
   Client cli("https://cdnjs.cloudflare.com");
-  auto res =
-      cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "br"}});
+  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
+                     Headers{{"Accept-Encoding", "br"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
