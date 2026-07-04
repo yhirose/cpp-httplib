@@ -2219,6 +2219,7 @@ public:
   Result Get(const std::string &path, const Headers &headers, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers, ResponseHandler response_handler, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Params &params, const Headers &headers, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Params &params, const Headers &headers, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Params &params, const Headers &headers, ResponseHandler response_handler, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
@@ -2602,6 +2603,7 @@ public:
   Result Get(const std::string &path, const Headers &headers, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Headers &headers, ResponseHandler response_handler, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
+  Result Get(const std::string &path, const Params &params, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Params &params, const Headers &headers, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Params &params, const Headers &headers, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
   Result Get(const std::string &path, const Params &params, const Headers &headers, ResponseHandler response_handler, ContentReceiver content_receiver, DownloadProgress progress = nullptr);
@@ -14285,6 +14287,11 @@ inline Result ClientImpl::Get(const std::string &path,
 }
 
 inline Result ClientImpl::Get(const std::string &path, const Params &params,
+                              DownloadProgress progress) {
+  return Get(path, params, Headers(), std::move(progress));
+}
+
+inline Result ClientImpl::Get(const std::string &path, const Params &params,
                               const Headers &headers,
                               DownloadProgress progress) {
   if (params.empty()) { return Get(path, headers); }
@@ -15361,6 +15368,10 @@ inline Result Client::Get(const std::string &path, const Headers &headers,
                           DownloadProgress progress) {
   return cli_->Get(path, headers, std::move(response_handler),
                    std::move(content_receiver), std::move(progress));
+}
+inline Result Client::Get(const std::string &path, const Params &params,
+                          DownloadProgress progress) {
+  return cli_->Get(path, params, std::move(progress));
 }
 inline Result Client::Get(const std::string &path, const Params &params,
                           const Headers &headers, DownloadProgress progress) {

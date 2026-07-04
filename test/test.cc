@@ -977,14 +977,14 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   {
     auto res =
         cli.Get("/accept_ok",
-                {{"Accept", "application/json, text/html;q=0.8, */*;q=0.1"}});
+                Headers{{"Accept", "application/json, text/html;q=0.8, */*;q=0.1"}});
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
 
   {
     auto res = cli.Get("/accept_bad_request",
-                       {{"Accept", "text/html;q=abc,application/json"}});
+                       Headers{{"Accept", "text/html;q=abc,application/json"}});
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   }
@@ -2398,7 +2398,7 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
   {
     auto res =
-        cli.Get(path, {make_basic_authentication_header("hello", "world")});
+        cli.Get(path, Headers{make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res);
     auto body = remove_whitespace(res->body);
     EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
@@ -3167,7 +3167,7 @@ TEST(ErrorHandlerTest, ContentLength) {
   {
     Client cli(HOST, PORT);
 
-    auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
+    auto res = cli.Get("/hi", Headers{{"Accept-Encoding", ""}});
     ASSERT_TRUE(res);
     EXPECT_EQ(StatusCode::OK_200, res->status);
     EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -3248,7 +3248,7 @@ TEST(ExceptionTest, WithExceptionHandler) {
     Client cli(HOST, PORT);
 
     for (size_t j = 0; j < 100; j++) {
-      auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
+      auto res = cli.Get("/hi", Headers{{"Accept-Encoding", ""}});
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
       EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -3259,7 +3259,7 @@ TEST(ExceptionTest, WithExceptionHandler) {
     cli.set_keep_alive(true);
 
     for (size_t j = 0; j < 100; j++) {
-      auto res = cli.Get("/hi", {{"Accept-Encoding", ""}});
+      auto res = cli.Get("/hi", Headers{{"Accept-Encoding", ""}});
       ASSERT_TRUE(res);
       EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
       EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -4562,7 +4562,7 @@ TEST_F(ServerTest, GetFileContent) {
 }
 
 TEST_F(ServerTest, GetFileContentWithRange) {
-  auto res = cli_.Get("/file_content", {{make_range_header({{1, 3}})}});
+  auto res = cli_.Get("/file_content", Headers{{make_range_header({{1, 3}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -4986,7 +4986,7 @@ TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
 }
 
 TEST_F(ServerTest, StaticFileRange) {
-  auto res = cli_.Get("/dir/test.abcde", {{make_range_header({{2, 3}})}});
+  auto res = cli_.Get("/dir/test.abcde", Headers{{make_range_header({{2, 3}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
@@ -4998,7 +4998,7 @@ TEST_F(ServerTest, StaticFileRange) {
 
 TEST_F(ServerTest, StaticFileRanges) {
   auto res =
-      cli_.Get("/dir/test.abcde", {{make_range_header({{1, 2}, {4, -1}})}});
+      cli_.Get("/dir/test.abcde", Headers{{make_range_header({{1, 2}, {4, -1}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_TRUE(
@@ -5020,7 +5020,7 @@ TEST_F(ServerTest, StaticFileRangeHead) {
 }
 
 TEST_F(ServerTest, StaticFileRangeBigFile) {
-  auto res = cli_.Get("/dir/1MB.txt", {{make_range_header({{-1, 5}})}});
+  auto res = cli_.Get("/dir/1MB.txt", Headers{{make_range_header({{-1, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -5032,7 +5032,7 @@ TEST_F(ServerTest, StaticFileRangeBigFile) {
 }
 
 TEST_F(ServerTest, StaticFileRangeBigFile2) {
-  auto res = cli_.Get("/dir/1MB.txt", {{make_range_header({{1, 4097}})}});
+  auto res = cli_.Get("/dir/1MB.txt", Headers{{make_range_header({{1, 4097}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -5504,7 +5504,7 @@ TEST_F(ServerTest, RejectsChunkSizeWithLeadingPlus) {
 }
 
 TEST_F(ServerTest, GetStreamed2) {
-  auto res = cli_.Get("/streamed", {{make_range_header({{2, 3}})}});
+  auto res = cli_.Get("/streamed", Headers{{make_range_header({{2, 3}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
@@ -5523,7 +5523,7 @@ TEST_F(ServerTest, GetStreamed) {
 
 TEST_F(ServerTest, GetStreamedWithoutLengthWithRange) {
   auto res =
-      cli_.Get("/streamed-without-length", {make_range_header({{0, -1}})});
+      cli_.Get("/streamed-without-length", Headers{make_range_header({{0, -1}})});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(false, res->has_header("Content-Length"));
@@ -5532,7 +5532,7 @@ TEST_F(ServerTest, GetStreamedWithoutLengthWithRange) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRange1) {
-  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{3, 5}})}});
+  auto res = cli_.Get("/streamed-with-range", Headers{{make_range_header({{3, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
@@ -5542,7 +5542,7 @@ TEST_F(ServerTest, GetStreamedWithRange1) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRange2) {
-  auto res = cli_.Get("/streamed-with-range", {{make_range_header({{1, -1}})}});
+  auto res = cli_.Get("/streamed-with-range", Headers{{make_range_header({{1, -1}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
@@ -5552,7 +5552,7 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
-  auto res = cli_.Get("/streamed-with-range", {{"Range", "bytes=-3"}});
+  auto res = cli_.Get("/streamed-with-range", Headers{{"Range", "bytes=-3"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
@@ -5562,7 +5562,7 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
-  auto res = cli_.Get("/streamed-with-range?error", {{"Range", "bytes=-9999"}});
+  auto res = cli_.Get("/streamed-with-range?error", Headers{{"Range", "bytes=-9999"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -5572,7 +5572,7 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
 
 TEST_F(ServerTest, GetStreamedWithRangeError) {
   auto res = cli_.Get("/streamed-with-range",
-                      {{"Range", "bytes=92233720368547758079223372036854775806-"
+                      Headers{{"Range", "bytes=92233720368547758079223372036854775806-"
                                  "92233720368547758079223372036854775807"}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
@@ -5584,7 +5584,7 @@ TEST_F(ServerTest, GetStreamedWithRangeError) {
 TEST_F(ServerTest, GetRangeWithMaxLongLength) {
   auto res = cli_.Get(
       "/with-range",
-      {{"Range", "bytes=0-" + std::to_string(std::numeric_limits<long>::max())},
+      Headers{{"Range", "bytes=0-" + std::to_string(std::numeric_limits<long>::max())},
        {"Accept-Encoding", ""}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
@@ -5595,7 +5595,7 @@ TEST_F(ServerTest, GetRangeWithMaxLongLength) {
 }
 
 TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          {"Range", "bytes=0-"},
                                          {"Accept-Encoding", ""},
                                      });
@@ -5609,7 +5609,7 @@ TEST_F(ServerTest, GetRangeWithZeroToInfinite) {
 
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
-      cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
+      cli_.Get("/streamed-with-range", Headers{{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("267", res->get_header_value("Content-Length"));
@@ -5634,7 +5634,7 @@ TEST_F(ServerTest, GetStreamedWithTooManyRanges) {
   }
 
   auto res =
-      cli_.Get("/streamed-with-range?error", {{make_range_header(ranges)}});
+      cli_.Get("/streamed-with-range?error", Headers{{make_range_header(ranges)}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -5644,7 +5644,7 @@ TEST_F(ServerTest, GetStreamedWithTooManyRanges) {
 
 TEST_F(ServerTest, GetStreamedWithOverwrapping) {
   auto res =
-      cli_.Get("/streamed-with-range", {{make_range_header({{1, 4}, {2, 5}})}});
+      cli_.Get("/streamed-with-range", Headers{{make_range_header({{1, 4}, {2, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ(5U, res->body.size());
@@ -5660,7 +5660,7 @@ TEST_F(ServerTest, GetStreamedWithOverwrapping) {
 
 TEST_F(ServerTest, GetStreamedWithNonAscendingRanges) {
   auto res =
-      cli_.Get("/streamed-with-range", {{make_range_header({{4, 5}, {0, 2}})}});
+      cli_.Get("/streamed-with-range", Headers{{make_range_header({{4, 5}, {0, 2}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ(268U, res->body.size());
@@ -5678,7 +5678,7 @@ TEST_F(ServerTest, GetStreamedWithNonAscendingRanges) {
 
 TEST_F(ServerTest, GetStreamedWithDuplicateRanges) {
   auto res =
-      cli_.Get("/streamed-with-range", {{make_range_header({{0, 2}, {0, 2}})}});
+      cli_.Get("/streamed-with-range", Headers{{make_range_header({{0, 2}, {0, 2}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ(269U, res->body.size());
@@ -5699,7 +5699,7 @@ TEST_F(ServerTest, GetStreamedWithDuplicateRanges) {
 
 TEST_F(ServerTest, GetStreamedWithRangesMoreThanTwoOverwrapping) {
   auto res = cli_.Get("/streamed-with-range?error",
-                      {{make_range_header({{0, 1}, {1, 2}, {2, 3}, {3, 4}})}});
+                      Headers{{make_range_header({{0, 1}, {1, 2}, {2, 3}, {3, 4}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
@@ -5749,7 +5749,7 @@ TEST_F(ServerTest, ClientStop) {
 }
 
 TEST_F(ServerTest, GetWithRange1) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{3, 5}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -5762,7 +5762,7 @@ TEST_F(ServerTest, GetWithRange1) {
 }
 
 TEST_F(ServerTest, GetWithRange2) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{1, -1}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -5775,7 +5775,7 @@ TEST_F(ServerTest, GetWithRange2) {
 }
 
 TEST_F(ServerTest, GetWithRange3) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{0, 0}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -5788,7 +5788,7 @@ TEST_F(ServerTest, GetWithRange3) {
 }
 
 TEST_F(ServerTest, GetWithRange4) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{-1, 2}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -5801,7 +5801,7 @@ TEST_F(ServerTest, GetWithRange4) {
 }
 
 TEST_F(ServerTest, GetWithRange5) {
-  auto res = cli_.Get("/with-range", {
+  auto res = cli_.Get("/with-range", Headers{
                                          make_range_header({{0, 5}}),
                                          {"Accept-Encoding", ""},
                                      });
@@ -5814,13 +5814,13 @@ TEST_F(ServerTest, GetWithRange5) {
 }
 
 TEST_F(ServerTest, GetWithRangeOffsetGreaterThanContent) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{10000, 20000}})}});
+  auto res = cli_.Get("/with-range", Headers{{make_range_header({{10000, 20000}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
 }
 
 TEST_F(ServerTest, GetWithRangeMultipart) {
-  auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
+  auto res = cli_.Get("/with-range", Headers{{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   EXPECT_EQ("267", res->get_header_value("Content-Length"));
@@ -5830,14 +5830,14 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
 
 TEST_F(ServerTest, GetWithRangeMultipartOffsetGreaterThanContent) {
   auto res =
-      cli_.Get("/with-range", {{make_range_header({{-1, 2}, {10000, 30000}})}});
+      cli_.Get("/with-range", Headers{{make_range_header({{-1, 2}, {10000, 30000}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
 }
 
 TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
   auto res = cli_.Get("/with-range-customized-response",
-                      {{make_range_header({{1, 2}})}});
+                      Headers{{make_range_header({{1, 2}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ(true, res->has_header("Content-Length"));
@@ -5847,7 +5847,7 @@ TEST_F(ServerTest, GetWithRangeCustomizedResponse) {
 
 TEST_F(ServerTest, GetWithRangeMultipartCustomizedResponseMultipleRange) {
   auto res = cli_.Get("/with-range-customized-response",
-                      {{make_range_header({{1, 2}, {4, 5}})}});
+                      Headers{{make_range_header({{1, 2}, {4, 5}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::BadRequest_400, res->status);
   EXPECT_EQ(true, res->has_header("Content-Length"));
@@ -5856,7 +5856,7 @@ TEST_F(ServerTest, GetWithRangeMultipartCustomizedResponseMultipleRange) {
 }
 
 TEST_F(ServerTest, Issue1772) {
-  auto res = cli_.Get("/issue1772", {{make_range_header({{1000, -1}})}});
+  auto res = cli_.Get("/issue1772", Headers{{make_range_header({{1000, -1}})}});
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
 }
@@ -9162,6 +9162,33 @@ TEST(GetWithParametersTest, GetWithParameters2) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("world", body);
+}
+
+TEST(GetWithParametersTest, GetWithParamsOnlyNoHeaders) {
+  Server svr;
+
+  svr.Get("/search", [&](const Request &req, Response &res) {
+    auto q = req.get_param_value("q");
+    res.set_content(q, "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  // Verify that Get(path, params) works without requiring Headers argument
+  auto res = cli.Get("/search", httplib::Params{{"q", "cpp-httplib"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("cpp-httplib", res->body);
 }
 
 TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
@@ -14326,7 +14353,7 @@ TEST(DirtyDataRequestTest, HeadFieldValueContains_CR_LF_NUL) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
-  cli.Get("/test", {{"Test", "_\n\r_\n\r_"}});
+  cli.Get("/test", Headers{{"Test", "_\n\r_\n\r_"}});
 }
 
 TEST(InvalidHeaderCharsTest, is_field_name) {
@@ -15012,7 +15039,7 @@ TEST(ForwardedHeadersTest, NoProxiesSetting) {
   svr.wait_until_ready();
 
   Client cli(HOST, PORT);
-  auto res = cli.Get("/ip", {{"X-Forwarded-For", "203.0.113.66"}});
+  auto res = cli.Get("/ip", Headers{{"X-Forwarded-For", "203.0.113.66"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -15081,7 +15108,7 @@ TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
 
   Client cli(HOST, PORT);
   auto res =
-      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
+      cli.Get("/ip", Headers{{"X-Forwarded-For", "198.51.100.23, 203.0.113.66"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -15115,11 +15142,10 @@ TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
 
   Client cli(HOST, PORT);
   auto res = cli.Get(
-      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+      "/ip", Headers{{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
-
   EXPECT_EQ(observed_xff, "198.51.100.23, 203.0.113.66, 192.0.2.45");
   EXPECT_EQ(observed_remote_addr, "198.51.100.23");
 }
@@ -15149,7 +15175,7 @@ TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
 
   Client cli(HOST, PORT);
   auto res =
-      cli.Get("/ip", {{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
+      cli.Get("/ip", Headers{{"X-Forwarded-For", "198.51.100.23, 198.51.100.24"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -15183,7 +15209,7 @@ TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
 
   Client cli(HOST, PORT);
   auto res = cli.Get(
-      "/ip", {{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
+      "/ip", Headers{{"X-Forwarded-For", "198.51.100.23, 203.0.113.66, 192.0.2.45"}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -15258,7 +15284,7 @@ static void run_malformed_xff_test(const std::string &xff_value) {
   svr.wait_until_ready();
 
   Client cli(HOST, port);
-  auto res = cli.Get("/ip", {{"X-Forwarded-For", xff_value}});
+  auto res = cli.Get("/ip", Headers{{"X-Forwarded-For", xff_value}});
 
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
