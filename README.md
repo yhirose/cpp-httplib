@@ -996,7 +996,7 @@ auto res = cli.Get("/hi", headers);
 or
 
 ```c++
-auto res = cli.Get("/hi", {{"Hello", "World!"}});
+auto res = cli.Get("/hi", httplib::Headers{{"Hello", "World!"}});
 ```
 
 or
@@ -1240,7 +1240,7 @@ for details and for reading the variable from the environment.
 ```cpp
 httplib::Client cli("httpcan.org");
 
-auto res = cli.Get("/range/32", {
+auto res = cli.Get("/range/32", httplib::Headers{
   httplib::make_range_header({{1, 10}}) // 'Range: bytes=1-10'
 });
 // res->status should be 206.
@@ -1364,13 +1364,13 @@ The default `Accept-Encoding` value contains all possible compression types. So,
 
 ```c++
 res = cli.Get("/resource/foo");
-res = cli.Get("/resource/foo", {{"Accept-Encoding", "br, gzip, deflate, zstd"}});
+res = cli.Get("/resource/foo", httplib::Headers{{"Accept-Encoding", "br, gzip, deflate, zstd"}});
 ```
 
 If we don't want a response without compression, we have to set `Accept-Encoding` to an empty string. This behavior is similar to curl.
 
 ```c++
-res = cli.Get("/resource/foo", {{"Accept-Encoding", ""}});
+res = cli.Get("/resource/foo", httplib::Headers{{"Accept-Encoding", ""}});
 ```
 
 ### Compress request body on client

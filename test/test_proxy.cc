@@ -169,8 +169,9 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
   }
 
   {
-    auto res = cli.Get("/basic-auth/hello/world",
-                       {make_basic_authentication_header("hello", "world")});
+    auto res =
+        cli.Get("/basic-auth/hello/world",
+                Headers{make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
     EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
               normalizeJson(res->body));
