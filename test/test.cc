@@ -420,6 +420,47 @@ TEST(SanitizeFilenameTest, VariousPatterns) {
   EXPECT_EQ("", httplib::sanitize_filename("   "));
 }
 
+// Forward declaration (see base64_encode note below) so the split build can
+// see the symbol from the test.
+namespace httplib {
+namespace detail {
+bool is_chunked_transfer_encoding(const Headers &headers);
+} // namespace detail
+} // namespace httplib
+
+TEST(ChunkedTransferEncodingTest, DetectsChunkedAsFinalCoding) {
+  auto with_te = [](const char *te) {
+    Headers h;
+    if (te) { h.emplace("Transfer-Encoding", te); }
+    return h;
+  };
+
+  // Sole coding, matched case-insensitively.
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("chunked")));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("Chunked")));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("CHUNKED")));
+
+  // RFC 9112 6.1: chunked as the final coding of a list still frames the body.
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("gzip, chunked")));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("gzip,chunked")));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("gzip, Chunked ")));
+
+  // Multiple field lines combine in received order; the overall last token
+  // wins.
+  {
+    Headers h;
+    h.emplace("Transfer-Encoding", "gzip");
+    h.emplace("Transfer-Encoding", "chunked");
+    EXPECT_TRUE(detail::is_chunked_transfer_encoding(h));
+  }
+
+  // Not chunk-framed: chunked absent, or not the final coding.
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(with_te("gzip")));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(with_te("chunked, gzip")));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(with_te("")));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(with_te(nullptr)));
+}
+
 // Forward declaration: in split builds split.py strips `inline` and moves the
 // definition into httplib.cc, so detail::base64_encode is not visible from the
 // public httplib.h. Re-declaring it here lets the tests link against the symbol
