@@ -77,4 +77,4 @@ The counter is reset whenever `read()` consumes an incoming Pong frame, so this 
 
 Even with `0`, a dead connection won't linger forever: while your code is inside `read()`, `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop and `read()` fails if no frame arrives in time. Think of `max_missed_pongs` as the knob for detecting an unresponsive peer **faster** than that.
 
-> For handling a closed connection, see [W03. Handle connection close](w03-websocket-close).
+> For handling a closed connection, see [W03. Handle connection close](../w03-websocket-close).

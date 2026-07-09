@@ -48,4 +48,4 @@ if (res.ssl_backend_error() != 0) {
 | `SSLServerHostnameVerification` | The cert's CN/SAN doesn't match the host |
 | `SSLConnection` | TLS version mismatch, no shared cipher suite |
 
-> To change certificate verification settings, see [T02. Control SSL certificate verification](t02-cert-verification).
+> To change certificate verification settings, see [T02. Control SSL certificate verification](../t02-cert-verification).

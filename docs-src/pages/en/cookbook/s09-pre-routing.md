@@ -49,6 +49,6 @@ If auth fails, return `Handled` to respond with 401 immediately. If it passes, r
 
 ## For per-route auth
 
-If you want different auth rules per route rather than a single global check, `set_pre_request_handler()` is a better fit. See [S11. Authenticate per route with a pre-request handler](s11-pre-request).
+If you want different auth rules per route rather than a single global check, `set_pre_request_handler()` is a better fit. See [S11. Authenticate per route with a pre-request handler](../s11-pre-request).
 
-> **Note:** If all you want is to modify the response, `set_post_routing_handler()` is the right tool. See [S10. Add response headers with a post-routing handler](s10-post-routing).
+> **Note:** If all you want is to modify the response, `set_post_routing_handler()` is the right tool. See [S10. Add response headers with a post-routing handler](../s10-post-routing).
