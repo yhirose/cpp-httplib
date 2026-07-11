@@ -18293,6 +18293,39 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtxMbedTLS) {
   ASSERT_TRUE(res);
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
+
+// Regression test for a use-after-free where ~SSLClient freed the mbedTLS
+// context (owning mbedtls_ssl_config) before shutting down a still-open
+// keep-alive SSL session, which reads through that config in
+// mbedtls_ssl_close_notify.
+TEST(SSLClientServerTest, DestructWithLiveKeepAliveSessionMbedTLS) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [&](const Request & /*req*/, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    SSLClient cli(HOST, PORT);
+    cli.enable_server_certificate_verification(false);
+    cli.set_keep_alive(true);
+
+    auto res = cli.Get("/test");
+    ASSERT_TRUE(res);
+    ASSERT_EQ(StatusCode::OK_200, res->status);
+    // cli is destructed here with the keep-alive SSL session still open.
+  }
+}
 #endif
 
 // WebSocket Tests
