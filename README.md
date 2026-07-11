@@ -1490,11 +1490,9 @@ See [README-sse.md](README-sse.md) for more details.
 httplib::Server svr;
 
 svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws) {
-    httplib::ws::Message msg;
+    std::string msg;
     while (ws.read(msg)) {
-        if (msg.is_text()) {
-            ws.send("Echo: " + msg.data);
-        }
+        ws.send("Echo: " + msg);
     }
 });
 
