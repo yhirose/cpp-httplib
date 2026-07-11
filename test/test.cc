@@ -7737,6 +7737,63 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, 24));
 }
 
+TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
+  Server svr;
+  svr.Get("/injected-trailer", [&](const Request & /*req*/, Response &res) {
+    auto i = new int(0);
+    res.set_header("Trailer", "X-Safe, X-Reflected");
+    res.set_chunked_content_provider(
+        "text/plain",
+        [i](size_t /*offset*/, DataSink &sink) {
+          if (*i == 0) {
+            sink.os << "body";
+          } else {
+            Headers trailer;
+            // A valid trailer that must survive.
+            trailer.emplace("X-Safe", "safe");
+            // Attacker-controlled value carrying CR/LF (response splitting).
+            trailer.emplace("X-Reflected",
+                            "legit\r\nInjected-Header: pwned\r\nX-Evil: also");
+            // Attacker-controlled name carrying CR/LF.
+            trailer.emplace("X-Bad\r\nSet-Cookie: a=1", "x");
+            sink.done_with_trailer(trailer);
+          }
+          (*i)++;
+          return true;
+        },
+        [i](bool /*success*/) { delete i; });
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = std::string("GET /injected-trailer HTTP/1.1\r\n") +
+                          "Host: " + HOST +
+                          "\r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+
+  // The injected fields must not appear anywhere in the raw response.
+  EXPECT_EQ(std::string::npos, res.find("Injected-Header"));
+  EXPECT_EQ(std::string::npos, res.find("X-Evil"));
+  EXPECT_EQ(std::string::npos, res.find("Set-Cookie"));
+
+  // Invalid trailers are dropped entirely, matching set_header().
+  EXPECT_EQ(std::string::npos, res.find("X-Reflected:"));
+
+  // The valid trailer still passes through.
+  EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
+}
+
 // Sends a raw request and verifies that there isn't a crash or exception.
 static void test_raw_request(const std::string &req,
                              std::string *out = nullptr) {
