@@ -12323,8 +12323,8 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       }
     }
 
-    auto length = std::to_string(res.body.size());
-    res.set_header("Content-Length", length);
+    res.content_length_ = res.body.size();
+    res.set_header("Content-Length", std::to_string(res.content_length_));
   }
 }
 

@@ -7499,6 +7499,24 @@ TEST_F(ServerTest, PreCompressionLoggingWithoutCompression) {
       post_compression_body); // Post-compression logger captures final content
 }
 
+TEST_F(ServerTest, LoggerSeesContentLength) {
+  size_t logged_content_length = 0;
+  std::string logged_content_length_header;
+
+  svr_.set_logger([&](const Request & /*req*/, const Response &res) {
+    logged_content_length = res.content_length_;
+    logged_content_length_header = res.get_header_value("Content-Length");
+  });
+
+  auto res = cli_.Get("/nocompress");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(res->body.size(), logged_content_length);
+  EXPECT_EQ(std::to_string(logged_content_length),
+            logged_content_length_header);
+}
+
 TEST_F(ServerTest, PreCompressionLoggingOnlyPreLogger) {
   const std::string test_content =
       "123456789012345678901234567890123456789012345678901234567890123456789012"
