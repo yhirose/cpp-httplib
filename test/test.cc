@@ -2773,6 +2773,90 @@ TEST(RedirectToDifferentPort, DoNotForwardCredentialsBearerToken) {
       [](Client &cli) { cli.set_bearer_token_auth("my-secret-token"); });
 }
 
+TEST(RedirectToDifferentPort, DoNotForwardCookie) {
+  Server svr1;
+  std::string captured_cookie;
+  bool target_hit = false;
+  svr1.Get("/target", [&](const Request &req, Response &res) {
+    captured_cookie = req.get_header_value("Cookie");
+    target_hit = true;
+    res.set_content("OK", "text/plain");
+  });
+
+  int svr1_port = 0;
+  auto thread1 = std::thread([&]() {
+    svr1_port = svr1.bind_to_any_port(HOST);
+    svr1.listen_after_bind();
+  });
+
+  Server svr2;
+  svr2.Get("/redir", [&](const Request & /*req*/, Response &res) {
+    res.set_redirect(
+        "http://localhost:" + std::to_string(svr1_port) + "/target", 302);
+  });
+
+  int svr2_port = 0;
+  auto thread2 = std::thread([&]() {
+    svr2_port = svr2.bind_to_any_port(HOST);
+    svr2.listen_after_bind();
+  });
+  auto se = detail::scope_exit([&] {
+    svr2.stop();
+    thread2.join();
+    svr1.stop();
+    thread1.join();
+    ASSERT_FALSE(svr2.is_running());
+    ASSERT_FALSE(svr1.is_running());
+  });
+
+  svr1.wait_until_ready();
+  svr2.wait_until_ready();
+
+  Client cli("localhost", svr2_port);
+  cli.set_follow_location(true);
+
+  Headers headers = {{"Cookie", "session_id=SECRET; auth=PRIVATE"}};
+  auto res = cli.Get("/redir", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_TRUE(target_hit);
+  // Cookie MUST NOT be forwarded to a different host (GHSA-22mf-w2v3-r2jv)
+  EXPECT_TRUE(captured_cookie.empty());
+}
+
+TEST(RedirectToSamePort, ForwardCookie) {
+  // A same-origin redirect (same scheme/host/port) should preserve the Cookie
+  // header so that ordinary session flows keep working.
+  Server svr;
+  std::string captured_cookie;
+  svr.Get("/redir", [&](const Request & /*req*/, Response &res) {
+    res.set_redirect("/target", 302);
+  });
+  svr.Get("/target", [&](const Request &req, Response &res) {
+    captured_cookie = req.get_header_value("Cookie");
+    res.set_content("OK", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_follow_location(true);
+
+  Headers headers = {{"Cookie", "session_id=SECRET"}};
+  auto res = cli.Get("/redir", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("session_id=SECRET", captured_cookie);
+}
+
 TEST(RedirectToDifferentPort, OverflowPortNumber) {
   Server svr;
   svr.Get("/redir", [&](const Request & /*req*/, Response &res) {
