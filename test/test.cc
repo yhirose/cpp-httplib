@@ -1300,6 +1300,26 @@ TEST(GetHeaderValueTest, RegularInvalidValueInt) {
   EXPECT_TRUE(is_invalid_value);
 }
 
+TEST(GetHeaderValueTest, OutOfRangeValueInt) {
+  // An all-digit value that overflows size_t must be reported as invalid, not
+  // silently saturated/truncated: strtoull would otherwise return ULLONG_MAX
+  // (or, on 32-bit builds, the cast would wrap a large length to a small one),
+  // leaving the framing length wrong while is_invalid_value stayed false.
+  Headers headers = {{"Content-Length", "99999999999999999999999999"}};
+  auto is_invalid_value = false;
+  detail::get_header_value_u64(headers, "Content-Length", 0, 0,
+                               is_invalid_value);
+  EXPECT_TRUE(is_invalid_value);
+
+  // A well-formed length is unaffected.
+  Headers ok = {{"Content-Length", "1234"}};
+  is_invalid_value = false;
+  auto val = detail::get_header_value_u64(ok, "Content-Length", 0, 0,
+                                          is_invalid_value);
+  EXPECT_EQ(1234ull, val);
+  EXPECT_FALSE(is_invalid_value);
+}
+
 TEST(GetHeaderValueTest, Range) {
   {
     Headers headers = {make_range_header({{1, -1}})};
