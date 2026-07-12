@@ -19271,6 +19271,64 @@ TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
 
   client.close();
 }
+
+// Regression test (GHSA-w7p7-f35j-mw7q): shutdown_and_close() used to free the
+// TLS session before ws_->close() sent the close frame. Because the WebSocket's
+// SSLSocketStream keeps a raw pointer to that session, sending the close frame
+// then read/wrote a freed SSL object (use-after-free). Destroying an open wss
+// client (without calling close() first) is the only path that runs
+// shutdown_and_close() while the WebSocket is still open, so it reproduces the
+// bug exactly.
+//
+// NOTE: the offending read/write happens inside OpenSSL, so ASan only flags it
+// when linked against an instrumented libssl; run under Valgrind to catch it
+// with a stock OpenSSL. The short timeouts keep a regression from wedging the
+// suite (the freed session otherwise stalls on the close handshake) — this test
+// is a memory-tool tripwire, not a pass/fail assertion on stock builds.
+TEST_F(WebSocketSSLIntegrationTest, DestroyWhileOpenSendsCloseOverLiveSession) {
+  {
+    ws::WebSocketClient client("wss://localhost:" + std::to_string(port_) +
+                               "/ws-echo");
+    client.enable_server_certificate_verification(false);
+    client.set_read_timeout(2, 0);
+    client.set_write_timeout(2, 0);
+    ASSERT_TRUE(client.connect());
+    ASSERT_TRUE(client.is_open());
+    ASSERT_TRUE(client.send("still open"));
+    // Intentionally do NOT call client.close(): leaving scope runs
+    // shutdown_and_close() with the WebSocket still open, which must send the
+    // close frame while the TLS session is still alive.
+  }
+}
+
+// Regression test (GHSA-w7p7-f35j-mw7q): reconnecting an open wss client runs
+// shutdown_and_close() at the start of connect(), reproducing the same
+// use-after-free within the test body rather than at scope exit. The second
+// connect must succeed and echo, proving the close handshake ran over a live
+// session. See the note above about memory-tool requirements.
+TEST_F(WebSocketSSLIntegrationTest,
+       ReconnectWhileOpenSendsCloseOverLiveSession) {
+  ws::WebSocketClient client("wss://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.enable_server_certificate_verification(false);
+  client.set_read_timeout(2, 0);
+  client.set_write_timeout(2, 0);
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.is_open());
+  ASSERT_TRUE(client.send("still open"));
+
+  // Reconnect without closing first: connect() calls shutdown_and_close() on
+  // the still-open connection, which must not touch a freed TLS session.
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.is_open());
+  ASSERT_TRUE(client.send("after reconnect"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("after reconnect", msg);
+
+  client.close();
+}
 #endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED

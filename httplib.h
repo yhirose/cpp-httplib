@@ -20539,6 +20539,11 @@ inline WebSocketClient::~WebSocketClient() {
 inline bool WebSocketClient::is_valid() const { return is_valid_; }
 
 inline void WebSocketClient::shutdown_and_close() {
+  // Send the close frame while the TLS session is still alive: ws_ holds an
+  // SSLSocketStream that keeps a raw pointer to tls_session_, so the session
+  // must outlive ws_->close() and ws_.reset() to avoid a use-after-free.
+  if (ws_ && ws_->is_open()) { ws_->close(); }
+  ws_.reset();
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl_) {
     if (tls_session_) {
@@ -20548,8 +20553,6 @@ inline void WebSocketClient::shutdown_and_close() {
     }
   }
 #endif
-  if (ws_ && ws_->is_open()) { ws_->close(); }
-  ws_.reset();
   if (sock_ != INVALID_SOCKET) {
     detail::shutdown_socket(sock_);
     detail::close_socket(sock_);
