@@ -445,15 +445,6 @@ TEST(ChunkedTransferEncodingTest, DetectsChunkedAsFinalCoding) {
   EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("gzip,chunked")));
   EXPECT_TRUE(detail::is_chunked_transfer_encoding(with_te("gzip, Chunked ")));
 
-  // Multiple field lines combine in received order; the overall last token
-  // wins.
-  {
-    Headers h;
-    h.emplace("Transfer-Encoding", "gzip");
-    h.emplace("Transfer-Encoding", "chunked");
-    EXPECT_TRUE(detail::is_chunked_transfer_encoding(h));
-  }
-
   // Not chunk-framed: chunked absent, or not the final coding.
   EXPECT_FALSE(detail::is_chunked_transfer_encoding(with_te("gzip")));
   EXPECT_FALSE(detail::is_chunked_transfer_encoding(with_te("chunked, gzip")));

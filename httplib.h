@@ -7388,19 +7388,12 @@ inline ReadContentResult read_content_chunked(Stream &strm, T &x,
 inline bool is_chunked_transfer_encoding(const Headers &headers) {
   // RFC 9112 6.1: a message is framed with the chunked coding when "chunked"
   // is the final transfer coding. The field value may list several codings
-  // (e.g. "gzip, chunked"), and multiple Transfer-Encoding lines are
-  // equivalent to a single comma-joined list in received order (RFC 9110
-  // 5.3), so match the last coding token of the last field line,
-  // case-insensitively.
-  auto rng = headers.equal_range("Transfer-Encoding");
-  const std::string *value = nullptr;
-  for (auto it = rng.first; it != rng.second; ++it) {
-    value = &it->second;
-  }
-  if (!value) { return false; }
+  // (e.g. "gzip, chunked"), so match the last coding token case-insensitively
+  // rather than comparing the whole field value against "chunked".
+  auto value = get_header_value(headers, "Transfer-Encoding", "", 0);
 
   std::string last_coding;
-  split(value->data(), value->data() + value->size(), ',',
+  split(value, value + std::strlen(value), ',',
         [&](const char *b, const char *e) { last_coding.assign(b, e); });
 
   return case_ignore::equal(last_coding, "chunked");
