@@ -7896,6 +7896,33 @@ TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
   EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
 }
 
+TEST(RequestLineInjectionTest, RejectsCRLFInTarget) {
+  // A well-formed target is written verbatim.
+  {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, "GET", "/path?a=b");
+    EXPECT_GT(n, 0);
+    EXPECT_EQ("GET /path?a=b HTTP/1.1\r\n", strm.get_buffer());
+  }
+
+  // A target carrying CR/LF must be rejected before anything reaches the wire,
+  // otherwise it splits the request line and injects a header or a whole
+  // request. This is what a decoded redirect Location ("%0D%0A") turns into
+  // when path encoding is disabled.
+  const std::string evil_targets[] = {
+      "/a\r\nInjected: pwned",
+      "/a\rInjected",
+      "/a\nInjected",
+      "/a\r\n\r\nGET /evil HTTP/1.1\r\nHost: victim\r\n\r\n",
+  };
+  for (const auto &evil : evil_targets) {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, "GET", evil);
+    EXPECT_LT(n, 0);
+    EXPECT_TRUE(strm.get_buffer().empty());
+  }
+}
+
 // Sends a raw request and verifies that there isn't a crash or exception.
 static void test_raw_request(const std::string &req,
                              std::string *out = nullptr) {

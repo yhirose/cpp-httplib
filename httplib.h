@@ -7504,6 +7504,13 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 
 inline ssize_t write_request_line(Stream &strm, const std::string &method,
                                   const std::string &path) {
+  // A request target must not carry CR/LF (or other control octets); otherwise
+  // a value smuggled into it splits the request line and injects headers or a
+  // whole request. The same field-value check already guards header values in
+  // check_and_write_headers and the request target in
+  // perform_websocket_handshake; apply it here too.
+  if (!fields::is_field_value(path)) { return -1; }
+
   std::string s = method;
   s += ' ';
   s += path;
