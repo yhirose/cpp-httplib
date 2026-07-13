@@ -15893,13 +15893,14 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   auto port = port_future.get();
   ASSERT_GT(port, 0);
 
-  // Before the fix, std::stoull would throw std::out_of_range here and
-  // crash the process. After the fix, strtoull silently clamps to
-  // ULLONG_MAX so the stream opens without crashing. The important thing
-  // is that the process does NOT terminate.
+  // Historically std::stoull would throw std::out_of_range here and crash
+  // the process, then strtoull silently clamped to ULLONG_MAX and the
+  // stream opened with a bogus framing length. Now the out-of-range value
+  // is flagged invalid, so the stream fails to open, matching the
+  // not-a-number case above. The process still must NOT terminate.
   Client cli("127.0.0.1", port);
   auto handle = cli.open_stream("GET", "/");
-  EXPECT_TRUE(handle.is_valid());
+  EXPECT_FALSE(handle.is_valid());
 
   server_thread.join();
 }
