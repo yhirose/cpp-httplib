@@ -7896,6 +7896,17 @@ TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
   EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
 }
 
+// Forward declaration: in split builds split.py strips `inline` and moves the
+// definition into httplib.cc, so detail::write_request_line is not visible from
+// the public httplib.h. Re-declaring it here lets the tests link against the
+// symbol in both header-only and split builds.
+namespace httplib {
+namespace detail {
+ssize_t write_request_line(Stream &strm, const std::string &method,
+                           const std::string &path);
+} // namespace detail
+} // namespace httplib
+
 TEST(RequestLineInjectionTest, RejectsCRLFInTarget) {
   // A well-formed target is written verbatim.
   {
