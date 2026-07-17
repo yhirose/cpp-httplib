@@ -42,32 +42,51 @@ jobs:
           clang-format --version
           cd test && make style_check
 
+  # 32-bit builds on same-ISA 64-bit hosts (multiarch, no QEMU):
+  #   i386  -> ubuntu-24.04 (amd64) + -m32
+  #   armhf -> ubuntu-24.04-arm (arm64) + arm-linux-gnueabihf toolchain
   build-and-test-on-32bit:
-    runs-on: ubuntu-latest
+    name: linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request'  &&
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     strategy:
+      fail-fast: false
       matrix:
-        config:
-        - arch_flags: -m32
-          arch_suffix: :i386
-          name: (32-bit)
+        include:
+          - arch: i386
+            runner: ubuntu-24.04
+            pkg_arch: i386
+            make_args: EXTRA_CXXFLAGS=-m32
+          - arch: armhf
+            runner: ubuntu-24.04-arm
+            pkg_arch: armhf
+            make_args: CXX=arm-linux-gnueabihf-g++ EXTRA_CXXFLAGS=-Wno-psabi
     steps:
       - name: checkout
         uses: actions/checkout@v4
       - name: install libraries
         run: |
-          sudo dpkg --add-architecture i386
+          sudo dpkg --add-architecture ${{ matrix.pkg_arch }}
           sudo apt-get update
-          sudo apt-get install -y libc6-dev${{ matrix.config.arch_suffix }} libstdc++-13-dev${{ matrix.config.arch_suffix }} \
-            libssl-dev${{ matrix.config.arch_suffix }} libcurl4-openssl-dev${{ matrix.config.arch_suffix }} \
-            zlib1g-dev${{ matrix.config.arch_suffix }} libbrotli-dev${{ matrix.config.arch_suffix }} \
-            libzstd-dev${{ matrix.config.arch_suffix }}
+          sudo apt-get install -y \
+            libc6-dev:${{ matrix.pkg_arch }} libstdc++-13-dev:${{ matrix.pkg_arch }} \
+            libssl-dev:${{ matrix.pkg_arch }} libcurl4-openssl-dev:${{ matrix.pkg_arch }} \
+            zlib1g-dev:${{ matrix.pkg_arch }} libbrotli-dev:${{ matrix.pkg_arch }} \
+            libzstd-dev:${{ matrix.pkg_arch }}
+          if [ "${{ matrix.arch }}" = "armhf" ]; then
+            sudo apt-get install -y g++-arm-linux-gnueabihf
+          fi
       - name: build and run tests
-        run: cd test && make test EXTRA_CXXFLAGS="${{ matrix.config.arch_flags }}"
+        run: |
+          cd test
+          make test ${{ matrix.make_args }}
+          file ./test
+          LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test
 
   ubuntu:
     runs-on: ubuntu-latest
