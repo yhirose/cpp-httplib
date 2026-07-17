@@ -66,7 +66,10 @@ jobs:
           - arch: armhf
             runner: ubuntu-24.04-arm
             pkg_arch: armhf
-            make_args: 'CXX=arm-linux-gnueabihf-g++ EXTRA_CXXFLAGS="-Wno-psabi -fsanitize=undefined"'
+            # -fno-sanitize=alignment: ARM Thumb function pointers are oddly
+            # tagged; UBSan alignment checks false-positive on std::function
+            # construction from default_socket_options / write_headers.
+            make_args: 'CXX=arm-linux-gnueabihf-g++ EXTRA_CXXFLAGS="-Wno-psabi -fsanitize=undefined -fno-sanitize=alignment"'
     steps:
       - name: checkout
         uses: actions/checkout@v4

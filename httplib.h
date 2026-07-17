@@ -2002,19 +2002,11 @@ private:
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
-  // Lambda avoids ARM Thumb function-pointer tagging tripping UBSan
-  // alignment checks when constructing std::function from a raw function.
-  SocketOptions socket_options_ = [](socket_t sock) {
-    default_socket_options(sock);
-  };
+  SocketOptions socket_options_ = default_socket_options;
 
   Headers default_headers_;
-  // Lambda avoids ARM Thumb function-pointer tagging tripping UBSan
-  // alignment checks when constructing std::function from a raw function.
   std::function<ssize_t(Stream &, Headers &)> header_writer_ =
-      [](Stream &strm, Headers &headers) {
-        return detail::write_headers(strm, headers);
-      };
+      detail::write_headers;
 };
 
 class Result {
@@ -2455,11 +2447,9 @@ protected:
   // Default headers
   Headers default_headers_;
 
-  // Header writer (lambda: avoid ARM Thumb UBSan on raw function pointers)
+  // Header writer
   std::function<ssize_t(Stream &, Headers &)> header_writer_ =
-      [](Stream &strm, Headers &headers) {
-        return detail::write_headers(strm, headers);
-      };
+      detail::write_headers;
 
   // Settings
   std::string client_cert_path_;
@@ -4582,6 +4572,7 @@ inline std::string file_mtime_to_http_date(time_t mtime) {
   return std::string(buf);
 }
 
+namespace {
 // Civil (proleptic Gregorian) YYYY-MM-DD → days since 1970-01-01.
 // Algorithm from Howard Hinnant — independent of time_t width (Y2038-safe).
 inline int64_t days_from_civil(int y, unsigned m, unsigned d) {
@@ -4594,7 +4585,6 @@ inline int64_t days_from_civil(int y, unsigned m, unsigned d) {
          719468;
 }
 
-// Convert UTC struct tm to Unix seconds without timegm/time_t (Y2038-safe).
 inline int64_t tm_to_unix_seconds(const struct tm &tm_buf) {
   const int year = tm_buf.tm_year + 1900;
   const unsigned month = static_cast<unsigned>(tm_buf.tm_mon) + 1;
@@ -4605,16 +4595,13 @@ inline int64_t tm_to_unix_seconds(const struct tm &tm_buf) {
          static_cast<int64_t>(tm_buf.tm_sec);
 }
 
-// Parse HTTP-date (RFC 9110 Section 5.6.7) to Unix seconds (UTC).
-// Returns -1 on failure. Uses int64_t so post-Y2038 dates work on 32-bit
-// platforms where time_t cannot represent them.
-inline int64_t parse_http_date(const std::string &date_str) {
+// Parse HTTP-date to Unix seconds (UTC). Returns -1 on failure.
+// int64_t so post-Y2038 dates work when time_t is 32-bit.
+inline int64_t parse_http_date_unix(const std::string &date_str) {
   struct tm tm_buf;
 
-  // Create a classic locale object once for all parsing attempts
   const std::locale classic_locale = std::locale::classic();
 
-  // Try to parse using std::get_time (C++11, cross-platform)
   auto try_parse = [&](const char *fmt) -> bool {
     std::istringstream ss(date_str);
     ss.imbue(classic_locale);
@@ -4635,6 +4622,21 @@ inline int64_t parse_http_date(const std::string &date_str) {
   }
 
   return tm_to_unix_seconds(tm_buf);
+}
+} // namespace
+
+// Parse HTTP-date (RFC 9110 Section 5.6.7) to time_t. Returns -1 on failure.
+// Far-future dates beyond time_t are clamped so 32-bit platforms stay usable.
+inline time_t parse_http_date(const std::string &date_str) {
+  const auto t = parse_http_date_unix(date_str);
+  if (t < 0) { return static_cast<time_t>(-1); }
+  if (sizeof(time_t) <= 4) {
+    const auto tmax = static_cast<int64_t>((std::numeric_limits<time_t>::max)());
+    const auto tmin = static_cast<int64_t>((std::numeric_limits<time_t>::min)());
+    if (t > tmax) { return (std::numeric_limits<time_t>::max)(); }
+    if (t < tmin) { return (std::numeric_limits<time_t>::min)(); }
+  }
+  return static_cast<time_t>(t);
 }
 
 inline bool is_weak_etag(const std::string &s) {
@@ -11964,7 +11966,7 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
     auto val = req.get_header_value("If-Modified-Since");
     auto t = detail::parse_http_date(val);
 
-    if (t != -1 && static_cast<int64_t>(mtime) <= t) {
+    if (t != -1 && mtime <= t) {
       res.status = StatusCode::NotModified_304;
       return true;
     }
@@ -11990,9 +11992,9 @@ inline bool Server::check_if_range(Request &req, const std::string &etag,
         // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
         return false;
       } else {
-        // HTTP-date comparison (int64_t — safe past Y2038 on 32-bit)
+        // HTTP-date comparison
         auto t = detail::parse_http_date(val);
-        return (t != -1 && static_cast<int64_t>(mtime) <= t);
+        return (t != -1 && mtime <= t);
       }
     };
 
