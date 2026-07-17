@@ -18333,8 +18333,9 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtxMbedTLS) {
         return false;
       }
       // Load server private key
+      // Mbed TLS 3.x takes an RNG callback; 2.x and 4.x do not.
       if (mbedtls_pk_parse_keyfile(&own_key, SERVER_PRIVATE_KEY_FILE, nullptr
-#if MBEDTLS_VERSION_MAJOR >= 3
+#if MBEDTLS_VERSION_MAJOR == 3
                                    ,
                                    mbedtls_ctr_drbg_random, nullptr
 #endif

@@ -216,6 +216,20 @@ elseif(HTTPLIB_USE_MBEDTLS_IF_AVAILABLE)
 	set(HTTPLIB_IS_USING_MBEDTLS ${MbedTLS_FOUND})
 endif()
 
+# Mbed TLS 4.x renamed MbedTLS::mbedcrypto -> MbedTLS::tfpsacrypto
+set(_HTTPLIB_MBEDTLS_LIBS "")
+if(HTTPLIB_IS_USING_MBEDTLS)
+	list(APPEND _HTTPLIB_MBEDTLS_LIBS MbedTLS::mbedtls)
+	if(TARGET MbedTLS::mbedx509)
+		list(APPEND _HTTPLIB_MBEDTLS_LIBS MbedTLS::mbedx509)
+	endif()
+	if(TARGET MbedTLS::tfpsacrypto)
+		list(APPEND _HTTPLIB_MBEDTLS_LIBS MbedTLS::tfpsacrypto)
+	elseif(TARGET MbedTLS::mbedcrypto)
+		list(APPEND _HTTPLIB_MBEDTLS_LIBS MbedTLS::mbedcrypto)
+	endif()
+endif()
+
 if(HTTPLIB_REQUIRE_ZLIB)
 	find_package(ZLIB REQUIRED)
 	set(HTTPLIB_IS_USING_ZLIB TRUE)
@@ -377,7 +391,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::SSL>
 		$<$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>:OpenSSL::Crypto>
 		$<$<BOOL:${HTTPLIB_IS_USING_WOLFSSL}>:wolfssl::wolfssl>
-		$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:MbedTLS::mbedtls>
+		${_HTTPLIB_MBEDTLS_LIBS}
 )
 
 # Set the definitions to enable optional features

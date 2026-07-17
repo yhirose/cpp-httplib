@@ -51,7 +51,11 @@ if get_option('tls').allowed()
   else
     mbedtls_dep = dependency('mbedtls', required: get_option('tls'))
     mbedtlsx509_dep = dependency('mbedx509', required: get_option('tls'))
-    mbedtlscrypto_dep = dependency('mbedcrypto', required: get_option('tls'))
+    # Mbed TLS 4.x renamed libmbedcrypto to libtfpsacrypto
+    mbedtlscrypto_dep = dependency('tfpsacrypto', required: false)
+    if not mbedtlscrypto_dep.found()
+      mbedtlscrypto_dep = dependency('mbedcrypto', required: get_option('tls'))
+    endif
     if mbedtls_dep.found() and mbedtlsx509_dep.found() and mbedtlscrypto_dep.found()
       deps += mbedtls_dep
       deps += mbedtlsx509_dep

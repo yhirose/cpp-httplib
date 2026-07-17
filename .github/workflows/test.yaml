@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tls_backend: [openssl, mbedtls, wolfssl]
+        tls_backend: [openssl, mbedtls, mbedtls4, wolfssl]
     name: ubuntu (${{ matrix.tls_backend }})
     steps:
       - name: checkout
@@ -91,9 +91,36 @@ jobs:
       - name: install OpenSSL
         if: matrix.tls_backend == 'openssl'
         run: sudo apt-get install -y libssl-dev
-      - name: install Mbed TLS
+      - name: install Mbed TLS 3.x
         if: matrix.tls_backend == 'mbedtls'
         run: sudo apt-get install -y libmbedtls-dev
+      - name: cache Mbed TLS 4.x prefix
+        if: matrix.tls_backend == 'mbedtls4'
+        id: mbedtls4-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mbedtls-4.2.0
+          key: mbedtls-4.2.0-${{ runner.os }}-cmake
+      - name: install Mbed TLS 4.x
+        if: matrix.tls_backend == 'mbedtls4'
+        env:
+          MBEDTLS_VERSION: "4.2.0"
+          MBEDTLS_PREFIX: ${{ runner.temp }}/mbedtls-4.2.0
+        run: |
+          set -euo pipefail
+          if [ ! -f "${MBEDTLS_PREFIX}/lib/libmbedtls.so" ] && [ ! -f "${MBEDTLS_PREFIX}/lib/libmbedtls.a" ]; then
+            curl -fsSL -o mbedtls.tar.bz2 \
+              "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2"
+            tar -xjf mbedtls.tar.bz2
+            cmake -S "mbedtls-${MBEDTLS_VERSION}" -B mbedtls-build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="${MBEDTLS_PREFIX}" \
+              -DENABLE_TESTING=OFF \
+              -DENABLE_PROGRAMS=OFF
+            cmake --build mbedtls-build -j"$(nproc)"
+            cmake --install mbedtls-build
+          fi
+          echo "MBEDTLS_DIR=${MBEDTLS_PREFIX}" >> "$GITHUB_ENV"
       - name: install wolfSSL
         if: matrix.tls_backend == 'wolfssl'
         run: sudo apt-get install -y libwolfssl-dev
@@ -103,7 +130,7 @@ jobs:
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
-        if: matrix.tls_backend == 'mbedtls'
+        if: matrix.tls_backend == 'mbedtls' || matrix.tls_backend == 'mbedtls4'
         # Run mbedTLS shards with reduced parallelism — under ASAN+mbedTLS the
         # default 4 shards overload CI runners enough that timing-sensitive
         # ServerTest cases flake on first-request keep-alive reuse.
@@ -365,14 +392,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tls_backend: [openssl, mbedtls, wolfssl]
+        tls_backend: [openssl, mbedtls, mbedtls4, wolfssl]
     name: macos (${{ matrix.tls_backend }})
     steps:
       - name: checkout
         uses: actions/checkout@v4
-      - name: install Mbed TLS
+      - name: install Mbed TLS 3.x
         if: matrix.tls_backend == 'mbedtls'
         run: brew install mbedtls@3
+      - name: install Mbed TLS 4.x
+        if: matrix.tls_backend == 'mbedtls4'
+        run: brew install mbedtls
       - name: install wolfSSL
         if: matrix.tls_backend == 'wolfssl'
         run: brew install wolfssl
@@ -382,11 +412,15 @@ jobs:
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
-        if: matrix.tls_backend == 'mbedtls'
+        if: matrix.tls_backend == 'mbedtls' || matrix.tls_backend == 'mbedtls4'
         # macOS runners under ASAN+mbedTLS still flake at SHARDS=2 (rapid
         # bind/connect on the fixture's fixed port races on the slower
         # macos-latest runner). Serialize fully here; ubuntu stays at 2.
-        run: cd test && make test_split_mbedtls && SHARDS=1 make test_mbedtls_parallel
+        run: |
+          if [ "${{ matrix.tls_backend }}" = "mbedtls4" ]; then
+            export MBEDTLS_DIR="$(brew --prefix mbedtls)"
+          fi
+          cd test && make test_split_mbedtls && SHARDS=1 make test_mbedtls_parallel
       - name: build and run tests (wolfSSL)
         if: matrix.tls_backend == 'wolfssl'
         run: cd test && make test_split_wolfssl && make test_wolfssl_parallel

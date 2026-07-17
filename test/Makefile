@@ -9,14 +9,24 @@ ifneq ($(OS), Windows_NT)
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
 		OPENSSL_SUPPORT += -framework CoreFoundation -framework Security
 		MBEDTLS_DIR ?= $(shell brew --prefix mbedtls@3)
-		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -lmbedcrypto
+		# Mbed TLS 4.x uses -ltfpsacrypto instead of -lmbedcrypto
+		MBEDTLS_CRYPTO_LIB ?= $(shell test -f "$(MBEDTLS_DIR)/lib/libtfpsacrypto.dylib" -o -f "$(MBEDTLS_DIR)/lib/libtfpsacrypto.a" && echo tfpsacrypto || echo mbedcrypto)
+		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -l$(MBEDTLS_CRYPTO_LIB)
 		MBEDTLS_SUPPORT += -framework CoreFoundation -framework Security
 		WOLFSSL_DIR ?= $(shell brew --prefix wolfssl)
 		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -I$(WOLFSSL_DIR)/include -I$(WOLFSSL_DIR)/include/wolfssl -L$(WOLFSSL_DIR)/lib -lwolfssl
 		WOLFSSL_SUPPORT += -framework CoreFoundation -framework Security
 	else
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -lssl -lcrypto
-		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -lmbedcrypto
+		# Optional prefix for a custom/built Mbed TLS (e.g. 4.x from source).
+		# When unset, use system libs; prefer tfpsacrypto (4.x) over mbedcrypto.
+		ifdef MBEDTLS_DIR
+			MBEDTLS_CRYPTO_LIB ?= $(shell test -f "$(MBEDTLS_DIR)/lib/libtfpsacrypto.so" -o -f "$(MBEDTLS_DIR)/lib/libtfpsacrypto.a" && echo tfpsacrypto || echo mbedcrypto)
+			MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -Wl,-rpath,$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -l$(MBEDTLS_CRYPTO_LIB)
+		else
+			MBEDTLS_CRYPTO_LIB ?= $(shell (ldconfig -p 2>/dev/null | grep -q libtfpsacrypto && echo tfpsacrypto) || (test -f /usr/lib/libtfpsacrypto.so -o -f /usr/lib/x86_64-linux-gnu/libtfpsacrypto.so -o -f /usr/lib/aarch64-linux-gnu/libtfpsacrypto.so && echo tfpsacrypto) || echo mbedcrypto)
+			MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -lmbedtls -lmbedx509 -l$(MBEDTLS_CRYPTO_LIB)
+		endif
 		WOLFSSL_SUPPORT = -DCPPHTTPLIB_WOLFSSL_SUPPORT -lwolfssl
 		ifeq ($(UNAME_S), Linux)
 			# Disable ASLR for ASAN compatibility on WSL2 (high-entropy ASLR conflicts with ASAN shadow memory)

@@ -8,7 +8,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     strategy:
       matrix:
-        tls_backend: [openssl, mbedtls]
+        tls_backend: [openssl, mbedtls, mbedtls4]
     name: proxy (${{ matrix.tls_backend }})
 
     steps:
@@ -21,9 +21,36 @@ jobs:
     - name: Install OpenSSL
       if: matrix.tls_backend == 'openssl'
       run: sudo apt-get install -y libssl-dev
-    - name: Install Mbed TLS
+    - name: Install Mbed TLS 3.x
       if: matrix.tls_backend == 'mbedtls'
       run: sudo apt-get install -y libmbedtls-dev
+    - name: Cache Mbed TLS 4.x prefix
+      if: matrix.tls_backend == 'mbedtls4'
+      id: mbedtls4-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/mbedtls-4.2.0
+        key: mbedtls-4.2.0-${{ runner.os }}-cmake
+    - name: Install Mbed TLS 4.x
+      if: matrix.tls_backend == 'mbedtls4'
+      env:
+        MBEDTLS_VERSION: "4.2.0"
+        MBEDTLS_PREFIX: ${{ runner.temp }}/mbedtls-4.2.0
+      run: |
+        set -euo pipefail
+        if [ ! -f "${MBEDTLS_PREFIX}/lib/libmbedtls.so" ] && [ ! -f "${MBEDTLS_PREFIX}/lib/libmbedtls.a" ]; then
+          curl -fsSL -o mbedtls.tar.bz2 \
+            "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2"
+          tar -xjf mbedtls.tar.bz2
+          cmake -S "mbedtls-${MBEDTLS_VERSION}" -B mbedtls-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${MBEDTLS_PREFIX}" \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_PROGRAMS=OFF
+          cmake --build mbedtls-build -j"$(nproc)"
+          cmake --install mbedtls-build
+        fi
+        echo "MBEDTLS_DIR=${MBEDTLS_PREFIX}" >> "$GITHUB_ENV"
 
     - name: Run proxy tests (OpenSSL)
       if: matrix.tls_backend == 'openssl'
@@ -31,7 +58,7 @@ jobs:
       env:
         COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     - name: Run proxy tests (Mbed TLS)
-      if: matrix.tls_backend == 'mbedtls'
+      if: matrix.tls_backend == 'mbedtls' || matrix.tls_backend == 'mbedtls4'
       run: cd test && make proxy_mbedtls
       env:
         COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml

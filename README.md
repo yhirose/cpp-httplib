@@ -67,7 +67,7 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 | Backend | Define | Libraries | Notes |
 | :------ | :----- | :-------- | :---- |
 | OpenSSL | `CPPHTTPLIB_OPENSSL_SUPPORT` | `libssl`, `libcrypto` | [3.0 or later](https://www.openssl.org/policies/releasestrat.html) required |
-| Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` | 2.x and 3.x supported (auto-detected) |
+| Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` (2.x/3.x) or `libtfpsacrypto` (4.x) | 2.x, 3.x, and 4.x supported (auto-detected) |
 | wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` | 5.x supported; must build with `--enable-opensslall` |
 
 > [!NOTE]
