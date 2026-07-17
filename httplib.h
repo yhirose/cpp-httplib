@@ -311,7 +311,6 @@ using socket_t = int;
 #include <cassert>
 #include <chrono>
 #include <climits>
-#include <limits>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
@@ -322,6 +321,7 @@ using socket_t = int;
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <map>
 #include <memory>
@@ -2009,8 +2009,12 @@ private:
   };
 
   Headers default_headers_;
+  // Lambda avoids ARM Thumb function-pointer tagging tripping UBSan
+  // alignment checks when constructing std::function from a raw function.
   std::function<ssize_t(Stream &, Headers &)> header_writer_ =
-      detail::write_headers;
+      [](Stream &strm, Headers &headers) {
+        return detail::write_headers(strm, headers);
+      };
 };
 
 class Result {
@@ -2451,9 +2455,11 @@ protected:
   // Default headers
   Headers default_headers_;
 
-  // Header writer
+  // Header writer (lambda: avoid ARM Thumb UBSan on raw function pointers)
   std::function<ssize_t(Stream &, Headers &)> header_writer_ =
-      detail::write_headers;
+      [](Stream &strm, Headers &headers) {
+        return detail::write_headers(strm, headers);
+      };
 
   // Settings
   std::string client_cert_path_;
@@ -4584,7 +4590,8 @@ inline int64_t days_from_civil(int y, unsigned m, unsigned d) {
   const unsigned yoe = static_cast<unsigned>(y - era * 400);
   const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
   const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  return static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(doe) - 719468;
+  return static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(doe) -
+         719468;
 }
 
 // Convert UTC struct tm to Unix seconds without timegm/time_t (Y2038-safe).
@@ -4623,9 +4630,7 @@ inline int64_t parse_http_date(const std::string &date_str) {
     // RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
     if (!try_parse("%A, %d-%b-%y %H:%M:%S")) {
       // asctime format: "Sun Nov  6 08:49:37 1994"
-      if (!try_parse("%a %b %d %H:%M:%S %Y")) {
-        return -1;
-      }
+      if (!try_parse("%a %b %d %H:%M:%S %Y")) { return -1; }
     }
   }
 
