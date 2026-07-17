@@ -81,17 +81,18 @@ client_cert_pem = custom_target(
   command: [openssl, 'x509', '-in', '@INPUT0@', '-days', '370', '-req', '-CA', '@INPUT1@', '-CAkey', '@INPUT2@', '-CAcreateserial', '-out', '@OUTPUT@']
 )
 
-client_encrypted_key_pem = custom_target(
-  'client_encrypted_key_pem',
-  output: 'client_encrypted.key.pem',
-  command: [openssl, 'genrsa', '-aes256', '-passout', 'pass:test012!', '-out', '@OUTPUT@', '2048']
+# Unencrypted key -> cert, then PBES2 AES wrap (Mbed TLS 4.x has no DES/PBES1).
+client_encrypted_tmp_key_pem = custom_target(
+  'client_encrypted_tmp_key_pem',
+  output: 'client_encrypted.tmp.key.pem',
+  command: [openssl, 'genrsa', '-out', '@OUTPUT@', '2048']
 )
 
 client_encrypted_temp_req = custom_target(
   'client_encrypted_temp_req',
-  input: client_encrypted_key_pem,
+  input: client_encrypted_tmp_key_pem,
   output: 'client_encrypted_temp_req',
-  command: [openssl, 'req', '-new', '-batch', '-config', test_conf, '-key', '@INPUT@', '-passin', 'pass:test012!', '-out', '@OUTPUT@']
+  command: [openssl, 'req', '-new', '-batch', '-config', test_conf, '-key', '@INPUT@', '-out', '@OUTPUT@']
 )
 
 client_encrypted_cert_pem = custom_target(
@@ -99,6 +100,13 @@ client_encrypted_cert_pem = custom_target(
   input: [client_encrypted_temp_req, rootca_cert_pem, rootca_key_pem],
   output: 'client_encrypted.cert.pem',
   command: [openssl, 'x509', '-in', '@INPUT0@', '-days', '370', '-req', '-CA', '@INPUT1@', '-CAkey', '@INPUT2@', '-CAcreateserial', '-out', '@OUTPUT@']
+)
+
+client_encrypted_key_pem = custom_target(
+  'client_encrypted_key_pem',
+  input: client_encrypted_tmp_key_pem,
+  output: 'client_encrypted.key.pem',
+  command: [openssl, 'pkcs8', '-topk8', '-v2', 'aes-256-cbc', '-in', '@INPUT@', '-passout', 'pass:test012!', '-out', '@OUTPUT@']
 )
 
 # Copy test files to the build directory

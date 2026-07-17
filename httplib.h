@@ -9095,8 +9095,7 @@ inline bool psa_hash_to_buf(psa_algorithm_t alg, const std::string &s,
   if (!ensure_mbedtls_psa_crypto()) { return false; }
   size_t out_len = 0;
   return psa_hash_compute(alg, reinterpret_cast<const uint8_t *>(s.data()),
-                          s.size(), hash, hash_size,
-                          &out_len) == PSA_SUCCESS &&
+                          s.size(), hash, hash_size, &out_len) == PSA_SUCCESS &&
          out_len == hash_size;
 }
 #endif
@@ -19553,23 +19552,23 @@ inline bool load_system_certs(ctx_t ctx) {
                                               SSL_FILETYPE_ASN1) == SSL_SUCCESS;
       });
 #else
-  for (auto path = impl::system_ca_paths(); *path; ++path) {
-    if (wolfSSL_CTX_load_verify_locations(wctx->ctx, *path, nullptr) ==
-        SSL_SUCCESS) {
-      loaded = true;
-      break;
-    }
-  }
-
-  if (!loaded) {
-    for (auto dir = impl::system_ca_dirs(); *dir; ++dir) {
-      if (wolfSSL_CTX_load_verify_locations(wctx->ctx, nullptr, *dir) ==
-          SSL_SUCCESS) {
-        loaded = true;
-        break;
+      for (auto path = impl::system_ca_paths(); *path; ++path) {
+        if (wolfSSL_CTX_load_verify_locations(wctx->ctx, *path, nullptr) ==
+            SSL_SUCCESS) {
+          loaded = true;
+          break;
+        }
       }
-    }
-  }
+
+      if (!loaded) {
+        for (auto dir = impl::system_ca_dirs(); *dir; ++dir) {
+          if (wolfSSL_CTX_load_verify_locations(wctx->ctx, nullptr, *dir) ==
+              SSL_SUCCESS) {
+            loaded = true;
+            break;
+          }
+        }
+      }
 #endif
 
   return loaded;

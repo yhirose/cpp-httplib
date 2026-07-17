@@ -103,19 +103,26 @@ if(HTTPLIB_IS_USING_OPENSSL)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
+    # Unencrypted key -> cert, then PBES2 AES wrap (Mbed TLS 4.x has no DES/PBES1).
     execute_process(
-        COMMAND ${OPENSSL_COMMAND} genrsa -aes256 -passout pass:test012! 2048
-        OUTPUT_FILE client_encrypted.key.pem
+        COMMAND ${OPENSSL_COMMAND} genrsa 2048
+        OUTPUT_FILE client_encrypted.tmp.key.pem
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
     execute_process(
-        COMMAND ${OPENSSL_COMMAND} req -new -batch -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key client_encrypted.key.pem -passin pass:test012!
+        COMMAND ${OPENSSL_COMMAND} req -new -batch -config ${CMAKE_CURRENT_LIST_DIR}/test.conf -key client_encrypted.tmp.key.pem
         COMMAND ${OPENSSL_COMMAND} x509 -days 370 -req -CA rootCA.cert.pem -CAkey rootCA.key.pem -CAcreateserial
         OUTPUT_FILE client_encrypted.cert.pem
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} pkcs8 -topk8 -v2 aes-256-cbc -in client_encrypted.tmp.key.pem -passout pass:test012! -out client_encrypted.key.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/client_encrypted.tmp.key.pem)
     # Certificates for IP-host hostname verification regression tests.
     # cert_ip_cn.pem: CN is an IPv4 literal with NO subjectAltName. An IP host
     #                 must NOT be authenticated via the CN, so verifying it
