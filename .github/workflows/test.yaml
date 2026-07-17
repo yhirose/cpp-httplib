@@ -45,6 +45,7 @@ jobs:
   # 32-bit builds on same-ISA 64-bit hosts (multiarch, no QEMU):
   #   i386  -> ubuntu-24.04 (amd64) + -m32
   #   armhf -> ubuntu-24.04-arm (arm64) + arm-linux-gnueabihf toolchain
+  # ASan comes from test/Makefile; UBSan + fuzz corpus replay are added here.
   build-and-test-on-32bit:
     name: linux ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
@@ -61,11 +62,11 @@ jobs:
           - arch: i386
             runner: ubuntu-24.04
             pkg_arch: i386
-            make_args: EXTRA_CXXFLAGS=-m32
+            make_args: 'EXTRA_CXXFLAGS="-m32 -fsanitize=undefined"'
           - arch: armhf
             runner: ubuntu-24.04-arm
             pkg_arch: armhf
-            make_args: CXX=arm-linux-gnueabihf-g++ EXTRA_CXXFLAGS=-Wno-psabi
+            make_args: 'CXX=arm-linux-gnueabihf-g++ EXTRA_CXXFLAGS="-Wno-psabi -fsanitize=undefined"'
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -77,7 +78,7 @@ jobs:
             libc6-dev:${{ matrix.pkg_arch }} libstdc++-13-dev:${{ matrix.pkg_arch }} \
             libssl-dev:${{ matrix.pkg_arch }} libcurl4-openssl-dev:${{ matrix.pkg_arch }} \
             zlib1g-dev:${{ matrix.pkg_arch }} libbrotli-dev:${{ matrix.pkg_arch }} \
-            libzstd-dev:${{ matrix.pkg_arch }}
+            libzstd-dev:${{ matrix.pkg_arch }} libubsan1:${{ matrix.pkg_arch }}
           if [ "${{ matrix.arch }}" = "armhf" ]; then
             sudo apt-get install -y g++-arm-linux-gnueabihf
           fi
@@ -86,7 +87,13 @@ jobs:
           cd test
           make test ${{ matrix.make_args }}
           file ./test
-          LSAN_OPTIONS=suppressions=lsan_suppressions.txt ./test
+          LSAN_OPTIONS=suppressions=lsan_suppressions.txt \
+            UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+            ./test
+      - name: run fuzz corpus replay
+        run: |
+          cd test
+          make fuzz_test ${{ matrix.make_args }}
 
   ubuntu:
     runs-on: ubuntu-latest
