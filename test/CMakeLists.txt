@@ -122,6 +122,11 @@ if(HTTPLIB_IS_USING_OPENSSL)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} pkcs8 -topk8 -v1 PBE-SHA1-3DES -in client_encrypted.tmp.key.pem -passout pass:test012! -out client_encrypted_pbes1.key.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
     file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/client_encrypted.tmp.key.pem)
     # Certificates for IP-host hostname verification regression tests.
     # cert_ip_cn.pem: CN is an IPv4 literal with NO subjectAltName. An IP host

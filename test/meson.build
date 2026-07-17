@@ -109,6 +109,13 @@ client_encrypted_key_pem = custom_target(
   command: [openssl, 'pkcs8', '-topk8', '-v2', 'aes-256-cbc', '-in', '@INPUT@', '-passout', 'pass:test012!', '-out', '@OUTPUT@']
 )
 
+client_encrypted_pbes1_key_pem = custom_target(
+  'client_encrypted_pbes1_key_pem',
+  input: client_encrypted_tmp_key_pem,
+  output: 'client_encrypted_pbes1.key.pem',
+  command: [openssl, 'pkcs8', '-topk8', '-v1', 'PBE-SHA1-3DES', '-in', '@INPUT@', '-passout', 'pass:test012!', '-out', '@OUTPUT@']
+)
+
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
@@ -147,6 +154,7 @@ test(
     client_key_pem,
     client_cert_pem,
     client_encrypted_key_pem,
+    client_encrypted_pbes1_key_pem,
     client_encrypted_cert_pem
   ],
   workdir: meson.current_build_dir(),

@@ -15,11 +15,14 @@ openssl req -new -batch -config test.conf -key client.key.pem | openssl x509 -da
 openssl genrsa -passout pass:test123! 2048 > key_encrypted.pem
 openssl req -new -batch -config test.conf -key key_encrypted.pem | openssl x509 -days 3650 -req -signkey key_encrypted.pem > cert_encrypted.pem
 # Generate an unencrypted key first so openssl req does not need a passphrase
-# (broken for PKCS#8 on some OpenSSL 3.x builds), then wrap with PBES2 AES.
-# PBE-SHA1-3DES is rejected by Mbed TLS 4.x (DES removed from default builds).
+# (broken for PKCS#8 on some OpenSSL 3.x builds), then wrap twice from the same
+# keypair: PBES2 AES for Mbed TLS 3.6+/4.x and OpenSSL/wolfSSL, and PBES1
+# 3DES for older Mbed TLS (e.g. Ubuntu 2.28) which has no PKCS5-AES support.
+# Mbed TLS 4.x rejects DES/PBES1.
 openssl genrsa 2048 > client_encrypted.tmp.key.pem
 openssl req -new -batch -config test.conf -key client_encrypted.tmp.key.pem | openssl x509 -days 370 -req -CA rootCA.cert.pem -CAkey rootCA.key.pem -CAcreateserial > client_encrypted.cert.pem
 openssl pkcs8 -topk8 -v2 aes-256-cbc -in client_encrypted.tmp.key.pem -passout pass:test012! -out client_encrypted.key.pem
+openssl pkcs8 -topk8 -v1 PBE-SHA1-3DES -in client_encrypted.tmp.key.pem -passout pass:test012! -out client_encrypted_pbes1.key.pem
 rm -f client_encrypted.tmp.key.pem
 
 # Certificates for IP-host hostname verification regression tests.
