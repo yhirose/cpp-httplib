@@ -311,6 +311,7 @@ using socket_t = int;
 #include <cassert>
 #include <chrono>
 #include <climits>
+#include <limits>
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
@@ -2001,7 +2002,11 @@ private:
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
-  SocketOptions socket_options_ = default_socket_options;
+  // Lambda avoids ARM Thumb function-pointer tagging tripping UBSan
+  // alignment checks when constructing std::function from a raw function.
+  SocketOptions socket_options_ = [](socket_t sock) {
+    default_socket_options(sock);
+  };
 
   Headers default_headers_;
   std::function<ssize_t(Stream &, Headers &)> header_writer_ =
@@ -4571,8 +4576,32 @@ inline std::string file_mtime_to_http_date(time_t mtime) {
   return std::string(buf);
 }
 
-// Parse HTTP-date (RFC 9110 Section 5.6.7) to time_t. Returns -1 on failure.
-inline time_t parse_http_date(const std::string &date_str) {
+// Civil (proleptic Gregorian) YYYY-MM-DD → days since 1970-01-01.
+// Algorithm from Howard Hinnant — independent of time_t width (Y2038-safe).
+inline int64_t days_from_civil(int y, unsigned m, unsigned d) {
+  y -= m <= 2;
+  const int era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = static_cast<unsigned>(y - era * 400);
+  const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(doe) - 719468;
+}
+
+// Convert UTC struct tm to Unix seconds without timegm/time_t (Y2038-safe).
+inline int64_t tm_to_unix_seconds(const struct tm &tm_buf) {
+  const int year = tm_buf.tm_year + 1900;
+  const unsigned month = static_cast<unsigned>(tm_buf.tm_mon) + 1;
+  const unsigned day = static_cast<unsigned>(tm_buf.tm_mday);
+  const int64_t days = days_from_civil(year, month, day);
+  return days * 86400 + static_cast<int64_t>(tm_buf.tm_hour) * 3600 +
+         static_cast<int64_t>(tm_buf.tm_min) * 60 +
+         static_cast<int64_t>(tm_buf.tm_sec);
+}
+
+// Parse HTTP-date (RFC 9110 Section 5.6.7) to Unix seconds (UTC).
+// Returns -1 on failure. Uses int64_t so post-Y2038 dates work on 32-bit
+// platforms where time_t cannot represent them.
+inline int64_t parse_http_date(const std::string &date_str) {
   struct tm tm_buf;
 
   // Create a classic locale object once for all parsing attempts
@@ -4595,18 +4624,12 @@ inline time_t parse_http_date(const std::string &date_str) {
     if (!try_parse("%A, %d-%b-%y %H:%M:%S")) {
       // asctime format: "Sun Nov  6 08:49:37 1994"
       if (!try_parse("%a %b %d %H:%M:%S %Y")) {
-        return static_cast<time_t>(-1);
+        return -1;
       }
     }
   }
 
-#ifdef _WIN32
-  return _mkgmtime(&tm_buf);
-#elif defined _AIX
-  return mktime(&tm_buf);
-#else
-  return timegm(&tm_buf);
-#endif
+  return tm_to_unix_seconds(tm_buf);
 }
 
 inline bool is_weak_etag(const std::string &s) {
@@ -11936,7 +11959,7 @@ inline bool Server::check_if_not_modified(const Request &req, Response &res,
     auto val = req.get_header_value("If-Modified-Since");
     auto t = detail::parse_http_date(val);
 
-    if (t != static_cast<time_t>(-1) && mtime <= t) {
+    if (t != -1 && static_cast<int64_t>(mtime) <= t) {
       res.status = StatusCode::NotModified_304;
       return true;
     }
@@ -11962,9 +11985,9 @@ inline bool Server::check_if_range(Request &req, const std::string &etag,
         // Weak ETags are not valid for If-Range (RFC 9110 Section 13.1.5)
         return false;
       } else {
-        // HTTP-date comparison
+        // HTTP-date comparison (int64_t — safe past Y2038 on 32-bit)
         auto t = detail::parse_http_date(val);
-        return (t != static_cast<time_t>(-1) && mtime <= t);
+        return (t != -1 && static_cast<int64_t>(mtime) <= t);
       }
     };
 
