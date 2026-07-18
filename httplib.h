@@ -13819,7 +13819,14 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
 
     // Write request line and headers
-    detail::write_request_line(bstrm, req.method, path_with_query);
+    if (detail::write_request_line(bstrm, req.method, path_with_query) < 0) {
+      // A rejected target (e.g. CR/LF smuggled in via a decoded redirect
+      // Location under set_path_encode(false)) must fail the request cleanly
+      // instead of emitting a request-line-less, header-injecting request.
+      error = Error::Write;
+      output_error_log(error, &req);
+      return false;
+    }
     if (!detail::check_and_write_headers(bstrm, req.headers, header_writer_,
                                          error)) {
       output_error_log(error, &req);
