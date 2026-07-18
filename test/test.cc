@@ -1302,9 +1302,9 @@ TEST(GetHeaderValueTest, RegularInvalidValueInt) {
 
 TEST(GetHeaderValueTest, OutOfRangeValueInt) {
   // An all-digit value that overflows size_t must be reported as invalid, not
-  // silently saturated/truncated: strtoull would otherwise return ULLONG_MAX
-  // (or, on 32-bit builds, the cast would wrap a large length to a small one),
-  // leaving the framing length wrong while is_invalid_value stayed false.
+  // silently saturated/truncated: parsing at size_t width would otherwise wrap
+  // a large length to a small one on 32-bit builds, leaving the framing length
+  // wrong while is_invalid_value stayed false.
   Headers headers = {{"Content-Length", "99999999999999999999999999"}};
   auto is_invalid_value = false;
   detail::get_header_value_u64(headers, "Content-Length", 0, 0,
@@ -16094,10 +16094,10 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   ASSERT_GT(port, 0);
 
   // Historically std::stoull would throw std::out_of_range here and crash
-  // the process, then strtoull silently clamped to ULLONG_MAX and the
-  // stream opened with a bogus framing length. Now the out-of-range value
-  // is flagged invalid, so the stream fails to open, matching the
-  // not-a-number case above. The process still must NOT terminate.
+  // the process, then parsing silently clamped to a bogus framing length and
+  // the stream opened anyway. Now the out-of-range value is flagged invalid,
+  // so the stream fails to open, matching the not-a-number case above. The
+  // process still must NOT terminate.
   Client cli("127.0.0.1", port);
   auto handle = cli.open_stream("GET", "/");
   EXPECT_FALSE(handle.is_valid());

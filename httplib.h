@@ -2957,18 +2957,18 @@ inline size_t get_header_value_u64(const Headers &headers,
   std::advance(it, static_cast<ssize_t>(id));
   if (it != rng.second) {
     if (is_numeric(it->second)) {
-      errno = 0;
-      auto val = std::strtoull(it->second.data(), nullptr, 10);
-      auto result = static_cast<size_t>(val);
-      // strtoull saturates to ULLONG_MAX on overflow, and the size_t cast
-      // truncates a value that doesn't fit (a Content-Length above 2^32 wraps
-      // to a small length on 32-bit builds). Either way the framing length
-      // would be wrong, so flag it rather than return a bogus size.
-      if (errno == ERANGE || static_cast<unsigned long long>(result) != val) {
+      // Parse at size_t width so an out-of-range Content-Length is reported
+      // rather than silently saturated/truncated (a value above 2^32 would
+      // otherwise wrap to a small framing length on 32-bit builds). Flag it
+      // and return SIZE_MAX so the existing oversized-value guards reject it.
+      size_t val = 0;
+      const auto &s = it->second;
+      auto r = from_chars(s.data(), s.data() + s.size(), val);
+      if (r.ec == std::errc::result_out_of_range) {
         is_invalid_value = true;
         return (std::numeric_limits<size_t>::max)();
       }
-      return result;
+      return val;
     } else {
       is_invalid_value = true;
     }
