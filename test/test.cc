@@ -7938,6 +7938,80 @@ TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
   EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
 }
 
+// Forward declaration: in split builds split.py strips `inline` and moves the
+// definition into httplib.cc, so detail::write_request_line is not visible from
+// the public httplib.h. Re-declaring it here lets the tests link against the
+// symbol in both header-only and split builds.
+namespace httplib {
+namespace detail {
+ssize_t write_request_line(Stream &strm, const std::string &method,
+                           const std::string &path);
+} // namespace detail
+} // namespace httplib
+
+TEST(RequestLineInjectionTest, RejectsCRLFInTarget) {
+  // A well-formed target is written verbatim.
+  {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, "GET", "/path?a=b");
+    EXPECT_GT(n, 0);
+    EXPECT_EQ("GET /path?a=b HTTP/1.1\r\n", strm.get_buffer());
+  }
+
+  // A target carrying CR/LF must be rejected before anything reaches the wire,
+  // otherwise it splits the request line and injects a header or a whole
+  // request. This is what a decoded redirect Location ("%0D%0A") turns into
+  // when path encoding is disabled.
+  const std::string evil_targets[] = {
+      "/a\r\nInjected: pwned",
+      "/a\rInjected",
+      "/a\nInjected",
+      "/a\r\n\r\nGET /evil HTTP/1.1\r\nHost: victim\r\n\r\n",
+  };
+  for (const auto &evil : evil_targets) {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, "GET", evil);
+    EXPECT_LT(n, 0);
+    EXPECT_TRUE(strm.get_buffer().empty());
+  }
+}
+
+TEST(RequestLineInjectionTest, ClientRejectsCRLFTargetEndToEnd) {
+  // End-to-end counterpart to RejectsCRLFInTarget. With path encoding disabled
+  // the client transmits the target verbatim, so a CR/LF-bearing target -- what
+  // a redirect Location "%0D%0A" decodes to -- reaches write_request. The
+  // client must fail cleanly with Error::Write instead of putting a
+  // request-line-less, header-injecting request on the wire.
+  Server svr;
+
+  svr.Get("/a", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, PORT);
+    cli.set_path_encode(false);
+    // The request is rejected before anything is written, so the connection
+    // stays silent and the subsequent response read would otherwise block for
+    // the full default read timeout. Shorten it -- the assertion is on the
+    // error, not the timeout.
+    cli.set_read_timeout(1, 0);
+
+    auto res = cli.Get("/a\r\nInjected: pwned");
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::Write, res.error());
+  }
+}
+
 // Sends a raw request and verifies that there isn't a crash or exception.
 static void test_raw_request(const std::string &req,
                              std::string *out = nullptr) {
