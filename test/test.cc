@@ -49,8 +49,7 @@ inline std::string u8_to_string(const char8_t *s) {
 #define CLIENT_ENCRYPTED_CERT_FILE "./client_encrypted.cert.pem"
 // Mbed TLS < 3.6 has no PKCS5 PBES2-AES; Ubuntu's 2.28 package needs PBES1.
 // Mbed TLS 4.x drops DES, so newer builds use the AES-wrapped key instead.
-#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) &&                                     \
-    (MBEDTLS_VERSION_NUMBER < 0x03060000)
+#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) && (MBEDTLS_VERSION_NUMBER < 0x03060000)
 #define CLIENT_ENCRYPTED_PRIVATE_KEY_FILE "./client_encrypted_pbes1.key.pem"
 #else
 #define CLIENT_ENCRYPTED_PRIVATE_KEY_FILE "./client_encrypted.key.pem"
