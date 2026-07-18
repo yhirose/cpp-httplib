@@ -7386,8 +7386,46 @@ inline ReadContentResult read_content_chunked(Stream &strm, T &x,
 }
 
 inline bool is_chunked_transfer_encoding(const Headers &headers) {
-  return case_ignore::equal(
-      get_header_value(headers, "Transfer-Encoding", "", 0), "chunked");
+  // RFC 9112 6.1: a message is framed with the chunked coding when "chunked"
+  // is the final transfer coding. A single field value may list several
+  // codings ("gzip, chunked"), and the list may be split across multiple
+  // Transfer-Encoding header lines (RFC 9110 5.3). Match the last coding token
+  // case-insensitively rather than comparing the whole value against "chunked".
+  //
+  // Security: reading a chunked message as unframed leaves its body in the
+  // socket, where a keep-alive connection parses it as a smuggled request.
+  // Headers is an unordered_multimap whose iteration order for duplicate keys
+  // is not portable, so when there is more than one Transfer-Encoding line we
+  // cannot tell which coding is truly final. In that ambiguous case we fail
+  // safe by treating the message as chunked (a mis-parse just closes the
+  // connection, whereas the opposite error enables smuggling).
+  auto rng = headers.equal_range("Transfer-Encoding");
+
+  size_t line_count = 0;
+  bool chunked_present = false;
+  bool last_line_ends_with_chunked = false;
+
+  for (auto it = rng.first; it != rng.second; ++it) {
+    line_count++;
+    const auto &value = it->second;
+
+    std::string last_coding;
+    bool line_has_chunked = false;
+    split(value.data(), value.data() + value.size(), ',',
+          [&](const char *b, const char *e) {
+            last_coding.assign(b, e);
+            if (case_ignore::equal(last_coding, "chunked")) {
+              line_has_chunked = true;
+            }
+          });
+
+    if (line_has_chunked) { chunked_present = true; }
+    last_line_ends_with_chunked = case_ignore::equal(last_coding, "chunked");
+  }
+
+  if (line_count == 0) { return false; }
+  if (line_count == 1) { return last_line_ends_with_chunked; }
+  return chunked_present;
 }
 
 template <typename T, typename U>
@@ -13226,9 +13264,8 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
     handle.body_reader_.content_length = content_length;
   }
 
-  auto transfer_encoding =
-      handle.response->get_header_value("Transfer-Encoding");
-  handle.body_reader_.chunked = (transfer_encoding == "chunked");
+  handle.body_reader_.chunked =
+      detail::is_chunked_transfer_encoding(handle.response->headers);
 
   auto content_encoding = handle.response->get_header_value("Content-Encoding");
   if (!content_encoding.empty()) {

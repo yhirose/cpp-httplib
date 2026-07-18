@@ -420,6 +420,48 @@ TEST(SanitizeFilenameTest, VariousPatterns) {
   EXPECT_EQ("", httplib::sanitize_filename("   "));
 }
 
+// Forward declaration (see the base64_encode note below): split builds move the
+// definition into httplib.cc, so re-declaring it here lets the test link.
+namespace httplib {
+namespace detail {
+bool is_chunked_transfer_encoding(const Headers &headers);
+} // namespace detail
+} // namespace httplib
+
+TEST(ChunkedTransferEncodingTest, DetectsChunkedAsFinalCoding) {
+  // Build a Headers with the given Transfer-Encoding lines (nullptr = none).
+  auto make = [](std::initializer_list<const char *> lines) {
+    Headers h;
+    for (auto te : lines) {
+      if (te) { h.emplace("Transfer-Encoding", te); }
+    }
+    return h;
+  };
+
+  // Sole coding, matched case-insensitively.
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"chunked"})));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"Chunked"})));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"CHUNKED"})));
+
+  // RFC 9112 6.1: chunked as the final coding of a list still frames the body.
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"gzip, chunked"})));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"gzip,chunked"})));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"gzip, Chunked "})));
+
+  // Single line: chunked absent, or not the final coding -> not chunk-framed.
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"gzip"})));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"chunked, gzip"})));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({""})));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({nullptr})));
+
+  // Multiple Transfer-Encoding lines: iteration order for duplicate keys is not
+  // portable, so any line naming chunked is treated as chunked (fail safe).
+  // The result must not depend on the order the lines were added.
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"gzip", "chunked"})));
+  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"chunked", "gzip"})));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"gzip", "deflate"})));
+}
+
 // Forward declaration: in split builds split.py strips `inline` and moves the
 // definition into httplib.cc, so detail::base64_encode is not visible from the
 // public httplib.h. Re-declaring it here lets the tests link against the symbol
