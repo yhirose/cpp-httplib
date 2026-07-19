@@ -8,7 +8,8 @@ ifneq ($(OS), Windows_NT)
 		OPENSSL_DIR = $(PREFIX)/opt/openssl@3
 		OPENSSL_SUPPORT = -DCPPHTTPLIB_OPENSSL_SUPPORT -I$(OPENSSL_DIR)/include -L$(OPENSSL_DIR)/lib -lssl -lcrypto
 		OPENSSL_SUPPORT += -framework CoreFoundation -framework Security
-		MBEDTLS_DIR ?= $(shell brew --prefix mbedtls@3)
+		# Homebrew's default mbedtls is 4.x; override MBEDTLS_DIR for other versions.
+		MBEDTLS_DIR ?= $(shell brew --prefix mbedtls)
 		# Mbed TLS 4.x renamed libmbedcrypto to libtfpsacrypto; pick whichever exists.
 		MBEDTLS_CRYPTO_LIB ?= $(shell test -f "$(MBEDTLS_DIR)/lib/libtfpsacrypto.dylib" -o -f "$(MBEDTLS_DIR)/lib/libtfpsacrypto.a" && echo tfpsacrypto || echo mbedcrypto)
 		MBEDTLS_SUPPORT = -DCPPHTTPLIB_MBEDTLS_SUPPORT -I$(MBEDTLS_DIR)/include -L$(MBEDTLS_DIR)/lib -lmbedtls -lmbedx509 -l$(MBEDTLS_CRYPTO_LIB)
