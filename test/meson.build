@@ -81,17 +81,20 @@ client_cert_pem = custom_target(
   command: [openssl, 'x509', '-in', '@INPUT0@', '-days', '370', '-req', '-CA', '@INPUT1@', '-CAkey', '@INPUT2@', '-CAcreateserial', '-out', '@OUTPUT@']
 )
 
-client_encrypted_key_pem = custom_target(
-  'client_encrypted_key_pem',
-  output: 'client_encrypted.key.pem',
-  command: [openssl, 'genrsa', '-aes256', '-passout', 'pass:test012!', '-out', '@OUTPUT@', '2048']
+# Encrypted client key: make an unencrypted key + cert first, then wrap the same
+# key two ways. Mbed TLS 4.x dropped DES/PBES1, while Ubuntu's Mbed TLS 2.28 has
+# no PBES2-AES, so ship both and let test.cc pick by version.
+client_encrypted_tmp_key_pem = custom_target(
+  'client_encrypted_tmp_key_pem',
+  output: 'client_encrypted.tmp.key.pem',
+  command: [openssl, 'genrsa', '-out', '@OUTPUT@', '2048']
 )
 
 client_encrypted_temp_req = custom_target(
   'client_encrypted_temp_req',
-  input: client_encrypted_key_pem,
+  input: client_encrypted_tmp_key_pem,
   output: 'client_encrypted_temp_req',
-  command: [openssl, 'req', '-new', '-batch', '-config', test_conf, '-key', '@INPUT@', '-passin', 'pass:test012!', '-out', '@OUTPUT@']
+  command: [openssl, 'req', '-new', '-batch', '-config', test_conf, '-key', '@INPUT@', '-out', '@OUTPUT@']
 )
 
 client_encrypted_cert_pem = custom_target(
@@ -99,6 +102,39 @@ client_encrypted_cert_pem = custom_target(
   input: [client_encrypted_temp_req, rootca_cert_pem, rootca_key_pem],
   output: 'client_encrypted.cert.pem',
   command: [openssl, 'x509', '-in', '@INPUT0@', '-days', '370', '-req', '-CA', '@INPUT1@', '-CAkey', '@INPUT2@', '-CAcreateserial', '-out', '@OUTPUT@']
+)
+
+client_encrypted_key_pem = custom_target(
+  'client_encrypted_key_pem',
+  input: client_encrypted_tmp_key_pem,
+  output: 'client_encrypted.key.pem',
+  command: [openssl, 'pkcs8', '-topk8', '-v2', 'aes-256-cbc', '-in', '@INPUT@', '-passout', 'pass:test012!', '-out', '@OUTPUT@']
+)
+
+client_encrypted_pbes1_key_pem = custom_target(
+  'client_encrypted_pbes1_key_pem',
+  input: client_encrypted_tmp_key_pem,
+  output: 'client_encrypted_pbes1.key.pem',
+  command: [openssl, 'pkcs8', '-topk8', '-v1', 'PBE-SHA1-3DES', '-in', '@INPUT@', '-passout', 'pass:test012!', '-out', '@OUTPUT@']
+)
+
+# Certificates for IP-host hostname verification regression tests.
+# cert_ip_cn.pem: CN is an IPv4 literal with NO subjectAltName, so verifying an
+# IP host against it must fail (an IP is never matched via the CN).
+cert_ip_cn_pem = custom_target(
+  'cert_ip_cn_pem',
+  input: key_pem,
+  output: 'cert_ip_cn.pem',
+  command: [openssl, 'req', '-x509', '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-subj', '/CN=127.0.0.1', '-out', '@OUTPUT@']
+)
+
+# cert_ipv6.pem: CN is an IPv6 literal plus a different IPv6 iPAddress SAN; the
+# SAN address must match and the CN address must be ignored.
+cert_ipv6_pem = custom_target(
+  'cert_ipv6_pem',
+  input: key_pem,
+  output: 'cert_ipv6.pem',
+  command: [openssl, 'req', '-x509', '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-subj', '/CN=::1', '-addext', 'subjectAltName=IP:2001:db8::1', '-out', '@OUTPUT@']
 )
 
 # Copy test files to the build directory
@@ -139,7 +175,10 @@ test(
     client_key_pem,
     client_cert_pem,
     client_encrypted_key_pem,
-    client_encrypted_cert_pem
+    client_encrypted_pbes1_key_pem,
+    client_encrypted_cert_pem,
+    cert_ip_cn_pem,
+    cert_ipv6_pem
   ],
   workdir: meson.current_build_dir(),
   timeout: 300

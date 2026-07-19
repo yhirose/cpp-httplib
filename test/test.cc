@@ -47,7 +47,13 @@ inline std::string u8_to_string(const char8_t *s) {
 #define CLIENT_CERT_FILE "./client.cert.pem"
 #define CLIENT_PRIVATE_KEY_FILE "./client.key.pem"
 #define CLIENT_ENCRYPTED_CERT_FILE "./client_encrypted.cert.pem"
+// Mbed TLS < 3.6 (e.g. Ubuntu's 2.28) has no PBES2-AES and needs the PBES1-3DES
+// key; 3.6+/4.x (4.x dropped DES) and OpenSSL/wolfSSL use the PBES2 AES key.
+#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) && (MBEDTLS_VERSION_NUMBER < 0x03060000)
+#define CLIENT_ENCRYPTED_PRIVATE_KEY_FILE "./client_encrypted_pbes1.key.pem"
+#else
 #define CLIENT_ENCRYPTED_PRIVATE_KEY_FILE "./client_encrypted.key.pem"
+#endif
 #define CLIENT_ENCRYPTED_PRIVATE_KEY_PASS "test012!"
 #define SERVER_ENCRYPTED_CERT_FILE "./cert_encrypted.pem"
 #define SERVER_ENCRYPTED_PRIVATE_KEY_FILE "./key_encrypted.pem"
@@ -18469,9 +18475,10 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtxMbedTLS) {
       if (mbedtls_x509_crt_parse_file(&own_cert, SERVER_CERT_FILE) != 0) {
         return false;
       }
-      // Load server private key
+      // Load server private key.
+      // Mbed TLS 3.x takes an RNG callback here; 2.x and 4.x do not.
       if (mbedtls_pk_parse_keyfile(&own_key, SERVER_PRIVATE_KEY_FILE, nullptr
-#if MBEDTLS_VERSION_MAJOR >= 3
+#if MBEDTLS_VERSION_MAJOR == 3
                                    ,
                                    mbedtls_ctr_drbg_random, nullptr
 #endif
