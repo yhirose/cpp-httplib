@@ -696,7 +696,7 @@ inline from_chars_result<T> from_chars(const char *first, const char *last,
     return {first, std::errc::invalid_argument};
   }
 
-  value = negative ? -result : result;
+  value = negative ? T(0) - result : result;
   return {p, std::errc{}};
 }
 
