@@ -15456,7 +15456,7 @@ TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
   EXPECT_EQ(observed_remote_addr, "198.51.100.23");
 }
 
-TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
+TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesRightmostIP) {
   Server svr;
 
   svr.set_trusted_proxies({"192.0.2.45"});
@@ -15486,8 +15486,44 @@ TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesFirstFromXFF) {
   ASSERT_TRUE(res);
   EXPECT_EQ(StatusCode::OK_200, res->status);
 
+  // No listed hop is a trusted proxy, so the rightmost entry (the one written
+  // by the closest hop) is used. The leftmost entry is fully client-controlled
+  // and must not be selected.
   EXPECT_EQ(observed_xff, "198.51.100.23, 198.51.100.24");
-  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+  EXPECT_EQ(observed_remote_addr, "198.51.100.24");
+}
+
+TEST(ForwardedHeadersTest, SpoofedIPBeforeTrustedProxyIsIgnored) {
+  Server svr;
+
+  svr.set_trusted_proxies({"10.0.0.1"});
+
+  std::string observed_remote_addr;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // The trusted proxy appends the address it saw (5.6.7.8). The client prepends
+  // a forged address and the trusted proxy's own address; the forged value must
+  // not win over the address the trusted proxy actually recorded.
+  Client cli(HOST, PORT);
+  auto res = cli.Get(
+      "/ip", Headers{{"X-Forwarded-For", "1.2.3.4, 10.0.0.1, 5.6.7.8"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(observed_remote_addr, "5.6.7.8");
 }
 
 TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
