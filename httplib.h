@@ -8166,6 +8166,13 @@ public:
             break;
           }
 
+          // Check header count limit
+          if (header_count_ >= CPPHTTPLIB_HEADER_MAX_COUNT) {
+            is_valid_ = false;
+            return false;
+          }
+          header_count_++;
+
           const auto header = buf_head(pos);
 
           if (!parse_header(header.data(), header.data() + header.size(),
@@ -8281,6 +8288,7 @@ private:
     file_.filename.clear();
     file_.content_type.clear();
     file_.headers.clear();
+    header_count_ = 0;
   }
 
   bool start_with_case_ignore(const std::string &a, const char *b,
@@ -8334,6 +8342,7 @@ private:
   size_t state_ = 0;
   bool is_valid_ = false;
   FormData file_;
+  size_t header_count_ = 0;
 
   // Buffer
   bool start_with(const std::string &a, size_t spos, size_t epos,

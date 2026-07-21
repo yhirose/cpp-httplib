@@ -13754,6 +13754,43 @@ TEST(MultipartFormDataTest, MakeFileProvider) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MultipartFormDataTest, ExcessivePartHeaders) {
+  // Verify that a multipart part with more than CPPHTTPLIB_HEADER_MAX_COUNT
+  // (100) headers is rejected with a 400 Bad Request response.
+  Server svr;
+  svr.Post("/post", [&](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Build a multipart part with 101 custom headers (exceeding CPPHTTPLIB_HEADER_MAX_COUNT=100)
+  std::stringstream body;
+  body << "--simpleboundary\r\n"
+       << "Content-Disposition: form-data; name=\"field1\"\r\n";
+  for (int i = 0; i < 101; i++) {
+    body << "X-Custom-Header-" << i << ": value\r\n";
+  }
+  body << "\r\n"
+       << "value1\r\n"
+       << "--simpleboundary--\r\n";
+
+  std::string content_type = "multipart/form-data; boundary=simpleboundary";
+
+  Client cli(HOST, PORT);
+  auto res = cli.Post("/post", body.str(), content_type.c_str());
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+}
+
 TEST(MakeFileBodyTest, Basic) {
   const std::string file_content(4096, 'Z');
   const std::string tmp_path = "./httplib_test_make_file_body.bin";
