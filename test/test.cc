@@ -15365,6 +15365,45 @@ TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
   ASSERT_TRUE(send_request(1, req, &res));
 }
 
+// A direct client that is not listed in trusted_proxies must not be able to
+// spoof req.remote_addr by sending an arbitrary X-Forwarded-For header. Only
+// the peer address on the actual TCP connection determines whether the
+// header is honored.
+TEST(ForwardedHeadersTest, UntrustedDirectClientCannotSpoofXFF) {
+  Server svr;
+
+  // Deliberately does NOT include the loopback address the test client
+  // actually connects from, so the direct connection is not a trusted proxy.
+  svr.set_trusted_proxies({"203.0.113.66"});
+
+  std::string observed_remote_addr;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/ip", Headers{{"X-Forwarded-For", "9.9.9.9"}});
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // The connecting peer is not a trusted proxy, so the spoofed header must be
+  // ignored entirely and the real connection-level address retained.
+  EXPECT_TRUE(observed_remote_addr == "::1" ||
+              observed_remote_addr == "127.0.0.1");
+}
+
 TEST(ForwardedHeadersTest, NoProxiesSetting) {
   Server svr;
 
@@ -15434,7 +15473,9 @@ TEST(ForwardedHeadersTest, NoForwardedHeaders) {
 TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
   Server svr;
 
-  svr.set_trusted_proxies({"203.0.113.66"});
+  // Include the loopback address the test client actually connects from, so
+  // the direct connection itself is recognized as the trusted proxy hop.
+  svr.set_trusted_proxies({"203.0.113.66", "::1", "127.0.0.1"});
 
   std::string observed_remote_addr;
   std::string observed_xff;
@@ -15468,7 +15509,7 @@ TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
 TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
   Server svr;
 
-  svr.set_trusted_proxies({"203.0.113.66", "192.0.2.45"});
+  svr.set_trusted_proxies({"203.0.113.66", "192.0.2.45", "::1", "127.0.0.1"});
 
   std::string observed_remote_addr;
   std::string observed_xff;
@@ -15502,7 +15543,7 @@ TEST(ForwardedHeadersTest, MultipleTrustedProxies_UsesClientIP) {
 TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesRightmostIP) {
   Server svr;
 
-  svr.set_trusted_proxies({"192.0.2.45"});
+  svr.set_trusted_proxies({"192.0.2.45", "::1", "127.0.0.1"});
 
   std::string observed_remote_addr;
   std::string observed_xff;
@@ -15539,7 +15580,7 @@ TEST(ForwardedHeadersTest, TrustedProxyNotInHeader_UsesRightmostIP) {
 TEST(ForwardedHeadersTest, SpoofedIPBeforeTrustedProxyIsIgnored) {
   Server svr;
 
-  svr.set_trusted_proxies({"10.0.0.1"});
+  svr.set_trusted_proxies({"10.0.0.1", "::1", "127.0.0.1"});
 
   std::string observed_remote_addr;
 
@@ -15572,7 +15613,7 @@ TEST(ForwardedHeadersTest, SpoofedIPBeforeTrustedProxyIsIgnored) {
 TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
   Server svr;
 
-  svr.set_trusted_proxies({"192.0.2.45"});
+  svr.set_trusted_proxies({"192.0.2.45", "::1", "127.0.0.1"});
 
   std::string observed_remote_addr;
   std::string observed_xff;
@@ -15607,7 +15648,7 @@ TEST(ForwardedHeadersTest, LastHopTrusted_SelectsImmediateLeftIP) {
 TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   Server svr;
 
-  svr.set_trusted_proxies({"192.0.2.45"});
+  svr.set_trusted_proxies({"192.0.2.45", "::1", "127.0.0.1"});
 
   std::string observed_remote_addr;
   std::string observed_xff;
