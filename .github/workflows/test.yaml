@@ -120,6 +120,33 @@ jobs:
       - name: build and run ThreadPool test
         run: cd test && make test_thread_pool && ./test_thread_pool
 
+  # Ubuntu 26.04's apt ships Mbed TLS 3.6, giving 3.x coverage that
+  # ubuntu-latest (24.04 = 2.28) and macOS (Homebrew = 4.x) no longer provide.
+  # Uses the 26.04 public-preview image; fold into the main ubuntu matrix once
+  # ubuntu-latest moves to 26.04.
+  ubuntu-2604-mbedtls:
+    runs-on: ubuntu-26.04
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request'  &&
+       github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
+    name: ubuntu-26.04 (mbedtls 3.x)
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: install common libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev zlib1g-dev libbrotli-dev libzstd-dev
+      - name: install Mbed TLS
+        run: sudo apt-get install -y libmbedtls-dev
+      - name: build and run tests (Mbed TLS)
+        # Run mbedTLS shards with reduced parallelism — under ASAN+mbedTLS the
+        # default 4 shards overload CI runners enough that timing-sensitive
+        # ServerTest cases flake on first-request keep-alive reuse.
+        run: cd test && make test_split_mbedtls && SHARDS=2 make test_mbedtls_parallel
+
   # BoringSSL is Google's fork of OpenSSL. It has no API stability guarantee
   # and is not packaged by distros, so we build it from source. cpp-httplib
   # treats it as an OpenSSL backend variant via the OPENSSL_IS_BORINGSSL
@@ -372,7 +399,7 @@ jobs:
         uses: actions/checkout@v4
       - name: install Mbed TLS
         if: matrix.tls_backend == 'mbedtls'
-        run: brew install mbedtls@3
+        run: brew install mbedtls
       - name: install wolfSSL
         if: matrix.tls_backend == 'wolfssl'
         run: brew install wolfssl
