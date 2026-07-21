@@ -79,6 +79,8 @@ cpp-httplib also supports Mbed TLS and wolfSSL in addition to OpenSSL. You can s
 | Mbed TLS | `CPPHTTPLIB_MBEDTLS_SUPPORT` | `libmbedtls`, `libmbedx509`, `libmbedcrypto` |
 | wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` |
 
+Mbed TLS 2.x, 3.x, and 4.x are all supported and auto-detected. Note that Mbed TLS 4.x renames `libmbedcrypto` to `libtfpsacrypto`, so link against that instead.
+
 This tour assumes OpenSSL, but the API is the same regardless of which backend you choose.
 
 ## Next Step
