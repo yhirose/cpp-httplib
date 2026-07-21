@@ -13771,7 +13771,8 @@ TEST(MultipartFormDataTest, ExcessivePartHeaders) {
 
   svr.wait_until_ready();
 
-  // Build a multipart part with 101 custom headers (exceeding CPPHTTPLIB_HEADER_MAX_COUNT=100)
+  // Build a multipart part with 101 custom headers (exceeding
+  // CPPHTTPLIB_HEADER_MAX_COUNT=100)
   std::stringstream body;
   body << "--simpleboundary\r\n"
        << "Content-Disposition: form-data; name=\"field1\"\r\n";
