@@ -12772,13 +12772,19 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
   // Drain any unconsumed framed body to prevent request smuggling on
   // keep-alive. Without framing there is no body to drain — reading would
-  // consume the next request (issue #2450).
+  // consume the next request (issue #2450). If the response has committed the
+  // connection to close, there is no next request to protect.
   if (!req.body_consumed_ && detail::has_framed_body(req)) {
-    int dummy_status;
-    if (!detail::read_content(
-            strm, req, payload_max_length_, dummy_status, nullptr,
-            [](const char *, size_t, size_t, size_t) { return true; }, false)) {
+    if (res.get_header_value("Connection") == "close") {
       connection_closed = true;
+    } else {
+      int dummy_status;
+      if (!detail::read_content(
+              strm, req, payload_max_length_, dummy_status, nullptr,
+              [](const char *, size_t, size_t, size_t) { return true; },
+              false)) {
+        connection_closed = true;
+      }
     }
   }
 

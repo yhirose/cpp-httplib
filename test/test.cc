@@ -20039,6 +20039,55 @@ TEST(KeepAliveTest, DeleteWithoutContentLengthDoesNotEatNextRequest) {
   EXPECT_EQ(2, delete_count.load());
 }
 
+TEST(KeepAliveTest, UnconsumedChunkedBodyIsNotDrainedWhenResponseCloses) {
+  Server svr;
+  svr.Post("/ingest", [&](const Request &, Response &res,
+                          const ContentReader &content_reader) {
+    auto consumed = content_reader([](const char *, size_t) { return false; });
+    EXPECT_FALSE(consumed);
+    res.status = StatusCode::Conflict_409;
+    res.set_header("Connection", "close");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/2, 0,
+      /*read_timeout_sec=*/1, 0,
+      /*write_timeout_sec=*/2, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  std::string request = "POST /ingest HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "Transfer-Encoding: chunked\r\n"
+                        "\r\n"
+                        "4\r\n"
+                        "data\r\n";
+  auto sent = send(sock, request.data(), request.size(), 0);
+  ASSERT_EQ(static_cast<ssize_t>(request.size()), sent);
+
+  std::string response;
+  ssize_t received = 0;
+  do {
+    char buf[4096];
+    received = recv(sock, buf, sizeof(buf), 0);
+    if (received > 0) { response.append(buf, static_cast<size_t>(received)); }
+  } while (received > 0);
+
+  EXPECT_NE(std::string::npos, response.find("HTTP/1.1 409 Conflict"));
+  EXPECT_NE(std::string::npos, response.find("Connection: close"));
+  EXPECT_EQ(0, received);
+}
+
 namespace no_proxy_test {
 
 // Server bound to 127.0.0.1:<dynamic>, listen thread spawned by listen(),
