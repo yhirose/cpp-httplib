@@ -19921,8 +19921,7 @@ TEST(KeepAliveTest, UnconsumedChunkedBodyIsNotDrainedWhenResponseCloses) {
   Server svr;
   svr.Post("/ingest", [&](const Request &, Response &res,
                           const ContentReader &content_reader) {
-    auto consumed =
-        content_reader([](const char *, size_t) { return false; });
+    auto consumed = content_reader([](const char *, size_t) { return false; });
     EXPECT_FALSE(consumed);
     res.status = StatusCode::Conflict_409;
     res.set_header("Connection", "close");
@@ -19959,9 +19958,7 @@ TEST(KeepAliveTest, UnconsumedChunkedBodyIsNotDrainedWhenResponseCloses) {
   do {
     char buf[4096];
     received = recv(sock, buf, sizeof(buf), 0);
-    if (received > 0) {
-      response.append(buf, static_cast<size_t>(received));
-    }
+    if (received > 0) { response.append(buf, static_cast<size_t>(received)); }
   } while (received > 0);
 
   EXPECT_NE(std::string::npos, response.find("HTTP/1.1 409 Conflict"));

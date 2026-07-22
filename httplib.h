@@ -12724,7 +12724,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       int dummy_status;
       if (!detail::read_content(
               strm, req, payload_max_length_, dummy_status, nullptr,
-              [](const char *, size_t, size_t, size_t) { return true; }, false)) {
+              [](const char *, size_t, size_t, size_t) { return true; },
+              false)) {
         connection_closed = true;
       }
     }
