@@ -7594,6 +7594,15 @@ inline ssize_t write_response_line(Stream &strm, int status) {
 inline ssize_t write_headers(Stream &strm, const Headers &headers) {
   ssize_t write_len = 0;
   for (const auto &x : headers) {
+    // Skip fields with invalid names or values to prevent response splitting
+    // via CR/LF injection, matching set_header(). The client validates request
+    // headers up front in check_and_write_headers, but the server passes
+    // res.headers straight to this writer, and res.headers is a public field
+    // an application can populate directly with request-derived values.
+    if (!fields::is_field_name(x.first) || !fields::is_field_value(x.second)) {
+      continue;
+    }
+
     std::string s;
     s = x.first;
     s += ": ";

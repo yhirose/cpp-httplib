@@ -7964,6 +7964,51 @@ TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
   EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
 }
 
+TEST(ServerResponseSplittingTest, ResponseHeaderCRLFInjection) {
+  Server svr;
+  svr.Get("/injected-header", [&](const Request & /*req*/, Response &res) {
+    // res.headers is a public field an application can populate directly,
+    // bypassing set_header()'s validation (e.g. reflecting a request value).
+    // A valid header that must survive.
+    res.headers.emplace("X-Safe", "safe");
+    // Attacker-controlled value carrying CR/LF (response splitting).
+    res.headers.emplace("X-Reflected",
+                        "legit\r\nInjected-Header: pwned\r\nX-Evil: also");
+    // Attacker-controlled name carrying CR/LF.
+    res.headers.emplace("X-Bad\r\nSet-Cookie: a=1", "x");
+    res.set_content("body", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = std::string("GET /injected-header HTTP/1.1\r\n") +
+                          "Host: " + HOST +
+                          "\r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+
+  // The injected fields must not appear anywhere in the raw response.
+  EXPECT_EQ(std::string::npos, res.find("Injected-Header"));
+  EXPECT_EQ(std::string::npos, res.find("X-Evil"));
+  EXPECT_EQ(std::string::npos, res.find("Set-Cookie"));
+
+  // Invalid headers are dropped entirely, matching set_header().
+  EXPECT_EQ(std::string::npos, res.find("X-Reflected:"));
+
+  // The valid header still passes through.
+  EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
+}
+
 // Forward declaration: in split builds split.py strips `inline` and moves the
 // definition into httplib.cc, so detail::write_request_line is not visible from
 // the public httplib.h. Re-declaring it here lets the tests link against the
