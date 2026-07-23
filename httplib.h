@@ -3426,6 +3426,7 @@ bool is_obs_text(char c);
 bool is_field_vchar(char c);
 bool is_field_content(const std::string &s);
 bool is_field_value(const std::string &s);
+bool is_field_valid(const std::string &name, const std::string &value);
 
 } // namespace fields
 } // namespace detail
@@ -7203,9 +7204,7 @@ get_multimap_value(const Map &m, const std::string &key, size_t id) {
 
 inline void set_header(Headers &headers, const std::string &key,
                        const std::string &val) {
-  if (fields::is_field_name(key) && fields::is_field_value(val)) {
-    headers.emplace(key, val);
-  }
+  if (fields::is_field_valid(key, val)) { headers.emplace(key, val); }
 }
 
 inline bool read_headers(Stream &strm, Headers &headers) {
@@ -7599,9 +7598,7 @@ inline ssize_t write_headers(Stream &strm, const Headers &headers) {
     // headers up front in check_and_write_headers, but the server passes
     // res.headers straight to this writer, and res.headers is a public field
     // an application can populate directly with request-derived values.
-    if (!fields::is_field_name(x.first) || !fields::is_field_value(x.second)) {
-      continue;
-    }
+    if (!fields::is_field_valid(x.first, x.second)) { continue; }
 
     std::string s;
     s = x.first;
@@ -7803,10 +7800,7 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
       for (const auto &kv : *trailer) {
         // Skip fields with invalid names or values to prevent response
         // splitting via CR/LF injection, matching set_header().
-        if (!fields::is_field_name(kv.first) ||
-            !fields::is_field_value(kv.second)) {
-          continue;
-        }
+        if (!fields::is_field_valid(kv.first, kv.second)) { continue; }
         std::string field_line = kv.first + ": " + kv.second + "\r\n";
         if (!write_data(strm, field_line.data(), field_line.size())) {
           ok = false;
@@ -9012,6 +9006,10 @@ inline bool is_field_content(const std::string &s) {
 
 inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 
+inline bool is_field_valid(const std::string &name, const std::string &value) {
+  return is_field_name(name) && is_field_value(value);
+}
+
 } // namespace fields
 
 inline bool perform_websocket_handshake(Stream &strm, const std::string &host,
@@ -9026,9 +9024,7 @@ inline bool perform_websocket_handshake(Stream &strm, const std::string &host,
 
   // Validate user-provided headers
   for (const auto &h : headers) {
-    if (!fields::is_field_name(h.first) || !fields::is_field_value(h.second)) {
-      return false;
-    }
+    if (!fields::is_field_valid(h.first, h.second)) { return false; }
   }
 
   // Generate random Sec-WebSocket-Key
@@ -11080,8 +11076,7 @@ template <typename T>
 inline bool check_and_write_headers(Stream &strm, Headers &headers,
                                     T header_writer, Error &error) {
   for (const auto &h : headers) {
-    if (!detail::fields::is_field_name(h.first) ||
-        !detail::fields::is_field_value(h.second)) {
+    if (!detail::fields::is_field_valid(h.first, h.second)) {
       error = Error::InvalidHeaders;
       return false;
     }
