@@ -20893,9 +20893,13 @@ TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
   proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
   ASSERT_NE(0, proxy.port());
 
-  SSLClient cli(HOST, origin.port());
+  // Pin to 127.0.0.1: the proxy listens on 127.0.0.1 only, while "localhost"
+  // may resolve to ::1 first. A concurrent test (e.g. another gtest shard)
+  // holding ::1 with the same ephemeral port number would hijack the CONNECT
+  // and answer with its own status, making this test flaky.
+  SSLClient cli("127.0.0.1", origin.port());
   cli.enable_server_certificate_verification(false);
-  cli.set_proxy(HOST, proxy.port());
+  cli.set_proxy("127.0.0.1", proxy.port());
   cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
 
   auto res = cli.Get("/x");

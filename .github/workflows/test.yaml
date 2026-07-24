@@ -104,10 +104,7 @@ jobs:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
-        # Run mbedTLS shards with reduced parallelism — under ASAN+mbedTLS the
-        # default 4 shards overload CI runners enough that timing-sensitive
-        # ServerTest cases flake on first-request keep-alive reuse.
-        run: cd test && make test_split_mbedtls && SHARDS=2 make test_mbedtls_parallel
+        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
       - name: build and run tests (wolfSSL)
         if: matrix.tls_backend == 'wolfssl'
         run: cd test && make test_split_wolfssl && make test_wolfssl_parallel
@@ -142,10 +139,7 @@ jobs:
       - name: install Mbed TLS
         run: sudo apt-get install -y libmbedtls-dev
       - name: build and run tests (Mbed TLS)
-        # Run mbedTLS shards with reduced parallelism — under ASAN+mbedTLS the
-        # default 4 shards overload CI runners enough that timing-sensitive
-        # ServerTest cases flake on first-request keep-alive reuse.
-        run: cd test && make test_split_mbedtls && SHARDS=2 make test_mbedtls_parallel
+        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
 
   # BoringSSL is Google's fork of OpenSSL. It has no API stability guarantee
   # and is not packaged by distros, so we build it from source. cpp-httplib
@@ -410,10 +404,7 @@ jobs:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
-        # macOS runners under ASAN+mbedTLS still flake at SHARDS=2 (rapid
-        # bind/connect on the fixture's fixed port races on the slower
-        # macos-latest runner). Serialize fully here; ubuntu stays at 2.
-        run: cd test && make test_split_mbedtls && SHARDS=1 make test_mbedtls_parallel
+        run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
       - name: build and run tests (wolfSSL)
         if: matrix.tls_backend == 'wolfssl'
         run: cd test && make test_split_wolfssl && make test_wolfssl_parallel
