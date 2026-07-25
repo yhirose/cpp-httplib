@@ -3140,6 +3140,211 @@ TEST(PathUrlEncodeTest, PreEncodedQueryNotReencoded) {
   }
 }
 
+TEST(PathUrlEncodeTest, StreamingMatchesBufferedTarget) {
+  // `open_stream()` used to skip the path encoding that the buffered send
+  // path applies, so the same `path` produced different bytes in the request
+  // line depending on which API was used. Assert the two agree.
+  Server svr;
+
+  std::string target;
+  svr.Get(".*", [&](const Request &req, Response &res) {
+    target = req.target;
+    res.status = StatusCode::OK_200;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  struct {
+    const char *path;
+    const char *expected;
+  } cases[] = {
+      {"/a b?x=1", "/a%20b?x=1"},
+      {"/\xE6\x97\xA5\xE6\x9C\xAC", "/%E6%97%A5%E6%9C%AC"},
+      {"/a,b;c+d", "/a%2Cb%3Bc%2Bd"},
+  };
+
+  for (const auto &c : cases) {
+    Client cli(HOST, port);
+
+    target.clear();
+    auto res = cli.Get(c.path);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(c.expected, target) << "buffered path: " << c.path;
+    auto buffered_target = target;
+
+    target.clear();
+    auto handle = cli.open_stream("GET", c.path);
+    EXPECT_TRUE(handle.is_valid())
+        << "streaming path: " << c.path << ", " << to_string(handle.error);
+    EXPECT_EQ(buffered_target, target) << "streaming path: " << c.path;
+  }
+}
+
+TEST(PathUrlEncodeTest, StreamingPreEncodedQueryNotReencoded) {
+  // The `set_path_encode(false)` contract — transmit the supplied target
+  // verbatim — must hold for the streaming API too.
+  Server svr;
+
+  const std::string expected_target = "/foo?q=a%20b%2Cc%24d%3Bx&a=%00%FF";
+
+  std::string target;
+  svr.Get("/foo", [&](const Request &req, Response &res) {
+    target = req.target;
+    res.status = StatusCode::OK_200;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_path_encode(false);
+
+    auto handle = cli.open_stream("GET", expected_target);
+    EXPECT_TRUE(handle.is_valid()) << to_string(handle.error);
+    EXPECT_EQ(expected_target, target);
+  }
+}
+
+TEST(PathUrlEncodeTest, StreamingCRLFInTargetIsEncoded) {
+  // With path encoding enabled a CR/LF in the target is percent-encoded
+  // rather than rejected, matching the buffered send path. The CR/LF guard in
+  // write_request_line still backstops `set_path_encode(false)`, which is
+  // covered by StreamingCRLFRejectedWhenPathEncodeDisabled.
+  Server svr;
+
+  // Captured before routing: the decoded path contains a newline, which a
+  // `.*` handler pattern would not match (`.` excludes `\n` in std::regex).
+  std::string target;
+  svr.set_pre_routing_handler([&](const Request &req, Response &res) {
+    target = req.target;
+    res.status = StatusCode::OK_200;
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+
+    auto handle = cli.open_stream("GET", "/a\r\nX-Injected: 1");
+    EXPECT_TRUE(handle.is_valid()) << to_string(handle.error);
+    EXPECT_EQ("/a%0D%0AX-Injected:%201", target);
+  }
+}
+
+TEST(PathUrlEncodeTest, StreamingCRLFRejectedWhenPathEncodeDisabled) {
+  // Nothing may reach the wire: a raw CR/LF target would split the request
+  // line and inject headers.
+  Server svr;
+
+  // Pre-routing so that "not called" means nothing reached the server at all,
+  // rather than merely failing to match a handler pattern.
+  auto handler_called = false;
+  svr.set_pre_routing_handler([&](const Request & /*req*/, Response &res) {
+    handler_called = true;
+    res.status = StatusCode::OK_200;
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_path_encode(false);
+
+    auto handle = cli.open_stream("GET", "/a\r\nX-Injected: 1");
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(Error::Write, handle.error);
+    EXPECT_FALSE(handler_called);
+  }
+}
+
+TEST(PathUrlEncodeTest, RequestParamsBranchSelection) {
+  // Which of the two branches runs is decided by whether the query component
+  // is empty, not by whether `req.path` contains a `?`: a trailing `?` yields
+  // an empty query and must still fall back to building one from
+  // `req.params`, while a non-empty query must win over `req.params`.
+  Server svr;
+
+  std::string target;
+  svr.Get("/foo", [&](const Request &req, Response &res) {
+    target = req.target;
+    res.status = StatusCode::OK_200;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    // Trailing `?` -> empty query component -> `req.params` is used.
+    Client cli(HOST, port);
+
+    Request req;
+    req.method = "GET";
+    req.path = "/foo?";
+    req.params.emplace("a", "1");
+
+    target.clear();
+    auto res = cli.send(req);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("/foo?a=1", target);
+  }
+
+  {
+    // Non-empty query in `req.path` -> `req.params` is not appended.
+    Client cli(HOST, port);
+
+    Request req;
+    req.method = "GET";
+    req.path = "/foo?b=2";
+    req.params.emplace("a", "1");
+
+    target.clear();
+    auto res = cli.send(req);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("/foo?b=2", target);
+  }
+}
+
 TEST(PathUrlEncodeTest, IncludePercentEncodingLF) {
   Server svr;
 
