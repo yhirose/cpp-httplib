@@ -2013,6 +2013,7 @@ private:
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
   bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
+  bool shutdown_socket = true;
   SocketOptions socket_options_ = default_socket_options;
 
   Headers default_headers_;
@@ -2348,6 +2349,8 @@ public:
   void set_address_family(int family);
   void set_tcp_nodelay(bool on);
   void set_ipv6_v6only(bool on);
+  void set_shutdown_socket(bool shutdown_socket);
+  void set_socket(const socket_t socket);
   void set_socket_options(SocketOptions socket_options);
 
   void set_connection_timeout(time_t sec, time_t usec = 0);
@@ -11502,6 +11505,16 @@ inline Server &Server::set_ipv6_v6only(bool on) {
   return *this;
 }
 
+inline Server &Server::set_socket(const socket_t n_sock) {
+  svr_sock_ = n_sock;
+  return *this;
+}
+
+inline Server &Server::set_shutdown_socket(bool shutdown_socket) {
+  shutdown_socket_ = shutdown_socket;
+  return *this;
+}
+
 inline Server &Server::set_socket_options(SocketOptions socket_options) {
   socket_options_ = std::move(socket_options);
   return *this;
@@ -11616,7 +11629,7 @@ inline void Server::stop() noexcept {
   if (is_running_) {
     assert(svr_sock_ != INVALID_SOCKET);
     std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
-    detail::shutdown_socket(sock);
+    if (shutdown_socket) detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
   is_decommissioned = false;
@@ -12240,7 +12253,7 @@ inline bool Server::listen_internal() {
       if (!task_queue->enqueue(
               [this, sock]() { process_and_close_socket(sock); })) {
         output_error_log(Error::ResourceExhaustion, nullptr);
-        detail::shutdown_socket(sock);
+        if (shutdown_socket) detail::shutdown_socket(sock);
         detail::close_socket(sock);
       }
     }
@@ -12854,7 +12867,7 @@ inline bool Server::process_and_close_socket(socket_t sock) {
                                nullptr, &websocket_upgraded);
       });
 
-  detail::shutdown_socket(sock);
+  if (shutdown_socket) detail::shutdown_socket(sock);
   detail::close_socket(sock);
   return ret;
 }
@@ -16176,7 +16189,7 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
   if (!session) {
     last_ssl_error_ = static_cast<int>(get_error());
-    detail::shutdown_socket(sock);
+    if (shutdown_socket) detail::shutdown_socket(sock);
     detail::close_socket(sock);
     return false;
   }
@@ -16188,7 +16201,7 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
   auto cleanup = detail::scope_exit([&] {
     if (handshake_done) { shutdown(session, !websocket_upgraded && ret); }
     free_session(session);
-    detail::shutdown_socket(sock);
+    if (shutdown_socket) detail::shutdown_socket(sock);
     detail::close_socket(sock);
   });
 
