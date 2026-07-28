@@ -4419,6 +4419,24 @@ protected:
                      delete data;
                    });
              })
+        .Get("/streamed-with-range-and-error-status",
+             [&](const Request & /*req*/, Response &res) {
+               auto data = new std::string("abcdefg");
+               res.status = StatusCode::Forbidden_403;
+               res.set_content_provider(
+                   data->size(), "text/plain",
+                   [data](size_t offset, size_t length, DataSink &sink) {
+                     size_t DATA_CHUNK_SIZE = 4;
+                     const auto &d = *data;
+                     auto out_len =
+                         std::min(static_cast<size_t>(length), DATA_CHUNK_SIZE);
+                     auto ret =
+                         sink.write(&d[static_cast<size_t>(offset)], out_len);
+                     EXPECT_TRUE(ret);
+                     return true;
+                   },
+                   [data](bool /*success*/) { delete data; });
+             })
         .Get("/streamed-cancel",
              [&](const Request & /*req*/, Response &res) {
                res.set_content_provider(
@@ -5930,6 +5948,27 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(0U, res->body.size());
+}
+
+TEST_F(ServerTest, GetStreamedWithRangeAndErrorStatus) {
+  // The handler answers with a non-2xx status, so `detail::range_error()`
+  // never validated the ranges and `apply_ranges()` reported the full
+  // content length. The body must match that header and the content provider
+  // must not be asked for an offset outside the representation.
+  auto res = cli_.Get("/streamed-with-range-and-error-status",
+                      Headers{{make_range_header({{3, 5}})}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+  EXPECT_EQ("7", res->get_header_value("Content-Length"));
+  EXPECT_EQ(false, res->has_header("Content-Range"));
+  EXPECT_EQ(std::string("abcdefg"), res->body);
+
+  auto res2 = cli_.Get("/streamed-with-range-and-error-status",
+                       Headers{{"Range", "bytes=100000-100200"}});
+  ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
+  EXPECT_EQ(StatusCode::Forbidden_403, res2->status);
+  EXPECT_EQ("7", res2->get_header_value("Content-Length"));
+  EXPECT_EQ(std::string("abcdefg"), res2->body);
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeError) {
