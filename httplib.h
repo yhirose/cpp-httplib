@@ -5568,6 +5568,15 @@ inline bool mmap::open(const char *path) {
     is_open_empty_file = true;
     return false;
   }
+
+  // A failed mapping must not be left in `addr_`: `is_open()` only compares it
+  // against nullptr, so the MAP_FAILED sentinel would pass and `data()` would
+  // hand the caller (const char *)-1.
+  if (addr_ == MAP_FAILED) {
+    addr_ = nullptr;
+    close();
+    return false;
+  }
 #endif
 
   return true;

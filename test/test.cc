@@ -9163,6 +9163,23 @@ TEST(MmapTest, OpenWhileFileHeldForWriting) {
 }
 #endif
 
+#ifndef _WIN32
+// A failed ::mmap must not be reported as an open mapping. is_open() only
+// compares addr_ against nullptr, so the MAP_FAILED sentinel used to pass it
+// and data() handed the caller (const char *)-1. A directory opens and stats
+// fine but has no mapping, so ::mmap fails for it.
+TEST(MmapTest, FailedMappingIsNotOpen) {
+  const char *path = "./mmap_failed_mapping_test_dir";
+  ASSERT_EQ(0, ::mkdir(path, 0755));
+  auto dir_cleanup = detail::scope_exit([&] { ::rmdir(path); });
+
+  detail::mmap m(path);
+  EXPECT_FALSE(m.is_open());
+  EXPECT_NE(static_cast<const void *>(m.data()),
+            static_cast<const void *>(MAP_FAILED));
+}
+#endif
+
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
 
