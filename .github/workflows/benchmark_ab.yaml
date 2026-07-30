@@ -1,0 +1,62 @@
+name: benchmark-ab
+
+# Manual A/B throughput comparison between two refs.
+#
+# This is a measurement, not a test: it never fails the build on a slow result.
+# Absolute req/s from a shared runner is meaningless on its own, so both refs
+# are built and measured alternately in the same job and only the ratio of the
+# medians is reported, with a permutation test to say whether the difference
+# stands out from the run-to-run noise.
+#
+# Non-SSL and Linux only for now.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Baseline ref"
+        required: false
+        default: "origin/master"
+      head:
+        description: "Ref to compare (defaults to the ref this run was started on)"
+        required: false
+        default: ""
+      rounds:
+        description: "Measurement rounds per ref (9+ recommended; below 4 the test can never reach significance)"
+        required: false
+        default: "9"
+      duration:
+        description: "Load duration per measurement"
+        required: false
+        default: "5s"
+      connections:
+        description: "Concurrent connections"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: install bombardier
+        run: go install github.com/codesenberg/bombardier@latest
+
+      - name: run A/B benchmark
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          HEAD_REF="${{ inputs.head }}"
+          if [ -z "$HEAD_REF" ]; then HEAD_REF="${{ github.sha }}"; fi
+          ./benchmark/ab.sh \
+            --base "${{ inputs.base }}" \
+            --head "$HEAD_REF" \
+            --rounds "${{ inputs.rounds }}" \
+            --duration "${{ inputs.duration }}" \
+            --connections "${{ inputs.connections }}"

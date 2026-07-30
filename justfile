@@ -46,6 +46,10 @@ build:
 bench:
     @(cd benchmark && make bench-all)
 
+# A/B throughput comparison between two refs (see benchmark/ab.sh --help)
+bench-ab *args:
+    @./benchmark/ab.sh {{args}}
+
 docs-serve:
     -@docs-gen serve docs-src --open
 
