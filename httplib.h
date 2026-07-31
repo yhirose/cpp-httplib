@@ -5746,7 +5746,14 @@ public:
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
 
+  // The caller has just seen this socket become readable. Lets the next read
+  // skip its own readiness wait, which would otherwise ask the kernel a
+  // question that was answered a moment ago. Consumed by that read.
+  void set_readable_hint() { readable_hint_ = true; }
+
 private:
+  bool ensure_readable();
+
   socket_t sock_;
   time_t read_timeout_sec_;
   time_t read_timeout_usec_;
@@ -5758,6 +5765,7 @@ private:
   std::vector<char> read_buff_;
   size_t read_buff_off_ = 0;
   size_t read_buff_content_size_ = 0;
+  bool readable_hint_ = false;
 
   static const size_t read_buff_size_ = 1024l * 4;
 };
@@ -5825,6 +5833,9 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
       [&](bool close_connection, bool &connection_closed) {
         SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                           write_timeout_sec, write_timeout_usec);
+        // process_server_socket_core() only gets here once keep_alive() has
+        // seen the socket go readable.
+        strm.set_readable_hint();
         return callback(strm, close_connection, connection_closed);
       });
 }
@@ -9124,7 +9135,12 @@ public:
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
 
+  // See SocketStream::set_readable_hint().
+  void set_readable_hint() { readable_hint_ = true; }
+
 private:
+  bool ensure_readable();
+
   socket_t sock_;
   tls::session_t session_;
   time_t read_timeout_sec_;
@@ -9133,6 +9149,7 @@ private:
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
   const std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  bool readable_hint_ = false;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -9294,6 +9311,8 @@ inline bool process_server_socket_ssl(
       [&](bool close_connection, bool &connection_closed) {
         SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
                              write_timeout_sec, write_timeout_usec);
+        // See the non-TLS path in process_server_socket().
+        strm.set_readable_hint();
         return callback(strm, close_connection, connection_closed);
       });
 }
@@ -10675,6 +10694,14 @@ inline bool SocketStream::wait_writable() const {
   return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0;
 }
 
+inline bool SocketStream::ensure_readable() {
+  if (readable_hint_) {
+    readable_hint_ = false;
+    return true;
+  }
+  return wait_readable();
+}
+
 inline bool SocketStream::is_peer_alive() const {
   return detail::is_socket_alive(sock_);
 }
@@ -10701,7 +10728,7 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
     }
   }
 
-  if (!wait_readable()) {
+  if (!ensure_readable()) {
     error_ = Error::Timeout;
     return -1;
   }
@@ -11179,6 +11206,14 @@ inline bool SSLSocketStream::wait_writable() const {
          !tls::is_peer_closed(session_, sock_);
 }
 
+inline bool SSLSocketStream::ensure_readable() {
+  if (readable_hint_) {
+    readable_hint_ = false;
+    return true;
+  }
+  return wait_readable();
+}
+
 inline bool SSLSocketStream::is_peer_alive() const {
   return !tls::is_peer_closed(session_, sock_);
 }
@@ -11191,7 +11226,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
       error_ = Error::ConnectionClosed;
     }
     return ret;
-  } else if (wait_readable()) {
+  } else if (ensure_readable()) {
     tls::TlsError err;
     auto ret = tls::read(session_, ptr, size, err);
     if (ret < 0) {
