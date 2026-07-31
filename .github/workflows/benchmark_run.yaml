@@ -43,16 +43,53 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
 
+      # macos runners ship without Go.
+      - name: setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
       - name: install bombardier
         run: go install github.com/codesenberg/bombardier@latest
 
+      # crow_all.h includes <asio.hpp>, which no runner has out of the box.
+      - name: install asio
+        if: ${{ inputs.crow }}
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y libasio-dev
+          else
+            brew install asio
+          fi
+
       - name: run benchmark
         run: |
+          # Without pipefail the `tee` below swallows a build failure and the
+          # job reports success having measured nothing.
+          set -o pipefail
           export PATH="$(go env GOPATH)/bin:$PATH"
+          CROW_FLAGS="-std=c++17"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            CROW_FLAGS="$CROW_FLAGS -I$(brew --prefix asio)/include"
+          fi
           if [ "${{ inputs.crow }}" = "true" ]; then TARGET=bench-all; else TARGET=bench; fi
           make -C benchmark "$TARGET" \
+            CROW_CXXFLAGS="$CROW_FLAGS" \
             BENCH="bombardier -c ${{ inputs.connections }} -d ${{ inputs.duration }} localhost:8080" \
             2>&1 | tee /tmp/bench.txt
+
+      # pipefail only catches a failed build. Each Makefile recipe ends in
+      # `kill`, so a bombardier that never ran still leaves make happy — check
+      # that the measurements are actually there.
+      - name: check results were produced
+        run: |
+          expected=1
+          if [ "${{ inputs.crow }}" = "true" ]; then expected=2; fi
+          got=$(grep -c "Reqs/sec" /tmp/bench.txt || true)
+          if [ "$got" -lt "$expected" ]; then
+            echo "::error::expected $expected benchmark result(s), found $got"
+            exit 1
+          fi
 
       - name: record results
         if: always()
