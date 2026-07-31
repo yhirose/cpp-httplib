@@ -1545,6 +1545,18 @@ public:
     (void)usec;
   }
 
+  // Bytes already pulled off the socket and sitting in this stream's own
+  // buffer. Exposing them lets a line reader scan for a terminator in one
+  // pass instead of asking for a byte at a time. A stream that does no
+  // buffering of its own reports none, and readers fall back to read().
+  virtual const char *buffered_data(size_t &size) const {
+    size = 0;
+    return nullptr;
+  }
+
+  // Discards `size` bytes previously returned by buffered_data().
+  virtual void consume_buffered(size_t size) { (void)size; }
+
   ssize_t write(const char *ptr);
   ssize_t write(const std::string &s);
 
@@ -3364,6 +3376,7 @@ public:
 
 private:
   void append(char c);
+  void append(const char *data, size_t size);
 
   Stream &strm_;
   char *fixed_buffer_;
@@ -5455,6 +5468,46 @@ inline bool stream_line_reader::getline() {
 #endif
 
   for (size_t i = 0;; i++) {
+    // Fast path: whatever the stream has already buffered can be scanned for
+    // the terminator in one pass. Asking for a byte at a time costs a virtual
+    // call, a bounds check and a one-byte copy per character of the request.
+    size_t buffered_size = 0;
+    if (auto buffered = strm_.buffered_data(buffered_size)) {
+      auto take = buffered_size;
+      auto terminated = false;
+
+      for (size_t at = 0; at < buffered_size;) {
+        auto nl = static_cast<const char *>(
+            memchr(buffered + at, '\n', buffered_size - at));
+        if (!nl) { break; }
+        auto pos = static_cast<size_t>(nl - buffered);
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+        take = pos + 1;
+        terminated = true;
+        break;
+#else
+        // A bare LF does not end the line; keep looking for CRLF. The CR may
+        // be the last byte of an earlier chunk, hence prev_byte.
+        if ((pos > 0 ? buffered[pos - 1] : prev_byte) == '\r') {
+          take = pos + 1;
+          terminated = true;
+          break;
+        }
+        at = pos + 1;
+#endif
+      }
+
+      if (size() + take > CPPHTTPLIB_MAX_LINE_LENGTH) { return false; }
+#ifndef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+      prev_byte = buffered[take - 1];
+#endif
+      append(buffered, take);
+      strm_.consume_buffered(take);
+      i += take;
+      if (terminated) { return true; }
+      continue;
+    }
+
     if (size() >= CPPHTTPLIB_MAX_LINE_LENGTH) {
       // Treat exceptionally long lines as an error to
       // prevent infinite loops/memory exhaustion
@@ -5486,16 +5539,26 @@ inline bool stream_line_reader::getline() {
   return true;
 }
 
-inline void stream_line_reader::append(char c) {
-  if (fixed_buffer_used_size_ < fixed_buffer_size_ - 1) {
-    fixed_buffer_[fixed_buffer_used_size_++] = c;
+inline void stream_line_reader::append(char c) { append(&c, 1); }
+
+inline void stream_line_reader::append(const char *data, size_t size) {
+  // Once the line has outgrown the fixed buffer everything must keep going to
+  // the growable one, even if a later chunk would have fit. Without the
+  // emptiness check a short append after a long one would land in the fixed
+  // buffer, which ptr() and size() no longer look at, and be lost.
+  if (growable_buffer_.empty() &&
+      fixed_buffer_used_size_ + size < fixed_buffer_size_) {
+    memcpy(fixed_buffer_ + fixed_buffer_used_size_, data, size);
+    fixed_buffer_used_size_ += size;
     fixed_buffer_[fixed_buffer_used_size_] = '\0';
   } else {
+    // Unlike the per-character overload, this can be the very first append of
+    // the line, so the fixed buffer may hold nothing and carry no terminator
+    // yet. assign() takes an explicit length and does not need one.
     if (growable_buffer_.empty()) {
-      assert(fixed_buffer_[fixed_buffer_used_size_] == '\0');
       growable_buffer_.assign(fixed_buffer_, fixed_buffer_used_size_);
     }
-    growable_buffer_ += c;
+    growable_buffer_.append(data, size);
   }
 }
 
@@ -5745,6 +5808,8 @@ public:
   socket_t socket() const override;
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
+  const char *buffered_data(size_t &size) const override;
+  void consume_buffered(size_t size) override;
 
   // The caller has just seen this socket become readable. Lets the next read
   // skip its own readiness wait, which would otherwise ask the kernel a
@@ -10700,6 +10765,16 @@ inline bool SocketStream::ensure_readable() {
     return true;
   }
   return wait_readable();
+}
+
+inline const char *SocketStream::buffered_data(size_t &size) const {
+  size = read_buff_content_size_ - read_buff_off_;
+  return size ? read_buff_.data() + read_buff_off_ : nullptr;
+}
+
+inline void SocketStream::consume_buffered(size_t size) {
+  assert(size <= read_buff_content_size_ - read_buff_off_);
+  read_buff_off_ += size;
 }
 
 inline bool SocketStream::is_peer_alive() const {
