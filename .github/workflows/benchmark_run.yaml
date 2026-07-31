@@ -1,0 +1,69 @@
+name: benchmark-run
+
+# Runs the committed benchmark (`just bench`) and records the numbers.
+#
+# This is a measurement, not a test: nothing here fails the build. Unlike
+# benchmark-ab, which compares two refs inside one job, this just reports the
+# absolute throughput of the current ref alongside Crow for reference.
+#
+# Absolute req/s is only meaningful against other runs on the same runner type,
+# so compare like with like when reading the history.
+#
+# Non-SSL only. Windows is excluded: benchmark/Makefile depends on `nc`, `&`
+# and `kill`, so it would need a PowerShell rewrite first.
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Load duration per server"
+        required: false
+        default: "5s"
+      connections:
+        description: "Concurrent connections"
+        required: false
+        default: "10"
+      crow:
+        description: "Also benchmark Crow v1.3.1 for reference"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install bombardier
+        run: go install github.com/codesenberg/bombardier@latest
+
+      - name: run benchmark
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          if [ "${{ inputs.crow }}" = "true" ]; then TARGET=bench-all; else TARGET=bench; fi
+          make -C benchmark "$TARGET" \
+            BENCH="bombardier -c ${{ inputs.connections }} -d ${{ inputs.duration }} localhost:8080" \
+            2>&1 | tee /tmp/bench.txt
+
+      - name: record results
+        if: always()
+        run: |
+          {
+            echo "## Benchmark (${{ matrix.os }})"
+            echo ""
+            echo "- ref: \`${{ github.ref_name }}\` (${{ github.sha }})"
+            echo "- connections=${{ inputs.connections }} duration=${{ inputs.duration }}"
+            echo ""
+            echo '```'
+            cat /tmp/bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
