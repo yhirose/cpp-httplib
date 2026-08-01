@@ -3154,6 +3154,10 @@ private:
 std::string make_host_and_port_string(const std::string &host, int port,
                                       bool is_ssl);
 
+template <typename T>
+bool check_and_write_headers(Stream &strm, Headers &headers, T header_writer,
+                             Error &error);
+
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -3992,6 +3996,7 @@ public:
 private:
   void shutdown_and_close();
   bool create_stream(std::unique_ptr<Stream> &strm);
+  void prepare_default_headers(Request &req);
 
   std::string host_;
   int port_;
@@ -9049,21 +9054,8 @@ inline bool is_field_valid(const std::string &name, const std::string &value) {
 
 } // namespace fields
 
-inline bool perform_websocket_handshake(Stream &strm, const std::string &host,
-                                        int port, bool is_ssl,
-                                        const std::string &path,
-                                        const Headers &headers,
+inline bool perform_websocket_handshake(Stream &strm, Request &req,
                                         std::string &selected_subprotocol) {
-  // Validate path and host
-  if (!fields::is_field_value(path) || !fields::is_field_value(host)) {
-    return false;
-  }
-
-  // Validate user-provided headers
-  for (const auto &h : headers) {
-    if (!fields::is_field_valid(h.first, h.second)) { return false; }
-  }
-
   // Generate random Sec-WebSocket-Key
   thread_local std::mt19937 rng(std::random_device{}());
   std::string key_bytes(16, '\0');
@@ -9073,19 +9065,21 @@ inline bool perform_websocket_handshake(Stream &strm, const std::string &host,
   }
   auto client_key = base64_encode(key_bytes);
 
-  // Build upgrade request
-  std::string req_str = "GET " + path + " HTTP/1.1\r\n";
-  req_str += "Host: " + make_host_and_port_string(host, port, is_ssl) + "\r\n";
-  req_str += "Upgrade: websocket\r\n";
-  req_str += "Connection: Upgrade\r\n";
-  req_str += "Sec-WebSocket-Key: " + client_key + "\r\n";
-  req_str += "Sec-WebSocket-Version: 13\r\n";
-  for (const auto &h : headers) {
-    req_str += h.first + ": " + h.second + "\r\n";
-  }
-  req_str += "\r\n";
+  req.headers.erase("Upgrade");
+  req.headers.erase("Connection");
+  req.headers.erase("Sec-WebSocket-Key");
+  req.headers.erase("Sec-WebSocket-Version");
+  req.headers.emplace("Upgrade", "websocket");
+  req.headers.emplace("Connection", "Upgrade");
+  req.headers.emplace("Sec-WebSocket-Key", client_key);
+  req.headers.emplace("Sec-WebSocket-Version", "13");
 
-  if (strm.write(req_str.data(), req_str.size()) < 0) { return false; }
+  if (write_request_line(strm, req.method, req.path) < 0) { return false; }
+
+  auto error = Error::Success;
+  if (!check_and_write_headers(strm, req.headers, write_headers, error)) {
+    return false;
+  }
 
   // Verify 101 response and Sec-WebSocket-Accept header
   auto expected_accept = websocket_accept_key(client_key);
@@ -20828,11 +20822,37 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm) {
   return true;
 }
 
+inline void WebSocketClient::prepare_default_headers(Request &req) {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  auto is_ssl = is_ssl_;
+#else
+  auto is_ssl = false;
+#endif
+
+  if (!req.has_header("Host")) {
+    if (address_family_ == AF_UNIX) {
+      req.headers.emplace("Host", "localhost");
+    } else {
+      req.headers.emplace(
+          "Host", detail::make_host_and_port_string(host_, port_, is_ssl));
+    }
+  }
+
+#ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
+  if (!req.has_header("User-Agent")) {
+    auto agent = std::string("cpp-httplib/") + CPPHTTPLIB_VERSION;
+    req.set_header("User-Agent", agent);
+  }
+#endif
+}
+
 inline bool WebSocketClient::connect() {
   if (!is_valid_) { return false; }
   shutdown_and_close();
 
-  // Check is custom IP specified for host_
+  // Check is custom IP specified for host_.
+  // host_ stays the identity used for the Host header and for SNI, while ip
+  // only redirects where the socket connects.
   std::string ip;
   auto it = addr_map_.find(host_);
   if (it != addr_map_.end()) { ip = it->second; }
@@ -20852,23 +20872,19 @@ inline bool WebSocketClient::connect() {
     return false;
   }
 
-#ifdef CPPHTTPLIB_SSL_ENABLED
-  auto is_ssl = is_ssl_;
-#else
-  auto is_ssl = false;
-#endif
+  Request req;
+  req.method = "GET";
+  req.path = path_;
+  req.headers = headers_;
+  prepare_default_headers(req);
 
   std::string selected_subprotocol;
-  if (!detail::perform_websocket_handshake(*strm, host_, port_, is_ssl, path_,
-                                           headers_, selected_subprotocol)) {
+  if (!detail::perform_websocket_handshake(*strm, req, selected_subprotocol)) {
     shutdown_and_close();
     return false;
   }
   subprotocol_ = std::move(selected_subprotocol);
 
-  Request req;
-  req.method = "GET";
-  req.path = path_;
   ws_ = std::unique_ptr<WebSocket>(new WebSocket(std::move(strm), req, false,
                                                  websocket_ping_interval_sec_,
                                                  websocket_max_missed_pongs_));

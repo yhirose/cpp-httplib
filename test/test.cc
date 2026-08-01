@@ -19818,6 +19818,144 @@ TEST(WebSocketTest, HostHeaderInHandshake) {
   t.join();
 }
 
+// Run a handshake against a throwaway server and hand the request the server
+// received back to the caller, so tests can assert on the headers the client
+// actually put on the wire.
+static void capture_websocket_handshake_request(
+    const Headers &client_headers,
+    std::function<void(const Request &, int port)> verify) {
+  Server svr;
+
+  std::mutex mtx;
+  Request received;
+
+  svr.WebSocket("/ws", [&](const Request &req, ws::WebSocket &ws) {
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      received = req;
+    }
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws",
+                             client_headers);
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  client.close();
+
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    verify(received, port);
+  }
+}
+
+TEST(WebSocketTest, DefaultHeadersInHandshake) {
+  capture_websocket_handshake_request({}, [](const Request &req, int port) {
+    EXPECT_EQ("localhost:" + std::to_string(port),
+              req.get_header_value("Host"));
+    EXPECT_EQ(std::string("cpp-httplib/") + CPPHTTPLIB_VERSION,
+              req.get_header_value("User-Agent"));
+    EXPECT_FALSE(req.has_header("Accept"));
+    EXPECT_FALSE(req.has_header("Accept-Encoding"));
+    EXPECT_FALSE(req.has_header("Content-Length"));
+  });
+}
+
+TEST(WebSocketTest, UserHeadersOverrideGeneratedOnesInHandshake) {
+  capture_websocket_handshake_request(
+      {{"Host", "example.com"},
+       {"User-Agent", "custom-agent"},
+       {"X-Custom", "value"}},
+      [](const Request &req, int) {
+        EXPECT_EQ("example.com", req.get_header_value("Host"));
+        EXPECT_EQ(1U, req.get_header_value_count("Host"));
+        EXPECT_EQ("custom-agent", req.get_header_value("User-Agent"));
+        EXPECT_EQ(1U, req.get_header_value_count("User-Agent"));
+        EXPECT_EQ("value", req.get_header_value("X-Custom"));
+      });
+}
+
+TEST(WebSocketTest, MandatoryHeadersInHandshakeAreEnforced) {
+  capture_websocket_handshake_request(
+      {{"Upgrade", "bogus"},
+       {"Connection", "close"},
+       {"Sec-WebSocket-Key", "AAAAAAAAAAAAAAAAAAAAAA=="},
+       {"Sec-WebSocket-Version", "8"}},
+      [](const Request &req, int) {
+        EXPECT_EQ("websocket", req.get_header_value("Upgrade"));
+        EXPECT_EQ(1U, req.get_header_value_count("Upgrade"));
+        EXPECT_EQ("Upgrade", req.get_header_value("Connection"));
+        EXPECT_EQ(1U, req.get_header_value_count("Connection"));
+        EXPECT_EQ("13", req.get_header_value("Sec-WebSocket-Version"));
+        EXPECT_EQ(1U, req.get_header_value_count("Sec-WebSocket-Version"));
+        EXPECT_EQ(1U, req.get_header_value_count("Sec-WebSocket-Key"));
+        EXPECT_NE("AAAAAAAAAAAAAAAAAAAAAA==",
+                  req.get_header_value("Sec-WebSocket-Key"));
+      });
+}
+
+TEST(WebSocketTest, HostHeaderOverUnixSocket) {
+  // The socket path doubles as the URL host, so it must not contain '/'.
+  const char *shard = getenv("GTEST_SHARD_INDEX");
+  const std::string sock_path =
+      shard ? std::string("httplib-ws-") + shard + ".sock"
+            : std::string("httplib-ws.sock");
+  std::remove(sock_path.c_str());
+
+  Server svr;
+
+  std::mutex mtx;
+  std::string received_host;
+
+  svr.WebSocket("/ws", [&](const Request &req, ws::WebSocket &ws) {
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      received_host = req.get_header_value("Host");
+    }
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+  svr.set_address_family(AF_UNIX);
+
+  std::thread t([&]() { ASSERT_TRUE(svr.listen(sock_path, 80)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    std::remove(sock_path.c_str());
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://" + sock_path + "/ws");
+  client.set_address_family(AF_UNIX);
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  client.close();
+
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    // There is no host:port for a Unix socket, so the same "localhost"
+    // placeholder the HTTP client uses is expected.
+    EXPECT_EQ("localhost", received_host);
+  }
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class WebSocketSSLIntegrationTest : public ::testing::Test {
 protected:
