@@ -3510,6 +3510,47 @@ TEST(BindServerTest, BindAndListenSeparately) {
   svr.stop();
 }
 
+// Reports whether anything is still listening on a loopback port. A plain
+// connect() is used instead of a Client request because a socket left bound by
+// mistake accepts the connection into its backlog and never answers, which
+// would hang the test instead of failing it.
+static bool is_loopback_port_accepting(int port) {
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(port));
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  socket_t sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  EXPECT_NE(sock, INVALID_SOCKET);
+  if (sock == INVALID_SOCKET) { return false; }
+
+  auto ret = ::connect(sock, reinterpret_cast<sockaddr *>(&addr),
+                       static_cast<socklen_t>(sizeof(addr)));
+  detail::close_socket(sock);
+  return ret == 0;
+}
+
+TEST(BindServerTest, StopClosesBoundSocketWithoutListen) {
+  Server svr;
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  ASSERT_TRUE(port > 0);
+  svr.stop();
+
+  // bind_to_any_port() already called listen(2), so until stop() closed the
+  // descriptor the port kept accepting connections into the backlog. ASSERT
+  // rather than EXPECT: with the socket still open, the listen_after_bind()
+  // below blocks forever in the accept loop.
+  ASSERT_FALSE(is_loopback_port_accepting(port));
+
+  // Nothing is left to accept on, so listen_after_bind() must report failure
+  // instead of returning success without ever serving.
+  EXPECT_FALSE(svr.listen_after_bind());
+
+  // The failed listen marks the server decommissioned, so a waiter returns
+  // instead of spinning forever.
+  svr.wait_until_ready();
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(BindServerTest, BindAndListenSeparatelySSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
