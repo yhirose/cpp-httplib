@@ -9105,6 +9105,32 @@ inline bool is_ip_address(const std::string &host) {
          inet_pton(AF_INET6, host.c_str(), &addr6) == 1;
 }
 
+// Resolve where a client should connect for `host`, honoring a user-supplied
+// hostname-to-address map. `host` itself is never rewritten, so it keeps
+// supplying the Host header and SNI; only the connection target changes.
+//
+// A mapped IP literal goes to `ip`, which keeps create_socket's AI_NUMERICHOST
+// path. Anything else goes to `connect_host`, which create_socket resolves as
+// a name, or uses as the socket path when the address family is AF_UNIX. An
+// absent or empty mapping leaves `host` as the connection target; without the
+// empty check the value would reach getaddrinfo as a null node and silently
+// resolve to loopback.
+inline void apply_addr_map(const std::map<std::string, std::string> &addr_map,
+                           const std::string &host, std::string &connect_host,
+                           std::string &ip) {
+  connect_host = host;
+  ip.clear();
+
+  auto it = addr_map.find(host);
+  if (it == addr_map.end() || it->second.empty()) { return; }
+
+  if (is_ip_address(it->second)) {
+    ip = it->second;
+  } else {
+    connect_host = it->second;
+  }
+}
+
 } // namespace detail
 
 /*
@@ -12993,20 +13019,10 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
         write_timeout_sec_, write_timeout_usec_, interface_, error);
   }
 
-  // Check is custom IP or hostname specified for host_.
-  // An IP literal goes to the ip argument, which keeps create_socket's
-  // AI_NUMERICHOST path; a hostname goes to the host argument so that it is
-  // resolved. Either way host_ still supplies the Host header and SNI.
-  auto connect_host = host_;
+  // Check is custom IP or hostname specified for host_
+  std::string connect_host;
   std::string ip;
-  auto it = addr_map_.find(host_);
-  if (it != addr_map_.end() && !it->second.empty()) {
-    if (detail::is_ip_address(it->second)) {
-      ip = it->second;
-    } else {
-      connect_host = it->second;
-    }
-  }
+  detail::apply_addr_map(addr_map_, host_, connect_host, ip);
 
   return detail::create_client_socket(
       connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
@@ -20871,21 +20887,10 @@ inline bool WebSocketClient::connect() {
   if (!is_valid_) { return false; }
   shutdown_and_close();
 
-  // Check is custom IP or hostname specified for host_.
-  // host_ stays the identity used for the Host header and for SNI, while the
-  // mapped value only redirects where the socket connects. An IP literal goes
-  // to the ip argument, which keeps create_socket's AI_NUMERICHOST path; a
-  // hostname goes to the host argument so that it is resolved.
-  auto connect_host = host_;
+  // Check is custom IP or hostname specified for host_
+  std::string connect_host;
   std::string ip;
-  auto it = addr_map_.find(host_);
-  if (it != addr_map_.end() && !it->second.empty()) {
-    if (detail::is_ip_address(it->second)) {
-      ip = it->second;
-    } else {
-      connect_host = it->second;
-    }
-  }
+  detail::apply_addr_map(addr_map_, host_, connect_host, ip);
 
   Error error;
   sock_ = detail::create_client_socket(

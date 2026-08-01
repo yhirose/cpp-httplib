@@ -19395,6 +19395,47 @@ TEST(WebSocketTest, SpecifyServerIPAddress_RealHostname) {
   t.join();
 }
 
+TEST(WebSocketTest, SpecifyServerIPAddress_HostnameAsAddrMapValue) {
+  // A mapped value that is not an IP literal must be resolved. HOST resolves
+  // from the hosts file, so this test needs no external DNS. "target.invalid"
+  // (RFC 6761) is only a map key and the Host header value.
+  auto host = "target.invalid";
+
+  Server svr;
+  std::string received_host;
+  svr.WebSocket("/ws", [&](const Request &req, ws::WebSocket &ws) {
+    received_host = req.get_header_value("Host");
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+
+  // ASSERT_* below returns from the test body, which would leave t joinable
+  // and make ~thread call std::terminate.
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    if (t.joinable()) { t.join(); }
+  });
+
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://" + std::string(host) + ":" +
+                             std::to_string(port) + "/ws");
+  client.set_hostname_addr_map({{host, HOST}});
+
+  ASSERT_TRUE(client.connect());
+  EXPECT_TRUE(client.is_open());
+  client.close();
+
+  svr.stop();
+  t.join();
+
+  // The mapping only redirects the connection; the identity stays host_.
+  EXPECT_EQ(std::string(host) + ":" + std::to_string(port), received_host);
+}
+
 class WebSocketIntegrationTest : public ::testing::Test {
 protected:
   void SetUp() override {

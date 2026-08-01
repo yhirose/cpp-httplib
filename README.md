@@ -1289,6 +1289,34 @@ res->status; // 200
 cli.set_interface("eth0"); // Interface name, IP address or host name
 ```
 
+### Override the connection target for a hostname
+
+`set_hostname_addr_map` redirects where the socket connects, without changing
+the identity of the request. The hostname the client was constructed with keeps
+supplying the `Host` header, the SNI, and the name that the server certificate
+is verified against, so this is a connection-level override only, not a way to
+talk to a different origin.
+
+```cpp
+httplib::Client cli("https://example.com");
+
+// Connect to this IP address instead of resolving "example.com"
+cli.set_hostname_addr_map({{"example.com", "192.168.1.10"}});
+```
+
+A mapped value may be an IP literal or another hostname. An IP literal is used
+as-is; anything else is resolved as a name, so a host that is only reachable
+under a different name works too:
+
+```cpp
+cli.set_hostname_addr_map({{"example.com", "internal.example.lan"}});
+```
+
+An empty value is ignored, leaving the original hostname as the connection
+target.
+
+The same method is available on `httplib::ws::WebSocketClient`.
+
 ### Automatic Path Encoding
 
 The client automatically encodes special characters in URL paths by default:
