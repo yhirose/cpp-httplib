@@ -15,7 +15,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
+#include <clocale>
 #include <cstdio>
 #include <fstream>
 #include <future>
@@ -2571,6 +2573,101 @@ TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Connection, res.error());
+}
+
+TEST(SpecifyServerIPAddressTest, HostnameAsAddrMapValue) {
+  // A mapped value that is not an IP literal must be resolved. "localhost"
+  // resolves from the hosts file, so this test needs no external DNS.
+  // "target.invalid" (RFC 6761) is only a map key and the Host header value.
+  auto host = "target.invalid";
+
+  Server svr;
+  std::string received_host;
+  svr.Get("/hi", [&](const Request &req, Response &res) {
+    received_host = req.get_header_value("Host");
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(host, port);
+  cli.set_hostname_addr_map({{host, HOST}});
+
+  auto res = cli.Get("/hi");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  // The mapping only redirects the connection; the identity stays host_.
+  EXPECT_EQ(std::string(host) + ":" + std::to_string(port), received_host);
+}
+
+TEST(SpecifyServerIPAddressTest, IPAddressAsAddrMapValue) {
+  // A mapped value that is an IP literal keeps the AI_NUMERICHOST path.
+  auto host = "target.invalid";
+
+  Server svr;
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(host, port);
+  cli.set_hostname_addr_map({{host, "127.0.0.1"}});
+
+  auto res = cli.Get("/hi");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(SpecifyServerIPAddressTest, EmptyAddrMapValueIsIgnored) {
+  // An empty mapped value must leave host_ as the connection target. Without
+  // that guard the empty value would become the host argument, getaddrinfo
+  // would be called with a null node, and (no AI_PASSIVE) it would resolve to
+  // loopback - silently connecting somewhere the caller never asked for.
+  // The server listens on loopback, so such a fallback would succeed and is
+  // therefore observable as a failure of this test.
+  auto blackhole = "192.0.2.1"; // TEST-NET-1, never routable
+
+  Server svr;
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("Hello World!", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(blackhole, port);
+  cli.set_hostname_addr_map({{blackhole, ""}});
+  cli.set_connection_timeout(1);
+
+  auto res = cli.Get("/hi");
+  EXPECT_FALSE(res) << "empty mapping must not redirect to loopback";
 }
 
 TEST(AbsoluteRedirectTest, Redirect_Online) {
