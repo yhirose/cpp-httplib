@@ -2452,7 +2452,8 @@ protected:
   std::thread::id socket_requests_are_from_thread_ = std::thread::id();
   bool socket_should_be_closed_when_request_is_done_ = false;
 
-  // Hostname-IP map
+  // Hostname to connection target map. The value is an IP literal or another
+  // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
   // Default headers
@@ -4021,7 +4022,8 @@ private:
   time_t connection_timeout_usec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_USECOND;
   std::string interface_;
 
-  // Hostname-IP map
+  // Hostname to connection target map. The value is an IP literal or another
+  // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
@@ -9087,6 +9089,13 @@ inline bool perform_websocket_handshake(Stream &strm, Request &req,
                                          selected_subprotocol);
 }
 
+inline bool is_ip_address(const std::string &host) {
+  struct in_addr addr4;
+  struct in6_addr addr6;
+  return inet_pton(AF_INET, host.c_str(), &addr4) == 1 ||
+         inet_pton(AF_INET6, host.c_str(), &addr6) == 1;
+}
+
 } // namespace detail
 
 /*
@@ -9269,13 +9278,6 @@ inline std::string SHA_512(const std::string &s) {
   return hash_to_hex(hash);
 }
 #endif
-
-inline bool is_ip_address(const std::string &host) {
-  struct in_addr addr4;
-  struct in6_addr addr6;
-  return inet_pton(AF_INET, host.c_str(), &addr4) == 1 ||
-         inet_pton(AF_INET6, host.c_str(), &addr6) == 1;
-}
 
 template <typename T>
 inline bool process_server_socket_ssl(
@@ -12982,13 +12984,23 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
         write_timeout_sec_, write_timeout_usec_, interface_, error);
   }
 
-  // Check is custom IP specified for host_
+  // Check is custom IP or hostname specified for host_.
+  // An IP literal goes to the ip argument, which keeps create_socket's
+  // AI_NUMERICHOST path; a hostname goes to the host argument so that it is
+  // resolved. Either way host_ still supplies the Host header and SNI.
+  auto connect_host = host_;
   std::string ip;
   auto it = addr_map_.find(host_);
-  if (it != addr_map_.end()) { ip = it->second; }
+  if (it != addr_map_.end() && !it->second.empty()) {
+    if (detail::is_ip_address(it->second)) {
+      ip = it->second;
+    } else {
+      connect_host = it->second;
+    }
+  }
 
   return detail::create_client_socket(
-      host_, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
+      connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
       socket_options_, connection_timeout_sec_, connection_timeout_usec_,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_, interface_, error);
@@ -20850,16 +20862,25 @@ inline bool WebSocketClient::connect() {
   if (!is_valid_) { return false; }
   shutdown_and_close();
 
-  // Check is custom IP specified for host_.
-  // host_ stays the identity used for the Host header and for SNI, while ip
-  // only redirects where the socket connects.
+  // Check is custom IP or hostname specified for host_.
+  // host_ stays the identity used for the Host header and for SNI, while the
+  // mapped value only redirects where the socket connects. An IP literal goes
+  // to the ip argument, which keeps create_socket's AI_NUMERICHOST path; a
+  // hostname goes to the host argument so that it is resolved.
+  auto connect_host = host_;
   std::string ip;
   auto it = addr_map_.find(host_);
-  if (it != addr_map_.end()) { ip = it->second; }
+  if (it != addr_map_.end() && !it->second.empty()) {
+    if (detail::is_ip_address(it->second)) {
+      ip = it->second;
+    } else {
+      connect_host = it->second;
+    }
+  }
 
   Error error;
   sock_ = detail::create_client_socket(
-      host_, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
+      connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
       socket_options_, connection_timeout_sec_, connection_timeout_usec_,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_, interface_, error);
