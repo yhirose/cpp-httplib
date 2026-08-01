@@ -4546,10 +4546,12 @@ protected:
              })
         .Post("/chunked",
               [&](const Request &req, Response & /*res*/) {
+                EXPECT_FALSE(req.has_header("Content-Length"));
                 EXPECT_EQ(req.body, "dechunked post body");
               })
         .Post("/large-chunked",
               [&](const Request &req, Response & /*res*/) {
+                EXPECT_FALSE(req.has_header("Content-Length"));
                 std::string expected(6 * 30 * 1024u, 'a');
                 EXPECT_EQ(req.body, expected);
               })
@@ -5910,7 +5912,6 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   req.headers.emplace("Accept", "*/*");
   req.headers.emplace("User-Agent", "cpp-httplib/0.1");
   req.headers.emplace("Content-Type", "text/plain");
-  req.headers.emplace("Content-Length", "0");
   req.headers.emplace(
       "Transfer-Encoding",
       "Chunked"); // Note, "Chunked" rather than typical "chunked".
@@ -6383,7 +6384,6 @@ TEST_F(ServerTest, LargeChunkedPost) {
   req.headers.emplace("Accept", "*/*");
   req.headers.emplace("User-Agent", "cpp-httplib/0.1");
   req.headers.emplace("Content-Type", "text/plain");
-  req.headers.emplace("Content-Length", "0");
   req.headers.emplace("Transfer-Encoding", "chunked");
 
   std::string long_string(30 * 1024u, 'a');
@@ -20522,6 +20522,61 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
     EXPECT_EQ("HTTP/1.1 400 Bad Request",
               response.substr(0, response.find("\r\n")));
   }
+
+  // A zero Content-Length is still ambiguous when Transfer-Encoding is
+  // present and must not keep the connection reusable.
+  {
+    auto req = "POST /test HTTP/1.1\r\n"
+               "Host: localhost\r\n"
+               "Content-Length: 0\r\n"
+               "Transfer-Encoding: chunked\r\n"
+               "Connection: close\r\n"
+               "\r\n"
+               "0\r\n\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")));
+  }
+}
+
+TEST(RequestSmugglingTest, NonFinalChunkedTransferEncodingRejected) {
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  for (const auto &transfer_encoding : {"gzip", "chunked, gzip"}) {
+    auto req = std::string("POST /test HTTP/1.1\r\n") + "Host: localhost\r\n" +
+               "Transfer-Encoding: " + transfer_encoding + "\r\n" + "\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")))
+        << transfer_encoding;
+  }
+
+  // A supported sequence ending in chunked remains valid.
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Transfer-Encoding: gzip, chunked\r\n"
+             "Connection: close\r\n"
+             "\r\n"
+             "0\r\n\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  EXPECT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
 }
 
 // Regression for issue #2450: a DELETE without Content-Length on a

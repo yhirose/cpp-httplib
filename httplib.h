@@ -12603,11 +12603,13 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     return write_response(strm, close_connection, req, res);
   }
 
-  // RFC 9112 §6.3: Reject requests with both a non-zero Content-Length and
-  // any Transfer-Encoding to prevent request smuggling. Content-Length: 0 is
-  // tolerated for compatibility with existing clients.
-  if (req.get_header_value_u64("Content-Length") > 0 &&
-      req.has_header("Transfer-Encoding")) {
+  // RFC 9112 §6.3: ambiguous request framing can desynchronize this parser
+  // from an intermediary and enable request smuggling. Reject both framing
+  // headers together, even when Content-Length is zero, and reject a
+  // Transfer-Encoding whose final coding is not chunked.
+  if (req.has_header("Transfer-Encoding") &&
+      (req.has_header("Content-Length") ||
+       !detail::is_chunked_transfer_encoding(req.headers))) {
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     return write_response(strm, close_connection, req, res);
@@ -13293,7 +13295,7 @@ inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
     if (!ct.empty() && !r.has_header("Content-Type")) {
       r.headers.emplace("Content-Type", ct);
     }
-    if (!r.has_header("Content-Length")) {
+    if (!r.has_header("Content-Length") && !r.has_header("Transfer-Encoding")) {
       r.headers.emplace("Content-Length", std::to_string(r.body.size()));
     }
   }
@@ -13916,8 +13918,9 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
         }
       }
     } else {
-      if (req.method == "POST" || req.method == "PUT" ||
-          req.method == "PATCH") {
+      if ((req.method == "POST" || req.method == "PUT" ||
+           req.method == "PATCH") &&
+          !req.has_header("Transfer-Encoding")) {
         req.set_header("Content-Length", "0");
       }
     }
