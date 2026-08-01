@@ -11327,7 +11327,12 @@ inline Server::Server()
 #endif
 }
 
-inline Server::~Server() = default;
+inline Server::~Server() {
+  // Close the listening socket for callers that bound but never stopped the
+  // server. Destroying a Server whose accept loop is still running was always
+  // undefined behavior, so this only affects the bound-but-idle case.
+  stop();
+}
 
 inline std::unique_ptr<detail::MatcherBase>
 Server::make_matcher(const std::string &pattern) {
@@ -12193,6 +12198,9 @@ inline int Server::bind_internal(const std::string &host, int port,
     if (getsockname(svr_sock_, reinterpret_cast<struct sockaddr *>(&addr),
                     &addr_len) == -1) {
       output_error_log(Error::GetSockName, nullptr);
+      // The socket is already bound and listening; close it so the failure
+      // does not leave the port held for the life of the process.
+      detail::close_socket(svr_sock_.exchange(INVALID_SOCKET));
       return -1;
     }
     if (addr.ss_family == AF_INET) {
@@ -12201,6 +12209,7 @@ inline int Server::bind_internal(const std::string &host, int port,
       return ntohs(reinterpret_cast<struct sockaddr_in6 *>(&addr)->sin6_port);
     } else {
       output_error_log(Error::UnsupportedAddressFamily, nullptr);
+      detail::close_socket(svr_sock_.exchange(INVALID_SOCKET));
       return -1;
     }
   } else {

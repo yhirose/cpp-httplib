@@ -3551,6 +3551,17 @@ TEST(BindServerTest, StopClosesBoundSocketWithoutListen) {
   svr.wait_until_ready();
 }
 
+TEST(BindServerTest, DestructorClosesBoundSocket) {
+  int port = 0;
+  {
+    Server svr;
+    port = svr.bind_to_any_port("127.0.0.1");
+    ASSERT_TRUE(port > 0);
+    // Deliberately no stop(); the destructor has to release the socket.
+  }
+  EXPECT_FALSE(is_loopback_port_accepting(port));
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(BindServerTest, BindAndListenSeparatelySSL) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
