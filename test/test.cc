@@ -19777,47 +19777,6 @@ TEST(WebSocketTest, QueryStringInHandshake) {
   t.join();
 }
 
-TEST(WebSocketTest, HostHeaderInHandshake) {
-  Server svr;
-
-  std::mutex mtx;
-  std::string received_host;
-
-  svr.WebSocket("/ws", [&](const Request &req, ws::WebSocket &ws) {
-    {
-      std::lock_guard<std::mutex> lock(mtx);
-      received_host = req.get_header_value("Host");
-    }
-    std::string msg;
-    while (ws.read(msg)) {
-      ws.send(msg);
-    }
-  });
-
-  auto port = svr.bind_to_any_port("localhost");
-  std::thread t([&]() { svr.listen_after_bind(); });
-  svr.wait_until_ready();
-
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
-  ASSERT_TRUE(client.connect());
-  // Round-trip ensures the handler has run and captured the request.
-  ASSERT_TRUE(client.send("hello"));
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  client.close();
-
-  {
-    std::lock_guard<std::mutex> lock(mtx);
-    // Non-default port must be present in the Host header. Default ports
-    // (80/443) are omitted; that logic is covered by
-    // MakeHostAndPortStringTest.
-    EXPECT_EQ("localhost:" + std::to_string(port), received_host);
-  }
-
-  svr.stop();
-  t.join();
-}
-
 // Run a handshake against a throwaway server and hand the request the server
 // received back to the caller, so tests can assert on the headers the client
 // actually put on the wire.
@@ -19864,6 +19823,9 @@ static void capture_websocket_handshake_request(
 
 TEST(WebSocketTest, DefaultHeadersInHandshake) {
   capture_websocket_handshake_request({}, [](const Request &req, int port) {
+    // Non-default port must be present in the Host header. Default ports
+    // (80/443) are omitted; that logic is covered by
+    // MakeHostAndPortStringTest.
     EXPECT_EQ("localhost:" + std::to_string(port),
               req.get_header_value("Host"));
     EXPECT_EQ(std::string("cpp-httplib/") + CPPHTTPLIB_VERSION,
@@ -19905,6 +19867,63 @@ TEST(WebSocketTest, MandatoryHeadersInHandshakeAreEnforced) {
         EXPECT_NE("AAAAAAAAAAAAAAAAAAAAAA==",
                   req.get_header_value("Sec-WebSocket-Key"));
       });
+}
+
+TEST(WebSocketTest, InvalidHeaderInHandshakeWritesNothing) {
+  // A header the client refuses to send must abort the handshake before any
+  // part of it reaches the wire; a lone request line would otherwise sit in
+  // the peer's buffer as a truncated request.
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, srv);
+  auto se_srv = detail::scope_exit([&] { detail::close_socket(srv); });
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = 0; // ephemeral, so parallel shards don't collide
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 1));
+
+  sockaddr_in bound{};
+  socklen_t bound_len = sizeof(bound);
+  ASSERT_EQ(
+      0, ::getsockname(srv, reinterpret_cast<sockaddr *>(&bound), &bound_len));
+  auto port = ntohs(bound.sin_port);
+
+  ssize_t received = -1;
+  std::thread t([&] {
+    // Bound every blocking call so a regression fails the test with a bad
+    // value instead of hanging the suite.
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(srv, &rfds);
+    timeval tv{5, 0};
+    if (::select(static_cast<int>(srv + 1), &rfds, nullptr, nullptr, &tv) <=
+        0) {
+      return;
+    }
+
+    sockaddr_in cli_addr{};
+    socklen_t cli_len = sizeof(cli_addr);
+    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
+    if (cli == INVALID_SOCKET) { return; }
+    auto se_cli = detail::scope_exit([&] { detail::close_socket(cli); });
+
+    detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    char buf[4096];
+    received = ::recv(cli, buf, sizeof(buf), 0);
+  });
+  // The CR/LF makes the value invalid, so check_and_write_headers rejects it.
+  // connect() has already shut the socket down by the time it returns false,
+  // so the peer sees EOF without waiting for the client to be destroyed.
+  ws::WebSocketClient client("ws://127.0.0.1:" + std::to_string(port) + "/ws",
+                             {{"X-Bad", "a\r\nInjected: 1"}});
+  EXPECT_FALSE(client.connect());
+
+  t.join();
+
+  // 0 means the peer saw a clean EOF without a single byte of the handshake.
+  EXPECT_EQ(0, received);
 }
 
 TEST(WebSocketTest, HostHeaderOverUnixSocket) {

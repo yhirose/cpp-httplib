@@ -9074,12 +9074,21 @@ inline bool perform_websocket_handshake(Stream &strm, Request &req,
   req.headers.emplace("Sec-WebSocket-Key", client_key);
   req.headers.emplace("Sec-WebSocket-Version", "13");
 
-  if (write_request_line(strm, req.method, req.path) < 0) { return false; }
+  // Build the request in memory first, like ClientImpl::write_request does.
+  // Writing straight to the socket would leak a request line onto the wire
+  // before check_and_write_headers gets a chance to reject an invalid header,
+  // and would emit one small write per header.
+  BufferStream bstrm;
+
+  if (write_request_line(bstrm, req.method, req.path) < 0) { return false; }
 
   auto error = Error::Success;
-  if (!check_and_write_headers(strm, req.headers, write_headers, error)) {
+  if (!check_and_write_headers(bstrm, req.headers, write_headers, error)) {
     return false;
   }
+
+  const auto &data = bstrm.get_buffer();
+  if (!write_data(strm, data.data(), data.size())) { return false; }
 
   // Verify 101 response and Sec-WebSocket-Accept header
   auto expected_accept = websocket_accept_key(client_key);
