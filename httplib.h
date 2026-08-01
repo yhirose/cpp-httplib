@@ -11576,9 +11576,14 @@ inline void Server::wait_until_ready() const {
 }
 
 inline void Server::stop() noexcept {
-  if (is_running_) {
-    assert(svr_sock_ != INVALID_SOCKET);
-    std::atomic<socket_t> sock(svr_sock_.exchange(INVALID_SOCKET));
+  // Release the listening socket whether or not the accept loop is running. A
+  // server that bound (bind_to_port / bind_to_any_port) and never reached
+  // listen_after_bind still owns the descriptor, and ~Server does not free it,
+  // so gating this on is_running_ leaked both the fd and the port. The exchange
+  // is what makes this safe to call concurrently with the accept loop.
+  assert(!is_running_ || svr_sock_ != INVALID_SOCKET);
+  socket_t sock = svr_sock_.exchange(INVALID_SOCKET);
+  if (sock != INVALID_SOCKET) {
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
