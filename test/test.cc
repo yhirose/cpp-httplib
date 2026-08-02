@@ -10433,6 +10433,146 @@ TEST(PayloadLimitBypassTest, StreamingGzipDecompression) {
 }
 #endif
 
+// Some servers misuse Content-Encoding to advertise a character set, e.g.
+// `Content-Encoding: UTF-8` on a JPEG. Such a value is not a content coding, so
+// the payload must be passed through untouched instead of being rejected.
+TEST(ContentEncodingTest, UnknownEncodingIsPassedThrough) {
+  const std::string body = "\xff\xd8\xff\xe0 not really a jpeg";
+
+  Server svr;
+
+  svr.Get("/image", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.set_header("Content-Encoding", "UTF-8");
+  });
+
+  svr.Get("/identity", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.set_header("Content-Encoding", "identity");
+  });
+
+  svr.Post("/echo", [](const Request &req, Response &res) {
+    res.set_content(req.body, "image/jpeg");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  {
+    auto res = cli.Get("/image");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(body, res->body);
+  }
+
+  {
+    auto res = cli.Get("/identity");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(body, res->body);
+  }
+
+  {
+    // The same applies to a request body reaching the server.
+    Headers headers = {{"Content-Encoding", "UTF-8"}};
+    auto res = cli.Post("/echo", headers, body, "image/jpeg");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(body, res->body);
+  }
+}
+
+// "Hello World!" as gzip. Hard-coded so that the test below can serve a
+// gzip-encoded response even when the build has no zlib support.
+static const char GZIPPED_HELLO_WORLD[] = {
+    '\x1f', '\x8b', '\x08', '\x00', '\x00', '\x00', '\x00', '\x00',
+    '\x02', '\x03', '\xf3', '\x48', '\xcd', '\xc9', '\xc9', '\x57',
+    '\x08', '\xcf', '\x2f', '\xca', '\x49', '\x51', '\x04', '\x00',
+    '\xa3', '\x1c', '\x29', '\x1c', '\x0c', '\x00', '\x00', '\x00'};
+
+// A content coding cpp-httplib recognizes but was not built with must be
+// reported as such. Handing the still-compressed payload back to the caller
+// would silently corrupt it.
+TEST(ContentEncodingTest, KnownEncodingWithoutSupportIsReported) {
+  const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
+
+  Server svr;
+
+  // "image/jpeg" keeps the server from applying a content coding of its own,
+  // so the hand-crafted Content-Encoding below survives.
+  svr.Get("/gzipped", [&](const Request & /*req*/, Response &res) {
+    res.set_content(gzipped, "image/jpeg");
+    res.set_header("Content-Encoding", "gzip");
+  });
+
+  // Content codings are case-insensitive (RFC 9110 8.4.1).
+  svr.Get("/gzipped-uppercase", [&](const Request & /*req*/, Response &res) {
+    res.set_content(gzipped, "image/jpeg");
+    res.set_header("Content-Encoding", "GZIP");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+
+  {
+    auto res = cli.Get("/gzipped");
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("Hello World!", res->body);
+#else
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::UnsupportedContentEncoding, res.error());
+#endif
+  }
+
+  {
+    // open_stream() must behave the same way.
+    auto handle = cli.open_stream("GET", "/gzipped");
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    ASSERT_TRUE(handle.is_valid());
+    std::string received;
+    char buf[256];
+    ssize_t n;
+    while ((n = handle.read(buf, sizeof(buf))) > 0) {
+      received.append(buf, static_cast<size_t>(n));
+    }
+    EXPECT_EQ("Hello World!", received);
+#else
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(Error::UnsupportedContentEncoding, handle.error);
+#endif
+  }
+
+  {
+    // A differently-cased coding must not be mistaken for an unknown one, or
+    // the body would be handed back still compressed.
+    auto res = cli.Get("/gzipped-uppercase");
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("Hello World!", res->body);
+#else
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::UnsupportedContentEncoding, res.error());
+#endif
+  }
+}
+
 // Regression test for DoS vulnerability: a malicious server sending a response
 // without Content-Length header must not cause unbounded memory consumption on
 // the client side. The client should stop reading after a reasonable limit,
@@ -16292,6 +16432,10 @@ protected:
     svr_.Get("/large", [](const Request &, Response &res) {
       res.set_content(std::string(10000, 'X'), "text/plain");
     });
+    svr_.Get("/unknown-encoding", [](const Request &, Response &res) {
+      res.set_content("Hello World!", "image/jpeg");
+      res.set_header("Content-Encoding", "UTF-8");
+    });
     svr_.Get("/chunked", [](const Request &, Response &res) {
       res.set_chunked_content_provider("text/plain",
                                        [](size_t offset, DataSink &sink) {
@@ -16377,6 +16521,13 @@ TEST_F(OpenStreamTest, Basic) {
   Client cli("127.0.0.1", port_);
   auto handle = cli.open_stream("GET", "/hello");
   EXPECT_TRUE(handle.is_valid());
+  EXPECT_EQ("Hello World!", read_all(handle));
+}
+
+TEST_F(OpenStreamTest, UnknownContentEncodingIsPassedThrough) {
+  Client cli("127.0.0.1", port_);
+  auto handle = cli.open_stream("GET", "/unknown-encoding");
+  ASSERT_TRUE(handle.is_valid());
   EXPECT_EQ("Hello World!", read_all(handle));
 }
 
