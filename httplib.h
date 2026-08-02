@@ -11845,16 +11845,15 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
   };
 
   if (res.content_length_ > 0) {
-    // Only a 206 response is served as a partial representation. That is the
-    // condition `apply_ranges()` used when it decided the Content-Length and
-    // the multipart boundary, and `detail::range_error()` only validates
-    // `req.ranges` against the content length for a 2xx status. Honouring the
-    // ranges here under any other status would write a body that disagrees
-    // with the header we already sent, from an offset nothing has checked.
-    auto partial =
+    // Only a 206 response is served as a partial representation, matching the
+    // condition `apply_ranges()` used to decide the Content-Length and the
+    // multipart boundary. Since `detail::range_error()` validates `req.ranges`
+    // only for a 2xx status, slicing under any other status would write a body
+    // that disagrees with the header already sent, from an unchecked offset.
+    auto is_partial =
         !req.ranges.empty() && res.status == StatusCode::PartialContent_206;
 
-    if (!partial) {
+    if (!is_partial) {
       return detail::write_content(strm, res.content_provider_, 0,
                                    res.content_length_, is_shutting_down);
     } else if (req.ranges.size() == 1) {
