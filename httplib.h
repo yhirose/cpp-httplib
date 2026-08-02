@@ -1362,9 +1362,16 @@ struct FormField {
   std::string content;
   Headers headers;
 };
-using FormFields = std::multimap<std::string, FormField>;
+// RFC 7578 5.2: a form processor "SHOULD send back results in order" and
+// "Intermediaries MUST NOT reorder the results", so a handler walking these
+// should see the parts as they were sent. A std::multimap sorts by field name
+// and loses that. Field names are case-sensitive, hence std::equal_to rather
+// than the case-insensitive predicate Headers uses.
+using FormFields =
+    detail::insertion_ordered_multimap<FormField, std::equal_to<std::string>>;
 
-using FormFiles = std::multimap<std::string, FormData>;
+using FormFiles =
+    detail::insertion_ordered_multimap<FormData, std::equal_to<std::string>>;
 
 struct MultipartFormData {
   FormFields fields; // Text fields from multipart
