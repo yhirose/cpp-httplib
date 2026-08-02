@@ -9346,6 +9346,23 @@ TEST(MmapTest, OpenWhileFileHeldForWriting) {
 }
 #endif
 
+#ifndef _WIN32
+// A failed ::mmap() must not be reported as an open mapping, otherwise data()
+// hands the caller the MAP_FAILED sentinel. A directory is the easiest way to
+// reach it, since ::open() and fstat() succeed for one but ::mmap() doesn't.
+TEST(MmapTest, FailedMappingIsNotOpen) {
+  const char *path = "./mmap_failed_mapping_test_dir";
+  ASSERT_EQ(0, ::mkdir(path, 0755));
+  auto dir_cleanup = detail::scope_exit([&] { ::rmdir(path); });
+
+  detail::mmap m(path);
+  EXPECT_FALSE(m.is_open());
+  EXPECT_EQ(0U, m.size());
+  EXPECT_NE(static_cast<const void *>(m.data()),
+            static_cast<const void *>(MAP_FAILED));
+}
+#endif
+
 TEST(KeepAliveTest, ReadTimeout) {
   Server svr;
 

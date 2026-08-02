@@ -5576,6 +5576,14 @@ inline bool mmap::open(const char *path) {
     is_open_empty_file = true;
     return false;
   }
+
+  if (addr_ == MAP_FAILED) {
+    // Clear the sentinel before `close()`, since `is_open()` only checks
+    // `addr_` against nullptr and `munmap()` must not be called with it.
+    addr_ = nullptr;
+    close();
+    return false;
+  }
 #endif
 
   return true;
