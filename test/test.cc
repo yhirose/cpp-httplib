@@ -301,6 +301,12 @@ TEST(SocketStream, wait_writable_INET) {
   std::thread svr{[&] {
     const int s = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_LE(0, s);
+    // PORT + 1 is shared with the SSL redirect tests and with
+    // VulnerabilityTest.CRLFInjectionInHeaders, all of which set this. Without
+    // it, a TIME_WAIT one of them left behind makes bind() fail here, and
+    // because that happens on a worker thread the ASSERT does not stop the
+    // test: it runs on and fails at the disconnected_svr_sock check instead.
+    default_socket_options(s);
     ASSERT_EQ(0, ::bind(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
     ASSERT_EQ(0, listen(s, 1));
     ASSERT_LE(0, disconnected_svr_sock = accept(s, nullptr, nullptr));
