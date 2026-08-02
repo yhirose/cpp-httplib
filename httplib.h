@@ -5577,10 +5577,9 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 
-  // A failed mapping must not be left in `addr_`: `is_open()` only compares it
-  // against nullptr, so the MAP_FAILED sentinel would pass and `data()` would
-  // hand the caller (const char *)-1.
   if (addr_ == MAP_FAILED) {
+    // Clear the sentinel before `close()`, since `is_open()` only checks
+    // `addr_` against nullptr and `munmap()` must not be called with it.
     addr_ = nullptr;
     close();
     return false;
