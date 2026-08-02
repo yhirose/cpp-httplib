@@ -1366,6 +1366,93 @@ TEST(GetHeaderValueTest, Range) {
   }
 }
 
+// Joins every field of a Headers into "name=value " so a whole traversal can
+// be compared in one assertion.
+static std::string headers_to_string(const Headers &headers) {
+  std::string s;
+  for (const auto &header : headers) {
+    s += header.first + "=" + header.second + " ";
+  }
+  return s;
+}
+
+TEST(HeadersOrderTest, DuplicateFieldsKeepInsertionOrder) {
+  // RFC 9110 5.3: the order of fields sharing a name is significant. This used
+  // to depend on the standard library (libstdc++ handed back duplicates in
+  // reverse insertion order, libc++ in insertion order).
+  Request req;
+  req.set_header("Accept-Encoding", "gzip");
+  req.set_header("Accept-Encoding", "deflate");
+  req.set_header("Accept-Encoding", "br");
+
+  EXPECT_EQ(3U, req.get_header_value_count("Accept-Encoding"));
+  EXPECT_EQ("gzip", req.get_header_value("Accept-Encoding"));
+  EXPECT_EQ("gzip", req.get_header_value("Accept-Encoding", "", 0));
+  EXPECT_EQ("deflate", req.get_header_value("Accept-Encoding", "", 1));
+  EXPECT_EQ("br", req.get_header_value("Accept-Encoding", "", 2));
+}
+
+TEST(HeadersOrderTest, IdBeyondTheLastDuplicateYieldsDefault) {
+  Request req;
+  req.set_header("X-Test", "only");
+
+  EXPECT_EQ("only", req.get_header_value("X-Test", "def", 0));
+  EXPECT_EQ("def", req.get_header_value("X-Test", "def", 1));
+  EXPECT_EQ("def", req.get_header_value("X-Test", "def", 99));
+  EXPECT_EQ("def", req.get_header_value("X-Missing", "def", 3));
+}
+
+TEST(HeadersOrderTest, TraversalFollowsInsertionOrder) {
+  Headers headers;
+  headers.emplace("Host", "example.com");
+  headers.emplace("Accept-Encoding", "gzip");
+  headers.emplace("User-Agent", "test");
+  headers.emplace("Accept-Encoding", "deflate");
+
+  EXPECT_EQ("Host=example.com Accept-Encoding=gzip User-Agent=test "
+            "Accept-Encoding=deflate ",
+            headers_to_string(headers));
+}
+
+TEST(HeadersOrderTest, LookupIsCaseInsensitiveAndPicksTheFirstField) {
+  Headers headers = {{"Content-Type", "text/html"},
+                     {"CONTENT-TYPE", "text/xml"}};
+
+  EXPECT_EQ(2U, headers.count("content-type"));
+  auto it = headers.find("content-type");
+  ASSERT_TRUE(it != headers.end());
+  EXPECT_EQ("text/html", it->second);
+}
+
+TEST(HeadersOrderTest, ErasingAnEqualRangeSparesInterleavedFields) {
+  // The fields sharing a name are not adjacent, so an equal_range() erase must
+  // drop only those fields and leave everything positioned between them.
+  Headers headers = {{"A", "1"}, {"X", "x"}, {"A", "2"},
+                     {"Y", "y"}, {"A", "3"}, {"Z", "z"}};
+
+  auto rng = headers.equal_range("a");
+  headers.erase(rng.first, rng.second);
+
+  EXPECT_EQ("X=x Y=y Z=z ", headers_to_string(headers));
+}
+
+TEST(HeadersOrderTest, ErasingByNameKeepsTheRemainingOrder) {
+  Headers headers = {
+      {"A", "1"}, {"B", "2"}, {"a", "3"}, {"C", "4"}, {"A", "5"}};
+
+  EXPECT_EQ(3U, headers.erase("A"));
+  EXPECT_EQ(0U, headers.count("A"));
+  EXPECT_EQ("B=2 C=4 ", headers_to_string(headers));
+}
+
+TEST(HeadersOrderTest, EmplaceFrontPrepends) {
+  Headers headers = {{"Accept", "*/*"}, {"User-Agent", "test"}};
+  headers.emplace_front("Host", "example.com");
+
+  EXPECT_EQ("Host=example.com Accept=*/* User-Agent=test ",
+            headers_to_string(headers));
+}
+
 TEST(ParseHeaderValueTest, Range) {
   {
     Ranges ranges;
@@ -8293,6 +8380,63 @@ TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   ASSERT_TRUE(send_request(5, req, &res));
   EXPECT_EQ(header_value, "");
   EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, 24));
+}
+
+TEST(HeadersOrderTest, ReceivedFieldsKeepTheirOrder) {
+  Server svr;
+  std::string received;
+  svr.Get("/order", [&](const Request &req, Response &res) {
+    received = headers_to_string(req.headers);
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET /order HTTP/1.1\r\n"
+                          "X-First: 1\r\n"
+                          "X-Dup: a\r\n"
+                          "X-Second: 2\r\n"
+                          "X-Dup: b\r\n"
+                          "Connection: close\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
+  EXPECT_EQ("X-First=1 X-Dup=a X-Second=2 X-Dup=b Connection=close ", received);
+}
+
+TEST(HeadersOrderTest, SentFieldsKeepTheirOrder) {
+  Server svr;
+  svr.Get("/cookies", [](const Request & /*req*/, Response &res) {
+    res.set_header("Set-Cookie", "first=1");
+    res.set_header("X-Between", "y");
+    res.set_header("Set-Cookie", "second=2");
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/cookies");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(2U, res->get_header_value_count("Set-Cookie"));
+  EXPECT_EQ("first=1", res->get_header_value("Set-Cookie", "", 0));
+  EXPECT_EQ("second=2", res->get_header_value("Set-Cookie", "", 1));
 }
 
 TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
@@ -20776,6 +20920,48 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
     EXPECT_EQ("HTTP/1.1 400 Bad Request",
               response.substr(0, response.find("\r\n")));
   }
+}
+
+TEST(RequestSmugglingTest, NonFinalChunkedTransferEncodingRejected) {
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // RFC 9112 6.3: when chunked is not the final transfer coding the body
+  // length cannot be determined, so the server must answer 400 and close
+  // rather than treat the request as bodyless and leave the body in the
+  // socket for the next request to pick up.
+  for (const auto &transfer_encoding : {"gzip", "chunked, gzip"}) {
+    auto req = std::string("POST /test HTTP/1.1\r\n") + "Host: localhost\r\n" +
+               "Transfer-Encoding: " + transfer_encoding + "\r\n" + "\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")))
+        << transfer_encoding;
+  }
+
+  // A sequence ending in chunked stays valid.
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Transfer-Encoding: gzip, chunked\r\n"
+             "Connection: close\r\n"
+             "\r\n"
+             "0\r\n\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  EXPECT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
 }
 
 // Regression for issue #2450: a DELETE without Content-Length on a

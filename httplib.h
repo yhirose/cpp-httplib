@@ -321,6 +321,7 @@ using socket_t = int;
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <list>
 #include <map>
 #include <memory>
@@ -333,9 +334,11 @@ using socket_t = int;
 #include <sys/stat.h>
 #include <system_error>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 // On macOS with a TLS backend, enable Keychain root certificates by default
 // unless the user explicitly opts out. Not enabled on iOS/tvOS/watchOS since
@@ -968,9 +971,263 @@ enum StatusCode {
   NetworkAuthenticationRequired_511 = 511,
 };
 
-using Headers =
-    std::unordered_multimap<std::string, std::string, detail::case_ignore::hash,
-                            detail::case_ignore::equal_to>;
+// RFC 9110 5.3: the order in which header fields with the same field name are
+// received is significant, and a proxy must not reorder them. Neither
+// std::unordered_multimap (no ordering guarantee at all for equivalent keys:
+// libstdc++ yields reverse insertion order, libc++ insertion order) nor
+// std::multimap (sorts by field name, so control data such as Host no longer
+// leads the message) can express that, so header fields are kept in a flat
+// vector in the order they were received or set. Lookup is a linear scan,
+// which beats hashing for the at most CPPHTTPLIB_HEADER_MAX_COUNT fields a
+// message carries.
+class Headers {
+public:
+  using key_type = std::string;
+  using mapped_type = std::string;
+  using value_type = std::pair<std::string, std::string>;
+  using size_type = std::size_t;
+  using difference_type = std::ptrdiff_t;
+  using reference = value_type &;
+  using const_reference = const value_type &;
+
+private:
+  static size_type npos() { return static_cast<size_type>(-1); }
+
+  // Iterating a Headers yields every field in insertion order, but
+  // equal_range() and find() have to walk only the fields sharing one name,
+  // which are not adjacent. Both are the same iterator type: key_idx_ selects
+  // between the two traversals, and since equality compares only the position,
+  // an iterator restricted to one name still compares equal to end().
+  template <typename V> class iterator_t {
+  public:
+    using iterator_category = std::bidirectional_iterator_tag;
+    using value_type = Headers::value_type;
+    using difference_type = Headers::difference_type;
+    using pointer = V *;
+    using reference = V &;
+
+    iterator_t() : data_(nullptr), idx_(0), size_(0), key_idx_(npos()) {}
+
+    template <typename U,
+              typename std::enable_if<std::is_convertible<U *, V *>::value,
+                                      int>::type = 0>
+    iterator_t(const iterator_t<U> &rhs)
+        : data_(rhs.data_), idx_(rhs.idx_), size_(rhs.size_),
+          key_idx_(rhs.key_idx_) {}
+
+    reference operator*() const { return data_[idx_]; }
+    pointer operator->() const { return data_ + idx_; }
+
+    iterator_t &operator++() {
+      // Saturating, so that advancing past the last field of a name (which
+      // get_header_value() does when asked for an out-of-range id) stays at
+      // end() instead of running off the container.
+      if (idx_ >= size_) { return *this; }
+      ++idx_;
+      if (key_idx_ != npos()) {
+        while (idx_ < size_ && !matches(idx_)) {
+          ++idx_;
+        }
+      }
+      return *this;
+    }
+
+    iterator_t operator++(int) {
+      auto tmp = *this;
+      ++*this;
+      return tmp;
+    }
+
+    iterator_t &operator--() {
+      if (idx_ == 0) { return *this; }
+      --idx_;
+      if (key_idx_ != npos()) {
+        while (idx_ > 0 && !matches(idx_)) {
+          --idx_;
+        }
+      }
+      return *this;
+    }
+
+    iterator_t operator--(int) {
+      auto tmp = *this;
+      --*this;
+      return tmp;
+    }
+
+    template <typename U> bool operator==(const iterator_t<U> &rhs) const {
+      return idx_ == rhs.idx_;
+    }
+
+    template <typename U> bool operator!=(const iterator_t<U> &rhs) const {
+      return idx_ != rhs.idx_;
+    }
+
+  private:
+    friend class Headers;
+    template <typename> friend class iterator_t;
+
+    iterator_t(V *data, size_type idx, size_type size, size_type key_idx)
+        : data_(data), idx_(idx), size_(size), key_idx_(key_idx) {}
+
+    bool matches(size_type i) const {
+      return detail::case_ignore::equal(data_[i].first, data_[key_idx_].first);
+    }
+
+    V *data_;
+    size_type idx_;
+    size_type size_;
+    size_type key_idx_;
+  };
+
+public:
+  using iterator = iterator_t<value_type>;
+  using const_iterator = iterator_t<const value_type>;
+
+  Headers() = default;
+  Headers(std::initializer_list<value_type> il) : entries_(il) {}
+  template <typename InputIt>
+  Headers(InputIt first, InputIt last) : entries_(first, last) {}
+
+  iterator begin() { return make_iter(0, npos()); }
+  iterator end() { return make_iter(entries_.size(), npos()); }
+  const_iterator begin() const { return make_citer(0, npos()); }
+  const_iterator end() const { return make_citer(entries_.size(), npos()); }
+  const_iterator cbegin() const { return begin(); }
+  const_iterator cend() const { return end(); }
+
+  bool empty() const { return entries_.empty(); }
+  size_type size() const { return entries_.size(); }
+  void clear() { entries_.clear(); }
+  void swap(Headers &rhs) { entries_.swap(rhs.entries_); }
+
+  iterator insert(const value_type &val) {
+    entries_.push_back(val);
+    return make_iter(entries_.size() - 1, npos());
+  }
+
+  iterator insert(value_type &&val) {
+    entries_.push_back(std::move(val));
+    return make_iter(entries_.size() - 1, npos());
+  }
+
+  template <typename... Args> iterator emplace(Args &&...args) {
+    entries_.emplace_back(std::forward<Args>(args)...);
+    return make_iter(entries_.size() - 1, npos());
+  }
+
+  // RFC 9110 5.3 recommends sending control data such as Host first.
+  template <typename... Args> iterator emplace_front(Args &&...args) {
+    entries_.emplace(entries_.begin(), std::forward<Args>(args)...);
+    return make_iter(0, npos());
+  }
+
+  iterator find(const std::string &key) {
+    auto i = index_of(key);
+    return i == npos() ? end() : make_iter(i, i);
+  }
+
+  const_iterator find(const std::string &key) const {
+    auto i = index_of(key);
+    return i == npos() ? end() : make_citer(i, i);
+  }
+
+  size_type count(const std::string &key) const {
+    size_type n = 0;
+    for (const auto &entry : entries_) {
+      if (detail::case_ignore::equal(entry.first, key)) { n++; }
+    }
+    return n;
+  }
+
+  std::pair<iterator, iterator> equal_range(const std::string &key) {
+    auto i = index_of(key);
+    return i == npos() ? std::make_pair(end(), end())
+                       : std::make_pair(make_iter(i, i), end());
+  }
+
+  std::pair<const_iterator, const_iterator>
+  equal_range(const std::string &key) const {
+    auto i = index_of(key);
+    return i == npos() ? std::make_pair(end(), end())
+                       : std::make_pair(make_citer(i, i), end());
+  }
+
+  size_type erase(const std::string &key) {
+    auto before = entries_.size();
+    entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
+                                  [&](const value_type &entry) {
+                                    return detail::case_ignore::equal(
+                                        entry.first, key);
+                                  }),
+                   entries_.end());
+    return before - entries_.size();
+  }
+
+  iterator erase(const_iterator pos) {
+    entries_.erase(entries_.begin() + static_cast<difference_type>(pos.idx_));
+    return make_iter(pos.idx_, npos());
+  }
+
+  // Erases what iterating [first, last) would actually visit, so erasing an
+  // equal_range() removes only the fields with that name, not everything
+  // positioned between them.
+  iterator erase(const_iterator first, const_iterator last) {
+    auto from = first.idx_;
+    auto to = last.idx_;
+    if (from >= to) { return make_iter(from, npos()); }
+
+    auto begin_it = entries_.begin();
+    auto from_it = begin_it + static_cast<difference_type>(from);
+    auto to_it = begin_it + static_cast<difference_type>(to);
+
+    if (first.key_idx_ == npos()) {
+      entries_.erase(from_it, to_it);
+    } else {
+      auto key = entries_[first.key_idx_].first;
+      auto keep = from_it;
+      for (auto it = from_it; it != to_it; ++it) {
+        if (!detail::case_ignore::equal(it->first, key)) {
+          if (keep != it) { *keep = std::move(*it); }
+          ++keep;
+        }
+      }
+      if (keep != to_it) {
+        keep = std::move(to_it, entries_.end(), keep);
+      } else {
+        keep = entries_.end();
+      }
+      entries_.erase(keep, entries_.end());
+    }
+    return make_iter(from, npos());
+  }
+
+  friend bool operator==(const Headers &lhs, const Headers &rhs) {
+    return lhs.entries_ == rhs.entries_;
+  }
+
+  friend bool operator!=(const Headers &lhs, const Headers &rhs) {
+    return !(lhs == rhs);
+  }
+
+private:
+  size_type index_of(const std::string &key) const {
+    for (size_type i = 0; i < entries_.size(); i++) {
+      if (detail::case_ignore::equal(entries_[i].first, key)) { return i; }
+    }
+    return npos();
+  }
+
+  iterator make_iter(size_type idx, size_type key_idx) {
+    return iterator(entries_.data(), idx, entries_.size(), key_idx);
+  }
+
+  const_iterator make_citer(size_type idx, size_type key_idx) const {
+    return const_iterator(entries_.data(), idx, entries_.size(), key_idx);
+  }
+
+  std::vector<value_type> entries_;
+};
 
 using Params = std::multimap<std::string, std::string>;
 using Match = std::smatch;
@@ -7541,10 +7798,10 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
   //
   // Security: reading a chunked message as unframed leaves its body in the
   // socket, where a keep-alive connection parses it as a smuggled request.
-  // Headers is an unordered_multimap whose iteration order for duplicate keys
-  // is not portable, so when there is more than one Transfer-Encoding line we
-  // cannot tell which coding is truly final. In that ambiguous case we fail
-  // safe by treating the message as chunked (a mis-parse just closes the
+  // Headers now preserves the order the lines were received in, so the final
+  // coding could be identified even when it is split across lines, but we
+  // keep failing safe and treat any message carrying more than one
+  // Transfer-Encoding line as chunked (a mis-parse just closes the
   // connection, whereas the opposite error enables smuggling).
   auto rng = headers.equal_range("Transfer-Encoding");
 
@@ -12773,11 +13030,17 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     return write_response(strm, close_connection, req, res);
   }
 
-  // RFC 9112 §6.3: Reject requests with both a non-zero Content-Length and
-  // any Transfer-Encoding to prevent request smuggling. Content-Length: 0 is
-  // tolerated for compatibility with existing clients.
-  if (req.get_header_value_u64("Content-Length") > 0 &&
-      req.has_header("Transfer-Encoding")) {
+  // RFC 9112 §6.3: Reject requests whose framing is ambiguous, which would
+  // otherwise let an intermediary and this parser disagree on where the body
+  // ends and enable request smuggling. Two cases: a non-zero Content-Length
+  // alongside any Transfer-Encoding (Content-Length: 0 is tolerated for
+  // compatibility with existing clients), and a Transfer-Encoding whose final
+  // coding is not chunked, which leaves the body length undeterminable. The
+  // latter must not fall through to the "no body" path, or the body bytes are
+  // parsed as the next request on a persistent connection.
+  if (req.has_header("Transfer-Encoding") &&
+      (req.get_header_value_u64("Content-Length") > 0 ||
+       !detail::is_chunked_transfer_encoding(req.headers))) {
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     return write_response(strm, close_connection, req, res);
@@ -13423,11 +13686,13 @@ inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
     if (!r.has_header(header.first)) { r.headers.insert(header); }
   }
 
+  // RFC 9110 5.3 recommends sending control data such as Host first, so
+  // prepend it rather than appending it after the caller's own fields.
   if (!r.has_header("Host")) {
     if (address_family_ == AF_UNIX) {
-      r.headers.emplace("Host", "localhost");
+      r.headers.emplace_front("Host", "localhost");
     } else {
-      r.headers.emplace(
+      r.headers.emplace_front(
           "Host", detail::make_host_and_port_string(host_, port_, is_ssl()));
     }
   }
