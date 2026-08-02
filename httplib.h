@@ -7600,8 +7600,7 @@ inline const char *get_header_value(const Headers &headers,
 
 inline size_t get_header_value_count(const Headers &headers,
                                      const std::string &key) {
-  auto r = headers.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return headers.count(key);
 }
 
 template <typename Map>
@@ -10566,8 +10565,7 @@ inline std::string Request::get_trailer_value(const std::string &key,
 }
 
 inline size_t Request::get_trailer_value_count(const std::string &key) const {
-  auto r = trailers.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return trailers.count(key);
 }
 
 inline bool Request::has_param(const std::string &key) const {
@@ -10591,8 +10589,7 @@ Request::get_param_values(const std::string &key) const {
 }
 
 inline size_t Request::get_param_value_count(const std::string &key) const {
-  auto r = params.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return params.count(key);
 }
 
 inline bool Request::is_multipart_form_data() const {
@@ -10625,8 +10622,7 @@ inline bool MultipartFormData::has_field(const std::string &key) const {
 }
 
 inline size_t MultipartFormData::get_field_count(const std::string &key) const {
-  auto r = fields.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return fields.count(key);
 }
 
 inline FormData MultipartFormData::get_file(const std::string &key,
@@ -10649,8 +10645,7 @@ inline bool MultipartFormData::has_file(const std::string &key) const {
 }
 
 inline size_t MultipartFormData::get_file_count(const std::string &key) const {
-  auto r = files.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return files.count(key);
 }
 
 // Multipart FormData writer implementation
@@ -10729,8 +10724,7 @@ inline std::string Response::get_trailer_value(const std::string &key,
 }
 
 inline size_t Response::get_trailer_value_count(const std::string &key) const {
-  auto r = trailers.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return trailers.count(key);
 }
 
 inline void Response::set_redirect(const std::string &url, int stat) {
@@ -10826,8 +10820,7 @@ inline std::string Result::get_request_header_value(const std::string &key,
 
 inline size_t
 Result::get_request_header_value_count(const std::string &key) const {
-  auto r = request_headers_.equal_range(key);
-  return static_cast<size_t>(std::distance(r.first, r.second));
+  return request_headers_.count(key);
 }
 
 // Stream implementation
