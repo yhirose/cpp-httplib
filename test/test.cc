@@ -20778,6 +20778,48 @@ TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
   }
 }
 
+TEST(RequestSmugglingTest, NonFinalChunkedTransferEncodingRejected) {
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // RFC 9112 6.3: when chunked is not the final transfer coding the body
+  // length cannot be determined, so the server must answer 400 and close
+  // rather than treat the request as bodyless and leave the body in the
+  // socket for the next request to pick up.
+  for (const auto &transfer_encoding : {"gzip", "chunked, gzip"}) {
+    auto req = std::string("POST /test HTTP/1.1\r\n") + "Host: localhost\r\n" +
+               "Transfer-Encoding: " + transfer_encoding + "\r\n" + "\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")))
+        << transfer_encoding;
+  }
+
+  // A sequence ending in chunked stays valid.
+  auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
+             "Transfer-Encoding: gzip, chunked\r\n"
+             "Connection: close\r\n"
+             "\r\n"
+             "0\r\n\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  EXPECT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
+}
+
 // Regression for issue #2450: a DELETE without Content-Length on a
 // keep-alive connection must not let the post-response drain consume the
 // next request's bytes.
