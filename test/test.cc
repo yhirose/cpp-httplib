@@ -4540,6 +4540,15 @@ protected:
         .Get("/streamed-with-range",
              [&](const Request &req, Response &res) {
                auto data = new std::string("abcdefg");
+               // An explicit status keeps the server from picking the 206 it
+               // would otherwise choose for a ranged request, so the response
+               // is not a partial representation.
+               auto status = req.get_param_value("status");
+               if (status == "200") {
+                 res.status = StatusCode::OK_200;
+               } else if (status == "403") {
+                 res.status = StatusCode::Forbidden_403;
+               }
                res.set_content_provider(
                    data->size(), "text/plain",
                    [data](size_t offset, size_t length, DataSink &sink) {
@@ -6068,6 +6077,42 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
   EXPECT_EQ(0U, res->body.size());
+}
+
+TEST_F(ServerTest, GetStreamedWithRangeAndNonPartialStatus) {
+  // Only a 206 is served as a partial representation. Under any other status
+  // `apply_ranges()` reported the full content length, so the body must match
+  // that header, and the content provider must never be asked for an offset
+  // outside the representation.
+  auto check = [&](int status, const char *range) {
+    auto path =
+        std::string("/streamed-with-range?status=") + std::to_string(status);
+    auto ctx = path + " Range: " + range;
+
+    auto res = cli_.Get(path, Headers{{"Range", range}});
+    ASSERT_TRUE(res) << ctx << " Error: " << to_string(res.error());
+    EXPECT_EQ(status, res->status) << ctx;
+    EXPECT_EQ("7", res->get_header_value("Content-Length")) << ctx;
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type")) << ctx;
+    EXPECT_FALSE(res->has_header("Content-Range")) << ctx;
+    EXPECT_EQ(std::string("abcdefg"), res->body) << ctx;
+  };
+
+  // Non-2xx: `detail::range_error()` never validated these ranges at all.
+  check(403, "bytes=3-5");
+  // The offset is far past the representation.
+  check(403, "bytes=100000-100200");
+  // `first_pos` is still -1 here, and the bounds asserts in
+  // `get_range_offset_and_length()` are compiled out under NDEBUG.
+  check(403, "bytes=-3");
+  // `apply_ranges()` makes no boundary for a non-206 response, so the
+  // multipart branch would have written one that is empty.
+  check(403, "bytes=1-2, 4-5");
+
+  // 2xx but not 206: the ranges were validated, yet the Content-Length still
+  // covers the whole representation.
+  check(200, "bytes=3-5");
+  check(200, "bytes=1-2, 4-5");
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeError) {
