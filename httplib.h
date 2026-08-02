@@ -971,20 +971,30 @@ enum StatusCode {
   NetworkAuthenticationRequired_511 = 511,
 };
 
-// RFC 9110 5.3: the order in which header fields with the same field name are
-// received is significant, and a proxy must not reorder them. Neither
-// std::unordered_multimap (no ordering guarantee at all for equivalent keys:
-// libstdc++ yields reverse insertion order, libc++ insertion order) nor
-// std::multimap (sorts by field name, so control data such as Host no longer
-// leads the message) can express that, so header fields are kept in a flat
-// vector in the order they were received or set. Lookup is a linear scan,
-// which beats hashing for the at most CPPHTTPLIB_HEADER_MAX_COUNT fields a
-// message carries.
-class Headers {
+namespace detail {
+
+// A multimap that keeps its entries in the order they were inserted.
+//
+// HTTP needs that order in two places. RFC 9110 5.3 makes the order of header
+// fields sharing a field name significant and forbids a proxy from reordering
+// them, and a query string's parameters are meaningful in the order the caller
+// wrote them. Neither standard container expresses it: std::unordered_multimap
+// gives no ordering guarantee at all for equivalent keys (libstdc++ yields
+// reverse insertion order, libc++ insertion order), and std::multimap sorts by
+// key, which would drop control data such as Host behind whatever else the
+// message carries and alphabetise a query string.
+//
+// Entries are therefore kept in a flat vector, in order. Lookup is a linear
+// scan, which beats hashing for the handful of entries a message carries
+// (headers are capped at CPPHTTPLIB_HEADER_MAX_COUNT).
+//
+// KeyEqual compares keys; it is what makes Headers case-insensitive and
+// Params, whose parameter names are case-sensitive, not.
+template <typename Mapped, typename KeyEqual> class insertion_ordered_multimap {
 public:
   using key_type = std::string;
-  using mapped_type = std::string;
-  using value_type = std::pair<std::string, std::string>;
+  using mapped_type = Mapped;
+  using value_type = std::pair<std::string, Mapped>;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
   using reference = value_type &;
@@ -993,16 +1003,20 @@ public:
 private:
   static size_type npos() { return static_cast<size_type>(-1); }
 
-  // Iterating a Headers yields every field in insertion order, but
-  // equal_range() and find() have to walk only the fields sharing one name,
-  // which are not adjacent. Both are the same iterator type: key_idx_ selects
-  // between the two traversals, and since equality compares only the position,
-  // an iterator restricted to one name still compares equal to end().
+  static bool keys_equal(const std::string &a, const std::string &b) {
+    return KeyEqual()(a, b);
+  }
+
+  // Iterating yields every entry in insertion order, but equal_range() and
+  // find() have to walk only the entries sharing one key, which are not
+  // adjacent. Both are the same iterator type: key_idx_ selects between the
+  // two traversals, and since equality compares only the position, an iterator
+  // restricted to one key still compares equal to end().
   template <typename V> class iterator_t {
   public:
     using iterator_category = std::bidirectional_iterator_tag;
-    using value_type = Headers::value_type;
-    using difference_type = Headers::difference_type;
+    using value_type = insertion_ordered_multimap::value_type;
+    using difference_type = insertion_ordered_multimap::difference_type;
     using pointer = V *;
     using reference = V &;
 
@@ -1019,8 +1033,8 @@ private:
     pointer operator->() const { return data_ + idx_; }
 
     iterator_t &operator++() {
-      // Saturating, so that advancing past the last field of a name (which
-      // get_header_value() does when asked for an out-of-range id) stays at
+      // Saturating, so that advancing past the last entry of a key (which
+      // get_multimap_value() does when asked for an out-of-range id) stays at
       // end() instead of running off the container.
       if (idx_ >= size_) { return *this; }
       ++idx_;
@@ -1064,14 +1078,14 @@ private:
     }
 
   private:
-    friend class Headers;
+    friend class insertion_ordered_multimap;
     template <typename> friend class iterator_t;
 
     iterator_t(V *data, size_type idx, size_type size, size_type key_idx)
         : data_(data), idx_(idx), size_(size), key_idx_(key_idx) {}
 
     bool matches(size_type i) const {
-      return detail::case_ignore::equal(data_[i].first, data_[key_idx_].first);
+      return keys_equal(data_[i].first, data_[key_idx_].first);
     }
 
     V *data_;
@@ -1084,10 +1098,12 @@ public:
   using iterator = iterator_t<value_type>;
   using const_iterator = iterator_t<const value_type>;
 
-  Headers() = default;
-  Headers(std::initializer_list<value_type> il) : entries_(il) {}
+  insertion_ordered_multimap() = default;
+  insertion_ordered_multimap(std::initializer_list<value_type> il)
+      : entries_(il) {}
   template <typename InputIt>
-  Headers(InputIt first, InputIt last) : entries_(first, last) {}
+  insertion_ordered_multimap(InputIt first, InputIt last)
+      : entries_(first, last) {}
 
   iterator begin() { return make_iter(0, npos()); }
   iterator end() { return make_iter(entries_.size(), npos()); }
@@ -1099,7 +1115,7 @@ public:
   bool empty() const { return entries_.empty(); }
   size_type size() const { return entries_.size(); }
   void clear() { entries_.clear(); }
-  void swap(Headers &rhs) { entries_.swap(rhs.entries_); }
+  void swap(insertion_ordered_multimap &rhs) { entries_.swap(rhs.entries_); }
 
   iterator insert(const value_type &val) {
     entries_.push_back(val);
@@ -1116,7 +1132,8 @@ public:
     return make_iter(entries_.size() - 1, npos());
   }
 
-  // RFC 9110 5.3 recommends sending control data such as Host first.
+  // For entries that have to lead the message, such as the Host header field
+  // (RFC 9110 5.3 recommends sending control data first).
   template <typename... Args> iterator emplace_front(Args &&...args) {
     entries_.emplace(entries_.begin(), std::forward<Args>(args)...);
     return make_iter(0, npos());
@@ -1135,7 +1152,7 @@ public:
   size_type count(const std::string &key) const {
     size_type n = 0;
     for (const auto &entry : entries_) {
-      if (detail::case_ignore::equal(entry.first, key)) { n++; }
+      if (keys_equal(entry.first, key)) { n++; }
     }
     return n;
   }
@@ -1157,8 +1174,7 @@ public:
     auto before = entries_.size();
     entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
                                   [&](const value_type &entry) {
-                                    return detail::case_ignore::equal(
-                                        entry.first, key);
+                                    return keys_equal(entry.first, key);
                                   }),
                    entries_.end());
     return before - entries_.size();
@@ -1170,7 +1186,7 @@ public:
   }
 
   // Erases what iterating [first, last) would actually visit, so erasing an
-  // equal_range() removes only the fields with that name, not everything
+  // equal_range() removes only the entries with that key, not everything
   // positioned between them.
   iterator erase(const_iterator first, const_iterator last) {
     auto from = first.idx_;
@@ -1187,7 +1203,7 @@ public:
       auto key = entries_[first.key_idx_].first;
       auto keep = from_it;
       for (auto it = from_it; it != to_it; ++it) {
-        if (!detail::case_ignore::equal(it->first, key)) {
+        if (!keys_equal(it->first, key)) {
           if (keep != it) { *keep = std::move(*it); }
           ++keep;
         }
@@ -1202,18 +1218,20 @@ public:
     return make_iter(from, npos());
   }
 
-  friend bool operator==(const Headers &lhs, const Headers &rhs) {
+  friend bool operator==(const insertion_ordered_multimap &lhs,
+                         const insertion_ordered_multimap &rhs) {
     return lhs.entries_ == rhs.entries_;
   }
 
-  friend bool operator!=(const Headers &lhs, const Headers &rhs) {
+  friend bool operator!=(const insertion_ordered_multimap &lhs,
+                         const insertion_ordered_multimap &rhs) {
     return !(lhs == rhs);
   }
 
 private:
   size_type index_of(const std::string &key) const {
     for (size_type i = 0; i < entries_.size(); i++) {
-      if (detail::case_ignore::equal(entries_[i].first, key)) { return i; }
+      if (keys_equal(entries_[i].first, key)) { return i; }
     }
     return npos();
   }
@@ -1229,7 +1247,15 @@ private:
   std::vector<value_type> entries_;
 };
 
-using Params = std::multimap<std::string, std::string>;
+} // namespace detail
+
+using Headers =
+    detail::insertion_ordered_multimap<std::string,
+                                       detail::case_ignore::equal_to>;
+
+// Query parameter names are case-sensitive, unlike header field names.
+using Params =
+    detail::insertion_ordered_multimap<std::string, std::equal_to<std::string>>;
 using Match = std::smatch;
 
 using DownloadProgress = std::function<bool(size_t current, size_t total)>;
@@ -8288,8 +8314,11 @@ inline void parse_query_text(const std::string &s, Params &params) {
 
 // Normalize a query string by decoding and re-encoding each key/value pair
 // while preserving the original parameter order. This avoids double-encoding
-// and ensures consistent encoding without reordering (unlike Params which
-// uses std::multimap and sorts keys).
+// and ensures consistent encoding. It works on the raw string rather than
+// parsing into Params and re-serializing, because that round trip cannot
+// reproduce the input: params_to_query_str() always emits '=', so a bare
+// "flag" would come back as "flag=", and parse_query_text() drops exactly
+// duplicated pairs.
 inline std::string normalize_query_string(const std::string &query) {
   std::string result;
   split(query.data(), query.data() + query.size(), '&',
