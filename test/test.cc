@@ -1308,7 +1308,8 @@ TEST(ParamsOrderTest, ServerSeesTheOrderTheClientSent) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -1316,7 +1317,7 @@ TEST(ParamsOrderTest, ServerSeesTheOrderTheClientSent) {
   });
   svr.wait_until_ready();
 
-  Client cli(HOST, PORT);
+  Client cli(HOST, port);
   auto res = cli.Get("/order?zulu=1&alpha=2&tag=x&mike=3&tag=y");
   ASSERT_TRUE(res);
   EXPECT_EQ("zulu=1 alpha=2 tag=x mike=3 tag=y ", order);
@@ -1335,7 +1336,8 @@ TEST(MultipartOrderTest, PartsKeepTheOrderSent) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -1351,7 +1353,7 @@ TEST(MultipartOrderTest, PartsKeepTheOrderSent) {
       {"apple", "a", "a.txt", "text/plain"},
   };
 
-  Client cli(HOST, PORT);
+  Client cli(HOST, port);
   auto res = cli.Post("/order", items);
   ASSERT_TRUE(res);
   EXPECT_EQ("zulu=1 alpha=2 mike=3 ", field_order);
@@ -1373,7 +1375,8 @@ TEST(MultipartOrderTest, RepeatedNamesKeepTheirOrder) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -1389,7 +1392,7 @@ TEST(MultipartOrderTest, RepeatedNamesKeepTheirOrder) {
       {"tag", "second", "", ""},
   };
 
-  Client cli(HOST, PORT);
+  Client cli(HOST, port);
   auto res = cli.Post("/repeated", items);
   ASSERT_TRUE(res);
   ASSERT_EQ(2U, values.size());
@@ -1433,7 +1436,8 @@ TEST(MultipartOrderTest, ContentSurvivesContainerGrowth) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -1446,7 +1450,7 @@ TEST(MultipartOrderTest, ContentSurvivesContainerGrowth) {
     items.push_back({name_of(i), content_of(i), "", ""});
   }
 
-  Client cli(HOST, PORT);
+  Client cli(HOST, port);
   auto res = cli.Post("/many", items);
   ASSERT_TRUE(res);
   ASSERT_EQ(part_count, received.size());
@@ -8541,11 +8545,11 @@ TEST(ZstdDecompressor, Decompress) {
 
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
-                         std::string *resp = nullptr) {
+                         std::string *resp = nullptr, int port = PORT) {
   auto error = Error::Success;
 
   auto client_sock = detail::create_client_socket(
-      HOST, "", PORT, AF_UNSPEC, false, false, nullptr,
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
       /*connection_timeout_sec=*/5, 0,
       /*read_timeout_sec=*/5, 0,
       /*write_timeout_sec=*/5, 0, std::string(), error);
@@ -8612,7 +8616,8 @@ TEST(HeadersOrderTest, ReceivedFieldsKeepTheirOrder) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -8630,7 +8635,7 @@ TEST(HeadersOrderTest, ReceivedFieldsKeepTheirOrder) {
                           "\r\n";
 
   std::string res;
-  ASSERT_TRUE(send_request(5, req, &res));
+  ASSERT_TRUE(send_request(5, req, &res, port));
   EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
   EXPECT_EQ("X-First=1 X-Dup=a X-Second=2 X-Dup=b Connection=close ", received);
 }
@@ -8644,7 +8649,8 @@ TEST(HeadersOrderTest, SentFieldsKeepTheirOrder) {
     res.set_content("ok", "text/plain");
   });
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -8653,7 +8659,7 @@ TEST(HeadersOrderTest, SentFieldsKeepTheirOrder) {
 
   svr.wait_until_ready();
 
-  Client cli(HOST, PORT);
+  Client cli(HOST, port);
   auto res = cli.Get("/cookies");
   ASSERT_TRUE(res);
   EXPECT_EQ(2U, res->get_header_value_count("Set-Cookie"));
