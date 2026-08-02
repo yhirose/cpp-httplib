@@ -1316,6 +1316,140 @@ TEST(ParamsOrderTest, ServerSeesTheOrderTheClientSent) {
   EXPECT_EQ("zulu=1 alpha=2 tag=x mike=3 tag=y ", order);
 }
 
+TEST(MultipartOrderTest, PartsKeepTheOrderSent) {
+  Server svr;
+  std::string field_order, file_order;
+  svr.Post("/order", [&](const Request &req, Response &res) {
+    for (const auto &field : req.form.fields) {
+      field_order += field.first + "=" + field.second.content + " ";
+    }
+    for (const auto &file : req.form.files) {
+      file_order += file.first + "=" + file.second.filename + " ";
+    }
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  UploadFormDataItems items = {
+      {"zulu", "1", "", ""},
+      {"alpha", "2", "", ""},
+      {"mike", "3", "", ""},
+      {"zebra", "z", "z.txt", "text/plain"},
+      {"apple", "a", "a.txt", "text/plain"},
+  };
+
+  Client cli(HOST, PORT);
+  auto res = cli.Post("/order", items);
+  ASSERT_TRUE(res);
+  EXPECT_EQ("zulu=1 alpha=2 mike=3 ", field_order);
+  EXPECT_EQ("zebra=z.txt apple=a.txt ", file_order);
+}
+
+TEST(MultipartOrderTest, RepeatedNamesKeepTheirOrder) {
+  Server svr;
+  std::vector<std::string> values;
+  std::string first, second, out_of_range, order;
+  svr.Post("/repeated", [&](const Request &req, Response &res) {
+    values = req.form.get_fields("tag");
+    first = req.form.get_field("tag", 0);
+    second = req.form.get_field("tag", 1);
+    out_of_range = req.form.get_field("tag", 2);
+    for (const auto &field : req.form.fields) {
+      order += field.first + "=" + field.second.content + " ";
+    }
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // "other" sits between the two "tag" parts, so the entries sharing a name are
+  // not adjacent in the container.
+  UploadFormDataItems items = {
+      {"tag", "first", "", ""},
+      {"other", "x", "", ""},
+      {"tag", "second", "", ""},
+  };
+
+  Client cli(HOST, PORT);
+  auto res = cli.Post("/repeated", items);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(2U, values.size());
+  EXPECT_EQ("first", values[0]);
+  EXPECT_EQ("second", values[1]);
+  EXPECT_EQ("first", first);
+  EXPECT_EQ("second", second);
+
+  // std::multimap already kept entries sharing a name in insertion order, so
+  // everything above passes without this change too. The whole traversal is
+  // what tells the two apart: sorting by name would hoist "other" to the front
+  // and the two "tag" parts would end up adjacent.
+  EXPECT_EQ("tag=first other=x tag=second ", order);
+
+  // Advancing past the last entry of a name used to run off the container;
+  // the container's saturating increment makes it return the default instead.
+  EXPECT_EQ("", out_of_range);
+}
+
+TEST(MultipartOrderTest, ContentSurvivesContainerGrowth) {
+  // Server::read_content() keeps a FormFields::iterator alive across the
+  // content callbacks that fill the part it points at. The container is
+  // vector-backed, so a later emplace can reallocate and invalidate an older
+  // iterator; 64 parts grow the vector through seven reallocations, which
+  // checks that every part's content still lands in its own entry.
+  const size_t part_count = 64;
+
+  // One formula for both the parts sent and the values expected back, so the
+  // two cannot drift apart.
+  auto name_of = [](size_t i) { return "f" + std::to_string(i); };
+  auto content_of = [](size_t i) {
+    return std::string(64, static_cast<char>('a' + (i % 26)));
+  };
+
+  Server svr;
+  std::vector<std::pair<std::string, std::string>> received;
+  svr.Post("/many", [&](const Request &req, Response &res) {
+    for (const auto &field : req.form.fields) {
+      received.emplace_back(field.first, field.second.content);
+    }
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  UploadFormDataItems items;
+  for (size_t i = 0; i < part_count; i++) {
+    items.push_back({name_of(i), content_of(i), "", ""});
+  }
+
+  Client cli(HOST, PORT);
+  auto res = cli.Post("/many", items);
+  ASSERT_TRUE(res);
+  ASSERT_EQ(part_count, received.size());
+  for (size_t i = 0; i < part_count; i++) {
+    EXPECT_EQ(name_of(i), received[i].first) << "part " << i;
+    EXPECT_EQ(content_of(i), received[i].second) << "part " << i;
+  }
+}
+
 TEST(ParseMultipartBoundaryTest, DefaultValue) {
   string content_type = "multipart/form-data; boundary=something";
   string boundary;
