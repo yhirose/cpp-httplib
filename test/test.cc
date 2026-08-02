@@ -1235,6 +1235,87 @@ TEST(ParamsToQueryTest, ConvertParamsToQuery) {
   EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1&key2=val2&key3=val3");
 }
 
+// Joins every entry of a Headers or Params into "key=value " so a whole
+// traversal can be compared in one assertion. Both are instantiations of the
+// same insertion-ordered container, so one helper serves both.
+template <typename Map> static std::string entries_to_string(const Map &m) {
+  std::string s;
+  for (const auto &entry : m) {
+    s += entry.first + "=" + entry.second + " ";
+  }
+  return s;
+}
+
+TEST(ParamsOrderTest, QueryIsBuiltInInsertionOrderNotSorted) {
+  // Params used to be a std::multimap, which sorted by name and handed the
+  // caller's query back alphabetised. A client signing its query string could
+  // not reproduce the order it asked for.
+  Params dic;
+  dic.emplace("zulu", "1");
+  dic.emplace("alpha", "2");
+  dic.emplace("mike", "3");
+
+  EXPECT_EQ("zulu=1&alpha=2&mike=3", detail::params_to_query_str(dic));
+  EXPECT_EQ("/p?zulu=1&alpha=2&mike=3", append_query_params("/p", dic));
+}
+
+TEST(ParamsOrderTest, ParsingKeepsTheOrderReceived) {
+  Params dic;
+  detail::parse_query_text("zulu=1&alpha=2&mike=3", dic);
+
+  EXPECT_EQ("zulu=1 alpha=2 mike=3 ", entries_to_string(dic));
+}
+
+TEST(ParamsOrderTest, RepeatedNamesKeepTheirOrder) {
+  Request req;
+  detail::parse_query_text("tag=first&other=x&tag=second&tag=third",
+                           req.params);
+
+  EXPECT_EQ(3U, req.get_param_value_count("tag"));
+  EXPECT_EQ("first", req.get_param_value("tag"));
+  EXPECT_EQ("first", req.get_param_value("tag", 0));
+  EXPECT_EQ("second", req.get_param_value("tag", 1));
+  EXPECT_EQ("third", req.get_param_value("tag", 2));
+  EXPECT_EQ("", req.get_param_value("tag", 3));
+}
+
+TEST(ParamsOrderTest, LookupStaysCaseSensitive) {
+  // Params shares its container with Headers, which matches field names
+  // case-insensitively. Parameter names must not pick that up.
+  Params dic;
+  dic.emplace("Key", "upper");
+  dic.emplace("key", "lower");
+
+  EXPECT_EQ(2U, dic.size());
+  EXPECT_EQ(1U, dic.count("Key"));
+  EXPECT_EQ(1U, dic.count("key"));
+  EXPECT_EQ("upper", dic.find("Key")->second);
+  EXPECT_EQ("lower", dic.find("key")->second);
+  EXPECT_TRUE(dic.find("KEY") == dic.end());
+}
+
+TEST(ParamsOrderTest, ServerSeesTheOrderTheClientSent) {
+  Server svr;
+  std::string order;
+  svr.Get("/order", [&](const Request &req, Response &res) {
+    order = entries_to_string(req.params);
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/order?zulu=1&alpha=2&tag=x&mike=3&tag=y");
+  ASSERT_TRUE(res);
+  EXPECT_EQ("zulu=1 alpha=2 tag=x mike=3 tag=y ", order);
+}
+
 TEST(ParseMultipartBoundaryTest, DefaultValue) {
   string content_type = "multipart/form-data; boundary=something";
   string boundary;
@@ -1377,16 +1458,6 @@ TEST(GetHeaderValueTest, Range) {
   }
 }
 
-// Joins every field of a Headers into "name=value " so a whole traversal can
-// be compared in one assertion.
-static std::string headers_to_string(const Headers &headers) {
-  std::string s;
-  for (const auto &header : headers) {
-    s += header.first + "=" + header.second + " ";
-  }
-  return s;
-}
-
 TEST(HeadersOrderTest, DuplicateFieldsKeepInsertionOrder) {
   // RFC 9110 5.3: the order of fields sharing a name is significant. This used
   // to depend on the standard library (libstdc++ handed back duplicates in
@@ -1422,7 +1493,7 @@ TEST(HeadersOrderTest, TraversalFollowsInsertionOrder) {
 
   EXPECT_EQ("Host=example.com Accept-Encoding=gzip User-Agent=test "
             "Accept-Encoding=deflate ",
-            headers_to_string(headers));
+            entries_to_string(headers));
 }
 
 TEST(HeadersOrderTest, LookupIsCaseInsensitiveAndPicksTheFirstField) {
@@ -1444,7 +1515,7 @@ TEST(HeadersOrderTest, ErasingAnEqualRangeSparesInterleavedFields) {
   auto rng = headers.equal_range("a");
   headers.erase(rng.first, rng.second);
 
-  EXPECT_EQ("X=x Y=y Z=z ", headers_to_string(headers));
+  EXPECT_EQ("X=x Y=y Z=z ", entries_to_string(headers));
 }
 
 TEST(HeadersOrderTest, ErasingByNameKeepsTheRemainingOrder) {
@@ -1453,7 +1524,7 @@ TEST(HeadersOrderTest, ErasingByNameKeepsTheRemainingOrder) {
 
   EXPECT_EQ(3U, headers.erase("A"));
   EXPECT_EQ(0U, headers.count("A"));
-  EXPECT_EQ("B=2 C=4 ", headers_to_string(headers));
+  EXPECT_EQ("B=2 C=4 ", entries_to_string(headers));
 }
 
 TEST(HeadersOrderTest, EmplaceFrontPrepends) {
@@ -1461,7 +1532,7 @@ TEST(HeadersOrderTest, EmplaceFrontPrepends) {
   headers.emplace_front("Host", "example.com");
 
   EXPECT_EQ("Host=example.com Accept=*/* User-Agent=test ",
-            headers_to_string(headers));
+            entries_to_string(headers));
 }
 
 TEST(ParseHeaderValueTest, Range) {
@@ -8397,7 +8468,7 @@ TEST(HeadersOrderTest, ReceivedFieldsKeepTheirOrder) {
   Server svr;
   std::string received;
   svr.Get("/order", [&](const Request &req, Response &res) {
-    received = headers_to_string(req.headers);
+    received = entries_to_string(req.headers);
     res.set_content("ok", "text/plain");
   });
 
