@@ -1,6 +1,16 @@
 name: CIFuzz
 
-on: [pull_request]
+# The fuzzers only build httplib.h and the targets under test/fuzzing, so a
+# pull request that touches neither has nothing for CIFuzz to exercise. Fuzzing
+# is by far the longest job in CI (10 minutes of fuzzing on top of building the
+# OSS-Fuzz image), and skipping it for documentation-only changes keeps the
+# full 600 seconds for the pull requests that do reach the parsers.
+on:
+  pull_request:
+    paths:
+      - 'httplib.h'
+      - 'test/fuzzing/**'
+      - '.github/workflows/cifuzz.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
