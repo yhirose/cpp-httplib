@@ -462,12 +462,23 @@ TEST(ChunkedTransferEncodingTest, DetectsChunkedAsFinalCoding) {
   EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({""})));
   EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({nullptr})));
 
-  // Multiple Transfer-Encoding lines: iteration order for duplicate keys is not
-  // portable, so any line naming chunked is treated as chunked (fail safe).
-  // The result must not depend on the order the lines were added.
+  // RFC 9110 5.3: multiple Transfer-Encoding lines combine, in the order they
+  // were received, into one list. Headers preserves that order, so the answer
+  // is decided by the last coding of the last line and the order the lines
+  // arrived in is significant.
   EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"gzip", "chunked"})));
-  EXPECT_TRUE(detail::is_chunked_transfer_encoding(make({"chunked", "gzip"})));
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"chunked", "gzip"})));
   EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"gzip", "deflate"})));
+
+  // The split can fall anywhere in the list.
+  EXPECT_TRUE(
+      detail::is_chunked_transfer_encoding(make({"deflate", "gzip, chunked"})));
+  EXPECT_FALSE(
+      detail::is_chunked_transfer_encoding(make({"gzip, chunked", "deflate"})));
+
+  // A trailing line naming no coding leaves the list ending in nothing, so it
+  // must not inherit the chunked from the line before it.
+  EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"chunked", ""})));
 }
 
 // Forward declaration: in split builds split.py strips `inline` and moves the
@@ -20951,6 +20962,24 @@ TEST(RequestSmugglingTest, NonFinalChunkedTransferEncodingRejected) {
         << transfer_encoding;
   }
 
+  // RFC 9110 5.3: the codings may also be split across several
+  // Transfer-Encoding lines, which combine in the order they were received.
+  // "chunked" followed by "gzip" therefore ends in gzip and must be rejected
+  // just like the single-line "chunked, gzip" above.
+  {
+    auto req = "POST /test HTTP/1.1\r\n"
+               "Host: localhost\r\n"
+               "Transfer-Encoding: chunked\r\n"
+               "Transfer-Encoding: gzip\r\n"
+               "\r\n"
+               "0\r\n\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")));
+  }
+
   // A sequence ending in chunked stays valid.
   auto req = "POST /test HTTP/1.1\r\n"
              "Host: localhost\r\n"
@@ -20962,6 +20991,20 @@ TEST(RequestSmugglingTest, NonFinalChunkedTransferEncodingRejected) {
   std::string response;
   ASSERT_TRUE(send_request(1, req, &response));
   EXPECT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
+
+  // ...including when it is spread over several lines.
+  auto split_req = "POST /test HTTP/1.1\r\n"
+                   "Host: localhost\r\n"
+                   "Transfer-Encoding: gzip\r\n"
+                   "Transfer-Encoding: chunked\r\n"
+                   "Connection: close\r\n"
+                   "\r\n"
+                   "0\r\n\r\n";
+
+  std::string split_response;
+  ASSERT_TRUE(send_request(1, split_req, &split_response));
+  EXPECT_EQ("HTTP/1.1 200 OK",
+            split_response.substr(0, split_response.find("\r\n")));
 }
 
 // Regression for issue #2450: a DELETE without Content-Length on a
