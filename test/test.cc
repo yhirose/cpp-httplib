@@ -9635,6 +9635,39 @@ TEST(MountTest, Unmount) {
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
+TEST(MountTest, PathSegmentBoundary) {
+  Server svr;
+
+  svr.set_mount_point("/mount2", "./www2");
+  svr.set_mount_point("/", "./www");
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  auto res = cli.Get("/mount2/dir/test.html");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // "/mount2" must not match part-way through a path segment.
+  res = cli.Get("/mount2dir/test.html");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+
+  // A mount point ending in '/' keeps matching every path below it.
+  res = cli.Get("/dir/test.html");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST(MountTest, Redicect) {
   Server svr;
 
