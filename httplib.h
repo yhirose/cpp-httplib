@@ -12448,8 +12448,14 @@ inline bool Server::read_content_core(
 
 inline bool Server::handle_file_request(Request &req, Response &res) {
   for (const auto &entry : base_dirs_) {
-    // Prefix match
-    if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
+    // Prefix match, on a path segment boundary. A mount point of "/mount"
+    // covers "/mount" and "/mount/...", but must not swallow "/mountdir/...".
+    // One that already ends in '/' (the root mount among them) carries its own
+    // boundary; set_mount_point() guarantees the mount point is not empty.
+    if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point) &&
+        (entry.mount_point.back() == '/' ||
+         req.path.size() == entry.mount_point.size() ||
+         req.path[entry.mount_point.size()] == '/')) {
       std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
       if (detail::is_valid_path(sub_path)) {
         auto path = entry.base_dir + sub_path;
