@@ -1,5 +1,5 @@
 //
-//  sample.cc
+//  server.cc
 //
 //  Copyright (c) 2026 Yuji Hirose. All rights reserved.
 //  MIT License
