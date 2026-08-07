@@ -151,8 +151,15 @@ explicit WebSocketClient(const std::string &scheme_host_port_path,
 // Check if the URL was parsed successfully
 bool is_valid() const;
 
-// Connect (performs HTTP upgrade handshake)
-bool connect();
+// Connect (performs HTTP upgrade handshake). The returned Result is truthy
+// only when the handshake fully succeeded; on failure it describes what went
+// wrong:
+//   res.error()             httplib::Error identifying the failing layer
+//   res.status()            HTTP status of the upgrade response (-1 if none)
+//   res.headers()           headers of the upgrade response
+//   res.ssl_error()         TLS error detail (wss://, SSL builds only)
+//   res.ssl_backend_error() backend-specific TLS error code (SSL builds only)
+Result connect();
 
 // Get the subprotocol selected by the server (empty if none)
 const std::string &subprotocol() const;
@@ -218,6 +225,26 @@ if (ws.connect()) {
         std::cout << msg << std::endl; // "echo: hello", "echo: world"
     }
     // read() returns false when the server closes the connection
+}
+```
+
+### Inspecting Connection Failures
+
+`connect()` returns a `Result` that tells you why a connection attempt failed.
+`error()` distinguishes network problems (`Connection`, `ConnectionTimeout`),
+TLS problems (`SSLConnection`, `SSLServerVerification`,
+`SSLServerHostnameVerification`), and upgrade rejections
+(`WebSocketHandshake`). When the server answered with something other than
+`101 Switching Protocols`, `status()` and `headers()` carry that response:
+
+```cpp
+auto res = ws.connect();
+if (!res) {
+    std::cerr << "connect failed: " << httplib::to_string(res.error()) << std::endl;
+    if (res.status() != -1) {
+        // The server responded but refused the upgrade (e.g. 401, 404)
+        std::cerr << "HTTP status: " << res.status() << std::endl;
+    }
 }
 ```
 

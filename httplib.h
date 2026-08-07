@@ -1805,6 +1805,7 @@ enum class Error {
   HTTPParsing,
   InvalidRangeHeader,
   UnsupportedContentEncoding,
+  WebSocketHandshake,
 
   // For internal use only
   SSLPeerCouldBeClosed_,
@@ -4202,6 +4203,50 @@ enum class CloseStatus : uint16_t {
 
 enum ReadResult : int { Fail = 0, Text = 1, Binary = 2 };
 
+// Result of WebSocketClient::connect(). Truthy only when the WebSocket
+// upgrade handshake fully succeeded. On failure error() identifies the
+// failing layer; status()/headers() expose the server's upgrade response
+// when one was received (status() is -1 otherwise).
+class Result {
+public:
+  Result() = default;
+  Result(Error err, int status, Headers &&headers)
+      : err_(err), status_(status), headers_(std::move(headers)) {}
+
+  explicit operator bool() const { return err_ == Error::Success; }
+  Error error() const { return err_; }
+
+  // Upgrade response info
+  int status() const { return status_; }
+  const Headers &headers() const { return headers_; }
+  std::string get_header_value(const std::string &key,
+                               const char *def = "") const {
+    return detail::get_header_value(headers_, key, def, 0);
+  }
+  bool has_header(const std::string &key) const {
+    return headers_.find(key) != headers_.end();
+  }
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  Result(Error err, int status, Headers &&headers, int ssl_error,
+         uint64_t ssl_backend_error)
+      : err_(err), status_(status), headers_(std::move(headers)),
+        ssl_error_(ssl_error), ssl_backend_error_(ssl_backend_error) {}
+
+  int ssl_error() const { return ssl_error_; }
+  uint64_t ssl_backend_error() const { return ssl_backend_error_; }
+#endif
+
+private:
+  Error err_ = Error::Unknown; // a default-constructed Result is falsy
+  int status_ = -1;
+  Headers headers_;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  int ssl_error_ = 0;
+  uint64_t ssl_backend_error_ = 0;
+#endif
+};
+
 class WebSocket {
 public:
   WebSocket(const WebSocket &) = delete;
@@ -4268,7 +4313,7 @@ public:
 
   bool is_valid() const;
 
-  bool connect();
+  Result connect();
   ReadResult read(std::string &msg);
   bool send(const std::string &data);
   bool send(const char *data, size_t len);
@@ -4320,7 +4365,8 @@ public:
 
 private:
   void shutdown_and_close();
-  bool create_stream(std::unique_ptr<Stream> &strm);
+  bool create_stream(std::unique_ptr<Stream> &strm, Error &error,
+                     int &ssl_error, uint64_t &ssl_backend_error);
   void prepare_default_headers(Request &req);
 
   std::string host_;
@@ -7716,42 +7762,94 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   return true;
 }
 
+inline bool parse_status_line(const char *line, std::string &version,
+                              int &status, std::string &reason) {
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
+#else
+  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
+#endif
+
+  std::cmatch m;
+  if (!std::regex_match(line, m, re)) { return false; }
+  version = std::string(m[1]);
+  status = std::stoi(std::string(m[2]));
+  reason = std::string(m[3]);
+  return true;
+}
+
+// Everything WebSocketClient::connect() reports about the upgrade exchange.
+// status stays -1 until a status line is parsed, mirroring stream::Result.
+struct WebSocketUpgradeResponse {
+  Error error = Error::Success;
+  int status = -1;
+  Headers headers;
+  std::string selected_subprotocol;
+};
+
 inline bool read_websocket_upgrade_response(Stream &strm,
                                             const std::string &expected_accept,
-                                            std::string &selected_subprotocol) {
+                                            WebSocketUpgradeResponse &upgrade) {
   // Read status line
   const auto bufsiz = 2048;
   char buf[bufsiz];
   stream_line_reader line_reader(strm, buf, bufsiz);
-  if (!line_reader.getline()) { return false; }
+  if (!line_reader.getline()) {
+    upgrade.error = Error::Read;
+    return false;
+  }
 
-  // Check for "HTTP/1.1 101"
-  auto line = std::string(line_reader.ptr(), line_reader.size());
-  if (line.find("HTTP/1.1 101") == std::string::npos) { return false; }
+  std::string version;
+  std::string reason;
+  if (!parse_status_line(line_reader.ptr(), version, upgrade.status, reason)) {
+    upgrade.error = Error::WebSocketHandshake;
+    return false;
+  }
 
-  // Parse headers using existing read_headers
-  Headers headers;
-  if (!read_headers(strm, headers)) { return false; }
+  // Read the headers even for a rejection so the caller can see why the
+  // server refused the upgrade. A non-101 response may carry a body; it is
+  // deliberately left unread since the caller closes the socket right away.
+  if (!read_headers(strm, upgrade.headers)) {
+    upgrade.error = Error::Read;
+    return false;
+  }
+
+  const auto &headers = upgrade.headers;
+
+  if (upgrade.status != StatusCode::SwitchingProtocol_101) {
+    upgrade.error = Error::WebSocketHandshake;
+    return false;
+  }
 
   // Verify Upgrade: websocket (case-insensitive)
   auto upgrade_it = headers.find("Upgrade");
-  if (upgrade_it == headers.end()) { return false; }
-  auto upgrade_val = case_ignore::to_lower(upgrade_it->second);
-  if (upgrade_val != "websocket") { return false; }
+  if (upgrade_it == headers.end() ||
+      case_ignore::to_lower(upgrade_it->second) != "websocket") {
+    upgrade.error = Error::WebSocketHandshake;
+    return false;
+  }
 
   // Verify Connection header contains "Upgrade" (case-insensitive)
   auto connection_it = headers.find("Connection");
-  if (connection_it == headers.end()) { return false; }
-  auto connection_val = case_ignore::to_lower(connection_it->second);
-  if (connection_val.find("upgrade") == std::string::npos) { return false; }
+  if (connection_it == headers.end() ||
+      case_ignore::to_lower(connection_it->second).find("upgrade") ==
+          std::string::npos) {
+    upgrade.error = Error::WebSocketHandshake;
+    return false;
+  }
 
   // Verify Sec-WebSocket-Accept header value
   auto it = headers.find("Sec-WebSocket-Accept");
-  if (it == headers.end() || it->second != expected_accept) { return false; }
+  if (it == headers.end() || it->second != expected_accept) {
+    upgrade.error = Error::WebSocketHandshake;
+    return false;
+  }
 
   // Extract negotiated subprotocol
   auto proto_it = headers.find("Sec-WebSocket-Protocol");
-  if (proto_it != headers.end()) { selected_subprotocol = proto_it->second; }
+  if (proto_it != headers.end()) {
+    upgrade.selected_subprotocol = proto_it->second;
+  }
 
   return true;
 }
@@ -9501,7 +9599,7 @@ inline bool is_field_valid(const std::string &name, const std::string &value) {
 } // namespace fields
 
 inline bool perform_websocket_handshake(Stream &strm, Request &req,
-                                        std::string &selected_subprotocol) {
+                                        WebSocketUpgradeResponse &upgrade) {
   // Generate random Sec-WebSocket-Key
   thread_local std::mt19937 rng(std::random_device{}());
   std::string key_bytes(16, '\0');
@@ -9526,20 +9624,26 @@ inline bool perform_websocket_handshake(Stream &strm, Request &req,
   // and would emit one small write per header.
   BufferStream bstrm;
 
-  if (write_request_line(bstrm, req.method, req.path) < 0) { return false; }
+  if (write_request_line(bstrm, req.method, req.path) < 0) {
+    upgrade.error = Error::Write;
+    return false;
+  }
 
   auto error = Error::Success;
   if (!check_and_write_headers(bstrm, req.headers, write_headers, error)) {
+    upgrade.error = error;
     return false;
   }
 
   const auto &data = bstrm.get_buffer();
-  if (!write_data(strm, data.data(), data.size())) { return false; }
+  if (!write_data(strm, data.data(), data.size())) {
+    upgrade.error = Error::Write;
+    return false;
+  }
 
   // Verify 101 response and Sec-WebSocket-Accept header
   auto expected_accept = websocket_accept_key(client_key);
-  return read_websocket_upgrade_response(strm, expected_accept,
-                                         selected_subprotocol);
+  return read_websocket_upgrade_response(strm, expected_accept, upgrade);
 }
 
 inline bool is_ip_address(const std::string &host) {
@@ -10322,6 +10426,7 @@ inline std::string to_string(const Error error) {
   case Error::HTTPParsing: return "HTTP parsing failed";
   case Error::InvalidRangeHeader: return "Invalid Range header";
   case Error::UnsupportedContentEncoding: return "Unsupported Content-Encoding";
+  case Error::WebSocketHandshake: return "WebSocket handshake failed";
   default: break;
   }
 
@@ -13713,29 +13818,20 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
   if (!line_reader.getline()) { return false; }
 
-#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
-  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
-#else
-  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
-#endif
-
-  std::cmatch m;
-  if (!std::regex_match(line_reader.ptr(), m, re)) {
+  if (!detail::parse_status_line(line_reader.ptr(), res.version, res.status,
+                                 res.reason)) {
     return req.method == "CONNECT";
   }
-  res.version = std::string(m[1]);
-  res.status = std::stoi(std::string(m[2]));
-  res.reason = std::string(m[3]);
 
   // Ignore '100 Continue' (only when not using Expect: 100-continue explicitly)
   while (skip_100_continue && res.status == StatusCode::Continue_100) {
     if (!line_reader.getline()) { return false; } // CRLF
     if (!line_reader.getline()) { return false; } // next response line
 
-    if (!std::regex_match(line_reader.ptr(), m, re)) { return false; }
-    res.version = std::string(m[1]);
-    res.status = std::stoi(std::string(m[2]));
-    res.reason = std::string(m[3]);
+    if (!detail::parse_status_line(line_reader.ptr(), res.version, res.status,
+                                   res.reason)) {
+      return false;
+    }
   }
 
   return true;
@@ -21351,7 +21447,9 @@ inline void WebSocketClient::shutdown_and_close() {
   }
 }
 
-inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm) {
+inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
+                                           Error &error, int &ssl_error,
+                                           uint64_t &ssl_backend_error) {
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl_) {
     // A plain flag rather than SSLClient::load_certs()'s call_once: connect()
@@ -21365,10 +21463,14 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm) {
       certs_loaded_ = true;
     }
 
+    detail::ClientTlsSessionError tls_error;
     if (!detail::setup_client_tls_session(host_, tls_ctx_, tls_session_, sock_,
                                           server_certificate_verification_,
-                                          read_timeout_sec_,
-                                          read_timeout_usec_)) {
+                                          read_timeout_sec_, read_timeout_usec_,
+                                          &tls_error)) {
+      error = tls_error.error;
+      ssl_error = tls_error.ssl_error;
+      ssl_backend_error = tls_error.backend_error;
       return false;
     }
 
@@ -21377,6 +21479,10 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm) {
         write_timeout_sec_, write_timeout_usec_));
     return true;
   }
+#else
+  (void)error;
+  (void)ssl_error;
+  (void)ssl_backend_error;
 #endif
   strm = std::unique_ptr<Stream>(
       new detail::SocketStream(sock_, read_timeout_sec_, read_timeout_usec_,
@@ -21399,8 +21505,8 @@ inline void WebSocketClient::prepare_default_headers(Request &req) {
   detail::add_default_user_agent_header(req);
 }
 
-inline bool WebSocketClient::connect() {
-  if (!is_valid_) { return false; }
+inline Result WebSocketClient::connect() {
+  if (!is_valid_) { return Result{Error::Connection, -1, Headers{}}; }
   shutdown_and_close();
 
   // Check is custom IP or hostname specified for host_
@@ -21408,19 +21514,29 @@ inline bool WebSocketClient::connect() {
   std::string ip;
   detail::apply_addr_map(addr_map_, host_, connect_host, ip);
 
-  Error error;
+  auto error = Error::Success;
   sock_ = detail::create_client_socket(
       connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
       socket_options_, connection_timeout_sec_, connection_timeout_usec_,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
       write_timeout_usec_, interface_, error);
 
-  if (sock_ == INVALID_SOCKET) { return false; }
+  if (sock_ == INVALID_SOCKET) {
+    if (error == Error::Success) { error = Error::Connection; }
+    return Result{error, -1, Headers{}};
+  }
 
   std::unique_ptr<Stream> strm;
-  if (!create_stream(strm)) {
+  auto stream_error = Error::SSLConnection;
+  int ssl_error = 0;
+  uint64_t ssl_backend_error = 0;
+  if (!create_stream(strm, stream_error, ssl_error, ssl_backend_error)) {
     shutdown_and_close();
-    return false;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+    return Result{stream_error, -1, Headers{}, ssl_error, ssl_backend_error};
+#else
+    return Result{stream_error, -1, Headers{}};
+#endif
   }
 
   Request req;
@@ -21429,17 +21545,17 @@ inline bool WebSocketClient::connect() {
   req.headers = headers_;
   prepare_default_headers(req);
 
-  std::string selected_subprotocol;
-  if (!detail::perform_websocket_handshake(*strm, req, selected_subprotocol)) {
+  detail::WebSocketUpgradeResponse upgrade;
+  if (!detail::perform_websocket_handshake(*strm, req, upgrade)) {
     shutdown_and_close();
-    return false;
+    return Result{upgrade.error, upgrade.status, std::move(upgrade.headers)};
   }
-  subprotocol_ = std::move(selected_subprotocol);
+  subprotocol_ = std::move(upgrade.selected_subprotocol);
 
   ws_ = std::unique_ptr<WebSocket>(new WebSocket(std::move(strm), req, false,
                                                  websocket_ping_interval_sec_,
                                                  websocket_max_missed_pongs_));
-  return true;
+  return Result{Error::Success, upgrade.status, std::move(upgrade.headers)};
 }
 
 inline ReadResult WebSocketClient::read(std::string &msg) {

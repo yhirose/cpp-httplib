@@ -19896,7 +19896,11 @@ TEST(WebSocketTest, ConnectAndDisconnect) {
   svr.wait_until_ready();
 
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
-  ASSERT_TRUE(client.connect());
+  auto res = client.connect();
+  ASSERT_TRUE(res);
+  EXPECT_EQ(Error::Success, res.error());
+  EXPECT_EQ(StatusCode::SwitchingProtocol_101, res.status());
+  EXPECT_TRUE(res.has_header("Sec-WebSocket-Accept"));
   EXPECT_TRUE(client.is_open());
   client.close();
   EXPECT_FALSE(client.is_open());
@@ -19972,7 +19976,23 @@ TEST(WebSocketTest, UnsupportedScheme) {
 TEST(WebSocketTest, ConnectWhenInvalid) {
   ws::WebSocketClient ws("not a valid url");
   EXPECT_FALSE(ws.is_valid());
-  EXPECT_FALSE(ws.connect());
+  auto res = ws.connect();
+  EXPECT_FALSE(res);
+  EXPECT_EQ(Error::Connection, res.error());
+  EXPECT_EQ(-1, res.status());
+}
+
+TEST(WebSocketTest, ConnectRefusedReportsError) {
+  // Grab a port that is free, then close it again so nothing listens there
+  Server svr;
+  auto port = svr.bind_to_any_port(HOST);
+  svr.stop();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+  auto res = client.connect();
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::Connection, res.error());
+  EXPECT_EQ(-1, res.status());
 }
 
 TEST(WebSocketTest, DefaultPort) {
@@ -20368,7 +20388,10 @@ TEST_F(WebSocketIntegrationTest, MaxPayloadAtLimit) {
 TEST_F(WebSocketIntegrationTest, ConnectToInvalidPath) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
                              "/nonexistent");
-  EXPECT_FALSE(client.connect());
+  auto res = client.connect();
+  EXPECT_FALSE(res);
+  EXPECT_EQ(Error::WebSocketHandshake, res.error());
+  EXPECT_EQ(StatusCode::NotFound_404, res.status());
   EXPECT_FALSE(client.is_open());
 }
 
@@ -20955,7 +20978,11 @@ TEST_F(WebSocketSSLCATest, WrongCustomCaFailsVerification) {
   read_file(CLIENT_CA_CERT_FILE, cert);
   client.load_ca_cert_store(cert.c_str(), cert.size());
 
-  ASSERT_FALSE(client.connect());
+  auto res = client.connect();
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+  EXPECT_EQ(-1, res.status());
+  EXPECT_NE(0u, res.ssl_backend_error());
 }
 
 // The same CA as a file path rather than PEM in memory
@@ -21090,7 +21117,10 @@ TEST_F(WebSocketSSLDnsHostTest, TrustedChainWrongNameFails) {
   ws::WebSocketClient client(url());
   client.set_ca_cert_path(SERVER_CERT_FILE);
 
-  ASSERT_FALSE(client.connect());
+  auto res = client.connect();
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerHostnameVerification, res.error());
+  EXPECT_EQ(-1, res.status());
 }
 
 // A CA that did not sign the server certificate fails the chain, even though
