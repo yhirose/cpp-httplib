@@ -3233,8 +3233,6 @@ private:
   // Used to keep custom CA configuration exclusive with system CA loading.
   bool ca_cert_store_set_ = false;
 
-  long verify_result_ = 0;
-
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
@@ -4775,7 +4773,6 @@ void set_verify_client(ctx_t ctx, bool require);
 session_t create_session(ctx_t ctx, socket_t sock);
 void free_session(session_t session);
 bool set_sni(session_t session, const char *hostname);
-bool set_hostname(session_t session, const char *hostname);
 
 // Handshake (non-blocking capable)
 TlsError connect(session_t session);
@@ -10026,50 +10023,143 @@ inline bool load_client_ca_config(tls::ctx_t ctx,
   return ret;
 }
 
-inline bool setup_client_tls_session(const std::string &host, tls::ctx_t ctx,
-                                     tls::session_t &session, socket_t sock,
-                                     bool server_certificate_verification,
-                                     time_t timeout_sec, time_t timeout_usec) {
+// The parts of session setup that only SSLClient needs. WebSocketClient takes
+// the defaults, which is what keeps the two clients on one implementation.
+struct ClientTlsSessionOptions {
+  // SSLClient exposes this independently of certificate verification;
+  // WebSocketClient always checks the identity when it verifies the chain.
+  bool server_hostname_verification = true;
+  std::function<SSLVerifierResponse(tls::session_t)> session_verifier;
+  // When non-null, guards session creation against concurrent use of the
+  // context. A WebSocketClient is not safe to use from several threads to
+  // begin with, so it passes nothing.
+  std::mutex *ctx_mutex = nullptr;
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  // The caller decides whether Schannel has anything to say about this
+  // connection; see SSLClient::initialize_ssl().
+  bool windows_cert_verification = false;
+#endif
+};
+
+// Filled in on failure for callers that report error details.
+struct ClientTlsSessionError {
+  Error error = Error::Success;
+  int ssl_error = 0;
+  uint64_t backend_error = 0;
+};
+
+// Establishes a client TLS session on an already connected socket. On failure
+// the session is left for the caller to free: SSLClient frees it right away,
+// WebSocketClient keeps it in a member that shutdown_and_close() cleans up.
+inline bool setup_client_tls_session(
+    const std::string &host, tls::ctx_t ctx, tls::session_t &session,
+    socket_t sock, bool server_certificate_verification, time_t timeout_sec,
+    time_t timeout_usec, ClientTlsSessionError *out_error = nullptr,
+    const ClientTlsSessionOptions &options = ClientTlsSessionOptions()) {
   using namespace tls;
 
-  if (!ctx) { return false; }
+  auto fail = [&](Error error, int ssl_error, uint64_t backend_error) {
+    if (out_error) {
+      out_error->error = error;
+      out_error->ssl_error = ssl_error;
+      out_error->backend_error = backend_error;
+    }
+    return false;
+  };
 
-  bool is_ip = is_ip_address(host);
+  if (!ctx) {
+    session = nullptr;
+    return fail(Error::SSLConnection, 0, 0);
+  }
 
 #if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
-  // Chain verification happens during the handshake even for IP hosts; the
-  // certificate identity is verified post-handshake via verify_hostname()
+  // Mbed TLS and wolfSSL need the verification mode set explicitly; OpenSSL
+  // uses SSL_VERIFY_NONE and does all verification post-handshake. Chain
+  // verification happens during the handshake even for IP hosts; the
+  // certificate identity is verified post-handshake via verify_hostname().
   set_verify_client(ctx, server_certificate_verification);
 #endif
 
-  session = create_session(ctx, sock);
-  if (!session) { return false; }
+  {
+    std::unique_lock<std::mutex> guard;
+    if (options.ctx_mutex) {
+      guard = std::unique_lock<std::mutex>(*options.ctx_mutex);
+    }
+    session = create_session(ctx, sock);
+  }
+  if (!session) { return fail(Error::SSLConnection, 0, get_error()); }
 
   // RFC 6066: SNI must not be set for IP addresses. On Mbed TLS and wolfSSL
-  // set_hostname also sets SNI, so it must be skipped for IP hosts as well;
-  // their identity is checked post-handshake below instead.
-  if (!is_ip) {
-    if (server_certificate_verification) {
-      set_hostname(session, host.c_str());
-    } else {
-      set_sni(session, host.c_str());
+  // set_sni also turns on hostname verification during the handshake, so it
+  // must be skipped for IP hosts as well; their identity is checked
+  // post-handshake below instead.
+  if (!is_ip_address(host)) {
+    if (!set_sni(session, host.c_str())) {
+      return fail(Error::SSLConnection, 0, get_error());
     }
   }
 
-  if (!connect_nonblocking(session, sock, timeout_sec, timeout_usec, nullptr)) {
-    return false;
+  TlsError tls_err;
+  if (!connect_nonblocking(session, sock, timeout_sec, timeout_usec,
+                           &tls_err)) {
+    auto error = Error::SSLConnection;
+    if (tls_err.code == ErrorCode::CertVerifyFailed) {
+      error = Error::SSLServerVerification;
+    } else if (tls_err.code == ErrorCode::HostnameMismatch) {
+      error = Error::SSLServerHostnameVerification;
+    }
+    return fail(error, static_cast<int>(tls_err.code), tls_err.backend_code);
   }
 
-  if (server_certificate_verification) {
-    if (get_verify_result(session) != 0) { return false; }
+  auto verification_status = SSLVerifierResponse::NoDecisionMade;
+  if (options.session_verifier) {
+    verification_status = options.session_verifier(session);
+  }
+
+  if (verification_status == SSLVerifierResponse::CertificateRejected) {
+    return fail(Error::SSLServerVerification, 0, get_error());
+  }
+
+  if (verification_status == SSLVerifierResponse::NoDecisionMade &&
+      server_certificate_verification) {
+    auto verify_result = get_verify_result(session);
+    if (verify_result != 0) {
+      return fail(Error::SSLServerVerification, 0,
+                  static_cast<uint64_t>(verify_result));
+    }
+
+    auto server_cert = get_peer_cert(session);
+    if (!server_cert) {
+      return fail(Error::SSLServerVerification, 0, get_error());
+    }
+    auto cert_guard = detail::scope_exit([&] { free_cert(server_cert); });
 
     // Identity check against the peer certificate, post-handshake for all
-    // backends (same as SSLClient). For IP hosts this is the only identity
-    // verification since no hostname is bound during the handshake.
-    auto server_cert = get_peer_cert(session);
-    if (!server_cert) { return false; }
-    auto cert_guard = detail::scope_exit([&] { free_cert(server_cert); });
-    if (!verify_hostname(server_cert, host.c_str())) { return false; }
+    // backends. For IP hosts this is the only identity verification, since no
+    // hostname is bound during the handshake.
+    if (options.server_hostname_verification) {
+      if (!verify_hostname(server_cert, host.c_str())) {
+        return fail(Error::SSLServerHostnameVerification, 0,
+                    hostname_mismatch_code());
+      }
+    }
+
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+    // Additional Windows Schannel verification.
+    // This provides real-time certificate validation with Windows Update
+    // integration, working with both OpenSSL and MbedTLS backends.
+    if (options.windows_cert_verification) {
+      std::vector<unsigned char> der;
+      if (get_cert_der(server_cert, der)) {
+        uint64_t wincrypt_error = 0;
+        if (!verify_cert_with_windows_schannel(
+                der, host, options.server_hostname_verification,
+                wincrypt_error)) {
+          return fail(Error::SSLServerVerification, 0, wincrypt_error);
+        }
+      }
+    }
+#endif
   }
 
   return true;
@@ -17106,8 +17196,6 @@ inline bool SSLClient::load_certs() {
 }
 
 inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
-  using namespace tls;
-
   // Load CA certificates if server verification is enabled
   if (server_certificate_verification_) {
     if (!load_certs()) {
@@ -17117,132 +17205,38 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     }
   }
 
-  bool is_ip = detail::is_ip_address(host_);
-
-#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
-  // MbedTLS/wolfSSL need explicit verification mode (OpenSSL uses
-  // SSL_VERIFY_NONE by default and performs all verification post-handshake).
-  // Chain verification happens during the handshake even for IP hosts; the
-  // certificate identity is verified post-handshake via verify_hostname().
-  set_verify_client(ctx_, server_certificate_verification_);
+  detail::ClientTlsSessionOptions options;
+  options.server_hostname_verification = server_hostname_verification_;
+  options.session_verifier = session_verifier_;
+  options.ctx_mutex = &ctx_mutex_;
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  // Skip Schannel when a custom CA cert is specified, as the Windows
+  // certificate store would not know about user-provided CA certificates.
+  // Also skip when system CA trust is explicitly disabled.
+  options.windows_cert_verification =
+      enable_windows_cert_verification_ &&
+      system_ca_mode_ != SystemCAMode::Disabled && ca_cert_file_path_.empty() &&
+      ca_cert_dir_path_.empty() && ca_cert_pem_.empty() && !ca_cert_store_set_;
 #endif
 
-  // Create TLS session
-  session_t session = nullptr;
-  {
-    std::lock_guard<std::mutex> guard(ctx_mutex_);
-    session = create_session(ctx_, socket.sock);
-  }
-
-  if (!session) {
-    error = Error::SSLConnection;
-    last_backend_error_ = get_error();
-    return false;
-  }
+  tls::session_t session = nullptr;
 
   // Use scope_exit to ensure session is freed on error paths
   bool success = false;
   auto session_guard = detail::scope_exit([&] {
-    if (!success) { free_session(session); }
+    if (!success) { tls::free_session(session); }
   });
 
-  // Set SNI extension (skip for IP addresses per RFC 6066).
-  // On MbedTLS, set_sni also enables hostname verification internally.
-  // On OpenSSL, set_sni only sets SNI; verification is done post-handshake.
-  if (!is_ip) {
-    if (!set_sni(session, host_.c_str())) {
-      error = Error::SSLConnection;
-      last_backend_error_ = get_error();
-      return false;
-    }
-  }
-
-  // Perform non-blocking TLS handshake with timeout
-  TlsError tls_err;
-  if (!connect_nonblocking(session, socket.sock, connection_timeout_sec_,
-                           connection_timeout_usec_, &tls_err)) {
-    last_ssl_error_ = static_cast<int>(tls_err.code);
-    last_backend_error_ = tls_err.backend_code;
-    if (tls_err.code == ErrorCode::CertVerifyFailed) {
-      error = Error::SSLServerVerification;
-    } else if (tls_err.code == ErrorCode::HostnameMismatch) {
-      error = Error::SSLServerHostnameVerification;
-    } else {
-      error = Error::SSLConnection;
-    }
+  detail::ClientTlsSessionError tls_error;
+  if (!detail::setup_client_tls_session(
+          host_, ctx_, session, socket.sock, server_certificate_verification_,
+          connection_timeout_sec_, connection_timeout_usec_, &tls_error,
+          options)) {
+    error = tls_error.error;
+    last_ssl_error_ = tls_error.ssl_error;
+    last_backend_error_ = tls_error.backend_error;
     output_error_log(error, nullptr);
     return false;
-  }
-
-  // Post-handshake session verifier callback
-  auto verification_status = SSLVerifierResponse::NoDecisionMade;
-  if (session_verifier_) { verification_status = session_verifier_(session); }
-
-  if (verification_status == SSLVerifierResponse::CertificateRejected) {
-    last_backend_error_ = get_error();
-    error = Error::SSLServerVerification;
-    output_error_log(error, nullptr);
-    return false;
-  }
-
-  // Default server certificate verification
-  if (verification_status == SSLVerifierResponse::NoDecisionMade &&
-      server_certificate_verification_) {
-    verify_result_ = tls::get_verify_result(session);
-    if (verify_result_ != 0) {
-      last_backend_error_ = static_cast<uint64_t>(verify_result_);
-      error = Error::SSLServerVerification;
-      output_error_log(error, nullptr);
-      return false;
-    }
-
-    auto server_cert = get_peer_cert(session);
-    if (!server_cert) {
-      last_backend_error_ = get_error();
-      error = Error::SSLServerVerification;
-      output_error_log(error, nullptr);
-      return false;
-    }
-    auto cert_guard = detail::scope_exit([&] { free_cert(server_cert); });
-
-    // Hostname verification (post-handshake for all cases).
-    // On OpenSSL, verification is always post-handshake (SSL_VERIFY_NONE).
-    // On MbedTLS, set_sni already enabled hostname verification during
-    // handshake for non-IP hosts, but this check is still needed for IP
-    // addresses where SNI is not set.
-    if (server_hostname_verification_) {
-      if (!verify_hostname(server_cert, host_.c_str())) {
-        last_backend_error_ = hostname_mismatch_code();
-        error = Error::SSLServerHostnameVerification;
-        output_error_log(error, nullptr);
-        return false;
-      }
-    }
-
-#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-    // Additional Windows Schannel verification.
-    // This provides real-time certificate validation with Windows Update
-    // integration, working with both OpenSSL and MbedTLS backends.
-    // Skip when a custom CA cert is specified, as the Windows certificate
-    // store would not know about user-provided CA certificates. Also skip
-    // when system CA trust is explicitly disabled.
-    if (enable_windows_cert_verification_ &&
-        system_ca_mode_ != SystemCAMode::Disabled &&
-        ca_cert_file_path_.empty() && ca_cert_dir_path_.empty() &&
-        ca_cert_pem_.empty() && !ca_cert_store_set_) {
-      std::vector<unsigned char> der;
-      if (get_cert_der(server_cert, der)) {
-        uint64_t wincrypt_error = 0;
-        if (!detail::verify_cert_with_windows_schannel(
-                der, host_, server_hostname_verification_, wincrypt_error)) {
-          last_backend_error_ = wincrypt_error;
-          error = Error::SSLServerVerification;
-          output_error_log(error, nullptr);
-          return false;
-        }
-      }
-    }
-#endif
   }
 
   success = true;
@@ -17972,32 +17966,6 @@ inline bool set_sni(session_t session, const char *hostname) {
   return SSL_ctrl(ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
                   static_cast<void *>(const_cast<char *>(hostname))) == 1;
 #endif
-}
-
-inline bool set_hostname(session_t session, const char *hostname) {
-  if (!session || !hostname) return false;
-
-  auto ssl = static_cast<SSL *>(session);
-
-  // Enable hostname verification
-  auto param = SSL_get0_param(ssl);
-  if (!param) return false;
-
-  if (detail::is_ip_address(hostname)) {
-    // RFC 6066: SNI must not be set for IP addresses; verify against the
-    // certificate's IP SANs instead of its DNS names
-    if (X509_VERIFY_PARAM_set1_ip_asc(param, hostname) != 1) { return false; }
-  } else {
-    // Set SNI (Server Name Indication)
-    if (!set_sni(session, hostname)) { return false; }
-
-    X509_VERIFY_PARAM_set_hostflags(param,
-                                    X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-    if (X509_VERIFY_PARAM_set1_host(param, hostname, 0) != 1) { return false; }
-  }
-
-  SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
-  return true;
 }
 
 inline TlsError connect(session_t session) {
@@ -19224,11 +19192,6 @@ inline bool set_sni(session_t session, const char *hostname) {
   return true;
 }
 
-inline bool set_hostname(session_t session, const char *hostname) {
-  // In Mbed TLS, set_hostname also sets up hostname verification
-  return set_sni(session, hostname);
-}
-
 inline TlsError connect(session_t session) {
   TlsError err;
   if (!session) {
@@ -20379,11 +20342,6 @@ inline bool set_sni(session_t session, const char *hostname) {
 
   wsession->hostname = hostname;
   return true;
-}
-
-inline bool set_hostname(session_t session, const char *hostname) {
-  // In wolfSSL, set_hostname also sets up hostname verification
-  return set_sni(session, hostname);
 }
 
 inline TlsError connect(session_t session) {

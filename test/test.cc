@@ -21030,6 +21030,94 @@ TEST(WebSocketSSLVerifyTest, TrustedChainWrongIdentityFails) {
 
   ASSERT_FALSE(client.connect());
 }
+
+// The tests above all connect to an IP literal, for which RFC 6066 forbids
+// SNI, so nothing binds the host name to the TLS session. These bind the
+// server to "localhost" instead, the only shape that exercises the SNI and
+// hostname-verification path with certificate verification left enabled.
+class WebSocketSSLDnsHostTest : public ::testing::Test {
+protected:
+  void Start(const char *cert_file) {
+    server_ = httplib::detail::make_unique<SSLServer>(cert_file,
+                                                      SERVER_PRIVATE_KEY_FILE);
+    ASSERT_TRUE(server_->is_valid());
+    server_->WebSocket("/echo", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      while (ws.read(msg)) {
+        ws.send(msg);
+      }
+    });
+    port_ = server_->bind_to_any_port("localhost");
+    server_thread_ = std::thread([this]() { server_->listen_after_bind(); });
+    server_->wait_until_ready();
+  }
+
+  void TearDown() override {
+    if (server_) { server_->stop(); }
+    if (server_thread_.joinable()) { server_thread_.join(); }
+  }
+
+  std::string url() const {
+    return "wss://localhost:" + std::to_string(port_) + "/echo";
+  }
+
+  std::unique_ptr<SSLServer> server_;
+  std::thread server_thread_;
+  int port_ = 0;
+};
+
+// cert2 carries a DNS:localhost SAN, so both the chain and the identity check
+// out and the connection is usable
+TEST_F(WebSocketSSLDnsHostTest, TrustedChainMatchingNameVerifies) {
+  Start(SERVER_CERT2_FILE);
+
+  ws::WebSocketClient client(url());
+  client.set_ca_cert_path(SERVER_CERT2_FILE);
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+}
+
+// cert.pem has a CN but no SAN, so trusting it as a CA satisfies the chain
+// while the identity check must still reject "localhost"
+TEST_F(WebSocketSSLDnsHostTest, TrustedChainWrongNameFails) {
+  Start(SERVER_CERT_FILE);
+
+  ws::WebSocketClient client(url());
+  client.set_ca_cert_path(SERVER_CERT_FILE);
+
+  ASSERT_FALSE(client.connect());
+}
+
+// A CA that did not sign the server certificate fails the chain, even though
+// the name would match
+TEST_F(WebSocketSSLDnsHostTest, UntrustedChainFails) {
+  Start(SERVER_CERT2_FILE);
+
+  ws::WebSocketClient client(url());
+  client.set_ca_cert_path(CLIENT_CA_CERT_FILE);
+
+  ASSERT_FALSE(client.connect());
+}
+
+// With verification disabled, neither the chain nor the name is checked
+TEST_F(WebSocketSSLDnsHostTest, VerificationDisabledAcceptsAnyName) {
+  Start(SERVER_CERT_FILE);
+
+  ws::WebSocketClient client(url());
+  client.enable_server_certificate_verification(false);
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+}
 #endif
 
 #if !defined(_WIN32)
