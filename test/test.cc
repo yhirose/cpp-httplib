@@ -21123,6 +21123,23 @@ TEST_F(WebSocketSSLDnsHostTest, TrustedChainWrongNameFails) {
   EXPECT_EQ(-1, res.status());
 }
 
+// Same setup as TrustedChainWrongNameFails, but with hostname verification
+// disabled: the chain is still checked, only the identity check is skipped
+TEST_F(WebSocketSSLDnsHostTest, HostnameVerificationDisabledAcceptsWrongName) {
+  Start(SERVER_CERT_FILE);
+
+  ws::WebSocketClient client(url());
+  client.set_ca_cert_path(SERVER_CERT_FILE);
+  client.enable_server_hostname_verification(false);
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+}
+
 // A CA that did not sign the server certificate fails the chain, even though
 // the name would match
 TEST_F(WebSocketSSLDnsHostTest, UntrustedChainFails) {

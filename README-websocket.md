@@ -188,6 +188,7 @@ void set_ca_cert_path(const std::string &ca_cert_file_path,
                       const std::string &ca_cert_dir_path = std::string());
 void set_ca_cert_store(tls::ca_store_t store);
 void enable_server_certificate_verification(bool enabled);
+void enable_server_hostname_verification(bool enabled);
 ```
 
 ## Examples
@@ -395,6 +396,7 @@ if (ws.connect()) {
 httplib::ws::WebSocketClient ws("wss://example.com/ws");
 ws.set_ca_cert_path("/path/to/ca-bundle.crt");
 ws.enable_server_certificate_verification(true);
+ws.enable_server_hostname_verification(true); // default; false skips the identity check
 
 if (ws.connect()) {
     ws.send("secure message");

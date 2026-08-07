@@ -4360,6 +4360,7 @@ public:
   void set_ca_cert_store(tls::ca_store_t store);
   void load_ca_cert_store(const char *ca_cert, std::size_t size);
   void enable_server_certificate_verification(bool enabled);
+  void enable_server_hostname_verification(bool enabled);
   void enable_system_ca(bool enabled);
 #endif
 
@@ -4406,6 +4407,7 @@ private:
   bool certs_loaded_ = false;
   SystemCAMode system_ca_mode_ = SystemCAMode::Auto;
   bool server_certificate_verification_ = true;
+  bool server_hostname_verification_ = true;
 #endif
 };
 
@@ -10137,11 +10139,12 @@ inline bool load_client_ca_config(tls::ctx_t ctx,
   return ret;
 }
 
-// The parts of session setup that only SSLClient needs. WebSocketClient takes
-// the defaults, which is what keeps the two clients on one implementation.
+// The parts of session setup that only SSLClient needs, plus the handful
+// WebSocketClient also exposes; everything else takes the defaults, which is
+// what keeps the two clients on one implementation.
 struct ClientTlsSessionOptions {
-  // SSLClient exposes this independently of certificate verification;
-  // WebSocketClient always checks the identity when it verifies the chain.
+  // Both SSLClient and WebSocketClient expose this independently of
+  // certificate verification.
   bool server_hostname_verification = true;
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier;
   // When non-null, guards session creation against concurrent use of the
@@ -21463,11 +21466,14 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
       certs_loaded_ = true;
     }
 
+    detail::ClientTlsSessionOptions options;
+    options.server_hostname_verification = server_hostname_verification_;
+
     detail::ClientTlsSessionError tls_error;
     if (!detail::setup_client_tls_session(host_, tls_ctx_, tls_session_, sock_,
                                           server_certificate_verification_,
                                           read_timeout_sec_, read_timeout_usec_,
-                                          &tls_error)) {
+                                          &tls_error, options)) {
       error = tls_error.error;
       ssl_error = tls_error.ssl_error;
       ssl_backend_error = tls_error.backend_error;
@@ -21658,6 +21664,10 @@ inline void WebSocketClient::load_ca_cert_store(const char *ca_cert,
 inline void
 WebSocketClient::enable_server_certificate_verification(bool enabled) {
   server_certificate_verification_ = enabled;
+}
+
+inline void WebSocketClient::enable_server_hostname_verification(bool enabled) {
+  server_hostname_verification_ = enabled;
 }
 
 inline void WebSocketClient::enable_system_ca(bool enabled) {
