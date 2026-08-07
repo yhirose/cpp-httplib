@@ -85,4 +85,4 @@ svr.new_task_queue = [] {
 
 詳細は[S21. マルチスレッド数を設定する](../s21-thread-pool)を参照してください。
 
-> **Note:** HTTPSサーバーの上でWebSocketを動かしたいときは、`httplib::Server`の代わりに`httplib::SSLServer`を使えば、同じ`WebSocket()`ハンドラがそのまま動きます。クライアント側は`wss://`スキームを指定するだけです。
+> **Note:** HTTPSサーバーの上でWebSocketを動かしたいときは、`httplib::Server`の代わりに`httplib::SSLServer`を使えば、同じ`WebSocket()`ハンドラがそのまま動きます。クライアント側は`wss://`スキームを指定するだけです。CA証明書やクライアント証明書の設定は[W05. wss接続でTLSを設定する](../w05-websocket-tls)を参照してください。

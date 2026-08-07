@@ -85,4 +85,4 @@ svr.new_task_queue = [] {
 
 See [S21. Configure the thread pool](../s21-thread-pool).
 
-> **Note:** To run WebSocket over HTTPS, use `httplib::SSLServer` instead of `httplib::Server` — the same `WebSocket()` handler just works. On the client side, use a `wss://` URL.
+> **Note:** To run WebSocket over HTTPS, use `httplib::SSLServer` instead of `httplib::Server` — the same `WebSocket()` handler just works. On the client side, use a `wss://` URL. For CA and client certificate configuration, see [W05. Configure TLS for wss:// Connections](../w05-websocket-tls).

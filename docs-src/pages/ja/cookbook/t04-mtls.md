@@ -57,25 +57,21 @@ auto res = cli.Get("/");
 
 `Client`ではなく`SSLClient`を直接使う点に注意してください。秘密鍵にパスワードがある場合は第5引数で渡せます。
 
-## WebSocketクライアントの場合
-
-`ws::WebSocketClient`にも同じ`PemMemory`構造体があり、`wss://`接続でクライアント証明書を使えます。
+クライアント側にも同じ`PemMemory`構造体があり、メモリ上のPEMからクライアント証明書を設定できます。
 
 ```cpp
-httplib::ws::WebSocketClient::PemMemory pem{};
+httplib::SSLClient::PemMemory pem{};
 pem.cert_pem = client_cert.data();
 pem.cert_pem_len = client_cert.size();
 pem.key_pem = client_key.data();
 pem.key_pem_len = client_key.size();
 
-httplib::ws::WebSocketClient ws("wss://api.example.com/ws", pem);
+httplib::SSLClient cli("api.example.com", 443, pem);
 
-if (ws.connect()) {
-  ws.send("hello");
-}
+auto res = cli.Get("/");
 ```
 
-`ws://`（非TLS）のURLに`PemMemory`を渡した場合は黙って無視されます。ファイルパスから直接読み込むコンストラクタは用意されていないので、`SSLClient`と違いPEMをメモリ上に読み込んでから渡す必要があります。
+> WebSocketクライアント（`wss://`）でmTLSを使う場合は[W05. wss接続でTLSを設定する](../w05-websocket-tls)を参照してください。
 
 ## ハンドラからクライアント情報を取得する
 

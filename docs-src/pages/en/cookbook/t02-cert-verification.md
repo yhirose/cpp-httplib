@@ -51,3 +51,5 @@ On most Linux distributions, root certificates live in a single file like `/etc/
 > The same APIs work on the mbedTLS and wolfSSL backends. For choosing between backends, see [T01. Choosing between OpenSSL, mbedTLS, and wolfSSL](../t01-tls-backends).
 
 > For details on diagnosing failures, see [C18. Handle SSL errors](../c18-ssl-errors).
+
+> For TLS configuration on a WebSocket client (`wss://`), see [W05. Configure TLS for wss:// Connections](../w05-websocket-tls).

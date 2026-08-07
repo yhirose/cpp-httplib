@@ -94,3 +94,5 @@ A collection of recipes that answer "How do I...?" questions. Each recipe is sel
 - [W02. Set a WebSocket heartbeat](w02-websocket-ping)
 - [W03. Handle connection close](w03-websocket-close)
 - [W04. Send and receive binary frames](w04-websocket-binary)
+- [W05. Configure TLS for wss:// connections](w05-websocket-tls)
+- [W06. Set timeouts](w06-websocket-timeouts)

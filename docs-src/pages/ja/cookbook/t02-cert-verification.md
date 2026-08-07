@@ -51,3 +51,5 @@ cli.enable_server_hostname_verification(false);
 > mbedTLSやwolfSSLバックエンドでも同じAPIが使えます。バックエンドの選び方は[T01. OpenSSL・mbedTLS・wolfSSLの選択指針](../t01-tls-backends)を参照してください。
 
 > 失敗したときの詳細を調べる方法は[C18. SSLエラーをハンドリングする](../c18-ssl-errors)を参照してください。
+
+> WebSocketクライアント（`wss://`）のTLS設定は[W05. wss接続でTLSを設定する](../w05-websocket-tls)を参照してください。
