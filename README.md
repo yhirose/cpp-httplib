@@ -1394,6 +1394,29 @@ httplib::Server svr;
 svr.listen("127.0.0.1", 8080);
 ```
 
+## Ordered Headers, Query Parameters, and Form Data
+
+`Headers`, `Params`, `FormFields`, and `FormFiles` preserve the order entries were received (for a parsed request) or inserted (for one you build yourself). Earlier versions stored these in `std::multimap` or `std::unordered_multimap`, which either sorted entries by key or gave no ordering guarantee at all for repeated keys. RFC 9110 §5.3 and RFC 7578 §5.2 both require the original order to be preserved, so this is now guaranteed rather than incidental.
+
+```c++
+// A request with two Accept-Encoding lines...
+// Accept-Encoding: gzip
+// Accept-Encoding: br
+// ...visits "gzip" before "br", not the other way around.
+for (auto it = req.headers.equal_range("Accept-Encoding").first;
+     it != req.headers.end(); ++it) {
+  std::cout << it->second << std::endl;
+}
+
+// get_header_value(key, id) reaches a specific one directly.
+auto second = req.get_header_value("Accept-Encoding", 1); // "br"
+```
+
+`Headers` matches field names case-insensitively, as before. `Params`, `FormFields`, and `FormFiles` are case-sensitive.
+
+> [!NOTE]
+> Iterators on these containers follow `std::vector` rules: inserting a new entry invalidates existing iterators. Code that keeps an iterator across a call to `insert()`/`emplace()` needs to re-fetch it afterward.
+
 ## Payload Limit
 
 The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely.
