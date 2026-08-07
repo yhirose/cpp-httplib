@@ -11428,6 +11428,26 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
+// Value for the Host header a client sends when the caller supplied none.
+// Only the value: callers decide where in their header list it goes.
+inline std::string make_default_host_header_value(const std::string &host,
+                                                  int port, bool is_ssl,
+                                                  int address_family) {
+  if (address_family == AF_UNIX) { return "localhost"; }
+  return make_host_and_port_string(host, port, is_ssl);
+}
+
+inline void add_default_user_agent_header(Request &req) {
+#ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
+  if (!req.has_header("User-Agent")) {
+    req.set_header("User-Agent",
+                   std::string("cpp-httplib/") + CPPHTTPLIB_VERSION);
+  }
+#else
+  (void)req;
+#endif
+}
+
 bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out);
 NormalizedTarget normalize_target(const std::string &host);
 bool ip_in_cidr(const IPBytes &ip, const IPBytes &net, int prefix_bits);
@@ -13751,12 +13771,9 @@ inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
   // RFC 9110 5.3 recommends sending control data such as Host first, so
   // prepend it rather than appending it after the caller's own fields.
   if (!r.has_header("Host")) {
-    if (address_family_ == AF_UNIX) {
-      r.headers.emplace_front("Host", "localhost");
-    } else {
-      r.headers.emplace_front(
-          "Host", detail::make_host_and_port_string(host_, port_, is_ssl()));
-    }
+    r.headers.emplace_front(
+        "Host", detail::make_default_host_header_value(host_, port_, is_ssl(),
+                                                       address_family_));
   }
 
   if (!r.has_header("Accept")) { r.headers.emplace("Accept", "*/*"); }
@@ -13778,12 +13795,7 @@ inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
       r.set_header("Accept-Encoding", accept_encoding);
     }
 
-#ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
-    if (!r.has_header("User-Agent")) {
-      auto agent = std::string("cpp-httplib/") + CPPHTTPLIB_VERSION;
-      r.set_header("User-Agent", agent);
-    }
-#endif
+    detail::add_default_user_agent_header(r);
   }
 
   if (!r.body.empty()) {
@@ -21394,20 +21406,11 @@ inline void WebSocketClient::prepare_default_headers(Request &req) {
 #endif
 
   if (!req.has_header("Host")) {
-    if (address_family_ == AF_UNIX) {
-      req.headers.emplace("Host", "localhost");
-    } else {
-      req.headers.emplace(
-          "Host", detail::make_host_and_port_string(host_, port_, is_ssl));
-    }
+    req.headers.emplace("Host", detail::make_default_host_header_value(
+                                    host_, port_, is_ssl, address_family_));
   }
 
-#ifndef CPPHTTPLIB_NO_DEFAULT_USER_AGENT
-  if (!req.has_header("User-Agent")) {
-    auto agent = std::string("cpp-httplib/") + CPPHTTPLIB_VERSION;
-    req.set_header("User-Agent", agent);
-  }
-#endif
+  detail::add_default_user_agent_header(req);
 }
 
 inline bool WebSocketClient::connect() {
