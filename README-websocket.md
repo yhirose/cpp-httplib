@@ -135,6 +135,19 @@ bool is_open() const;
 explicit WebSocketClient(const std::string &scheme_host_port_path,
                          const Headers &headers = {});
 
+// Constructor with a client certificate for mutual TLS (wss:// only,
+// requires CPPHTTPLIB_OPENSSL_SUPPORT). The certificate is ignored for
+// ws:// URLs.
+struct PemMemory {
+  const char *cert_pem;
+  size_t cert_pem_len;
+  const char *key_pem;
+  size_t key_pem_len;
+  const char *private_key_password;
+};
+explicit WebSocketClient(const std::string &scheme_host_port_path,
+                         const PemMemory &pem, const Headers &headers = {});
+
 // Check if the URL was parsed successfully
 bool is_valid() const;
 

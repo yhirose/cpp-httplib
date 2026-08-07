@@ -21118,6 +21118,80 @@ TEST_F(WebSocketSSLDnsHostTest, VerificationDisabledAcceptsAnyName) {
   EXPECT_EQ("hello", msg);
   client.close();
 }
+
+class WebSocketSSLPemMemoryTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    server_ = httplib::detail::make_unique<SSLServer>(
+        SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+    ASSERT_TRUE(server_->is_valid());
+    server_->WebSocket("/ws-echo", [](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      while (ws.read(msg)) {
+        ws.send(msg);
+      }
+    });
+    port_ = server_->bind_to_any_port("localhost");
+    server_thread_ = std::thread([this]() { server_->listen_after_bind(); });
+    server_->wait_until_ready();
+  }
+
+  void TearDown() override {
+    server_->stop();
+    if (server_thread_.joinable()) { server_thread_.join(); }
+  }
+
+  std::string url() const {
+    return "wss://localhost:" + std::to_string(port_) + "/ws-echo";
+  }
+
+  void ConnectWithClientCert(const std::string &client_cert_file,
+                             const std::string &client_private_key_file,
+                             const char *private_key_password) {
+    std::string cert_pem, key_pem;
+    read_file(client_cert_file, cert_pem);
+    read_file(client_private_key_file, key_pem);
+
+    ws::WebSocketClient::PemMemory pem = {cert_pem.c_str(), cert_pem.size(),
+                                          key_pem.c_str(), key_pem.size(),
+                                          private_key_password};
+    ws::WebSocketClient client(url(), pem);
+    ASSERT_TRUE(client.is_valid());
+    client.enable_server_certificate_verification(false);
+
+    ASSERT_TRUE(client.connect());
+    ASSERT_TRUE(client.send("hello"));
+    std::string msg;
+    EXPECT_EQ(ws::Text, client.read(msg));
+    EXPECT_EQ("hello", msg);
+    client.close();
+  }
+
+  std::unique_ptr<SSLServer> server_;
+  std::thread server_thread_;
+  int port_ = 0;
+};
+
+TEST_F(WebSocketSSLPemMemoryTest, ClientCertAccepted) {
+  ConnectWithClientCert(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE, nullptr);
+}
+
+// Control for the tests above: the fixture's server really does require a
+// client certificate, so it is the PEM the constructor installed that decides
+// the outcome.
+TEST_F(WebSocketSSLPemMemoryTest, NoClientCertRejected) {
+  ws::WebSocketClient client(url());
+  ASSERT_TRUE(client.is_valid());
+  client.enable_server_certificate_verification(false);
+
+  EXPECT_FALSE(client.connect());
+}
+
+TEST_F(WebSocketSSLPemMemoryTest, EncryptedClientCertAccepted) {
+  ConnectWithClientCert(CLIENT_ENCRYPTED_CERT_FILE,
+                        CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
+                        CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
+}
 #endif
 
 #if !defined(_WIN32)

@@ -57,6 +57,26 @@ auto res = cli.Get("/");
 
 Note you're using `SSLClient` directly, not `Client`. If the private key has a password, pass it as the fifth argument.
 
+## WebSocket clients
+
+`ws::WebSocketClient` has the same `PemMemory` struct, so `wss://` connections can present a client certificate too.
+
+```cpp
+httplib::ws::WebSocketClient::PemMemory pem{};
+pem.cert_pem = client_cert.data();
+pem.cert_pem_len = client_cert.size();
+pem.key_pem = client_key.data();
+pem.key_pem_len = client_key.size();
+
+httplib::ws::WebSocketClient ws("wss://api.example.com/ws", pem);
+
+if (ws.connect()) {
+  ws.send("hello");
+}
+```
+
+Passing `PemMemory` to a `ws://` (non-TLS) URL is silently ignored. There's no constructor that reads the cert files directly, so unlike `SSLClient` you always load the PEM into memory yourself before passing it in.
+
 ## Read client info from a handler
 
 To see which client connected from inside a handler, use `req.peer_cert()`. Details in [T05. Access the peer certificate on the server](../t05-peer-cert).
