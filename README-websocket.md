@@ -155,9 +155,14 @@ bool is_open() const;
 // Timeouts
 void set_read_timeout(time_t sec, time_t usec = 0);
 void set_write_timeout(time_t sec, time_t usec = 0);
+template <class Rep, class Period>
+void set_read_timeout(const std::chrono::duration<Rep, Period> &duration);
+template <class Rep, class Period>
+void set_write_timeout(const std::chrono::duration<Rep, Period> &duration);
 
 // SSL configuration (wss:// only, requires CPPHTTPLIB_OPENSSL_SUPPORT)
-void set_ca_cert_path(const std::string &path);
+void set_ca_cert_path(const std::string &ca_cert_file_path,
+                      const std::string &ca_cert_dir_path = std::string());
 void set_ca_cert_store(tls::ca_store_t store);
 void enable_server_certificate_verification(bool enabled);
 ```

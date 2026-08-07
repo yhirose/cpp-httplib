@@ -4302,7 +4302,8 @@ public:
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
-  void set_ca_cert_path(const std::string &path);
+  void set_ca_cert_path(const std::string &ca_cert_file_path,
+                        const std::string &ca_cert_dir_path = std::string());
   void set_ca_cert_store(tls::ca_store_t store);
   void load_ca_cert_store(const char *ca_cert, std::size_t size);
   void enable_server_certificate_verification(bool enabled);
@@ -4346,6 +4347,7 @@ private:
   tls::ctx_t tls_ctx_ = nullptr;
   tls::session_t tls_session_ = nullptr;
   std::string ca_cert_file_path_;
+  std::string ca_cert_dir_path_;
   bool custom_ca_loaded_ = false;
   bool certs_loaded_ = false;
   SystemCAMode system_ca_mode_ = SystemCAMode::Auto;
@@ -17077,6 +17079,8 @@ inline void SSLClient::load_ca_cert_store(const char *ca_cert,
 inline bool SSLClient::load_certs() {
   auto ret = true;
 
+  // call_once rather than the plain flag WebSocketClient::create_stream() uses:
+  // one client is shared across concurrent requests here.
   std::call_once(initialize_cert_, [&]() {
     std::lock_guard<std::mutex> guard(ctx_mutex_);
 
@@ -21352,11 +21356,14 @@ inline void WebSocketClient::shutdown_and_close() {
 inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm) {
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl_) {
+    // A plain flag rather than SSLClient::load_certs()'s call_once: connect()
+    // is not safe to call concurrently on one client to begin with, since
+    // nothing else here is guarded either.
     if (server_certificate_verification_ && !certs_loaded_) {
       uint64_t backend_error = 0;
-      detail::load_client_ca_config(tls_ctx_, ca_cert_file_path_, std::string(),
-                                    custom_ca_loaded_, system_ca_mode_,
-                                    backend_error);
+      detail::load_client_ca_config(tls_ctx_, ca_cert_file_path_,
+                                    ca_cert_dir_path_, custom_ca_loaded_,
+                                    system_ca_mode_, backend_error);
       certs_loaded_ = true;
     }
 
@@ -21518,8 +21525,11 @@ inline void WebSocketClient::set_hostname_addr_map(
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 
-inline void WebSocketClient::set_ca_cert_path(const std::string &path) {
-  ca_cert_file_path_ = path;
+inline void
+WebSocketClient::set_ca_cert_path(const std::string &ca_cert_file_path,
+                                  const std::string &ca_cert_dir_path) {
+  ca_cert_file_path_ = ca_cert_file_path;
+  ca_cert_dir_path_ = ca_cert_dir_path;
 }
 
 inline void WebSocketClient::set_ca_cert_store(tls::ca_store_t store) {

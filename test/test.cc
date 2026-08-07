@@ -20958,6 +20958,28 @@ TEST_F(WebSocketSSLCATest, WrongCustomCaFailsVerification) {
   ASSERT_FALSE(client.connect());
 }
 
+// The same CA as a file path rather than PEM in memory
+TEST_F(WebSocketSSLCATest, SetCaCertPathVerifiesServer) {
+  ws::WebSocketClient client(url());
+  client.set_ca_cert_path(SERVER_CERT2_FILE);
+
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+}
+
+// ...and a CA file that does not cover the server still fails, so it is the
+// path above that decides the outcome
+TEST_F(WebSocketSSLCATest, WrongCaCertPathFailsVerification) {
+  ws::WebSocketClient client(url());
+  client.set_ca_cert_path(CLIENT_CA_CERT_FILE);
+
+  ASSERT_FALSE(client.connect());
+}
+
 // Regression test: reconnecting with a native custom CA store used to reuse
 // a store handle the previous TLS context had already freed (use-after-free
 // under the OpenSSL backend). The context now lives as long as the client.
