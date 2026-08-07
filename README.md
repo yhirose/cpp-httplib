@@ -168,6 +168,41 @@ cli.set_server_certificate_verifier(
     });
 ```
 
+### Mutual TLS (mTLS)
+
+Regular TLS only verifies the server certificate. With mTLS, the client also presents a certificate that the server verifies.
+
+```c++
+// Server: pass a CA to verify client certificates against
+httplib::SSLServer svr("./cert.pem", "./key.pem", "./client-ca-cert.pem");
+
+// Client: present a certificate
+httplib::SSLClient cli("api.example.com", 443,
+                       "./client-cert.pem", "./client-key.pem");
+```
+
+Both `SSLServer` and `SSLClient` also accept an in-memory `PemMemory` struct instead of file paths — handy when certs come from an environment variable or a secrets manager:
+
+```c++
+httplib::SSLServer::PemMemory server_pem{};
+server_pem.cert_pem = server_cert.data();
+server_pem.cert_pem_len = server_cert.size();
+server_pem.key_pem = server_key.data();
+server_pem.key_pem_len = server_key.size();
+server_pem.client_ca_pem = client_ca.data();
+server_pem.client_ca_pem_len = client_ca.size();
+httplib::SSLServer svr(server_pem);
+
+httplib::SSLClient::PemMemory client_pem{};
+client_pem.cert_pem = client_cert.data();
+client_pem.cert_pem_len = client_cert.size();
+client_pem.key_pem = client_key.data();
+client_pem.key_pem_len = client_key.size();
+httplib::SSLClient cli("api.example.com", 443, client_pem);
+```
+
+`httplib::ws::WebSocketClient` has the same `PemMemory` constructor for `wss://` connections. See [README-websocket.md](README-websocket.md) for details.
+
 ### Peer Certificate Inspection
 
 On the server side, you can inspect the client's peer certificate from a request handler:
@@ -1289,6 +1324,8 @@ res->status; // 200
 ```cpp
 cli.set_interface("eth0"); // Interface name, IP address or host name
 ```
+
+The same method is available on `httplib::ws::WebSocketClient`.
 
 ### Override the connection target for a hostname
 

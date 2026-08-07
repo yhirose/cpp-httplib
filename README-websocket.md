@@ -168,10 +168,13 @@ bool is_open() const;
 // Timeouts
 void set_read_timeout(time_t sec, time_t usec = 0);
 void set_write_timeout(time_t sec, time_t usec = 0);
+void set_connection_timeout(time_t sec, time_t usec = 0);
 template <class Rep, class Period>
 void set_read_timeout(const std::chrono::duration<Rep, Period> &duration);
 template <class Rep, class Period>
 void set_write_timeout(const std::chrono::duration<Rep, Period> &duration);
+template <class Rep, class Period>
+void set_connection_timeout(const std::chrono::duration<Rep, Period> &duration);
 
 // SSL configuration (wss:// only, requires CPPHTTPLIB_OPENSSL_SUPPORT)
 void set_ca_cert_path(const std::string &ca_cert_file_path,
@@ -304,8 +307,14 @@ httplib::Headers headers = {
 };
 
 httplib::ws::WebSocketClient ws("ws://localhost:8080/ws", headers);
-ws.set_read_timeout(30, 0);   // 30 seconds
-ws.set_write_timeout(10, 0);  // 10 seconds
+ws.set_connection_timeout(5, 0); // 5 seconds
+ws.set_read_timeout(30, 0);      // 30 seconds
+ws.set_write_timeout(10, 0);     // 10 seconds
+
+// std::chrono is also supported
+ws.set_connection_timeout(std::chrono::seconds(5));
+ws.set_read_timeout(std::chrono::seconds(30));
+ws.set_write_timeout(std::chrono::seconds(10));
 
 if (ws.connect()) {
     std::string msg;
