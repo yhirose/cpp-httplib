@@ -467,6 +467,9 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      issues: write
     if: >
       (github.event_name == 'push') ||
       (github.event_name == 'pull_request'  &&
@@ -563,6 +566,30 @@ jobs:
         }
         if ($failed) { exit 1 }
         Write-Host "All shards passed."
+    - name: Report flaky failure on issue #2533
+      if: failure() && matrix.config.name == 'without SSL' && github.event_name == 'push'
+      continue-on-error: true
+      shell: pwsh
+      working-directory: build/test
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        $summary = ""
+        for ($i = 0; $i -lt 4; $i++) {
+          $log = "shard_${i}.log"
+          if (Test-Path $log) {
+            $failedLines = Select-String -Path $log -Pattern "\[  FAILED  \]"
+            if ($failedLines) {
+              $summary += "**Shard ${i}:**`n" + (($failedLines | ForEach-Object { $_.Line }) -join "`n") + "`n`n"
+            }
+          }
+        }
+        if (-not $summary) {
+          $summary = "_Could not extract failed test name from shard logs; see the run for details._`n`n"
+        }
+        $runUrl = "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
+        $body = "Reoccurred on push: $runUrl`n`nCommit: $($env:GITHUB_SHA)`n`n$summary"
+        gh issue comment 2533 --repo $env:GITHUB_REPOSITORY --body $body
 
     env:
       VCPKG_ROOT: "C:/vcpkg"
