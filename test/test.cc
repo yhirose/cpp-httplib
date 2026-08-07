@@ -20487,6 +20487,28 @@ TEST_F(WebSocketIntegrationTest, SocketSettings) {
   client.close();
 }
 
+TEST_F(WebSocketIntegrationTest, ChronoTimeoutSetters) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.set_connection_timeout(std::chrono::seconds(3));
+  client.set_write_timeout(std::chrono::seconds(3));
+  // A sub-second remainder exercises the seconds/microseconds split.
+  client.set_read_timeout(std::chrono::milliseconds(1500));
+
+  ASSERT_TRUE(client.connect());
+
+  auto start = std::chrono::steady_clock::now();
+  std::string msg;
+  EXPECT_EQ(client.read(msg), ws::ReadResult::Fail);
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - start)
+                     .count();
+  // Above 1s so that dropping the microseconds half of the split fails here,
+  // and well under the 300s default so that ignoring the setter fails too.
+  EXPECT_GE(elapsed, 1400);
+  EXPECT_LT(elapsed, 30000);
+}
+
 TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   Server svr;
 
