@@ -11910,12 +11910,7 @@ TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
 
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
-
-  // The error type depends on when hostname verification occurs:
-  // - OpenSSL: SSLServerHostnameVerification (post-handshake verification)
-  // - Mbed TLS: SSLServerVerification (during handshake)
-  EXPECT_TRUE(res.error() == Error::SSLServerHostnameVerification ||
-              res.error() == Error::SSLServerVerification);
+  EXPECT_EQ(Error::SSLServerHostnameVerification, res.error());
 
   // Verify backend error is captured for hostname verification failure
   EXPECT_NE(0UL, res.ssl_backend_error());
