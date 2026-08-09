@@ -6326,7 +6326,7 @@ inline int shutdown_socket(socket_t sock) noexcept {
 // (or bytes arriving after the receive side is closed) makes the stack send
 // an abortive RST instead of a graceful FIN, which can make the peer see the
 // response as a failed read even though it was fully written.
-inline void close_socket_gracefully(socket_t sock) noexcept {
+inline void drain_and_close_socket(socket_t sock) noexcept {
 #ifdef _WIN32
   shutdown(sock, SD_SEND);
 #else
@@ -13641,7 +13641,7 @@ inline bool Server::process_and_close_socket(socket_t sock) {
                                nullptr, &websocket_upgraded);
       });
 
-  detail::close_socket_gracefully(sock);
+  detail::drain_and_close_socket(sock);
   return ret;
 }
 
