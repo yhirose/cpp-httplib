@@ -1996,6 +1996,14 @@ private:
   std::regex regex_;
 };
 
+class LiteralMatcher final : public MatcherBase {
+public:
+  LiteralMatcher(const std::string &pattern) : MatcherBase(pattern) {}
+
+  bool match(Request &request) const override;
+};
+
+
 int close_socket(socket_t sock) noexcept;
 
 ssize_t write_headers(Stream &strm, const Headers &headers);
@@ -11263,6 +11271,12 @@ inline time_t BufferStream::duration() const { return 0; }
 
 inline const std::string &BufferStream::get_buffer() const { return buffer; }
 
+inline bool LiteralMatcher::match(Request &request) const {
+  request.path_params.clear();
+  request.matches = std::smatch();
+  return request.path == pattern();
+}
+
 inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern)
     : MatcherBase(pattern) {
   constexpr const char marker[] = "/:";
@@ -11764,7 +11778,9 @@ inline std::unique_ptr<detail::MatcherBase>
 Server::make_matcher(const std::string &pattern) {
   if (pattern.find("/:") != std::string::npos) {
     return detail::make_unique<detail::PathParamsMatcher>(pattern);
-  } else {
+  } else if(pattern.find_first_of(".^$|()[]{}*+?\\") == std::string::npos) {
+    return detail::make_unique<detail::LiteralMatcher>(pattern);
+  }else{
     return detail::make_unique<detail::RegexMatcher>(pattern);
   }
 }

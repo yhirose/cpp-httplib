@@ -20,6 +20,7 @@
 	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_SHARED (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
 	* HTTPLIB_TEST (default off)
+	* HTTPLIB_BUILD_ROUTING_BENCHMARK (default off)
 	* BROTLI_USE_STATIC_LIBS - tells Cmake to use the static Brotli libs (only works if you have them installed).
 	* OPENSSL_USE_STATIC_LIBS - tells Cmake to use the static OpenSSL libs (only works if you have them installed).
 
@@ -115,6 +116,7 @@ option(HTTPLIB_COMPILE "If ON, uses a Python script to split the header into a c
 # Lets you disable the installation (useful when fetched from another CMake project)
 option(HTTPLIB_INSTALL "Enables the installation target" ON)
 option(HTTPLIB_TEST "Enables testing and builds tests" OFF)
+option(HTTPLIB_BUILD_ROUTING_BENCHMARK "Enables building the route-matching microbenchmark (requires internet access to fetch Google Benchmark)." OFF)
 option(HTTPLIB_REQUIRE_BROTLI "Requires Brotli to be found & linked, or fails build." OFF)
 option(HTTPLIB_USE_BROTLI_IF_AVAILABLE "Uses Brotli (if available) to enable Brotli decompression support." ON)
 option(HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES "Disable loading system certs from the Apple Keychain on macOS." OFF)
@@ -467,4 +469,8 @@ endif()
 if(HTTPLIB_TEST)
 	include(CTest)
 	add_subdirectory(test)
+endif()
+
+if(HTTPLIB_BUILD_ROUTING_BENCHMARK)
+	add_subdirectory(benchmark/routing)
 endif()

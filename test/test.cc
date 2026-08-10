@@ -15352,6 +15352,59 @@ TEST(PathParamsTest, SemicolonInTheMiddleIsNotAParam) {
   EXPECT_EQ(request.path_params, expected_params);
 }
 
+TEST(LiteralMatcherTest, Match) {
+  const auto pattern = "/users/all";
+  detail::LiteralMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/all";
+  ASSERT_TRUE(matcher.match(request));
+}
+
+TEST(LiteralMatcherTest, Mismatch) {
+  const auto pattern = "/users/all";
+  detail::LiteralMatcher matcher(pattern);
+
+  Request request;
+  request.path = "/users/1";
+  ASSERT_FALSE(matcher.match(request));
+}
+
+TEST(LiteralMatcherTest, ClearsStalePathParams) {
+  detail::PathParamsMatcher param_matcher("/users/:id/orders");
+  detail::LiteralMatcher literal_matcher("/users/list");
+
+  Request request;
+  request.path = "/users/list";
+  ASSERT_FALSE(param_matcher.match(request));
+  ASSERT_FALSE(request.path_params.empty());
+
+  ASSERT_TRUE(literal_matcher.match(request));
+  ASSERT_TRUE(request.path_params.empty());
+}
+
+TEST(LiteralMatcherTest, ClearsStaleMatches) {
+  detail::RegexMatcher regex_matcher("/users/([0-9]+)");
+  detail::LiteralMatcher literal_matcher("/users/list");
+
+  Request request;
+  request.path = "/users/42";
+  ASSERT_TRUE(regex_matcher.match(request));
+  ASSERT_TRUE(request.matches.ready());
+
+  request.path = "/users/list";
+  ASSERT_TRUE(literal_matcher.match(request));
+  ASSERT_FALSE(request.matches.ready());
+}
+
+TEST(LiteralMatcherTest, EmptyPatternMatchesEmptyPath) {
+  detail::LiteralMatcher matcher("");
+
+  Request request;
+  request.path = "";
+  ASSERT_TRUE(matcher.match(request));
+}
+
 TEST(ParseUrlTest, VariousPatterns) {
   {
     detail::UrlComponents uc;
