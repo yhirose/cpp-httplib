@@ -15377,6 +15377,23 @@ TEST(ParseUrlTest, VariousPatterns) {
     ASSERT_FALSE(detail::parse_url("http://[::1/path", uc));
   }
   {
+    // Bytes after the IPv6 literal must be a delimiter, not folded into
+    // the path while the connection still targets the bracketed host.
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("http://[::1]evil.com/", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_FALSE(detail::parse_url("http://[::1]evil", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("http://[::1]/path", uc));
+    EXPECT_EQ("::1", uc.host);
+    EXPECT_TRUE(uc.port.empty());
+    EXPECT_EQ("/path", uc.path);
+  }
+  {
     detail::UrlComponents uc;
     ASSERT_TRUE(detail::parse_url("//example.com/path?q=1", uc));
     EXPECT_TRUE(uc.scheme.empty());
