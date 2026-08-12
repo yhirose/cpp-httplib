@@ -107,7 +107,7 @@ if host_machine.system() == 'windows'
 elif host_machine.system() == 'darwin'
   async_ns_dep = dependency('appleframeworks', modules: ['CFNetwork', 'CoreFoundation'], required: async_ns_opt)
 else
-  has_gai_a = cxx.has_function('getaddrinfo_a', args: '-D_GNU_SOURCE')
+  has_gai_a = not async_ns_opt.disabled() and cxx.has_function('getaddrinfo_a', args: '-D_GNU_SOURCE')
   if has_gai_a
     async_ns_dep = declare_dependency()
   else
