@@ -1,6 +1,6 @@
 FROM alpine:latest
 
-ARG auth="basic"
+ARG auth_mode="basic"
 ARG port="3128"
 
 RUN apk update && apk add --no-cache squid
