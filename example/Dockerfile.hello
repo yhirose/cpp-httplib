@@ -1,12 +1,22 @@
-FROM alpine as builder
+#see https://docs.docker.com/build/building/best-practices/#use---pull-to-get-fresh-base-images
+FROM alpine:3.24 AS builder
+RUN apt-get -y update && apt-get install -y --no-install-recommends
+
 WORKDIR /src/example
+
+#see https://docs.docker.com/build/building/best-practices/#user
+RUN groupadd -r user && \
+    useradd -r -g user -m -d /home/appuser -s /bin/bash user
+
+USER user
+
 RUN apk add g++ make openssl-dev zlib-dev brotli-dev
 COPY ./httplib.h /src
 COPY ./example/hello.cc /src/example
 COPY ./example/Makefile /src/example
 RUN make hello
 
-FROM alpine
+FROM alpine:3.24
 RUN apk --no-cache add brotli libstdc++
 COPY --from=builder /src/example/hello /bin/hello
 CMD ["/bin/hello"]
