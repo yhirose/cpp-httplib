@@ -10898,6 +10898,71 @@ TEST(PayloadLimitBypassTest, StreamingGzipDecompression) {
   // Decompressed bytes delivered to the handler must not exceed LIMIT.
   EXPECT_LE(total, LIMIT);
 }
+
+#ifndef CPPHTTPLIB_SSL_ENABLED
+// For a request with neither Content-Length nor Transfer-Encoding, the
+// non-SSL raw-socket fallback in read_content_core() used to hand the
+// compressed wire bytes straight to the ContentReader without ever routing
+// them through the decompressor, so payload_max_length_ only bounded the
+// compressed size on the wire, not the decompressed size.
+TEST(PayloadLimitBypassTest, UnframedGzipDecompression) {
+  Server svr;
+  const size_t LIMIT = 64 * 1024; // 64KB
+  svr.set_payload_max_length(LIMIT);
+
+  size_t total = 0;
+  svr.Post("/stream", [&](const Request & /*req*/, Response &res,
+                          const ContentReader &content_reader) {
+    content_reader([&](const char * /*data*/, size_t len) {
+      total += len;
+      return true;
+    });
+    res.status = 200;
+    res.set_content("stream_ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // Prepare 256KB raw data and gzip-compress it, same payload as the
+  // StreamingGzipDecompression test above.
+  std::string raw(256 * 1024, 'A');
+  std::string gz;
+  {
+    httplib::detail::gzip_compressor compressor;
+    bool result = compressor.compress(raw.data(), raw.size(), /*last=*/true,
+                                      [&](const char *chunk, size_t len) {
+                                        gz.append(chunk, len);
+                                        return true;
+                                      });
+    ASSERT_TRUE(result);
+  }
+
+  // Send the gzip body over raw TCP with neither Content-Length nor
+  // Transfer-Encoding, and Connection: close so the server's stray-body scan
+  // kicks in.
+  std::string req = "POST /stream HTTP/1.1\r\n"
+                    "Host: " +
+                    std::string(HOST) + ":" + std::to_string(port) +
+                    "\r\n"
+                    "Content-Encoding: gzip\r\n"
+                    "Connection: close\r\n"
+                    "\r\n" +
+                    gz;
+
+  std::string response;
+  ASSERT_TRUE(send_request(5, req, &response, port));
+
+  // Decompressed bytes delivered to the handler must not exceed LIMIT.
+  EXPECT_LE(total, LIMIT);
+}
+#endif
 #endif
 
 // Some servers misuse Content-Encoding to advertise a character set, e.g.
