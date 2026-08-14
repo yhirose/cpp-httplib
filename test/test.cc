@@ -15461,6 +15461,79 @@ TEST(RegexMatcherTest, ServerSurvivesOverlongPathOnRegexRoute) {
   EXPECT_NE(std::string::npos, response.find("404"));
 }
 
+TEST(RouteMatcherTest, LiteralPatternsAndRegexPatterns) {
+  Server svr;
+
+  auto handler = [](const Request & /*req*/, Response &res) {
+    res.set_content("hit", "text/plain");
+  };
+
+  // No regex metacharacter, so this one is compared literally
+  svr.Get("/literal/route", handler);
+  // '.' is a regex metacharacter, so this one must keep regex semantics
+  svr.Get("/a.c", handler);
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  struct {
+    const char *path;
+    int status;
+  } cases[] = {
+      {"/literal/route", StatusCode::OK_200},
+      {"/literal/routes", StatusCode::NotFound_404},
+      {"/literal/rout", StatusCode::NotFound_404},
+      {"/abc", StatusCode::OK_200},
+      {"/a.c", StatusCode::OK_200},
+  };
+
+  for (const auto &x : cases) {
+    auto res = cli.Get(x.path);
+    ASSERT_TRUE(res) << x.path;
+    EXPECT_EQ(x.status, res->status) << x.path;
+  }
+}
+
+TEST(RouteMatcherTest, LongLiteralPatternIsNotSubjectToTheRegexPathLimit) {
+  // CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH exists to keep std::regex_match
+  // from exhausting the stack, so it must only constrain routes that actually
+  // run a regular expression. A literal route is matched by comparison and
+  // stays usable at any length.
+  Server svr;
+
+  const std::string pattern =
+      "/files/" + std::string(CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH * 2, 'a');
+
+  svr.Get(pattern, [](const Request & /*req*/, Response &res) {
+    res.set_content("hit", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  auto res = cli.Get(pattern);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST(ParseUrlTest, VariousPatterns) {
   {
     detail::UrlComponents uc;
