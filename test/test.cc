@@ -15412,6 +15412,55 @@ TEST(PathParamsTest, SemicolonInTheMiddleIsNotAParam) {
   EXPECT_EQ(request.path_params, expected_params);
 }
 
+TEST(RegexMatcherTest, OverlongPathIsRejectedBeforeRegexMatch) {
+  // std::regex_match's backtracking (most acute on libstdc++) can exhaust the
+  // calling thread's stack on a long enough path for a quantified pattern;
+  // RegexMatcher must refuse to run regex matching on paths beyond
+  // CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH instead of invoking it.
+  detail::RegexMatcher matcher("/files/(.*)");
+
+  Request within_limit;
+  within_limit.path = "/files/" + std::string(10, 'A');
+  EXPECT_TRUE(matcher.match(within_limit));
+
+  Request over_limit;
+  over_limit.path =
+      "/files/" + std::string(CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH, 'A');
+  EXPECT_FALSE(matcher.match(over_limit));
+}
+
+TEST(RegexMatcherTest, ServerSurvivesOverlongPathOnRegexRoute) {
+  Server svr;
+  svr.Get(R"(/files/(.*))", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // Comfortably past CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH, well within the
+  // request URI limit; this used to be able to crash the process.
+  std::string path =
+      "/files/" + std::string(CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH * 4, 'A');
+  std::string req = "GET " + path +
+                    " HTTP/1.1\r\n"
+                    "Host: " +
+                    std::string(HOST) + ":" + std::to_string(port) +
+                    "\r\n"
+                    "Connection: close\r\n"
+                    "\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(5, req, &response, port));
+  EXPECT_NE(std::string::npos, response.find("404"));
+}
+
 TEST(ParseUrlTest, VariousPatterns) {
   {
     detail::UrlComponents uc;
