@@ -856,9 +856,9 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
       // path, query or fragment delimiter (or the end of input). Otherwise the
       // trailing bytes would be folded into the path while the connection
       // still targets the bracketed address.
-      if (pos < url.size() && url[pos] != ':' && url[pos] != '/' &&
-          url[pos] != '?' && url[pos] != '#') {
-        return false;
+      if (pos < url.size()) {
+        auto c = url[pos];
+        if (c != ':' && c != '/' && c != '?' && c != '#') { return false; }
       }
     } else {
       auto end = url.find_first_of(":/?#", pos);
