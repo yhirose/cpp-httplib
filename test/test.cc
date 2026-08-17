@@ -5796,6 +5796,15 @@ TEST_F(ServerTest, GetMethodDirTest) {
   EXPECT_EQ("test.html", res->body);
 }
 
+TEST_F(ServerTest, GetMethodDirTestRangeNotSatisfiable) {
+  Headers headers = {make_range_header({{100, 199}})};
+  auto res = cli_.Get("/dir/test.html", headers);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ("", res->body);
+}
+
 TEST_F(ServerTest, GetMethodDirTestWithDoubleDots) {
   auto res = cli_.Get("/dir/../dir/test.html");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -9724,6 +9733,176 @@ TEST(MountTest, Unmount) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
+
+TEST(BorrowedContentTest, ServeAndRelease) {
+  Server svr;
+
+  const std::string data = "0123456789abcdefghij";
+  std::atomic<int> released{0};
+  std::atomic<int> released_ok{0};
+
+  svr.Get("/view", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", [&](bool ok) {
+      released++;
+      if (ok) { released_ok++; }
+    });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  svr.wait_until_ready();
+
+  {
+    Client cli("localhost", PORT);
+    cli.set_keep_alive(true);
+
+    auto res = cli.Get("/view");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("20", res->get_header_value("Content-Length"));
+    EXPECT_EQ(data, res->body);
+
+    res = cli.Head("/view");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("20", res->get_header_value("Content-Length"));
+    EXPECT_EQ("", res->body);
+
+    Headers range_headers = {make_range_header({{5, 8}})};
+    res = cli.Get("/view", range_headers);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+    EXPECT_EQ("bytes 5-8/20", res->get_header_value("Content-Range"));
+    EXPECT_EQ("5678", res->body);
+
+    // An unsatisfiable range drops the borrowed view; nothing may trail the
+    // 416 on this kept-alive connection.
+    Headers bad_range_headers = {make_range_header({{100, 199}})};
+    res = cli.Get("/view", bad_range_headers);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+    EXPECT_EQ("", res->body);
+
+    res = cli.Get("/view");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(data, res->body);
+  }
+
+  svr.stop();
+  listen_thread.join();
+
+  // One release per response; the flag reports whether the borrowed bytes
+  // were delivered (HEAD and the 416 never send them).
+  EXPECT_EQ(5, released.load());
+  EXPECT_EQ(3, released_ok.load());
+}
+
+#ifndef _WIN32
+// A Content-Length-honoring client cannot see bytes leaked after the header
+// block (a 416 always closes the connection), so verify at the socket level
+// that the 416 for a borrowed view carries no body at all.
+TEST(BorrowedContentTest, RangeNotSatisfiableLeavesNoStrayBytes) {
+  Server svr;
+
+  const std::string data = "0123456789abcdefghij";
+  svr.Get("/view", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+  });
+
+  // Bind the loopback IPv4 address explicitly; the raw client below
+  // connects to INADDR_LOOPBACK.
+  auto listen_thread = std::thread([&svr]() { svr.listen("127.0.0.1", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  const int sock = socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_LE(0, sock);
+  sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT));
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_EQ(0,
+            connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+
+  const std::string request = "GET /view HTTP/1.1\r\n"
+                              "Host: localhost\r\n"
+                              "Range: bytes=100-199\r\n"
+                              "Connection: close\r\n"
+                              "\r\n";
+  ASSERT_EQ(static_cast<ssize_t>(request.size()),
+            send(sock, request.data(), request.size(), 0));
+
+  std::string response;
+  char buf[4096];
+  ssize_t n;
+  while ((n = recv(sock, buf, sizeof(buf), 0)) > 0) {
+    response.append(buf, static_cast<size_t>(n));
+  }
+  close(sock);
+
+  EXPECT_EQ(0u, response.find("HTTP/1.1 416 "));
+  const auto header_end = response.find("\r\n\r\n");
+  ASSERT_NE(std::string::npos, header_end);
+  EXPECT_EQ(response.size(), header_end + 4);
+}
+#endif
+
+TEST(BorrowedContentTest, ErrorHandlerReplacesBorrowedContent) {
+  Server svr;
+
+  const std::string data = "borrowed bytes";
+  svr.Get("/fail", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+    res.status = StatusCode::InternalServerError_500;
+  });
+  svr.set_error_handler([](const Request & /*req*/, Response &res) {
+    res.set_content("error body", "text/html");
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  auto res = cli.Get("/fail");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+  EXPECT_EQ("error body", res->body);
+}
+
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+TEST(BorrowedContentTest, ExceptionDropsBorrowedContent) {
+  Server svr;
+
+  const std::string data = "borrowed bytes";
+  svr.Get("/throw", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+    throw std::runtime_error("boom");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  auto res = cli.Get("/throw");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ("", res->body);
+}
+#endif
 
 TEST(MountTest, PathSegmentBoundary) {
   Server svr;
