@@ -290,6 +290,47 @@ TEST(SocketStream, wait_writable_UNIX) {
   EXPECT_EQ(0, close(fds[0]));
 }
 
+TEST(SocketStream, writev_UNIX) {
+  int fds[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
+
+  // More spans than CPPHTTPLIB_WRITEV_MAX_BUFS exercises batching; a total
+  // several times the socket buffer exercises the partial-send resume logic.
+  std::vector<std::string> spans;
+  for (size_t i = 0; i < 2 * CPPHTTPLIB_WRITEV_MAX_BUFS + 3; i++) {
+    spans.emplace_back(1 + i * 25000, static_cast<char>('a' + i % 26));
+  }
+  std::vector<Stream::WriteBuffer> bufs;
+  std::string expected;
+  for (const auto &s : spans) {
+    bufs.push_back({s.data(), s.size()});
+    expected += s;
+  }
+
+  std::string received;
+  std::thread reader{[&] {
+    char buf[4096];
+    ssize_t n;
+    while ((n = ::recv(fds[1], buf, sizeof(buf), 0)) > 0) {
+      received.append(buf, static_cast<size_t>(n));
+    }
+  }};
+
+  detail::process_client_socket(
+      fds[0], 5, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
+      [&](Stream &strm) {
+        EXPECT_EQ(static_cast<ssize_t>(expected.size()),
+                  strm.writev(bufs.data(), bufs.size()));
+        return true;
+      });
+  EXPECT_EQ(0, close(fds[0])); // EOF ends the reader
+  reader.join();
+  EXPECT_EQ(0, close(fds[1]));
+
+  ASSERT_EQ(expected.size(), received.size());
+  EXPECT_TRUE(expected == received);
+}
+
 TEST(SocketStream, wait_writable_INET) {
   sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
@@ -1917,6 +1958,55 @@ TEST(BufferStreamTest, read) {
   EXPECT_EQ('o', buf[0]);
 
   EXPECT_EQ(0, strm.read(buf, 1));
+}
+
+namespace {
+// Records write() calls into the generic Stream::writev() fallback. The call
+// count matters beyond syscall volume: for streams like TLS, every write() is
+// at least one record on the wire.
+struct WriteRecordingStream final : public Stream {
+  std::string buffer;
+  std::vector<size_t> write_sizes;
+
+  bool is_readable() const override { return false; }
+  bool wait_readable() const override { return false; }
+  bool wait_writable() const override { return true; }
+  ssize_t read(char *, size_t) override { return -1; }
+  ssize_t write(const char *ptr, size_t size) override {
+    write_sizes.push_back(size);
+    buffer.append(ptr, size);
+    return static_cast<ssize_t>(size);
+  }
+  void get_remote_ip_and_port(std::string &, int &) const override {}
+  void get_local_ip_and_port(std::string &, int &) const override {}
+  socket_t socket() const override { return INVALID_SOCKET; }
+  time_t duration() const override { return 0; }
+};
+} // namespace
+
+// Small totals coalesce into a single write.
+TEST(StreamWritevFallbackTest, coalesced) {
+  WriteRecordingStream strm;
+
+  const Stream::WriteBuffer bufs[3] = {{"foo", 3}, {"", 0}, {"barbaz", 6}};
+  EXPECT_EQ(9, strm.writev(bufs, 3));
+  EXPECT_EQ("foobarbaz", strm.buffer);
+  EXPECT_EQ(std::vector<size_t>{9}, strm.write_sizes);
+}
+
+// Larger totals flush in CPPHTTPLIB_SEND_BUFSIZ chunks, packing spans
+// across chunk boundaries.
+TEST(StreamWritevFallbackTest, chunked) {
+  WriteRecordingStream strm;
+
+  const std::string a(CPPHTTPLIB_SEND_BUFSIZ + 10, 'a');
+  const std::string b(20, 'b');
+  const Stream::WriteBuffer bufs[2] = {{a.data(), a.size()},
+                                       {b.data(), b.size()}};
+  EXPECT_EQ(static_cast<ssize_t>(a.size() + b.size()), strm.writev(bufs, 2));
+  EXPECT_EQ(a + b, strm.buffer);
+  EXPECT_EQ((std::vector<size_t>{CPPHTTPLIB_SEND_BUFSIZ, 30}),
+            strm.write_sizes);
 }
 
 TEST(HostnameToIPConversionTest, HTTPWatch_Online) {

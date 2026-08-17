@@ -162,6 +162,10 @@
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(16384u)
 #endif
 
+#ifndef CPPHTTPLIB_WRITEV_MAX_BUFS
+#define CPPHTTPLIB_WRITEV_MAX_BUFS size_t(8u)
+#endif
+
 #ifndef CPPHTTPLIB_SEND_BUFSIZ
 #define CPPHTTPLIB_SEND_BUFSIZ size_t(16384u)
 #endif
@@ -304,6 +308,7 @@ using socklen_t = int;
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -1847,6 +1852,15 @@ public:
 
   virtual ssize_t read(char *ptr, size_t size) = 0;
   virtual ssize_t write(const char *ptr, size_t size) = 0;
+
+  // Gather write: all buffers leave in as few syscalls as possible
+  // (normally one), minimizing both syscall overhead and TCP segments.
+  struct WriteBuffer {
+    const char *data;
+    size_t size;
+  };
+  virtual ssize_t writev(const WriteBuffer *bufs, size_t count);
+
   virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
   virtual void get_local_ip_and_port(std::string &ip, int &port) const = 0;
   virtual socket_t socket() const = 0;
@@ -6220,6 +6234,7 @@ public:
   bool is_peer_alive() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
+  ssize_t writev(const WriteBuffer *bufs, size_t count) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
   void get_local_ip_and_port(std::string &ip, int &port) const override;
   socket_t socket() const override;
@@ -11132,6 +11147,40 @@ inline ssize_t Stream::write(const std::string &s) {
   return write(s.data(), s.size());
 }
 
+inline ssize_t Stream::writev(const WriteBuffer *bufs, size_t count) {
+  size_t total = 0;
+  for (size_t i = 0; i < count; i++) {
+    total += bufs[i].size;
+  }
+
+  // Fallback for streams without native gather support: pack spans into a
+  // bounded staging buffer, flushing whenever it fills. Small totals leave
+  // as a single write() - for TLS, a single record - and large ones chunk
+  // at the same granularity TLS fragments records anyway.
+  std::string chunk;
+  chunk.reserve((std::min)(total, CPPHTTPLIB_SEND_BUFSIZ));
+  for (size_t i = 0; i < count; i++) {
+    const char *data = bufs[i].data;
+    size_t remaining = bufs[i].size;
+    while (remaining > 0) {
+      auto n = (std::min)(remaining, CPPHTTPLIB_SEND_BUFSIZ - chunk.size());
+      chunk.append(data, n);
+      data += n;
+      remaining -= n;
+      if (chunk.size() == CPPHTTPLIB_SEND_BUFSIZ) {
+        if (!detail::write_data(*this, chunk.data(), chunk.size())) {
+          return -1;
+        }
+        chunk.clear();
+      }
+    }
+  }
+  if (!chunk.empty()) {
+    if (!detail::write_data(*this, chunk.data(), chunk.size())) { return -1; }
+  }
+  return static_cast<ssize_t>(total);
+}
+
 // BodyReader implementation
 inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
   if (!stream) {
@@ -11501,6 +11550,89 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
 #endif
 
   return send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
+}
+
+inline ssize_t SocketStream::writev(const WriteBuffer *bufs, size_t count) {
+  // Gather write: all buffers leave in as few syscalls as the kernel
+  // allows (normally one, but limited to batches of fixed size to bound
+  // stack use)
+  if (count > CPPHTTPLIB_WRITEV_MAX_BUFS) {
+    size_t total = 0;
+    while (count > 0) {
+      auto batch = (std::min)(count, CPPHTTPLIB_WRITEV_MAX_BUFS);
+      auto n = writev(bufs, batch);
+      if (n < 0) { return -1; }
+      total += static_cast<size_t>(n);
+      bufs += batch;
+      count -= batch;
+    }
+    return static_cast<ssize_t>(total);
+  }
+
+  // In-progress state in portable form
+  WriteBuffer rest[CPPHTTPLIB_WRITEV_MAX_BUFS];
+  size_t total = 0;
+  for (size_t i = 0; i < count; i++) {
+    rest[i] = bufs[i];
+    total += bufs[i].size;
+  }
+
+  size_t written = 0;
+  size_t first = 0; // first span not yet fully written
+  while (written < total) {
+    if (!wait_writable()) { return -1; }
+
+#ifdef _WIN32
+    WSABUF iov[CPPHTTPLIB_WRITEV_MAX_BUFS];
+    DWORD niov = 0;
+    for (size_t i = first; i < count; i++) {
+      iov[i].buf = const_cast<char *>(rest[i].data);
+      // WSABUF::len is a ULONG; an oversized span goes out in clamped
+      // pieces, with the resume logic below advancing through it. Later
+      // spans must not ride along in the same call - they would land
+      // ahead of the clamped span's remainder - so the batch ends there.
+      iov[i].len = static_cast<ULONG>(
+          (std::min)(rest[i].size,
+                     static_cast<size_t>((std::numeric_limits<ULONG>::max)())));
+      niov++;
+      if (iov[i].len < rest[i].size) { break; }
+    }
+    DWORD sent = 0;
+    auto ret = handle_EINTR([&]() {
+      return ::WSASend(sock_, iov + first, niov, &sent, 0, nullptr, nullptr);
+    });
+    if (ret != 0) { return -1; }
+    size_t n = sent;
+#else
+    struct iovec iov[CPPHTTPLIB_WRITEV_MAX_BUFS];
+    for (size_t i = first; i < count; i++) {
+      iov[i].iov_base = const_cast<char *>(rest[i].data);
+      iov[i].iov_len = rest[i].size;
+    }
+    struct msghdr msg = {};
+    msg.msg_iov = iov + first;
+    msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(count - first);
+    auto n_or_err = handle_EINTR(
+        [&]() { return ::sendmsg(sock_, &msg, CPPHTTPLIB_SEND_FLAGS); });
+    if (n_or_err < 0) { return -1; }
+    size_t n = static_cast<size_t>(n_or_err);
+#endif
+
+    written += n;
+
+    // Advance past whole spans the kernel consumed, then trim the
+    // partially-consumed one.
+    while (first < count && n >= rest[first].size) {
+      n -= rest[first].size;
+      first++;
+    }
+    if (first < count && n > 0) {
+      rest[first].data += n;
+      rest[first].size -= n;
+    }
+  }
+
+  return static_cast<ssize_t>(total);
 }
 
 inline void SocketStream::get_remote_ip_and_port(std::string &ip,
