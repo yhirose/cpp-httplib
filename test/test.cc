@@ -719,6 +719,22 @@ TEST(DecodeUriTest, TestRoundTripWithEncodeUri) {
   EXPECT_EQ(decoded, original);
 }
 
+TEST(DecodeUriTest, KeepsReservedCharacterEscapes) {
+  // decode_uri is the inverse of encode_uri: an escaped reserved character
+  // stays encoded so it is not promoted into a real delimiter, while
+  // non-reserved escapes still decode (like JS decodeURI).
+  EXPECT_EQ(httplib::decode_uri("%2F"), "%2F");
+  EXPECT_EQ(httplib::decode_uri("%23"), "%23");
+  EXPECT_EQ(httplib::decode_uri("%3F%3A%40%26%3D%2B%24%2C%3B"),
+            "%3F%3A%40%26%3D%2B%24%2C%3B");
+  EXPECT_EQ(httplib::decode_uri("%2D"), "-");
+  EXPECT_EQ(httplib::decode_uri("%20"), " ");
+  EXPECT_EQ(httplib::decode_uri("http://example.com/a%2Fb"),
+            "http://example.com/a%2Fb");
+  // decode_uri_component still decodes the reserved character.
+  EXPECT_EQ(httplib::decode_uri_component("%2F"), "/");
+}
+
 TEST(DecodeUriComponentTest, TestRoundTripWithEncodeUriComponent) {
   string original = "Piri Tommy Villiers - on & on";
   string encoded = httplib::encode_uri_component(original);
