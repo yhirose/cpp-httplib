@@ -3500,6 +3500,9 @@ void split(const char *b, const char *e, char d,
 void split(const char *b, const char *e, char d, size_t m,
            std::function<void(const char *, const char *)> fn);
 
+bool has_header_token(const Headers &headers, const std::string &key,
+                      const std::string &token);
+
 bool process_client_socket(
     socket_t sock, time_t read_timeout_sec, time_t read_timeout_usec,
     time_t write_timeout_sec, time_t write_timeout_usec,
@@ -5280,25 +5283,6 @@ inline std::string websocket_accept_key(const std::string &client_key) {
   return base64_encode(sha1(client_key + magic));
 }
 
-inline bool has_header_token(const Headers &headers, const std::string &key,
-                             const std::string &token) {
-  // RFC 9110 7.6.1: a Connection field value is a comma-separated list of
-  // tokens, and RFC 9110 5.3 lets that list be split across several lines.
-  // Match complete tokens rather than searching the raw value, so that a
-  // value such as "notupgrade" is not read as the token "upgrade".
-  auto rng = headers.equal_range(key);
-  for (auto it = rng.first; it != rng.second; ++it) {
-    const auto &value = it->second;
-    auto found = false;
-    split(value.data(), value.data() + value.size(), ',',
-          [&](const char *b, const char *e) {
-            if (case_ignore::equal(std::string(b, e), token)) { found = true; }
-          });
-    if (found) { return true; }
-  }
-  return false;
-}
-
 inline bool is_websocket_upgrade(const Request &req) {
   if (req.method != "GET") { return false; }
 
@@ -5308,7 +5292,7 @@ inline bool is_websocket_upgrade(const Request &req) {
   auto upgrade_val = case_ignore::to_lower(upgrade_it->second);
   if (upgrade_val != "websocket") { return false; }
 
-  // Check Connection carries the "Upgrade" token
+  // Check Connection: Upgrade
   if (!has_header_token(req.headers, "Connection", "upgrade")) { return false; }
 
   // Check Sec-WebSocket-Key is a valid base64-encoded 16-byte value (24 chars)
@@ -7901,7 +7885,7 @@ inline bool read_websocket_upgrade_response(Stream &strm,
     return false;
   }
 
-  // Verify Connection carries the "Upgrade" token (case-insensitive)
+  // Verify Connection: Upgrade
   if (!has_header_token(headers, "Connection", "upgrade")) {
     upgrade.error = Error::WebSocketHandshake;
     return false;
@@ -8028,6 +8012,25 @@ inline ReadContentResult read_content_chunked(Stream &strm, T &x,
 
     total_len += static_cast<size_t>(n);
   }
+}
+
+inline bool has_header_token(const Headers &headers, const std::string &key,
+                             const std::string &token) {
+  // RFC 9110 7.6.1: a comma-separated token list field such as Connection may
+  // carry several tokens, and RFC 9110 5.3 lets that list be split across
+  // several lines. Match complete tokens rather than searching the raw value,
+  // so that a value such as "notupgrade" is not read as the token "upgrade".
+  auto rng = headers.equal_range(key);
+  for (auto it = rng.first; it != rng.second; ++it) {
+    const auto &value = it->second;
+    if (split_find(value.data(), value.data() + value.size(), ',',
+                   [&](const char *b, const char *e) {
+                     return case_ignore::equal(std::string(b, e), token);
+                   })) {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline bool is_chunked_transfer_encoding(const Headers &headers) {

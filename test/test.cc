@@ -21046,81 +21046,30 @@ TEST(WebSocketTest, ServerRejectsHandshakeWithoutUpgradeToken) {
 TEST(WebSocketTest, ClientRejectsResponseWithoutUpgradeToken) {
   // The peer answers 101 with a correct Sec-WebSocket-Accept, so the
   // Connection value is the only thing left for the client to reject.
-  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
-  ASSERT_NE(INVALID_SOCKET, srv);
-  auto se_srv = detail::scope_exit([&] { detail::close_socket(srv); });
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = 0; // ephemeral, so parallel shards don't collide
-  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
-  ASSERT_EQ(0, ::listen(srv, 1));
-
-  sockaddr_in bound{};
-  socklen_t bound_len = sizeof(bound);
-  ASSERT_EQ(
-      0, ::getsockname(srv, reinterpret_cast<sockaddr *>(&bound), &bound_len));
-  auto port = ntohs(bound.sin_port);
-
-  std::thread t([&] {
-    // Bound every blocking call so a regression fails the test instead of
-    // hanging the suite.
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(srv, &rfds);
-    timeval tv{5, 0};
-    if (::select(static_cast<int>(srv + 1), &rfds, nullptr, nullptr, &tv) <=
-        0) {
-      return;
-    }
-
-    sockaddr_in cli_addr{};
-    socklen_t cli_len = sizeof(cli_addr);
-    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
-    if (cli == INVALID_SOCKET) { return; }
-    auto se_cli = detail::scope_exit([&] { detail::close_socket(cli); });
-
-    detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
-    std::string req;
-    char buf[4096];
-    while (req.find("\r\n\r\n") == std::string::npos) {
-      auto n = ::recv(cli, buf, sizeof(buf), 0);
-      if (n <= 0) { return; }
-      req.append(buf, static_cast<size_t>(n));
-    }
-
-    const std::string name = "Sec-WebSocket-Key: ";
-    auto beg = req.find(name);
-    if (beg == std::string::npos) { return; }
-    beg += name.size();
-    auto end = req.find("\r\n", beg);
-    auto key = req.substr(beg, end - beg);
-
-    auto res = std::string("HTTP/1.1 101 Switching Protocols\r\n"
-                           "Upgrade: websocket\r\n"
-                           "Connection: notupgrade\r\n"
-                           "Sec-WebSocket-Accept: ") +
-               detail::websocket_accept_key(key) + "\r\n\r\n";
-    ::send(cli,
-#ifdef _WIN32
-           static_cast<const char *>(res.c_str()), static_cast<int>(res.size()),
-#else
-           res.c_str(), res.size(),
-#endif
-           0);
+  Server svr;
+  svr.Get("/ws", [](const Request &req, Response &res) {
+    res.status = StatusCode::SwitchingProtocol_101;
+    res.set_header("Upgrade", "websocket");
+    res.set_header("Connection", "notupgrade");
+    res.set_header("Sec-WebSocket-Accept",
+                   detail::websocket_accept_key(
+                       req.get_header_value("Sec-WebSocket-Key")));
   });
 
-  ws::WebSocketClient client("ws://127.0.0.1:" + std::to_string(port) + "/ws");
-  client.set_connection_timeout(5, 0);
-  client.set_read_timeout(5, 0);
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
 
   auto res = client.connect();
   EXPECT_FALSE(res);
   EXPECT_EQ(Error::WebSocketHandshake, res.error());
   EXPECT_FALSE(client.is_open());
-
-  t.join();
 }
 
 TEST(WebSocketTest, HostHeaderOverUnixSocket) {
