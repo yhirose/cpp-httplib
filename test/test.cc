@@ -20983,6 +20983,95 @@ TEST(WebSocketTest, InvalidHeaderInHandshakeWritesNothing) {
   EXPECT_EQ(0, received);
 }
 
+TEST(WebSocketTest, ConnectionHeaderNeedsCompleteUpgradeToken) {
+  // RFC 6455 4.2.1: Connection is a token list, so a value that merely
+  // contains "upgrade" as a substring is a different token and must not
+  // start a WebSocket handshake.
+  auto make_request = [](const std::vector<std::string> &connection_values) {
+    Request req;
+    req.method = "GET";
+    req.headers.emplace("Upgrade", "websocket");
+    for (const auto &value : connection_values) {
+      req.headers.emplace("Connection", value);
+    }
+    req.headers.emplace("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+    req.headers.emplace("Sec-WebSocket-Version", "13");
+    return req;
+  };
+
+  EXPECT_TRUE(detail::is_websocket_upgrade(make_request({"Upgrade"})));
+  EXPECT_TRUE(detail::is_websocket_upgrade(make_request({"upgrade"})));
+  EXPECT_TRUE(
+      detail::is_websocket_upgrade(make_request({"keep-alive, Upgrade"})));
+  EXPECT_TRUE(
+      detail::is_websocket_upgrade(make_request({"Upgrade , keep-alive"})));
+  EXPECT_TRUE(
+      detail::is_websocket_upgrade(make_request({"keep-alive", "Upgrade"})));
+
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"notupgrade"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"upgrade-not"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"xupgrade"})));
+  EXPECT_FALSE(
+      detail::is_websocket_upgrade(make_request({"keep-alive, notupgrade"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"close"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({})));
+}
+
+TEST(WebSocketTest, ServerRejectsHandshakeWithoutUpgradeToken) {
+  Server svr;
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &) {});
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Headers headers = {{"Upgrade", "websocket"},
+                     {"Connection", "notupgrade"},
+                     {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                     {"Sec-WebSocket-Version", "13"}};
+
+  Client cli("localhost", port);
+  auto res = cli.Get("/ws", headers);
+
+  // The route exists only as a WebSocket route, so a request that fails the
+  // handshake check falls through to ordinary routing.
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST(WebSocketTest, ClientRejectsResponseWithoutUpgradeToken) {
+  // The peer answers 101 with a correct Sec-WebSocket-Accept, so the
+  // Connection value is the only thing left for the client to reject.
+  Server svr;
+  svr.Get("/ws", [](const Request &req, Response &res) {
+    res.status = StatusCode::SwitchingProtocol_101;
+    res.set_header("Upgrade", "websocket");
+    res.set_header("Connection", "notupgrade");
+    res.set_header("Sec-WebSocket-Accept",
+                   detail::websocket_accept_key(
+                       req.get_header_value("Sec-WebSocket-Key")));
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+
+  auto res = client.connect();
+  EXPECT_FALSE(res);
+  EXPECT_EQ(Error::WebSocketHandshake, res.error());
+  EXPECT_FALSE(client.is_open());
+}
+
 TEST(WebSocketTest, HostHeaderOverUnixSocket) {
   // The socket path doubles as the URL host, so it must not contain '/'.
   const char *shard = getenv("GTEST_SHARD_INDEX");
