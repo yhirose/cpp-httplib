@@ -16576,6 +16576,61 @@ TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
   ASSERT_TRUE(send_request(1, req, &res));
 }
 
+// RFC 9110 Section 5.2 and 5.3: a comma-separated list field may be sent as
+// several field lines, and the combined value is what has to be parsed. A
+// Trailer field split across lines therefore declares every name it lists;
+// reading only the first line silently drops the trailers the later lines
+// declare. The prohibited-trailer filter still applies to every line.
+TEST(HeaderSmugglingTest, DuplicateTrailerFieldLinesDeclareAllTrailers) {
+  Server svr;
+
+  size_t observed_trailer_count = 0;
+  std::string observed_hello;
+  std::string observed_world;
+  bool observed_content_length = true;
+
+  svr.Get("/", [&](const Request &req, Response &res) {
+    observed_trailer_count = req.trailers.size();
+    observed_hello = req.get_trailer_value("X-Hello");
+    observed_world = req.get_trailer_value("X-World");
+    observed_content_length = req.has_trailer("Content-Length");
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Transfer-Encoding: chunked\r\n"
+                          "Trailer: X-Hello\r\n"
+                          "Trailer: X-World, Content-Length\r\n"
+                          "\r\n"
+                          "0\r\n"
+                          "X-Hello: hello\r\n"
+                          "X-World: world\r\n"
+                          "Content-Length: 10\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
+
+  // Accepted: both field lines contribute to the declared set
+  EXPECT_EQ(2U, observed_trailer_count);
+  EXPECT_EQ(observed_hello, "hello");
+  EXPECT_EQ(observed_world, "world");
+
+  // Denied: a prohibited name stays prohibited on a later field line
+  EXPECT_FALSE(observed_content_length);
+}
+
 // A direct client that is not listed in trusted_proxies must not be able to
 // spoof req.remote_addr by sending an arbitrary X-Forwarded-For header. Only
 // the peer address on the actual TCP connection determines whether the
@@ -16895,6 +16950,69 @@ TEST(ForwardedHeadersTest, HandlesWhitespaceAroundIPs) {
   EXPECT_EQ(observed_remote_addr, "203.0.113.66");
 }
 
+// RFC 9110 Section 5.2 and 5.3: repeated field lines carry the same meaning as
+// one comma-joined value, in the order received. Proxies such as HAProxy append
+// their own X-Forwarded-For as a separate field line rather than extending the
+// one the client sent, so every occurrence has to be taken into account.
+// Reading only the first one hands back the address the client chose.
+TEST(ForwardedHeadersTest, DuplicateFieldLines_JoinsAllOccurrences) {
+  Server svr;
+
+  svr.set_trusted_proxies({"192.0.2.45", "::1", "127.0.0.1"});
+
+  std::string observed_remote_addr;
+  size_t observed_xff_count = 0;
+
+  svr.Get("/ip", [&](const Request &req, Response &res) {
+    observed_remote_addr = req.remote_addr;
+    observed_xff_count = req.get_header_value_count("X-Forwarded-For");
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // The client supplies the first field line; the trusted proxy appends the
+  // address it observed as a second one.
+  std::string raw_req = "GET /ip HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "X-Forwarded-For: 1.2.3.4\r\n"
+                        "X-Forwarded-For: 198.51.100.23, 192.0.2.45\r\n"
+                        "Connection: close\r\n"
+                        "\r\n";
+
+  std::string out;
+  ASSERT_TRUE(send_request(5, raw_req, &out, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
+
+  EXPECT_EQ(observed_xff_count, 2U);
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+
+  // The same chain spread over one field line per hop derives the same client
+  // address, i.e. the split and the comma-joined representations agree.
+  std::string per_hop_req = "GET /ip HTTP/1.1\r\n"
+                            "Host: localhost\r\n"
+                            "X-Forwarded-For: 1.2.3.4\r\n"
+                            "X-Forwarded-For: 198.51.100.23\r\n"
+                            "X-Forwarded-For: 192.0.2.45\r\n"
+                            "Connection: close\r\n"
+                            "\r\n";
+
+  out.clear();
+  ASSERT_TRUE(send_request(5, per_hop_req, &out, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
+
+  EXPECT_EQ(observed_xff_count, 3U);
+  EXPECT_EQ(observed_remote_addr, "198.51.100.23");
+}
+
 // An X-Forwarded-For header whose value parses to zero IP segments must not
 // crash the server (it used to call front() on an empty vector inside
 // get_client_ip). The connection-level remote address must be retained instead.
@@ -16941,6 +17059,116 @@ TEST(ForwardedHeadersTest, CommaOnlyXForwardedFor_DoesNotCrash) {
 TEST(ForwardedHeadersTest, MultipleCommasXForwardedFor_DoesNotCrash) {
   run_malformed_xff_test(", , ,");
 }
+
+// The same rule applies to Accept: a request whose acceptable types are spread
+// over several field lines must be negotiated against all of them.
+TEST(RepeatedFieldLinesTest, AcceptCombinesEveryFieldLine) {
+  Server svr;
+
+  std::vector<std::string> observed_types;
+
+  svr.Get("/", [&](const Request &req, Response &res) {
+    observed_types = req.accept_content_types;
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  Headers headers;
+  headers.emplace("Accept", "text/plain;q=0.5");
+  headers.emplace("Accept", "application/json");
+
+  auto res = cli.Get("/", headers);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Sorted by q-value, so the second field line's type comes first
+  ASSERT_EQ(2U, observed_types.size());
+  EXPECT_EQ("application/json", observed_types[0]);
+  EXPECT_EQ("text/plain", observed_types[1]);
+}
+
+// RFC 9110 Section 5.6.1.2: empty list elements are parsed and ignored, so an
+// empty field line must not contribute a bare comma to the combined value.
+// parse_accept_header() rejects a leading comma outright, so a stray one would
+// turn a legal request into 400 Bad Request.
+TEST(RepeatedFieldLinesTest, EmptyFieldLineDoesNotInjectComma) {
+  Server svr;
+
+  std::vector<std::string> observed_types;
+
+  svr.Get("/", [&](const Request &req, Response &res) {
+    observed_types = req.accept_content_types;
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Empty first field line, then a real one
+  std::string raw_req = "GET / HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "Accept:\r\n"
+                        "Accept: application/json\r\n"
+                        "Connection: close\r\n"
+                        "\r\n";
+
+  std::string out;
+  ASSERT_TRUE(send_request(5, raw_req, &out, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
+
+  ASSERT_EQ(1U, observed_types.size());
+  EXPECT_EQ("application/json", observed_types[0]);
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+// An encoding offered on a later Accept-Encoding field line is still offered.
+TEST(RepeatedFieldLinesTest, AcceptEncodingCombinesEveryFieldLine) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_content(std::string(1024, 'x'), "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+
+  Headers headers;
+  headers.emplace("Accept-Encoding", "identity");
+  headers.emplace("Accept-Encoding", "gzip");
+
+  auto res = cli.Get("/", headers);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+}
+#endif
 
 #ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
@@ -18230,6 +18458,16 @@ TEST(ETagTest, StaticFileETagAndIfNoneMatch) {
   auto res5 = cli.Get("/static/etag_testfile.txt", h5);
   ASSERT_TRUE(res5);
   EXPECT_EQ(304, res5->status);
+
+  // The ETag list split over several field lines: RFC 9110 Section 5.3 makes
+  // that equivalent to the single comma-separated list above, so the match on
+  // the second line must still be found.
+  Headers h6;
+  h6.emplace("If-None-Match", "W/\"other\"");
+  h6.emplace("If-None-Match", etag);
+  auto res6 = cli.Get("/static/etag_testfile.txt", h6);
+  ASSERT_TRUE(res6);
+  EXPECT_EQ(304, res6->status);
 
   svr.stop();
   t.join();
@@ -20675,6 +20913,20 @@ TEST_F(WebSocketIntegrationTest, SubProtocolNegotiation) {
   ASSERT_TRUE(client.connect());
 
   // Server should have selected graphql-ws
+  EXPECT_EQ("graphql-ws", client.subprotocol());
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, SubProtocolSplitAcrossFieldLines) {
+  Headers headers;
+  headers.emplace("Sec-WebSocket-Protocol", "mqtt");
+  headers.emplace("Sec-WebSocket-Protocol", "graphql-ws");
+  ws::WebSocketClient client(
+      "ws://localhost:" + std::to_string(port_) + "/ws-subprotocol", headers);
+  ASSERT_TRUE(client.connect());
+
+  // The offer on the second field line counts too, so graphql-ws is selected
   EXPECT_EQ("graphql-ws", client.subprotocol());
 
   client.close();
