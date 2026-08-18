@@ -5280,6 +5280,25 @@ inline std::string websocket_accept_key(const std::string &client_key) {
   return base64_encode(sha1(client_key + magic));
 }
 
+inline bool has_header_token(const Headers &headers, const std::string &key,
+                             const std::string &token) {
+  // RFC 9110 7.6.1: a Connection field value is a comma-separated list of
+  // tokens, and RFC 9110 5.3 lets that list be split across several lines.
+  // Match complete tokens rather than searching the raw value, so that a
+  // value such as "notupgrade" is not read as the token "upgrade".
+  auto rng = headers.equal_range(key);
+  for (auto it = rng.first; it != rng.second; ++it) {
+    const auto &value = it->second;
+    auto found = false;
+    split(value.data(), value.data() + value.size(), ',',
+          [&](const char *b, const char *e) {
+            if (case_ignore::equal(std::string(b, e), token)) { found = true; }
+          });
+    if (found) { return true; }
+  }
+  return false;
+}
+
 inline bool is_websocket_upgrade(const Request &req) {
   if (req.method != "GET") { return false; }
 
@@ -5289,11 +5308,8 @@ inline bool is_websocket_upgrade(const Request &req) {
   auto upgrade_val = case_ignore::to_lower(upgrade_it->second);
   if (upgrade_val != "websocket") { return false; }
 
-  // Check Connection header contains "Upgrade"
-  auto connection_it = req.headers.find("Connection");
-  if (connection_it == req.headers.end()) { return false; }
-  auto connection_val = case_ignore::to_lower(connection_it->second);
-  if (connection_val.find("upgrade") == std::string::npos) { return false; }
+  // Check Connection carries the "Upgrade" token
+  if (!has_header_token(req.headers, "Connection", "upgrade")) { return false; }
 
   // Check Sec-WebSocket-Key is a valid base64-encoded 16-byte value (24 chars)
   // RFC 6455 Section 4.2.1
@@ -7885,11 +7901,8 @@ inline bool read_websocket_upgrade_response(Stream &strm,
     return false;
   }
 
-  // Verify Connection header contains "Upgrade" (case-insensitive)
-  auto connection_it = headers.find("Connection");
-  if (connection_it == headers.end() ||
-      case_ignore::to_lower(connection_it->second).find("upgrade") ==
-          std::string::npos) {
+  // Verify Connection carries the "Upgrade" token (case-insensitive)
+  if (!has_header_token(headers, "Connection", "upgrade")) {
     upgrade.error = Error::WebSocketHandshake;
     return false;
   }
