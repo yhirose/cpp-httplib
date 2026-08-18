@@ -1481,7 +1481,6 @@ res->body; // Compressed data
 Unix Domain Socket Support
 --------------------------
 
-Unix Domain Socket support is available on Linux and macOS.
 
 ```c++
 // Server
