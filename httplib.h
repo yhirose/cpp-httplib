@@ -3503,28 +3503,8 @@ void split(const char *b, const char *e, char d, size_t m,
 bool split_find(const char *b, const char *e, char d,
                 std::function<bool(const char *, const char *)> fn);
 
-// Defined here rather than beside the other header-field helpers because both
-// call sites sit in the implementation section below. Kept static so that an
-// internal helper does not become an exported symbol of the shared library.
-static inline bool has_header_token(const Headers &headers,
-                                    const std::string &key,
-                                    const std::string &token) {
-  // RFC 9110 7.6.1: a comma-separated token list field such as Connection may
-  // carry several tokens, and RFC 9110 5.3 lets that list be split across
-  // several lines. Match complete tokens rather than searching the raw value,
-  // so that a value such as "notupgrade" is not read as the token "upgrade".
-  auto rng = headers.equal_range(key);
-  for (auto it = rng.first; it != rng.second; ++it) {
-    const auto &value = it->second;
-    if (split_find(value.data(), value.data() + value.size(), ',',
-                   [&](const char *b, const char *e) {
-                     return case_ignore::equal(std::string(b, e), token);
-                   })) {
-      return true;
-    }
-  }
-  return false;
-}
+bool has_header_token(const Headers &headers, const std::string &key,
+                      const std::string &token);
 
 std::string websocket_accept_key(const std::string &client_key);
 
@@ -7788,6 +7768,25 @@ inline std::string get_combined_header_value(const Headers &headers,
     combined += it->second;
   }
   return combined;
+}
+
+inline bool has_header_token(const Headers &headers, const std::string &key,
+                             const std::string &token) {
+  // RFC 9110 7.6.1: a comma-separated token list field such as Connection may
+  // carry several tokens, and RFC 9110 5.3 lets that list be split across
+  // several lines. Match complete tokens rather than searching the raw value,
+  // so that a value such as "notupgrade" is not read as the token "upgrade".
+  auto rng = headers.equal_range(key);
+  for (auto it = rng.first; it != rng.second; ++it) {
+    const auto &value = it->second;
+    if (split_find(value.data(), value.data() + value.size(), ',',
+                   [&](const char *b, const char *e) {
+                     return case_ignore::equal(std::string(b, e), token);
+                   })) {
+      return true;
+    }
+  }
+  return false;
 }
 
 template <typename Map>
