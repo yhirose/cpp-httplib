@@ -1560,34 +1560,6 @@ TEST(GetHeaderValueTest, RegularInvalidValueInt) {
   EXPECT_TRUE(is_invalid_value);
 }
 
-TEST(BearerTokenAuthTest, SchemeValidation) {
-  // A value shorter than "Bearer " must not throw from the fixed-length
-  // substr, and a non-Bearer scheme must not be reported as a token.
-  {
-    Request req;
-    req.set_header("Authorization", "x");
-    EXPECT_EQ("", get_bearer_token_auth(req));
-  }
-  {
-    Request req;
-    req.set_header("Authorization", "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
-    EXPECT_EQ("", get_bearer_token_auth(req));
-  }
-
-  // A well-formed header still yields the token; the scheme is
-  // case-insensitive.
-  {
-    Request req;
-    req.set_header("Authorization", "Bearer abc123");
-    EXPECT_EQ("abc123", get_bearer_token_auth(req));
-  }
-  {
-    Request req;
-    req.set_header("Authorization", "bearer abc123");
-    EXPECT_EQ("abc123", get_bearer_token_auth(req));
-  }
-}
-
 TEST(GetHeaderValueTest, OutOfRangeValueInt) {
   // An all-digit value that overflows size_t must be reported as invalid, not
   // silently saturated/truncated: parsing at size_t width would otherwise wrap
@@ -1643,6 +1615,26 @@ TEST(GetHeaderValueTest, Range) {
     Headers headers = {make_range_header({{0, 0}, {-1, 1}})};
     auto val = detail::get_header_value(headers, "Range", 0, 0);
     EXPECT_STREQ("bytes=0-0, -1", val);
+  }
+}
+
+TEST(BearerTokenAuthTest, SchemeValidation) {
+  // A value shorter than "Bearer " must not throw from the fixed-length
+  // substr, and a non-Bearer scheme must not be reported as a token.
+  struct {
+    const char *value;
+    const char *expected;
+  } cases[] = {
+      {"x", ""},
+      {"Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==", ""},
+      {"Bearer abc123", "abc123"},
+      {"bearer abc123", "abc123"}, // scheme match is case-insensitive
+  };
+
+  for (const auto &c : cases) {
+    Request req;
+    req.set_header("Authorization", c.value);
+    EXPECT_EQ(c.expected, get_bearer_token_auth(req)) << "value: " << c.value;
   }
 }
 

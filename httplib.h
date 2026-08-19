@@ -10458,18 +10458,15 @@ inline bool set_socket_opt(socket_t sock, int level, int optname, int optval) {
 }
 
 inline std::string get_bearer_token_auth(const Request &req) {
-  if (req.has_header("Authorization")) {
-    constexpr auto bearer_header_prefix_len = detail::str_len("Bearer ");
-    auto value = req.get_header_value("Authorization");
-    // Only strip the prefix when the value actually carries the "Bearer "
-    // scheme (case-insensitive per RFC 7235). Without this the fixed-length
-    // substr throws out_of_range on a value shorter than the prefix, and a
-    // different scheme (e.g. "Basic ...") is mistaken for a bearer token.
-    if (value.size() >= bearer_header_prefix_len &&
-        detail::case_ignore::equal(value.substr(0, bearer_header_prefix_len),
-                                   "Bearer ")) {
-      return value.substr(bearer_header_prefix_len);
-    }
+  // The auth scheme is case-insensitive (RFC 9110 11.1), and a value shorter
+  // than the prefix carries no token.
+  constexpr const char bearer_prefix[] = "Bearer ";
+  constexpr auto bearer_prefix_len = detail::str_len(bearer_prefix);
+  auto value = req.get_header_value("Authorization");
+  if (value.size() >= bearer_prefix_len &&
+      detail::case_ignore::equal(value.substr(0, bearer_prefix_len),
+                                 bearer_prefix)) {
+    return value.substr(bearer_prefix_len);
   }
   return "";
 }
