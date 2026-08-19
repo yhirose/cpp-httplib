@@ -5296,11 +5296,11 @@ inline std::string websocket_accept_key(const std::string &client_key) {
 inline bool is_websocket_upgrade(const Request &req) {
   if (req.method != "GET") { return false; }
 
-  // Check Upgrade: websocket (case-insensitive)
-  auto upgrade_it = req.headers.find("Upgrade");
-  if (upgrade_it == req.headers.end()) { return false; }
-  auto upgrade_val = case_ignore::to_lower(upgrade_it->second);
-  if (upgrade_val != "websocket") { return false; }
+  // Check Upgrade: websocket. RFC 9110 7.8 defines Upgrade as a comma-separated
+  // list of protocols and asks recipients to match each name
+  // case-insensitively, so look for the token rather than compare the whole
+  // field value.
+  if (!has_header_token(req.headers, "Upgrade", "websocket")) { return false; }
 
   // Check Connection: Upgrade
   if (!has_header_token(req.headers, "Connection", "upgrade")) { return false; }
@@ -7912,10 +7912,8 @@ inline bool read_websocket_upgrade_response(Stream &strm,
     return false;
   }
 
-  // Verify Upgrade: websocket (case-insensitive)
-  auto upgrade_it = headers.find("Upgrade");
-  if (upgrade_it == headers.end() ||
-      case_ignore::to_lower(upgrade_it->second) != "websocket") {
+  // Verify Upgrade: websocket (a comma-separated list, matched per token)
+  if (!has_header_token(headers, "Upgrade", "websocket")) {
     upgrade.error = Error::WebSocketHandshake;
     return false;
   }

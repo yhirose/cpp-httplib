@@ -21561,6 +21561,43 @@ TEST(WebSocketTest, ConnectionHeaderNeedsCompleteUpgradeToken) {
   EXPECT_FALSE(detail::is_websocket_upgrade(make_request({})));
 }
 
+TEST(WebSocketTest, UpgradeHeaderNeedsCompleteWebsocketToken) {
+  // RFC 9110 7.8 defines Upgrade as a comma-separated list of protocols and
+  // asks recipients to match each protocol-name case-insensitively, and RFC
+  // 6455 4.2.1 asks for a header field containing the value "websocket". A
+  // client naming websocket alongside another protocol, or on a second field
+  // line, is offering websocket; a value that merely contains "websocket" as a
+  // substring is a different protocol name and is not.
+  auto make_request = [](const std::vector<std::string> &upgrade_values) {
+    Request req;
+    req.method = "GET";
+    for (const auto &value : upgrade_values) {
+      req.headers.emplace("Upgrade", value);
+    }
+    req.headers.emplace("Connection", "Upgrade");
+    req.headers.emplace("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+    req.headers.emplace("Sec-WebSocket-Version", "13");
+    return req;
+  };
+
+  EXPECT_TRUE(detail::is_websocket_upgrade(make_request({"websocket"})));
+  EXPECT_TRUE(detail::is_websocket_upgrade(make_request({"WebSocket"})));
+  EXPECT_TRUE(
+      detail::is_websocket_upgrade(make_request({"websocket, HTTP/3.0"})));
+  EXPECT_TRUE(
+      detail::is_websocket_upgrade(make_request({"HTTP/3.0 , websocket"})));
+  EXPECT_TRUE(
+      detail::is_websocket_upgrade(make_request({"HTTP/3.0", "websocket"})));
+
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"notwebsocket"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"websocket-2"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"xwebsocket"})));
+  EXPECT_FALSE(
+      detail::is_websocket_upgrade(make_request({"HTTP/3.0, notwebsocket"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({"h2c"})));
+  EXPECT_FALSE(detail::is_websocket_upgrade(make_request({})));
+}
+
 TEST(WebSocketTest, ServerRejectsHandshakeWithoutUpgradeToken) {
   Server svr;
   svr.WebSocket("/ws", [](const Request &, ws::WebSocket &) {});
