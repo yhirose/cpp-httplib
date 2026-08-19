@@ -162,6 +162,10 @@
 #define CPPHTTPLIB_RECV_BUFSIZ size_t(16384u)
 #endif
 
+#ifndef CPPHTTPLIB_WRITEV_MAX_BUFS
+#define CPPHTTPLIB_WRITEV_MAX_BUFS size_t(8u)
+#endif
+
 #ifndef CPPHTTPLIB_SEND_BUFSIZ
 #define CPPHTTPLIB_SEND_BUFSIZ size_t(16384u)
 #endif
@@ -304,6 +308,7 @@ using socklen_t = int;
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -1753,6 +1758,11 @@ struct Response {
   void set_content(const std::string &s, const std::string &content_type);
   void set_content(std::string &&s, const std::string &content_type);
 
+  // Zero-copy path: s is not copied, and must remain until the response
+  // completes; resource_releaser is invoked exactly once from ~Response.
+  void set_content(const char *s, size_t n, const std::string &content_type,
+                   ContentProviderResourceReleaser resource_releaser);
+
   void set_content_provider(
       size_t length, const std::string &content_type, ContentProvider provider,
       ContentProviderResourceReleaser resource_releaser = nullptr);
@@ -1768,6 +1778,15 @@ struct Response {
   void set_file_content(const std::string &path,
                         const std::string &content_type);
   void set_file_content(const std::string &path);
+
+  // Drop any pending content so the response can be replaced (e.g. on error)
+  void clear_content() {
+    body.clear();
+    content_length_ = 0;
+    content_provider_ = nullptr;
+    is_chunked_content_provider_ = false;
+    content_view_data_ = nullptr;
+  }
 
   Response() = default;
   Response(const Response &) = default;
@@ -1786,6 +1805,9 @@ struct Response {
   ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
   bool content_provider_success_ = false;
+  // Borrowed content of content_length_ bytes; see the zero-copy
+  // set_content() overload.
+  const char *content_view_data_ = nullptr;
   std::string file_content_path_;
   std::string file_content_content_type_;
 };
@@ -1847,6 +1869,15 @@ public:
 
   virtual ssize_t read(char *ptr, size_t size) = 0;
   virtual ssize_t write(const char *ptr, size_t size) = 0;
+
+  // Gather write: all buffers leave in as few syscalls as possible
+  // (normally one), minimizing both syscall overhead and TCP segments.
+  struct WriteBuffer {
+    const char *data;
+    size_t size;
+  };
+  virtual ssize_t writev(const WriteBuffer *bufs, size_t count);
+
   virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
   virtual void get_local_ip_and_port(std::string &ip, int &port) const = 0;
   virtual socket_t socket() const = 0;
@@ -6222,6 +6253,7 @@ public:
   bool is_peer_alive() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
+  ssize_t writev(const WriteBuffer *bufs, size_t count) override;
   void get_remote_ip_and_port(std::string &ip, int &port) const override;
   void get_local_ip_and_port(std::string &ip, int &port) const override;
   socket_t socket() const override;
@@ -11152,6 +11184,7 @@ inline void Response::set_redirect(const std::string &url, int stat) {
 inline void Response::set_content(const char *s, size_t n,
                                   const std::string &content_type) {
   body.assign(s, n);
+  content_view_data_ = nullptr;
 
   auto rng = headers.equal_range("Content-Type");
   headers.erase(rng.first, rng.second);
@@ -11166,6 +11199,24 @@ inline void Response::set_content(const std::string &s,
 inline void Response::set_content(std::string &&s,
                                   const std::string &content_type) {
   body = std::move(s);
+  content_view_data_ = nullptr;
+
+  auto rng = headers.equal_range("Content-Type");
+  headers.erase(rng.first, rng.second);
+  set_header("Content-Type", content_type);
+}
+
+inline void
+Response::set_content(const char *s, size_t n, const std::string &content_type,
+                      ContentProviderResourceReleaser resource_releaser) {
+  // Borrow the buffer as-is. write_response_core() emits it together with
+  // the response headers in a single gather write; a ranged request, which
+  // needs (offset, length) slices instead, wraps it in a content provider
+  // at its point of use (see write_content_with_provider).
+  clear_content();
+  content_length_ = n;
+  if (n > 0) { content_view_data_ = s; }
+  content_provider_resource_releaser_ = std::move(resource_releaser);
 
   auto rng = headers.equal_range("Content-Type");
   headers.erase(rng.first, rng.second);
@@ -11180,6 +11231,7 @@ inline void Response::set_content_provider(
   if (in_length > 0) { content_provider_ = std::move(provider); }
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
+  content_view_data_ = nullptr;
 }
 
 inline void Response::set_content_provider(
@@ -11190,6 +11242,7 @@ inline void Response::set_content_provider(
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
+  content_view_data_ = nullptr;
 }
 
 inline void Response::set_chunked_content_provider(
@@ -11200,6 +11253,7 @@ inline void Response::set_chunked_content_provider(
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = true;
+  content_view_data_ = nullptr;
 }
 
 inline void Response::set_file_content(const std::string &path,
@@ -11241,6 +11295,40 @@ inline ssize_t Stream::write(const char *ptr) {
 
 inline ssize_t Stream::write(const std::string &s) {
   return write(s.data(), s.size());
+}
+
+inline ssize_t Stream::writev(const WriteBuffer *bufs, size_t count) {
+  size_t total = 0;
+  for (size_t i = 0; i < count; i++) {
+    total += bufs[i].size;
+  }
+
+  // Fallback for streams without native gather support: pack spans into a
+  // bounded staging buffer, flushing whenever it fills. Small totals leave
+  // as a single write() - for TLS, a single record - and large ones chunk
+  // at the same granularity TLS fragments records anyway.
+  std::string chunk;
+  chunk.reserve((std::min)(total, CPPHTTPLIB_SEND_BUFSIZ));
+  for (size_t i = 0; i < count; i++) {
+    const char *data = bufs[i].data;
+    size_t remaining = bufs[i].size;
+    while (remaining > 0) {
+      auto n = (std::min)(remaining, CPPHTTPLIB_SEND_BUFSIZ - chunk.size());
+      chunk.append(data, n);
+      data += n;
+      remaining -= n;
+      if (chunk.size() == CPPHTTPLIB_SEND_BUFSIZ) {
+        if (!detail::write_data(*this, chunk.data(), chunk.size())) {
+          return -1;
+        }
+        chunk.clear();
+      }
+    }
+  }
+  if (!chunk.empty()) {
+    if (!detail::write_data(*this, chunk.data(), chunk.size())) { return -1; }
+  }
+  return static_cast<ssize_t>(total);
 }
 
 // BodyReader implementation
@@ -11612,6 +11700,89 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
 #endif
 
   return send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
+}
+
+inline ssize_t SocketStream::writev(const WriteBuffer *bufs, size_t count) {
+  // Gather write: all buffers leave in as few syscalls as the kernel
+  // allows (normally one, but limited to batches of fixed size to bound
+  // stack use)
+  if (count > CPPHTTPLIB_WRITEV_MAX_BUFS) {
+    size_t total = 0;
+    while (count > 0) {
+      auto batch = (std::min)(count, CPPHTTPLIB_WRITEV_MAX_BUFS);
+      auto n = writev(bufs, batch);
+      if (n < 0) { return -1; }
+      total += static_cast<size_t>(n);
+      bufs += batch;
+      count -= batch;
+    }
+    return static_cast<ssize_t>(total);
+  }
+
+  // In-progress state in portable form
+  WriteBuffer rest[CPPHTTPLIB_WRITEV_MAX_BUFS];
+  size_t total = 0;
+  for (size_t i = 0; i < count; i++) {
+    rest[i] = bufs[i];
+    total += bufs[i].size;
+  }
+
+  size_t written = 0;
+  size_t first = 0; // first span not yet fully written
+  while (written < total) {
+    if (!wait_writable()) { return -1; }
+
+#ifdef _WIN32
+    WSABUF iov[CPPHTTPLIB_WRITEV_MAX_BUFS];
+    DWORD niov = 0;
+    for (size_t i = first; i < count; i++) {
+      iov[i].buf = const_cast<char *>(rest[i].data);
+      // WSABUF::len is a ULONG; an oversized span goes out in clamped
+      // pieces, with the resume logic below advancing through it. Later
+      // spans must not ride along in the same call - they would land
+      // ahead of the clamped span's remainder - so the batch ends there.
+      iov[i].len = static_cast<ULONG>(
+          (std::min)(rest[i].size,
+                     static_cast<size_t>((std::numeric_limits<ULONG>::max)())));
+      niov++;
+      if (iov[i].len < rest[i].size) { break; }
+    }
+    DWORD sent = 0;
+    auto ret = handle_EINTR([&]() {
+      return ::WSASend(sock_, iov + first, niov, &sent, 0, nullptr, nullptr);
+    });
+    if (ret != 0) { return -1; }
+    size_t n = sent;
+#else
+    struct iovec iov[CPPHTTPLIB_WRITEV_MAX_BUFS];
+    for (size_t i = first; i < count; i++) {
+      iov[i].iov_base = const_cast<char *>(rest[i].data);
+      iov[i].iov_len = rest[i].size;
+    }
+    struct msghdr msg = {};
+    msg.msg_iov = iov + first;
+    msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(count - first);
+    auto n_or_err = handle_EINTR(
+        [&]() { return ::sendmsg(sock_, &msg, CPPHTTPLIB_SEND_FLAGS); });
+    if (n_or_err < 0) { return -1; }
+    size_t n = static_cast<size_t>(n_or_err);
+#endif
+
+    written += n;
+
+    // Advance past whole spans the kernel consumed, then trim the
+    // partially-consumed one.
+    while (first < count && n >= rest[first].size) {
+      n -= rest[first].size;
+      first++;
+    }
+    if (first < count && n > 0) {
+      rest[first].data += n;
+      rest[first].size -= n;
+    }
+  }
+
+  return static_cast<ssize_t>(total);
 }
 
 inline void SocketStream::get_remote_ip_and_port(std::string &ip,
@@ -12654,30 +12825,53 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   if (!detail::write_response_line(bstrm, res.status)) { return false; }
   if (header_writer_(bstrm, res.headers) <= 0) { return false; }
 
-  // Combine small body with headers to reduce write syscalls
-  if (req.method != "HEAD" && !res.body.empty() && !res.content_provider_) {
-    bstrm.write(res.body.data(), res.body.size());
-  }
-
   // Log before writing to avoid race condition with client-side code that
   // accesses logger-captured data immediately after receiving the response.
   output_log(req, res);
 
-  // Flush buffer
   auto &data = bstrm.get_buffer();
-  if (!detail::write_data(strm, data.data(), data.size())) { return false; }
 
-  // Streaming body
-  auto ret = true;
-  if (req.method != "HEAD" && res.content_provider_) {
-    if (write_content_with_provider(strm, req, res, boundary, content_type)) {
-      res.content_provider_success_ = true;
-    } else {
-      ret = false;
+  // Owned (res.body) and borrowed (content_view_*) bodies compose at this
+  // point. Both are a stable span for the duration of the write - an owned
+  // body is simply borrowed from ourselves - and leave with the headers in a
+  // single gather write. A borrowed view with a ranged request needs (offset,
+  // length) slices instead, and falls through to the provider machinery; an
+  // owned body was already sliced by apply_ranges() above.
+  const char *span_data = nullptr;
+  size_t span_size = 0;
+  auto span_is_view = false;
+  if (req.method != "HEAD") {
+    if (res.content_view_data_ != nullptr && req.ranges.empty()) {
+      span_data = res.content_view_data_;
+      span_size = res.content_length_;
+      span_is_view = true;
+    } else if (!res.body.empty() && !res.content_provider_) {
+      span_data = res.body.data();
+      span_size = res.body.size();
     }
   }
 
-  return ret;
+  if (span_data != nullptr) {
+    const Stream::WriteBuffer bufs[2] = {{data.data(), data.size()},
+                                         {span_data, span_size}};
+    if (strm.writev(bufs, 2) < 0) { return false; }
+    res.content_provider_success_ = span_is_view;
+    return true;
+  }
+
+  // Header-only responses, HEAD, and streamed bodies
+  if (!detail::write_data(strm, data.data(), data.size())) { return false; }
+
+  if (req.method != "HEAD" &&
+      (res.content_provider_ || res.content_view_data_ != nullptr)) {
+    if (write_content_with_provider(strm, req, res, boundary, content_type)) {
+      res.content_provider_success_ = true;
+      return true;
+    }
+    return false;
+  }
+
+  return true;
 }
 
 inline bool
@@ -12687,6 +12881,18 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
   auto is_shutting_down = [this]() {
     return this->svr_sock_ == INVALID_SOCKET;
   };
+
+  // A borrowed buffer only arrives here for ranged requests - the unranged
+  // case already left with the headers in one gather write. Wrap it in a
+  // provider so the range machinery below can serve slices of it like any
+  // other known-length body.
+  if (!res.content_provider_ && res.content_view_data_ != nullptr) {
+    auto data = res.content_view_data_;
+    res.content_provider_ = [data](size_t offset, size_t length,
+                                   DataSink &sink) {
+      return sink.write(data + offset, length);
+    };
+  }
 
   if (res.content_length_ > 0) {
     // Only a 206 response is served as a partial representation, matching the
@@ -12950,14 +13156,14 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             return false;
           }
 
-          res.set_content_provider(
-              mm->size(),
+          // Borrowed content over the mapping: unranged responses leave as
+          // one gather write of headers plus file body; the releaser holds
+          // the mapping open until the response completes.
+          res.set_content(
+              mm->data(), mm->size(),
               detail::find_content_type(path, file_extension_and_mimetype_map_,
                                         default_file_mimetype_),
-              [mm](size_t offset, size_t length, DataSink &sink) -> bool {
-                sink.write(mm->data() + offset, length);
-                return true;
-              });
+              [mm](bool) {});
 
           if (req.method != "HEAD" && file_request_handler_) {
             file_request_handler_(req, res);
@@ -13249,9 +13455,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
           // Enforce the limit: override any status the handler may have set
           // and return false so the error path sends a plain 413 response.
           res.status = StatusCode::PayloadTooLarge_413;
-          res.body.clear();
-          res.content_length_ = 0;
-          res.content_provider_ = nullptr;
+          res.clear_content();
           return false;
         }
         return true;
@@ -13693,6 +13897,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       exception_handler_(req, res, ep);
       routed = true;
     } else {
+      // The handler died mid-flight; content it may have staged is suspect
+      // and must not leak into the 500.
+      res.clear_content();
       res.status = StatusCode::InternalServerError_500;
     }
   } catch (...) {
@@ -13701,6 +13908,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       exception_handler_(req, res, ep);
       routed = true;
     } else {
+      // The handler died mid-flight; content it may have staged is suspect
+      // and must not leak into the 500.
+      res.clear_content();
       res.status = StatusCode::InternalServerError_500;
     }
   }
@@ -13718,9 +13928,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       const auto &path = res.file_content_path_;
       auto mm = std::make_shared<detail::mmap>(path.c_str());
       if (!mm->is_open()) {
-        res.body.clear();
-        res.content_length_ = 0;
-        res.content_provider_ = nullptr;
+        res.clear_content();
         res.status = StatusCode::NotFound_404;
         output_error_log(Error::OpenFile, &req);
         file_open_error = true;
@@ -13731,21 +13939,18 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
               path, file_extension_and_mimetype_map_, default_file_mimetype_);
         }
 
-        res.set_content_provider(
-            mm->size(), content_type,
-            [mm](size_t offset, size_t length, DataSink &sink) -> bool {
-              sink.write(mm->data() + offset, length);
-              return true;
-            });
+        // Borrowed content over the mapping, exactly as in
+        // handle_file_request(): unranged responses leave as one gather
+        // write of headers plus file body; the releaser holds the mapping
+        // open until the response completes.
+        res.set_content(mm->data(), mm->size(), content_type, [mm](bool) {});
       }
     }
 
     if (file_open_error) {
       ret = write_response(strm, close_connection, req, res);
     } else if (detail::range_error(req, res)) {
-      res.body.clear();
-      res.content_length_ = 0;
-      res.content_provider_ = nullptr;
+      res.clear_content();
       res.status = StatusCode::RangeNotSatisfiable_416;
       ret = write_response(strm, close_connection, req, res);
     } else {
