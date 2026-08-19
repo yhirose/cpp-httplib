@@ -7642,13 +7642,6 @@ inline bool zstd_decompressor::decompress(const char *data, size_t data_length,
 }
 #endif
 
-inline bool contains_case_ignore(const std::string &s, const char *token) {
-  auto token_end = token + std::strlen(token);
-  return std::search(s.begin(), s.end(), token, token_end, [](char a, char b) {
-           return case_ignore::to_lower(a) == case_ignore::to_lower(b);
-         }) != s.end();
-}
-
 // Content codings are case-insensitive (RFC 9110 8.4.1). Matching them
 // case-sensitively would make a response labeled e.g. "GZIP" look like an
 // unknown coding, and its payload would be handed back still compressed.
@@ -7658,11 +7651,11 @@ inline bool is_zlib_encoding(const std::string &encoding) {
 }
 
 inline bool is_brotli_encoding(const std::string &encoding) {
-  return contains_case_ignore(encoding, "br");
+  return case_ignore::equal(encoding, "br");
 }
 
 inline bool is_zstd_encoding(const std::string &encoding) {
-  return contains_case_ignore(encoding, "zstd");
+  return case_ignore::equal(encoding, "zstd");
 }
 
 // Returns true if the content coding is one cpp-httplib is able to decompress

@@ -11049,6 +11049,52 @@ static const char GZIPPED_HELLO_WORLD[] = {
 // A content coding cpp-httplib recognizes but was not built with must be
 // reported as such. Handing the still-compressed payload back to the caller
 // would silently corrupt it.
+// A content coding is a whole token, not something the field value merely
+// contains. Matching "br" and "zstd" as substrings made unrelated values such
+// as "fibre" look like Brotli, and turned a multi-coding value like
+// "gzip, br" into a Brotli-labeled body, so a decompressor was run over data
+// it was never meant to see.
+TEST(ContentEncodingTest, SubstringOfACodingIsNotTheCoding) {
+  const std::string body = "\xff\xd8\xff\xe0 not really a jpeg";
+
+  Server svr;
+
+  svr.Get("/fibre", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.set_header("Content-Encoding", "fibre");
+  });
+
+  svr.Get("/multi", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.set_header("Content-Encoding", "gzip, br");
+  });
+
+  svr.Get("/zstdish", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.set_header("Content-Encoding", "x-zstd-ish");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  for (const char *path : {"/fibre", "/multi", "/zstdish"}) {
+    auto res = cli.Get(path);
+    ASSERT_TRUE(res) << path << " -> " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << path;
+    // Not a coding we recognize, so the payload comes back untouched
+    EXPECT_EQ(body, res->body) << path;
+  }
+}
+
 TEST(ContentEncodingTest, KnownEncodingWithoutSupportIsReported) {
   const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
 
