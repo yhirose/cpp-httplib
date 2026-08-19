@@ -16111,6 +16111,93 @@ TEST(InvalidHeaderValueTest, InvalidContentLength) {
 }
 
 #ifndef _WIN32
+// RFC 9110 Section 10.1.1: Expect is a comma-separated list, its value is
+// case-insensitive, and a server that receives a 100-continue expectation in
+// an HTTP/1.0 request MUST ignore it.
+static void probe_expect(int port, const std::string &req, bool *got_100) {
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0,
+      /*read_timeout_sec=*/1, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(sock, INVALID_SOCKET);
+  auto se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  std::string first_line;
+  detail::process_client_socket(
+      sock, 1, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
+      [&](Stream &strm) {
+        if (strm.write(req.data(), req.size()) !=
+            static_cast<ssize_t>(req.size())) {
+          return false;
+        }
+        char buf[512];
+        detail::stream_line_reader reader(strm, buf, sizeof(buf));
+        if (reader.getline()) { first_line = reader.ptr(); }
+        return true;
+      });
+
+  *got_100 = first_line.find("100 Continue") != std::string::npos;
+}
+
+class ExpectTokenTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.Post("/p", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+    port_ = svr_.bind_to_any_port(HOST);
+    thread_ = thread([&]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) { thread_.join(); }
+  }
+
+  std::string request(const char *version, const char *expect_value) const {
+    return std::string("POST /p ") + version +
+           "\r\n"
+           "Host: localhost\r\n"
+           "Content-Length: 2\r\n"
+           "Expect: " +
+           expect_value +
+           "\r\n"
+           "\r\n"
+           "hi";
+  }
+
+  Server svr_;
+  int port_ = 0;
+  thread thread_;
+};
+
+TEST_F(ExpectTokenTest, Http11GetsTheInterimResponse) {
+  bool got_100 = false;
+  probe_expect(port_, request("HTTP/1.1", "100-continue"), &got_100);
+  EXPECT_TRUE(got_100);
+}
+
+TEST_F(ExpectTokenTest, Http10ExpectationIsIgnored) {
+  bool got_100 = true;
+  probe_expect(port_, request("HTTP/1.0", "100-continue"), &got_100);
+  EXPECT_FALSE(got_100);
+}
+
+TEST_F(ExpectTokenTest, ExpectationIsCaseInsensitive) {
+  bool got_100 = false;
+  probe_expect(port_, request("HTTP/1.1", "100-Continue"), &got_100);
+  EXPECT_TRUE(got_100);
+}
+
+TEST_F(ExpectTokenTest, ExpectationAmongOthersIsRecognized) {
+  bool got_100 = false;
+  probe_expect(port_, request("HTTP/1.1", "100-continue, foo"), &got_100);
+  EXPECT_TRUE(got_100);
+}
+
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";
   static constexpr char accept[] = "Upload accepted";
