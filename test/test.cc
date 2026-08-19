@@ -2869,6 +2869,77 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
   }
 }
 
+// RFC 9110 Section 11.6.1: a WWW-Authenticate field value is a
+// comma-separated list of challenges, and each challenge may itself carry a
+// comma-separated auth-param list, so a server can legally offer Basic
+// before Digest, either as two field lines or packed into one. Runs one 401
+// -> Digest-retry round trip with the given field lines (get_combined_header_
+// value() joins them in receipt order) and checks that the retry carries a
+// well-formed Digest Authorization header naming expected_realm.
+static void
+run_digest_challenge_list_test(const std::vector<std::string> &challenges,
+                               const std::string &expected_realm) {
+  std::atomic<int> hits{0};
+
+  Server svr;
+  svr.Get("/x", [&](const Request &req, Response &res) {
+    if (++hits == 1) {
+      res.status = StatusCode::Unauthorized_401;
+      for (const auto &challenge : challenges) {
+        res.set_header("WWW-Authenticate", challenge);
+      }
+    } else {
+      auto authorization = req.get_header_value("Authorization");
+      EXPECT_EQ(0u, authorization.rfind("Digest ", 0));
+      EXPECT_NE(std::string::npos,
+                authorization.find("realm=\"" + expected_realm + "\""));
+      EXPECT_EQ(std::string::npos, authorization.find("Basic"));
+      res.set_content("ok", "text/plain");
+    }
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_digest_auth("hello", "world");
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  EXPECT_EQ(2, hits.load());
+}
+
+static const char *kBasicChallenge = "Basic realm=\"decoy\"";
+static const char *kDigestChallenge =
+    "Digest realm=\"testrealm\", qop=\"auth\", nonce=\"abc123\", "
+    "algorithm=MD5";
+
+TEST(DigestAuthTest, BasicChallengeListedBeforeDigest) {
+  run_digest_challenge_list_test({kBasicChallenge, kDigestChallenge},
+                                 "testrealm");
+}
+
+// Same challenge list with the schemes in the opposite order, to make sure
+// the fix above didn't just special-case "Basic first".
+TEST(DigestAuthTest, DigestChallengeListedBeforeBasic) {
+  run_digest_challenge_list_test({kDigestChallenge, kBasicChallenge},
+                                 "testrealm");
+}
+
+// A comma inside a quoted auth-param value must not be mistaken for the
+// separator between two challenges (or two auth-params).
+TEST(DigestAuthTest, RealmContainingCommaIsNotSplit) {
+  run_digest_challenge_list_test(
+      {"Digest realm=\"test,realm\", qop=\"auth\", nonce=\"abc123\", "
+       "algorithm=MD5"},
+      "test,realm");
+}
+
 #endif
 
 TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
