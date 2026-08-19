@@ -11046,55 +11046,11 @@ static const char GZIPPED_HELLO_WORLD[] = {
     '\x08', '\xcf', '\x2f', '\xca', '\x49', '\x51', '\x04', '\x00',
     '\xa3', '\x1c', '\x29', '\x1c', '\x0c', '\x00', '\x00', '\x00'};
 
-// A content coding cpp-httplib recognizes but was not built with must be
-// reported as such. Handing the still-compressed payload back to the caller
-// would silently corrupt it.
 // A content coding is a whole token, not something the field value merely
 // contains. Matching "br" and "zstd" as substrings made unrelated values such
 // as "fibre" look like Brotli, and turned a multi-coding value like
 // "gzip, br" into a Brotli-labeled body, so a decompressor was run over data
 // it was never meant to see.
-// RFC 9110 Section 5.3: a Content-Encoding split over several field lines is
-// the same message as the comma-joined one, so both have to be read the same
-// way. Reading only the first line made "gzip" followed by "gzip" look like a
-// single gzip coding, and a body the sender says was encoded twice was handed
-// back after one pass, still compressed but presented as decoded.
-TEST(ContentEncodingTest, DuplicateFieldLinesAreTheSameAsTheJoinedValue) {
-  const std::string body = "\xff\xd8\xff\xe0 not really a jpeg";
-
-  Server svr;
-  svr.Get("/split", [&](const Request & /*req*/, Response &res) {
-    res.set_content(body, "image/jpeg");
-    res.headers.emplace("Content-Encoding", "gzip");
-    res.headers.emplace("Content-Encoding", "gzip");
-  });
-  svr.Get("/joined", [&](const Request & /*req*/, Response &res) {
-    res.set_content(body, "image/jpeg");
-    res.set_header("Content-Encoding", "gzip, gzip");
-  });
-
-  auto port = svr.bind_to_any_port(HOST);
-  thread t = thread([&]() { svr.listen_after_bind(); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  Client cli(HOST, port);
-
-  // Two codings is not something cpp-httplib decodes, so both representations
-  // take the pass-through path rather than one of them being gunzipped once.
-  for (const char *path : {"/split", "/joined"}) {
-    auto res = cli.Get(path);
-    ASSERT_TRUE(res) << path << " -> " << to_string(res.error());
-    EXPECT_EQ(StatusCode::OK_200, res->status) << path;
-    EXPECT_EQ(body, res->body) << path;
-  }
-}
-
 TEST(ContentEncodingTest, SubstringOfACodingIsNotTheCoding) {
   const std::string body = "\xff\xd8\xff\xe0 not really a jpeg";
 
@@ -11136,6 +11092,9 @@ TEST(ContentEncodingTest, SubstringOfACodingIsNotTheCoding) {
   }
 }
 
+// A content coding cpp-httplib recognizes but was not built with must be
+// reported as such. Handing the still-compressed payload back to the caller
+// would silently corrupt it.
 TEST(ContentEncodingTest, KnownEncodingWithoutSupportIsReported) {
   const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
 
@@ -11205,6 +11164,47 @@ TEST(ContentEncodingTest, KnownEncodingWithoutSupportIsReported) {
     ASSERT_FALSE(res);
     EXPECT_EQ(Error::UnsupportedContentEncoding, res.error());
 #endif
+  }
+}
+
+// RFC 9110 Section 5.3: a Content-Encoding split over several field lines is
+// the same message as the comma-joined one, so both have to be read the same
+// way. Reading only the first line made "gzip" followed by "gzip" look like a
+// single gzip coding, and a body the sender says was encoded twice was handed
+// back after one pass, still compressed but presented as decoded.
+TEST(ContentEncodingTest, DuplicateFieldLinesAreTheSameAsTheJoinedValue) {
+  const std::string body = "\xff\xd8\xff\xe0 not really a jpeg";
+
+  Server svr;
+  svr.Get("/split", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.headers.emplace("Content-Encoding", "gzip");
+    res.headers.emplace("Content-Encoding", "gzip");
+  });
+  svr.Get("/joined", [&](const Request & /*req*/, Response &res) {
+    res.set_content(body, "image/jpeg");
+    res.set_header("Content-Encoding", "gzip, gzip");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  // Two codings is not something cpp-httplib decodes, so both representations
+  // take the pass-through path rather than one of them being gunzipped once.
+  for (const char *path : {"/split", "/joined"}) {
+    auto res = cli.Get(path);
+    ASSERT_TRUE(res) << path << " -> " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << path;
+    EXPECT_EQ(body, res->body) << path;
   }
 }
 
@@ -16110,35 +16110,13 @@ TEST(InvalidHeaderValueTest, InvalidContentLength) {
             response.substr(0, response.find("\r\n")));
 }
 
-#ifndef _WIN32
 // RFC 9110 Section 10.1.1: Expect is a comma-separated list, its value is
 // case-insensitive, and a server that receives a 100-continue expectation in
 // an HTTP/1.0 request MUST ignore it.
 static void probe_expect(int port, const std::string &req, bool *got_100) {
-  auto error = Error::Success;
-  auto sock = detail::create_client_socket(
-      HOST, "", port, AF_UNSPEC, false, false, nullptr,
-      /*connection_timeout_sec=*/5, 0,
-      /*read_timeout_sec=*/1, 0,
-      /*write_timeout_sec=*/5, 0, std::string(), error);
-  ASSERT_NE(sock, INVALID_SOCKET);
-  auto se = detail::scope_exit([&] { detail::close_socket(sock); });
-
-  std::string first_line;
-  detail::process_client_socket(
-      sock, 1, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
-      [&](Stream &strm) {
-        if (strm.write(req.data(), req.size()) !=
-            static_cast<ssize_t>(req.size())) {
-          return false;
-        }
-        char buf[512];
-        detail::stream_line_reader reader(strm, buf, sizeof(buf));
-        if (reader.getline()) { first_line = reader.ptr(); }
-        return true;
-      });
-
-  *got_100 = first_line.find("100 Continue") != std::string::npos;
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response, port));
+  *got_100 = response.find("100 Continue") != std::string::npos;
 }
 
 class ExpectTokenTest : public ::testing::Test {
@@ -16162,6 +16140,7 @@ protected:
            "\r\n"
            "Host: localhost\r\n"
            "Content-Length: 2\r\n"
+           "Connection: close\r\n"
            "Expect: " +
            expect_value +
            "\r\n"
@@ -16198,6 +16177,7 @@ TEST_F(ExpectTokenTest, ExpectationAmongOthersIsRecognized) {
   EXPECT_TRUE(got_100);
 }
 
+#ifndef _WIN32
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";
   static constexpr char accept[] = "Upload accepted";
