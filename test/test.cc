@@ -17062,6 +17062,144 @@ TEST(ForwardedHeadersTest, MultipleCommasXForwardedFor_DoesNotCrash) {
 
 // The same rule applies to Accept: a request whose acceptable types are spread
 // over several field lines must be negotiated against all of them.
+// RFC 9110 Section 7.6.1: Connection carries a comma-separated list of
+// case-insensitive connection options. Comparing the whole field value against
+// one option misses a client that sends several of them, and misses every
+// casing but the one written in the comparison.
+//
+// Sends req, reads the response, then reuses the same socket for a second
+// request to find out whether the server kept the connection.
+static void probe_connection_reuse(int port, const std::string &req,
+                                   bool *announced_close, bool *reusable) {
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0,
+      /*read_timeout_sec=*/1, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(sock, INVALID_SOCKET);
+  auto se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  const std::string second = "GET /keepalive HTTP/1.1\r\n"
+                             "Host: localhost\r\n"
+                             "Connection: close\r\n"
+                             "\r\n";
+  std::string first_response;
+  std::string second_response;
+
+  detail::process_client_socket(
+      sock, 1, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
+      [&](Stream &strm) {
+        if (strm.write(req.data(), req.size()) !=
+            static_cast<ssize_t>(req.size())) {
+          return false;
+        }
+
+        char buf[512];
+        detail::stream_line_reader reader(strm, buf, sizeof(buf));
+        // Headers plus the two-byte body of the handler below
+        while (reader.getline()) {
+          first_response += reader.ptr();
+          if (first_response.find("ok") != std::string::npos) { break; }
+        }
+
+        if (strm.write(second.data(), second.size()) !=
+            static_cast<ssize_t>(second.size())) {
+          return true;
+        }
+        detail::stream_line_reader reader2(strm, buf, sizeof(buf));
+        while (reader2.getline()) {
+          second_response += reader2.ptr();
+          if (second_response.find("ok") != std::string::npos) { break; }
+        }
+        return true;
+      });
+
+  *announced_close =
+      first_response.find("Connection: close") != std::string::npos;
+  *reusable = second_response.find("HTTP/1.1 200") != std::string::npos;
+}
+
+class ConnectionTokenTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.Get("/keepalive", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+    port_ = svr_.bind_to_any_port(HOST);
+    thread_ = thread([&]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) { thread_.join(); }
+  }
+
+  Server svr_;
+  int port_ = 0;
+  thread thread_;
+};
+
+// "close" alongside another option still closes the connection, and the
+// response says so rather than leaving the peer to discover it.
+TEST_F(ConnectionTokenTest, CloseAmongSeveralOptionsIsHonored) {
+  bool announced_close = false;
+  bool reusable = true;
+  probe_connection_reuse(port_,
+                         "GET /keepalive HTTP/1.1\r\n"
+                         "Host: localhost\r\n"
+                         "Connection: keep-alive, close\r\n"
+                         "\r\n",
+                         &announced_close, &reusable);
+  EXPECT_TRUE(announced_close);
+  EXPECT_FALSE(reusable);
+}
+
+// "close" split over two field lines is the same list, so it is honored too.
+TEST_F(ConnectionTokenTest, CloseOnALaterFieldLineIsHonored) {
+  bool announced_close = false;
+  bool reusable = true;
+  probe_connection_reuse(port_,
+                         "GET /keepalive HTTP/1.1\r\n"
+                         "Host: localhost\r\n"
+                         "Connection: keep-alive\r\n"
+                         "Connection: close\r\n"
+                         "\r\n",
+                         &announced_close, &reusable);
+  EXPECT_TRUE(announced_close);
+  EXPECT_FALSE(reusable);
+}
+
+// Connection options are case-insensitive, so an HTTP/1.0 client asking for
+// keep-alive in the spelling everyone actually sends keeps its connection.
+TEST_F(ConnectionTokenTest, Http10KeepAliveIsCaseInsensitive) {
+  bool announced_close = false;
+  bool reusable = false;
+  probe_connection_reuse(port_,
+                         "GET /keepalive HTTP/1.0\r\n"
+                         "Host: localhost\r\n"
+                         "Connection: keep-alive\r\n"
+                         "\r\n",
+                         &announced_close, &reusable);
+  EXPECT_FALSE(announced_close);
+  EXPECT_TRUE(reusable);
+}
+
+// A token the value merely contains is not the token itself.
+TEST_F(ConnectionTokenTest, SubstringOfAnOptionIsNotTheOption) {
+  bool announced_close = false;
+  bool reusable = false;
+  probe_connection_reuse(port_,
+                         "GET /keepalive HTTP/1.1\r\n"
+                         "Host: localhost\r\n"
+                         "Connection: notclose\r\n"
+                         "\r\n",
+                         &announced_close, &reusable);
+  EXPECT_FALSE(announced_close);
+  EXPECT_TRUE(reusable);
+}
+
 TEST(RepeatedFieldLinesTest, AcceptCombinesEveryFieldLine) {
   Server svr;
 
