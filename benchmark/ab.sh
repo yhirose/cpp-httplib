@@ -3,7 +3,25 @@
 # A/B throughput comparison between two git refs.
 #
 # Usage: ./ab.sh [--base REF] [--head REF] [--rounds N] [--duration S]
-#                [--connections N] [--threads N]
+#                [--connections N] [--threads N] [--path PATH] [--tls]
+#                [--large-mib N] [--timeout S]
+#
+# --path selects the workload. The harness serves:
+#   /                  small body via set_content(); the response line, the
+#                      headers and the body already share a single write(), so
+#                      this is the least sensitive case
+#   /large             large body via set_content()
+#   /static/small.js   1 KiB file from a mount point, where the headers and the
+#                      body are two separate writes
+#   /static/large.bin  same, with the body large enough to dominate
+#
+# --large-mib sizes the two large workloads (default 1).
+#
+# --tls runs the same workload over HTTPS, which writes through
+# SSLSocketStream instead of SocketStream.
+#
+# --timeout is bombardier's per-request timeout. Its 2s default aborts large
+# TLS responses, and the run then fails on the non-2xx check.
 #
 # Absolute numbers from a single run are meaningless: on a quiet 8-core laptop
 # the same binary varies by +/-20% run to run, and shared CI runners are worse.
@@ -21,6 +39,10 @@ DURATION="5s"
 CONNECTIONS=10
 THREADS=""
 PORT=8080
+REQ_PATH="/"
+TLS=0
+LARGE_MIB=1
+TIMEOUT="30s"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,6 +52,10 @@ while [ $# -gt 0 ]; do
     --duration) DURATION="$2"; shift 2 ;;
     --connections) CONNECTIONS="$2"; shift 2 ;;
     --threads) THREADS="$2"; shift 2 ;;
+    --path) REQ_PATH="$2"; shift 2 ;;
+    --large-mib) LARGE_MIB="$2"; shift 2 ;;
+    --timeout) TIMEOUT="$2"; shift 2 ;;
+    --tls) TLS=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -62,6 +88,7 @@ HEAD_SHA=$(git -C "$REPO_ROOT" rev-parse --short "$HEAD_REF")
 echo "==> base: $BASE_REF ($BASE_SHA)"
 echo "==> head: $HEAD_REF ($HEAD_SHA)"
 echo "==> rounds=$ROUNDS duration=$DURATION connections=$CONNECTIONS threads=$THREADS"
+echo "==> path=$REQ_PATH tls=$TLS large=${LARGE_MIB}MiB"
 echo ""
 
 if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
@@ -69,18 +96,49 @@ if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
   echo ""
 fi
 
+# --- Toolchain bits that depend on --tls ---
+SCHEME="http"
+INSECURE=""
+TLS_CXXFLAGS=""
+TLS_LDFLAGS=""
+TLS_ARGS=""
+if [ "$TLS" = "1" ]; then
+  SCHEME="https"
+  INSECURE="-k"
+  TLS_CXXFLAGS="-DCPPHTTPLIB_OPENSSL_SUPPORT"
+  TLS_LDFLAGS="-lssl -lcrypto"
+  if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists openssl; then
+    TLS_CXXFLAGS="$TLS_CXXFLAGS $(pkg-config --cflags openssl)"
+    TLS_LDFLAGS="$(pkg-config --libs openssl)"
+  elif command -v brew >/dev/null 2>&1 && brew --prefix openssl >/dev/null 2>&1; then
+    OPENSSL_PREFIX=$(brew --prefix openssl)
+    TLS_CXXFLAGS="$TLS_CXXFLAGS -I$OPENSSL_PREFIX/include"
+    TLS_LDFLAGS="-L$OPENSSL_PREFIX/lib -lssl -lcrypto"
+  fi
+  if [ "$(uname -s)" = "Darwin" ]; then
+    TLS_LDFLAGS="$TLS_LDFLAGS -framework CoreFoundation -framework Security"
+  fi
+  TLS_ARGS="--cert $REPO_ROOT/test/cert.pem --key $REPO_ROOT/test/key.pem"
+  for f in "$REPO_ROOT/test/cert.pem" "$REPO_ROOT/test/key.pem"; do
+    [ -f "$f" ] || { echo "Error: $f not found" >&2; exit 1; }
+  done
+fi
+
 # --- Build both refs ---
+# The harness source always comes from the invoking worktree, so both refs run
+# an identical workload and a ref that predates a harness change stays
+# measurable. Only httplib.h varies, through -I.
+HARNESS="$REPO_ROOT/benchmark/cpp-httplib/main.cpp"
+[ -f "$HARNESS" ] || { echo "Error: $HARNESS not found" >&2; exit 1; }
+
 build() {
   local name=$1 ref=$2
   git -C "$REPO_ROOT" worktree add --detach --quiet "$WORKDIR/$name" "$ref"
-  if [ ! -f "$WORKDIR/$name/benchmark/cpp-httplib/main.cpp" ]; then
-    echo "Error: benchmark/cpp-httplib/main.cpp missing in $ref" >&2
-    exit 1
-  fi
   "$CXX" -o "$WORKDIR/$name/server-ab" -O2 -std=c++11 \
     -I"$WORKDIR/$name" \
     -DCPPHTTPLIB_THREAD_POOL_COUNT="$THREADS" \
-    "$WORKDIR/$name/benchmark/cpp-httplib/main.cpp" -lpthread
+    $TLS_CXXFLAGS \
+    "$HARNESS" -lpthread $TLS_LDFLAGS
 }
 
 echo "==> Building..."
@@ -92,7 +150,8 @@ measure() {
   local name=$1
   local json rc
 
-  "$WORKDIR/$name/server-ab" >/dev/null 2>&1 &
+  "$WORKDIR/$name/server-ab" --port "$PORT" --dir "$WORKDIR/$name-www" \
+    --large-mib "$LARGE_MIB" $TLS_ARGS >/dev/null 2>&1 &
   local pid=$!
 
   # Wait for the listener (no dependency on nc)
@@ -103,8 +162,8 @@ measure() {
   done
 
   set +e
-  json=$(bombardier -c "$CONNECTIONS" -d "$DURATION" -o json -p r \
-    "http://127.0.0.1:$PORT/" 2>/dev/null)
+  json=$(bombardier -c "$CONNECTIONS" -d "$DURATION" -t "$TIMEOUT" -o json -p r $INSECURE \
+    "$SCHEME://127.0.0.1:$PORT$REQ_PATH" 2>/dev/null)
   rc=$?
   set -e
 
