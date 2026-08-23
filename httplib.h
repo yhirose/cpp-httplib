@@ -9871,6 +9871,13 @@ public:
 private:
   bool ensure_readable();
 
+  int locked_pending() const;
+  bool locked_is_peer_closed() const;
+  ssize_t locked_read(char *ptr, size_t size, tls::TlsError &err);
+  ssize_t locked_write(const char *ptr, size_t size, tls::TlsError &err);
+
+  mutable std::mutex session_mutex_;
+
   socket_t sock_;
   tls::session_t session_;
   time_t read_timeout_sec_;
@@ -12053,8 +12060,30 @@ inline SSLSocketStream::SSLSocketStream(
 
 inline SSLSocketStream::~SSLSocketStream() = default;
 
+inline int SSLSocketStream::locked_pending() const {
+  std::lock_guard<std::mutex> guard(this->session_mutex_);
+  return tls::pending(session_);
+}
+
+inline bool SSLSocketStream::locked_is_peer_closed() const {
+  std::lock_guard<std::mutex> guard(this->session_mutex_);
+  return tls::is_peer_closed(session_, sock_);
+}
+
+inline ssize_t SSLSocketStream::locked_read(char *ptr, size_t size,
+                                            tls::TlsError &err) {
+  std::lock_guard<std::mutex> guard(this->session_mutex_);
+  return tls::read(session_, ptr, size, err);
+}
+
+inline ssize_t SSLSocketStream::locked_write(const char *ptr, size_t size,
+                                             tls::TlsError &err) {
+  std::lock_guard<std::mutex> guard(this->session_mutex_);
+  return tls::write(session_, ptr, size, err);
+}
+
 inline bool SSLSocketStream::is_readable() const {
-  return tls::pending(session_) > 0;
+  return this->locked_pending() > 0;
 }
 
 inline bool SSLSocketStream::wait_readable() const {
@@ -12072,7 +12101,7 @@ inline bool SSLSocketStream::wait_readable() const {
 
 inline bool SSLSocketStream::wait_writable() const {
   return select_write(sock_, write_timeout_sec_, write_timeout_usec_) > 0 &&
-         !tls::is_peer_closed(session_, sock_);
+         !this->locked_is_peer_closed();
 }
 
 inline bool SSLSocketStream::ensure_readable() {
@@ -12084,20 +12113,20 @@ inline bool SSLSocketStream::ensure_readable() {
 }
 
 inline bool SSLSocketStream::is_peer_alive() const {
-  return !tls::is_peer_closed(session_, sock_);
+  return !this->locked_is_peer_closed();
 }
 
 inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
-  if (tls::pending(session_) > 0) {
+  if (this->locked_pending() > 0) {
     tls::TlsError err;
-    auto ret = tls::read(session_, ptr, size, err);
+    auto ret = this->locked_read(ptr, size, err);
     if (ret == 0 || err.code == tls::ErrorCode::PeerClosed) {
       error_ = Error::ConnectionClosed;
     }
     return ret;
   } else if (ensure_readable()) {
     tls::TlsError err;
-    auto ret = tls::read(session_, ptr, size, err);
+    auto ret = this->locked_read(ptr, size, err);
     if (ret < 0) {
       auto n = 1000;
 #ifdef _WIN32
@@ -12107,11 +12136,11 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
 #else
       while (--n >= 0 && err.code == tls::ErrorCode::WantRead) {
 #endif
-        if (tls::pending(session_) > 0) {
-          return tls::read(session_, ptr, size, err);
+        if (this->locked_pending() > 0) {
+          return this->locked_read(ptr, size, err);
         } else if (wait_readable()) {
           std::this_thread::sleep_for(std::chrono::microseconds{10});
-          ret = tls::read(session_, ptr, size, err);
+          ret = this->locked_read(ptr, size, err);
           if (ret >= 0) { return ret; }
         } else {
           break;
@@ -12134,7 +12163,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
         std::min<size_t>(size, (std::numeric_limits<int>::max)());
 
     tls::TlsError err;
-    auto ret = tls::write(session_, ptr, handle_size, err);
+    auto ret = this->locked_write(ptr, handle_size, err);
     if (ret < 0) {
       auto n = 1000;
 #ifdef _WIN32
@@ -12146,7 +12175,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
 #endif
         if (wait_writable()) {
           std::this_thread::sleep_for(std::chrono::microseconds{10});
-          ret = tls::write(session_, ptr, handle_size, err);
+          ret = this->locked_write(ptr, handle_size, err);
           if (ret >= 0) { return ret; }
         } else {
           break;
