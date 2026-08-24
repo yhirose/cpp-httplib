@@ -466,6 +466,14 @@ svr.new_task_queue = [] {
 
 Choose sizes that account for both your expected HTTP load and the maximum number of simultaneous WebSocket connections.
 
+### Calling from Multiple Threads
+
+A single `WebSocket` (server-side) or `WebSocketClient` handle is shared by three potential callers: the thread running your handler (or holding the client), the heartbeat thread, and, if your code does its own thing, a separate thread calling `send()`/`close()` while another thread is blocked in `read()`.
+
+**Supported**: calling `read()` from one thread while calling `send()`/`close()` from another. This is the common pattern for a client that reads incoming messages in a loop on one thread and sends from elsewhere (e.g. a UI thread). The heartbeat thread's automatic pings use the same `send()` path internally, so they are safe to run concurrently with your `read()` loop too — for `wss://` this requires every TLS call on a connection to be serialized internally, which cpp-httplib does for you.
+
+**Not supported**: calling `read()` from two threads at the same time on the same handle, or calling `close()` from one thread while another thread is already inside `read()` and a Close frame from the peer is currently being parsed. `close()` waits for the peer's Close response using its own frame read, so it can race with your `read()` loop's own frame parsing. This does not corrupt the TLS session or crash the process, but a message that is in flight at that exact moment is not guaranteed to arrive intact — treat any message received while `close()` is in progress as advisory only, and don't rely on it.
+
 ## Protocol
 
 The implementation follows [RFC 6455](https://tools.ietf.org/html/rfc6455):
