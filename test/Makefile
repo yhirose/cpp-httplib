@@ -264,6 +264,10 @@ test_websocket_heartbeat : test_websocket_heartbeat.cc ../httplib.h Makefile
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_websocket_heartbeat.cc $(TEST_ARGS)
 	@file $@
 
+test_websocket_thread_safety : test_websocket_thread_safety.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) test_websocket_thread_safety.cc $(TEST_ARGS)
+	@file $@
+
 test_proxy : test_proxy.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_proxy.cc $(TEST_ARGS)
 
