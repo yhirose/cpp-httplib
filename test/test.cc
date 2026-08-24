@@ -21793,6 +21793,166 @@ TEST(WebSocketTest, HostHeaderOverUnixSocket) {
   }
 }
 
+// Two threads must never parse WebSocket frames from the same stream.
+// close() used to read the peer's Close reply with its own frame read, so it
+// raced a reader thread that was in the middle of a payload: the payload loop
+// in read_websocket_frame() keeps reading until payload_len bytes are in hand,
+// so bytes taken by close() were replaced with bytes from further along the
+// stream. The message kept its length and silently changed content.
+//
+// The raw peer below sends a frame header plus part of the payload, waits for
+// the handler to call close(), and only then sends the rest. Whichever thread
+// would win the race for those bytes, the message must arrive intact, because
+// close() must not touch the stream while read() owns it.
+TEST(WebSocketTest, CloseDoesNotStealBytesFromConcurrentRead) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  const size_t payload_len = 120; // fits the 7-bit length field
+  const size_t prefix_len = 8;
+  const int attempts = 8;
+
+  std::string expected(payload_len, '\0');
+  for (size_t i = 0; i < payload_len; i++) {
+    expected[i] = static_cast<char>('a' + i % 26);
+  }
+
+  std::atomic<bool> peer_stalled{false};
+  std::atomic<bool> handler_done{false};
+  std::mutex received_mutex;
+  std::vector<std::string> received;
+
+  // Bound every wait, so a regression fails the test instead of hanging the
+  // suite.
+  auto wait_for = [](const std::atomic<bool> &flag) {
+    for (int i = 0; i < 500 && !flag; i++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  };
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::thread reader([&]() {
+      std::string msg;
+      while (ws.read(msg)) {
+        std::lock_guard<std::mutex> guard(received_mutex);
+        received.push_back(msg);
+      }
+    });
+
+    // Wait until the peer stalls mid-payload, so the reader thread is parked
+    // inside read_websocket_frame() when close() runs.
+    wait_for(peer_stalled);
+    ws.close();
+    reader.join();
+    handler_done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto send_bytes = [](socket_t s, const std::string &data) {
+#ifdef _WIN32
+    auto n = ::send(s, data.data(), static_cast<int>(data.size()), 0);
+#else
+    auto n = ::send(s, data.data(), data.size(), 0);
+#endif
+    return n == static_cast<decltype(n)>(data.size());
+  };
+
+  // Frame header with an all-zero mask key, so the payload goes out verbatim.
+  // Every length used here fits the 7-bit length field.
+  auto masked_header = [](uint8_t first_byte, size_t len) {
+    std::string h;
+    h += static_cast<char>(first_byte);
+    h += static_cast<char>(0x80 | len); // masked, 7-bit length
+    h.append(4, '\0');                  // mask key
+    return h;
+  };
+
+  for (int attempt = 0; attempt < attempts; attempt++) {
+    peer_stalled = false;
+    handler_done = false;
+
+    auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_NE(INVALID_SOCKET, sock) << "attempt " << attempt;
+    auto se_sock = detail::scope_exit([&] {
+      if (sock != INVALID_SOCKET) { detail::close_socket(sock); }
+    });
+    detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<uint16_t>(port));
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    ASSERT_EQ(
+        0, ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)))
+        << "attempt " << attempt;
+
+    ASSERT_TRUE(send_bytes(sock,
+                           "GET /ws HTTP/1.1\r\n"
+                           "Host: 127.0.0.1\r\n"
+                           "Upgrade: websocket\r\n"
+                           "Connection: Upgrade\r\n"
+                           "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n"
+                           "Sec-WebSocket-Version: 13\r\n"
+                           "\r\n"))
+        << "attempt " << attempt;
+
+    std::string response;
+    while (response.find("\r\n\r\n") == std::string::npos) {
+      char buf[512];
+      auto n = ::recv(sock, buf, static_cast<int>(sizeof(buf)), 0);
+      if (n <= 0) { break; }
+      response.append(buf, static_cast<size_t>(n));
+    }
+    ASSERT_NE(std::string::npos, response.find(" 101 "))
+        << "attempt " << attempt;
+
+    // Send the header of a Binary message but only the first prefix_len bytes
+    // of its payload, leaving the reader thread stalled inside the payload.
+    ASSERT_TRUE(send_bytes(sock, masked_header(0x82, payload_len) +
+                                     expected.substr(0, prefix_len)))
+        << "attempt " << attempt;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    peer_stalled = true;
+    // Let close() send its Close frame and park in its own read before the
+    // rest of the payload arrives, so both threads are waiting for it.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    std::string close_frame = masked_header(0x88, 2); // FIN + Close
+    close_frame += static_cast<char>(0x03);           // status 1000
+    close_frame += static_cast<char>(0xE8);
+    ASSERT_TRUE(send_bytes(sock, expected.substr(prefix_len) + close_frame))
+        << "attempt " << attempt;
+
+    // Closing the peer releases the reader thread even on the buggy path,
+    // where it waits for bytes another thread already consumed.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    detail::close_socket(sock);
+    sock = INVALID_SOCKET;
+
+    wait_for(handler_done);
+    ASSERT_TRUE(handler_done) << "attempt " << attempt;
+  }
+
+  std::lock_guard<std::mutex> guard(received_mutex);
+  EXPECT_EQ(static_cast<size_t>(attempts), received.size())
+      << "a message in flight when close() ran was dropped";
+  for (size_t i = 0; i < received.size(); i++) {
+    EXPECT_EQ(expected, received[i]) << "message " << i;
+  }
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class WebSocketSSLIntegrationTest : public ::testing::Test {
 protected:
