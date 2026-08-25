@@ -1,6 +1,6 @@
 ---
 title: "E02. Use Named Events in SSE"
-order: 48
+order: 49
 status: "draft"
 ---
 

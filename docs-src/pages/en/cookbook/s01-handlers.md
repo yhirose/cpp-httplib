@@ -4,7 +4,7 @@ order: 20
 status: "draft"
 ---
 
-With `httplib::Server`, you register a handler per HTTP method. Just pass a pattern and a lambda to `Get()`, `Post()`, `Put()`, or `Delete()`.
+With `httplib::Server`, you register a handler per HTTP method. Just pass a pattern and a lambda to `Get()`, `Post()`, `Put()`, or `Delete()`. For methods outside the built-in set, such as WebDAV's `PROPFIND`, use `CustomRoute()`.
 
 ## Basic usage
 
@@ -64,3 +64,5 @@ To add a response header, use `res.set_header("Name", "Value")`.
 > **Note:** `listen()` is a blocking call. To run it on a different thread, wrap it in `std::thread`. If you need non-blocking startup, see [S18. Control startup order with `listen_after_bind`](../s18-listen-after-bind).
 
 > To use path parameters like `/users/:id`, see [S03. Use path parameters](../s03-path-params).
+
+> For methods outside the built-in set, such as WebDAV's `PROPFIND`, see [S23. Handle custom HTTP methods](../s23-custom-methods).

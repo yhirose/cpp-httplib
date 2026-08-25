@@ -1,6 +1,6 @@
 ---
 title: "E01. SSEサーバーを実装する"
-order: 47
+order: 48
 status: "draft"
 ---
 

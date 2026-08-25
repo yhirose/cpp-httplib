@@ -3981,6 +3981,19 @@ TEST(BindServerTest, BindAndListenSeparatelySSL) {
   svr.stop();
 }
 
+// SSLServer::is_valid() overrides the base version, so it has to chain to it
+// or a rejected CustomRoute() registration would not stop the server binding.
+TEST(BindServerTest, SSLServerIsInvalidAfterRejectedCustomRoute) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
+                CLIENT_CA_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.CustomRoute("GET", "/x", [](const Request &, Response &) {});
+
+  EXPECT_FALSE(svr.is_valid());
+  EXPECT_TRUE(svr.bind_to_any_port("0.0.0.0") < 0);
+}
+
 TEST(BindServerTest, BindAndListenSeparatelySSLEncryptedKey) {
   SSLServer svr(SERVER_ENCRYPTED_CERT_FILE, SERVER_ENCRYPTED_PRIVATE_KEY_FILE,
                 nullptr, nullptr, SERVER_ENCRYPTED_PRIVATE_KEY_PASS);
@@ -5206,6 +5219,38 @@ protected:
                  [&](const Request & /*req*/, Response &res) {
                    res.set_header("Allow", "GET, POST, HEAD, OPTIONS");
                  })
+        .CustomRoute("PROPFIND", "/dav/:id",
+                     [&](const Request &req, Response &res) {
+                       res.set_header("x-body-size",
+                                      std::to_string(req.body.size()));
+                       res.set_header("x-matched-route", req.matched_route);
+                       res.set_header("x-dav-id", req.path_params.at("id"));
+                       res.status = StatusCode::MultiStatus_207;
+                       res.set_content(req.body, "application/xml");
+                     })
+        .CustomRoute("PROPFIND", R"(/dav-re/(\d+))",
+                     [&](const Request &req, Response &res) {
+                       res.set_header("x-dav-match", req.matches[1]);
+                       res.status = StatusCode::MultiStatus_207;
+                     })
+        .CustomRoute("MKCOL", "/dav-mkcol",
+                     [&](const Request &req, Response &res) {
+                       EXPECT_TRUE(req.body.empty());
+                       res.status = StatusCode::Created_201;
+                     })
+        .CustomRoute(
+            "REPORT", "/dav-report",
+            [&](const Request & /*req*/, Response &res,
+                const ContentReader &content_reader) {
+              std::string body;
+              content_reader([&](const char *data, size_t data_length) {
+                body.append(data, data_length);
+                return true;
+              });
+              res.set_header("x-body-size", std::to_string(body.size()));
+              res.status = StatusCode::MultiStatus_207;
+              res.set_content(body, "application/xml");
+            })
         .Get("/request-target",
              [&](const Request &req, Response & /*res*/) {
                EXPECT_EQ("/request-target?aaa=bbb&ccc=ddd", req.target);
@@ -7994,6 +8039,176 @@ TEST_F(ServerTest, BadRequestLineCancelsKeepAlive) {
   EXPECT_FALSE(cli_.is_socket_open());
 }
 
+TEST_F(ServerTest, CustomRouteReadsBody) {
+  const std::string xml =
+      R"(<?xml version="1.0"?><propfind><allprop/></propfind>)";
+
+  Request req;
+  req.method = "PROPFIND";
+  req.path = "/dav/dir";
+  req.set_header("Depth", "1");
+  req.body = xml;
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+  EXPECT_EQ(xml, res->body);
+  EXPECT_EQ(std::to_string(xml.size()), res->get_header_value("x-body-size"));
+  EXPECT_EQ("application/xml", res->get_header_value("Content-Type"));
+}
+
+TEST_F(ServerTest, CustomRouteMatchedRouteAndPathParams) {
+  Request req;
+  req.method = "PROPFIND";
+  req.path = "/dav/42";
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+  EXPECT_EQ("/dav/:id", res->get_header_value("x-matched-route"));
+  EXPECT_EQ("42", res->get_header_value("x-dav-id"));
+}
+
+TEST_F(ServerTest, CustomRouteRegexPattern) {
+  Request req;
+  req.method = "PROPFIND";
+  req.path = "/dav-re/123";
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+  EXPECT_EQ("123", res->get_header_value("x-dav-match"));
+}
+
+TEST_F(ServerTest, CustomRouteWithoutBody) {
+  Request req;
+  req.method = "MKCOL";
+  req.path = "/dav-mkcol";
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Created_201, res->status);
+}
+
+TEST_F(ServerTest, CustomRouteWithContentReader) {
+  const std::string xml = R"(<?xml version="1.0"?><sync-collection/>)";
+
+  Request req;
+  req.method = "REPORT";
+  req.path = "/dav-report";
+  req.body = xml;
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+  EXPECT_EQ(xml, res->body);
+}
+
+// A content reader route must fire even when the request carries no body,
+// the way the built-in Delete(pattern, HandlerWithContentReader) does.
+// Without that, a body-less PROPFIND-style request would fall through to 404.
+TEST_F(ServerTest, CustomRouteWithContentReaderWithoutBody) {
+  Request req;
+  req.method = "REPORT";
+  req.path = "/dav-report";
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+  EXPECT_EQ("0", res->get_header_value("x-body-size"));
+}
+
+TEST_F(ServerTest, CustomRouteUnmatchedPathReturns404) {
+  Request req;
+  req.method = "PROPFIND";
+  req.path = "/not-dav";
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST_F(ServerTest, CustomRouteUnregisteredMethodIsRejected) {
+  Request req;
+  req.method = "UNLOCK";
+  req.path = "/dav/dir";
+
+  cli_.set_keep_alive(true);
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(cli_.is_socket_open());
+}
+
+TEST_F(ServerTest, CustomRouteDoesNotServeStaticFiles) {
+  // The mount point serves this path, but only for GET and HEAD.
+  auto get_res = cli_.Get("/dir/index.html");
+  ASSERT_TRUE(get_res) << "Error: " << to_string(get_res.error());
+  ASSERT_EQ(StatusCode::OK_200, get_res->status);
+
+  Request req;
+  req.method = "PROPFIND";
+  req.path = "/dir/index.html";
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST_F(ServerTest, CustomRouteKeepAlive) {
+  const std::string xml = R"(<?xml version="1.0"?><propfind/>)";
+
+  cli_.set_keep_alive(true);
+
+  for (auto i = 0; i < 2; i++) {
+    Request req;
+    req.method = "PROPFIND";
+    req.path = "/dav/dir";
+    req.body = xml;
+
+    auto res = cli_.send(req);
+
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+    EXPECT_EQ(xml, res->body);
+    EXPECT_TRUE(cli_.is_socket_open());
+  }
+
+  // A built-in method must still be served on the same connection.
+  cli_.set_keep_alive(false);
+
+  auto res = cli_.Get("/hi");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+}
+
+TEST_F(ServerTest, CustomRouteExpect100Continue) {
+  const std::string xml = R"(<?xml version="1.0"?><propfind/>)";
+
+  Request req;
+  req.method = "PROPFIND";
+  req.path = "/dav/dir";
+  req.set_header("Expect", "100-continue");
+  req.body = xml;
+
+  auto res = cli_.send(req);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::MultiStatus_207, res->status);
+  EXPECT_EQ(xml, res->body);
+}
+
 TEST_F(ServerTest, StartTime) { auto res = cli_.Get("/test-start-time"); }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -8964,6 +9179,10 @@ static void test_raw_request(const std::string &req,
           [&](const Request & /*req*/, Response &res) {
             res.set_content("ok", "text/plain");
           });
+  svr.CustomRoute("PROPFIND", "/dav",
+                  [&](const Request & /*req*/, Response &res) {
+                    res.status = StatusCode::MultiStatus_207;
+                  });
 
   // Server read timeout must be longer than the client read timeout for the
   // bug to reproduce, probably to force the server to process a request
@@ -9118,6 +9337,81 @@ TEST(ServerRequestParsingTest, RemoteAddrSetOnBadRequest) {
   std::string out;
   ASSERT_TRUE(send_request(5, bad_req, &out));
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
+}
+
+// A custom method with neither Content-Length nor Transfer-Encoding must be
+// answered right away rather than blocking on a read that waits for EOF.
+TEST(ServerRequestParsingTest, CustomMethodWithoutFraming) {
+  std::string out;
+  test_raw_request("PROPFIND /dav HTTP/1.1\r\nHost: localhost\r\n\r\n", &out);
+  EXPECT_EQ("HTTP/1.1 207 Multi-Status", out.substr(0, 25));
+}
+
+TEST(CustomRouteRegistrationTest, RejectsBuiltInMethods) {
+  const char *methods[] = {"GET",     "HEAD",    "POST",  "PUT",   "DELETE",
+                           "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
+
+  for (const auto *method : methods) {
+    Server svr;
+    svr.CustomRoute(method, "/x", [](const Request &, Response &) {});
+
+    EXPECT_FALSE(svr.is_valid()) << method;
+    EXPECT_FALSE(svr.listen(HOST, PORT)) << method;
+  }
+}
+
+TEST(CustomRouteRegistrationTest, RejectsNonTokenMethods) {
+  const char *methods[] = {"",          "PRO PFIND", "PROP\tFIND", "PROP/FIND",
+                           "PROP,FIND", "PROP:FIND", "PROP(FIND)", "\x01FIND"};
+
+  for (const auto *method : methods) {
+    Server svr;
+    svr.CustomRoute(method, "/x", [](const Request &, Response &) {});
+
+    EXPECT_FALSE(svr.is_valid()) << method;
+  }
+}
+
+TEST(CustomRouteRegistrationTest, AcceptsWebDavAndUpnpMethods) {
+  const char *methods[] = {"PROPFIND", "PROPPATCH", "MKCOL",
+                           "COPY",     "MOVE",      "LOCK",
+                           "UNLOCK",   "REPORT",    "SUBSCRIBE"};
+
+  Server svr;
+  for (const auto *method : methods) {
+    svr.CustomRoute(method, "/x", [](const Request &, Response &) {});
+  }
+
+  EXPECT_TRUE(svr.is_valid());
+}
+
+TEST(CustomRouteRegistrationTest, ContentReaderOverloadRejectsBuiltInMethods) {
+  Server svr;
+  svr.CustomRoute("POST", "/x",
+                  [](const Request &, Response &, const ContentReader &) {});
+
+  EXPECT_FALSE(svr.is_valid());
+}
+
+TEST(CustomRouteRegistrationTest, RejectionIsSticky) {
+  Server svr;
+  svr.CustomRoute("PROPFIND", "/a", [](const Request &, Response &) {});
+  svr.CustomRoute("GET", "/b", [](const Request &, Response &) {});
+  svr.CustomRoute("MKCOL", "/c", [](const Request &, Response &) {});
+
+  EXPECT_FALSE(svr.is_valid());
+}
+
+TEST(CustomRouteRegistrationTest, ReportsRejectionToErrorLogger) {
+  Server svr;
+
+  auto captured = Error::Success;
+  svr.set_error_logger(
+      [&](const Error &err, const Request * /*req*/) { captured = err; });
+
+  svr.CustomRoute("POST", "/x", [](const Request &, Response &) {});
+
+  EXPECT_EQ(Error::InvalidHTTPMethod, captured);
 }
 
 TEST(ServerRequestParsingTest, InvalidFieldValueContains_CR_LF_NUL) {

@@ -1,6 +1,6 @@
 ---
 title: "E04. Receive SSE on the Client"
-order: 50
+order: 51
 status: "draft"
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: "T05. サーバー側でピア証明書を参照する"
-order: 46
+order: 47
 status: "draft"
 ---
 

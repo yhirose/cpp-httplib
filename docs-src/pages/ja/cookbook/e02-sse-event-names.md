@@ -1,6 +1,6 @@
 ---
 title: "E02. SSEでイベント名を使い分ける"
-order: 48
+order: 49
 status: "draft"
 ---
 

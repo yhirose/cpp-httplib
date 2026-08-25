@@ -1,6 +1,6 @@
 ---
 title: "T05. Access the Peer Certificate on the Server Side"
-order: 46
+order: 47
 status: "draft"
 ---
 

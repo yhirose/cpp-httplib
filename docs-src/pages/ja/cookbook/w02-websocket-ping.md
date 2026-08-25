@@ -1,6 +1,6 @@
 ---
 title: "W02. ハートビートを設定する"
-order: 52
+order: 53
 status: "draft"
 ---
 

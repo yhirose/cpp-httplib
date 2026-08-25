@@ -1,6 +1,6 @@
 ---
 title: "T02. Control SSL Certificate Verification"
-order: 43
+order: 44
 status: "draft"
 ---
 
