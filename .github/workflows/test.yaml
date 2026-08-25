@@ -524,7 +524,42 @@ jobs:
       run: vcpkg install gtest curl zlib brotli zstd
     - name: Install OpenSSL
       if: ${{ matrix.config.with_ssl }}
-      run: choco install openssl
+      shell: pwsh
+      run: |
+        # Chocolatey's openssl package hardcodes a versioned slproweb URL, and
+        # slproweb keeps only the newest build of each branch. The package
+        # therefore 404s on every OpenSSL release until someone respins it.
+        # Read slproweb's own manifest instead: it is updated at the same time
+        # as the downloads it points at, so the URL is always live.
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest is slow with it
+
+        $manifest = 'https://raw.githubusercontent.com/slproweb/opensslhashes/master/win32_openssl_hashes.json'
+        $entry = (Invoke-RestMethod $manifest).files.PSObject.Properties.Value |
+          Where-Object {
+            $_.bits -eq 64 -and $_.arch -eq 'INTEL' -and
+            -not $_.light -and $_.installer -eq 'exe' -and $_.basever -like '4.*'
+          } |
+          Sort-Object { [version]$_.basever } | Select-Object -Last 1
+        if (-not $entry) { throw 'No 64-bit OpenSSL 4.x installer found in the manifest' }
+        Write-Host "Installing OpenSSL $($entry.basever) from $($entry.url)"
+
+        $installer = Join-Path $env:RUNNER_TEMP 'Win64OpenSSL.exe'
+        Invoke-WebRequest $entry.url -OutFile $installer
+        $actual = (Get-FileHash $installer -Algorithm SHA512).Hash.ToLower()
+        if ($actual -ne $entry.sha512.ToLower()) {
+          throw "SHA512 mismatch: expected $($entry.sha512), got $actual"
+        }
+
+        # Same silent flags the Chocolatey package used. The installer is Inno
+        # Setup, so /DIR pins the location CMake already looks in.
+        $dir = 'C:\Program Files\OpenSSL'
+        $proc = Start-Process $installer -Wait -PassThru -ArgumentList `
+          '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$dir"
+        if ($proc.ExitCode -ne 0) { throw "Installer exited with $($proc.ExitCode)" }
+
+        "$dir\bin" | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+        "OPENSSL_CONF=$dir\bin\openssl.cfg" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
     - name: Configure CMake ${{ matrix.config.name }}
       run: >
         cmake -B build -S .
