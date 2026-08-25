@@ -13408,8 +13408,15 @@ inline bool Server::listen_internal() {
         } else if (errno == EINTR || errno == EAGAIN) {
           continue;
         }
-        if (svr_sock_ != INVALID_SOCKET) {
-          detail::close_socket(svr_sock_);
+        // Take svr_sock_ as we close it. Leaving the descriptor behind lets a
+        // later stop() call shutdown()/close() on a value the OS may already
+        // have handed out to a different socket, and leaves keep_alive() in
+        // the workers waiting on a listening socket that is gone. The exchange
+        // also settles the race with a concurrent stop(): whichever side takes
+        // the descriptor closes it exactly once.
+        auto listen_sock = svr_sock_.exchange(INVALID_SOCKET);
+        if (listen_sock != INVALID_SOCKET) {
+          detail::close_socket(listen_sock);
           ret = false;
           output_error_log(Error::Connection, nullptr);
         } else {
