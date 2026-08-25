@@ -22,6 +22,18 @@
  * Configuration
  */
 
+/*
+ * Additional HTTP methods the server will accept, on top of the standard set.
+ * Define as a comma-separated list of string literals, e.g. for WebDAV:
+ *
+ *   #define CPPHTTPLIB_ADDITIONAL_METHODS "PROPFIND","PROPPATCH","MKCOL"
+ *
+ * Empty by default, so behaviour is unchanged unless it is set.
+ */
+#ifndef CPPHTTPLIB_ADDITIONAL_METHODS
+#define CPPHTTPLIB_ADDITIONAL_METHODS
+#endif
+
 #ifndef CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #endif
@@ -12735,7 +12747,8 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
 
   thread_local const std::set<std::string> methods{
       "GET",     "HEAD",    "POST",  "PUT",   "DELETE",
-      "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
+      "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI",
+      CPPHTTPLIB_ADDITIONAL_METHODS};
 
   if (methods.find(req.method) == methods.end()) {
     output_error_log(Error::InvalidHTTPMethod, &req);
