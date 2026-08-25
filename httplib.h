@@ -6925,6 +6925,30 @@ inline bool is_connection_error() {
 #endif
 }
 
+// accept() failed because the process or the network stack is temporarily out
+// of resources. The listening socket is still good; retry after a short pause.
+inline bool is_accept_resource_error() {
+#ifdef _WIN32
+  auto err = WSAGetLastError();
+  return err == WSAEMFILE || err == WSAENOBUFS;
+#else
+  return errno == EMFILE;
+#endif
+}
+
+// accept() failed for a reason that says nothing about the listening socket:
+// the pending connection went away before it could be accepted, or the call
+// was interrupted. Retry immediately.
+inline bool is_accept_transient_error() {
+#ifdef _WIN32
+  auto err = WSAGetLastError();
+  return err == WSAECONNRESET || err == WSAECONNABORTED || err == WSAEINTR ||
+         err == WSAEWOULDBLOCK;
+#else
+  return errno == EINTR || errno == EAGAIN;
+#endif
+}
+
 inline bool bind_ip_address(socket_t sock, const std::string &host) {
   struct addrinfo hints;
   struct addrinfo *result;
@@ -13400,12 +13424,18 @@ inline bool Server::listen_internal() {
 #endif
 
       if (sock == INVALID_SOCKET) {
-        if (errno == EMFILE) {
-          // The per-process limit of open file descriptors has been reached.
-          // Try to accept new connections after a short sleep.
+        // NOTE: Winsock reports failures through WSAGetLastError(), never
+        // through the CRT errno, so these have to be asked platform by
+        // platform. Testing errno directly here made both retry branches dead
+        // code on Windows and turned every transient accept() failure into a
+        // fatal one.
+        if (detail::is_accept_resource_error()) {
+          // The per-process limit of open file descriptors, or the network
+          // stack's buffer space, has been reached. Try to accept new
+          // connections after a short sleep.
           std::this_thread::sleep_for(std::chrono::microseconds{1});
           continue;
-        } else if (errno == EINTR || errno == EAGAIN) {
+        } else if (detail::is_accept_transient_error()) {
           continue;
         }
         if (svr_sock_ != INVALID_SOCKET) {

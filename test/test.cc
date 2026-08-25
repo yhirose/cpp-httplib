@@ -355,6 +355,52 @@ TEST(SetSocketOptTest, TcpNoDelay) {
   detail::close_socket(sock);
 }
 
+TEST(AcceptErrorTest, ClassifiesRetryableFailures) {
+  // accept() reports failures through WSAGetLastError() on Windows and through
+  // errno everywhere else, so each classifier has to read the one its platform
+  // actually sets.
+#ifdef _WIN32
+  for (auto err : {WSAEMFILE, WSAENOBUFS}) {
+    WSASetLastError(err);
+    EXPECT_TRUE(detail::is_accept_resource_error()) << "error " << err;
+    EXPECT_FALSE(detail::is_accept_transient_error()) << "error " << err;
+  }
+
+  for (auto err :
+       {WSAECONNRESET, WSAECONNABORTED, WSAEINTR, WSAEWOULDBLOCK}) {
+    WSASetLastError(err);
+    EXPECT_TRUE(detail::is_accept_transient_error()) << "error " << err;
+    EXPECT_FALSE(detail::is_accept_resource_error()) << "error " << err;
+  }
+
+  for (auto err : {WSAENOTSOCK, WSAEINVAL, WSAEOPNOTSUPP}) {
+    WSASetLastError(err);
+    EXPECT_FALSE(detail::is_accept_resource_error()) << "error " << err;
+    EXPECT_FALSE(detail::is_accept_transient_error()) << "error " << err;
+  }
+
+  WSASetLastError(0);
+#else
+  errno = EMFILE;
+  EXPECT_TRUE(detail::is_accept_resource_error());
+  EXPECT_FALSE(detail::is_accept_transient_error());
+
+  for (auto err : {EINTR, EAGAIN}) {
+    errno = err;
+    EXPECT_TRUE(detail::is_accept_transient_error()) << "errno " << err;
+    EXPECT_FALSE(detail::is_accept_resource_error()) << "errno " << err;
+  }
+
+  for (auto err : {EBADF, EINVAL, ENOTSOCK}) {
+    errno = err;
+    EXPECT_FALSE(detail::is_accept_resource_error()) << "errno " << err;
+    EXPECT_FALSE(detail::is_accept_transient_error()) << "errno " << err;
+  }
+
+  errno = 0;
+#endif
+}
+
 TEST(ClientTest, MoveConstructible) {
   EXPECT_FALSE(std::is_copy_constructible<Client>::value);
   EXPECT_TRUE(std::is_nothrow_move_constructible<Client>::value);
