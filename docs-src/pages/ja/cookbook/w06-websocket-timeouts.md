@@ -1,6 +1,6 @@
 ---
 title: "W06. タイムアウトを設定する"
-order: 56
+order: 57
 status: "draft"
 ---
 

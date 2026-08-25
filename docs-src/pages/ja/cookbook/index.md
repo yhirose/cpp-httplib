@@ -73,6 +73,9 @@ status: "draft"
 - [S21. マルチスレッド数を設定する](s21-thread-pool)
 - [S22. Unix domain socketで通信する](s22-unix-socket)
 
+### プロトコル拡張
+- [S23. カスタムHTTPメソッドを扱う](s23-custom-methods)
+
 ## TLS / セキュリティ
 
 - [T01. OpenSSL・mbedTLS・wolfSSLの選択指針](t01-tls-backends)

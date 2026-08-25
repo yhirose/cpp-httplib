@@ -1,6 +1,6 @@
 ---
 title: "W05. Configure TLS for wss:// Connections"
-order: 55
+order: 56
 status: "draft"
 ---
 

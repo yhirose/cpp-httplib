@@ -1,6 +1,6 @@
 ---
 title: "E04. SSEをクライアントで受信する"
-order: 50
+order: 51
 status: "draft"
 ---
 

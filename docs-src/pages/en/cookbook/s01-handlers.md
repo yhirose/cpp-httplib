@@ -61,30 +61,8 @@ svr.Get("/me", [](const httplib::Request &req, httplib::Response &res) {
 
 To add a response header, use `res.set_header("Name", "Value")`.
 
-## Handle HTTP methods outside the built-in set
-
-The server rejects methods it does not know with `400 Bad Request`. To accept an extension method, such as the WebDAV methods of RFC 4918 or UPnP's `SUBSCRIBE`, register a handler with `CustomRoute()`. Registering the handler is what makes the server accept the method.
-
-```cpp
-svr.CustomRoute("PROPFIND", "/dav/:id",
-                [](const httplib::Request &req, httplib::Response &res) {
-                  // The request body is available as usual
-                  auto id = req.path_params.at("id");
-                  res.status = httplib::StatusCode::MultiStatus_207;
-                  res.set_content(build_multistatus(req.body), "application/xml");
-                });
-```
-
-Patterns work the same way as they do for `Get()`, so regular expressions and path parameters are both available. There is also a content reader overload, just like the one on `Post()`, for reading the body in chunks.
-
-Five things to keep in mind:
-
-- The method name has to be a valid HTTP method token (RFC 9110), and it must be registered before you call `listen()`
-- `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `CONNECT`, `OPTIONS`, `TRACE`, `PATCH` and `PRI` cannot be registered here. Use the dedicated methods for those
-- A rejected registration makes `is_valid()` return `false` and `listen()` fail, so the server never starts holding a handler that would never fire
-- Static file serving and WebSocket upgrades stay `GET`/`HEAD` only
-- `Allow` and WebDAV's `DAV:` header are not generated for you. Return them yourself with `Options()` if clients need them
-
 > **Note:** `listen()` is a blocking call. To run it on a different thread, wrap it in `std::thread`. If you need non-blocking startup, see [S18. Control startup order with `listen_after_bind`](../s18-listen-after-bind).
 
 > To use path parameters like `/users/:id`, see [S03. Use path parameters](../s03-path-params).
+
+> For methods outside the built-in set, such as WebDAV's `PROPFIND`, see [S23. Handle custom HTTP methods](../s23-custom-methods).

@@ -1,6 +1,6 @@
 ---
 title: "W03. 接続クローズをハンドリングする"
-order: 53
+order: 54
 status: "draft"
 ---
 

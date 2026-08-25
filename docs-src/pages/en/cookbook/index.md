@@ -73,6 +73,9 @@ A collection of recipes that answer "How do I...?" questions. Each recipe is sel
 - [S21. Configure the thread pool](s21-thread-pool)
 - [S22. Talk over a Unix domain socket](s22-unix-socket)
 
+### Protocol Extensions
+- [S23. Handle custom HTTP methods](s23-custom-methods)
+
 ## TLS / Security
 
 - [T01. Choosing between OpenSSL, mbedTLS, and wolfSSL](t01-tls-backends)

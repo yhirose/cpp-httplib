@@ -1,6 +1,6 @@
 ---
 title: "W02. Set a WebSocket Heartbeat"
-order: 52
+order: 53
 status: "draft"
 ---
 

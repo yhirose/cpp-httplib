@@ -1,6 +1,6 @@
 ---
 title: "W05. wss接続でTLSを設定する"
-order: 55
+order: 56
 status: "draft"
 ---
 
