@@ -307,6 +307,39 @@ int main(void)
 
 `Post`, `Put`, `Patch`, `Delete` and `Options` methods are also supported.
 
+### Custom HTTP methods
+
+Methods outside the built-in set are rejected with `400 Bad Request` unless a handler is registered for them with `CustomRoute`. This covers the WebDAV methods of RFC 4918, `SUBSCRIBE` and friends from UPnP, and any other extension method.
+
+```c++
+svr.CustomRoute("PROPFIND", "/dav/:id", [](const Request& req, Response& res) {
+  // The request body is available as usual
+  auto id = req.path_params.at("id");
+  res.status = StatusCode::MultiStatus_207;
+  res.set_content(build_multistatus(req.body), "application/xml");
+});
+
+// A content reader overload is available too
+svr.CustomRoute("REPORT", "/dav/.*",
+                [](const Request& req, Response& res,
+                   const ContentReader& content_reader) {
+                  content_reader([&](const char* data, size_t data_length) {
+                    // ...
+                    return true;
+                  });
+                });
+```
+
+Patterns work exactly as they do for `Get` and the other methods, so regular expressions and path parameters are both available.
+
+Note the following:
+
+* The method name must be a valid HTTP method token (RFC 9110) and must be registered before `listen()` is called.
+* `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `CONNECT`, `OPTIONS`, `TRACE`, `PATCH` and `PRI` cannot be registered this way. Use the dedicated methods above instead.
+* A rejected registration makes `is_valid()` return `false`, and `listen()` then fails rather than starting a server with a route that would never fire.
+* Static file serving and WebSocket upgrades remain `GET`/`HEAD` only.
+* `Allow` and the WebDAV `DAV:` header are not generated automatically. Register an `Options` handler if clients need them.
+
 ### Bind a socket to multiple interfaces and any available port
 
 ```cpp
