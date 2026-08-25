@@ -552,11 +552,21 @@ jobs:
         }
 
         # Same silent flags the Chocolatey package used. The installer is Inno
-        # Setup, so /DIR pins the location CMake already looks in.
+        # Setup, so /DIR pins the location CMake already looks in. The inner
+        # quotes matter: ArgumentList joins on spaces, so an unquoted /DIR
+        # would install to C:\Program and only fail later, at load time.
         $dir = 'C:\Program Files\OpenSSL'
         $proc = Start-Process $installer -Wait -PassThru -ArgumentList `
-          '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$dir"
+          '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$dir`""
         if ($proc.ExitCode -ne 0) { throw "Installer exited with $($proc.ExitCode)" }
+
+        # Catch a misplaced install here rather than at link or load time.
+        if (-not (Test-Path "$dir\lib\VC\x64\MD\libcrypto.lib")) {
+          throw "OpenSSL import libraries missing under $dir"
+        }
+        if (-not (Get-ChildItem "$dir\bin\libcrypto-*.dll" -ErrorAction SilentlyContinue)) {
+          throw "OpenSSL runtime DLLs missing under $dir\bin"
+        }
 
         "$dir\bin" | Out-File $env:GITHUB_PATH -Append -Encoding utf8
         "OPENSSL_CONF=$dir\bin\openssl.cfg" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
