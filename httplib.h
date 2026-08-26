@@ -1834,6 +1834,7 @@ enum class Error {
   InvalidRangeHeader,
   UnsupportedContentEncoding,
   WebSocketHandshake,
+  UserCallbackException,
 
   // For internal use only
   SSLPeerCouldBeClosed_,
@@ -2223,6 +2224,35 @@ protected:
                        bool &connection_closed,
                        const std::function<void(Request &)> &setup_request,
                        bool *websocket_upgraded = nullptr);
+
+  // Runs the per-connection serving loop and stops an exception thrown by a
+  // user callback from escaping the worker thread.
+  //
+  // process_request() wraps only routing() in a try/catch. Content providers,
+  // the post-routing, error, logging and expect-100 handlers and WebSocket
+  // handlers all run outside it, and the task queue calls the job without a
+  // catch, so an exception from any of those would terminate the process.
+  //
+  // No 500 is possible here: by the time a content provider runs, the status
+  // line and headers are already on the wire. Report it through the error
+  // logger and drop the connection, which is what the peer observes either
+  // way. Other connections are unaffected.
+  template <typename Serve> bool serve_guarded(Serve &&serve) const {
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+    return serve();
+#else
+    try {
+      return serve();
+    } catch (...) {
+      // The error logger is a user callback too, so it must not be able to
+      // throw the guard back open.
+      try {
+        output_error_log(Error::UserCallbackException, nullptr);
+      } catch (...) {}
+      return false;
+    }
+#endif
+  }
 
   std::atomic<socket_t> svr_sock_{INVALID_SOCKET};
 
@@ -10740,6 +10770,7 @@ inline std::string to_string(const Error error) {
   case Error::InvalidRangeHeader: return "Invalid Range header";
   case Error::UnsupportedContentEncoding: return "Unsupported Content-Encoding";
   case Error::WebSocketHandshake: return "WebSocket handshake failed";
+  case Error::UserCallbackException: return "User callback threw an exception";
   default: break;
   }
 
@@ -14159,15 +14190,18 @@ inline bool Server::process_and_close_socket(socket_t sock) {
   detail::get_local_ip_and_port(sock, local_addr, local_port);
 
   bool websocket_upgraded = false;
-  auto ret = detail::process_server_socket(
-      svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_,
-      [&](Stream &strm, bool close_connection, bool &connection_closed) {
-        return process_request(strm, remote_addr, remote_port, local_addr,
-                               local_port, close_connection, connection_closed,
-                               nullptr, &websocket_upgraded);
-      });
+  auto ret = serve_guarded([&]() {
+    return detail::process_server_socket(
+        svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
+        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+        write_timeout_usec_,
+        [&](Stream &strm, bool close_connection, bool &connection_closed) {
+          return process_request(strm, remote_addr, remote_port, local_addr,
+                                 local_port, close_connection,
+                                 connection_closed, nullptr,
+                                 &websocket_upgraded);
+        });
+  });
 
   detail::drain_and_close_socket(sock);
   return ret;
@@ -17567,16 +17601,18 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
   int local_port = 0;
   detail::get_local_ip_and_port(sock, local_addr, local_port);
 
-  ret = detail::process_server_socket_ssl(
-      svr_sock_, session, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_,
-      [&](Stream &strm, bool close_connection, bool &connection_closed) {
-        return process_request(
-            strm, remote_addr, remote_port, local_addr, local_port,
-            close_connection, connection_closed,
-            [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
-      });
+  ret = serve_guarded([&]() {
+    return detail::process_server_socket_ssl(
+        svr_sock_, session, sock, keep_alive_max_count_,
+        keep_alive_timeout_sec_, read_timeout_sec_, read_timeout_usec_,
+        write_timeout_sec_, write_timeout_usec_,
+        [&](Stream &strm, bool close_connection, bool &connection_closed) {
+          return process_request(
+              strm, remote_addr, remote_port, local_addr, local_port,
+              close_connection, connection_closed,
+              [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
+        });
+  });
 
   return ret;
 }

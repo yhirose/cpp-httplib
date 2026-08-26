@@ -4348,6 +4348,279 @@ TEST(ExceptionTest, AndErrorHandler) {
 }
 #endif
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+// process_request() wraps only routing() in a try/catch, so an exception from
+// any other user callback used to unwind into the task queue - which does not
+// catch - and terminate the process. Each test below runs the server on a
+// single worker thread: a guard that catches the exception but still loses the
+// thread would otherwise be hidden by a spare worker serving the follow-up
+// request. Note that a regression here aborts the whole test binary rather
+// than failing one test.
+TEST(ServerExceptionTest, ThrowingContentProviderDoesNotKillTheServer) {
+  Server svr;
+  svr.new_task_queue = [] { return new ThreadPool(1); };
+
+  std::atomic<int> reported{0};
+  svr.set_error_logger([&](const Error &err, const Request * /*req*/) {
+    if (err == Error::UserCallbackException) { reported++; }
+  });
+
+  svr.Get("/throw", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        1024, "text/plain",
+        [](size_t /*offset*/, size_t /*length*/, DataSink &sink) -> bool {
+          sink.write("hello", 5);
+          throw std::runtime_error("from the content provider");
+        });
+  });
+
+  svr.Get("/ok", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_read_timeout(5, 0);
+    EXPECT_FALSE(cli.Get("/throw"));
+  }
+
+  EXPECT_TRUE(svr.is_running());
+  EXPECT_EQ(1, reported.load());
+
+  // A request on a fresh connection is still served.
+  {
+    Client cli(HOST, port);
+    auto res = cli.Get("/ok");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("ok", res->body);
+  }
+}
+
+TEST(ServerExceptionTest, ThrowingPostRoutingHandlerDoesNotKillTheServer) {
+  Server svr;
+  svr.new_task_queue = [] { return new ThreadPool(1); };
+
+  std::atomic<bool> should_throw{true};
+
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
+    res.set_content("hi", "text/plain");
+  });
+
+  svr.set_post_routing_handler(
+      [&](const Request & /*req*/, Response & /*res*/) {
+        if (should_throw) {
+          throw std::runtime_error("from the post-routing handler");
+        }
+      });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_read_timeout(5, 0);
+    EXPECT_FALSE(cli.Get("/hi"));
+  }
+
+  EXPECT_TRUE(svr.is_running());
+
+  should_throw = false;
+
+  {
+    Client cli(HOST, port);
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("hi", res->body);
+  }
+}
+
+TEST(ServerExceptionTest, ThrowingErrorLoggerDoesNotReopenTheGuard) {
+  // The guard reports the caught exception through the error logger, which is
+  // a user callback too. A logger that throws has to be contained as well, or
+  // the process would terminate from inside the catch.
+  Server svr;
+  svr.new_task_queue = [] { return new ThreadPool(1); };
+
+  std::atomic<int> reported{0};
+  svr.set_error_logger([&](const Error &err, const Request * /*req*/) {
+    if (err == Error::UserCallbackException) {
+      reported++;
+      throw std::runtime_error("from the error logger");
+    }
+  });
+
+  svr.Get("/throw", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        1024, "text/plain",
+        [](size_t /*offset*/, size_t /*length*/, DataSink &sink) -> bool {
+          sink.write("hello", 5);
+          throw std::runtime_error("from the content provider");
+        });
+  });
+
+  svr.Get("/ok", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_read_timeout(5, 0);
+    EXPECT_FALSE(cli.Get("/throw"));
+  }
+
+  EXPECT_TRUE(svr.is_running());
+  EXPECT_EQ(1, reported.load());
+
+  {
+    Client cli(HOST, port);
+    auto res = cli.Get("/ok");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("ok", res->body);
+  }
+}
+
+TEST(ServerExceptionTest, ThrowingWebSocketHandlerDoesNotKillTheServer) {
+  // A WebSocket handler runs on the upgrade path after the 101 has been sent,
+  // so the exception unwinds through the ws::WebSocket object on its way to
+  // the guard. None of the HTTP cases above cross that.
+  Server svr;
+  svr.new_task_queue = [] { return new ThreadPool(1); };
+
+  std::atomic<int> reported{0};
+  svr.set_error_logger([&](const Error &err, const Request * /*req*/) {
+    if (err == Error::UserCallbackException) { reported++; }
+  });
+
+  svr.WebSocket("/ws", [](const Request & /*req*/, ws::WebSocket & /*ws*/) {
+    throw std::runtime_error("from the WebSocket handler");
+  });
+
+  svr.Get("/ok", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    ws::WebSocketClient client("ws://localhost:" + std::to_string(port) +
+                               "/ws");
+    auto res = client.connect();
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+    // The server dropped the connection instead of dying.
+    std::string msg;
+    EXPECT_FALSE(client.read(msg));
+    client.close();
+  }
+
+  EXPECT_TRUE(svr.is_running());
+  EXPECT_EQ(1, reported.load());
+
+  {
+    Client cli(HOST, port);
+    auto res = cli.Get("/ok");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("ok", res->body);
+  }
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(ServerExceptionTest, ThrowingContentProviderDoesNotKillTheSSLServer) {
+  // SSLServer::process_and_close_socket() is a separate overload with its own
+  // guard, so it is exercised on its own.
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.new_task_queue = [] { return new ThreadPool(1); };
+
+  std::atomic<int> reported{0};
+  svr.set_error_logger([&](const Error &err, const Request * /*req*/) {
+    if (err == Error::UserCallbackException) { reported++; }
+  });
+
+  svr.Get("/throw", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        1024, "text/plain",
+        [](size_t /*offset*/, size_t /*length*/, DataSink &sink) -> bool {
+          sink.write("hello", 5);
+          throw std::runtime_error("from the content provider");
+        });
+  });
+
+  svr.Get("/ok", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    SSLClient cli(HOST, port);
+    cli.enable_server_certificate_verification(false);
+    cli.set_read_timeout(5, 0);
+    EXPECT_FALSE(cli.Get("/throw"));
+  }
+
+  EXPECT_TRUE(svr.is_running());
+  EXPECT_EQ(1, reported.load());
+
+  {
+    SSLClient cli(HOST, port);
+    cli.enable_server_certificate_verification(false);
+    auto res = cli.Get("/ok");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("ok", res->body);
+  }
+}
+#endif
+#endif
+
 TEST(NoContentTest, ContentLength) {
   Server svr;
 
