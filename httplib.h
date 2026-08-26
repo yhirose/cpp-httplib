@@ -8405,8 +8405,15 @@ write_content_chunked(Stream &strm, const ContentProvider &content_provider,
   DataSink data_sink;
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
+    // Writing nothing is not a way to end the body. A zero-length chunk is
+    // the terminator in chunked coding, so it must never be emitted in the
+    // middle of one, and only done()/done_with_trailer() may finish the
+    // message. Treating it as "no more data" (data_available = l > 0) ended
+    // the loop with the terminating chunk still unwritten, and this function
+    // then reported success for a body the peer can never see the end of.
+    if (l == 0) { return ok; }
+
     if (ok) {
-      data_available = l > 0;
       offset += l;
 
       std::string payload;

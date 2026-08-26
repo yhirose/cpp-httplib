@@ -1934,6 +1934,75 @@ TEST(ParseAcceptEncoding8, AcceptEncodingQValuePriority) {
 #endif
 }
 
+TEST(WriteContentChunkedTest, ZeroLengthWriteDoesNotEndTheBody) {
+  detail::BufferStream strm;
+  detail::nocompressor compressor;
+  auto error = Error::Success;
+  auto step = 0;
+
+  // A provider that happens to have nothing to hand over on one pass - an
+  // empty buffer popped off a queue, say - must not be taken to mean the body
+  // is finished. Before this was fixed the write below ended the loop with the
+  // terminating chunk unwritten, and the function still reported success.
+  auto ret = detail::write_content_chunked(
+      strm,
+      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        switch (step++) {
+        case 0: sink.write("", 0); break;
+        case 1: sink.write("hello", 5); break;
+        default: sink.done(); break;
+        }
+        return true;
+      },
+      []() { return false; }, compressor, error);
+
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(Error::Success, error);
+  EXPECT_EQ("5\r\nhello\r\n0\r\n\r\n", strm.get_buffer());
+}
+
+TEST(WriteContentChunkedTest, DoneWithNoDataWritesOnlyTheTerminator) {
+  detail::BufferStream strm;
+  detail::nocompressor compressor;
+  auto error = Error::Success;
+
+  auto ret = detail::write_content_chunked(
+      strm,
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.done();
+        return true;
+      },
+      []() { return false; }, compressor, error);
+
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(Error::Success, error);
+  EXPECT_EQ("0\r\n\r\n", strm.get_buffer());
+}
+
+TEST(WriteContentChunkedTest, TrailersFollowTheTerminatingChunk) {
+  detail::BufferStream strm;
+  detail::nocompressor compressor;
+  auto error = Error::Success;
+  auto sent = false;
+
+  auto ret = detail::write_content_chunked(
+      strm,
+      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        if (!sent) {
+          sent = true;
+          sink.write("data", 4);
+        } else {
+          sink.done_with_trailer({{"X-Checksum", "abc"}});
+        }
+        return true;
+      },
+      []() { return false; }, compressor, error);
+
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(Error::Success, error);
+  EXPECT_EQ("4\r\ndata\r\n0\r\nX-Checksum: abc\r\n\r\n", strm.get_buffer());
+}
+
 TEST(BufferStreamTest, read) {
   detail::BufferStream strm1;
   Stream &strm = strm1;
