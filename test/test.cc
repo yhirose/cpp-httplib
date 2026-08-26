@@ -9952,6 +9952,49 @@ TEST(DownloadProgressTest, GetWithContentReceiver) {
       "/download-receiver", 2000u);
 }
 
+TEST(StreamingTest, ChunkedZeroLengthWriteDoesNotEndTheBody) {
+  // A provider reaching a pass with nothing to hand over - an empty buffer
+  // popped off a queue, say - must not be taken to mean the body is finished.
+  // It used to end the loop with the terminating chunk unwritten while the
+  // server still considered the response complete, so the peer waited for an
+  // end that never arrived.
+  Server svr;
+
+  svr.Get("/stream", [](const Request & /*req*/, Response &res) {
+    auto step = std::make_shared<int>(0);
+    res.set_chunked_content_provider("text/plain",
+                                     [step](size_t /*offset*/, DataSink &sink) {
+                                       switch ((*step)++) {
+                                       case 0: sink.write("", 0); break;
+                                       case 1: sink.write("hello", 5); break;
+                                       default: sink.done(); break;
+                                       }
+                                       return true;
+                                     });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto listen_se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  // Without the fix the body is never terminated, so bound the wait rather
+  // than letting the test hang on the default read timeout.
+  cli.set_read_timeout(5, 0);
+
+  auto res = cli.Get("/stream");
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("hello", res->body);
+}
+
 TEST(StreamingTest, NoContentLengthStreaming) {
   Server svr;
 
