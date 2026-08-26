@@ -8984,21 +8984,19 @@ public:
         if (buf_start_with(crlf_)) {
           buf_erase(crlf_.size());
           state_ = 1;
+        } else if (buf_start_with(dash_)) {
+          buf_erase(dash_.size());
+          is_valid_ = true;
+          state_ = 5;
         } else {
-          if (dash_.size() > buf_size()) { return true; }
-          if (buf_start_with(dash_)) {
-            buf_erase(dash_.size());
-            is_valid_ = true;
-            state_ = 5;
-          } else {
-            // Only CRLF (another part follows) and "--" (close-delimiter) are
-            // accepted after a boundary; RFC 2046 allows transport-padding in
-            // between, but this parser has never supported it. Either way the
-            // body is already destined to be rejected, so fail now instead of
-            // buffering the rest of it.
-            is_valid_ = false;
-            return false;
-          }
+          // Only CRLF (another part follows) and "--" (close-delimiter) are
+          // accepted after a boundary; RFC 2046 allows transport-padding in
+          // between, but this parser has never supported it. Either way the
+          // body is already destined to be rejected, so fail now instead of
+          // buffering the rest of it. Both are two bytes, so the check above
+          // already guarantees enough buffered data to decide.
+          is_valid_ = false;
+          return false;
         }
         break;
       }
