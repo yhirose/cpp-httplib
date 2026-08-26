@@ -15389,17 +15389,19 @@ TEST(MultipartFormDataTest, NoInitialBoundaryParsingIsNotQuadratic) {
     return ms;
   };
 
-  auto small = post_dashes(4u * 1024 * 1024);
-  auto large = post_dashes(16u * 1024 * 1024);
+  // Not named `small`/`large`: <rpcndr.h> defines `small` as a macro on
+  // Windows.
+  auto ms_4mb = post_dashes(4u * 1024 * 1024);
+  auto ms_16mb = post_dashes(16u * 1024 * 1024);
 
   // Comparing the two sizes rather than checking an absolute duration keeps
   // this meaningful across build types and CI load, both of which move the
   // absolute numbers by more than an order of magnitude. Four times the bytes
   // costs about four times the time when parsing is linear, and about sixteen
   // times when the body is buffered and rescanned.
-  ASSERT_GT(small, 0) << "timer resolution too coarse to compare";
-  EXPECT_LT(large, small * 10)
-      << "4MB took " << small << "ms but 16MB took " << large
+  ASSERT_GT(ms_4mb, 0) << "timer resolution too coarse to compare";
+  EXPECT_LT(ms_16mb, ms_4mb * 10)
+      << "4MB took " << ms_4mb << "ms but 16MB took " << ms_16mb
       << "ms, which suggests the body is being buffered and rescanned";
 }
 
