@@ -15474,6 +15474,7 @@ static void expect_split_multipart_ok(const std::string &body1,
   const std::string head =
       "POST /post HTTP/1.1\r\n"
       "Content-Type: multipart/form-data; boundary=zzzz\r\n"
+      "Connection: close\r\n"
       "Content-Length: " +
       std::to_string(body1.size() + body2.size()) + "\r\n\r\n";
 
