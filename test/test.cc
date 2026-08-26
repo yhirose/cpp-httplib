@@ -355,6 +355,65 @@ TEST(SetSocketOptTest, TcpNoDelay) {
   detail::close_socket(sock);
 }
 
+TEST(AcceptErrorTest, RetryableFailuresAreClassifiedPerPlatform) {
+  // accept() reports failures through WSAGetLastError() on Windows and through
+  // errno everywhere else. Asking the wrong one is what made the accept loop
+  // treat every recoverable failure as fatal on Windows.
+  struct Classification {
+    bool resource;
+    bool transient;
+  };
+
+  auto classify = [](int err) {
+#ifdef _WIN32
+    WSASetLastError(err);
+#else
+    errno = err;
+#endif
+    // Read both before asserting: an assertion may clobber the error slot.
+    Classification c;
+    c.resource = detail::is_accept_resource_error();
+    c.transient = detail::is_accept_transient_error();
+    return c;
+  };
+
+#ifdef _WIN32
+  const std::vector<int> resource_errors = {WSAEMFILE, WSAENOBUFS};
+  const std::vector<int> transient_errors = {WSAEINTR, WSAEWOULDBLOCK,
+                                             WSAECONNRESET, WSAECONNABORTED};
+  const std::vector<int> fatal_errors = {WSAENOTSOCK, WSAEINVAL, WSAEOPNOTSUPP};
+#else
+  const std::vector<int> resource_errors = {EMFILE, ENFILE, ENOBUFS, ENOMEM};
+  const std::vector<int> transient_errors = {EINTR, EAGAIN, EWOULDBLOCK,
+                                             ECONNABORTED};
+  const std::vector<int> fatal_errors = {EBADF, EINVAL, ENOTSOCK};
+#endif
+
+  for (auto err : resource_errors) {
+    const auto c = classify(err);
+    EXPECT_TRUE(c.resource) << "error " << err;
+    EXPECT_FALSE(c.transient) << "error " << err;
+  }
+
+  for (auto err : transient_errors) {
+    const auto c = classify(err);
+    EXPECT_TRUE(c.transient) << "error " << err;
+    EXPECT_FALSE(c.resource) << "error " << err;
+  }
+
+  for (auto err : fatal_errors) {
+    const auto c = classify(err);
+    EXPECT_FALSE(c.resource) << "error " << err;
+    EXPECT_FALSE(c.transient) << "error " << err;
+  }
+
+#ifdef _WIN32
+  WSASetLastError(0);
+#else
+  errno = 0;
+#endif
+}
+
 TEST(ClientTest, MoveConstructible) {
   EXPECT_FALSE(std::is_copy_constructible<Client>::value);
   EXPECT_TRUE(std::is_nothrow_move_constructible<Client>::value);
