@@ -1429,9 +1429,20 @@ public:
   DataSink &operator=(DataSink &&) = delete;
 
   std::function<bool(const char *data, size_t data_len)> write;
-  std::function<bool()> is_writable;
-  std::function<void()> done;
-  std::function<void(const Headers &trailer)> done_with_trailer;
+
+  // Every writer that hands a DataSink to a content provider assigns `write`,
+  // but only write_content_chunked() assigns all of the rest, so a provider
+  // that calls one of the others hits an empty std::function and throws
+  // std::bad_function_call. Nothing on the path catches it, so it reaches the
+  // thread that runs the provider and terminates the process. Default them to
+  // something harmless instead: a sink is writable unless a writer says
+  // otherwise, and a sink that cannot carry trailers still has to finish, so
+  // done_with_trailer() falls back to done(). Capturing `this` is safe because
+  // DataSink is neither copyable nor movable.
+  std::function<bool()> is_writable = []() { return true; };
+  std::function<void()> done = []() {};
+  std::function<void(const Headers &trailer)> done_with_trailer =
+      [this](const Headers & /*trailer*/) { done(); };
   std::ostream os;
 
 private:
@@ -8298,6 +8309,7 @@ inline bool write_content_with_progress(Stream &strm,
   size_t end_offset = offset + length;
   size_t start_offset = offset;
   auto ok = true;
+  auto finished = false;
   DataSink data_sink;
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
@@ -8321,7 +8333,14 @@ inline bool write_content_with_progress(Stream &strm,
 
   data_sink.is_writable = [&]() -> bool { return strm.is_peer_alive(); };
 
-  while (offset < end_offset && !is_shutting_down()) {
+  // The body is framed by `length`, so a provider that reports itself done
+  // before producing that many bytes has truncated it and the response has to
+  // fail. Without this the default no-op done() would leave `offset` short of
+  // `end_offset` with nothing written, and the loop would call the provider
+  // again immediately - a busy loop rather than an error.
+  data_sink.done = [&]() { finished = true; };
+
+  while (offset < end_offset && !finished && !is_shutting_down()) {
     if (!strm.wait_writable() || !strm.is_peer_alive()) {
       error = Error::Write;
       return false;
@@ -8334,7 +8353,7 @@ inline bool write_content_with_progress(Stream &strm,
     }
   }
 
-  if (offset < end_offset) { // exited due to is_shutting_down(), not completion
+  if (offset < end_offset) { // done() early, or exited due to is_shutting_down()
     error = Error::Write;
     return false;
   }
@@ -15312,6 +15331,7 @@ ClientImpl::send_with_content_provider_and_receiver(
 
     if (content_provider) {
       auto ok = true;
+      auto finished = false;
       size_t offset = 0;
       DataSink data_sink;
 
@@ -15335,12 +15355,23 @@ ClientImpl::send_with_content_provider_and_receiver(
         return ok;
       };
 
-      while (ok && offset < content_length) {
+      // As in write_content_with_progress(): the request body is framed by
+      // content_length, so a provider that finishes early has truncated it.
+      // Stop and report it rather than calling the provider forever.
+      data_sink.done = [&]() { finished = true; };
+
+      while (ok && !finished && offset < content_length) {
         if (!content_provider(offset, content_length - offset, data_sink)) {
           error = Error::Canceled;
           output_error_log(error, &req);
           return nullptr;
         }
+      }
+
+      if (offset < content_length) {
+        error = Error::Write;
+        output_error_log(error, &req);
+        return nullptr;
       }
     } else {
       if (!compressor->compress(body, content_length, true,

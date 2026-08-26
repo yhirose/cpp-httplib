@@ -1934,6 +1934,67 @@ TEST(ParseAcceptEncoding8, AcceptEncodingQValuePriority) {
 #endif
 }
 
+TEST(DataSinkTest, OptionalCallbacksHaveSafeDefaults) {
+  DataSink sink;
+
+  // A default-constructed sink must be safe to call: only `write` is assigned
+  // by every writer, so the rest need defaults or a provider that touches them
+  // throws std::bad_function_call.
+  EXPECT_TRUE(sink.is_writable());
+  EXPECT_NO_THROW(sink.done());
+  EXPECT_NO_THROW(sink.done_with_trailer(Headers{}));
+
+  // done_with_trailer() falls back to done(), so a provider that offers
+  // trailers still finishes on a sink that cannot carry them.
+  auto done_called = false;
+  sink.done = [&]() { done_called = true; };
+  sink.done_with_trailer(Headers{{"X-Trailer", "value"}});
+  EXPECT_TRUE(done_called);
+}
+
+TEST(DataSinkTest, DoneBeforeContentLengthFailsTheWrite) {
+  detail::BufferStream strm;
+  auto error = Error::Success;
+  auto calls = 0;
+
+  // Promises 10 bytes but reports done() after 3. The body is framed by that
+  // length, so the write has to fail; the guard on `calls` keeps the test from
+  // hanging if the provider is ever called repeatedly instead.
+  auto ret = detail::write_content_with_progress(
+      strm,
+      [&](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        if (++calls > 3) { return false; }
+        sink.write("abc", 3);
+        sink.done();
+        return true;
+      },
+      0, 10, []() { return false; }, nullptr, error);
+
+  EXPECT_FALSE(ret);
+  EXPECT_EQ(Error::Write, error);
+  EXPECT_EQ(1, calls); // done() is honoured immediately, not retried
+  EXPECT_EQ("abc", strm.get_buffer());
+}
+
+TEST(DataSinkTest, WriteToContentLengthStillSucceeds) {
+  detail::BufferStream strm;
+  auto error = Error::Success;
+
+  auto ret = detail::write_content_with_progress(
+      strm,
+      [](size_t offset, size_t length, DataSink &sink) {
+        std::string chunk(length, 'x');
+        (void)offset;
+        sink.write(chunk.data(), chunk.size());
+        return true;
+      },
+      0, 10, []() { return false; }, nullptr, error);
+
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(Error::Success, error);
+  EXPECT_EQ("xxxxxxxxxx", strm.get_buffer());
+}
+
 TEST(BufferStreamTest, read) {
   detail::BufferStream strm1;
   Stream &strm = strm1;
