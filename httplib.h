@@ -8849,7 +8849,14 @@ public:
       switch (state_) {
       case 0: { // Initial boundary
         auto pos = buf_find(dash_boundary_crlf_);
-        if (pos == buf_size()) { return true; }
+        if (pos == buf_size()) {
+          // Not found yet: keep only a possible partial boundary at the tail so
+          // that a body which never contains the boundary cannot grow the
+          // buffer (and get rescanned from the start) without bound.
+          auto keep = dash_boundary_crlf_.size() - 1;
+          if (buf_size() > keep) { buf_erase(buf_size() - keep); }
+          return true;
+        }
         buf_erase(pos + dash_boundary_crlf_.size());
         state_ = 1;
         break;
@@ -8977,11 +8984,21 @@ public:
           if (buf_start_with(dash_)) {
             buf_erase(dash_.size());
             is_valid_ = true;
-            buf_erase(buf_size()); // Remove epilogue
+            state_ = 5;
           } else {
-            return true;
+            // Only CRLF (another part follows) and "--" (close-delimiter) are
+            // accepted after a boundary; RFC 2046 allows transport-padding in
+            // between, but this parser has never supported it. Either way the
+            // body is already destined to be rejected, so fail now instead of
+            // buffering the rest of it.
+            is_valid_ = false;
+            return false;
           }
         }
+        break;
+      }
+      case 5: { // Epilogue
+        buf_erase(buf_size());
         break;
       }
       }

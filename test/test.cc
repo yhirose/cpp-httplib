@@ -8865,9 +8865,13 @@ TEST(ZstdDecompressor, Decompress) {
 }
 #endif
 
-// Sends a raw request to a server listening at HOST:PORT.
-static bool send_request(time_t read_timeout_sec, const std::string &req,
-                         std::string *resp = nullptr, int port = PORT) {
+// Sends a raw request to a server listening at HOST:PORT, writing it in
+// separate chunks so that the server sees each part in its own read(). Used to
+// place a read boundary at a specific offset of a request body.
+static bool send_request_in_parts(time_t read_timeout_sec,
+                                  const std::vector<std::string> &parts,
+                                  std::string *resp = nullptr,
+                                  int port = PORT) {
   auto error = Error::Success;
 
   auto client_sock = detail::create_client_socket(
@@ -8881,9 +8885,15 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   auto ret = detail::process_client_socket(
       client_sock, read_timeout_sec, 0, 0, 0, 0,
       std::chrono::steady_clock::time_point::min(), [&](Stream &strm) {
-        if (req.size() !=
-            static_cast<size_t>(strm.write(req.data(), req.size()))) {
-          return false;
+        for (size_t i = 0; i < parts.size(); i++) {
+          const auto &part = parts[i];
+          if (part.size() !=
+              static_cast<size_t>(strm.write(part.data(), part.size()))) {
+            return false;
+          }
+          if (i + 1 < parts.size()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
         }
 
         char buf[512];
@@ -8898,6 +8908,12 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   detail::close_socket(client_sock);
 
   return ret;
+}
+
+// Sends a raw request to a server listening at HOST:PORT.
+static bool send_request(time_t read_timeout_sec, const std::string &req,
+                         std::string *resp = nullptr, int port = PORT) {
+  return send_request_in_parts(read_timeout_sec, {req}, resp, port);
 }
 
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
@@ -15556,6 +15572,155 @@ TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   }
 }
 #endif
+
+TEST(MultipartFormDataTest, NoInitialBoundaryParsingIsNotQuadratic) {
+  // A body that never contains the declared boundary must not be accumulated
+  // while the parser waits for it. Buffering it would also make every read
+  // rescan everything seen so far, which is quadratic in the body size.
+  Server svr;
+  svr.Post("/post", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_read_timeout(60, 0);
+  cli.set_write_timeout(60, 0);
+
+  // '-' is the worst case: it matches the first character of the boundary, so
+  // every position has to be checked against it.
+  auto post_dashes = [&](size_t size) {
+    const std::string body(size, '-');
+    auto start = std::chrono::steady_clock::now();
+    auto res =
+        cli.Post("/post", body, "multipart/form-data; boundary=simpleboundary");
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - start)
+                  .count();
+    EXPECT_TRUE(res) << "Error: " << to_string(res.error());
+    if (res) { EXPECT_EQ(StatusCode::BadRequest_400, res->status); }
+    return ms;
+  };
+
+  auto small = post_dashes(4u * 1024 * 1024);
+  auto large = post_dashes(16u * 1024 * 1024);
+
+  // Comparing the two sizes rather than checking an absolute duration keeps
+  // this meaningful across build types and CI load, both of which move the
+  // absolute numbers by more than an order of magnitude. Four times the bytes
+  // costs about four times the time when parsing is linear, and about sixteen
+  // times when the body is buffered and rescanned.
+  ASSERT_GT(small, 0) << "timer resolution too coarse to compare";
+  EXPECT_LT(large, small * 10)
+      << "4MB took " << small << "ms but 16MB took " << large
+      << "ms, which suggests the body is being buffered and rescanned";
+}
+
+TEST(MultipartFormDataTest, BoundaryNotFollowedByDelimiterFailsFast) {
+  // A boundary can only be followed by CRLF or by "--", so anything else is
+  // malformed no matter what comes next. The parser must say so right away
+  // instead of buffering the rest of the declared body.
+  Server svr;
+  svr.Post("/post", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Announce a 1 MB body but send only the malformed prefix. A parser that
+  // buffers instead of failing would still be waiting for the remaining bytes.
+  const std::string body = "--zzzz\r\n"
+                           "Content-Disposition: form-data; name=\"text1\"\r\n"
+                           "\r\n"
+                           "text1"
+                           "\r\n--zzzzXX";
+
+  const std::string req = "POST /post HTTP/1.1\r\n"
+                          "Content-Type: multipart/form-data; boundary=zzzz\r\n"
+                          "Content-Length: 1048576\r\n"
+                          "\r\n" +
+                          body;
+
+  std::string response;
+  ASSERT_TRUE(send_request(3, req, &response));
+  ASSERT_GE(response.size(), 12u) << "no response before the read timeout";
+  EXPECT_EQ("400", response.substr(9, 3));
+}
+
+// Posts a multipart body split into two writes, so that the server sees the
+// split at whatever offset the caller chose, and expects the single "text1"
+// field to come through.
+static void expect_split_multipart_ok(const std::string &body1,
+                                      const std::string &body2) {
+  auto handled = false;
+
+  Server svr;
+  svr.Post("/post", [&](const Request &req, Response &) {
+    EXPECT_EQ(1u, req.form.fields.size());
+    EXPECT_EQ("text1", req.form.get_field("text1"));
+    handled = true;
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  const std::string head =
+      "POST /post HTTP/1.1\r\n"
+      "Content-Type: multipart/form-data; boundary=zzzz\r\n"
+      "Content-Length: " +
+      std::to_string(body1.size() + body2.size()) + "\r\n\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request_in_parts(3, {head + body1, body2}, &response));
+  ASSERT_GE(response.size(), 12u) << "no response before the read timeout";
+  EXPECT_EQ("200", response.substr(9, 3));
+}
+
+TEST(MultipartFormDataTest, EpilogueSplitAcrossReadsIsIgnored) {
+  // RFC 2046: everything after the close-delimiter is an epilogue and is to be
+  // ignored, including when it does not arrive in the same read as the
+  // close-delimiter itself.
+  expect_split_multipart_ok("--zzzz\r\n"
+                            "Content-Disposition: form-data; name=\"text1\"\r\n"
+                            "\r\n"
+                            "text1"
+                            "\r\n--zzzz--",
+                            "\r\nthis epilogue must be ignored\r\n");
+}
+
+TEST(MultipartFormDataTest, InitialBoundarySplitAfterLongPreamble) {
+  // The initial boundary may be preceded by a preamble of any length and may
+  // straddle a read boundary. Discarding data while waiting for it must not
+  // throw away a partial boundary sitting at the end of the buffer.
+  expect_split_multipart_ok(std::string(64u * 1024, 'p') + "--zz",
+                            "zz\r\n"
+                            "Content-Disposition: form-data; name=\"text1\"\r\n"
+                            "\r\n"
+                            "text1"
+                            "\r\n--zzzz--\r\n");
+}
 
 TEST(RedirectTest, RedirectToUrlWithPlusInQueryParameters) {
   Server svr;
