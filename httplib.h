@@ -1429,9 +1429,16 @@ public:
   DataSink &operator=(DataSink &&) = delete;
 
   std::function<bool(const char *data, size_t data_len)> write;
-  std::function<bool()> is_writable;
-  std::function<void()> done;
-  std::function<void(const Headers &trailer)> done_with_trailer;
+
+  // Only `write` is mandatory. The rest are defaulted so that a provider
+  // calling one on a writer that does not set it gets sensible behaviour
+  // rather than std::bad_function_call thrown from a worker thread. Capturing
+  // `this` is safe: DataSink is neither copyable nor movable.
+  std::function<bool()> is_writable = []() { return true; };
+  std::function<void()> done = []() {};
+  std::function<void(const Headers &trailer)> done_with_trailer =
+      [this](const Headers & /*trailer*/) { done(); };
+
   std::ostream os;
 
 private:
@@ -8332,6 +8339,7 @@ inline bool write_content_with_progress(Stream &strm,
   size_t end_offset = offset + length;
   size_t start_offset = offset;
   auto ok = true;
+  auto finished = false;
   DataSink data_sink;
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
@@ -8355,7 +8363,12 @@ inline bool write_content_with_progress(Stream &strm,
 
   data_sink.is_writable = [&]() -> bool { return strm.is_peer_alive(); };
 
-  while (offset < end_offset && !is_shutting_down()) {
+  // The body is framed by `length`, so a provider that reports itself done
+  // early has truncated it. Record that and let the short-body check below
+  // fail the write, rather than calling the provider again forever.
+  data_sink.done = [&]() { finished = true; };
+
+  while (offset < end_offset && !finished && !is_shutting_down()) {
     if (!strm.wait_writable() || !strm.is_peer_alive()) {
       error = Error::Write;
       return false;
@@ -8368,7 +8381,7 @@ inline bool write_content_with_progress(Stream &strm,
     }
   }
 
-  if (offset < end_offset) { // exited due to is_shutting_down(), not completion
+  if (offset < end_offset) { // done() called early, or is_shutting_down()
     error = Error::Write;
     return false;
   }
@@ -15380,6 +15393,7 @@ ClientImpl::send_with_content_provider_and_receiver(
 
     if (content_provider) {
       auto ok = true;
+      auto finished = false;
       size_t offset = 0;
       DataSink data_sink;
 
@@ -15403,12 +15417,26 @@ ClientImpl::send_with_content_provider_and_receiver(
         return ok;
       };
 
-      while (ok && offset < content_length) {
+      // As in detail::write_content_with_progress(): the body is framed by
+      // content_length, so a provider that finishes early has truncated it.
+      // Stop and report that instead of calling the provider forever.
+      data_sink.done = [&]() { finished = true; };
+
+      while (ok && !finished && offset < content_length) {
         if (!content_provider(offset, content_length - offset, data_sink)) {
           error = Error::Canceled;
           output_error_log(error, &req);
           return nullptr;
         }
+      }
+
+      // A short body here means either the provider stopped early or the
+      // compressor gave up. The branch below reports a failing compressor as
+      // Error::Compression, so keep the two distinguishable.
+      if (offset < content_length) {
+        error = ok ? Error::Write : Error::Compression;
+        output_error_log(error, &req);
+        return nullptr;
       }
     } else {
       if (!compressor->compress(body, content_length, true,
@@ -15712,6 +15740,9 @@ inline ContentProviderWithoutLength ClientImpl::get_multipart_content_provider(
       DataSink cur_sink;
       auto has_data = true;
       cur_sink.write = sink.write;
+      // Forward is_writable so a provider item asking whether it may keep
+      // going gets the outer sink's answer rather than the default `true`.
+      cur_sink.is_writable = sink.is_writable;
       cur_sink.done = [&]() { has_data = false; };
 
       if (!provider_items[cur_item].provider(offset - cur_start, cur_sink)) {

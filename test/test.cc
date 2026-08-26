@@ -10608,6 +10608,122 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
   }
 }
 
+TEST(DataSinkTest, OptionalCallbacksAreCallableByDefault) {
+  // A writer only has to assign `write`. The other three used to be left as
+  // empty std::functions, so a provider calling one threw
+  // std::bad_function_call out of the thread running it and took the whole
+  // process down.
+  DataSink sink;
+
+  std::string written;
+  sink.write = [&](const char *data, size_t data_len) {
+    written.append(data, data_len);
+    return true;
+  };
+
+  EXPECT_TRUE(sink.is_writable());
+  sink.done();
+  sink.done_with_trailer(Headers{{"X-Trailer", "value"}});
+  EXPECT_TRUE(written.empty());
+}
+
+TEST(DataSinkTest, DoneWithTrailerFallsBackToDone) {
+  // A sink that cannot carry trailers still has to finish.
+  DataSink sink;
+
+  auto done_count = 0;
+  sink.done = [&]() { done_count++; };
+
+  sink.done_with_trailer(Headers{{"X-Trailer", "value"}});
+  EXPECT_EQ(1, done_count);
+}
+
+TEST(DataSinkTest, LengthFramedProviderMayCallDoneAfterWritingEverything) {
+  Server svr;
+
+  const std::string body(4096, 'x');
+
+  svr.Get("/", [&](const Request & /*req*/, Response &res) {
+    res.set_content_provider(body.size(), "text/plain",
+                             [&](size_t offset, size_t length, DataSink &sink) {
+                               sink.write(body.data() + offset, length);
+                               sink.done();
+                               return true;
+                             });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/");
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(body, res->body);
+}
+
+TEST(DataSinkTest, LengthFramedProviderThatFinishesEarlyFailsTheResponse) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        1024, "text/plain",
+        [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+          sink.write("hello", 5);
+          sink.done(); // short of the 1024 bytes the response promised
+          return true;
+        });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_read_timeout(5, 0);
+
+  // The response is short of its Content-Length, so the client cannot read a
+  // complete body. What matters is that this returns at all: a no-op done()
+  // would leave the writer looping over a provider that never makes progress.
+  auto res = cli.Get("/");
+  EXPECT_FALSE(res);
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST(DataSinkTest, CompressedRequestProviderThatFinishesEarlyFails) {
+  // The compressed path builds the whole body before connecting, so this
+  // fails client-side and never reaches a server.
+  Client cli(HOST, PORT);
+  cli.set_compress(true);
+
+  auto res = cli.Post(
+      "/", 1024,
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        sink.write("hello", 5);
+        sink.done(); // short of the 1024 bytes the request announced
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::Write, res.error());
+}
+#endif
+
 TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   Server svr;
 
