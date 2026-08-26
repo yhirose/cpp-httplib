@@ -14076,15 +14076,39 @@ inline bool Server::process_and_close_socket(socket_t sock) {
   detail::get_local_ip_and_port(sock, local_addr, local_port);
 
   bool websocket_upgraded = false;
-  auto ret = detail::process_server_socket(
-      svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_,
-      [&](Stream &strm, bool close_connection, bool &connection_closed) {
-        return process_request(strm, remote_addr, remote_port, local_addr,
-                               local_port, close_connection, connection_closed,
-                               nullptr, &websocket_upgraded);
-      });
+  auto serve = [&]() {
+    return detail::process_server_socket(
+        svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
+        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+        write_timeout_usec_,
+        [&](Stream &strm, bool close_connection, bool &connection_closed) {
+          return process_request(strm, remote_addr, remote_port, local_addr,
+                                 local_port, close_connection,
+                                 connection_closed, nullptr,
+                                 &websocket_upgraded);
+        });
+  };
+
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  auto ret = serve();
+#else
+  auto ret = false;
+  try {
+    ret = serve();
+  } catch (...) {
+    // process_request() runs only routing() inside its own try/catch. The
+    // content provider, the post-routing / logger / error / expect-100
+    // handlers and a WebSocket handler all run outside it, so an exception
+    // from any of those reaches here. Without this it would unwind into the
+    // task queue - which does not catch - and terminate the whole server.
+    //
+    // It is not turned into a 500: by the time a content provider runs, the
+    // status line and headers are already on the wire. Report it and drop the
+    // connection, which is what the peer sees anyway.
+    ret = false;
+    output_error_log(Error::Unknown, nullptr);
+  }
+#endif
 
   detail::drain_and_close_socket(sock);
   return ret;
@@ -17466,16 +17490,33 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
   int local_port = 0;
   detail::get_local_ip_and_port(sock, local_addr, local_port);
 
-  ret = detail::process_server_socket_ssl(
-      svr_sock_, session, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_,
-      [&](Stream &strm, bool close_connection, bool &connection_closed) {
-        return process_request(
-            strm, remote_addr, remote_port, local_addr, local_port,
-            close_connection, connection_closed,
-            [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
-      });
+  auto serve = [&]() {
+    return detail::process_server_socket_ssl(
+        svr_sock_, session, sock, keep_alive_max_count_,
+        keep_alive_timeout_sec_, read_timeout_sec_, read_timeout_usec_,
+        write_timeout_sec_, write_timeout_usec_,
+        [&](Stream &strm, bool close_connection, bool &connection_closed) {
+          return process_request(
+              strm, remote_addr, remote_port, local_addr, local_port,
+              close_connection, connection_closed,
+              [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
+        });
+  };
+
+  // Same guard as Server::process_and_close_socket(); see the comment there.
+  // The scope_exit above already frees the session and closes the socket while
+  // unwinding, but the exception itself still has to be stopped before it
+  // reaches the task queue.
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  ret = serve();
+#else
+  try {
+    ret = serve();
+  } catch (...) {
+    ret = false;
+    output_error_log(Error::Unknown, nullptr);
+  }
+#endif
 
   return ret;
 }

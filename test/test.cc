@@ -1073,6 +1073,94 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   }
 }
 
+TEST(ServerExceptionTest, ThrowingContentProviderDoesNotStopTheServer) {
+  Server svr;
+
+  // A content provider runs after process_request()'s try/catch has ended, so
+  // before this was guarded the exception unwound into the task queue and
+  // terminated the whole process - taking every other connection with it.
+  svr.Get("/throws", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        1024, "text/plain",
+        [](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) -> bool {
+          throw std::runtime_error("content provider failed");
+        });
+  });
+
+  svr.Get("/ok", [](const Request & /*req*/, Response &res) {
+    res.set_content("still here", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_connection_timeout(std::chrono::seconds(5));
+    // The response is already committed to the wire when the provider throws,
+    // so the connection is simply dropped rather than turned into a 500.
+    auto res = cli.Get("/throws");
+    EXPECT_FALSE(res);
+  }
+
+  // The point of the test: the server survived and still serves.
+  {
+    Client cli(HOST, port);
+    cli.set_connection_timeout(std::chrono::seconds(5));
+    auto res = cli.Get("/ok");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("still here", res->body);
+  }
+
+  EXPECT_TRUE(svr.is_running());
+}
+
+TEST(ServerExceptionTest, ThrowingPostRoutingHandlerDoesNotStopTheServer) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_content("body", "text/plain");
+  });
+
+  std::atomic<int> calls{0};
+  svr.set_post_routing_handler([&](const Request & /*req*/, Response & /*res*/) {
+    if (++calls == 1) { throw std::runtime_error("post-routing failed"); }
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    cli.set_connection_timeout(std::chrono::seconds(5));
+    auto res = cli.Get("/");
+    EXPECT_FALSE(res);
+  }
+
+  {
+    Client cli(HOST, port);
+    cli.set_connection_timeout(std::chrono::seconds(5));
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  EXPECT_TRUE(svr.is_running());
+}
+
 TEST(ServerStartHandlerTest, CalledOnceWhenReady) {
   Server svr;
   svr.Get("/", [](const Request & /*req*/, Response &res) {
