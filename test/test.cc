@@ -1089,6 +1089,76 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
   EXPECT_EQ(result[0], "text/*");
 }
 
+TEST(ParseDispositionParamsTest, BasicQuotedNameAndFilename) {
+  Params params;
+  detail::parse_disposition_params("name=\"file1\"; filename=\"a.txt\"",
+                                   params);
+  ASSERT_NE(params.find("name"), params.end());
+  ASSERT_NE(params.find("filename"), params.end());
+  EXPECT_EQ(params.find("name")->second, "file1");
+  EXPECT_EQ(params.find("filename")->second, "a.txt");
+}
+
+TEST(ParseDispositionParamsTest, SpacesAroundEquals) {
+  Params params;
+  detail::parse_disposition_params("name=\"file2\" ;filename = \"a.html\"",
+                                   params);
+  ASSERT_NE(params.find("name"), params.end());
+  ASSERT_NE(params.find("filename"), params.end());
+  EXPECT_EQ(params.find("name")->second, "file2");
+  EXPECT_EQ(params.find("filename")->second, "a.html");
+}
+
+TEST(ParseDispositionParamsTest, QuotedEqualsInValue) {
+  Params params;
+  detail::parse_disposition_params("name=\"file1\"; filename=\"report=v2.pdf\"",
+                                   params);
+  ASSERT_NE(params.find("name"), params.end());
+  ASSERT_NE(params.find("filename"), params.end());
+  EXPECT_EQ(params.find("name")->second, "file1");
+  EXPECT_EQ(params.find("filename")->second, "report=v2.pdf");
+}
+
+TEST(ParseDispositionParamsTest, QuotedEqualsInName) {
+  Params params;
+  detail::parse_disposition_params("name=\"x=y\"", params);
+  ASSERT_NE(params.find("name"), params.end());
+  EXPECT_EQ(params.find("name")->second, "x=y");
+}
+
+TEST(ParseDispositionParamsTest, QuotedSemicolonInFilename) {
+  Params params;
+  detail::parse_disposition_params("name=\"file3\"; filename=\"a;b.txt\"",
+                                   params);
+  ASSERT_NE(params.find("name"), params.end());
+  ASSERT_NE(params.find("filename"), params.end());
+  EXPECT_EQ(params.find("name")->second, "file3");
+  EXPECT_EQ(params.find("filename")->second, "a;b.txt");
+}
+
+TEST(ParseDispositionParamsTest, QuotedPairDoesNotEndQuotedString) {
+  Params params;
+  detail::parse_disposition_params(
+      "name=\"file4\"; filename=\"a\\\"b;c=d.txt\"", params);
+  ASSERT_NE(params.find("name"), params.end());
+  ASSERT_NE(params.find("filename"), params.end());
+  EXPECT_EQ(params.find("name")->second, "file4");
+  EXPECT_EQ(params.find("filename")->second, "a\\\"b;c=d.txt");
+}
+
+TEST(ParseDispositionParamsTest, FilenameStarAndUnquotedValue) {
+  Params params;
+  detail::parse_disposition_params(
+      "filename*=\"UTF-8''%41.txt\"; filename=\"a.txt\"; name=\"file1\"",
+      params);
+  ASSERT_NE(params.find("name"), params.end());
+  ASSERT_NE(params.find("filename"), params.end());
+  ASSERT_NE(params.find("filename*"), params.end());
+  EXPECT_EQ(params.find("name")->second, "file1");
+  EXPECT_EQ(params.find("filename")->second, "a.txt");
+  EXPECT_EQ(params.find("filename*")->second, "UTF-8''%41.txt");
+}
+
 TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   Server svr;
 
@@ -1485,6 +1555,62 @@ TEST(MultipartOrderTest, RepeatedNamesKeepTheirOrder) {
   // Advancing past the last entry of a name used to run off the container;
   // the container's saturating increment makes it return the default instead.
   EXPECT_EQ("", out_of_range);
+}
+
+TEST(MultipartFormDataTest, QuotedEqualsAndSemicolonInDisposition) {
+  Server svr;
+  std::string field_xy;
+  std::string file1_name, file1_filename;
+  std::string file3_name, file3_filename;
+  bool has_file1 = false, has_xy = false, has_file3 = false;
+
+  svr.Post("/quoted", [&](const Request &req, Response &res) {
+    has_xy = req.form.has_field("x=y");
+    field_xy = req.form.get_field("x=y");
+
+    has_file1 = req.form.has_file("file1");
+    const auto &file1 = req.form.get_file("file1");
+    file1_name = file1.name;
+    file1_filename = file1.filename;
+
+    has_file3 = req.form.has_file("file3");
+    const auto &file3 = req.form.get_file("file3");
+    file3_name = file3.name;
+    file3_filename = file3.filename;
+
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  UploadFormDataItems items = {
+      {"x=y", "field-value", "", ""},
+      {"file1", "pdf-bytes", "report=v2.pdf", "application/pdf"},
+      {"file3", "txt-bytes", "a;b.txt", "text/plain"},
+  };
+
+  Client cli(HOST, port);
+  auto res = cli.Post("/quoted", items);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_TRUE(has_xy);
+  EXPECT_EQ("field-value", field_xy);
+
+  EXPECT_TRUE(has_file1);
+  EXPECT_EQ("file1", file1_name);
+  EXPECT_EQ("report=v2.pdf", file1_filename);
+
+  EXPECT_TRUE(has_file3);
+  EXPECT_EQ("file3", file3_name);
+  EXPECT_EQ("a;b.txt", file3_filename);
 }
 
 TEST(MultipartOrderTest, ContentSurvivesContainerGrowth) {

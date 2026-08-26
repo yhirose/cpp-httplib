@@ -8745,28 +8745,67 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   return !boundary.empty() && boundary.size() <= 70;
 }
 
+// Offset of the first unquoted `d` in [b, e), or (e - b) if none. RFC 9110
+// quoted-string: ';' and '=' inside quotes are not delimiters. A quoted-pair
+// ('\\' + CHAR) does not end the quoted-string or start a delimiter.
+inline size_t find_unquoted(const char *b, const char *e, char d) {
+  auto in_quotes = false;
+  auto escaped = false;
+  for (auto p = b; p != e; ++p) {
+    const auto c = *p;
+    if (in_quotes) {
+      if (escaped) {
+        escaped = false;
+      } else if (c == '\\') {
+        escaped = true;
+      } else if (c == '"') {
+        in_quotes = false;
+      }
+    } else if (c == '"') {
+      in_quotes = true;
+    } else if (c == d) {
+      return static_cast<size_t>(p - b);
+    }
+  }
+  return static_cast<size_t>(e - b);
+}
+
 inline void parse_disposition_params(const std::string &s, Params &params) {
   std::set<std::string> cache;
-  split(s.data(), s.data() + s.size(), ';', [&](const char *b, const char *e) {
-    std::string kv(b, e);
-    if (cache.find(kv) != cache.end()) { return; }
-    cache.insert(kv);
+  auto cur = s.data();
+  const auto end = s.data() + s.size();
+  while (cur < end) {
+    const auto len = find_unquoted(cur, end, ';');
+    const auto r = trim(cur, cur + len, 0, len);
+    if (r.first < r.second) {
+      const auto tb = cur + r.first;
+      const auto te = cur + r.second;
+      std::string kv(tb, te);
+      if (cache.find(kv) == cache.end()) {
+        cache.insert(kv);
 
-    std::string key;
-    std::string val;
-    split(b, e, '=', [&](const char *b2, const char *e2) {
-      if (key.empty()) {
-        key.assign(b2, e2);
-      } else {
-        val.assign(b2, e2);
+        const auto eq = find_unquoted(tb, te, '=');
+        std::string key;
+        std::string val;
+        if (eq < static_cast<size_t>(te - tb)) {
+          const auto kr = trim(tb, tb + eq, 0, eq);
+          key.assign(tb + kr.first, tb + kr.second);
+          const auto vb = tb + eq + 1;
+          const auto vr = trim(vb, te, 0, static_cast<size_t>(te - vb));
+          val.assign(vb + vr.first, vb + vr.second);
+        } else {
+          key.assign(tb, te);
+        }
+
+        if (!key.empty()) {
+          params.emplace(trim_double_quotes_copy(key),
+                         trim_double_quotes_copy(val));
+        }
       }
-    });
-
-    if (!key.empty()) {
-      params.emplace(trim_double_quotes_copy((key)),
-                     trim_double_quotes_copy((val)));
     }
-  });
+    cur += len;
+    if (cur < end && *cur == ';') { ++cur; }
+  }
 }
 
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
