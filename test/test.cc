@@ -1510,6 +1510,37 @@ TEST(ParseMultipartBoundaryTest, ValueWithQuotesAndCharset) {
   EXPECT_EQ(boundary, "cpp-httplib-multipart-data");
 }
 
+TEST(ParseMultipartBoundaryTest, LongestAllowedValue) {
+  const string boundary(70, 'a');
+  string content_type = "multipart/form-data; boundary=" + boundary;
+  string parsed;
+  auto ret = detail::parse_multipart_boundary(content_type, parsed);
+  EXPECT_TRUE(ret);
+  EXPECT_EQ(parsed, boundary);
+}
+
+TEST(ParseMultipartBoundaryTest, ValueLongerThanRFCLimit) {
+  // RFC 2046 5.1.1 caps a boundary at 70 characters.
+  string content_type = "multipart/form-data; boundary=" + string(71, 'a');
+  string parsed;
+  auto ret = detail::parse_multipart_boundary(content_type, parsed);
+  EXPECT_FALSE(ret);
+}
+
+TEST(ParseMultipartBoundaryTest, QuotedValueIsMeasuredAfterUnquoting) {
+  // The limit applies to the unquoted value, so a quoted 70 character boundary
+  // is 72 characters on the wire and still valid.
+  const string boundary(70, 'a');
+  string content_type = "multipart/form-data; boundary=\"" + boundary + "\"";
+  string parsed;
+  EXPECT_TRUE(detail::parse_multipart_boundary(content_type, parsed));
+  EXPECT_EQ(parsed, boundary);
+
+  content_type = "multipart/form-data; boundary=\"" + string(71, 'a') + "\"";
+  parsed.clear();
+  EXPECT_FALSE(detail::parse_multipart_boundary(content_type, parsed));
+}
+
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
   auto val = detail::get_header_value(headers, "Content-Type", "text/plain", 0);
@@ -15506,6 +15537,54 @@ TEST(MultipartFormDataTest, InitialBoundarySplitAfterLongPreamble) {
                             "\r\n"
                             "text1"
                             "\r\n--zzzz--\r\n");
+}
+
+TEST(MultipartFormDataTest, BoundaryLengthLimitIsEnforced) {
+  // The received boundary was only checked for being non-empty, so it could be
+  // as long as a header is allowed to be. The parser scans the body for
+  // "--" + boundary, so a body crafted to repeat that delimiter's leading bytes
+  // costs a nearly full comparison at nearly every position, making the
+  // boundary's length a multiplier on the worst-case parsing cost. RFC 2046
+  // 5.1.1 caps a boundary at 70 characters; honoring that caps the multiplier.
+  Server svr;
+  svr.Post("/post", [](const Request &req, Response &res) {
+    EXPECT_EQ(1u, req.form.fields.size());
+    EXPECT_EQ("text1", req.form.get_field("text1"));
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  auto post_with_boundary_of_length = [&](size_t len) {
+    const std::string boundary(len, 'a');
+    const std::string body =
+        "--" + boundary +
+        "\r\n"
+        "Content-Disposition: form-data; name=\"text1\"\r\n"
+        "\r\n"
+        "text1"
+        "\r\n--" +
+        boundary + "--\r\n";
+    return cli.Post("/post", body, "multipart/form-data; boundary=" + boundary);
+  };
+
+  auto res = post_with_boundary_of_length(70);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  res = post_with_boundary_of_length(71);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
 }
 
 TEST(MakeFileBodyTest, Basic) {
