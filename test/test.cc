@@ -5885,7 +5885,7 @@ TEST_F(ServerTest, GetEmptyFile) {
 }
 
 TEST_F(ServerTest, GetFileContent) {
-  auto res = cli_.Get("/file_content");
+  auto res = cli_.Get("/file_content", Headers{{"Accept-Encoding", ""}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -5904,7 +5904,8 @@ TEST_F(ServerTest, GetFileContentWithRange) {
 }
 
 TEST_F(ServerTest, GetFileContentWithContentType) {
-  auto res = cli_.Get("/file_content_with_content_type");
+  auto res = cli_.Get("/file_content_with_content_type",
+                      Headers{{"Accept-Encoding", ""}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -5959,7 +5960,8 @@ TEST_F(ServerTest, HeadMethod200) {
 }
 
 TEST_F(ServerTest, HeadMethod200Static) {
-  auto res = cli_.Head("/mount/dir/index.html");
+  auto res =
+      cli_.Head("/mount/dir/index.html", Headers{{"Accept-Encoding", ""}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
@@ -6376,7 +6378,7 @@ TEST_F(ServerTest, StaticFileRangeBigFile2) {
 }
 
 TEST_F(ServerTest, StaticFileBigFile) {
-  auto res = cli_.Get("/dir/1MB.txt");
+  auto res = cli_.Get("/dir/1MB.txt", Headers{{"Accept-Encoding", ""}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -6848,7 +6850,7 @@ TEST_F(ServerTest, GetStreamed2) {
 }
 
 TEST_F(ServerTest, GetStreamed) {
-  auto res = cli_.Get("/streamed");
+  auto res = cli_.Get("/streamed", Headers{{"Accept-Encoding", ""}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
@@ -6917,7 +6919,8 @@ TEST_F(ServerTest, GetStreamedWithRangeAndNonPartialStatus) {
         std::string("/streamed-with-range?status=") + std::to_string(status);
     auto ctx = path + " Range: " + range;
 
-    auto res = cli_.Get(path, Headers{{"Range", range}});
+    auto res =
+        cli_.Get(path, Headers{{"Range", range}, {"Accept-Encoding", ""}});
     ASSERT_TRUE(res) << ctx << " Error: " << to_string(res.error());
     EXPECT_EQ(status, res->status) << ctx;
     EXPECT_EQ("7", res->get_header_value("Content-Length")) << ctx;
@@ -8725,6 +8728,91 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST_F(ServerTest, GzipStaticFile) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+
+  cli_.set_decompress(false);
+  auto res = cli_.Get("/dir/1MB.txt", headers);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("Accept-Encoding", res->get_header_value("Vary"));
+  EXPECT_EQ("chunked", res->get_header_value("Transfer-Encoding"));
+  EXPECT_TRUE(res->get_header_value("Content-Length").empty());
+  EXPECT_LT(res->body.size(), 1048576U);
+  EXPECT_FALSE(res->body.empty());
+}
+
+TEST_F(ServerTest, GzipStaticFileDecompressed) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+  auto res = cli_.Get("/dir/1MB.txt", headers);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ(1048576U, res->body.size());
+}
+
+TEST_F(ServerTest, GzipFileContent) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+  auto res = cli_.Get("/file_content", headers);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GzipKnownLengthContentProvider) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+  auto res = cli_.Get("/streamed", headers);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("aaabbb", res->body);
+}
+
+TEST_F(ServerTest, GzipStaticFileRangeUncompressed) {
+  auto res = cli_.Get("/dir/test.abcde", Headers{
+                                             make_range_header({{2, 3}}),
+                                             {"Accept-Encoding", "gzip"},
+                                         });
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ("bytes 2-3/5", res->get_header_value("Content-Range"));
+  EXPECT_EQ(std::string("cd"), res->body);
+}
+
+TEST_F(ServerTest, GzipStaticFileHead) {
+  auto res = cli_.Head("/dir/1MB.txt", {{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("chunked", res->get_header_value("Transfer-Encoding"));
+  EXPECT_TRUE(res->body.empty());
+}
+
+TEST_F(ServerTest, NoGzipStaticOctetStream) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "gzip");
+  auto res = cli_.Get("/file", headers);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("5", res->get_header_value("Content-Length"));
 }
 #endif
 
@@ -19633,7 +19721,8 @@ TEST(ErrorHandlingTest, StreamReadTimeout) {
   Client cli("localhost", port);
   cli.set_read_timeout(1, 0); // 1 second timeout
 
-  auto handle = cli.open_stream("GET", "/slow-stream");
+  auto handle =
+      cli.open_stream("GET", "/slow-stream", {}, {{"Accept-Encoding", ""}});
   ASSERT_TRUE(handle.is_valid());
 
   char buf[256];
@@ -19688,7 +19777,8 @@ TEST(ErrorHandlingTest, StreamConnectionClosed) {
   svr.wait_until_ready();
 
   Client cli("localhost", port);
-  auto handle = cli.open_stream("GET", "/will-close");
+  auto handle =
+      cli.open_stream("GET", "/will-close", {}, {{"Accept-Encoding", ""}});
   ASSERT_TRUE(handle.is_valid());
 
   char buf[256];
@@ -19743,7 +19833,8 @@ TEST(ErrorHandlingTest, SSLStreamReadTimeout) {
   cli.enable_server_certificate_verification(false);
   cli.set_read_timeout(1, 0); // 1 second timeout
 
-  auto handle = cli.open_stream("GET", "/slow-stream");
+  auto handle =
+      cli.open_stream("GET", "/slow-stream", {}, {{"Accept-Encoding", ""}});
   ASSERT_TRUE(handle.is_valid());
 
   char buf[256];
@@ -19796,7 +19887,8 @@ TEST(ErrorHandlingTest, SSLStreamConnectionClosed) {
 
   SSLClient cli("localhost", port);
   cli.enable_server_certificate_verification(false);
-  auto handle = cli.open_stream("GET", "/will-close");
+  auto handle =
+      cli.open_stream("GET", "/will-close", {}, {{"Accept-Encoding", ""}});
   ASSERT_TRUE(handle.is_valid());
 
   char buf[256];

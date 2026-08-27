@@ -8590,6 +8590,68 @@ inline bool write_content_chunked(Stream &strm,
                                compressor, error);
 }
 
+// Compress a known-length provider as chunked. Length-framing (including a
+// provider that calls done() short of `length`) matches write_content(); the
+// payload is gzip/br/zstd-chunked like write_content_chunked(). Buffering the
+// whole representation would stall streaming providers until they finished.
+template <typename T, typename U>
+inline bool write_content_chunked_known_length(
+    Stream &strm, const ContentProvider &content_provider, size_t offset,
+    size_t length, const T &is_shutting_down, U &compressor) {
+  auto end_offset = offset + length;
+  auto ok = true;
+  auto finished = false;
+  DataSink data_sink;
+
+  auto emit = [&](const std::string &payload) -> bool {
+    if (payload.empty()) { return true; }
+    auto chunk = from_i_to_hex(payload.size()) + "\r\n" + payload + "\r\n";
+    return write_data(strm, chunk.data(), chunk.size());
+  };
+
+  data_sink.write = [&](const char *d, size_t l) -> bool {
+    if (!ok || l == 0) { return ok; }
+    offset += l;
+    std::string payload;
+    if (!compressor.compress(d, l, false,
+                             [&](const char *data, size_t data_len) {
+                               payload.append(data, data_len);
+                               return true;
+                             })) {
+      ok = false;
+      return false;
+    }
+    if (!emit(payload)) { ok = false; }
+    return ok;
+  };
+
+  data_sink.is_writable = [&]() -> bool { return strm.is_peer_alive(); };
+  data_sink.done = [&]() { finished = true; };
+
+  while (offset < end_offset && !finished && !is_shutting_down()) {
+    if (!strm.wait_writable() || !strm.is_peer_alive()) { return false; }
+    if (!content_provider(offset, end_offset - offset, data_sink)) {
+      return false;
+    }
+    if (!ok) { return false; }
+  }
+
+  if (offset < end_offset) { return false; }
+
+  std::string payload;
+  if (!compressor.compress(nullptr, 0, true,
+                           [&](const char *data, size_t data_len) {
+                             payload.append(data, data_len);
+                             return true;
+                           })) {
+    return false;
+  }
+  if (!emit(payload)) { return false; }
+
+  constexpr const char done_marker[] = "0\r\n\r\n";
+  return write_data(strm, done_marker, str_len(done_marker));
+}
+
 template <typename T>
 inline bool redirect(T &cli, Request &req, Response &res,
                      const std::string &path, const std::string &location,
@@ -13059,6 +13121,14 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
         !req.ranges.empty() && res.status == StatusCode::PartialContent_206;
 
     if (!is_partial) {
+      auto type = detail::encoding_type(req, res);
+      if (type != detail::EncodingType::None) {
+        if (auto compressor = detail::make_compressor(type)) {
+          return detail::write_content_chunked_known_length(
+              strm, res.content_provider_, 0, res.content_length_,
+              is_shutting_down, *compressor);
+        }
+      }
       return detail::write_content(strm, res.content_provider_, 0,
                                    res.content_length_, is_shutting_down);
     } else if (req.ranges.size() == 1) {
@@ -13717,8 +13787,11 @@ inline void Server::apply_ranges(const Request &req, Response &res,
 
   if (res.body.empty()) {
     if (res.content_length_ > 0) {
+      auto is_partial =
+          !req.ranges.empty() && res.status == StatusCode::PartialContent_206;
+
       size_t length = 0;
-      if (req.ranges.empty() || res.status != StatusCode::PartialContent_206) {
+      if (!is_partial) {
         length = res.content_length_;
       } else if (req.ranges.size() == 1) {
         auto offset_and_length = detail::get_range_offset_and_length(
@@ -13733,7 +13806,18 @@ inline void Server::apply_ranges(const Request &req, Response &res,
         length = detail::get_multipart_ranges_data_length(
             req, boundary, content_type, res.content_length_);
       }
-      res.set_header("Content-Length", std::to_string(length));
+
+      // Known-length providers leave res.body empty, so the set_content()
+      // compressor never runs. Encode them as chunked instead; 206 stays
+      // uncompressed so Content-Range still names identity bytes.
+      if (!is_partial && type != detail::EncodingType::None &&
+          res.content_provider_) {
+        res.set_header("Transfer-Encoding", "chunked");
+        res.set_header("Content-Encoding", detail::encoding_name(type));
+        res.set_header("Vary", "Accept-Encoding");
+      } else {
+        res.set_header("Content-Length", std::to_string(length));
+      }
     } else {
       if (res.content_provider_) {
         if (res.is_chunked_content_provider_) {
