@@ -8752,6 +8752,284 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+// Static file compression is opt-in, so these run their own server rather than
+// flipping it on for the shared ServerTest fixture, which would silently
+// rewrite what every other static file test is asserting.
+class StaticFileCompressionTest : public ::testing::Test {
+protected:
+  void TearDown() override {
+    if (t_.joinable()) {
+      svr_.stop();
+      t_.join();
+    }
+  }
+
+  int start(const std::function<void(Server &)> &configure = nullptr) {
+    svr_.set_mount_point("/", "./www");
+
+    svr_.Get("/file_content", [](const Request & /*req*/, Response &res) {
+      res.set_file_content("./www/dir/index.html", "text/html");
+    });
+
+    svr_.Get("/streamed", [](const Request & /*req*/, Response &res) {
+      res.set_content_provider(
+          6, "text/plain",
+          [](size_t offset, size_t /*length*/, DataSink &sink) {
+            sink.write(offset < 3 ? "aaa" : "bbb", 3);
+            return true;
+          });
+    });
+
+    svr_.Get("/slow-stream", [](const Request & /*req*/, Response &res) {
+      res.set_content_provider(
+          1000, "text/plain",
+          [](size_t offset, size_t /*length*/, DataSink &sink) {
+            if (offset < 100) {
+              std::string data(100, 'A');
+              sink.write(data.data(), data.size());
+              return true;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::string data(900, 'B');
+            sink.write(data.data(), data.size());
+            return true;
+          });
+    });
+
+    if (configure) { configure(svr_); }
+
+    auto port = svr_.bind_to_any_port(HOST);
+    t_ = std::thread([&]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+    return port;
+  }
+
+  static void enable(Server &svr) { svr.set_static_file_compression(true); }
+
+  Server svr_;
+  std::thread t_;
+};
+
+TEST_F(StaticFileCompressionTest, DisabledByDefault) {
+  auto port = start();
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("1048576", res->get_header_value("Content-Length"));
+  EXPECT_EQ(1048576U, res->body.size());
+}
+
+TEST_F(StaticFileCompressionTest, MountPoint) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+  auto res = cli.Get("/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("Accept-Encoding", res->get_header_value("Vary"));
+  // The response stays self-delimiting: a length, not a chunked body.
+  EXPECT_FALSE(res->has_header("Transfer-Encoding"));
+  EXPECT_EQ(std::to_string(res->body.size()),
+            res->get_header_value("Content-Length"));
+  EXPECT_LT(res->body.size(), 1048576U);
+  EXPECT_FALSE(res->body.empty());
+}
+
+TEST_F(StaticFileCompressionTest, MountPointDecompressed) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ(1048576U, res->body.size());
+}
+
+TEST_F(StaticFileCompressionTest, FileContent) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/file_content", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ(104U, res->body.size());
+}
+
+TEST_F(StaticFileCompressionTest, Head) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+  auto get = cli.Get("/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(get) << "Error: " << to_string(get.error());
+
+  auto res = cli.Head("/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_FALSE(res->has_header("Transfer-Encoding"));
+  // HEAD still reports the size a GET would return.
+  EXPECT_EQ(get->get_header_value("Content-Length"),
+            res->get_header_value("Content-Length"));
+  EXPECT_TRUE(res->body.empty());
+}
+
+TEST_F(StaticFileCompressionTest, RangeStaysIdentity) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/dir/test.abcde", Headers{make_range_header({{2, 3}}),
+                                                {"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("2", res->get_header_value("Content-Length"));
+  EXPECT_EQ("bytes 2-3/5", res->get_header_value("Content-Range"));
+  EXPECT_EQ("cd", res->body);
+}
+
+TEST_F(StaticFileCompressionTest, NotCompressibleType) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/file", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("5", res->get_header_value("Content-Length"));
+}
+
+TEST_F(StaticFileCompressionTest, EmptyFile) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/empty_file", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_TRUE(res->body.empty());
+}
+
+TEST_F(StaticFileCompressionTest, MaxLength) {
+  auto port = start([](Server &svr) {
+    svr.set_static_file_compression(true);
+    svr.set_static_file_compression_max_length(1024);
+  });
+
+  Client cli(HOST, port);
+
+  // Over the limit: served as is. Not named `big`/`small`: <rpcndr.h>
+  // defines `small` as a macro on Windows.
+  auto over = cli.Get("/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(over) << "Error: " << to_string(over.error());
+  EXPECT_FALSE(over->has_header("Content-Encoding"));
+  EXPECT_EQ("1048576", over->get_header_value("Content-Length"));
+
+  // Under it: compressed.
+  auto under = cli.Get("/dir/index.html", Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(under) << "Error: " << to_string(under.error());
+  EXPECT_EQ("gzip", under->get_header_value("Content-Encoding"));
+}
+
+TEST_F(StaticFileCompressionTest, EtagPerEncoding) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+
+  auto identity = cli.Get("/dir/index.html", Headers{{"Accept-Encoding", ""}});
+  ASSERT_TRUE(identity) << "Error: " << to_string(identity.error());
+  EXPECT_FALSE(identity->has_header("Content-Encoding"));
+  auto identity_etag = identity->get_header_value("ETag");
+  ASSERT_FALSE(identity_etag.empty());
+
+  auto gzipped =
+      cli.Get("/dir/index.html", Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(gzipped) << "Error: " << to_string(gzipped.error());
+  EXPECT_EQ("gzip", gzipped->get_header_value("Content-Encoding"));
+  auto gzip_etag = gzipped->get_header_value("ETag");
+  ASSERT_FALSE(gzip_etag.empty());
+
+  // Two representations, two validators.
+  EXPECT_NE(identity_etag, gzip_etag);
+
+  // Each one revalidates against the request that would produce it...
+  auto fresh =
+      cli.Get("/dir/index.html", Headers{{"Accept-Encoding", "gzip"},
+                                         {"If-None-Match", gzip_etag}});
+  ASSERT_TRUE(fresh) << "Error: " << to_string(fresh.error());
+  EXPECT_EQ(StatusCode::NotModified_304, fresh->status);
+
+  auto fresh_identity =
+      cli.Get("/dir/index.html", Headers{{"Accept-Encoding", ""},
+                                         {"If-None-Match", identity_etag}});
+  ASSERT_TRUE(fresh_identity) << "Error: " << to_string(fresh_identity.error());
+  EXPECT_EQ(StatusCode::NotModified_304, fresh_identity->status);
+
+  // ...and not against the other representation.
+  auto crossed =
+      cli.Get("/dir/index.html",
+              Headers{{"Accept-Encoding", ""}, {"If-None-Match", gzip_etag}});
+  ASSERT_TRUE(crossed) << "Error: " << to_string(crossed.error());
+  EXPECT_EQ(StatusCode::OK_200, crossed->status);
+}
+
+// The opt-in covers responses the server reads off disk itself. A caller's own
+// known-length provider keeps its Content-Length and, more importantly, keeps
+// delivering incrementally: routing it through a compressor would hold every
+// write back until zlib's window filled.
+TEST_F(StaticFileCompressionTest, KnownLengthProviderUnaffected) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/streamed", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("6", res->get_header_value("Content-Length"));
+  EXPECT_EQ("aaabbb", res->body);
+}
+
+TEST_F(StaticFileCompressionTest, IncrementalProviderUnaffected) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  cli.set_read_timeout(1, 0);
+
+  auto handle = cli.open_stream("GET", "/slow-stream", Params{},
+                                Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(handle.is_valid());
+
+  // The provider writes 100 bytes and then stalls for longer than the read
+  // timeout. Those first bytes have to arrive anyway: run the response through
+  // a compressor and zlib holds them until its window fills, so the read would
+  // come back empty instead.
+  char buf[256];
+  auto n = handle.read(buf, sizeof(buf));
+  ASSERT_GT(n, 0) << "first read should return the bytes already written";
+  EXPECT_EQ(std::string(100, 'A'), std::string(buf, static_cast<size_t>(n)));
+}
+#endif
+
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST_F(ServerTest, Brotli) {
   Headers headers;

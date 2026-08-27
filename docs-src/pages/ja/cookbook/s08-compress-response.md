@@ -48,6 +48,24 @@ svr.Get("/events", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
+## 静的ファイルは明示的に有効にする
+
+`set_mount_point()`や`Response::set_file_content()`でファイルをそのまま返す場合、デフォルトでは圧縮されません。有効にするには次を呼びます。
+
+```cpp
+svr.set_static_file_compression(true);
+```
+
+リクエストのたびに圧縮が走り、圧縮後のバイト列はレスポンスを書き終えるまでメモリに載ります。つまりピーク時のコストは同時処理中のリクエスト数に比例します。サイズ上限はこのためのもので、`set_static_file_compression_max_length()`を超えるファイルは圧縮されません。デフォルトは4MB、`0`で無制限、コンパイル時に決めるなら`CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH`です。
+
+```cpp
+svr.set_static_file_compression_max_length(1024 * 1024);
+```
+
+圧縮しても`Content-Length`は付いたままなので、`HEAD`は`GET`と同じサイズを返します。細かい挙動として、Rangeリクエストは非圧縮の表現から切り出して返し、`ETag`には`W/"...-gzip"`のように使われた圧縮方式が入ります。
+
+なお`set_content_provider()`で登録したコンテンツプロバイダは対象外です。圧縮器を通すと、内部バッファが埋まるまで書き込みが送出されず、ボディを少しずつ生成するプロバイダが止まってしまうためです。生成したボディを圧縮したい場合は`set_chunked_content_provider()`を使ってください。
+
 > **Note:** 最小サイズのしきい値はありません。圧縮対象のMIMEタイプでクライアントが受け入れていれば、ボディの大きさによらず圧縮されます。数バイトのレスポンスはgzipのヘッダ分だけかえって大きくなるので、小さいレスポンスを避けたい場合はハンドラ側で判断してください。
 
 > クライアント側の挙動は[C15. 圧縮を有効にする](../c15-compression)を参照してください。
