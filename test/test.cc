@@ -1624,6 +1624,112 @@ TEST(ParseMultipartBoundaryTest, QuotedValueIsMeasuredAfterUnquoting) {
   EXPECT_FALSE(detail::parse_multipart_boundary(content_type, parsed));
 }
 
+TEST(ParseMultipartBoundaryTest, QuotedValueWithEqualsSign) {
+  // RFC 2046 5.1.1 allows '=' in a boundary, so a MIME sender has to quote it.
+  // The parameter parser must not treat that '=' as the key/value separator.
+  string content_type =
+      "multipart/mixed; boundary=\"----=_NextPart_000_0000_01D9\"; "
+      "charset=UTF-8";
+  string parsed;
+  EXPECT_TRUE(detail::parse_multipart_boundary(content_type, parsed));
+  EXPECT_EQ(parsed, "----=_NextPart_000_0000_01D9");
+}
+
+TEST(ParseMultipartBoundaryTest, QuotedValueWithSemicolon) {
+  // A ';' inside the quoted-string is part of the value, not a parameter
+  // separator, so it must not truncate the boundary.
+  string content_type = "multipart/mixed; boundary=\"a;b\"; charset=UTF-8";
+  string parsed;
+  EXPECT_TRUE(detail::parse_multipart_boundary(content_type, parsed));
+  EXPECT_EQ(parsed, "a;b");
+}
+
+TEST(ParseDispositionParamsTest, QuotedValues) {
+  // RFC 9110 Section 5.6.6: a parameter value may be a quoted-string, and
+  // ';' and '=' are ordinary characters inside one.
+  struct {
+    const char *value;
+    std::vector<std::pair<const char *, const char *>> expected;
+  } cases[] = {
+      {"name=\"file1\"; filename=\"a.txt\"",
+       {{"name", "file1"}, {"filename", "a.txt"}}},
+      // Whitespace around '=' and ';' is still trimmed
+      {"name=\"file2\" ;filename = \"a.html\"",
+       {{"name", "file2"}, {"filename", "a.html"}}},
+      // '=' inside the value used to leave only the text after the last one
+      {"name=\"file1\"; filename=\"report=v2.pdf\"",
+       {{"name", "file1"}, {"filename", "report=v2.pdf"}}},
+      {"name=\"x=y\"", {{"name", "x=y"}}},
+      // ';' inside the value used to truncate the pair and leave a bogus one
+      {"name=\"file3\"; filename=\"a;b.txt\"",
+       {{"name", "file3"}, {"filename", "a;b.txt"}}},
+      // An unquoted value keeps working, and so does filename*
+      {"filename*=UTF-8''%41.txt; filename=\"a.txt\"",
+       {{"filename*", "UTF-8''%41.txt"}, {"filename", "a.txt"}}},
+      // A parameter with no key is dropped rather than turned into one whose
+      // key is the value
+      {"=nokey; name=\"file5\"", {{"name", "file5"}}},
+  };
+
+  for (const auto &c : cases) {
+    Params params;
+    detail::parse_disposition_params(c.value, params);
+    for (const auto &kv : c.expected) {
+      auto it = params.find(kv.first);
+      ASSERT_NE(it, params.end())
+          << "value: " << c.value << ", key: " << kv.first;
+      EXPECT_EQ(kv.second, it->second) << "value: " << c.value;
+    }
+    EXPECT_EQ(c.expected.size(), params.size()) << "value: " << c.value;
+  }
+}
+
+TEST(ParseDispositionParamsTest, QuotedValuesSurviveTheRoundTrip) {
+  // escape_multipart_field() only escapes '"', CR and LF, so a name or
+  // filename holding '=' or ';' reaches the server's parameter parser as is.
+  Server svr;
+  std::string field_value, file_name, file_filename;
+  bool has_field = false, has_file = false;
+
+  svr.Post("/quoted", [&](const Request &req, Response &res) {
+    has_field = req.form.has_field("x=y");
+    field_value = req.form.get_field("x=y");
+
+    has_file = req.form.has_file("file1");
+    const auto &file = req.form.get_file("file1");
+    file_name = file.name;
+    file_filename = file.filename;
+
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  UploadFormDataItems items = {
+      {"x=y", "field-value", "", ""},
+      {"file1", "pdf-bytes", "a;b=report.pdf", "application/pdf"},
+  };
+
+  Client cli(HOST, port);
+  auto res = cli.Post("/quoted", items);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+
+  EXPECT_TRUE(has_field);
+  EXPECT_EQ("field-value", field_value);
+
+  EXPECT_TRUE(has_file);
+  EXPECT_EQ("file1", file_name);
+  EXPECT_EQ("a;b=report.pdf", file_filename);
+}
+
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
   auto val = detail::get_header_value(headers, "Content-Type", "text/plain", 0);
