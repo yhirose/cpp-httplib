@@ -8807,6 +8807,14 @@ protected:
 
   static void enable(Server &svr) { svr.set_static_file_compression(true); }
 
+  // Every file under ./www except 1MB.txt is smaller than the default
+  // 1400-byte floor, so a test that needs a small file compressed has to lower
+  // it out of the way.
+  static void enable_without_floor(Server &svr) {
+    svr.set_static_file_compression(true);
+    svr.set_static_file_compression_min_length(0);
+  }
+
   Server svr_;
   std::thread t_;
 };
@@ -8857,7 +8865,7 @@ TEST_F(StaticFileCompressionTest, MountPointDecompressed) {
 }
 
 TEST_F(StaticFileCompressionTest, FileContent) {
-  auto port = start(enable);
+  auto port = start(enable_without_floor);
 
   Client cli(HOST, port);
   auto res = cli.Get("/file_content", Headers{{"Accept-Encoding", "gzip"}});
@@ -8929,9 +8937,44 @@ TEST_F(StaticFileCompressionTest, EmptyFile) {
   EXPECT_TRUE(res->body.empty());
 }
 
+TEST_F(StaticFileCompressionTest, MinLength) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+
+  // 104 bytes, well under the default floor. Compressing it would add the
+  // gzip header and trailer to a body that already fits in one packet.
+  auto res = cli.Get("/dir/index.html", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_FALSE(res->has_header("Content-Encoding"));
+  EXPECT_EQ("104", res->get_header_value("Content-Length"));
+}
+
+TEST_F(StaticFileCompressionTest, MinLengthLowered) {
+  auto port = start([](Server &svr) {
+    svr.set_static_file_compression(true);
+    svr.set_static_file_compression_min_length(1);
+  });
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+
+  auto res = cli.Get("/dir/test.html", Headers{{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+
+  // A 9-byte file comes back larger than it went in, because gzip's header and
+  // trailer outweigh anything deflate can save. That is the end of the range
+  // the floor exists to keep out.
+  EXPECT_GT(res->body.size(), 9U);
+}
+
 TEST_F(StaticFileCompressionTest, MaxLength) {
   auto port = start([](Server &svr) {
     svr.set_static_file_compression(true);
+    svr.set_static_file_compression_min_length(0);
     svr.set_static_file_compression_max_length(1024);
   });
 
@@ -8951,7 +8994,7 @@ TEST_F(StaticFileCompressionTest, MaxLength) {
 }
 
 TEST_F(StaticFileCompressionTest, EtagPerEncoding) {
-  auto port = start(enable);
+  auto port = start(enable_without_floor);
 
   Client cli(HOST, port);
 

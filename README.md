@@ -1476,11 +1476,16 @@ Responses served from a file, whether through `set_mount_point()` or `Response::
 svr.set_static_file_compression(true);
 ```
 
-The file is compressed per request, and the compressed bytes are held in memory until the response has been written, so the peak cost scales with the number of requests in flight. That is what the size limit is for: files larger than `set_static_file_compression_max_length()` are served uncompressed. The default is 4MB, `0` removes the limit, and `CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH` sets it at compile time.
+Only files within a size range are compressed, and both ends of it can be moved:
 
 ```c++
+svr.set_static_file_compression_min_length(512);
 svr.set_static_file_compression_max_length(1024 * 1024);
 ```
+
+The lower bound defaults to 1400 bytes. A response that already fits in a single 1500-byte MTU is not delivered any faster for being smaller, and a file of a few bytes comes back larger than it went in, since gzip's header and trailer outweigh what deflate saves. `0` compresses everything down to a single byte, and `CPPHTTPLIB_STATIC_FILE_COMPRESSION_MIN_LENGTH` sets the default at compile time. An empty file is never compressed regardless.
+
+The upper bound defaults to 4MB, and exists for a different reason: the file is compressed per request, and the compressed bytes are held in memory until the response has been written, so the peak cost scales with the number of requests in flight. It is a bound on what one request can cost, not a statement about how well large files compress, which is why raising it is reasonable when the files are known and the traffic is not. `0` removes the limit, and `CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH` sets the default at compile time.
 
 A compressed response keeps its `Content-Length`, so `HEAD` still reports the size a `GET` would return. Two details are worth knowing:
 

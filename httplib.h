@@ -134,6 +134,12 @@
 #define CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH 8192
 #endif
 
+#ifndef CPPHTTPLIB_STATIC_FILE_COMPRESSION_MIN_LENGTH
+// 1400 rather than a round number: a body that already fits in one 1500-byte
+// MTU gains nothing from being made smaller.
+#define CPPHTTPLIB_STATIC_FILE_COMPRESSION_MIN_LENGTH 1400
+#endif
+
 #ifndef CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH
 #define CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH (4 * 1024 * 1024) // 4MB
 #endif
@@ -2218,6 +2224,7 @@ public:
   Server &set_payload_max_length(size_t length);
 
   Server &set_static_file_compression(bool on);
+  Server &set_static_file_compression_min_length(size_t length);
   Server &set_static_file_compression_max_length(size_t length);
 
   Server &set_websocket_ping_interval(time_t sec);
@@ -2291,6 +2298,8 @@ protected:
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
   bool static_file_compression_ = false;
+  size_t static_file_compression_min_length_ =
+      CPPHTTPLIB_STATIC_FILE_COMPRESSION_MIN_LENGTH;
   size_t static_file_compression_max_length_ =
       CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH;
   time_t websocket_ping_interval_sec_ =
@@ -12944,6 +12953,11 @@ inline Server &Server::set_static_file_compression(bool on) {
   return *this;
 }
 
+inline Server &Server::set_static_file_compression_min_length(size_t length) {
+  static_file_compression_min_length_ = length;
+  return *this;
+}
+
 inline Server &Server::set_static_file_compression_max_length(size_t length) {
   static_file_compression_max_length_ = length;
   return *this;
@@ -13837,8 +13851,16 @@ inline detail::EncodingType Server::static_file_encoding(
   if (!static_file_compression_) { return detail::EncodingType::None; }
 
   // Nothing to compress, and an empty file already answers with
-  // `Content-Length: 0`.
+  // `Content-Length: 0`. Checked on its own so that a zero floor still cannot
+  // turn an empty body into a 20-byte gzip stream.
   if (length == 0) { return detail::EncodingType::None; }
+
+  // A file that already fits in a single packet gains nothing from being made
+  // smaller, since it still travels in that one segment, and a file of a few
+  // bytes comes out larger than it went in.
+  if (length < static_file_compression_min_length_) {
+    return detail::EncodingType::None;
+  }
 
   // RFC 9110 applies Range to the representation after content coding, so a
   // compressed 206 would mean compressing the whole file and then slicing it.
