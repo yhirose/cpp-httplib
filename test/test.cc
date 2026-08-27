@@ -1067,14 +1067,6 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
   EXPECT_FALSE(
       detail::parse_accept_header("invalidtype,application/json", result));
 
-  // Empty media type
-  result.clear();
-  EXPECT_FALSE(detail::parse_accept_header(",application/json", result));
-
-  // Only commas
-  result.clear();
-  EXPECT_FALSE(detail::parse_accept_header(",,,", result));
-
   // Valid cases should still work
   EXPECT_TRUE(detail::parse_accept_header("*/*", result));
   EXPECT_EQ(result.size(), 1U);
@@ -1087,6 +1079,38 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
   EXPECT_TRUE(detail::parse_accept_header("text/*", result));
   EXPECT_EQ(result.size(), 1U);
   EXPECT_EQ(result[0], "text/*");
+}
+
+// RFC 9110 Section 5.6.1.2: a recipient has to parse and ignore empty list
+// elements, so a leading, trailing or doubled comma is a legal Accept value
+// and must not be answered with 400 Bad Request.
+TEST(ParseAcceptHeaderTest, EmptyListElementsAreIgnored) {
+  struct {
+    const char *value;
+    std::vector<std::string> expected;
+  } cases[] = {
+      {",application/json", {"application/json"}},
+      {"text/html,", {"text/html"}},
+      {"text/html,,*/*", {"text/html", "*/*"}},
+      // An empty element may be spelled with whitespace in it
+      {"text/html, , application/json", {"text/html", "application/json"}},
+      // Nothing but empty elements is an empty list, which means the same
+      // thing as no Accept header at all
+      {",,,", {}},
+      // Quality values still apply across ignored empty elements
+      {",text/html;q=0.5,,application/json", {"application/json", "text/html"}},
+  };
+
+  for (const auto &c : cases) {
+    std::vector<std::string> result;
+    EXPECT_TRUE(detail::parse_accept_header(c.value, result))
+        << "value: " << c.value;
+    EXPECT_EQ(c.expected, result) << "value: " << c.value;
+  }
+
+  // An invalid entry is still rejected when empty elements surround it
+  std::vector<std::string> result;
+  EXPECT_FALSE(detail::parse_accept_header(",invalidtype,", result));
 }
 
 TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
@@ -18519,8 +18543,6 @@ TEST(RepeatedFieldLinesTest, AcceptCombinesEveryFieldLine) {
 
 // RFC 9110 Section 5.6.1.2: empty list elements are parsed and ignored, so an
 // empty field line must not contribute a bare comma to the combined value.
-// parse_accept_header() rejects a leading comma outright, so a stray one would
-// turn a legal request into 400 Bad Request.
 TEST(RepeatedFieldLinesTest, EmptyFieldLineDoesNotInjectComma) {
   Server svr;
 
@@ -18555,6 +18577,24 @@ TEST(RepeatedFieldLinesTest, EmptyFieldLineDoesNotInjectComma) {
 
   ASSERT_EQ(1U, observed_types.size());
   EXPECT_EQ("application/json", observed_types[0]);
+}
+
+// The skip in get_combined_header_value() is what keeps an empty field line
+// from contributing a bare comma. Only a trailing empty field line exercises
+// it: a leading one is already covered by the "combined is still empty" check,
+// and parse_accept_header() now ignores the empty element either way, so the
+// request-level test above can no longer tell the two apart.
+TEST(RepeatedFieldLinesTest, EmptyFieldLineIsNotCombined) {
+  Headers headers;
+  headers.emplace("Accept", "text/html");
+  headers.emplace("Accept", "");
+  EXPECT_EQ("text/html", detail::get_combined_header_value(headers, "Accept"));
+
+  headers.clear();
+  headers.emplace("Accept", "");
+  headers.emplace("Accept", "application/json");
+  EXPECT_EQ("application/json",
+            detail::get_combined_header_value(headers, "Accept"));
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
