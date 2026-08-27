@@ -1523,13 +1523,9 @@ make_file_body(const std::string &filepath) {
       auto to_read = (std::min)(sizeof(buf), length);
       f.read(buf, static_cast<std::streamsize>(to_read));
       auto n = static_cast<size_t>(f.gcount());
-      // Out of file with bytes still owed. make_file_body() measured the file
-      // once and that length is already the response's Content-Length, so the
-      // file has been rewritten or truncated since and the body cannot be
-      // completed. Reporting success returned without advancing the caller's
-      // offset, so write_content_with_progress() called this provider again
-      // straight away, got nothing again, and kept going. Fail the way every
-      // other error here does.
+      // The file is shorter than the size make_file_body() measured, which the
+      // caller has already committed to as Content-Length. The body cannot be
+      // completed, so fail as every other error here does.
       if (n == 0) { return false; }
       if (!sink.write(buf, n)) { return false; }
       length -= n;
