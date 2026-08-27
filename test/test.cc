@@ -493,6 +493,61 @@ TEST(SanitizeFilenameTest, VariousPatterns) {
   EXPECT_EQ("", httplib::sanitize_filename("   "));
 }
 
+// Forward declaration: in split builds split.py strips `inline` and moves the
+// definition into httplib.cc, so these detail parsers are not visible from the
+// public httplib.h. Re-declaring them here lets the test link in both builds.
+namespace httplib {
+namespace detail {
+void parse_disposition_params(const std::string &s, Params &params);
+std::string extract_media_type(const std::string &content_type,
+                               std::map<std::string, std::string> *params);
+} // namespace detail
+} // namespace httplib
+
+TEST(ParseHeaderFieldParametersTest, QuotedStringDelimiters) {
+  // RFC 9110 5.6.6: a parameter value may be a quoted-string, which can itself
+  // contain the ';' separating parameters and the '=' separating a name from
+  // its value. Splitting on those characters unconditionally truncated the
+  // value, e.g. filename="a;b=c.txt" became filename="a plus a bogus param.
+  {
+    Params params;
+    detail::parse_disposition_params("name=\"field\"; filename=\"a;b=c.txt\"",
+                                     params);
+    EXPECT_EQ("field", params.find("name")->second);
+    EXPECT_EQ("a;b=c.txt", params.find("filename")->second);
+    // The bytes inside the quoted value must not surface as spurious params.
+    EXPECT_EQ(params.end(), params.find("b"));
+    EXPECT_EQ(2u, params.size());
+  }
+
+  // A backslash-escaped quote inside the value must not end it early.
+  {
+    Params params;
+    detail::parse_disposition_params("name=\"f\"; filename=\"a\\\"b.txt\"",
+                                     params);
+    EXPECT_EQ("a\\\"b.txt", params.find("filename")->second);
+  }
+
+  // Well-formed values without quoted delimiters are unchanged.
+  {
+    Params params;
+    detail::parse_disposition_params("name=\"file\"; filename=\"plain.txt\"",
+                                     params);
+    EXPECT_EQ("file", params.find("name")->second);
+    EXPECT_EQ("plain.txt", params.find("filename")->second);
+  }
+
+  // The same splitter parses media-type parameters, e.g. a quoted boundary.
+  {
+    std::map<std::string, std::string> params;
+    auto mt = detail::extract_media_type(
+        "multipart/form-data; boundary=\"a;b\"", &params);
+    EXPECT_EQ("multipart/form-data", mt);
+    EXPECT_EQ("a;b", params["boundary"]);
+    EXPECT_EQ(1u, params.size());
+  }
+}
+
 // Forward declaration (see the base64_encode note below): split builds move the
 // definition into httplib.cc, so re-declaring it here lets the test link.
 namespace httplib {

@@ -7290,6 +7290,64 @@ find_content_type(const std::string &path,
   }
 }
 
+// RFC 9110 §5.6.6: a header field parameter value may be a token or a
+// quoted-string, and a quoted-string may itself contain the ';' that
+// separates parameters and the '=' that separates a name from its value.
+// Splitting on those characters unconditionally therefore truncates a value
+// such as filename="a;b" or filename="a=b". Track the quoted-string state so
+// the delimiters are only honoured outside quotes; a backslash escapes the
+// next character inside quotes. `fn` receives the whitespace-trimmed name and
+// value with any surrounding quotes left in place for the caller to strip.
+inline void parse_header_field_parameters(
+    const std::string &s,
+    std::function<void(const std::string &, const std::string &)> fn) {
+  size_t i = 0;
+  const auto n = s.size();
+  while (i < n) {
+    const auto param_beg = i;
+    auto in_quotes = false;
+    for (; i < n; i++) {
+      const auto c = s[i];
+      if (in_quotes) {
+        if (c == '\\' && i + 1 < n) {
+          i++;
+        } else if (c == '"') {
+          in_quotes = false;
+        }
+      } else if (c == '"') {
+        in_quotes = true;
+      } else if (c == ';') {
+        break;
+      }
+    }
+
+    const auto param = s.substr(param_beg, i - param_beg);
+    if (i < n) { i++; } // Skip the ';'
+
+    auto eq = std::string::npos;
+    in_quotes = false;
+    for (size_t j = 0; j < param.size(); j++) {
+      const auto c = param[j];
+      if (in_quotes) {
+        if (c == '\\' && j + 1 < param.size()) {
+          j++;
+        } else if (c == '"') {
+          in_quotes = false;
+        }
+      } else if (c == '"') {
+        in_quotes = true;
+      } else if (c == '=') {
+        eq = j;
+        break;
+      }
+    }
+    if (eq == std::string::npos) { continue; }
+
+    auto key = trim_copy(param.substr(0, eq));
+    if (!key.empty()) { fn(key, trim_copy(param.substr(eq + 1))); }
+  }
+}
+
 inline std::string
 extract_media_type(const std::string &content_type,
                    std::map<std::string, std::string> *params = nullptr) {
@@ -7302,22 +7360,10 @@ extract_media_type(const std::string &content_type,
     media_type = media_type.substr(0, semicolon_pos);
 
     if (params) {
-      // Parse parameters: key=value pairs separated by ';'
-      split(param_str.data(), param_str.data() + param_str.size(), ';',
-            [&](const char *b, const char *e) {
-              std::string key;
-              std::string val;
-              split(b, e, '=', [&](const char *b2, const char *e2) {
-                if (key.empty()) {
-                  key.assign(b2, e2);
-                } else {
-                  val.assign(b2, e2);
-                }
-              });
-              if (!key.empty()) {
-                params->emplace(trim_copy(key), trim_double_quotes_copy(val));
-              }
-            });
+      parse_header_field_parameters(
+          param_str, [&](const std::string &key, const std::string &val) {
+            params->emplace(key, trim_double_quotes_copy(val));
+          });
     }
   }
 
@@ -8759,26 +8805,9 @@ inline bool parse_multipart_boundary(const std::string &content_type,
 }
 
 inline void parse_disposition_params(const std::string &s, Params &params) {
-  std::set<std::string> cache;
-  split(s.data(), s.data() + s.size(), ';', [&](const char *b, const char *e) {
-    std::string kv(b, e);
-    if (cache.find(kv) != cache.end()) { return; }
-    cache.insert(kv);
-
-    std::string key;
-    std::string val;
-    split(b, e, '=', [&](const char *b2, const char *e2) {
-      if (key.empty()) {
-        key.assign(b2, e2);
-      } else {
-        val.assign(b2, e2);
-      }
-    });
-
-    if (!key.empty()) {
-      params.emplace(trim_double_quotes_copy((key)),
-                     trim_double_quotes_copy((val)));
-    }
+  parse_header_field_parameters(s, [&](const std::string &key,
+                                       const std::string &val) {
+    params.emplace(trim_double_quotes_copy(key), trim_double_quotes_copy(val));
   });
 }
 
