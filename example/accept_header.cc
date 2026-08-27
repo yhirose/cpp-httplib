@@ -55,8 +55,7 @@ int main() {
       "text/html;q=1.5,application/json",     // q > 1.0
       "text/html;q=-0.1,application/json",    // q < 0.0
       "text/html;q=invalid,application/json", // invalid q value
-      "invalidtype,application/json",         // invalid media type
-      ",application/json"                     // empty entry
+      "invalidtype,application/json"          // invalid media type
   };
 
   for (const auto &invalid_accept : invalid_examples) {
