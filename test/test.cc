@@ -16142,6 +16142,66 @@ TEST(MakeFileBodyTest, Basic) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(MakeFileBodyTest, TruncatedFileMakesTheProviderFail) {
+  const std::string path = "./httplib_test_make_file_body_truncated.bin";
+  {
+    std::ofstream ofs(path, std::ios::binary);
+    const std::string content(100, 'A');
+    ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+  }
+  auto cleanup = detail::scope_exit([&] { std::remove(path.c_str()); });
+
+  auto body = make_file_body(path);
+  ASSERT_EQ(100u, body.first);
+  ASSERT_TRUE(static_cast<bool>(body.second));
+
+  // Rewritten shorter after its length was measured - and, on a server, after
+  // that length has already gone out as Content-Length.
+  {
+    std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+    const std::string content(10, 'A');
+    ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+  }
+
+  std::string written;
+  DataSink sink;
+  sink.write = [&](const char *d, size_t l) {
+    written.append(d, l);
+    return true;
+  };
+
+  // The provider has to report failure. write_content_with_progress() advances
+  // its offset only by what was written, so a provider that returns true
+  // without completing the length it promised is called again straight away,
+  // and again.
+  EXPECT_FALSE(body.second(0, body.first, sink));
+  EXPECT_EQ(std::string(10, 'A'), written);
+}
+
+TEST(MakeFileBodyTest, WholeFileIsSent) {
+  const std::string path = "./httplib_test_make_file_body_whole.bin";
+  const std::string content(9000, 'Z'); // spans more than one 8 KiB read
+  {
+    std::ofstream ofs(path, std::ios::binary);
+    ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+  }
+  auto cleanup = detail::scope_exit([&] { std::remove(path.c_str()); });
+
+  auto body = make_file_body(path);
+  ASSERT_EQ(content.size(), body.first);
+  ASSERT_TRUE(static_cast<bool>(body.second));
+
+  std::string written;
+  DataSink sink;
+  sink.write = [&](const char *d, size_t l) {
+    written.append(d, l);
+    return true;
+  };
+
+  EXPECT_TRUE(body.second(0, body.first, sink));
+  EXPECT_EQ(content, written);
+}
+
 TEST(TaskQueueTest, IncreaseAtomicInteger) {
   static constexpr unsigned int number_of_tasks{1000000};
   std::atomic_uint count{0};
