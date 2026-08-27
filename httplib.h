@@ -8401,6 +8401,8 @@ inline bool write_content_with_progress(Stream &strm,
   data_sink.done = [&]() { finished = true; };
 
   while (offset < end_offset && !finished && !is_shutting_down()) {
+    auto last_offset = offset;
+
     if (!strm.wait_writable() || !strm.is_peer_alive()) {
       error = Error::Write;
       return false;
@@ -8408,6 +8410,15 @@ inline bool write_content_with_progress(Stream &strm,
       error = Error::Canceled;
       return false;
     } else if (!ok) {
+      error = Error::Write;
+      return false;
+    }
+
+    // A provider that reports success without writing anything and without
+    // reporting itself done gets handed the same offset and length again on
+    // the next pass, so it would spin here for as long as the peer stays
+    // connected. Treat making no progress as a short body, like done() early.
+    if (!finished && offset == last_offset) {
       error = Error::Write;
       return false;
     }

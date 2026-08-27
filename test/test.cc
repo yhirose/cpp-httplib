@@ -10948,6 +10948,43 @@ TEST(ClientProblemDetectionTest, ContentProvider) {
   }
 }
 
+TEST(ContentProviderTest, ProviderMakingNoProgressFails) {
+  // A provider that reports success without writing anything and without
+  // calling done() used to be handed the same offset and length again on every
+  // pass, so it spun for as long as the peer stayed connected.
+  Server svr;
+
+  svr.Post("/", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  std::atomic<int> call_count{0};
+
+  Client cli(HOST, port);
+  auto res = cli.Post(
+      "/", 1024,
+      [&](size_t /*offset*/, size_t /*length*/, DataSink & /*sink*/) {
+        // Give up after enough passes to show the spin, so that losing the
+        // check below fails this test instead of hanging it.
+        return ++call_count < 100;
+      },
+      "text/plain");
+
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::Write, res.error());
+  EXPECT_EQ(1, call_count.load());
+}
+
 TEST(DataSinkTest, OptionalCallbacksAreCallableByDefault) {
   // A writer only has to assign `write`. The other three used to be left as
   // empty std::functions, so a provider calling one threw
