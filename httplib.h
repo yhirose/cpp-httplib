@@ -7858,8 +7858,7 @@ inline std::string get_combined_header_value(const Headers &headers,
   for (auto it = rng.first; it != rng.second; ++it) {
     // RFC 9110 Section 5.6.1.2: a recipient has to parse and ignore empty list
     // elements, so an empty field line must not contribute a bare comma to the
-    // combined value. parse_accept_header() rejects a leading comma outright,
-    // which would turn a legal request into 400 Bad Request.
+    // combined value.
     if (it->second.empty()) { continue; }
     if (!combined.empty()) { combined += ", "; }
     combined += it->second;
@@ -8836,12 +8835,6 @@ inline bool parse_accept_header(const std::string &s,
   // Empty string is considered valid (no preference)
   if (s.empty()) { return true; }
 
-  // Check for invalid patterns: leading/trailing commas or consecutive commas
-  if (s.front() == ',' || s.back() == ',' ||
-      s.find(",,") != std::string::npos) {
-    return false;
-  }
-
   struct AcceptEntry {
     std::string media_type;
     double quality;
@@ -8857,10 +8850,9 @@ inline bool parse_accept_header(const std::string &s,
     std::string entry(b, e);
     entry = trim_copy(entry);
 
-    if (entry.empty()) {
-      has_invalid_entry = true;
-      return;
-    }
+    // RFC 9110 §5.6.1.2: ignore empty list elements (leading, trailing,
+    // or consecutive commas). "text/html," and ",application/json" are legal.
+    if (entry.empty()) { return; }
 
     AcceptEntry accept_entry;
     accept_entry.order = order++;

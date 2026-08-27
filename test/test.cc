@@ -1067,13 +1067,27 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
   EXPECT_FALSE(
       detail::parse_accept_header("invalidtype,application/json", result));
 
-  // Empty media type
+  // RFC 9110 §5.6.1.2: empty list elements are ignored, not a 400
   result.clear();
-  EXPECT_FALSE(detail::parse_accept_header(",application/json", result));
+  EXPECT_TRUE(detail::parse_accept_header(",application/json", result));
+  ASSERT_EQ(result.size(), 1U);
+  EXPECT_EQ(result[0], "application/json");
 
-  // Only commas
   result.clear();
-  EXPECT_FALSE(detail::parse_accept_header(",,,", result));
+  EXPECT_TRUE(detail::parse_accept_header("text/html,", result));
+  ASSERT_EQ(result.size(), 1U);
+  EXPECT_EQ(result[0], "text/html");
+
+  result.clear();
+  EXPECT_TRUE(detail::parse_accept_header("text/html,,application/json", result));
+  ASSERT_EQ(result.size(), 2U);
+  EXPECT_EQ(result[0], "text/html");
+  EXPECT_EQ(result[1], "application/json");
+
+  // Only commas: a legal empty list
+  result.clear();
+  EXPECT_TRUE(detail::parse_accept_header(",,,", result));
+  EXPECT_TRUE(result.empty());
 
   // Valid cases should still work
   EXPECT_TRUE(detail::parse_accept_header("*/*", result));
@@ -1105,6 +1119,12 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
     res.set_content("bad request", "text/plain");
   });
 
+  std::vector<std::string> empty_element_types;
+  svr.Get("/accept_empty_elements", [&](const Request &req, Response &res) {
+    empty_element_types = req.accept_content_types;
+    res.set_content("ok", "text/plain");
+  });
+
   auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
@@ -1129,6 +1149,16 @@ TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
                        Headers{{"Accept", "text/html;q=abc,application/json"}});
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  }
+
+  // RFC 9110 empty list elements must not 400 the request.
+  {
+    auto res = cli.Get("/accept_empty_elements",
+                       Headers{{"Accept", "text/html,"}});
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    ASSERT_EQ(empty_element_types.size(), 1U);
+    EXPECT_EQ(empty_element_types[0], "text/html");
   }
 }
 
@@ -18519,8 +18549,7 @@ TEST(RepeatedFieldLinesTest, AcceptCombinesEveryFieldLine) {
 
 // RFC 9110 Section 5.6.1.2: empty list elements are parsed and ignored, so an
 // empty field line must not contribute a bare comma to the combined value.
-// parse_accept_header() rejects a leading comma outright, so a stray one would
-// turn a legal request into 400 Bad Request.
+// Empty field lines must not inject a comma into the combined Accept value.
 TEST(RepeatedFieldLinesTest, EmptyFieldLineDoesNotInjectComma) {
   Server svr;
 
