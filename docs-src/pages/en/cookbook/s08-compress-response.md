@@ -48,6 +48,6 @@ svr.Get("/events", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
-> **Note:** Tiny responses barely benefit from compression and just waste CPU time. cpp-httplib skips compression for bodies that are too small to bother with.
+> **Note:** There is no minimum size threshold. A body of a compressible MIME type is compressed whenever the client accepts it, however small it is, and a response of a few bytes ends up larger than it started because of the gzip header. Decide in the handler if you want to avoid that.
 
 > For the client-side counterpart, see [C15. Enable compression](../c15-compression).
