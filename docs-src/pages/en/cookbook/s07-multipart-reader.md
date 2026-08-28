@@ -66,6 +66,38 @@ svr.Post("/upload",
 
 Only a small chunk sits in memory at any moment, so gigabyte-scale files are no problem.
 
+## Count the parts yourself
+
+There is a cap on the number of parts, `CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT` (1024 by default), but it only applies to the buffered path, where every part is accumulated into `req.form`. The `ContentReader` keeps nothing on the library side, so the cap does not apply here.
+
+If you want an upper bound, count the parts yourself and return `false` from the header callback. The parser stops right there.
+
+```cpp
+svr.Post("/upload",
+  [](const httplib::Request &req, httplib::Response &res,
+     const httplib::ContentReader &content_reader) {
+    size_t count = 0;
+
+    auto ok = content_reader(
+      [&](const httplib::FormData &file) {
+        if (++count > 100) { return false; } // stop here
+        return true;
+      },
+      [&](const char *data, size_t len) {
+        return true;
+      });
+
+    if (!ok) {
+      res.status = httplib::StatusCode::BadRequest_400;
+      return;
+    }
+
+    res.set_content("ok", "text/plain");
+  });
+```
+
+When `content_reader` returns `false`, set the response status yourself. The rest of the body is left unread and the connection is closed, so a client that is still sending sees the connection drop.
+
 > **Warning:** When you use `HandlerWithContentReader`, `req.body` stays **empty**. Handle the body yourself inside the callbacks.
 
 > For the client side of multipart uploads, see [C07. Upload a file as multipart form data](../c07-multipart-upload).

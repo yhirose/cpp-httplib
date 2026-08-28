@@ -730,6 +730,12 @@ svr.Post("/content_receiver",
   });
 ```
 
+`CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT` (default 1024) caps the number of
+form-data parts only on the buffered path, where every part is accumulated into
+`req.form`. The content receiver keeps nothing, so the cap does not apply here.
+If your handler needs an upper bound on the number of parts, count them yourself
+and return `false` from the callback to stop the parser.
+
 ### Send content with the content provider
 
 ```cpp
