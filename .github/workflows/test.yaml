@@ -585,6 +585,7 @@ jobs:
     - name: Build ${{ matrix.config.name }}
       run: cmake --build build --config Release -- /v:m /clp:ShowCommandLine
     - name: Run tests ${{ matrix.config.name }}
+      id: run_tests
       if: ${{ matrix.config.run_tests }}
       shell: pwsh
       working-directory: build/test
@@ -618,7 +619,10 @@ jobs:
         if ($failed) { exit 1 }
         Write-Host "All shards passed."
     - name: Report flaky failure on issue #2533
-      if: failure() && matrix.config.name == 'without SSL' && github.event_name == 'push'
+      if: >
+        failure() && steps.run_tests.conclusion == 'failure'
+        && matrix.config.name == 'without SSL'
+        && github.event_name == 'push'
       continue-on-error: true
       shell: pwsh
       working-directory: build/test
@@ -636,7 +640,8 @@ jobs:
           }
         }
         if (-not $summary) {
-          $summary = "_Could not extract failed test name from shard logs; see the run for details._`n`n"
+          Write-Host "No [  FAILED  ] line in any shard log; not a test failure. Skipping the report."
+          exit 0
         }
         $runUrl = "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
         $body = "Reoccurred on push: $runUrl`n`nCommit: $($env:GITHUB_SHA)`n`n$summary"
