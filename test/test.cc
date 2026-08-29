@@ -3180,6 +3180,44 @@ TEST(DigestAuthTest, RealmContainingCommaIsNotSplit) {
       "test,realm");
 }
 
+// RFC 7616 Section 3.3 requires realm and nonce on every Digest challenge.
+// make_digest_authentication_header() dereferences both unconditionally, so
+// a server sending a challenge missing either one must not be treated as
+// usable -- doing so used to crash the client with std::out_of_range.
+static void run_digest_challenge_missing_field_test(const char *challenge) {
+  Server svr;
+  svr.Get("/x", [&](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::Unauthorized_401;
+    res.set_header("WWW-Authenticate", challenge);
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_digest_auth("hello", "world");
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+}
+
+TEST(DigestAuthTest, ChallengeMissingRealmAndNonceDoesNotCrash) {
+  run_digest_challenge_missing_field_test("Digest qop=\"auth\"");
+}
+
+TEST(DigestAuthTest, ChallengeMissingNonceDoesNotCrash) {
+  run_digest_challenge_missing_field_test("Digest realm=\"r\", qop=\"auth\"");
+}
+
+TEST(DigestAuthTest, ChallengeMissingRealmDoesNotCrash) {
+  run_digest_challenge_missing_field_test("Digest nonce=\"n\", qop=\"auth\"");
+}
+
 #endif
 
 TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
