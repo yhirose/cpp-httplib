@@ -290,6 +290,47 @@ TEST(SocketStream, wait_writable_UNIX) {
   EXPECT_EQ(0, close(fds[0]));
 }
 
+TEST(SocketStream, writev_UNIX) {
+  int fds[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
+
+  // More spans than CPPHTTPLIB_WRITEV_MAX_BUFS exercises batching; a total
+  // several times the socket buffer exercises the partial-send resume logic.
+  std::vector<std::string> spans;
+  for (size_t i = 0; i < 2 * CPPHTTPLIB_WRITEV_MAX_BUFS + 3; i++) {
+    spans.emplace_back(1 + i * 25000, static_cast<char>('a' + i % 26));
+  }
+  std::vector<Stream::WriteBuffer> bufs;
+  std::string expected;
+  for (const auto &s : spans) {
+    bufs.push_back({s.data(), s.size()});
+    expected += s;
+  }
+
+  std::string received;
+  std::thread reader{[&] {
+    char buf[4096];
+    ssize_t n;
+    while ((n = ::recv(fds[1], buf, sizeof(buf), 0)) > 0) {
+      received.append(buf, static_cast<size_t>(n));
+    }
+  }};
+
+  detail::process_client_socket(
+      fds[0], 5, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
+      [&](Stream &strm) {
+        EXPECT_EQ(static_cast<ssize_t>(expected.size()),
+                  strm.writev(bufs.data(), bufs.size()));
+        return true;
+      });
+  EXPECT_EQ(0, close(fds[0])); // EOF ends the reader
+  reader.join();
+  EXPECT_EQ(0, close(fds[1]));
+
+  ASSERT_EQ(expected.size(), received.size());
+  EXPECT_TRUE(expected == received);
+}
+
 TEST(SocketStream, wait_writable_INET) {
   sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
@@ -2173,6 +2214,89 @@ TEST(BufferStreamTest, read) {
   EXPECT_EQ('o', buf[0]);
 
   EXPECT_EQ(0, strm.read(buf, 1));
+}
+
+namespace {
+// Records write() calls into the generic Stream::writev() fallback. The call
+// count matters beyond syscall volume: for streams like TLS, every write() is
+// at least one record on the wire.
+struct WriteRecordingStream final : public Stream {
+  std::string buffer;
+  std::vector<size_t> write_sizes;
+
+  bool is_readable() const override { return false; }
+  bool wait_readable() const override { return false; }
+  bool wait_writable() const override { return true; }
+  ssize_t read(char *, size_t) override { return -1; }
+  ssize_t write(const char *ptr, size_t size) override {
+    write_sizes.push_back(size);
+    buffer.append(ptr, size);
+    return static_cast<ssize_t>(size);
+  }
+  void get_remote_ip_and_port(std::string &, int &) const override {}
+  void get_local_ip_and_port(std::string &, int &) const override {}
+  socket_t socket() const override { return INVALID_SOCKET; }
+  time_t duration() const override { return 0; }
+};
+} // namespace
+
+// Small totals coalesce into a single write.
+TEST(StreamWritevFallbackTest, coalesced) {
+  WriteRecordingStream strm;
+
+  const Stream::WriteBuffer bufs[3] = {{"foo", 3}, {"", 0}, {"barbaz", 6}};
+  EXPECT_EQ(9, strm.writev(bufs, 3));
+  EXPECT_EQ("foobarbaz", strm.buffer);
+  EXPECT_EQ(std::vector<size_t>{9}, strm.write_sizes);
+}
+
+// A total of at least a full staging buffer is written span by span, with
+// no flattening copy. (Many small spans summing large would emit one write
+// each; no caller produces that shape.)
+TEST(StreamWritevFallbackTest, largeTotalWritesPerSpan) {
+  WriteRecordingStream strm;
+
+  const std::string a(CPPHTTPLIB_SEND_BUFSIZ - 10, 'a');
+  const std::string b(CPPHTTPLIB_SEND_BUFSIZ - 10, 'b');
+  const Stream::WriteBuffer bufs[2] = {{a.data(), a.size()},
+                                       {b.data(), b.size()}};
+  EXPECT_EQ(static_cast<ssize_t>(a.size() + b.size()), strm.writev(bufs, 2));
+  EXPECT_EQ(a + b, strm.buffer);
+  EXPECT_EQ((std::vector<size_t>{CPPHTTPLIB_SEND_BUFSIZ - 10,
+                                 CPPHTTPLIB_SEND_BUFSIZ - 10}),
+            strm.write_sizes);
+}
+
+// A large span reaches write() whole, so the stream (e.g. OpenSSL) can
+// fragment it internally instead of taking a copy and a write() per
+// staging-buffer sized piece.
+TEST(StreamWritevFallbackTest, passthrough) {
+  WriteRecordingStream strm;
+
+  const std::string a(CPPHTTPLIB_SEND_BUFSIZ + 10, 'a');
+  const std::string b(20, 'b');
+  const Stream::WriteBuffer bufs[2] = {{a.data(), a.size()},
+                                       {b.data(), b.size()}};
+  EXPECT_EQ(static_cast<ssize_t>(a.size() + b.size()), strm.writev(bufs, 2));
+  EXPECT_EQ(a + b, strm.buffer);
+  EXPECT_EQ((std::vector<size_t>{CPPHTTPLIB_SEND_BUFSIZ + 10, 20}),
+            strm.write_sizes);
+}
+
+// The gather-write shape: small headers, then a large body. The headers go
+// out first on their own; the body reaches write() untouched.
+TEST(StreamWritevFallbackTest, headersThenLargeBody) {
+  WriteRecordingStream strm;
+
+  const std::string headers(100, 'h');
+  const std::string body(2 * CPPHTTPLIB_SEND_BUFSIZ, 'b');
+  const Stream::WriteBuffer bufs[2] = {{headers.data(), headers.size()},
+                                       {body.data(), body.size()}};
+  EXPECT_EQ(static_cast<ssize_t>(headers.size() + body.size()),
+            strm.writev(bufs, 2));
+  EXPECT_EQ(headers + body, strm.buffer);
+  EXPECT_EQ((std::vector<size_t>{100, 2 * CPPHTTPLIB_SEND_BUFSIZ}),
+            strm.write_sizes);
 }
 
 TEST(HostnameToIPConversionTest, HTTPWatch_Online) {
@@ -6387,6 +6511,15 @@ TEST_F(ServerTest, GetMethodDirTest) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ("test.html", res->body);
+}
+
+TEST_F(ServerTest, GetMethodDirTestRangeNotSatisfiable) {
+  Headers headers = {make_range_header({{100, 199}})};
+  auto res = cli_.Get("/dir/test.html", headers);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ("", res->body);
 }
 
 TEST_F(ServerTest, GetMethodDirTestWithDoubleDots) {
@@ -10945,6 +11078,273 @@ TEST(MountTest, Unmount) {
   res = cli.Get("/mount2/dir/test.html");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+
+TEST(BorrowedContentTest, ServeAndRelease) {
+  Server svr;
+
+  const std::string data = "0123456789abcdefghij";
+  std::atomic<int> released{0};
+  std::atomic<int> released_ok{0};
+
+  svr.Get("/view", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", [&](bool ok) {
+      released++;
+      if (ok) { released_ok++; }
+    });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  svr.wait_until_ready();
+
+  {
+    Client cli("localhost", PORT);
+    cli.set_keep_alive(true);
+
+    auto res = cli.Get("/view");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+    EXPECT_EQ("20", res->get_header_value("Content-Length"));
+    EXPECT_EQ(data, res->body);
+
+    res = cli.Head("/view");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("20", res->get_header_value("Content-Length"));
+    EXPECT_EQ("", res->body);
+
+    Headers range_headers = {make_range_header({{5, 8}})};
+    res = cli.Get("/view", range_headers);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+    EXPECT_EQ("bytes 5-8/20", res->get_header_value("Content-Range"));
+    EXPECT_EQ("5678", res->body);
+
+    // An unsatisfiable range drops the borrowed view; nothing may trail the
+    // 416 on this kept-alive connection.
+    Headers bad_range_headers = {make_range_header({{100, 199}})};
+    res = cli.Get("/view", bad_range_headers);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+    EXPECT_EQ("", res->body);
+
+    res = cli.Get("/view");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(data, res->body);
+  }
+
+  svr.stop();
+  listen_thread.join();
+
+  // One release per response; the flag reports whether the borrowed bytes
+  // were delivered (HEAD and the 416 never send them).
+  EXPECT_EQ(5, released.load());
+  EXPECT_EQ(3, released_ok.load());
+}
+
+#ifndef _WIN32
+// A Content-Length-honoring client cannot see bytes leaked after the header
+// block (a 416 always closes the connection), so verify at the socket level
+// that the 416 for a borrowed view carries no body at all.
+TEST(BorrowedContentTest, RangeNotSatisfiableLeavesNoStrayBytes) {
+  Server svr;
+
+  const std::string data = "0123456789abcdefghij";
+  svr.Get("/view", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+  });
+
+  // Bind the loopback IPv4 address explicitly; the raw client below
+  // connects to INADDR_LOOPBACK.
+  auto listen_thread = std::thread([&svr]() { svr.listen("127.0.0.1", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  const int sock = socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_LE(0, sock);
+  sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT));
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_EQ(0,
+            connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+
+  const std::string request = "GET /view HTTP/1.1\r\n"
+                              "Host: localhost\r\n"
+                              "Range: bytes=100-199\r\n"
+                              "Connection: close\r\n"
+                              "\r\n";
+  ASSERT_EQ(static_cast<ssize_t>(request.size()),
+            send(sock, request.data(), request.size(), 0));
+
+  std::string response;
+  char buf[4096];
+  ssize_t n;
+  while ((n = recv(sock, buf, sizeof(buf), 0)) > 0) {
+    response.append(buf, static_cast<size_t>(n));
+  }
+  close(sock);
+
+  EXPECT_EQ(0u, response.find("HTTP/1.1 416 "));
+  const auto header_end = response.find("\r\n\r\n");
+  ASSERT_NE(std::string::npos, header_end);
+  EXPECT_EQ(response.size(), header_end + 4);
+}
+#endif
+
+TEST(BorrowedContentTest, ErrorHandlerReplacesBorrowedContent) {
+  Server svr;
+
+  const std::string data = "borrowed bytes";
+  svr.Get("/fail", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+    res.status = StatusCode::InternalServerError_500;
+  });
+  svr.set_error_handler([](const Request & /*req*/, Response &res) {
+    res.set_content("error body", "text/html");
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  auto res = cli.Get("/fail");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+  EXPECT_EQ("error body", res->body);
+}
+
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+TEST(BorrowedContentTest, ExceptionDropsBorrowedContent) {
+  Server svr;
+
+  const std::string data = "borrowed bytes";
+  svr.Get("/throw", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+    throw std::runtime_error("boom");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  auto res = cli.Get("/throw");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ("", res->body);
+}
+#endif
+
+TEST(BorrowedContentTest, ReplacingViewWithEmptyBodyClearsContentLength) {
+  Server svr;
+
+  const std::string data = "0123456789abcdefghij"; // 20 bytes
+  svr.Get("/replaced", [&](const Request & /*req*/, Response &res) {
+    res.set_content(data.data(), data.size(), "text/plain", nullptr);
+    res.set_content("", "text/plain"); // drop it again
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_read_timeout(1, 0);
+
+  auto res = cli.Get("/replaced");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("0", res->get_header_value("Content-Length"));
+  EXPECT_EQ("", res->body);
+}
+
+TEST(BorrowedContentTest, ReplacingContentReleasesTheOldView) {
+  Server svr;
+
+  const std::string a = "AAAA";
+  const std::string b = "BBBB";
+  std::atomic<int> released_a{0};
+
+  svr.Get("/twice", [&](const Request & /*req*/, Response &res) {
+    res.set_content(a.data(), a.size(), "text/plain",
+                    [&](bool) { released_a++; });
+    res.set_content(b.data(), b.size(), "text/plain", nullptr);
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  auto res = cli.Get("/twice");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("BBBB", res->body);
+  EXPECT_EQ(1, released_a.load()); // the discarded view is still released
+}
+
+TEST(BorrowedContentTest, ReplacingViewWithProviderReleasesTheOldView) {
+  Server svr;
+
+  const std::string a = "AAAA";
+  std::atomic<int> released_a{0};
+
+  svr.Get("/provided", [&](const Request & /*req*/, Response &res) {
+    res.set_content(a.data(), a.size(), "text/plain",
+                    [&](bool) { released_a++; });
+    res.set_content_provider(4, "text/plain",
+                             [](size_t offset, size_t length, DataSink &sink) {
+                               return sink.write("BBBB" + offset, length);
+                             });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  auto res = cli.Get("/provided");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("BBBB", res->body);
+  EXPECT_EQ(1, released_a.load()); // the discarded view is still released
+}
+
+TEST(BorrowedContentTest, CopiedResponseSharesTheReleaser) {
+  int released = 0;
+  {
+    Response res;
+    const std::string data = "AAAA";
+    res.set_content(data.data(), data.size(), "text/plain",
+                    [&](bool) { released++; });
+    {
+      Response copy = res; // copies share ownership; no double-release
+      EXPECT_EQ(0, released);
+    }
+    EXPECT_EQ(0, released); // still owned by the original
+  }
+  EXPECT_EQ(1, released); // released exactly once, by the last owner
 }
 
 TEST(MountTest, PathSegmentBoundary) {
