@@ -1474,6 +1474,19 @@ The server can apply compression to the following MIME type contents:
 - application/protobuf
 - application/xhtml+xml
 
+A response that already carries `Content-Encoding` is sent as it is. A handler serving content it encoded itself, an asset compressed at build time for instance, keeps its own coding and its own bytes:
+
+```c++
+svr.Get("/app.js", [](const Request & /*req*/, Response &res) {
+  res.set_header("Content-Encoding", "gzip");
+  res.set_content(gzipped_asset, "application/javascript");
+});
+```
+
+This holds for every kind of response, including the file-backed ones below.
+
+`Vary: Accept-Encoding` is added only to responses the server encoded itself. A handler that chooses between an encoded and an identity representation by reading `Accept-Encoding` should set the field itself, so that shared caches keep the two apart.
+
 ### Static file compression
 
 Responses served from a file, whether through `set_mount_point()` or `Response::set_file_content()`, are sent as is by default. Turn compression on for them with:

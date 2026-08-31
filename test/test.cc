@@ -8910,11 +8910,23 @@ protected:
   }
 
   int start(const std::function<void(Server &)> &configure = nullptr) {
+    // Serves the same tree as a directory of build-time compressed assets
+    // would be served: the mount point names the coding the files are already
+    // stored in. Registered before "/" so it is the one that matches.
+    svr_.set_mount_point("/pre-encoded", "./www",
+                         {{"Content-Encoding", "gzip"}});
+
     svr_.set_mount_point("/", "./www");
 
     svr_.Get("/file_content", [](const Request & /*req*/, Response &res) {
       res.set_file_content("./www/dir/index.html", "text/html");
     });
+
+    svr_.Get("/pre-encoded-file-content",
+             [](const Request & /*req*/, Response &res) {
+               res.set_header("Content-Encoding", "gzip");
+               res.set_file_content("./www/dir/index.html", "text/html");
+             });
 
     svr_.Get("/streamed", [](const Request & /*req*/, Response &res) {
       res.set_content_provider(
@@ -9019,6 +9031,47 @@ TEST_F(StaticFileCompressionTest, FileContent) {
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ(104U, res->body.size());
+}
+
+// A handler that serves an already-encoded file names the coding itself. The
+// file-backed path decided its coding from Accept-Encoding and the content
+// type alone, so it compressed the stored bytes a second time and appended a
+// second Content-Encoding field line.
+TEST_F(StaticFileCompressionTest, PreEncodedFileContentIsNotCompressedAgain) {
+  auto port = start(enable_without_floor);
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+  auto res = cli.Get("/pre-encoded-file-content",
+                     Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(1U, res->get_header_value_count("Content-Encoding"));
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  // Vary belongs to a coding the server chose, and it chose none here.
+  EXPECT_FALSE(res->has_header("Vary"));
+  // The file travels exactly as it is stored on disk.
+  EXPECT_EQ(104U, res->body.size());
+}
+
+// The 1MB file clears the default floor, so this one runs the configuration a
+// deployment would actually have.
+TEST_F(StaticFileCompressionTest, PreEncodedMountPointIsNotCompressedAgain) {
+  auto port = start(enable);
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+  auto res =
+      cli.Get("/pre-encoded/dir/1MB.txt", Headers{{"Accept-Encoding", "gzip"}});
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(1U, res->get_header_value_count("Content-Encoding"));
+  EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+  EXPECT_FALSE(res->has_header("Vary"));
+  EXPECT_EQ(1048576U, res->body.size());
+  EXPECT_EQ("1048576", res->get_header_value("Content-Length"));
 }
 
 TEST_F(StaticFileCompressionTest, Head) {
@@ -12652,6 +12705,65 @@ TEST(ContentEncodingTest, PreEncodedResponseIsNotCompressedAgain) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(1U, res->get_header_value_count("Content-Encoding"));
   EXPECT_EQ("Hello World!", res->body);
+}
+
+// A chunked provider settles its coding where the headers are written and
+// reuses it at write time. Both ends of that have to hold: a handler's own
+// Content-Encoding suppresses the coding, and a response without one is still
+// compressed as it always was.
+TEST(ContentEncodingTest, PreEncodedChunkedResponseIsNotCompressedAgain) {
+  const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
+  const std::string plain = "Hello World! Hello World! Hello World!";
+
+  Server svr;
+
+  svr.Get("/pre-gzipped", [&](const Request & /*req*/, Response &res) {
+    res.set_header("Content-Encoding", "gzip");
+    res.set_chunked_content_provider(
+        "text/plain", [gzipped](size_t /*offset*/, DataSink &sink) {
+          sink.write(gzipped.data(), gzipped.size());
+          sink.done();
+          return true;
+        });
+  });
+
+  svr.Get("/negotiated", [&](const Request & /*req*/, Response &res) {
+    res.set_chunked_content_provider(
+        "text/plain", [plain](size_t /*offset*/, DataSink &sink) {
+          sink.write(plain.data(), plain.size());
+          sink.done();
+          return true;
+        });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  Headers headers = {{"Accept-Encoding", "gzip"}};
+
+  {
+    auto res = cli.Get("/pre-gzipped", headers);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(1U, res->get_header_value_count("Content-Encoding"));
+    EXPECT_EQ("Hello World!", res->body);
+  }
+
+  {
+    auto res = cli.Get("/negotiated", headers);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
+    EXPECT_EQ(plain, res->body);
+  }
 }
 #endif
 
