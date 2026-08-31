@@ -12616,6 +12616,45 @@ TEST(ContentEncodingTest, KnownEncodingWithoutSupportIsReported) {
   }
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+// A handler serving pre-compressed content (e.g. build-time gzipped static
+// assets) sets Content-Encoding itself. The server used to pick a coding from
+// Accept-Encoding and the content type alone, gzipping the already-gzipped
+// body a second time and appending a second Content-Encoding field line, so
+// clients that decode one coding per listed value handed back raw gzip bytes.
+TEST(ContentEncodingTest, PreEncodedResponseIsNotCompressedAgain) {
+  const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
+
+  Server svr;
+
+  // text/plain is a compressible type, so only the pre-set Content-Encoding
+  // keeps the server from applying a coding of its own.
+  svr.Get("/pre-gzipped", [&](const Request & /*req*/, Response &res) {
+    res.set_content(gzipped, "text/plain");
+    res.set_header("Content-Encoding", "gzip");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  Headers headers = {{"Accept-Encoding", "gzip"}};
+  auto res = cli.Get("/pre-gzipped", headers);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(1U, res->get_header_value_count("Content-Encoding"));
+  EXPECT_EQ("Hello World!", res->body);
+}
+#endif
+
 // RFC 9110 Section 5.3: a Content-Encoding split over several field lines is
 // the same message as the comma-joined one, so both have to be read the same
 // way. Reading only the first line made "gzip" followed by "gzip" look like a
