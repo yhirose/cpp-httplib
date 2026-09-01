@@ -1817,10 +1817,12 @@ struct Response {
   std::string file_content_path_;
   std::string file_content_content_type_;
 
-  // Content coding chosen for a file-backed content provider, decided once
-  // where the file is opened so that the ETag and the body cannot disagree.
-  // `EncodingType::None` for every other kind of response.
-  detail::EncodingType file_content_encoding_ = detail::EncodingType::None;
+  // Content coding chosen for the response body, decided once so that the
+  // headers and the body cannot disagree: where the file is opened for a
+  // file-backed content provider (keeping the ETag honest), and in
+  // `apply_ranges()` for a chunked content provider. `EncodingType::None`
+  // for every other kind of response.
+  detail::EncodingType content_coding_ = detail::EncodingType::None;
 };
 
 enum class Error {
@@ -2359,6 +2361,7 @@ private:
 
   bool parse_request_line(const char *s, Request &req) const;
   detail::EncodingType static_file_encoding(const Request &req,
+                                            const Response &res,
                                             const std::string &content_type,
                                             size_t length) const;
   bool apply_static_file_compression(const Request &req, Response &res) const;
@@ -3662,6 +3665,9 @@ ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags);
 ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags);
 
 EncodingType encoding_type(const Request &req, const std::string &content_type);
+
+EncodingType encoding_type(const Request &req, const Response &res,
+                           const std::string &content_type);
 
 EncodingType encoding_type(const Request &req, const Response &res);
 
@@ -7542,8 +7548,21 @@ inline EncodingType encoding_type(const Request &req,
   return best;
 }
 
+// `content_type` is taken separately because a file-backed response has not
+// been given one yet when its coding has to be decided.
+inline EncodingType encoding_type(const Request &req, const Response &res,
+                                  const std::string &content_type) {
+  // The response already names a content coding of its own: a handler serving
+  // a body it encoded itself (pre-compressed static assets, say), or a mount
+  // point whose headers name the coding its files are stored in. Applying one
+  // on top of that would double-encode the body and append a second
+  // `Content-Encoding` field line.
+  if (res.has_header("Content-Encoding")) { return EncodingType::None; }
+  return encoding_type(req, content_type);
+}
+
 inline EncodingType encoding_type(const Request &req, const Response &res) {
-  return encoding_type(req, res.get_header_value("Content-Type"));
+  return encoding_type(req, res, res.get_header_value("Content-Type"));
 }
 
 inline std::unique_ptr<compressor> make_compressor(EncodingType type) {
@@ -8629,7 +8648,7 @@ inline void set_file_content_provider(Response &res,
         return true;
       });
 
-  res.file_content_encoding_ = encoding;
+  res.content_coding_ = encoding;
 }
 
 template <typename T, typename U>
@@ -11496,7 +11515,7 @@ inline void Response::set_content(const char *s, size_t n,
   auto rng = headers.equal_range("Content-Type");
   headers.erase(rng.first, rng.second);
   set_header("Content-Type", content_type);
-  file_content_encoding_ = detail::EncodingType::None;
+  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_content(const std::string &s,
@@ -11511,7 +11530,7 @@ inline void Response::set_content(std::string &&s,
   auto rng = headers.equal_range("Content-Type");
   headers.erase(rng.first, rng.second);
   set_header("Content-Type", content_type);
-  file_content_encoding_ = detail::EncodingType::None;
+  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_content_provider(
@@ -11522,7 +11541,7 @@ inline void Response::set_content_provider(
   if (in_length > 0) { content_provider_ = std::move(provider); }
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
-  file_content_encoding_ = detail::EncodingType::None;
+  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_content_provider(
@@ -11533,7 +11552,7 @@ inline void Response::set_content_provider(
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
-  file_content_encoding_ = detail::EncodingType::None;
+  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_chunked_content_provider(
@@ -11544,7 +11563,7 @@ inline void Response::set_chunked_content_provider(
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = true;
-  file_content_encoding_ = detail::EncodingType::None;
+  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_file_content(const std::string &path,
@@ -13247,9 +13266,10 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
     }
   } else {
     if (res.is_chunked_content_provider_) {
-      auto type = detail::encoding_type(req, res);
-
-      auto compressor = detail::make_compressor(type);
+      // Use the coding `apply_ranges()` chose when it wrote the headers;
+      // re-negotiating here would disagree with them, e.g. once a handler's
+      // own Content-Encoding header suppresses the negotiation.
+      auto compressor = detail::make_compressor(res.content_coding_);
       if (!compressor) {
         compressor = detail::make_unique<detail::nocompressor>();
       }
@@ -13475,7 +13495,8 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
           auto encoding = detail::EncodingType::None;
           if (static_file_compression_) {
             content_type = content_type_of();
-            encoding = static_file_encoding(req, content_type, stat.size());
+            encoding =
+                static_file_encoding(req, res, content_type, stat.size());
           }
 
           // The ETag names the representation actually sent, so a client that
@@ -13890,8 +13911,10 @@ inline bool Server::dispatch_request(Request &req, Response &res,
 // the ETag, which has to name the representation actually sent, and
 // `apply_static_file_compression()` go through this, so the two cannot drift
 // apart.
-inline detail::EncodingType Server::static_file_encoding(
-    const Request &req, const std::string &content_type, size_t length) const {
+inline detail::EncodingType
+Server::static_file_encoding(const Request &req, const Response &res,
+                             const std::string &content_type,
+                             size_t length) const {
   if (!static_file_compression_) { return detail::EncodingType::None; }
 
   // Nothing to compress, and an empty file already answers with
@@ -13916,14 +13939,14 @@ inline detail::EncodingType Server::static_file_encoding(
     return detail::EncodingType::None;
   }
 
-  return detail::encoding_type(req, content_type);
+  return detail::encoding_type(req, res, content_type);
 }
 
 // Compresses a file-backed content provider into `res.body` and takes over the
 // framing headers. Returns false when the response is left untouched.
 inline bool Server::apply_static_file_compression(const Request &req,
                                                   Response &res) const {
-  auto type = res.file_content_encoding_;
+  auto type = res.content_coding_;
   if (type == detail::EncodingType::None || !res.content_provider_) {
     return false;
   }
@@ -13947,7 +13970,7 @@ inline bool Server::apply_static_file_compression(const Request &req,
   res.content_provider_success_ = true;
   res.content_provider_ = nullptr;
   res.content_length_ = 0;
-  res.file_content_encoding_ = detail::EncodingType::None;
+  res.content_coding_ = detail::EncodingType::None;
 
   res.set_header("Content-Encoding", detail::encoding_name(type));
   res.set_header("Vary", "Accept-Encoding");
@@ -14006,6 +14029,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
       if (res.content_provider_) {
         if (res.is_chunked_content_provider_) {
           res.set_header("Transfer-Encoding", "chunked");
+          res.content_coding_ = type;
           if (type != detail::EncodingType::None) {
             res.set_header("Content-Encoding", detail::encoding_name(type));
             res.set_header("Vary", "Accept-Encoding");
@@ -14402,7 +14426,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
         detail::set_file_content_provider(
             res, mm, content_type,
-            static_file_encoding(req, content_type, mm->size()));
+            static_file_encoding(req, res, content_type, mm->size()));
       }
     }
 
