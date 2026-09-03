@@ -75,6 +75,6 @@ The counter is reset whenever `read()` consumes an incoming Pong frame, so this 
 
 `max_missed_pongs` defaults to `0`, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses aren't checked. If you want unresponsive-peer detection, set it explicitly to `1` or higher.
 
-Even with `0`, a dead connection won't linger forever: while your code is inside `read()`, `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop and `read()` fails if no frame arrives in time. Think of `max_missed_pongs` as the knob for detecting an unresponsive peer **faster** than that.
+On the server side, even with `0`, a dead connection won't linger forever: while a handler is inside `read()`, `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop. A client has no backstop of its own — it waits forever unless you set a read timeout — so there `max_missed_pongs` is what notices an unresponsive peer at all. On either side, it is also how you notice one **faster** than that 5-minute fallback.
 
 > For handling a closed connection, see [W03. Handle connection close](../w03-websocket-close).

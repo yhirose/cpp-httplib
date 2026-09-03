@@ -22341,8 +22341,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // RSV2 set (0x20)
@@ -22352,8 +22353,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // RSV3 set (0x10)
@@ -22363,8 +22365,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // No RSV bits set - should succeed
@@ -22374,8 +22377,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_TRUE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                               false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Ok);
     EXPECT_EQ(ws::Opcode::Text, opcode);
     EXPECT_EQ("Hello", payload);
     EXPECT_TRUE(fin);
@@ -22396,8 +22400,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // Close with FIN=0 - must be rejected
@@ -22410,8 +22415,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // Ping with payload_len=126 (extended length) - must be rejected
@@ -22427,8 +22433,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // Ping with FIN=1 and payload_len=125 - should succeed
@@ -22442,8 +22449,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_TRUE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                               false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Ok);
     EXPECT_EQ(ws::Opcode::Ping, opcode);
     EXPECT_EQ(125u, payload.size());
     EXPECT_TRUE(fin);
@@ -22466,8 +22474,9 @@ TEST(WebSocketTest, PayloadLength64BitMSBMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_FALSE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                                false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Fail);
   }
 
   // MSB clear - should pass length parsing (will be rejected by max_len,
@@ -22484,8 +22493,9 @@ TEST(WebSocketTest, PayloadLength64BitMSBMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_TRUE(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                               false, 1024));
+    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                             1024),
+              ws::impl::FrameRead::Ok);
     EXPECT_EQ(ws::Opcode::Text, opcode);
     EXPECT_EQ("abc", payload);
   }
@@ -22970,10 +22980,46 @@ TEST_F(WebSocketIntegrationTest, ReadTimeout) {
   client.set_read_timeout(1, 0); // 1 second
   ASSERT_TRUE(client.connect());
 
-  // Don't send anything — server echo handler waits for a message,
-  // so read() should time out and return false.
+  // Don't send anything — server echo handler waits for a message, so read()
+  // should time out. The connection survives it: nothing was consumed.
   std::string msg;
-  EXPECT_FALSE(client.read(msg));
+  EXPECT_EQ(client.read(msg), ws::Timeout);
+  EXPECT_TRUE(client.is_open());
+
+  // And it is still usable afterwards.
+  EXPECT_TRUE(client.send("after timeout"));
+  EXPECT_EQ(client.read(msg), ws::Text);
+  EXPECT_EQ(msg, "after timeout");
+}
+
+TEST_F(WebSocketIntegrationTest, ReadTimeoutLeavesMessageUntouched) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.set_read_timeout(1, 0);
+  ASSERT_TRUE(client.connect());
+
+  ASSERT_TRUE(client.send("first"));
+  std::string msg;
+  ASSERT_EQ(client.read(msg), ws::Text);
+  ASSERT_EQ(msg, "first");
+
+  // A timeout does not write to msg. This is why `while (ws.read(msg))` must
+  // not be used with a read timeout: it would reprocess the previous message.
+  EXPECT_EQ(client.read(msg), ws::Timeout);
+  EXPECT_EQ(msg, "first");
+}
+
+TEST_F(WebSocketIntegrationTest, ReadTimeoutSetAfterConnect) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  ASSERT_TRUE(client.connect());
+
+  // Setting it once the connection is open reaches the live stream, not just
+  // the seed for the next connect().
+  client.set_read_timeout(1, 0);
+  std::string msg;
+  EXPECT_EQ(client.read(msg), ws::Timeout);
+  EXPECT_TRUE(client.is_open());
 }
 
 TEST_F(WebSocketIntegrationTest, MaxPayloadExceeded) {
@@ -23162,12 +23208,13 @@ TEST_F(WebSocketIntegrationTest, ChronoTimeoutSetters) {
 
   auto start = std::chrono::steady_clock::now();
   std::string msg;
-  EXPECT_EQ(client.read(msg), ws::ReadResult::Fail);
+  EXPECT_EQ(client.read(msg), ws::ReadResult::Timeout);
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                      std::chrono::steady_clock::now() - start)
                      .count();
-  // Above 1s so that dropping the microseconds half of the split fails here,
-  // and well under the 300s default so that ignoring the setter fails too.
+  // Above 1s so that dropping the microseconds half of the split fails here.
+  // Ignoring the setter altogether would not reach this line at all: a client
+  // waits forever by default.
   EXPECT_GE(elapsed, 1400);
   EXPECT_LT(elapsed, 30000);
 }
@@ -23212,6 +23259,108 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
 
   svr.stop();
   t.join();
+}
+
+TEST(WebSocketServerTimeoutTest, HandlerSendsWhileNothingArrives) {
+  Server svr;
+
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
+    // A read timeout is how a handler gets control back. Without it, a handler
+    // parked in read() can never write on the connection it is reading.
+    ws.set_read_timeout(std::chrono::milliseconds(100));
+    std::string msg;
+    while (ws.is_open()) {
+      auto r = ws.read(msg);
+      if (r == httplib::ws::Timeout) {
+        ws.send("tick");
+        continue;
+      }
+      if (r == httplib::ws::Fail) { break; }
+      ws.send(msg);
+    }
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+  client.set_read_timeout(10, 0); // fail rather than hang if no tick arrives
+  ASSERT_TRUE(client.connect());
+
+  // The client sends nothing, so anything it receives came out of the
+  // handler's timeout path.
+  std::string msg;
+  ASSERT_EQ(client.read(msg), ws::Text);
+  EXPECT_EQ("tick", msg);
+
+  client.close();
+  svr.stop();
+  t.join();
+}
+
+// Stream::read may return fewer bytes than asked for. This is that contract at
+// its worst -- one byte per call -- which is what a frame header straddling a
+// read buffer's boundary looks like to the frame parser.
+class WsByteAtATimeStream : public Stream {
+public:
+  explicit WsByteAtATimeStream(std::string data) : data_(std::move(data)) {}
+  bool is_readable() const override { return true; }
+  bool wait_readable() const override { return true; }
+  bool wait_writable() const override { return true; }
+  ssize_t read(char *ptr, size_t size) override {
+    if (size == 0 || pos_ >= data_.size()) { return 0; }
+    *ptr = data_[pos_++];
+    return 1;
+  }
+  ssize_t write(const char *, size_t size) override {
+    return static_cast<ssize_t>(size);
+  }
+  void get_remote_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  void get_local_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  socket_t socket() const override { return INVALID_SOCKET; }
+  time_t duration() const override { return 0; }
+
+private:
+  std::string data_;
+  size_t pos_ = 0;
+};
+
+TEST(WebSocketFrameTest, MultiByteFieldsSplitAcrossReads) {
+  // A 200-byte payload uses the 16-bit extended length, so the header, the
+  // length and the mask key are all multi-byte fields here. Each used to be
+  // read with a single read() call, which fails as soon as one is split.
+  std::string body(200, 'x');
+  const uint8_t mask[4] = {0x0a, 0x0b, 0x0c, 0x0d};
+
+  std::string frame;
+  frame += static_cast<char>(0x81);       // FIN + Text
+  frame += static_cast<char>(0x80 | 126); // masked, 16-bit length follows
+  frame += static_cast<char>(body.size() >> 8);
+  frame += static_cast<char>(body.size() & 0xff);
+  for (size_t i = 0; i < 4; i++) {
+    frame += static_cast<char>(mask[i]);
+  }
+  for (size_t i = 0; i < body.size(); i++) {
+    frame += static_cast<char>(body[i] ^ mask[i % 4]);
+  }
+
+  WsByteAtATimeStream strm(frame);
+  ws::Opcode opcode;
+  std::string payload;
+  bool fin = false;
+  ASSERT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
+                                           /*expect_masked=*/true, 1024),
+            ws::impl::FrameRead::Ok);
+  EXPECT_TRUE(fin);
+  EXPECT_EQ(opcode, ws::Opcode::Text);
+  EXPECT_EQ(payload, body);
 }
 
 TEST(WebSocketTest, QueryStringInHandshake) {

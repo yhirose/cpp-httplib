@@ -31,11 +31,12 @@ int main() {
 
 `svr.WebSocket()`でWebSocket用のハンドラを登録します。ハンドラが呼ばれた時点で、すでにWebSocketのハンドシェイクは完了しています。ループの中で`ws.read()`して`ws.send()`するだけで、エコー動作が完成します。
 
-`read()`の返り値は`ReadResult`列挙値で、次の3種類です。
+`read()`の返り値は`ReadResult`列挙値で、次の4種類です。
 
 - `ReadResult::Text`: テキストメッセージを受信
 - `ReadResult::Binary`: バイナリメッセージを受信
 - `ReadResult::Fail`: エラー、または接続が閉じた
+- `ReadResult::Timeout`: 何も受信しないまま読み取りタイムアウトが経過した。接続は開いたまま。読み取りタイムアウトを設定したときだけ返る（[W06. タイムアウトを設定する](../w06-websocket-timeouts)を参照）
 
 ## クライアント: エコーを叩く
 

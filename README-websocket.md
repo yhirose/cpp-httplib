@@ -57,13 +57,29 @@ if (ws.connect()) {
 
 ```cpp
 enum ReadResult : int {
-    Fail   = 0,  // Connection closed or error
-    Text   = 1,  // UTF-8 text message
-    Binary = 2,  // Binary message
+    Fail    = 0,  // Connection closed or error
+    Text    = 1,  // UTF-8 text message
+    Binary  = 2,  // Binary message
+    Timeout = 3,  // Read timeout elapsed; connection still open
 };
 ```
 
 Returned by `read()`. Since `Fail` is `0`, the result works naturally in boolean contexts — `while (ws.read(msg))` continues until the connection closes. When you need to distinguish text from binary, check the return value directly.
+
+`Timeout` only appears once a read timeout is in effect (a client waits forever unless you set one; a server uses `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`). It means the timeout elapsed on a message boundary: nothing was consumed and the connection is still open, so you can send on it and read again.
+
+**`msg` is left untouched on `Timeout`.** Because `Timeout` is non-zero, `while (ws.read(msg))` keeps looping — with the *previous* message still in `msg`. Once a read timeout is set, test the result instead:
+
+```cpp
+ws.set_read_timeout(std::chrono::milliseconds(100));
+std::string msg;
+while (ws.is_open()) {
+    auto r = ws.read(msg);
+    if (r == httplib::ws::Timeout) { continue; }  // nothing yet; send if you like
+    if (r == httplib::ws::Fail) { break; }
+    handle(msg);
+}
+```
 
 ### CloseStatus
 
@@ -409,7 +425,8 @@ if (ws.connect()) {
 | Macro                                       | Default           | Description                                              |
 |---------------------------------------------|-------------------|----------------------------------------------------------|
 | `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`   | `16777216` (16MB) | Maximum payload size per message                         |
-| `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND`  | `300`             | Read timeout for WebSocket connections (seconds)         |
+| `CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND` | `0`         | Client read timeout (seconds); `0` waits forever         |
+| `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` | `300`       | Server read timeout (seconds)                            |
 | `CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND` | `5`               | Timeout for waiting peer's Close response (seconds)      |
 | `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND` | `30`              | Automatic Ping interval for heartbeat (seconds)          |
 | `CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS`     | `0` (disabled)    | Close the connection after N consecutive unacked pings   |
@@ -446,7 +463,7 @@ The server side has the same `set_websocket_max_missed_pongs()`.
 
 With the default ping interval of 30 seconds, `max_missed_pongs = 2` detects a dead peer within ~60 seconds. The counter is reset every time a Pong frame is received, so the mechanism only works when your code is actively calling `read()` — exactly the pattern a normal WebSocket client already uses.
 
-**The default is `0`**, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses are not checked. Even so, a dead connection does not linger forever: while your code is inside `read()`, `CPPHTTPLIB_WEBSOCKET_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop and `read()` fails if no frame arrives in time. `max_missed_pongs` is the knob for detecting an unresponsive peer faster than that 5-minute fallback.
+**The default is `0`**, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses are not checked. On the server side a dead connection still does not linger: while a handler is inside `read()`, `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop. A client has no such backstop — it waits forever unless you set a read timeout — so there `max_missed_pongs` is what notices an unresponsive peer at all. On either side it is also the knob for noticing one *faster* than the 5-minute fallback.
 
 ## Threading Model
 

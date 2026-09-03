@@ -42,6 +42,9 @@ switch (result) {
   case httplib::ws::ReadResult::Fail:
     // エラーまたは切断
     break;
+  case httplib::ws::ReadResult::Timeout:
+    // 読み取りタイムアウト。接続は開いたまま
+    break;
 }
 ```
 

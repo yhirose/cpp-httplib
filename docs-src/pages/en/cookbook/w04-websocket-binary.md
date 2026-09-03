@@ -42,6 +42,9 @@ switch (result) {
   case httplib::ws::ReadResult::Fail:
     // error or closed
     break;
+  case httplib::ws::ReadResult::Timeout:
+    // read timeout elapsed; the connection is still open
+    break;
 }
 ```
 

@@ -36,6 +36,7 @@ The `read()` return value is a `ReadResult` enum:
 - `ReadResult::Text`: received a text message
 - `ReadResult::Binary`: received a binary message
 - `ReadResult::Fail`: error, or connection closed
+- `ReadResult::Timeout`: the read timeout elapsed with nothing received; the connection is still open. Only appears once a read timeout is set — see [W06. Set Timeouts](../w06-websocket-timeouts)
 
 ## Client: talk to the echo server
 
