@@ -4603,6 +4603,13 @@ private:
 };
 
 template <class Rep, class Period>
+inline void
+WebSocket::set_read_timeout(const std::chrono::duration<Rep, Period> &duration) {
+  detail::duration_to_sec_and_usec(
+      duration, [&](time_t sec, time_t usec) { set_read_timeout(sec, usec); });
+}
+
+template <class Rep, class Period>
 inline void WebSocketClient::set_read_timeout(
     const std::chrono::duration<Rep, Period> &duration) {
   detail::duration_to_sec_and_usec(
@@ -22455,13 +22462,6 @@ inline void WebSocket::set_read_timeout(time_t sec, time_t usec) {
   // negative poll uses for an unbounded wait.
   if (sec == 0 && usec == 0) { sec = -1; }
   strm_.set_read_timeout(sec, usec);
-}
-
-template <class Rep, class Period>
-inline void WebSocket::set_read_timeout(
-    const std::chrono::duration<Rep, Period> &duration) {
-  detail::duration_to_sec_and_usec(
-      duration, [&](time_t sec, time_t usec) { set_read_timeout(sec, usec); });
 }
 
 // WebSocketClient implementation
