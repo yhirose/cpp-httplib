@@ -15611,24 +15611,34 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  if (!basic_auth_password_.empty() || !basic_auth_username_.empty()) {
-    if (!req.has_header("Authorization")) {
-      req.headers.insert(make_basic_authentication_header(
-          basic_auth_username_, basic_auth_password_, false));
+  // Each credential goes only to the hop that reads the message carrying it.
+  // A CONNECT request is read by the proxy, so the origin's Authorization must
+  // not be attached to it; everything sent inside the tunnel it opens is read
+  // by the origin, so Proxy-Authorization must not be attached there.
+  auto is_connect = req.method == "CONNECT";
+
+  if (!is_connect) {
+    if (!basic_auth_password_.empty() || !basic_auth_username_.empty()) {
+      if (!req.has_header("Authorization")) {
+        req.headers.insert(make_basic_authentication_header(
+            basic_auth_username_, basic_auth_password_, false));
+      }
+    }
+
+    if (!bearer_token_auth_token_.empty()) {
+      if (!req.has_header("Authorization")) {
+        req.headers.insert(make_bearer_token_authentication_header(
+            bearer_token_auth_token_, false));
+      }
     }
   }
 
-  if (!bearer_token_auth_token_.empty()) {
-    if (!req.has_header("Authorization")) {
-      req.headers.insert(make_bearer_token_authentication_header(
-          bearer_token_auth_token_, false));
-    }
-  }
-
-  // Proxy-Authorization is only sent when the proxy is actually used for
-  // this target — otherwise NO_PROXY-matched requests would leak proxy
-  // credentials directly to the destination server.
-  if (is_proxy_enabled_for_host(host_)) {
+  // Proxy-Authorization is only sent when the proxy is actually the hop
+  // reading this message: plain HTTP through an enabled proxy, or the CONNECT
+  // that opens a tunnel. Otherwise NO_PROXY-matched requests, and requests
+  // travelling inside a TLS tunnel, would leak proxy credentials to the
+  // destination server.
+  if (is_proxy_enabled_for_host(host_) && (!is_ssl() || is_connect)) {
     if (!proxy_basic_auth_username_.empty() &&
         !proxy_basic_auth_password_.empty() &&
         !req.has_header("Proxy-Authorization")) {
