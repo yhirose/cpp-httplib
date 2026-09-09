@@ -9051,7 +9051,13 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
       if (!lhs.empty()) {
         ssize_t v;
         auto res = detail::from_chars(lhs.data(), lhs.data() + lhs.size(), v);
-        if (res.ec == std::errc{}) { first = v; }
+        // -1 is the sentinel for an absent first-byte-pos, so falling through
+        // on overflow would turn the range into a suffix range.
+        if (res.ec != std::errc{}) {
+          all_valid_ranges = false;
+          return;
+        }
+        first = v;
       }
 
       ssize_t last = -1;

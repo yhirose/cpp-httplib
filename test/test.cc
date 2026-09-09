@@ -2012,6 +2012,27 @@ TEST(ParseHeaderValueTest, Range) {
     EXPECT_FALSE(detail::parse_range_header("bytes=0 -1", ranges));
     EXPECT_TRUE(ranges.empty());
   }
+
+  {
+    // A first-byte-pos that overflows ssize_t must be rejected, not silently
+    // turned into the suffix range "bytes=-100".
+    Ranges ranges;
+    EXPECT_FALSE(
+        detail::parse_range_header("bytes=9223372036854775808-100", ranges));
+    EXPECT_TRUE(ranges.empty());
+  }
+
+  {
+    // RFC 9110 14.1.2: a last-byte-pos greater than the content length is the
+    // remainder of the representation, so it stays accepted.
+    Ranges ranges;
+    auto ret =
+        detail::parse_range_header("bytes=0-99999999999999999999", ranges);
+    EXPECT_TRUE(ret);
+    ASSERT_EQ(1u, ranges.size());
+    EXPECT_EQ(0, ranges[0].first);
+    EXPECT_EQ(-1, ranges[0].second);
+  }
 }
 
 TEST(ParseAcceptEncoding1, AcceptEncoding) {
