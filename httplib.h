@@ -15080,6 +15080,24 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
     return handle;
   }
 
+  // RFC 9112 §6.3: reject an ambiguously framed response for the same reason
+  // ClientImpl::process_request() does. The body reader below prefers the
+  // chunked coding and ignores Content-Length when both are present, so a
+  // response carrying a non-zero Content-Length alongside a Transfer-Encoding,
+  // or a Transfer-Encoding whose final coding is not chunked, must not reach
+  // it. A HEAD or bodyless (204/304) response legitimately carries framing
+  // headers with no body, so leave those to the caller.
+  if (method != "HEAD" &&
+      handle.response->status != StatusCode::NoContent_204 &&
+      handle.response->status != StatusCode::NotModified_304 &&
+      handle.response->has_header("Transfer-Encoding") &&
+      (handle.response->get_header_value_u64("Content-Length") > 0 ||
+       !detail::is_chunked_transfer_encoding(handle.response->headers))) {
+    handle.error = Error::Read;
+    handle.response.reset();
+    return handle;
+  }
+
   handle.body_reader_.stream = handle.stream_;
   handle.body_reader_.payload_max_length = payload_max_length_;
 
@@ -16024,6 +16042,23 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&
       req.method != "CONNECT") {
+    // RFC 9112 §6.3: a response that pairs a Transfer-Encoding with a non-zero
+    // Content-Length, or whose final transfer coding is not chunked, is framed
+    // ambiguously. read_content() below delimits the body by the chunked coding
+    // and drops Content-Length, while an intermediary may do the reverse,
+    // leaving this reusable connection desynchronised so a later response is
+    // paired with the wrong request (response smuggling). The server side
+    // rejects the same shapes; refuse them here rather than guess. A HEAD/204
+    // response carries no body and is excluded above; a 304 is skipped below.
+    if (res.status != StatusCode::NotModified_304 &&
+        res.has_header("Transfer-Encoding") &&
+        (res.get_header_value_u64("Content-Length") > 0 ||
+         !detail::is_chunked_transfer_encoding(res.headers))) {
+      error = Error::Read;
+      output_error_log(error, &req);
+      return false;
+    }
+
     auto redirect = 300 < res.status && res.status < 400 &&
                     res.status != StatusCode::NotModified_304 &&
                     follow_location_;
