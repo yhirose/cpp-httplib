@@ -14929,8 +14929,13 @@ inline Result ClientImpl::send_(Request &&req) {
 inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
                                                 const std::string &ct) {
   (void)for_stream;
-  for (const auto &header : default_headers_) {
-    if (!r.has_header(header.first)) { r.headers.insert(header); }
+  // Default headers are meant for the origin and often carry its credentials
+  // (Authorization, Cookie, API keys). A CONNECT request is read by the proxy,
+  // before the TLS tunnel exists, so none of them go on it.
+  if (r.method != "CONNECT") {
+    for (const auto &header : default_headers_) {
+      if (!r.has_header(header.first)) { r.headers.insert(header); }
+    }
   }
 
   // RFC 9110 5.3 recommends sending control data such as Host first, so

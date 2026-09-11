@@ -25509,6 +25509,47 @@ TEST(ProxyTunnelTest, BearerCredentialsStayWithTheirHop) {
       "Bearer");
 }
 
+TEST(ProxyTunnelTest, DefaultHeadersStayOffConnect) {
+  // Default headers are meant for the origin and often carry its credentials;
+  // the proxy reading the CONNECT request must see none of them.
+  std::atomic<bool> origin_saw_defaults{false};
+
+  proxy_tunnel_test::ScopedSSLServer origin;
+  origin.svr().Get(".*", [&](const Request &req, Response &res) {
+    origin_saw_defaults =
+        req.get_header_value("Authorization") == "Bearer origin-token" &&
+        req.get_header_value("Cookie") == "sid=origin-session" &&
+        req.get_header_value("X-Api-Key") == "origin-key";
+    res.set_content("ok", "text/plain");
+  });
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  // Pinned to 127.0.0.1 for the same reason as the test below.
+  SSLClient cli("127.0.0.1", origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_proxy("127.0.0.1", proxy.port());
+  cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+  cli.set_default_headers({{"Authorization", "Bearer origin-token"},
+                           {"Cookie", "sid=origin-session"},
+                           {"X-Api-Key", "origin-key"}});
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(1, proxy.connect_hits());
+  EXPECT_TRUE(origin_saw_defaults.load());
+
+  auto connect_req = proxy.connect_request();
+  EXPECT_NE(std::string::npos,
+            connect_req.find("\r\nProxy-Authorization: Basic "));
+  EXPECT_EQ(std::string::npos, connect_req.find("\r\nAuthorization: "));
+  EXPECT_EQ(std::string::npos, connect_req.find("\r\nCookie: "));
+  EXPECT_EQ(std::string::npos, connect_req.find("\r\nX-Api-Key: "));
+}
+
 TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
   // Origin inside a CONNECT tunnel replying 407 must not trigger the digest
   // retry; otherwise proxy creds would be sent to the origin.
