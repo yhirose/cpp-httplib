@@ -13632,11 +13632,11 @@ static int start_raw_response_server(const std::string &raw_response,
   return port;
 }
 
-// A response that pairs Content-Length with Transfer-Encoding, or whose final
-// transfer coding is not chunked, is framed ambiguously (RFC 9112 §6.3). The
-// buffered client reads the chunked body and drops Content-Length, so a
-// front-end that trusts Content-Length would disagree about where the body ends
-// (response smuggling). The client must reject such a response.
+// A response that pairs a non-zero Content-Length with Transfer-Encoding is
+// framed ambiguously (RFC 9112 §6.3). The buffered client reads the chunked
+// body and drops Content-Length, so a front-end that trusts Content-Length
+// would disagree about where the body ends (response smuggling). The client
+// must reject such a response.
 TEST(ClientResponseSmugglingTest, ContentLengthAndTransferEncodingRejected) {
   const char *body = "5\r\nhello\r\n0\r\n\r\n";
 
@@ -13654,6 +13654,7 @@ TEST(ClientResponseSmugglingTest, ContentLengthAndTransferEncodingRejected) {
     cli.set_read_timeout(5, 0);
     auto res = cli.Get("/");
     EXPECT_FALSE(static_cast<bool>(res)) << te;
+    EXPECT_EQ(Error::Read, res.error()) << te;
   }
 
   // Control: a chunked-only response stays valid and is read normally.
@@ -13696,6 +13697,7 @@ TEST(ClientResponseSmugglingTest, AmbiguousFramedResponseRejectedForStream) {
     cli.set_read_timeout(5, 0);
     auto stream = cli.open_stream("GET", "/");
     EXPECT_FALSE(stream.is_valid());
+    EXPECT_EQ(Error::Read, stream.error);
   }
 
   // Control: a chunked-only stream is delivered intact.
@@ -13722,6 +13724,85 @@ TEST(ClientResponseSmugglingTest, AmbiguousFramedResponseRejectedForStream) {
       body.append(buffer, static_cast<size_t>(n));
     }
     EXPECT_EQ("hello", body);
+  }
+}
+
+// Unlike a request, a response whose final transfer coding is not chunked is
+// not ambiguous: RFC 9112 §6.3 delimits its body by the server closing the
+// connection. Both read paths must keep accepting it.
+TEST(ClientResponseSmugglingTest, NonChunkedTransferEncodingReadUntilClose) {
+  const std::string response = "HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: gzip\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "hello";
+
+  {
+    std::thread t;
+    auto port = start_raw_response_server(response, &t);
+    auto se = detail::scope_exit([&] { t.join(); });
+
+    Client cli("127.0.0.1", port);
+    cli.set_read_timeout(5, 0);
+    auto res = cli.Get("/");
+    ASSERT_TRUE(static_cast<bool>(res));
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("hello", res->body);
+  }
+
+  {
+    std::thread t;
+    auto port = start_raw_response_server(response, &t);
+    auto se = detail::scope_exit([&] { t.join(); });
+
+    Client cli("127.0.0.1", port);
+    cli.set_read_timeout(5, 0);
+    auto stream = cli.open_stream("GET", "/");
+    ASSERT_TRUE(stream.is_valid());
+
+    std::string body;
+    char buffer[1024];
+    ssize_t n;
+    while ((n = stream.read(buffer, sizeof(buffer))) > 0) {
+      body.append(buffer, static_cast<size_t>(n));
+    }
+    EXPECT_EQ("hello", body);
+  }
+}
+
+// A response to HEAD, and a 204 or 304 response, carries no body, so its
+// framing headers describe nothing to read and must not be rejected.
+TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
+  const char *framing = "Content-Length: 5\r\n"
+                        "Transfer-Encoding: chunked\r\n"
+                        "Connection: close\r\n"
+                        "\r\n";
+
+  {
+    auto response = std::string("HTTP/1.1 200 OK\r\n") + framing;
+
+    std::thread t;
+    auto port = start_raw_response_server(response, &t);
+    auto se = detail::scope_exit([&] { t.join(); });
+
+    Client cli("127.0.0.1", port);
+    cli.set_read_timeout(5, 0);
+    auto res = cli.Head("/");
+    ASSERT_TRUE(static_cast<bool>(res));
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  for (const char *status : {"204 No Content", "304 Not Modified"}) {
+    auto response = std::string("HTTP/1.1 ") + status + "\r\n" + framing;
+
+    std::thread t;
+    auto port = start_raw_response_server(response, &t);
+    auto se = detail::scope_exit([&] { t.join(); });
+
+    Client cli("127.0.0.1", port);
+    cli.set_read_timeout(5, 0);
+    auto res = cli.Get("/");
+    EXPECT_TRUE(static_cast<bool>(res)) << status;
   }
 }
 #endif
