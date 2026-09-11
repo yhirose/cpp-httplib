@@ -19863,6 +19863,105 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   server_thread.join();
 }
 
+// Serves `response` to the single request `fn` makes with a fresh client.
+template <typename Fn>
+static void with_single_response(const std::string &response, Fn fn) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  std::promise<int> port_promise;
+  auto port_future = port_promise.get_future();
+  auto server_thread = serve_single_response(port_promise, response);
+  auto se = detail::scope_exit([&] { server_thread.join(); });
+
+  auto port = port_future.get();
+  ASSERT_GT(port, 0);
+  Client cli("127.0.0.1", port);
+  fn(cli);
+}
+
+// RFC 9112 §6.3: a response that pairs a non-zero Content-Length with
+// Transfer-Encoding is framed ambiguously. Both read paths delimit its body by
+// the chunked coding and drop Content-Length, so a front-end that trusts
+// Content-Length would disagree about where the body ends (response
+// smuggling). The client must reject such a response.
+TEST(ClientResponseSmugglingTest, ContentLengthAndTransferEncodingRejected) {
+  for (const char *te : {"chunked", "gzip, chunked"}) {
+    auto response = std::string("HTTP/1.1 200 OK\r\n") +
+                    "Content-Length: 5\r\n" + "Transfer-Encoding: " + te +
+                    "\r\n" + "Connection: close\r\n" + "\r\n" +
+                    "5\r\nhello\r\n0\r\n\r\n";
+
+    with_single_response(response, [&](Client &cli) {
+      auto res = cli.Get("/");
+      EXPECT_FALSE(static_cast<bool>(res)) << te;
+      EXPECT_EQ(Error::Read, res.error()) << te;
+    });
+
+    with_single_response(response, [&](Client &cli) {
+      auto handle = cli.open_stream("GET", "/");
+      EXPECT_FALSE(handle.is_valid()) << te;
+      EXPECT_EQ(Error::Read, handle.error) << te;
+    });
+  }
+}
+
+// Unambiguous framing stays readable on both paths: chunked alone, and a final
+// coding other than chunked, whose body RFC 9112 §6.3 delimits by the server
+// closing the connection (unlike a request, which must be rejected).
+TEST(ClientResponseSmugglingTest, UnambiguousFramingAccepted) {
+  for (const char *response : {"HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: chunked\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "5\r\nhello\r\n0\r\n\r\n",
+                               "HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: gzip\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "hello"}) {
+    with_single_response(response, [&](Client &cli) {
+      auto res = cli.Get("/");
+      ASSERT_TRUE(static_cast<bool>(res)) << response;
+      EXPECT_EQ("hello", res->body);
+    });
+
+    with_single_response(response, [&](Client &cli) {
+      auto handle = cli.open_stream("GET", "/");
+      ASSERT_TRUE(handle.is_valid()) << response;
+      EXPECT_EQ("hello", read_all(handle));
+    });
+  }
+}
+
+// A response to HEAD, and a 204 or 304 response, carries no body, so its
+// framing headers describe nothing to read and must not be rejected.
+TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
+  const std::string framing = "Content-Length: 5\r\n"
+                              "Transfer-Encoding: chunked\r\n"
+                              "Connection: close\r\n"
+                              "\r\n";
+
+  with_single_response("HTTP/1.1 200 OK\r\n" + framing, [](Client &cli) {
+    EXPECT_TRUE(static_cast<bool>(cli.Head("/")));
+  });
+  with_single_response("HTTP/1.1 200 OK\r\n" + framing, [](Client &cli) {
+    EXPECT_TRUE(cli.open_stream("HEAD", "/").is_valid());
+  });
+
+  for (const char *status : {"204 No Content", "304 Not Modified"}) {
+    auto response = std::string("HTTP/1.1 ") + status + "\r\n" + framing;
+
+    with_single_response(response, [&](Client &cli) {
+      EXPECT_TRUE(static_cast<bool>(cli.Get("/"))) << status;
+    });
+    with_single_response(response, [&](Client &cli) {
+      EXPECT_TRUE(cli.open_stream("GET", "/").is_valid()) << status;
+    });
+  }
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(OpenStreamTest, Gzip) {
   Client cli("127.0.0.1", port_);
