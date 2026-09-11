@@ -13579,234 +13579,6 @@ TEST(ClientVulnerabilityTest, ZipBombWithoutContentLength) {
 }
 #endif
 
-#ifndef _WIN32
-// Accepts one connection on an ephemeral port, drains the client's request
-// headers, writes `raw_response` verbatim, then closes. Returns the port; the
-// caller joins *server_thread.
-static int start_raw_response_server(const std::string &raw_response,
-                                     std::thread *server_thread) {
-  signal(SIGPIPE, SIG_IGN);
-
-  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
-  EXPECT_NE(INVALID_SOCKET, srv);
-  int opt = 1;
-  ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-  detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
-  detail::set_socket_opt_time(srv, SOL_SOCKET, SO_SNDTIMEO, 5, 0);
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = 0; // ephemeral
-  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-  EXPECT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
-
-  sockaddr_in bound{};
-  socklen_t bound_len = sizeof(bound);
-  EXPECT_EQ(
-      0, ::getsockname(srv, reinterpret_cast<sockaddr *>(&bound), &bound_len));
-  auto port = static_cast<int>(ntohs(bound.sin_port));
-
-  EXPECT_EQ(0, ::listen(srv, 1));
-
-  *server_thread = std::thread([srv, raw_response] {
-    sockaddr_in cli_addr{};
-    socklen_t cli_len = sizeof(cli_addr);
-    auto cli = ::accept(srv, reinterpret_cast<sockaddr *>(&cli_addr), &cli_len);
-    if (cli != INVALID_SOCKET) {
-      char buf[4096];
-      size_t total = 0;
-      while (total < sizeof(buf)) {
-        auto n = ::recv(cli, buf + total, sizeof(buf) - total, 0);
-        if (n <= 0) break;
-        total += static_cast<size_t>(n);
-        if (std::string(buf, total).find("\r\n\r\n") != std::string::npos) {
-          break;
-        }
-      }
-      ::send(cli, raw_response.data(), raw_response.size(), 0);
-      detail::close_socket(cli);
-    }
-    detail::close_socket(srv);
-  });
-
-  return port;
-}
-
-// A response that pairs a non-zero Content-Length with Transfer-Encoding is
-// framed ambiguously (RFC 9112 §6.3). The buffered client reads the chunked
-// body and drops Content-Length, so a front-end that trusts Content-Length
-// would disagree about where the body ends (response smuggling). The client
-// must reject such a response.
-TEST(ClientResponseSmugglingTest, ContentLengthAndTransferEncodingRejected) {
-  const char *body = "5\r\nhello\r\n0\r\n\r\n";
-
-  for (const char *te : {"chunked", "gzip, chunked"}) {
-    std::string response = std::string("HTTP/1.1 200 OK\r\n") +
-                           "Content-Length: 5\r\n" +
-                           "Transfer-Encoding: " + te + "\r\n" +
-                           "Connection: close\r\n" + "\r\n" + body;
-
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto res = cli.Get("/");
-    EXPECT_FALSE(static_cast<bool>(res)) << te;
-    EXPECT_EQ(Error::Read, res.error()) << te;
-  }
-
-  // Control: a chunked-only response stays valid and is read normally.
-  {
-    std::string response = "HTTP/1.1 200 OK\r\n"
-                           "Transfer-Encoding: chunked\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "5\r\nhello\r\n0\r\n\r\n";
-
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto res = cli.Get("/");
-    ASSERT_TRUE(static_cast<bool>(res));
-    EXPECT_EQ(StatusCode::OK_200, res->status);
-    EXPECT_EQ("hello", res->body);
-  }
-}
-
-// The streaming path (open_stream) sets up its body reader the same way and
-// must refuse the same ambiguously framed responses.
-TEST(ClientResponseSmugglingTest, AmbiguousFramedResponseRejectedForStream) {
-  {
-    std::string response = "HTTP/1.1 200 OK\r\n"
-                           "Content-Length: 5\r\n"
-                           "Transfer-Encoding: chunked\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "5\r\nhello\r\n0\r\n\r\n";
-
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto stream = cli.open_stream("GET", "/");
-    EXPECT_FALSE(stream.is_valid());
-    EXPECT_EQ(Error::Read, stream.error);
-  }
-
-  // Control: a chunked-only stream is delivered intact.
-  {
-    std::string response = "HTTP/1.1 200 OK\r\n"
-                           "Transfer-Encoding: chunked\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "5\r\nhello\r\n0\r\n\r\n";
-
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto stream = cli.open_stream("GET", "/");
-    ASSERT_TRUE(stream.is_valid());
-
-    std::string body;
-    char buffer[1024];
-    ssize_t n;
-    while ((n = stream.read(buffer, sizeof(buffer))) > 0) {
-      body.append(buffer, static_cast<size_t>(n));
-    }
-    EXPECT_EQ("hello", body);
-  }
-}
-
-// Unlike a request, a response whose final transfer coding is not chunked is
-// not ambiguous: RFC 9112 §6.3 delimits its body by the server closing the
-// connection. Both read paths must keep accepting it.
-TEST(ClientResponseSmugglingTest, NonChunkedTransferEncodingReadUntilClose) {
-  const std::string response = "HTTP/1.1 200 OK\r\n"
-                               "Transfer-Encoding: gzip\r\n"
-                               "Connection: close\r\n"
-                               "\r\n"
-                               "hello";
-
-  {
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto res = cli.Get("/");
-    ASSERT_TRUE(static_cast<bool>(res));
-    EXPECT_EQ(StatusCode::OK_200, res->status);
-    EXPECT_EQ("hello", res->body);
-  }
-
-  {
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto stream = cli.open_stream("GET", "/");
-    ASSERT_TRUE(stream.is_valid());
-
-    std::string body;
-    char buffer[1024];
-    ssize_t n;
-    while ((n = stream.read(buffer, sizeof(buffer))) > 0) {
-      body.append(buffer, static_cast<size_t>(n));
-    }
-    EXPECT_EQ("hello", body);
-  }
-}
-
-// A response to HEAD, and a 204 or 304 response, carries no body, so its
-// framing headers describe nothing to read and must not be rejected.
-TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
-  const char *framing = "Content-Length: 5\r\n"
-                        "Transfer-Encoding: chunked\r\n"
-                        "Connection: close\r\n"
-                        "\r\n";
-
-  {
-    auto response = std::string("HTTP/1.1 200 OK\r\n") + framing;
-
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto res = cli.Head("/");
-    ASSERT_TRUE(static_cast<bool>(res));
-    EXPECT_EQ(StatusCode::OK_200, res->status);
-  }
-
-  for (const char *status : {"204 No Content", "304 Not Modified"}) {
-    auto response = std::string("HTTP/1.1 ") + status + "\r\n" + framing;
-
-    std::thread t;
-    auto port = start_raw_response_server(response, &t);
-    auto se = detail::scope_exit([&] { t.join(); });
-
-    Client cli("127.0.0.1", port);
-    cli.set_read_timeout(5, 0);
-    auto res = cli.Get("/");
-    EXPECT_TRUE(static_cast<bool>(res)) << status;
-  }
-}
-#endif
-
 TEST(HostAndPortPropertiesTest, NoSSL) {
   httplib::Client cli("www.google.com", 1234);
   ASSERT_EQ("www.google.com", cli.host());
@@ -20074,6 +19846,105 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   EXPECT_FALSE(handle.is_valid());
 
   server_thread.join();
+}
+
+// Serves `response` to the single request `fn` makes with a fresh client.
+template <typename Fn>
+static void with_single_response(const std::string &response, Fn fn) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  std::promise<int> port_promise;
+  auto port_future = port_promise.get_future();
+  auto server_thread = serve_single_response(port_promise, response);
+  auto se = detail::scope_exit([&] { server_thread.join(); });
+
+  auto port = port_future.get();
+  ASSERT_GT(port, 0);
+  Client cli("127.0.0.1", port);
+  fn(cli);
+}
+
+// RFC 9112 §6.3: a response that pairs a non-zero Content-Length with
+// Transfer-Encoding is framed ambiguously. Both read paths delimit its body by
+// the chunked coding and drop Content-Length, so a front-end that trusts
+// Content-Length would disagree about where the body ends (response
+// smuggling). The client must reject such a response.
+TEST(ClientResponseSmugglingTest, ContentLengthAndTransferEncodingRejected) {
+  for (const char *te : {"chunked", "gzip, chunked"}) {
+    auto response = std::string("HTTP/1.1 200 OK\r\n") +
+                    "Content-Length: 5\r\n" + "Transfer-Encoding: " + te +
+                    "\r\n" + "Connection: close\r\n" + "\r\n" +
+                    "5\r\nhello\r\n0\r\n\r\n";
+
+    with_single_response(response, [&](Client &cli) {
+      auto res = cli.Get("/");
+      EXPECT_FALSE(static_cast<bool>(res)) << te;
+      EXPECT_EQ(Error::Read, res.error()) << te;
+    });
+
+    with_single_response(response, [&](Client &cli) {
+      auto handle = cli.open_stream("GET", "/");
+      EXPECT_FALSE(handle.is_valid()) << te;
+      EXPECT_EQ(Error::Read, handle.error) << te;
+    });
+  }
+}
+
+// Unambiguous framing stays readable on both paths: chunked alone, and a final
+// coding other than chunked, whose body RFC 9112 §6.3 delimits by the server
+// closing the connection (unlike a request, which must be rejected).
+TEST(ClientResponseSmugglingTest, UnambiguousFramingAccepted) {
+  for (const char *response : {"HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: chunked\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "5\r\nhello\r\n0\r\n\r\n",
+                               "HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: gzip\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "hello"}) {
+    with_single_response(response, [&](Client &cli) {
+      auto res = cli.Get("/");
+      ASSERT_TRUE(static_cast<bool>(res)) << response;
+      EXPECT_EQ("hello", res->body);
+    });
+
+    with_single_response(response, [&](Client &cli) {
+      auto handle = cli.open_stream("GET", "/");
+      ASSERT_TRUE(handle.is_valid()) << response;
+      EXPECT_EQ("hello", read_all(handle));
+    });
+  }
+}
+
+// A response to HEAD, and a 204 or 304 response, carries no body, so its
+// framing headers describe nothing to read and must not be rejected.
+TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
+  const std::string framing = "Content-Length: 5\r\n"
+                              "Transfer-Encoding: chunked\r\n"
+                              "Connection: close\r\n"
+                              "\r\n";
+
+  with_single_response("HTTP/1.1 200 OK\r\n" + framing, [](Client &cli) {
+    EXPECT_TRUE(static_cast<bool>(cli.Head("/")));
+  });
+  with_single_response("HTTP/1.1 200 OK\r\n" + framing, [](Client &cli) {
+    EXPECT_TRUE(cli.open_stream("HEAD", "/").is_valid());
+  });
+
+  for (const char *status : {"204 No Content", "304 Not Modified"}) {
+    auto response = std::string("HTTP/1.1 ") + status + "\r\n" + framing;
+
+    with_single_response(response, [&](Client &cli) {
+      EXPECT_TRUE(static_cast<bool>(cli.Get("/"))) << status;
+    });
+    with_single_response(response, [&](Client &cli) {
+      EXPECT_TRUE(cli.open_stream("GET", "/").is_valid()) << status;
+    });
+  }
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT

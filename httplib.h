@@ -8365,6 +8365,17 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
   return case_ignore::equal(last_coding, "chunked");
 }
 
+inline bool has_conflicting_content_length(const Headers &headers) {
+  // RFC 9112 §6.3: a message carrying both Transfer-Encoding and a non-zero
+  // Content-Length is framed ambiguously. The body readers here delimit it by
+  // the transfer coding and drop Content-Length, while an intermediary may do
+  // the reverse, so the two disagree on where the body ends and a reused
+  // connection is desynchronised (request/response smuggling). Content-Length:
+  // 0 is tolerated for compatibility with existing peers.
+  return has_header(headers, "Transfer-Encoding") &&
+         get_header_value_u64(headers, "Content-Length", 0, 0) > 0;
+}
+
 template <typename T, typename U>
 bool prepare_content_receiver(T &x, int &status,
                               ContentReceiverWithProgress receiver,
@@ -14268,8 +14279,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // coding is not chunked, which leaves the body length undeterminable. The
   // latter must not fall through to the "no body" path, or the body bytes are
   // parsed as the next request on a persistent connection.
-  if (req.has_header("Transfer-Encoding") &&
-      (req.get_header_value_u64("Content-Length") > 0 ||
+  if (detail::has_conflicting_content_length(req.headers) ||
+      (req.has_header("Transfer-Encoding") &&
        !detail::is_chunked_transfer_encoding(req.headers))) {
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
@@ -15080,17 +15091,12 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
     return handle;
   }
 
-  // RFC 9112 §6.3: reject a response that pairs a Transfer-Encoding with a
-  // non-zero Content-Length, for the same reason ClientImpl::process_request()
-  // does. A Transfer-Encoding whose final coding is not chunked is left alone:
-  // unlike a request, such a response is delimited by the connection closing.
-  // A HEAD or bodyless (204/304) response legitimately carries framing headers
-  // with no body, so leave those to the caller.
+  // Same framing check as ClientImpl::process_request(). A HEAD or bodyless
+  // (204/304) response legitimately carries framing headers with no body.
   if (method != "HEAD" &&
       handle.response->status != StatusCode::NoContent_204 &&
       handle.response->status != StatusCode::NotModified_304 &&
-      handle.response->has_header("Transfer-Encoding") &&
-      handle.response->get_header_value_u64("Content-Length") > 0) {
+      detail::has_conflicting_content_length(handle.response->headers)) {
     handle.error = Error::Read;
     handle.response.reset();
     return handle;
@@ -16040,23 +16046,12 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
   // Body
   if ((res.status != StatusCode::NoContent_204) && req.method != "HEAD" &&
       req.method != "CONNECT") {
-    // RFC 9112 §6.3: a response that pairs a Transfer-Encoding with a non-zero
-    // Content-Length is framed ambiguously and ought to be handled as an
-    // error. read_content() below delimits the body by the chunked coding and
-    // drops Content-Length, while an intermediary may do the reverse, leaving
-    // this reusable connection desynchronised so a later response is paired
-    // with the wrong request (response smuggling). Content-Length: 0 is
-    // tolerated, as on the server side.
-    //
-    // Unlike a request, a response whose final transfer coding is not chunked
-    // is not ambiguous: its body runs until the server closes the connection,
-    // which read_content() already does, so it is not rejected here.
-    //
-    // A HEAD/204 response carries no body and is excluded above; a 304 is
-    // skipped below.
+    // Reject ambiguous framing (RFC 9112 §6.3). Unlike a request, a response
+    // whose final transfer coding is not chunked is not ambiguous: its body
+    // runs until the server closes the connection, so it is not rejected.
+    // HEAD/204 are excluded above and a 304 carries no body.
     if (res.status != StatusCode::NotModified_304 &&
-        res.has_header("Transfer-Encoding") &&
-        res.get_header_value_u64("Content-Length") > 0) {
+        detail::has_conflicting_content_length(res.headers)) {
       error = Error::Read;
       output_error_log(error, &req);
       return false;
