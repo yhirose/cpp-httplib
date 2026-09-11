@@ -22,23 +22,25 @@ template <typename T> void ProxyTest(T &cli, bool basic) {
 }
 
 TEST(ProxyTest, NoSSLBasic) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   ProxyTest(cli, true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLBasic) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   ProxyTest(cli, true);
 }
 
 TEST(ProxyTest, NoSSLDigest) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   ProxyTest(cli, false);
 }
 
 TEST(ProxyTest, SSLDigest) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   ProxyTest(cli, false);
 }
 #endif
@@ -63,23 +65,25 @@ void RedirectProxyText(T &cli, const char *path, bool basic) {
 }
 
 TEST(RedirectTest, HTTPBinNoSSLBasic) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   RedirectProxyText(cli, "/redirect/2", true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, HTTPBinNoSSLDigest) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   RedirectProxyText(cli, "/redirect/2", false);
 }
 
 TEST(RedirectTest, HTTPBinSSLBasic) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   RedirectProxyText(cli, "/redirect/2", true);
 }
 
 TEST(RedirectTest, HTTPBinSSLDigest) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   RedirectProxyText(cli, "/redirect/2", false);
 }
 #endif
@@ -333,22 +337,24 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, NoSSLWithBasic) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, SSLWithBasic) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, NoSSLWithDigest) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   KeepAliveTest(cli, false);
 }
 
 TEST(KeepAliveTest, SSLWithDigest) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   KeepAliveTest(cli, false);
 }
 #endif
@@ -357,7 +363,8 @@ TEST(KeepAliveTest, SSLWithDigest) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLOpenStream) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   cli.set_proxy("localhost", 3128);
   cli.set_proxy_basic_auth("hello", "world");
 
