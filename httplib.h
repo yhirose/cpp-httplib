@@ -14929,9 +14929,8 @@ inline Result ClientImpl::send_(Request &&req) {
 inline void ClientImpl::prepare_default_headers(Request &r, bool for_stream,
                                                 const std::string &ct) {
   (void)for_stream;
-  // Default headers are meant for the origin and often carry its credentials
-  // (Authorization, Cookie, API keys). A CONNECT request is read by the proxy,
-  // before the TLS tunnel exists, so none of them go on it.
+  // Default headers are meant for the origin and may carry its credentials, so
+  // keep them off the CONNECT request the proxy reads.
   if (r.method != "CONNECT") {
     for (const auto &header : default_headers_) {
       if (!r.has_header(header.first)) { r.headers.insert(header); }
@@ -15616,33 +15615,23 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  // Each credential goes only to the hop that reads the message carrying it.
-  // A CONNECT request is read by the proxy, so the origin's Authorization must
-  // not be attached to it; everything sent inside the tunnel it opens is read
-  // by the origin, so Proxy-Authorization must not be attached there.
+  // A CONNECT request is read by the proxy; everything sent through the tunnel
+  // it opens is read by the origin. Each credential goes only to its own hop.
   auto is_connect = req.method == "CONNECT";
 
-  if (!is_connect) {
+  if (!is_connect && !req.has_header("Authorization")) {
     if (!basic_auth_password_.empty() || !basic_auth_username_.empty()) {
-      if (!req.has_header("Authorization")) {
-        req.headers.insert(make_basic_authentication_header(
-            basic_auth_username_, basic_auth_password_, false));
-      }
-    }
-
-    if (!bearer_token_auth_token_.empty()) {
-      if (!req.has_header("Authorization")) {
-        req.headers.insert(make_bearer_token_authentication_header(
-            bearer_token_auth_token_, false));
-      }
+      req.headers.insert(make_basic_authentication_header(
+          basic_auth_username_, basic_auth_password_, false));
+    } else if (!bearer_token_auth_token_.empty()) {
+      req.headers.insert(make_bearer_token_authentication_header(
+          bearer_token_auth_token_, false));
     }
   }
 
-  // Proxy-Authorization is only sent when the proxy is actually the hop
-  // reading this message: plain HTTP through an enabled proxy, or the CONNECT
-  // that opens a tunnel. Otherwise NO_PROXY-matched requests, and requests
-  // travelling inside a TLS tunnel, would leak proxy credentials to the
-  // destination server.
+  // Proxy-Authorization is only sent when the proxy reads this message —
+  // otherwise NO_PROXY-matched requests, and requests inside a TLS tunnel,
+  // would leak proxy credentials to the destination server.
   if (is_proxy_enabled_for_host(host_) && (!is_ssl() || is_connect)) {
     if (!proxy_basic_auth_username_.empty() &&
         !proxy_basic_auth_password_.empty() &&

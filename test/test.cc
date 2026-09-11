@@ -25444,21 +25444,22 @@ private:
 // Sends one request through the CONNECT proxy to the TLS origin with a
 // credential configured for each hop, and checks that each credential reaches
 // only the hop it was configured for: the proxy's on the CONNECT request, the
-// origin's on the tunnelled request.
+// origin's (every header in origin_headers) on the tunnelled request.
 void CredentialsStayWithTheirHop(
     const std::function<void(SSLClient &)> &set_credentials,
-    const std::string &scheme) {
+    const std::string &scheme,
+    const std::vector<std::string> &origin_headers = {"Authorization"}) {
   std::atomic<int> origin_hits{0};
   std::atomic<bool> origin_saw_proxy_authz{false};
-  std::atomic<bool> origin_saw_authz{false};
+  std::atomic<bool> origin_saw_headers{false};
 
   ScopedSSLServer origin;
   origin.svr().Get(".*", [&](const Request &req, Response &res) {
     origin_hits++;
-    if (req.has_header("Proxy-Authorization")) {
-      origin_saw_proxy_authz = true;
-    }
-    if (req.has_header("Authorization")) { origin_saw_authz = true; }
+    origin_saw_proxy_authz = req.has_header("Proxy-Authorization");
+    origin_saw_headers =
+        std::all_of(origin_headers.begin(), origin_headers.end(),
+                    [&](const std::string &h) { return req.has_header(h); });
     res.set_content("ok", "text/plain");
   });
   origin.listen();
@@ -25478,15 +25479,17 @@ void CredentialsStayWithTheirHop(
   EXPECT_EQ(1, origin_hits.load());
   EXPECT_EQ(1, proxy.connect_hits());
 
-  EXPECT_TRUE(origin_saw_authz.load());
+  EXPECT_TRUE(origin_saw_headers.load());
   EXPECT_FALSE(origin_saw_proxy_authz.load())
       << "Proxy-Authorization must not be sent inside the tunnel";
 
   auto connect_req = proxy.connect_request();
   EXPECT_NE(std::string::npos,
             connect_req.find("\r\nProxy-Authorization: " + scheme + " "));
-  EXPECT_EQ(std::string::npos, connect_req.find("\r\nAuthorization: "))
-      << "Authorization must not be sent to the proxy on CONNECT";
+  for (const auto &h : origin_headers) {
+    EXPECT_EQ(std::string::npos, connect_req.find("\r\n" + h + ": "))
+        << h << " must not be sent to the proxy on CONNECT";
+  }
 }
 
 } // namespace proxy_tunnel_test
@@ -25510,44 +25513,14 @@ TEST(ProxyTunnelTest, BearerCredentialsStayWithTheirHop) {
 }
 
 TEST(ProxyTunnelTest, DefaultHeadersStayOffConnect) {
-  // Default headers are meant for the origin and often carry its credentials;
-  // the proxy reading the CONNECT request must see none of them.
-  std::atomic<bool> origin_saw_defaults{false};
-
-  proxy_tunnel_test::ScopedSSLServer origin;
-  origin.svr().Get(".*", [&](const Request &req, Response &res) {
-    origin_saw_defaults =
-        req.get_header_value("Authorization") == "Bearer origin-token" &&
-        req.get_header_value("Cookie") == "sid=origin-session" &&
-        req.get_header_value("X-Api-Key") == "origin-key";
-    res.set_content("ok", "text/plain");
-  });
-  origin.listen();
-
-  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
-  ASSERT_NE(0, proxy.port());
-
-  // Pinned to 127.0.0.1 for the same reason as the test below.
-  SSLClient cli("127.0.0.1", origin.port());
-  cli.enable_server_certificate_verification(false);
-  cli.set_proxy("127.0.0.1", proxy.port());
-  cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
-  cli.set_default_headers({{"Authorization", "Bearer origin-token"},
-                           {"Cookie", "sid=origin-session"},
-                           {"X-Api-Key", "origin-key"}});
-
-  auto res = cli.Get("/x");
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(1, proxy.connect_hits());
-  EXPECT_TRUE(origin_saw_defaults.load());
-
-  auto connect_req = proxy.connect_request();
-  EXPECT_NE(std::string::npos,
-            connect_req.find("\r\nProxy-Authorization: Basic "));
-  EXPECT_EQ(std::string::npos, connect_req.find("\r\nAuthorization: "));
-  EXPECT_EQ(std::string::npos, connect_req.find("\r\nCookie: "));
-  EXPECT_EQ(std::string::npos, connect_req.find("\r\nX-Api-Key: "));
+  proxy_tunnel_test::CredentialsStayWithTheirHop(
+      [](SSLClient &cli) {
+        cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+        cli.set_default_headers({{"Authorization", "Bearer origin-token"},
+                                 {"Cookie", "sid=origin-session"},
+                                 {"X-Api-Key", "origin-key"}});
+      },
+      "Basic", {"Authorization", "Cookie", "X-Api-Key"});
 }
 
 TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
