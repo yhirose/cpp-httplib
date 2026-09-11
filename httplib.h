@@ -235,7 +235,10 @@
 #endif
 
 // 0 waits forever. A read timeout is how a caller gets control back to send on
-// the same connection; it is not a liveness check (that is ping/pong).
+// the same connection; it is not a liveness check (that is ping/pong). Only a
+// timeout set at runtime through set_read_timeout() is reported as
+// ws::Timeout; when one of these compile-time defaults elapses, read() returns
+// ws::Fail and closes the connection.
 #ifndef CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND
 #define CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND 0
 #endif
@@ -4443,6 +4446,11 @@ public:
   // Bound how long read() waits before returning Timeout. 0 waits forever.
   // A server handler owns its connection's timeout this way; a client sets it
   // through WebSocketClient. Safe to call while another thread is in read().
+  //
+  // Only a timeout set here is reported as Timeout. The compile-time default
+  // (CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND) is a backstop rather
+  // than a request for control, so when it elapses read() returns Fail and
+  // closes the connection, and `while (ws.read(msg))` ends as it always has.
   void set_read_timeout(time_t sec, time_t usec = 0);
   template <class Rep, class Period>
   void set_read_timeout(const std::chrono::duration<Rep, Period> &duration);
@@ -4482,6 +4490,10 @@ private:
   int max_missed_pongs_;
   int unacked_pings_ = 0;
   std::atomic<bool> closed_{false};
+  // Set once the caller has bounded read() through set_read_timeout(). Until
+  // then the timeout in effect is the compile-time default, and elapsing it
+  // is a failure that closes the connection, not a Timeout.
+  std::atomic<bool> read_timeout_set_{false};
   std::mutex write_mutex_;
   // Owned by whichever thread is parsing frames off strm_. Only one thread
   // may do so: read_websocket_frame() reads a payload until it has the whole
@@ -4571,6 +4583,7 @@ private:
   std::unique_ptr<WebSocket> ws_;
   time_t read_timeout_sec_ = CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND;
   time_t read_timeout_usec_ = 0;
+  bool read_timeout_set_ = false; // see WebSocket::read_timeout_set_
   time_t write_timeout_sec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_SECOND;
   time_t write_timeout_usec_ = CPPHTTPLIB_CLIENT_WRITE_TIMEOUT_USECOND;
   time_t websocket_ping_interval_sec_ =
@@ -22311,8 +22324,11 @@ inline ReadResult WebSocket::read(std::string &msg) {
         impl::read_websocket_frame(strm_, opcode, payload, fin, is_server_,
                                    CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH);
     // A timeout landed on a frame boundary: the connection is untouched and
-    // still usable, so hand control back without closing it.
-    if (r == impl::FrameRead::Timeout) { return Timeout; }
+    // still usable, so hand control back without closing it. That is only
+    // useful to a caller who asked for the timeout; the compile-time default
+    // is a backstop against a peer gone quiet, and elapsing it closes the
+    // connection so a plain `while (ws.read(msg))` loop ends.
+    if (r == impl::FrameRead::Timeout && read_timeout_set_) { return Timeout; }
     if (r != impl::FrameRead::Ok) {
       closed_ = true;
       return Fail;
@@ -22503,6 +22519,7 @@ inline void WebSocket::set_read_timeout(time_t sec, time_t usec) {
   // negative poll uses for an unbounded wait.
   if (sec == 0 && usec == 0) { sec = -1; }
   strm_.set_read_timeout(sec, usec);
+  read_timeout_set_ = true;
 }
 
 // WebSocketClient implementation
@@ -22727,6 +22744,9 @@ inline Result WebSocketClient::connect() {
   ws_ = std::unique_ptr<WebSocket>(new WebSocket(std::move(strm), req, false,
                                                  websocket_ping_interval_sec_,
                                                  websocket_max_missed_pongs_));
+  // The stream was created with the timeout already; tell the WebSocket
+  // whether it came from the caller, so read() knows to report it as Timeout.
+  ws_->read_timeout_set_ = read_timeout_set_;
   return Result{Error::Success, upgrade.status, std::move(upgrade.headers)};
 }
 
@@ -22759,6 +22779,7 @@ inline const std::string &WebSocketClient::subprotocol() const {
 inline void WebSocketClient::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
+  read_timeout_set_ = true;
   // The members above only seed the next connect(); read() consults the
   // stream, so an already-open connection has to be told directly.
   if (ws_) { ws_->set_read_timeout(sec, usec); }

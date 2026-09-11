@@ -66,9 +66,9 @@ enum ReadResult : int {
 
 Returned by `read()`. Since `Fail` is `0`, the result works naturally in boolean contexts — `while (ws.read(msg))` continues until the connection closes. When you need to distinguish text from binary, check the return value directly.
 
-`Timeout` only appears once a read timeout is in effect (a client waits forever unless you set one; a server uses `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`). It means the timeout elapsed on a message boundary: nothing was consumed and the connection is still open, so you can send on it and read again.
+`Timeout` is only returned for a read timeout you set yourself with `set_read_timeout()`. It means the timeout elapsed on a message boundary: nothing was consumed and the connection is still open, so you can send on it and read again. The compile-time defaults (`CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`, 300 seconds on the server; a client waits forever) are a backstop against a peer that has gone quiet, not a request for control: when one of them elapses, `read()` returns `Fail` and closes the connection, so code that never calls `set_read_timeout()` can keep using `while (ws.read(msg))`.
 
-**`msg` is left untouched on `Timeout`.** Because `Timeout` is non-zero, `while (ws.read(msg))` keeps looping — with the *previous* message still in `msg`. Once a read timeout is set, test the result instead:
+**`msg` is left untouched on `Timeout`.** Because `Timeout` is non-zero, `while (ws.read(msg))` keeps looping — with the *previous* message still in `msg`. Once you set a read timeout, test the result instead:
 
 ```cpp
 ws.set_read_timeout(std::chrono::milliseconds(100));
