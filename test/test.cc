@@ -2010,13 +2010,7 @@ TEST(ParseHeaderValueTest, Range) {
     EXPECT_FALSE(detail::parse_range_header("bytes=0--1", ranges));
     EXPECT_FALSE(detail::parse_range_header("bytes=0- 1", ranges));
     EXPECT_FALSE(detail::parse_range_header("bytes=0 -1", ranges));
-    EXPECT_TRUE(ranges.empty());
-  }
-
-  {
-    // A first-byte-pos that overflows ssize_t must be rejected, not silently
-    // turned into the suffix range "bytes=-100".
-    Ranges ranges;
+    // Overflows ssize_t; must not be read as the suffix range "bytes=-100".
     EXPECT_FALSE(
         detail::parse_range_header("bytes=9223372036854775808-100", ranges));
     EXPECT_TRUE(ranges.empty());
