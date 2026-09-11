@@ -15,7 +15,7 @@
 	* HTTPLIB_REQUIRE_BROTLI (default off)
 	* HTTPLIB_REQUIRE_ZSTD (default off)
 	* HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES (default off)
-	* HTTPLIB_USE_NON_BLOCKING_GETADDRINFO (default on)
+	* HTTPLIB_USE_NON_BLOCKING_GETADDRINFO (default on when supported)
 	* HTTPLIB_COMPILE (default off)
 	* HTTPLIB_INSTALL (default on)
 	* HTTPLIB_SHARED (default off) builds as a shared library (if HTTPLIB_COMPILE is ON)
@@ -181,6 +181,20 @@ if(HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES)
 	set(HTTPLIB_IS_USING_MACOSX_AUTOMATIC_ROOT_CERTIFICATES FALSE)
 endif()
 set(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO ${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO})
+if(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO AND WIN32)
+	include(CheckCXXSymbolExists)
+
+	set(_httplib_cmake_required_definitions ${CMAKE_REQUIRED_DEFINITIONS})
+	list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_WIN32_WINNT=0x0A00)
+	check_cxx_symbol_exists(GetAddrInfoExCancel "winsock2.h;ws2tcpip.h" HTTPLIB_HAVE_GETADDRINFOEXCANCEL)
+	set(CMAKE_REQUIRED_DEFINITIONS ${_httplib_cmake_required_definitions})
+	unset(_httplib_cmake_required_definitions)
+
+	if(NOT HTTPLIB_HAVE_GETADDRINFOEXCANCEL)
+		set(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO FALSE)
+		message(STATUS "GetAddrInfoExCancel is unavailable; disabling non-blocking getaddrinfo.")
+	endif()
+endif()
 
 # Threads needed for <thread> on some systems, and for <pthread.h> on Linux
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -367,7 +381,7 @@ target_link_libraries(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 		# Needed for API from MacOS Security framework
 		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_OPENSSL}>,$<BOOL:${HTTPLIB_IS_USING_MACOSX_AUTOMATIC_ROOT_CERTIFICATES}>>:-framework CFNetwork -framework CoreFoundation -framework Security>"
 		# Needed for non-blocking getaddrinfo on MacOS
-		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>>:-framework CFNetwork -framework CoreFoundation>"
+		"$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO}>>:-framework CFNetwork -framework CoreFoundation>"
 		# Can't put multiple targets in a single generator expression or it bugs out.
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::common>
 		$<$<BOOL:${HTTPLIB_IS_USING_BROTLI}>:Brotli::encoder>
@@ -390,7 +404,7 @@ target_compile_definitions(${PROJECT_NAME} ${_INTERFACE_OR_PUBLIC}
 	$<$<BOOL:${HTTPLIB_IS_USING_WOLFSSL}>:CPPHTTPLIB_WOLFSSL_SUPPORT>
 	$<$<BOOL:${HTTPLIB_IS_USING_MBEDTLS}>:CPPHTTPLIB_MBEDTLS_SUPPORT>
 	$<$<AND:$<PLATFORM_ID:Darwin>,$<BOOL:${HTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES}>>:CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES>
-	$<$<BOOL:${HTTPLIB_USE_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>
+	$<$<BOOL:${HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO}>:CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO>
 )
 
 # CMake configuration files installation directory
