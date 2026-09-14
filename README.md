@@ -347,6 +347,25 @@ int port = svr.bind_to_any_port("0.0.0.0");
 svr.listen_after_bind();
 ```
 
+### Port sharing and exclusive binding
+
+By default, the server socket enables address/port reuse: `SO_REUSEPORT` where it is available (Linux, macOS), and `SO_REUSEADDR` otherwise (Windows). A restarted server can bind again immediately, but binding to a port that another server is already listening on also succeeds, and connections are distributed between them.
+
+If you want `listen()` to fail when the port is already in use, replace the default socket options with `set_socket_options`:
+
+```cpp
+svr.set_socket_options([](socket_t sock) {
+#ifdef _WIN32
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
+});
+```
+
+> [!NOTE]
+> Setting only `SO_REUSEADDR` is not enough on Windows. There, `SO_REUSEADDR` allows two sockets that both set it to bind to the same port, so use `SO_EXCLUSIVEADDRUSE` instead.
+
 ### Static File Server
 
 ```cpp
