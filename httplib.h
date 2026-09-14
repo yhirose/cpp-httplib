@@ -10902,6 +10902,16 @@ inline bool setup_client_tls_session(
  */
 
 inline void default_socket_options(socket_t sock) {
+#ifdef _WIN32
+  // On Windows, SO_REUSEADDR has a different, dangerous meaning: it allows a
+  // socket to bind to a port that another socket is already bound to (i.e.
+  // the bind silently steals the port) instead of returning WSAEADDRINUSE.
+  // Use SO_EXCLUSIVEADDRUSE to get the POSIX-like exclusive binding; a bind
+  // to an occupied port then fails with WSAEADDRINUSE. (SO_EXCLUSIVEADDRUSE
+  // only affects bind, so this is harmless for client sockets which connect
+  // without binding.)
+  set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
   set_socket_opt(sock, SOL_SOCKET,
 #ifdef SO_REUSEPORT
                  SO_REUSEPORT,
@@ -10909,6 +10919,7 @@ inline void default_socket_options(socket_t sock) {
                  SO_REUSEADDR,
 #endif
                  1);
+#endif
 }
 
 inline bool set_socket_opt(socket_t sock, int level, int optname, int optval) {
