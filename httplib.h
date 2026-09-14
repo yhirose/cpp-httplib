@@ -5910,6 +5910,13 @@ inline bool parse_trailers(stream_line_reader &line_reader, Headers &dest,
     // to look up.
     split(trailer_header.data(), trailer_header.data() + trailer_header.size(),
           ',', [&](const char *b, const char *e) {
+            // A legitimate message declares only a handful of trailers. Cap the
+            // set so a peer cannot grow it without bound: an oversized set only
+            // arises from an attempt to force many colliding names into
+            // quadratic lookups (case_ignore::hash is unkeyed).
+            if (declared_trailers.size() >= CPPHTTPLIB_HEADER_MAX_COUNT) {
+              return;
+            }
             std::string key(b, e);
             if (prohibited_trailers.find(key) == prohibited_trailers.end()) {
               declared_trailers.insert(key);
@@ -5920,6 +5927,8 @@ inline bool parse_trailers(stream_line_reader &line_reader, Headers &dest,
   size_t trailer_header_count = 0;
   while (strcmp(line_reader.ptr(), "\r\n") != 0) {
     if (line_reader.size() > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
+    // Count every received trailer field, not only the declared ones stored in
+    // dest, so undeclared fields cannot keep this loop running past the limit.
     if (trailer_header_count >= CPPHTTPLIB_HEADER_MAX_COUNT) { return false; }
 
     constexpr auto line_terminator_len = 2;
@@ -5932,11 +5941,12 @@ inline bool parse_trailers(stream_line_reader &line_reader, Headers &dest,
                         if (declared_trailers.find(key) !=
                             declared_trailers.end()) {
                           dest.emplace(key, val);
-                          trailer_header_count++;
                         }
                       })) {
       return false;
     }
+
+    trailer_header_count++;
 
     if (!line_reader.getline()) { return false; }
   }

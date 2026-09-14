@@ -18665,6 +18665,108 @@ TEST(HeaderSmugglingTest, DuplicateTrailerFieldLinesDeclareAllTrailers) {
   EXPECT_FALSE(observed_content_length);
 }
 
+// Undeclared trailer fields must count toward the trailer limit too. Otherwise
+// a peer can keep the trailer-parsing loop running indefinitely by sending an
+// unbounded run of fields that are never declared, because the counter would
+// only advance for declared fields.
+TEST(HeaderSmugglingTest, UndeclaredTrailerFieldsCountTowardLimit) {
+  Server svr;
+
+  bool handler_called = false;
+
+  svr.Get("/", [&](const Request & /*req*/, Response &res) {
+    handler_called = true;
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Declare nothing, then send far more undeclared trailer fields than the
+  // header-count limit. Parsing must stop and reject the request rather than
+  // read every line.
+  std::string req = "GET / HTTP/1.1\r\n"
+                    "Transfer-Encoding: chunked\r\n"
+                    "\r\n"
+                    "0\r\n";
+  for (int i = 0; i < CPPHTTPLIB_HEADER_MAX_COUNT + 10; i++) {
+    req += "X-Undeclared-" + std::to_string(i) + ": v\r\n";
+  }
+  req += "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res, port));
+
+  // The request is rejected before the handler runs.
+  EXPECT_FALSE(handler_called);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, res.find("\r\n")));
+}
+
+// The set of declared trailer names is capped so a peer cannot grow it without
+// bound (an unkeyed hash set would otherwise be a hash-flooding target). A name
+// declared past the cap is not honored, even if the field is actually sent.
+TEST(HeaderSmugglingTest, DeclaredTrailerNamesAreCappedAtHeaderMaxCount) {
+  Server svr;
+
+  // One name inside the cap and one past it, so the test tracks the cap rather
+  // than a fixed count.
+  constexpr int declared_count = CPPHTTPLIB_HEADER_MAX_COUNT + 50;
+  const std::string within_cap_name = "X-T-0";
+  const std::string past_cap_name = "X-T-" + std::to_string(declared_count - 1);
+
+  bool observed_within_cap = false;
+  bool observed_past_cap = false;
+
+  svr.Get("/", [&](const Request &req, Response &res) {
+    observed_within_cap = req.has_trailer(within_cap_name);
+    observed_past_cap = req.has_trailer(past_cap_name);
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Declare more trailer names than the cap in a single Trailer field, then
+  // actually send the first (within the cap) and the last (past it).
+  std::string trailer_decl = "Trailer: ";
+  for (int i = 0; i < declared_count; i++) {
+    if (i != 0) { trailer_decl += ", "; }
+    trailer_decl += "X-T-" + std::to_string(i);
+  }
+  trailer_decl += "\r\n";
+
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Transfer-Encoding: chunked\r\n" +
+                          trailer_decl +
+                          "\r\n"
+                          "0\r\n" +
+                          within_cap_name + ": a\r\n" + past_cap_name +
+                          ": b\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, res.find("\r\n")));
+
+  // A name within the cap is honored; one declared past the cap is dropped.
+  EXPECT_TRUE(observed_within_cap);
+  EXPECT_FALSE(observed_past_cap);
+}
+
 // A direct client that is not listed in trusted_proxies must not be able to
 // spoof req.remote_addr by sending an arbitrary X-Forwarded-For header. Only
 // the peer address on the actual TCP connection determines whether the
