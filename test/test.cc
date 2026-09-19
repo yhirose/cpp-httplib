@@ -23462,6 +23462,20 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   ws::WebSocketClient client1("ws://localhost:" + std::to_string(port) + "/ws");
   EXPECT_FALSE(client1.connect());
 
+  // The rejection is framed like any other HTTP response
+  {
+    Client cli("localhost", port);
+    Headers headers = {{"Upgrade", "websocket"},
+                       {"Connection", "Upgrade"},
+                       {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                       {"Sec-WebSocket-Version", "13"}};
+    auto res = cli.Get("/ws", headers);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+    EXPECT_EQ("12", res->get_header_value("Content-Length"));
+    EXPECT_EQ("Unauthorized", res->body);
+  }
+
   // With Authorization header - should succeed
   Headers headers = {{"Authorization", "Bearer token123"}};
   ws::WebSocketClient client2("ws://localhost:" + std::to_string(port) + "/ws",
@@ -23471,6 +23485,70 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   std::string msg;
   ASSERT_TRUE(client2.read(msg));
   EXPECT_EQ("hello", msg);
+  client2.close();
+
+  svr.stop();
+  t.join();
+}
+
+TEST(WebSocketPreRequestTest, RejectWithoutAuth) {
+  Server svr;
+
+  std::atomic<int> pre_request_calls{0};
+  std::atomic<bool> route_matched{false};
+  svr.set_pre_request_handler([&](const Request &req, Response &res) {
+    pre_request_calls++;
+    if (req.matched_route == "/ws/:id") { route_matched = true; }
+    if (req.get_header_value("Authorization") != "Bearer token123") {
+      res.status = StatusCode::Unauthorized_401;
+      res.set_content("Unauthorized", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  std::atomic<bool> handler_called{false};
+  svr.WebSocket("/ws/:id", [&](const Request &req, ws::WebSocket &ws) {
+    handler_called = true;
+    ws.send(req.matched_route + " " + req.path_params.at("id"));
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  // Without Authorization header - should be rejected before upgrade
+  ws::WebSocketClient client1("ws://localhost:" + std::to_string(port) +
+                              "/ws/1");
+  EXPECT_FALSE(client1.connect());
+  EXPECT_FALSE(handler_called);
+  EXPECT_EQ(1, pre_request_calls);
+  EXPECT_TRUE(route_matched);
+
+  // The rejection is an ordinary HTTP response, not a protocol switch
+  {
+    Client cli("localhost", port);
+    Headers headers = {{"Upgrade", "websocket"},
+                       {"Connection", "Upgrade"},
+                       {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                       {"Sec-WebSocket-Version", "13"}};
+    auto res = cli.Get("/ws/1", headers);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+    EXPECT_EQ("12", res->get_header_value("Content-Length"));
+    EXPECT_EQ("Unauthorized", res->body);
+  }
+  EXPECT_FALSE(handler_called);
+
+  // With Authorization header - should succeed
+  Headers headers = {{"Authorization", "Bearer token123"}};
+  ws::WebSocketClient client2(
+      "ws://localhost:" + std::to_string(port) + "/ws/2", headers);
+  ASSERT_TRUE(client2.connect());
+  std::string msg;
+  ASSERT_TRUE(client2.read(msg));
+  EXPECT_EQ("/ws/:id 2", msg);
+  EXPECT_TRUE(handler_called);
   client2.close();
 
   svr.stop();
