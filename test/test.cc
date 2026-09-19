@@ -18057,6 +18057,164 @@ TEST_F(ExpectTokenTest, ExpectationAmongOthersIsRecognized) {
   EXPECT_TRUE(got_100);
 }
 
+// `100 Continue` is sent only when the server starts reading the body, so a
+// request rejected before that never invites the client to send it. The
+// requests below carry the expectation but withhold the body, as a client
+// waiting for `100 Continue` would.
+// A POST that expects `100 Continue` and withholds its two-byte body.
+static std::string expect_headers_only(const std::string &path) {
+  return "POST " + path +
+         " HTTP/1.1\r\n"
+         "Host: localhost\r\n"
+         "Content-Length: 2\r\n"
+         "Expect: 100-continue\r\n"
+         "\r\n";
+}
+
+class ExpectLazyContinueTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.set_pre_routing_handler([](const Request &req, Response &res) {
+      if (req.path == "/pre-routing") {
+        res.status = StatusCode::Unauthorized_401;
+        return Server::HandlerResponse::Handled;
+      }
+      return Server::HandlerResponse::Unhandled;
+    });
+    svr_.set_pre_request_handler([](const Request &req, Response &res) {
+      if (req.matched_route == "/pre-request") {
+        res.status = StatusCode::Forbidden_403;
+        return Server::HandlerResponse::Handled;
+      }
+      return Server::HandlerResponse::Unhandled;
+    });
+    svr_.Post("/pre-routing", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+    svr_.Post("/pre-request", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+    svr_.Post("/reader-used", [](const Request &, Response &res,
+                                 const ContentReader &content_reader) {
+      std::string body;
+      content_reader([&](const char *data, size_t len) {
+        body.append(data, len);
+        return true;
+      });
+      res.set_content(body, "text/plain");
+    });
+    svr_.Post("/reader-unused",
+              [](const Request &, Response &res, const ContentReader &) {
+                res.set_content("ignored", "text/plain");
+              });
+    port_ = svr_.bind_to_any_port(HOST);
+    thread_ = thread([&]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) { thread_.join(); }
+  }
+
+  // Sends `req` and reads until the server closes the connection. Returns
+  // false if the read had to wait for the client-side timeout instead.
+  bool send_until_closed(const std::string &req, std::string *resp) const {
+    auto start = std::chrono::steady_clock::now();
+    if (!send_request(3, req, resp, port_)) { return false; }
+    auto elapsed = std::chrono::steady_clock::now() - start;
+    return elapsed < std::chrono::seconds(2);
+  }
+
+  // The final response comes without `100 Continue`, and the server closes
+  // the connection since the body may or may not follow.
+  void expect_final_without_interim(const std::string &path,
+                                    const char *status_line) const {
+    std::string resp;
+    ASSERT_TRUE(send_until_closed(expect_headers_only(path), &resp));
+    EXPECT_EQ(std::string::npos, resp.find("100 Continue"));
+    EXPECT_EQ(0u, resp.find(status_line));
+    EXPECT_NE(std::string::npos, resp.find("Connection: close"));
+  }
+
+  Server svr_;
+  int port_ = 0;
+  thread thread_;
+};
+
+TEST_F(ExpectLazyContinueTest, PreRoutingRejectsWithoutInterimResponse) {
+  expect_final_without_interim("/pre-routing", "HTTP/1.1 401");
+}
+
+TEST_F(ExpectLazyContinueTest, PreRequestRejectsWithoutInterimResponse) {
+  expect_final_without_interim("/pre-request", "HTTP/1.1 403");
+}
+
+TEST_F(ExpectLazyContinueTest, UnknownRouteRejectsWithoutInterimResponse) {
+  expect_final_without_interim("/nowhere", "HTTP/1.1 404");
+}
+
+TEST_F(ExpectLazyContinueTest, UnreadContentReaderClosesWithoutInterim) {
+  expect_final_without_interim("/reader-unused", "HTTP/1.1 200");
+}
+
+TEST_F(ExpectLazyContinueTest, ContentReaderGetsInterimResponse) {
+  // The body follows once `100 Continue` has had time to arrive.
+  auto req = expect_headers_only("/reader-used");
+  req.insert(req.size() - 2, "Connection: close\r\n");
+  std::string resp;
+  ASSERT_TRUE(send_request_in_parts(3, {req, "hi"}, &resp, port_));
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 100 Continue"));
+  EXPECT_NE(std::string::npos, resp.find("HTTP/1.1 200"));
+  EXPECT_NE(std::string::npos, resp.find("hi"));
+}
+
+TEST_F(ExpectLazyContinueTest, ClientWithholdsBodyWhenRejected) {
+  // Large enough for the client to add `Expect: 100-continue` itself.
+  const size_t length = CPPHTTPLIB_EXPECT_100_THRESHOLD * 4;
+  std::atomic<bool> body_sent{false};
+
+  Client cli(HOST, port_);
+  auto res = cli.Post(
+      "/pre-request", length,
+      [&](size_t /*offset*/, size_t len, DataSink &sink) {
+        body_sent = true;
+        std::string chunk(len, 'x');
+        sink.write(chunk.data(), chunk.size());
+        return true;
+      },
+      "application/octet-stream");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+  EXPECT_FALSE(body_sent);
+}
+
+TEST(Expect100ContinueHandlerTest, ExpectationFailedIsFinalResponse) {
+  Server svr;
+  svr.set_expect_100_continue_handler([](const Request &, Response &) {
+    return StatusCode::ExpectationFailed_417;
+  });
+  svr.Post("/p", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  std::string resp;
+  ASSERT_TRUE(send_request(3, expect_headers_only("/p"), &resp, port));
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 417"));
+  EXPECT_NE(std::string::npos, resp.find("Connection: close"));
+  // Exactly one response: the route handler must not run after the 417.
+  EXPECT_EQ(std::string::npos, resp.find("HTTP/1.1", 1));
+}
+
 #ifndef _WIN32
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";
