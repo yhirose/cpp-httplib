@@ -343,6 +343,18 @@ svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws)
 });
 ```
 
+The check above runs after the handshake, so the client sees a successful upgrade followed by a close frame. To refuse the upgrade itself with an HTTP status, use a pre-routing or pre-request handler. Both run before the `101 Switching Protocols` response, and `req.matched_route` is available in the pre-request handler:
+
+```cpp
+svr.set_pre_request_handler([](const httplib::Request &req, httplib::Response &res) {
+    if (req.matched_route == "/ws" && req.get_header_value("Authorization").empty()) {
+        res.status = httplib::StatusCode::Unauthorized_401;
+        return httplib::Server::HandlerResponse::Handled; // not upgraded
+    }
+    return httplib::Server::HandlerResponse::Unhandled;
+});
+```
+
 ### Custom Headers and Timeouts
 
 ```cpp

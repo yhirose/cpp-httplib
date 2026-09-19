@@ -107,6 +107,8 @@ svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws)
 });
 ```
 
+A check inside the handler runs after the handshake has completed. To refuse the connection with an HTTP status such as 401 before it is upgraded, use `set_pre_request_handler()` instead. It also runs for WebSocket routes. See [S11. Authenticate per route with a pre-request handler](../../cookbook/s11-pre-request).
+
 ## Using WSS
 
 WebSocket over HTTPS (WSS) is also supported. On the server side, just register a WebSocket handler on `httplib::SSLServer`.

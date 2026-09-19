@@ -37,6 +37,8 @@ svr.set_pre_request_handler(
 
 `matched_route`はパスパラメーターを展開する**前**のパターン文字列（例: `/admin/users/:id`）です。特定の値ではなく、ルート定義のパターンで判定できるので、IDや名前に左右されません。
 
+`svr.WebSocket()`で登録したルートでも、Pre-requestハンドラは呼ばれます。呼ばれるのは`101 Switching Protocols`を返す前なので、`Handled`を返すとそのHTTPレスポンス（403など）がそのまま返り、WebSocketへのアップグレードは行われません。
+
 ## 戻り値の意味
 
 Pre-routingハンドラと同じく、`HandlerResponse`を返します。

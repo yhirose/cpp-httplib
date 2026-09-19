@@ -587,6 +587,8 @@ Request received
 
 Use `pre_routing_handler` to reject a request as early as possible, before the route is known. Use `pre_request_handler` for route-specific checks, since `req.matched_route` is available and the body has not been read yet.
 
+A WebSocket upgrade request that matches a route registered with `svr.WebSocket()` takes a shorter path: `pre_routing_handler`, then route matching (`req.matched_route` is set), then `pre_request_handler`, then the WebSocket handler. If either hook returns `Handled`, its response is sent as a regular HTTP response and the connection is not upgraded. Once the connection is upgraded, `post_routing_handler` does not run.
+
 ### Response user data
 
 `res.user_data` is a type-safe key-value store that lets pre-routing or pre-request handlers pass arbitrary data to route handlers.
