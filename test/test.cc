@@ -11982,6 +11982,48 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   EXPECT_EQ(StatusCode::OK_200, resb->status);
   EXPECT_EQ("b", resb->body);
 }
+
+// Closing an idle keep-alive connection sends close_notify and returns. The
+// server must not wait for the client's close_notify: an idle client never
+// sends one, so the worker would be held until the read timeout expires, and
+// stop() would wait for it.
+TEST(KeepAliveTest, SSLIdleCloseDoesNotWaitForPeer) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(1);
+  svr.set_read_timeout(10, 0);
+  svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    if (listen_thread.joinable()) {
+      svr.stop();
+      listen_thread.join();
+    }
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Stay idle past the keep-alive timeout so the server closes the connection.
+  std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+  auto start = std::chrono::steady_clock::now();
+  svr.stop();
+  listen_thread.join();
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - start)
+                     .count();
+  EXPECT_LT(elapsed, 3000);
+}
 #endif
 
 class ServerTestWithAI_PASSIVE : public ::testing::Test {
