@@ -7020,6 +7020,53 @@ TEST_F(ServerTest, RejectsChunkSizeWithLeadingPlus) {
       cli_, "+4\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
 }
 
+// RFC 9112 §7.1.1: a chunk-ext is made of tokens and quoted-strings, so the
+// chunk-size line carries no CR, LF or other control character ahead of its
+// terminator. Such a line must be refused rather than read as extension text.
+TEST_F(ServerTest, RejectsBareLFInChunkExtension) {
+  expect_chunked_body_rejected(
+      cli_, "4;\nxx\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsBareLFAfterChunkSize) {
+  expect_chunked_body_rejected(
+      cli_, "4\nxx\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsBareCRInChunkExtension) {
+  expect_chunked_body_rejected(
+      cli_, "4;a\rb\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsControlCharacterInChunkExtension) {
+  expect_chunked_body_rejected(
+      cli_, "4;a\x01"
+            "b\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, AcceptsChunkExtension) {
+  Request req;
+  req.method = "POST";
+  req.path = "/chunked";
+
+  std::string host_and_port;
+  host_and_port += HOST;
+  host_and_port += ":";
+  host_and_port += std::to_string(PORT);
+
+  req.headers.emplace("Host", host_and_port.c_str());
+  req.headers.emplace("Content-Length", "0");
+  req.headers.emplace("Transfer-Encoding", "chunked");
+  req.body = "4;name=value\r\ndech\r\n"
+             "f ; note=\"a;b c\"\r\nunked post body\r\n"
+             "0;last\r\n\r\n";
+
+  auto res = std::make_shared<Response>();
+  auto error = Error::Success;
+  ASSERT_TRUE(cli_.send(req, *res, error));
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
 TEST_F(ServerTest, GetStreamed2) {
   auto res = cli_.Get("/streamed", Headers{{make_range_header({{2, 3}})}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());

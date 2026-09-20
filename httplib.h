@@ -15316,7 +15316,24 @@ inline ssize_t ChunkedDecoder::read_payload(char *buf, size_t len,
     while (is_space_or_tab(*p)) {
       ++p;
     }
-    if (*p != '\0' && *p != ';' && *p != '\r' && *p != '\n') { return -1; }
+
+    // RFC 9112 §7.1.1: only a chunk-ext may sit between the size and the line
+    // terminator, and it is built from tokens and quoted-strings, so it never
+    // holds a CR, LF or any other control character. getline() reads up to the
+    // CRLF, so a bare LF left in here would be swallowed as extension text
+    // while an intermediary that ends the line on it delimits the chunks
+    // differently, and the two disagree on where the body ends (request
+    // smuggling).
+    auto eol = lr.ptr() + lr.size();
+    if (lr.end_with_crlf()) {
+      eol -= 2;
+    } else if (p < eol && eol[-1] == '\n') {
+      eol -= 1;
+    }
+    if (p < eol && *p != ';') { return -1; }
+    for (; p < eol; ++p) {
+      if (!is_space_or_tab(*p) && !fields::is_field_vchar(*p)) { return -1; }
+    }
 
     if (chunk_len == 0) {
       chunk_remaining = 0;
