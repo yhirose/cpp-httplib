@@ -10141,6 +10141,93 @@ TEST(RequestLineInjectionTest, ClientRejectsCRLFTargetEndToEnd) {
   }
 }
 
+TEST(RequestLineInjectionTest, RejectsNonTokenMethod) {
+  // Methods that are tokens (RFC 9110 Section 9.1) are written verbatim,
+  // including extension methods.
+  const std::string good_methods[] = {"GET", "PROPFIND", "M-SEARCH"};
+  for (const auto &method : good_methods) {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, method, "/");
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(method + " / HTTP/1.1\r\n", strm.get_buffer());
+  }
+
+  // A method carrying CR/LF would split the request line and smuggle a whole
+  // request ahead of the real one. A space or an empty method corrupts the
+  // request line. All must be rejected before anything reaches the wire.
+  const std::string evil_methods[] = {
+      "GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET",
+      "GET\r\nInjected: pwned",
+      "GET\r",
+      "GET\n",
+      "GE T",
+      "",
+  };
+  for (const auto &evil : evil_methods) {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, evil, "/");
+    EXPECT_LT(n, 0);
+    EXPECT_TRUE(strm.get_buffer().empty());
+  }
+}
+
+TEST(RequestLineInjectionTest, ClientRejectsNonTokenMethodEndToEnd) {
+  // End-to-end counterpart to RejectsNonTokenMethod: a smuggling method passed
+  // through Client::send must fail with Error::Write and no request, neither
+  // the smuggled one nor the real one, may reach the server.
+  Server svr;
+
+  std::atomic<int> request_count(0);
+  svr.set_pre_routing_handler([&](const Request &, Response &res) {
+    request_count++;
+    res.status = StatusCode::OK_200;
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+    // Nothing is written, so shorten the read timeout the connection would
+    // otherwise sit in.
+    cli.set_read_timeout(1, 0);
+
+    const std::string evil_methods[] = {
+        "GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET",
+        "GE T",
+        "",
+    };
+    for (const auto &evil : evil_methods) {
+      Request req;
+      req.method = evil;
+      req.path = "/";
+      auto res = cli.send(req);
+      EXPECT_FALSE(res);
+      EXPECT_EQ(Error::Write, res.error());
+    }
+
+    auto handle =
+        cli.open_stream("GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET", "/");
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(Error::Write, handle.error);
+
+    // A valid request on the same client still goes through.
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  EXPECT_EQ(1, request_count.load());
+}
+
 // Sends a raw request and verifies that there isn't a crash or exception.
 static void test_raw_request(const std::string &req,
                              std::string *out = nullptr) {
