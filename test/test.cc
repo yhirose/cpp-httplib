@@ -6987,10 +6987,9 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
-// GHSA-h6wq-j5mv-f3q8: the server must reject malformed chunk-size lines
-// rather than treat them as valid lengths.
 template <typename ClientT>
-static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
+static void expect_chunked_body_status(ClientT &cli, const char *body,
+                                       int expected_status) {
   Request req;
   req.method = "POST";
   req.path = "/chunked";
@@ -7008,7 +7007,14 @@ static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
   auto res = std::make_shared<Response>();
   auto error = Error::Success;
   ASSERT_TRUE(cli.send(req, *res, error));
-  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ(expected_status, res->status);
+}
+
+// GHSA-h6wq-j5mv-f3q8: the server must reject malformed chunk-size lines
+// rather than treat them as valid lengths.
+template <typename ClientT>
+static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
+  expect_chunked_body_status(cli, body, StatusCode::BadRequest_400);
 }
 
 TEST_F(ServerTest, RejectsNegativeChunkSize) {
@@ -7039,32 +7045,19 @@ TEST_F(ServerTest, RejectsBareCRInChunkExtension) {
 }
 
 TEST_F(ServerTest, RejectsControlCharacterInChunkExtension) {
+  // The literal stays split: a hex escape consumes every hex digit that
+  // follows, so "\x01b" would be the single byte \x1b, not \x01 then 'b'.
   expect_chunked_body_rejected(
       cli_, "4;a\x01"
             "b\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
 }
 
 TEST_F(ServerTest, AcceptsChunkExtension) {
-  Request req;
-  req.method = "POST";
-  req.path = "/chunked";
-
-  std::string host_and_port;
-  host_and_port += HOST;
-  host_and_port += ":";
-  host_and_port += std::to_string(PORT);
-
-  req.headers.emplace("Host", host_and_port.c_str());
-  req.headers.emplace("Content-Length", "0");
-  req.headers.emplace("Transfer-Encoding", "chunked");
-  req.body = "4;name=value\r\ndech\r\n"
-             "f ; note=\"a;b c\"\r\nunked post body\r\n"
-             "0;last\r\n\r\n";
-
-  auto res = std::make_shared<Response>();
-  auto error = Error::Success;
-  ASSERT_TRUE(cli_.send(req, *res, error));
-  EXPECT_EQ(StatusCode::OK_200, res->status);
+  expect_chunked_body_status(cli_,
+                             "4;name=value\r\ndech\r\n"
+                             "f ; note=\"a;b c\"\r\nunked post body\r\n"
+                             "0;last\r\n\r\n",
+                             StatusCode::OK_200);
 }
 
 TEST_F(ServerTest, GetStreamed2) {
