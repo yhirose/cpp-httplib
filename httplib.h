@@ -15301,22 +15301,45 @@ inline ssize_t ChunkedDecoder::read_payload(char *buf, size_t len,
     stream_line_reader lr(strm, line_buf, sizeof(line_buf));
     if (!lr.getline()) { return -1; }
 
+    // Everything below is bounded by eol rather than by the buffer's NUL, so
+    // the line terminator is never mistaken for line content.
+    const char *eol = lr.ptr() + lr.size();
+    if (lr.end_with_crlf()) {
+      eol -= 2;
+    } else if (eol != lr.ptr() && eol[-1] == '\n') {
+      // Only reachable under CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR, where
+      // getline() ends the line on a bare LF. That LF is the terminator, so it
+      // has to come off here or the check below would reject the line.
+      eol -= 1;
+    }
+
     // RFC 9112 §7.1: chunk-size = 1*HEXDIG
     const char *p = lr.ptr();
     int v = 0;
-    if (!is_hex(*p, v)) { return -1; }
+    if (p == eol || !is_hex(*p, v)) { return -1; }
 
     size_t chunk_len = 0;
     constexpr size_t chunk_len_max = (std::numeric_limits<size_t>::max)();
-    for (; is_hex(*p, v); ++p) {
+    for (; p < eol && is_hex(*p, v); ++p) {
       if (chunk_len > (chunk_len_max >> 4)) { return -1; }
       chunk_len = (chunk_len << 4) | static_cast<size_t>(v);
     }
 
-    while (is_space_or_tab(*p)) {
+    while (p < eol && is_space_or_tab(*p)) {
       ++p;
     }
-    if (*p != '\0' && *p != ';' && *p != '\r' && *p != '\n') { return -1; }
+
+    // RFC 9112 §7.1.1: only a chunk-ext may sit between the size and the line
+    // terminator, and it is built from tokens and quoted-strings, so it never
+    // holds a CR, LF or any other control character. getline() reads up to the
+    // CRLF, so a bare LF left in here would be swallowed as extension text
+    // while an intermediary that ends the line on it delimits the chunks
+    // differently, and the two disagree on where the body ends (request
+    // smuggling).
+    if (p < eol && *p != ';') { return -1; }
+    for (; p < eol; ++p) {
+      if (!is_space_or_tab(*p) && !fields::is_field_vchar(*p)) { return -1; }
+    }
 
     if (chunk_len == 0) {
       chunk_remaining = 0;
