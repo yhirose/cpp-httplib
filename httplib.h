@@ -2986,7 +2986,7 @@ private:
   bool read_response_line(Stream &strm, const Request &req, Response &res,
                           bool skip_100_continue = true) const;
   bool write_request(Stream &strm, Request &req, bool close_connection,
-                     Error &error, bool skip_body = false);
+                     Error &error, bool skip_body, bool &rejected_locally);
   bool write_request_body(Stream &strm, Request &req, Error &error);
   void prepare_default_headers(Request &r, bool for_stream,
                                const std::string &ct);
@@ -15681,7 +15681,9 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
 
 inline bool ClientImpl::write_request(Stream &strm, Request &req,
                                       bool close_connection, Error &error,
-                                      bool skip_body) {
+                                      bool skip_body, bool &rejected_locally) {
+  rejected_locally = false;
+
   // Prepare additional headers
   if (close_connection) {
     if (!req.has_header("Connection")) {
@@ -15775,11 +15777,13 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       // set_path_encode(false)) must fail the request cleanly instead of
       // emitting a request-line-less, header-injecting request.
       error = Error::Write;
+      rejected_locally = true;
       output_error_log(error, &req);
       return false;
     }
     if (!detail::check_and_write_headers(bstrm, req.headers, header_writer_,
                                          error)) {
+      rejected_locally = true;
       output_error_log(error, &req);
       return false;
     }
@@ -16048,8 +16052,16 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       detail::has_header_token(req.headers, "Expect", "100-continue");
 
   // Send request (skip body if using Expect: 100-continue)
+  auto rejected_locally = false;
   auto write_request_success =
-      write_request(strm, req, close_connection, error, expect_100_continue);
+      write_request(strm, req, close_connection, error, expect_100_continue,
+                    rejected_locally);
+
+  // A failed write normally still reads the response below, since the server
+  // may have answered early (e.g. 413/414) and closed while the body was being
+  // sent. A request rejected before any byte reached the socket gets no such
+  // response, and waiting for one would block until the read timeout.
+  if (rejected_locally) { return false; }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl() && !expect_100_continue) {

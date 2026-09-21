@@ -10196,9 +10196,6 @@ TEST(RequestLineInjectionTest, ClientRejectsNonTokenMethodEndToEnd) {
 
   {
     Client cli(HOST, port);
-    // Nothing is written, so shorten the read timeout the connection would
-    // otherwise sit in.
-    cli.set_read_timeout(1, 0);
 
     const std::string evil_methods[] = {
         "GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET",
@@ -17413,6 +17410,54 @@ TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
   EXPECT_EQ(Error::InvalidHeaders, res.error());
 
   server_thread.join();
+}
+
+// A request rejected before any byte reaches the socket must fail right away
+// instead of waiting for a response the server will never send.
+TEST(ClientRejectedRequestTest, DoesNotWaitForResponse) {
+  // The kernel completes the TCP handshake from the listen backlog, so the
+  // client connects, but nothing ever reads, responds or closes.
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 1));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 8));
+
+  auto cli = Client("127.0.0.1", PORT + 1);
+  cli.set_read_timeout(10, 0);
+
+  auto elapsed_ms = [](std::chrono::steady_clock::time_point start) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now() - start)
+        .count();
+  };
+
+  {
+    Request req;
+    req.method = "GE T";
+    req.path = "/";
+    auto start = std::chrono::steady_clock::now();
+    auto res = cli.send(req);
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::Write, res.error());
+    EXPECT_LT(elapsed_ms(start), 1000);
+  }
+
+  {
+    auto start = std::chrono::steady_clock::now();
+    auto res = cli.Get("/", Headers{{"A", "B\r\nEvil: 1"}});
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::InvalidHeaders, res.error());
+    EXPECT_LT(elapsed_ms(start), 1000);
+  }
+
+  EXPECT_FALSE(cli.is_socket_open());
+
+  detail::close_socket(srv);
 }
 
 TEST(PathParamsTest, StaticMatch) {
