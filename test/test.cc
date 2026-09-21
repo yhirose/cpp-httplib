@@ -17460,6 +17460,48 @@ TEST(ClientRejectedRequestTest, DoesNotWaitForResponse) {
   detail::close_socket(srv);
 }
 
+TEST(ClientRejectedRequestTest, OpenStreamSendsNothingOnInvalidHeader) {
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 1));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 1));
+
+  std::string received;
+  auto server_thread = std::thread([&] {
+    auto sock = ::accept(srv, nullptr, nullptr);
+    if (sock == INVALID_SOCKET) { return; }
+    detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 2, 0);
+
+    char buf[2048];
+    ssize_t n;
+    while ((n = ::recv(sock, buf, sizeof(buf), 0)) > 0) {
+      received.append(buf, static_cast<size_t>(n));
+    }
+    detail::close_socket(sock);
+  });
+
+  {
+    auto cli = Client("127.0.0.1", PORT + 1);
+
+    // "Z" sorts after the default headers, so writing straight to the socket
+    // would have sent the request line and those headers before the rejection.
+    auto handle =
+        cli.open_stream("GET", "/", Params{}, Headers{{"Z", "B\r\nEvil: 1"}});
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(Error::InvalidHeaders, handle.error);
+  }
+
+  server_thread.join();
+  detail::close_socket(srv);
+
+  EXPECT_TRUE(received.empty()) << received;
+}
+
 TEST(PathParamsTest, StaticMatch) {
   const auto pattern = "/users/all";
   detail::PathParamsMatcher matcher(pattern);
