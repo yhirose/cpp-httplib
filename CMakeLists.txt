@@ -192,7 +192,7 @@ if(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO AND WIN32)
 
 	if(NOT HTTPLIB_HAVE_GETADDRINFOEXCANCEL)
 		set(HTTPLIB_IS_USING_NON_BLOCKING_GETADDRINFO FALSE)
-		message(STATUS "GetAddrInfoExCancel is unavailable; disabling non-blocking getaddrinfo.")
+		message(WARNING "GetAddrInfoExCancel is unavailable; disabling non-blocking getaddrinfo.")
 	endif()
 endif()
 
