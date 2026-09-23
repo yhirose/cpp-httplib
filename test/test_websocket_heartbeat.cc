@@ -9,6 +9,8 @@
 
 #include "gtest/gtest.h"
 
+#include <future>
+
 using namespace httplib;
 
 class WebSocketHeartbeatTest : public ::testing::Test {
@@ -189,6 +191,76 @@ TEST_F(WebSocketPongTimeoutTest, ClientDetectsNonResponsivePeer) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
+  EXPECT_FALSE(client.is_open());
+}
+
+// The compile-time client read timeout (3s here) was never asked for through
+// set_read_timeout(), so when it elapses read() reports Fail and closes the
+// connection rather than handing back a Timeout on a still-open one.
+TEST_F(WebSocketPongTimeoutTest, CompileTimeClientReadTimeoutIsFail) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
+  client.set_websocket_ping_interval(0);
+  ASSERT_TRUE(client.connect());
+
+  // Server pings are off and its handler never sends, so nothing arrives.
+  std::string msg;
+  EXPECT_EQ(client.read(msg), ws::Fail);
+  EXPECT_FALSE(client.is_open());
+}
+
+// The compile-time server read timeout (3s here) is a backstop that reclaims
+// the worker from a peer gone quiet, not a timeout the handler asked for. When
+// it elapses read() must return Fail, so a handler written as
+// `while (ws.read(msg))` ends instead of re-running its body with the previous
+// message still in `msg`.
+class WebSocketServerReadTimeoutTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.set_websocket_ping_interval(0);
+    svr_.WebSocket("/ws", [this](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      while (ws.read(msg)) {
+        iterations_++;
+        ws.send(msg);
+      }
+      handler_done_.set_value();
+    });
+
+    port_ = svr_.bind_to_any_port("localhost");
+    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+  void TearDown() override {
+    svr_.stop();
+    thread_.join();
+  }
+
+  Server svr_;
+  int port_;
+  std::thread thread_;
+  std::atomic<int> iterations_{0};
+  std::promise<void> handler_done_;
+};
+
+TEST_F(WebSocketServerReadTimeoutTest, BackstopEndsHandlerLoop) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
+  client.set_websocket_ping_interval(0); // nothing reaches the server's read()
+  client.set_read_timeout(10, 0);        // fail rather than hang
+  ASSERT_TRUE(client.connect());
+
+  ASSERT_TRUE(client.send("hello"));
+  std::string msg;
+  ASSERT_EQ(client.read(msg), ws::Text);
+  EXPECT_EQ("hello", msg);
+
+  // The client now stays silent. The server's backstop elapses and the
+  // handler returns, having run its loop body exactly once.
+  auto done = handler_done_.get_future();
+  ASSERT_EQ(done.wait_for(std::chrono::seconds(6)), std::future_status::ready);
+  EXPECT_EQ(1, iterations_.load());
+
+  EXPECT_EQ(client.read(msg), ws::Fail);
   EXPECT_FALSE(client.is_open());
 }
 

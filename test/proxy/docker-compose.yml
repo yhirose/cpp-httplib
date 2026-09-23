@@ -18,3 +18,24 @@ services:
       context: ./
       args:
         auth: digest
+
+  # Self-hosted stand-in for the httpbin.org-style auth-testing endpoints
+  # (/basic-auth, /digest-auth) that BaseAuthTest/DigestAuthTest exercise
+  # through the proxies above, so those tests don't depend on an external
+  # site's uptime.
+  httpbin_backend:
+    image: mccutchen/go-httpbin:latest
+    restart: always
+
+  # TLS termination in front of httpbin_backend (which only speaks plain
+  # HTTP) so the SSL variants of those tests can CONNECT-tunnel through the
+  # proxies to "httpbin" on port 443, same as the NoSSL variants do on 80.
+  httpbin:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      - httpbin_backend
+    volumes:
+      - ./httpbin_nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../cert.pem:/etc/nginx/certs/cert.pem:ro
+      - ../key.pem:/etc/nginx/certs/key.pem:ro

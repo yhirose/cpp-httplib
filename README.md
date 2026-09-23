@@ -347,6 +347,25 @@ int port = svr.bind_to_any_port("0.0.0.0");
 svr.listen_after_bind();
 ```
 
+### Port sharing and exclusive binding
+
+By default, the server socket enables address/port reuse: `SO_REUSEPORT` where it is available (Linux, macOS), and `SO_REUSEADDR` otherwise (Windows). A restarted server can bind again immediately, but binding to a port that another server is already listening on also succeeds, and connections are distributed between them.
+
+If you want `listen()` to fail when the port is already in use, replace the default socket options with `set_socket_options`:
+
+```cpp
+svr.set_socket_options([](socket_t sock) {
+#ifdef _WIN32
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
+});
+```
+
+> [!NOTE]
+> Setting only `SO_REUSEADDR` is not enough on Windows. There, `SO_REUSEADDR` allows two sockets that both set it to bind to the same port, so use `SO_EXCLUSIVEADDRUSE` instead.
+
 ### Static File Server
 
 ```cpp
@@ -546,12 +565,13 @@ svr.set_pre_request_handler([](const auto& req, auto& res) {
 ```
 Request received
   │
+  ├─ expect_100_continue_handler  (when the request has "Expect: 100-continue")
+  │     └─ returns a status other than 100 → stop here
+  │
   ├─ pre_routing_handler          route not matched yet, body not read
   │     └─ returns Handled → stop here
   │
   ├─ file_request_handler         (GET/HEAD, static file serving)
-  │
-  ├─ expect_100_continue_handler  (when the request has "Expect: 100-continue")
   │
   ├─ route matching → req.matched_route is set
   │
@@ -567,6 +587,10 @@ Request received
 ```
 
 Use `pre_routing_handler` to reject a request as early as possible, before the route is known. Use `pre_request_handler` for route-specific checks, since `req.matched_route` is available and the body has not been read yet.
+
+For a request with `Expect: 100-continue`, the `100 Continue` response is not sent until the body is about to be read. A request rejected before that point (by `pre_routing_handler`, `pre_request_handler`, or because no route matched) gets its final response without `100 Continue`, so the client never sends the body.
+
+A WebSocket upgrade request that matches a route registered with `svr.WebSocket()` takes a shorter path: `pre_routing_handler`, then route matching (`req.matched_route` is set), then `pre_request_handler`, then the WebSocket handler. If either hook returns `Handled`, its response is sent as a regular HTTP response and the connection is not upgraded. Once the connection is upgraded, `post_routing_handler` does not run.
 
 ### Response user data
 
@@ -827,7 +851,9 @@ svr.Get("/content", [&](const Request &req, Response &res) {
 
 ### 'Expect: 100-continue' handler
 
-By default, the server sends a `100 Continue` response for an `Expect: 100-continue` header.
+By default, the server accepts an `Expect: 100-continue` header and sends a `100 Continue` response when it starts reading the request body. If the request is answered without reading the body, `100 Continue` is not sent and the connection is closed after the response.
+
+The handler runs before `pre_routing_handler`. Returning `100` lets the request proceed; returning any other status sends that status as the final response and closes the connection.
 
 ```cpp
 // Send a '417 Expectation Failed' response.

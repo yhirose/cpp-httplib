@@ -107,6 +107,8 @@ svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws)
 });
 ```
 
+ハンドラー内のチェックは、ハンドシェイクが完了した後に行われます。アップグレードする前に401などのHTTPステータスで接続を拒否したい場合は、`set_pre_request_handler()`を使ってください。WebSocketのルートでも呼ばれます。詳しくは[S11. Pre-request handlerでルート単位の認証を行う](../../cookbook/s11-pre-request)を参照してください。
+
 ## WSSで使う
 
 HTTPS上のWebSocket（WSS）にも対応しています。サーバー側は `httplib::SSLServer` にWebSocketハンドラーを登録するだけです。

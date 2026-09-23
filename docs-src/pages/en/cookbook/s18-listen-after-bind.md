@@ -43,15 +43,40 @@ svr.listen_after_bind();
 
 ## Check the return values
 
-`bind_to_port()` returns `false` on failure — typically when the port is already taken. Always check it.
+`bind_to_port()` returns `false` on failure, for example when you don't have permission to bind to the port. Always check it.
 
 ```cpp
+if (!svr.bind_to_port("0.0.0.0", 8080)) {
+  std::cerr << "bind failed" << std::endl;
+  return 1;
+}
+```
+
+`listen_after_bind()` blocks until the server stops and returns `true` on a clean shutdown.
+
+## Detect a port that's already in use
+
+With the default settings, you can actually bind to a port another server is already using. That's because cpp-httplib sets `SO_REUSEPORT` (Linux, macOS) or `SO_REUSEADDR` (Windows) on the server socket. A restarted server can bind again right away. The flip side is that a second server on the same port starts without an error, and connections get split between the two.
+
+To make `bind_to_port()` fail on a port in use, replace the socket options with `set_socket_options()`.
+
+```cpp
+svr.set_socket_options([](socket_t sock) {
+#ifdef _WIN32
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
+});
+
 if (!svr.bind_to_port("0.0.0.0", 8080)) {
   std::cerr << "port already in use" << std::endl;
   return 1;
 }
 ```
 
-`listen_after_bind()` blocks until the server stops and returns `true` on a clean shutdown.
+`set_socket_options()` replaces the defaults entirely. Setting `SO_REUSEADDR` on Linux and macOS keeps the "restarted server can bind again right away" behavior.
+
+> **Note:** `SO_REUSEADDR` alone isn't enough on Windows. Two sockets that both set it can bind to the same port, so use `SO_EXCLUSIVEADDRUSE` instead.
 
 > **Note:** To auto-pick a free port, see [S17. Bind to any available port](../s17-bind-any-port). Under the hood, that's just `bind_to_any_port()` + `listen_after_bind()`.

@@ -37,6 +37,8 @@ svr.set_pre_request_handler(
 
 `matched_route` is the pattern **before** path parameters are expanded (e.g. `/admin/users/:id`). You compare against the route definition, not the actual request path, so IDs or names don't throw you off.
 
+The pre-request handler also runs for routes registered with `svr.WebSocket()`. It is called before the `101 Switching Protocols` response, so returning `Handled` sends your HTTP response (such as a 403) and the connection is never upgraded.
+
 ## Return values
 
 Same as pre-routing — return `HandlerResponse`.

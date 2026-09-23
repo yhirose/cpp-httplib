@@ -77,6 +77,8 @@ while (ws.is_open()) {
 
 サーバ側のデフォルトは「無期限」ではなく300秒（`CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`）です。WebSocketのハンドラは接続が続く限りワーカーを1つ占有するので、無言になったピアからワーカーを回収する保険として働きます。
 
+この保険はハンドラが求めたタイムアウトではないので、`Timeout`としては返りません。経過すると`read()`は`Fail`を返して接続を閉じるため、`while (ws.read(msg))`と書いたハンドラは従来どおりそこで終わります。`Timeout`が返るのは、ハンドラ自身が`set_read_timeout()`で設定したタイムアウトだけです。
+
 > Ping/Pongによる無応答ピア検出は別の仕組みです。詳しくは[W02. ハートビートを設定する](../w02-websocket-ping)を参照してください。
 
 ## `Client`との違い

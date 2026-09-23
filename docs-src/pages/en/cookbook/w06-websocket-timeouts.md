@@ -77,6 +77,8 @@ A handler's `ws::WebSocket` has `set_read_timeout()` too, and the pattern above 
 
 The server default is 300s (`CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`) rather than "forever": it is a backstop that reclaims a worker from a peer that has gone silent, since a WebSocket handler holds its worker for the life of the connection.
 
+Because it is a backstop rather than something the handler asked for, it does not surface as `Timeout`. When it elapses, `read()` returns `Fail` and closes the connection, so a handler written as `while (ws.read(msg))` ends the way it always has. Only a timeout the handler set itself with `set_read_timeout()` comes back as `Timeout`.
+
 > Unresponsive-peer detection via Ping/Pong is a separate mechanism. See [W02. Set a WebSocket Heartbeat](../w02-websocket-ping) for details.
 
 ## How this differs from `Client`

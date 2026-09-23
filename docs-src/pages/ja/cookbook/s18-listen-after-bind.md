@@ -43,15 +43,40 @@ svr.listen_after_bind();
 
 ## 戻り値のチェック
 
-`bind_to_port()`は失敗すると`false`を返します。ポートが既に使われている場合などです。必ずチェックしてください。
+`bind_to_port()`は失敗すると`false`を返します。ポートにbindする権限が無い場合などです。必ずチェックしてください。
 
 ```cpp
+if (!svr.bind_to_port("0.0.0.0", 8080)) {
+  std::cerr << "bind failed" << std::endl;
+  return 1;
+}
+```
+
+`listen_after_bind()`はサーバーが停止するまでブロックし、正常終了なら`true`を返します。
+
+## 使用中のポートを検出する
+
+実は、デフォルトの設定では、ほかのサーバーが使っているポートにもbindできてしまいます。cpp-httplibがサーバーソケットに`SO_REUSEPORT`（Linux、macOS）か`SO_REUSEADDR`（Windows）を設定しているからです。再起動したサーバーはすぐにbindし直せます。その代わり、同じポートで2つ目のサーバーを起動してもエラーにならず、接続が両方に振り分けられます。
+
+使用中のポートで`bind_to_port()`を失敗させたいときは、`set_socket_options()`でソケットオプションを差し替えてください。
+
+```cpp
+svr.set_socket_options([](socket_t sock) {
+#ifdef _WIN32
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
+});
+
 if (!svr.bind_to_port("0.0.0.0", 8080)) {
   std::cerr << "port already in use" << std::endl;
   return 1;
 }
 ```
 
-`listen_after_bind()`はサーバーが停止するまでブロックし、正常終了なら`true`を返します。
+`set_socket_options()`はデフォルトの設定を丸ごと置き換えます。Linux、macOSで`SO_REUSEADDR`を設定しているのは、再起動したサーバーがすぐにbindし直せるようにするためです。
+
+> **Note:** Windowsでは`SO_REUSEADDR`だけでは足りません。お互いに`SO_REUSEADDR`を設定したソケット同士は、同じポートにbindできてしまいます。`SO_EXCLUSIVEADDRUSE`を使ってください。
 
 > **Note:** 空いているポートを自動で選びたいときは[S17. ポートを動的に割り当てる](../s17-bind-any-port)を参照してください。こちらも内部では`bind_to_any_port()` + `listen_after_bind()`の組み合わせです。

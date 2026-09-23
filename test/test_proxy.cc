@@ -22,23 +22,25 @@ template <typename T> void ProxyTest(T &cli, bool basic) {
 }
 
 TEST(ProxyTest, NoSSLBasic) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   ProxyTest(cli, true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLBasic) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   ProxyTest(cli, true);
 }
 
 TEST(ProxyTest, NoSSLDigest) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   ProxyTest(cli, false);
 }
 
 TEST(ProxyTest, SSLDigest) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   ProxyTest(cli, false);
 }
 #endif
@@ -63,23 +65,25 @@ void RedirectProxyText(T &cli, const char *path, bool basic) {
 }
 
 TEST(RedirectTest, HTTPBinNoSSLBasic) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   RedirectProxyText(cli, "/redirect/2", true);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, HTTPBinNoSSLDigest) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   RedirectProxyText(cli, "/redirect/2", false);
 }
 
 TEST(RedirectTest, HTTPBinSSLBasic) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   RedirectProxyText(cli, "/redirect/2", true);
 }
 
 TEST(RedirectTest, HTTPBinSSLDigest) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   RedirectProxyText(cli, "/redirect/2", false);
 }
 #endif
@@ -173,7 +177,8 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
         cli.Get("/basic-auth/hello/world",
                 Headers{make_basic_authentication_header("hello", "world")});
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
+    EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\","
+                            "\"authorized\":true}\n"),
               normalizeJson(res->body));
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
@@ -182,7 +187,8 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
     cli.set_basic_auth("hello", "world");
     auto res = cli.Get("/basic-auth/hello/world");
     ASSERT_TRUE(res != nullptr);
-    EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\"}\n"),
+    EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\","
+                            "\"authorized\":true}\n"),
               normalizeJson(res->body));
     EXPECT_EQ(StatusCode::OK_200, res->status);
   }
@@ -203,13 +209,14 @@ template <typename T> void BaseAuthTestFromHTTPWatch(T &cli) {
 }
 
 TEST(BaseAuthTest, NoSSL) {
-  Client cli("httpcan.org");
+  Client cli("httpbin");
   BaseAuthTestFromHTTPWatch(cli);
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(BaseAuthTest, SSL) {
-  SSLClient cli("httpcan.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   BaseAuthTestFromHTTPWatch(cli);
 }
 #endif
@@ -228,21 +235,21 @@ template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
   }
 
   {
+    // go-httpbin (the "httpbin" test double) only implements MD5 and
+    // SHA-256 for digest auth, so SHA-256 is as far as this can exercise
+    // the client's digest-auth algorithm selection end-to-end.
     std::vector<std::string> paths = {
         "/digest-auth/auth/hello/world/MD5",
         "/digest-auth/auth/hello/world/SHA-256",
-        "/digest-auth/auth/hello/world/SHA-512",
     };
 
     cli.set_digest_auth("hello", "world");
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
       ASSERT_TRUE(res != nullptr);
-      std::string algo(path.substr(path.rfind('/') + 1));
-      EXPECT_EQ(
-          normalizeJson("{\"algorithm\":\"" + algo +
-                        "\",\"authenticated\":true,\"user\":\"hello\"}\n"),
-          normalizeJson(res->body));
+      EXPECT_EQ(normalizeJson("{\"authenticated\":true,\"user\":\"hello\","
+                              "\"authorized\":true}\n"),
+                normalizeJson(res->body));
       EXPECT_EQ(StatusCode::OK_200, res->status);
     }
 
@@ -263,12 +270,13 @@ template <typename T> void DigestAuthTestFromHTTPWatch(T &cli) {
 }
 
 TEST(DigestAuthTest, SSL) {
-  SSLClient cli("httpcan.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   DigestAuthTestFromHTTPWatch(cli);
 }
 
 TEST(DigestAuthTest, NoSSL) {
-  Client cli("httpcan.org");
+  Client cli("httpbin");
   DigestAuthTestFromHTTPWatch(cli);
 }
 #endif
@@ -329,22 +337,24 @@ template <typename T> void KeepAliveTest(T &cli, bool basic) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, NoSSLWithBasic) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, SSLWithBasic) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   KeepAliveTest(cli, true);
 }
 
 TEST(KeepAliveTest, NoSSLWithDigest) {
-  Client cli("httpbingo.org");
+  Client cli("httpbin");
   KeepAliveTest(cli, false);
 }
 
 TEST(KeepAliveTest, SSLWithDigest) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   KeepAliveTest(cli, false);
 }
 #endif
@@ -353,7 +363,8 @@ TEST(KeepAliveTest, SSLWithDigest) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLOpenStream) {
-  SSLClient cli("httpbingo.org");
+  SSLClient cli("httpbin");
+  cli.enable_server_certificate_verification(false);
   cli.set_proxy("localhost", 3128);
   cli.set_proxy_basic_auth("hello", "world");
 

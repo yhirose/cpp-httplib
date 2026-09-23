@@ -2010,7 +2010,22 @@ TEST(ParseHeaderValueTest, Range) {
     EXPECT_FALSE(detail::parse_range_header("bytes=0--1", ranges));
     EXPECT_FALSE(detail::parse_range_header("bytes=0- 1", ranges));
     EXPECT_FALSE(detail::parse_range_header("bytes=0 -1", ranges));
+    // Overflows ssize_t; must not be read as the suffix range "bytes=-100".
+    EXPECT_FALSE(
+        detail::parse_range_header("bytes=9223372036854775808-100", ranges));
     EXPECT_TRUE(ranges.empty());
+  }
+
+  {
+    // RFC 9110 14.1.2: a last-byte-pos greater than the content length is the
+    // remainder of the representation, so it stays accepted.
+    Ranges ranges;
+    auto ret =
+        detail::parse_range_header("bytes=0-99999999999999999999", ranges);
+    EXPECT_TRUE(ret);
+    ASSERT_EQ(1u, ranges.size());
+    EXPECT_EQ(0, ranges[0].first);
+    EXPECT_EQ(-1, ranges[0].second);
   }
 }
 
@@ -6972,10 +6987,9 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
-// GHSA-h6wq-j5mv-f3q8: the server must reject malformed chunk-size lines
-// rather than treat them as valid lengths.
 template <typename ClientT>
-static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
+static void expect_chunked_body_status(ClientT &cli, const char *body,
+                                       int expected_status) {
   Request req;
   req.method = "POST";
   req.path = "/chunked";
@@ -6993,7 +7007,14 @@ static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
   auto res = std::make_shared<Response>();
   auto error = Error::Success;
   ASSERT_TRUE(cli.send(req, *res, error));
-  EXPECT_EQ(StatusCode::BadRequest_400, res->status);
+  EXPECT_EQ(expected_status, res->status);
+}
+
+// GHSA-h6wq-j5mv-f3q8: the server must reject malformed chunk-size lines
+// rather than treat them as valid lengths.
+template <typename ClientT>
+static void expect_chunked_body_rejected(ClientT &cli, const char *body) {
+  expect_chunked_body_status(cli, body, StatusCode::BadRequest_400);
 }
 
 TEST_F(ServerTest, RejectsNegativeChunkSize) {
@@ -7003,6 +7024,40 @@ TEST_F(ServerTest, RejectsNegativeChunkSize) {
 TEST_F(ServerTest, RejectsChunkSizeWithLeadingPlus) {
   expect_chunked_body_rejected(
       cli_, "+4\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+// RFC 9112 §7.1.1: a chunk-ext is made of tokens and quoted-strings, so the
+// chunk-size line carries no CR, LF or other control character ahead of its
+// terminator. Such a line must be refused rather than read as extension text.
+TEST_F(ServerTest, RejectsBareLFInChunkExtension) {
+  expect_chunked_body_rejected(
+      cli_, "4;\nxx\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsBareLFAfterChunkSize) {
+  expect_chunked_body_rejected(
+      cli_, "4\nxx\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsBareCRInChunkExtension) {
+  expect_chunked_body_rejected(
+      cli_, "4;a\rb\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, RejectsControlCharacterInChunkExtension) {
+  // The literal stays split: a hex escape consumes every hex digit that
+  // follows, so "\x01b" would be the single byte \x1b, not \x01 then 'b'.
+  expect_chunked_body_rejected(
+      cli_, "4;a\x01"
+            "b\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
+}
+
+TEST_F(ServerTest, AcceptsChunkExtension) {
+  expect_chunked_body_status(cli_,
+                             "4;name=value\r\ndech\r\n"
+                             "f ; note=\"a;b c\"\r\nunked post body\r\n"
+                             "0;last\r\n\r\n",
+                             StatusCode::OK_200);
 }
 
 TEST_F(ServerTest, GetStreamed2) {
@@ -10086,6 +10141,90 @@ TEST(RequestLineInjectionTest, ClientRejectsCRLFTargetEndToEnd) {
   }
 }
 
+TEST(RequestLineInjectionTest, RejectsNonTokenMethod) {
+  // Methods that are tokens (RFC 9110 Section 9.1) are written verbatim,
+  // including extension methods.
+  const std::string good_methods[] = {"GET", "PROPFIND", "M-SEARCH"};
+  for (const auto &method : good_methods) {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, method, "/");
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(method + " / HTTP/1.1\r\n", strm.get_buffer());
+  }
+
+  // A method carrying CR/LF would split the request line and smuggle a whole
+  // request ahead of the real one. A space or an empty method corrupts the
+  // request line. All must be rejected before anything reaches the wire.
+  const std::string evil_methods[] = {
+      "GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET",
+      "GET\r\nInjected: pwned",
+      "GET\r",
+      "GET\n",
+      "GE T",
+      "",
+  };
+  for (const auto &evil : evil_methods) {
+    detail::BufferStream strm;
+    auto n = detail::write_request_line(strm, evil, "/");
+    EXPECT_LT(n, 0);
+    EXPECT_TRUE(strm.get_buffer().empty());
+  }
+}
+
+TEST(RequestLineInjectionTest, ClientRejectsNonTokenMethodEndToEnd) {
+  // End-to-end counterpart to RejectsNonTokenMethod: a smuggling method passed
+  // through Client::send must fail with Error::Write and no request, neither
+  // the smuggled one nor the real one, may reach the server.
+  Server svr;
+
+  std::atomic<int> request_count(0);
+  svr.set_pre_routing_handler([&](const Request &, Response &res) {
+    request_count++;
+    res.status = StatusCode::OK_200;
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+
+    const std::string evil_methods[] = {
+        "GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET",
+        "GE T",
+        "",
+    };
+    for (const auto &evil : evil_methods) {
+      Request req;
+      req.method = evil;
+      req.path = "/";
+      auto res = cli.send(req);
+      EXPECT_FALSE(res);
+      EXPECT_EQ(Error::Write, res.error());
+    }
+
+    auto handle =
+        cli.open_stream("GET /smuggled HTTP/1.1\r\nHost: x\r\n\r\nGET", "/");
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(Error::Write, handle.error);
+
+    // A valid request on the same client still goes through.
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+
+  EXPECT_EQ(1, request_count.load());
+}
+
 // Sends a raw request and verifies that there isn't a crash or exception.
 static void test_raw_request(const std::string &req,
                              std::string *out = nullptr) {
@@ -11966,6 +12105,48 @@ TEST(KeepAliveTest, ReadTimeoutSSL) {
   ASSERT_TRUE(resb);
   EXPECT_EQ(StatusCode::OK_200, resb->status);
   EXPECT_EQ("b", resb->body);
+}
+
+// Closing an idle keep-alive connection sends close_notify and returns. The
+// server must not wait for the client's close_notify: an idle client never
+// sends one, so the worker would be held until the read timeout expires, and
+// stop() would wait for it.
+TEST(KeepAliveTest, SSLIdleCloseDoesNotWaitForPeer) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(1);
+  svr.set_read_timeout(10, 0);
+  svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    if (listen_thread.joinable()) {
+      svr.stop();
+      listen_thread.join();
+    }
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Stay idle past the keep-alive timeout so the server closes the connection.
+  std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+  auto start = std::chrono::steady_clock::now();
+  svr.stop();
+  listen_thread.join();
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - start)
+                     .count();
+  EXPECT_LT(elapsed, 3000);
 }
 #endif
 
@@ -17231,6 +17412,96 @@ TEST(VulnerabilityTest, CRLFInjectionInHeaders) {
   server_thread.join();
 }
 
+// A request rejected before any byte reaches the socket must fail right away
+// instead of waiting for a response the server will never send.
+TEST(ClientRejectedRequestTest, DoesNotWaitForResponse) {
+  // The kernel completes the TCP handshake from the listen backlog, so the
+  // client connects, but nothing ever reads, responds or closes.
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 1));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 8));
+
+  auto cli = Client("127.0.0.1", PORT + 1);
+  cli.set_read_timeout(10, 0);
+
+  auto elapsed_ms = [](std::chrono::steady_clock::time_point start) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now() - start)
+        .count();
+  };
+
+  {
+    Request req;
+    req.method = "GE T";
+    req.path = "/";
+    auto start = std::chrono::steady_clock::now();
+    auto res = cli.send(req);
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::Write, res.error());
+    EXPECT_LT(elapsed_ms(start), 1000);
+  }
+
+  {
+    auto start = std::chrono::steady_clock::now();
+    auto res = cli.Get("/", Headers{{"A", "B\r\nEvil: 1"}});
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::InvalidHeaders, res.error());
+    EXPECT_LT(elapsed_ms(start), 1000);
+  }
+
+  EXPECT_FALSE(cli.is_socket_open());
+
+  detail::close_socket(srv);
+}
+
+TEST(ClientRejectedRequestTest, OpenStreamSendsNothingOnInvalidHeader) {
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 1));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 1));
+
+  std::string received;
+  auto server_thread = std::thread([&] {
+    auto sock = ::accept(srv, nullptr, nullptr);
+    if (sock == INVALID_SOCKET) { return; }
+    detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 2, 0);
+
+    char buf[2048];
+    ssize_t n;
+    while ((n = ::recv(sock, buf, sizeof(buf), 0)) > 0) {
+      received.append(buf, static_cast<size_t>(n));
+    }
+    detail::close_socket(sock);
+  });
+
+  {
+    auto cli = Client("127.0.0.1", PORT + 1);
+
+    // "Z" sorts after the default headers, so writing straight to the socket
+    // would have sent the request line and those headers before the rejection.
+    auto handle =
+        cli.open_stream("GET", "/", Params{}, Headers{{"Z", "B\r\nEvil: 1"}});
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(Error::InvalidHeaders, handle.error);
+  }
+
+  server_thread.join();
+  detail::close_socket(srv);
+
+  EXPECT_TRUE(received.empty()) << received;
+}
+
 TEST(PathParamsTest, StaticMatch) {
   const auto pattern = "/users/all";
   detail::PathParamsMatcher matcher(pattern);
@@ -18042,6 +18313,164 @@ TEST_F(ExpectTokenTest, ExpectationAmongOthersIsRecognized) {
   EXPECT_TRUE(got_100);
 }
 
+// `100 Continue` is sent only when the server starts reading the body, so a
+// request rejected before that never invites the client to send it. The
+// requests below carry the expectation but withhold the body, as a client
+// waiting for `100 Continue` would.
+// A POST that expects `100 Continue` and withholds its two-byte body.
+static std::string expect_headers_only(const std::string &path) {
+  return "POST " + path +
+         " HTTP/1.1\r\n"
+         "Host: localhost\r\n"
+         "Content-Length: 2\r\n"
+         "Expect: 100-continue\r\n"
+         "\r\n";
+}
+
+class ExpectLazyContinueTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    svr_.set_pre_routing_handler([](const Request &req, Response &res) {
+      if (req.path == "/pre-routing") {
+        res.status = StatusCode::Unauthorized_401;
+        return Server::HandlerResponse::Handled;
+      }
+      return Server::HandlerResponse::Unhandled;
+    });
+    svr_.set_pre_request_handler([](const Request &req, Response &res) {
+      if (req.matched_route == "/pre-request") {
+        res.status = StatusCode::Forbidden_403;
+        return Server::HandlerResponse::Handled;
+      }
+      return Server::HandlerResponse::Unhandled;
+    });
+    svr_.Post("/pre-routing", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+    svr_.Post("/pre-request", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+    svr_.Post("/reader-used", [](const Request &, Response &res,
+                                 const ContentReader &content_reader) {
+      std::string body;
+      content_reader([&](const char *data, size_t len) {
+        body.append(data, len);
+        return true;
+      });
+      res.set_content(body, "text/plain");
+    });
+    svr_.Post("/reader-unused",
+              [](const Request &, Response &res, const ContentReader &) {
+                res.set_content("ignored", "text/plain");
+              });
+    port_ = svr_.bind_to_any_port(HOST);
+    thread_ = thread([&]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+
+  void TearDown() override {
+    svr_.stop();
+    if (thread_.joinable()) { thread_.join(); }
+  }
+
+  // Sends `req` and reads until the server closes the connection. Returns
+  // false if the read had to wait for the client-side timeout instead.
+  bool send_until_closed(const std::string &req, std::string *resp) const {
+    auto start = std::chrono::steady_clock::now();
+    if (!send_request(3, req, resp, port_)) { return false; }
+    auto elapsed = std::chrono::steady_clock::now() - start;
+    return elapsed < std::chrono::seconds(2);
+  }
+
+  // The final response comes without `100 Continue`, and the server closes
+  // the connection since the body may or may not follow.
+  void expect_final_without_interim(const std::string &path,
+                                    const char *status_line) const {
+    std::string resp;
+    ASSERT_TRUE(send_until_closed(expect_headers_only(path), &resp));
+    EXPECT_EQ(std::string::npos, resp.find("100 Continue"));
+    EXPECT_EQ(0u, resp.find(status_line));
+    EXPECT_NE(std::string::npos, resp.find("Connection: close"));
+  }
+
+  Server svr_;
+  int port_ = 0;
+  thread thread_;
+};
+
+TEST_F(ExpectLazyContinueTest, PreRoutingRejectsWithoutInterimResponse) {
+  expect_final_without_interim("/pre-routing", "HTTP/1.1 401");
+}
+
+TEST_F(ExpectLazyContinueTest, PreRequestRejectsWithoutInterimResponse) {
+  expect_final_without_interim("/pre-request", "HTTP/1.1 403");
+}
+
+TEST_F(ExpectLazyContinueTest, UnknownRouteRejectsWithoutInterimResponse) {
+  expect_final_without_interim("/nowhere", "HTTP/1.1 404");
+}
+
+TEST_F(ExpectLazyContinueTest, UnreadContentReaderClosesWithoutInterim) {
+  expect_final_without_interim("/reader-unused", "HTTP/1.1 200");
+}
+
+TEST_F(ExpectLazyContinueTest, ContentReaderGetsInterimResponse) {
+  // The body follows once `100 Continue` has had time to arrive.
+  auto req = expect_headers_only("/reader-used");
+  req.insert(req.size() - 2, "Connection: close\r\n");
+  std::string resp;
+  ASSERT_TRUE(send_request_in_parts(3, {req, "hi"}, &resp, port_));
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 100 Continue"));
+  EXPECT_NE(std::string::npos, resp.find("HTTP/1.1 200"));
+  EXPECT_NE(std::string::npos, resp.find("hi"));
+}
+
+TEST_F(ExpectLazyContinueTest, ClientWithholdsBodyWhenRejected) {
+  // Large enough for the client to add `Expect: 100-continue` itself.
+  const size_t length = CPPHTTPLIB_EXPECT_100_THRESHOLD * 4;
+  std::atomic<bool> body_sent{false};
+
+  Client cli(HOST, port_);
+  auto res = cli.Post(
+      "/pre-request", length,
+      [&](size_t /*offset*/, size_t len, DataSink &sink) {
+        body_sent = true;
+        std::string chunk(len, 'x');
+        sink.write(chunk.data(), chunk.size());
+        return true;
+      },
+      "application/octet-stream");
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+  EXPECT_FALSE(body_sent);
+}
+
+TEST(Expect100ContinueHandlerTest, ExpectationFailedIsFinalResponse) {
+  Server svr;
+  svr.set_expect_100_continue_handler([](const Request &, Response &) {
+    return StatusCode::ExpectationFailed_417;
+  });
+  svr.Post("/p", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  std::string resp;
+  ASSERT_TRUE(send_request(3, expect_headers_only("/p"), &resp, port));
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 417"));
+  EXPECT_NE(std::string::npos, resp.find("Connection: close"));
+  // Exactly one response: the route handler must not run after the 417.
+  EXPECT_EQ(std::string::npos, resp.find("HTTP/1.1", 1));
+}
+
 #ifndef _WIN32
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";
@@ -18648,6 +19077,108 @@ TEST(HeaderSmugglingTest, DuplicateTrailerFieldLinesDeclareAllTrailers) {
 
   // Denied: a prohibited name stays prohibited on a later field line
   EXPECT_FALSE(observed_content_length);
+}
+
+// Undeclared trailer fields must count toward the trailer limit too. Otherwise
+// a peer can keep the trailer-parsing loop running indefinitely by sending an
+// unbounded run of fields that are never declared, because the counter would
+// only advance for declared fields.
+TEST(HeaderSmugglingTest, UndeclaredTrailerFieldsCountTowardLimit) {
+  Server svr;
+
+  bool handler_called = false;
+
+  svr.Get("/", [&](const Request & /*req*/, Response &res) {
+    handler_called = true;
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Declare nothing, then send far more undeclared trailer fields than the
+  // header-count limit. Parsing must stop and reject the request rather than
+  // read every line.
+  std::string req = "GET / HTTP/1.1\r\n"
+                    "Transfer-Encoding: chunked\r\n"
+                    "\r\n"
+                    "0\r\n";
+  for (int i = 0; i < CPPHTTPLIB_HEADER_MAX_COUNT + 10; i++) {
+    req += "X-Undeclared-" + std::to_string(i) + ": v\r\n";
+  }
+  req += "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res, port));
+
+  // The request is rejected before the handler runs.
+  EXPECT_FALSE(handler_called);
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, res.find("\r\n")));
+}
+
+// The set of declared trailer names is capped so a peer cannot grow it without
+// bound (an unkeyed hash set would otherwise be a hash-flooding target). A name
+// declared past the cap is not honored, even if the field is actually sent.
+TEST(HeaderSmugglingTest, DeclaredTrailerNamesAreCappedAtHeaderMaxCount) {
+  Server svr;
+
+  // One name inside the cap and one past it, so the test tracks the cap rather
+  // than a fixed count.
+  constexpr int declared_count = CPPHTTPLIB_HEADER_MAX_COUNT + 50;
+  const std::string within_cap_name = "X-T-0";
+  const std::string past_cap_name = "X-T-" + std::to_string(declared_count - 1);
+
+  bool observed_within_cap = false;
+  bool observed_past_cap = false;
+
+  svr.Get("/", [&](const Request &req, Response &res) {
+    observed_within_cap = req.has_trailer(within_cap_name);
+    observed_past_cap = req.has_trailer(past_cap_name);
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // Declare more trailer names than the cap in a single Trailer field, then
+  // actually send the first (within the cap) and the last (past it).
+  std::string trailer_decl = "Trailer: ";
+  for (int i = 0; i < declared_count; i++) {
+    if (i != 0) { trailer_decl += ", "; }
+    trailer_decl += "X-T-" + std::to_string(i);
+  }
+  trailer_decl += "\r\n";
+
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Transfer-Encoding: chunked\r\n" +
+                          trailer_decl +
+                          "\r\n"
+                          "0\r\n" +
+                          within_cap_name + ": a\r\n" + past_cap_name +
+                          ": b\r\n"
+                          "\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(1, req, &res, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, res.find("\r\n")));
+
+  // A name within the cap is honored; one declared past the cap is dropped.
+  EXPECT_TRUE(observed_within_cap);
+  EXPECT_FALSE(observed_past_cap);
 }
 
 // A direct client that is not listed in trusted_proxies must not be able to
@@ -19846,6 +20377,105 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   EXPECT_FALSE(handle.is_valid());
 
   server_thread.join();
+}
+
+// Serves `response` to the single request `fn` makes with a fresh client.
+template <typename Fn>
+static void with_single_response(const std::string &response, Fn fn) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  std::promise<int> port_promise;
+  auto port_future = port_promise.get_future();
+  auto server_thread = serve_single_response(port_promise, response);
+  auto se = detail::scope_exit([&] { server_thread.join(); });
+
+  auto port = port_future.get();
+  ASSERT_GT(port, 0);
+  Client cli("127.0.0.1", port);
+  fn(cli);
+}
+
+// RFC 9112 §6.3: a response that pairs a non-zero Content-Length with
+// Transfer-Encoding is framed ambiguously. Both read paths delimit its body by
+// the chunked coding and drop Content-Length, so a front-end that trusts
+// Content-Length would disagree about where the body ends (response
+// smuggling). The client must reject such a response.
+TEST(ClientResponseSmugglingTest, ContentLengthAndTransferEncodingRejected) {
+  for (const char *te : {"chunked", "gzip, chunked"}) {
+    auto response = std::string("HTTP/1.1 200 OK\r\n") +
+                    "Content-Length: 5\r\n" + "Transfer-Encoding: " + te +
+                    "\r\n" + "Connection: close\r\n" + "\r\n" +
+                    "5\r\nhello\r\n0\r\n\r\n";
+
+    with_single_response(response, [&](Client &cli) {
+      auto res = cli.Get("/");
+      EXPECT_FALSE(static_cast<bool>(res)) << te;
+      EXPECT_EQ(Error::Read, res.error()) << te;
+    });
+
+    with_single_response(response, [&](Client &cli) {
+      auto handle = cli.open_stream("GET", "/");
+      EXPECT_FALSE(handle.is_valid()) << te;
+      EXPECT_EQ(Error::Read, handle.error) << te;
+    });
+  }
+}
+
+// Unambiguous framing stays readable on both paths: chunked alone, and a final
+// coding other than chunked, whose body RFC 9112 §6.3 delimits by the server
+// closing the connection (unlike a request, which must be rejected).
+TEST(ClientResponseSmugglingTest, UnambiguousFramingAccepted) {
+  for (const char *response : {"HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: chunked\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "5\r\nhello\r\n0\r\n\r\n",
+                               "HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: gzip\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "hello"}) {
+    with_single_response(response, [&](Client &cli) {
+      auto res = cli.Get("/");
+      ASSERT_TRUE(static_cast<bool>(res)) << response;
+      EXPECT_EQ("hello", res->body);
+    });
+
+    with_single_response(response, [&](Client &cli) {
+      auto handle = cli.open_stream("GET", "/");
+      ASSERT_TRUE(handle.is_valid()) << response;
+      EXPECT_EQ("hello", read_all(handle));
+    });
+  }
+}
+
+// A response to HEAD, and a 204 or 304 response, carries no body, so its
+// framing headers describe nothing to read and must not be rejected.
+TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
+  const std::string framing = "Content-Length: 5\r\n"
+                              "Transfer-Encoding: chunked\r\n"
+                              "Connection: close\r\n"
+                              "\r\n";
+
+  with_single_response("HTTP/1.1 200 OK\r\n" + framing, [](Client &cli) {
+    EXPECT_TRUE(static_cast<bool>(cli.Head("/")));
+  });
+  with_single_response("HTTP/1.1 200 OK\r\n" + framing, [](Client &cli) {
+    EXPECT_TRUE(cli.open_stream("HEAD", "/").is_valid());
+  });
+
+  for (const char *status : {"204 No Content", "304 Not Modified"}) {
+    auto response = std::string("HTTP/1.1 ") + status + "\r\n" + framing;
+
+    with_single_response(response, [&](Client &cli) {
+      EXPECT_TRUE(static_cast<bool>(cli.Get("/"))) << status;
+    });
+    with_single_response(response, [&](Client &cli) {
+      EXPECT_TRUE(cli.open_stream("GET", "/").is_valid()) << status;
+    });
+  }
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -22341,9 +22971,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // RSV2 set (0x20)
@@ -22353,9 +22983,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // RSV3 set (0x10)
@@ -22365,9 +22995,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // No RSV bits set - should succeed
@@ -22377,9 +23007,9 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Ok);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Ok);
     EXPECT_EQ(ws::Opcode::Text, opcode);
     EXPECT_EQ("Hello", payload);
     EXPECT_TRUE(fin);
@@ -22400,9 +23030,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // Close with FIN=0 - must be rejected
@@ -22415,9 +23045,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // Ping with payload_len=126 (extended length) - must be rejected
@@ -22433,9 +23063,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // Ping with FIN=1 and payload_len=125 - should succeed
@@ -22449,9 +23079,9 @@ TEST(WebSocketTest, ControlFrameValidation) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Ok);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Ok);
     EXPECT_EQ(ws::Opcode::Ping, opcode);
     EXPECT_EQ(125u, payload.size());
     EXPECT_TRUE(fin);
@@ -22474,9 +23104,9 @@ TEST(WebSocketTest, PayloadLength64BitMSBMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Fail);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Fail);
   }
 
   // MSB clear - should pass length parsing (will be rejected by max_len,
@@ -22493,9 +23123,9 @@ TEST(WebSocketTest, PayloadLength64BitMSBMustBeZero) {
     ws::Opcode opcode;
     std::string payload;
     bool fin;
-    EXPECT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
-                                             1024),
-              ws::impl::FrameRead::Ok);
+    EXPECT_EQ(
+        ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
+        ws::impl::FrameRead::Ok);
     EXPECT_EQ(ws::Opcode::Text, opcode);
     EXPECT_EQ("abc", payload);
   }
@@ -23246,6 +23876,20 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   ws::WebSocketClient client1("ws://localhost:" + std::to_string(port) + "/ws");
   EXPECT_FALSE(client1.connect());
 
+  // The rejection is framed like any other HTTP response
+  {
+    Client cli("localhost", port);
+    Headers headers = {{"Upgrade", "websocket"},
+                       {"Connection", "Upgrade"},
+                       {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                       {"Sec-WebSocket-Version", "13"}};
+    auto res = cli.Get("/ws", headers);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+    EXPECT_EQ("12", res->get_header_value("Content-Length"));
+    EXPECT_EQ("Unauthorized", res->body);
+  }
+
   // With Authorization header - should succeed
   Headers headers = {{"Authorization", "Bearer token123"}};
   ws::WebSocketClient client2("ws://localhost:" + std::to_string(port) + "/ws",
@@ -23255,6 +23899,70 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   std::string msg;
   ASSERT_TRUE(client2.read(msg));
   EXPECT_EQ("hello", msg);
+  client2.close();
+
+  svr.stop();
+  t.join();
+}
+
+TEST(WebSocketPreRequestTest, RejectWithoutAuth) {
+  Server svr;
+
+  std::atomic<int> pre_request_calls{0};
+  std::atomic<bool> route_matched{false};
+  svr.set_pre_request_handler([&](const Request &req, Response &res) {
+    pre_request_calls++;
+    if (req.matched_route == "/ws/:id") { route_matched = true; }
+    if (req.get_header_value("Authorization") != "Bearer token123") {
+      res.status = StatusCode::Unauthorized_401;
+      res.set_content("Unauthorized", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  std::atomic<bool> handler_called{false};
+  svr.WebSocket("/ws/:id", [&](const Request &req, ws::WebSocket &ws) {
+    handler_called = true;
+    ws.send(req.matched_route + " " + req.path_params.at("id"));
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  svr.wait_until_ready();
+
+  // Without Authorization header - should be rejected before upgrade
+  ws::WebSocketClient client1("ws://localhost:" + std::to_string(port) +
+                              "/ws/1");
+  EXPECT_FALSE(client1.connect());
+  EXPECT_FALSE(handler_called);
+  EXPECT_EQ(1, pre_request_calls);
+  EXPECT_TRUE(route_matched);
+
+  // The rejection is an ordinary HTTP response, not a protocol switch
+  {
+    Client cli("localhost", port);
+    Headers headers = {{"Upgrade", "websocket"},
+                       {"Connection", "Upgrade"},
+                       {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                       {"Sec-WebSocket-Version", "13"}};
+    auto res = cli.Get("/ws/1", headers);
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+    EXPECT_EQ("12", res->get_header_value("Content-Length"));
+    EXPECT_EQ("Unauthorized", res->body);
+  }
+  EXPECT_FALSE(handler_called);
+
+  // With Authorization header - should succeed
+  Headers headers = {{"Authorization", "Bearer token123"}};
+  ws::WebSocketClient client2(
+      "ws://localhost:" + std::to_string(port) + "/ws/2", headers);
+  ASSERT_TRUE(client2.connect());
+  std::string msg;
+  ASSERT_TRUE(client2.read(msg));
+  EXPECT_EQ("/ws/:id 2", msg);
+  EXPECT_TRUE(handler_called);
   client2.close();
 
   svr.stop();
@@ -25353,6 +26061,11 @@ public:
 
   int port() const { return port_; }
   int connect_hits() const { return connect_hits_.load(); }
+  // Head of the last CONNECT request, as the proxy saw it on the wire.
+  std::string connect_request() const {
+    std::lock_guard<std::mutex> lock(connect_request_mutex_);
+    return connect_request_;
+  }
 
 private:
   void run() {
@@ -25379,6 +26092,10 @@ private:
         continue;
       }
       connect_hits_++;
+      {
+        std::lock_guard<std::mutex> lock(connect_request_mutex_);
+        connect_request_ = req;
+      }
 
       const char *ok = "HTTP/1.1 200 Connection established\r\n\r\n";
       ::send(client_fd, ok, std::strlen(ok), 0);
@@ -25428,9 +26145,91 @@ private:
   std::thread th_;
   std::atomic<bool> stop_{false};
   std::atomic<int> connect_hits_{0};
+  mutable std::mutex connect_request_mutex_;
+  std::string connect_request_;
 };
 
+// Sends one request through the CONNECT proxy to the TLS origin with a
+// credential configured for each hop, and checks that each credential reaches
+// only the hop it was configured for: the proxy's on the CONNECT request, the
+// origin's (every header in origin_headers) on the tunnelled request.
+void CredentialsStayWithTheirHop(
+    const std::function<void(SSLClient &)> &set_credentials,
+    const std::string &scheme,
+    const std::vector<std::string> &origin_headers = {"Authorization"}) {
+  std::atomic<int> origin_hits{0};
+  std::atomic<bool> origin_saw_proxy_authz{false};
+  std::atomic<bool> origin_saw_headers{false};
+
+  ScopedSSLServer origin;
+  origin.svr().Get(".*", [&](const Request &req, Response &res) {
+    origin_hits++;
+    origin_saw_proxy_authz = req.has_header("Proxy-Authorization");
+    origin_saw_headers =
+        std::all_of(origin_headers.begin(), origin_headers.end(),
+                    [&](const std::string &h) { return req.has_header(h); });
+    res.set_content("ok", "text/plain");
+  });
+  origin.listen();
+
+  ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  // Pinned to 127.0.0.1 for the same reason as the test below.
+  SSLClient cli("127.0.0.1", origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_proxy("127.0.0.1", proxy.port());
+  set_credentials(cli);
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(1, origin_hits.load());
+  EXPECT_EQ(1, proxy.connect_hits());
+
+  EXPECT_TRUE(origin_saw_headers.load());
+  EXPECT_FALSE(origin_saw_proxy_authz.load())
+      << "Proxy-Authorization must not be sent inside the tunnel";
+
+  auto connect_req = proxy.connect_request();
+  EXPECT_NE(std::string::npos,
+            connect_req.find("\r\nProxy-Authorization: " + scheme + " "));
+  for (const auto &h : origin_headers) {
+    EXPECT_EQ(std::string::npos, connect_req.find("\r\n" + h + ": "))
+        << h << " must not be sent to the proxy on CONNECT";
+  }
+}
+
 } // namespace proxy_tunnel_test
+
+TEST(ProxyTunnelTest, BasicCredentialsStayWithTheirHop) {
+  proxy_tunnel_test::CredentialsStayWithTheirHop(
+      [](SSLClient &cli) {
+        cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+        cli.set_basic_auth("origin-user", "origin-pass");
+      },
+      "Basic");
+}
+
+TEST(ProxyTunnelTest, BearerCredentialsStayWithTheirHop) {
+  proxy_tunnel_test::CredentialsStayWithTheirHop(
+      [](SSLClient &cli) {
+        cli.set_proxy_bearer_token_auth("proxy-token");
+        cli.set_bearer_token_auth("origin-token");
+      },
+      "Bearer");
+}
+
+TEST(ProxyTunnelTest, DefaultHeadersStayOffConnect) {
+  proxy_tunnel_test::CredentialsStayWithTheirHop(
+      [](SSLClient &cli) {
+        cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+        cli.set_default_headers({{"Authorization", "Bearer origin-token"},
+                                 {"Cookie", "sid=origin-session"},
+                                 {"X-Api-Key", "origin-key"}});
+      },
+      "Basic", {"Authorization", "Cookie", "X-Api-Key"});
+}
 
 TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
   // Origin inside a CONNECT tunnel replying 407 must not trigger the digest

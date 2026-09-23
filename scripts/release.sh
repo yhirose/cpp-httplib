@@ -164,14 +164,18 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "==> Dry run complete. No changes were made."
 else
   echo "==> Updating httplib.h..."
-  sed -i '' "s/#define CPPHTTPLIB_VERSION \"[^\"]*\"/#define CPPHTTPLIB_VERSION \"$NEW_VERSION\"/" httplib.h
-  sed -i '' "s/#define CPPHTTPLIB_VERSION_NUM \"0x[0-9a-fA-F]*\"/#define CPPHTTPLIB_VERSION_NUM \"$VERSION_HEX\"/" httplib.h
+  # `-i.bak` is the in-place form GNU and BSD sed both accept (`-i ''` is
+  # BSD-only: GNU sed reads the '' as the script).
+  sed -i.bak "s/#define CPPHTTPLIB_VERSION \"[^\"]*\"/#define CPPHTTPLIB_VERSION \"$NEW_VERSION\"/" httplib.h
+  sed -i.bak "s/#define CPPHTTPLIB_VERSION_NUM \"0x[0-9a-fA-F]*\"/#define CPPHTTPLIB_VERSION_NUM \"$VERSION_HEX\"/" httplib.h
+  rm -f httplib.h.bak
   echo "    CPPHTTPLIB_VERSION     = \"$NEW_VERSION\""
   echo "    CPPHTTPLIB_VERSION_NUM = \"$VERSION_HEX\""
 
   echo ""
   echo "==> Updating docs-src/config.toml..."
-  sed -i '' "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" docs-src/config.toml
+  sed -i.bak "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" docs-src/config.toml
+  rm -f docs-src/config.toml.bak
   echo "    version = \"$NEW_VERSION\""
 
   # --- Step 6: Commit, tag, and push ---

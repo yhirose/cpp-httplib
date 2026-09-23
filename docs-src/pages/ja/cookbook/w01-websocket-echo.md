@@ -36,7 +36,7 @@ int main() {
 - `ReadResult::Text`: テキストメッセージを受信
 - `ReadResult::Binary`: バイナリメッセージを受信
 - `ReadResult::Fail`: エラー、または接続が閉じた
-- `ReadResult::Timeout`: 何も受信しないまま読み取りタイムアウトが経過した。接続は開いたまま。読み取りタイムアウトを設定したときだけ返る（[W06. タイムアウトを設定する](../w06-websocket-timeouts)を参照）
+- `ReadResult::Timeout`: `set_read_timeout()`で自分が設定した読み取りタイムアウトが、何も受信しないまま経過した。接続は開いたまま。コンパイル時のデフォルトのタイムアウトは接続を閉じ、`Fail`として返る（[W06. タイムアウトを設定する](../w06-websocket-timeouts)を参照）
 
 ## クライアント: エコーを叩く
 

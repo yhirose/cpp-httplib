@@ -1,7 +1,12 @@
 repos:
-  - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v18.1.8  # 最新バージョンを使用
+  - repo: local
     hooks:
       - id: clang-format
-        files: \.(cpp|cc|h)$
-        args: [-i]  # インプレースで修正
+        name: clang-format
+        # Uses whatever `clang-format` resolves to on PATH (the Homebrew
+        # install on macOS) instead of a version pinned here, so it tracks
+        # the same version CI installs via `brew install clang-format`.
+        entry: clang-format
+        language: system
+        files: ^(httplib\.h|(example|fuzzing|test)/[^/]+\.(cpp|cc|h))$
+        args: [-i]
