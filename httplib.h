@@ -939,6 +939,48 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
   return true;
 }
 
+// Resolves a relative-path or query-only Location value against the path of
+// the request being redirected (RFC 3986 section 5.2). Absolute URIs and
+// references starting with '/' are returned unchanged.
+inline std::string resolve_relative_location(const std::string &location,
+                                             const std::string &base) {
+  if (location.empty() || location[0] == '/') { return location; }
+
+  // A ':' in the first segment means the value has a scheme.
+  if (location.find(':') < location.find_first_of("/?#")) { return location; }
+
+  if (location[0] == '#') { return base.substr(0, base.find('#')) + location; }
+
+  auto base_path = base.substr(0, base.find_first_of("?#"));
+  if (location[0] == '?') { return base_path + location; }
+
+  if (base_path.empty() || base_path[0] != '/') { base_path = "/"; }
+  auto merged = base_path.substr(0, base_path.rfind('/') + 1) + location;
+
+  // Remove "." and ".." segments from the merged path.
+  auto path_end = (std::min)(merged.find_first_of("?#"), merged.size());
+  std::string path;
+  size_t i = 0;
+  while (i < path_end) {
+    auto next = (std::min)(merged.find('/', i + 1), path_end);
+    auto segment = merged.substr(i + 1, next - i - 1);
+    auto is_last = next == path_end;
+    if (segment == "." || segment == "..") {
+      if (segment == "..") {
+        path.erase((std::min)(path.rfind('/'), path.size()));
+      }
+      if (is_last) { path += '/'; }
+    } else {
+      path += '/';
+      path += segment;
+    }
+    i = next;
+  }
+  if (path.empty()) { path = "/"; }
+
+  return path + merged.substr(path_end);
+}
+
 } // namespace detail
 
 enum class SSLVerifierResponse {
@@ -15506,7 +15548,10 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (location.empty()) { return false; }
 
   detail::UrlComponents uc;
-  if (!detail::parse_url(location, uc)) { return false; }
+  if (!detail::parse_url(detail::resolve_relative_location(location, req.path),
+                         uc)) {
+    return false;
+  }
 
   // Only follow http/https redirects
   if (!uc.scheme.empty() && uc.scheme != "http" && uc.scheme != "https") {
