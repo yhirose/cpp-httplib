@@ -17281,6 +17281,93 @@ TEST(RedirectTest, RedirectWithPlusInPath) {
   }
 }
 
+TEST(RedirectTest, ResolveRelativeLocation) {
+  // Examples from RFC 3986 section 5.4, base "http://a/b/c/d;p?q".
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"g", "/b/c/g"},
+      {"./g", "/b/c/g"},
+      {"g/", "/b/c/g/"},
+      {"?y", "/b/c/d;p?y"},
+      {"g?y", "/b/c/g?y"},
+      {"#s", "/b/c/d;p?q#s"},
+      {"g#s", "/b/c/g#s"},
+      {"g?y#s", "/b/c/g?y#s"},
+      {";x", "/b/c/;x"},
+      {"g;x", "/b/c/g;x"},
+      {".", "/b/c/"},
+      {"./", "/b/c/"},
+      {"..", "/b/"},
+      {"../", "/b/"},
+      {"../g", "/b/g"},
+      {"../..", "/"},
+      {"../../", "/"},
+      {"../../g", "/g"},
+      {"../../../g", "/g"},
+      {"g.", "/b/c/g."},
+      {".g", "/b/c/.g"},
+      {"g..", "/b/c/g.."},
+      {"..g", "/b/c/..g"},
+      {"./../g", "/b/g"},
+      {"./g/.", "/b/c/g/"},
+      {"g/./h", "/b/c/g/h"},
+      {"g/../h", "/b/c/h"},
+      {"g;x=1/./y", "/b/c/g;x=1/y"},
+      {"g;x=1/../y", "/b/c/y"},
+      {"g?y/./x", "/b/c/g?y/./x"},
+      {"g#s/../x", "/b/c/g#s/../x"},
+      // Not relative-path references, so left for parse_url.
+      {"/g", "/g"},
+      {"//g", "//g"},
+      {"http://g/x", "http://g/x"},
+      {"g:h", "g:h"},
+  };
+  for (const auto &c : cases) {
+    EXPECT_EQ(c.second,
+              detail::resolve_relative_location(c.first, "/b/c/d;p?q"))
+        << c.first;
+  }
+}
+
+TEST(RedirectTest, RelativeLocationWithoutLeadingSlash) {
+  Server svr;
+
+  svr.Get("/dir/page", [](const Request &req, Response &res) {
+    res.set_redirect(req.get_param_value("to"));
+  });
+
+  svr.Get("/dir/next", [](const Request &req, Response &res) {
+    res.set_content(req.target, "text/plain");
+  });
+
+  svr.Get("/other", [](const Request &req, Response &res) {
+    res.set_content(req.target, "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"next", "/dir/next"},
+      {"./next?x=1", "/dir/next?x=1"},
+      {"../other", "/other"},
+  };
+  for (const auto &c : cases) {
+    Client cli(HOST, PORT);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/dir/page?to=" + encode_query_component(c.first));
+    ASSERT_TRUE(res) << c.first << ": " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << c.first;
+    EXPECT_EQ(c.second, res->body) << c.first;
+  }
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(RedirectTest, Issue2185_Online) {
   SSLClient client("github.com");
