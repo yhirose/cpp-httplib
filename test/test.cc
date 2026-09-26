@@ -21367,6 +21367,73 @@ TEST(ETagTest, IfNoneMatchBoundaryCheck) {
   std::remove(fname);
 }
 
+// Forward declaration: in split builds split.py strips `inline` and moves the
+// definition into httplib.cc, so detail::parse_http_date is not visible from
+// the public httplib.h. Re-declaring it here lets the tests link against the
+// symbol in both header-only and split builds.
+namespace httplib {
+namespace detail {
+time_t parse_http_date(const std::string &date_str);
+} // namespace detail
+} // namespace httplib
+
+TEST(ParseHttpDateTest, RFC850TwoDigitYearIsNotFixedToACentury) {
+  using namespace httplib;
+
+  // RFC 9110 Section 5.6.7 says a recipient of an rfc850-date, which carries
+  // only a two-digit year, must read it as the closest year that is not more
+  // than 50 years in the future of "now" -- not a fixed century window (the
+  // 1969-2068 split that get_time/strptime commonly use). We compute "now"
+  // here so the test still makes sense decades from now, instead of pinning
+  // it to today's date.
+  time_t now = std::time(nullptr);
+  struct tm now_tm;
+#ifdef _WIN32
+  ASSERT_EQ(0, gmtime_s(&now_tm, &now));
+#else
+  ASSERT_NE(nullptr, gmtime_r(&now, &now_tm));
+#endif
+  auto current_year = now_tm.tm_year + 1900;
+
+  auto year_of = [](const std::string &date_str) {
+    auto t = detail::parse_http_date(date_str);
+    struct tm tm_buf;
+#ifdef _WIN32
+    gmtime_s(&tm_buf, &t);
+#else
+    gmtime_r(&t, &tm_buf);
+#endif
+    return tm_buf.tm_year + 1900;
+  };
+
+  // The two-digit year that resolves to exactly "current year + 50" is the
+  // last one RFC 9110 still reads in the current century; one digit higher
+  // rolls back a century. This is also exactly where a fixed 1969-2068 (or
+  // similar) century window disagrees with the spec, since that window
+  // doesn't know what year it is "now".
+  auto boundary_two_digits = (current_year + 50 - 2000) % 100;
+  char boundary_date[64];
+  std::snprintf(boundary_date, sizeof(boundary_date),
+                "Wednesday, 01-Jan-%02d 00:00:00 GMT", boundary_two_digits);
+  EXPECT_EQ(current_year + 50, year_of(boundary_date));
+
+  auto just_past_boundary_two_digits = (boundary_two_digits + 1) % 100;
+  char just_past_boundary_date[64];
+  std::snprintf(just_past_boundary_date, sizeof(just_past_boundary_date),
+                "Thursday, 01-Jan-%02d 00:00:00 GMT",
+                just_past_boundary_two_digits);
+  EXPECT_EQ(current_year + 50 - 99, year_of(just_past_boundary_date));
+
+  // The classic RFC 850 example date is decades in the past either way, so a
+  // fixed window and the spec's own rule already agree here; this just
+  // guards against a fix that moves the boundary in the wrong direction.
+  EXPECT_EQ(1994, year_of("Sunday, 06-Nov-94 08:49:37 GMT"));
+
+  // Unaffected formats keep their full four-digit year exactly as given.
+  EXPECT_EQ(1994, year_of("Sun, 06 Nov 1994 08:49:37 GMT"));
+  EXPECT_EQ(1994, year_of("Sun Nov  6 08:49:37 1994"));
+}
+
 TEST(ETagTest, LastModifiedAndIfModifiedSince) {
   using namespace httplib;
 

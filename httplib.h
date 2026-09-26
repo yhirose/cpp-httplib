@@ -5239,11 +5239,34 @@ inline time_t parse_http_date(const std::string &date_str) {
   // RFC 9110 preferred format (HTTP-date): "Sun, 06 Nov 1994 08:49:37 GMT"
   if (!try_parse("%a, %d %b %Y %H:%M:%S")) {
     // RFC 850 format: "Sunday, 06-Nov-94 08:49:37 GMT"
-    if (!try_parse("%A, %d-%b-%y %H:%M:%S")) {
-      // asctime format: "Sun Nov  6 08:49:37 1994"
-      if (!try_parse("%a %b %d %H:%M:%S %Y")) {
-        return static_cast<time_t>(-1);
+    if (try_parse("%A, %d-%b-%y %H:%M:%S")) {
+      // `%y` on its own leaves the century to whatever fixed window the
+      // standard library's get_time/strptime happens to use (typically
+      // 1969-2068), which drifts from what the request actually meant as
+      // "now" moves past 2068. RFC 9110 Section 5.6.7 instead asks a
+      // recipient to interpret the two digits as the closest year that is
+      // not more than 50 years in the future of the current time. `tm_year %
+      // 100` recovers the literal two digits from the input regardless of
+      // which century the library guessed, so we can redo the century
+      // ourselves against the real current year.
+      auto two_digit_year = tm_buf.tm_year % 100;
+      auto now = std::time(nullptr);
+      struct tm now_tm;
+#ifdef _WIN32
+      auto have_now_tm = gmtime_s(&now_tm, &now) == 0;
+#else
+      auto have_now_tm = gmtime_r(&now, &now_tm) != nullptr;
+#endif
+      if (have_now_tm) {
+        auto current_year = now_tm.tm_year + 1900;
+        auto century_base = (current_year / 100) * 100;
+        auto candidate_year = century_base + two_digit_year;
+        if (candidate_year > current_year + 50) { candidate_year -= 100; }
+        tm_buf.tm_year = candidate_year - 1900;
       }
+    } else if (!try_parse("%a %b %d %H:%M:%S %Y")) {
+      // asctime format: "Sun Nov  6 08:49:37 1994"
+      return static_cast<time_t>(-1);
     }
   }
 
