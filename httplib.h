@@ -1884,6 +1884,7 @@ struct Response {
   ContentProvider content_provider_;
   ContentProviderResourceReleaser content_provider_resource_releaser_;
   bool is_chunked_content_provider_ = false;
+  bool is_file_content_provider_ = false;
   bool content_provider_success_ = false;
   std::string file_content_path_;
   std::string file_content_content_type_;
@@ -8788,9 +8789,9 @@ inline bool compress_content_provider(const ContentProvider &content_provider,
   return cmp.compress(nullptr, 0, true, append);
 }
 
-// Serves `m` as the response body. `set_content_provider()` clears the coding,
-// so recording it has to come after; keeping both here means a third
-// file-serving path cannot get that order wrong.
+// Serves `m` as the response body. `set_content_provider()` clears the coding
+// and the file flag, so recording them has to come after; keeping all of it
+// here means a third file-serving path cannot get that order wrong.
 inline void set_file_content_provider(Response &res,
                                       const std::shared_ptr<mmap> &m,
                                       const std::string &content_type,
@@ -8802,6 +8803,7 @@ inline void set_file_content_provider(Response &res,
         return true;
       });
 
+  res.is_file_content_provider_ = true;
   res.content_coding_ = encoding;
 }
 
@@ -11702,6 +11704,7 @@ inline void Response::set_content_provider(
   if (in_length > 0) { content_provider_ = std::move(provider); }
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
+  is_file_content_provider_ = false;
   content_coding_ = detail::EncodingType::None;
 }
 
@@ -11713,6 +11716,7 @@ inline void Response::set_content_provider(
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = false;
+  is_file_content_provider_ = false;
   content_coding_ = detail::EncodingType::None;
 }
 
@@ -11724,6 +11728,7 @@ inline void Response::set_chunked_content_provider(
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
   is_chunked_content_provider_ = true;
+  is_file_content_provider_ = false;
   content_coding_ = detail::EncodingType::None;
 }
 
@@ -13377,9 +13382,27 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   if (!detail::write_response_line(bstrm, res.status)) { return false; }
   if (header_writer_(bstrm, res.headers) <= 0) { return false; }
 
-  // Combine small body with headers to reduce write syscalls
-  if (req.method != "HEAD" && !res.body.empty() && !res.content_provider_) {
-    bstrm.write(res.body.data(), res.body.size());
+  // Combine a small body with the headers so the whole response leaves in a
+  // single write. A large body is written on its own instead: a copy of it
+  // costs more than the extra write saves.
+  auto send_body = req.method != "HEAD";
+  auto body_is_separate = false;
+  auto provider_done = false;
+  if (send_body && !res.body.empty() && !res.content_provider_) {
+    if (res.body.size() < CPPHTTPLIB_SEND_BUFSIZ) {
+      bstrm.write(res.body.data(), res.body.size());
+    } else {
+      body_is_separate = true;
+    }
+  } else if (send_body && res.content_provider_ &&
+             res.is_file_content_provider_ &&
+             res.content_length_ < CPPHTTPLIB_SEND_BUFSIZ) {
+    // A small file is read into the same buffer. Other providers may produce
+    // their data over time, so they are never held back.
+    if (!write_content_with_provider(bstrm, req, res, boundary, content_type)) {
+      return false;
+    }
+    provider_done = true;
   }
 
   // Log before writing to avoid race condition with client-side code that
@@ -13390,17 +13413,20 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   auto &data = bstrm.get_buffer();
   if (!detail::write_data(strm, data.data(), data.size())) { return false; }
 
-  // Streaming body
-  auto ret = true;
-  if (req.method != "HEAD" && res.content_provider_) {
-    if (write_content_with_provider(strm, req, res, boundary, content_type)) {
-      res.content_provider_success_ = true;
-    } else {
-      ret = false;
-    }
+  if (body_is_separate) {
+    return detail::write_data(strm, res.body.data(), res.body.size());
   }
 
-  return ret;
+  // Streaming body
+  if (send_body && res.content_provider_) {
+    if (!provider_done &&
+        !write_content_with_provider(strm, req, res, boundary, content_type)) {
+      return false;
+    }
+    res.content_provider_success_ = true;
+  }
+
+  return true;
 }
 
 inline bool
