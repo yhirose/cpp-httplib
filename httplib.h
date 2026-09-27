@@ -7623,7 +7623,8 @@ inline bool parse_quality(const char *b, const char *e, std::string &token,
 
                double v = 0.0;
                auto res = from_chars(pb + r.first, pb + r.second, v);
-               if (res.ec != std::errc{} || v < 0.0 || v > 1.0) {
+               if (res.ec != std::errc{} || res.ptr != pb + r.second ||
+                   v < 0.0 || v > 1.0) {
                  invalid = true;
                  return true;
                }
