@@ -1059,6 +1059,10 @@ TEST(ParseAcceptHeaderTest, InvalidCases) {
   EXPECT_FALSE(detail::parse_accept_header(
       "text/html;q=invalid,application/json", result));
 
+  // A valid numeric prefix does not make the entire quality value valid.
+  EXPECT_FALSE(detail::parse_accept_header(
+      "text/html;q=0.5junk,application/json", result));
+
   // Empty quality value
   EXPECT_FALSE(
       detail::parse_accept_header("text/html;q=,application/json", result));
@@ -2110,6 +2114,16 @@ TEST(ParseAcceptEncoding5, AcceptEncodingQZeroVariants) {
   auto ret = detail::encoding_type(req, res);
 
   EXPECT_TRUE(ret == detail::EncodingType::None);
+}
+
+TEST(ParseAcceptEncodingTest, RejectsTrailingQualityCharacters) {
+  Request req;
+  req.set_header("Accept-Encoding", "gzip;q=0.5junk");
+
+  Response res;
+  res.set_header("Content-Type", "text/plain");
+
+  EXPECT_EQ(detail::EncodingType::None, detail::encoding_type(req, res));
 }
 
 TEST(ParseAcceptEncoding6, AcceptEncodingXGzipQZero) {
