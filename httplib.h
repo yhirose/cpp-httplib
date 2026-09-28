@@ -5051,11 +5051,15 @@ inline bool SSEClient::should_reconnect(int count) const {
 }
 
 inline void SSEClient::wait_for_reconnect() {
-  // Use small increments to check running_ flag frequently
+  // Use small increments to check running_ flag frequently.
+  // Always wait at least one increment, so that a zero interval (e.g.
+  // "retry: 0" from the server) cannot cause a busy reconnect loop.
+  const auto step_ms = 100;
+  auto interval_ms = (std::max)(reconnect_interval_ms_, step_ms);
   auto waited = 0;
-  while (running_.load() && waited < reconnect_interval_ms_) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    waited += 100;
+  while (running_.load() && waited < interval_ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
+    waited += step_ms;
   }
 }
 

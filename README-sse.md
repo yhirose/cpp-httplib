@@ -69,7 +69,7 @@ sse.on_error([](httplib::Error err) { });
 #### Configuration
 
 ```cpp
-// Set reconnect interval (default: 3000ms)
+// Set reconnect interval (default: 3000ms, minimum: 100ms)
 sse.set_reconnect_interval(5000);
 
 // Set max reconnect attempts (default: 0 = unlimited)

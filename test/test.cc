@@ -22702,7 +22702,10 @@ TEST_F(SSEIntegrationTest, DigitRetryFieldApplied) {
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
   sse.stop();
 
+  // The server-supplied interval is applied, but never below 100ms, so
+  // "retry: 0" does not cause a busy reconnect loop
   EXPECT_GE(connection_count.load(), 2);
+  EXPECT_LE(connection_count.load(), 10);
 }
 
 // Test: Last-Event-ID sent on reconnect
