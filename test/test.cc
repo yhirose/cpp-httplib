@@ -10390,6 +10390,22 @@ TEST(ServerRequestParsingTest, InvalidSpaceInURL) {
   EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24));
 }
 
+TEST(ServerRequestParsingTest, InvalidControlCharInURL) {
+  for (auto target : {"/h\ri", "/h\x7fi"}) {
+    std::string out;
+    test_raw_request(std::string("GET ") + target + " HTTP/1.1\r\n\r\n", &out);
+    EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24)) << target;
+  }
+}
+
+TEST(ServerRequestParsingTest, NonAsciiInURLAccepted) {
+  std::string out;
+  test_raw_request("GET /hi?q=\xE3\x81\x82 HTTP/1.1\r\n"
+                   "Connection: close\r\n\r\n",
+                   &out);
+  EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
+}
+
 TEST(ServerRequestParsingTest, RemoteAddrSetOnBadRequest) {
   Server svr;
 

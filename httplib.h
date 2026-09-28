@@ -13296,6 +13296,13 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     return false;
   }
 
+  // RFC 9112 §2.2/§3.2: reject control characters (incl. bare CR) in the
+  // request-target. obs-text is allowed since some clients send raw UTF-8.
+  if (!std::all_of(req.target.begin(), req.target.end(),
+                   detail::fields::is_field_vchar)) {
+    return false;
+  }
+
   {
     // Skip URL fragment
     for (size_t i = 0; i < req.target.size(); i++) {
