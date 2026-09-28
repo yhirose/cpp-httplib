@@ -4913,7 +4913,8 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
     msg.id = value;
   } else if (field == "retry") {
     // Parse retry interval in milliseconds
-    {
+    // Per the SSE spec, a value that is not all ASCII digits is ignored.
+    if (detail::is_numeric(value)) {
       int v = 0;
       auto res =
           detail::from_chars(value.data(), value.data() + value.size(), v);
