@@ -3957,6 +3957,7 @@ bool is_field_vchar(char c);
 bool is_field_content(const std::string &s);
 bool is_field_value(const std::string &s);
 bool is_field_valid(const std::string &name, const std::string &value);
+bool is_request_target(const std::string &s);
 
 } // namespace fields
 } // namespace detail
@@ -5821,15 +5822,15 @@ inline std::string encode_path(const std::string &s) {
     switch (s[i]) {
     case ' ': result += "%20"; break;
     case '+': result += "%2B"; break;
-    case '\r': result += "%0D"; break;
-    case '\n': result += "%0A"; break;
     case '\'': result += "%27"; break;
     case ',': result += "%2C"; break;
     // case ':': result += "%3A"; break; // ok? probably...
     case ';': result += "%3B"; break;
     default:
       auto c = static_cast<uint8_t>(s[i]);
-      if (c >= 0x80) {
+      // Control characters (incl. CR/LF) and non-ASCII bytes are not allowed
+      // in a request-target as-is.
+      if (c < 0x20 || c == 0x7f || c >= 0x80) {
         result += '%';
         char hex[4];
         auto len = snprintf(hex, sizeof(hex) - 1, "%02X", c);
@@ -8561,14 +8562,11 @@ bool read_content(Stream &strm, T &x, size_t payload_max_length, int &status,
 
 inline ssize_t write_request_line(Stream &strm, const std::string &method,
                                   const std::string &path) {
-  // Neither the method nor the request target may carry CR/LF (or other
-  // control octets); otherwise a value smuggled into either splits the request
-  // line and injects headers or a whole request. The method must be a token
-  // (RFC 9110 Section 9.1), which also rejects an empty method and embedded
-  // spaces. The target gets the same field-value check that already guards
-  // header values in check_and_write_headers.
+  // Neither the method nor the request target may carry CR/LF, SP or other
+  // control octets; otherwise a value smuggled into either splits the request
+  // line and injects headers or a whole request.
   if (!fields::is_token(method)) { return -1; }
-  if (!fields::is_field_value(path)) { return -1; }
+  if (!fields::is_request_target(path)) { return -1; }
 
   std::string s = method;
   s += ' ';
@@ -10220,6 +10218,12 @@ inline bool is_field_value(const std::string &s) { return is_field_content(s); }
 
 inline bool is_field_valid(const std::string &name, const std::string &value) {
   return is_field_name(name) && is_field_value(value);
+}
+
+// RFC 9112 §2.2/§3.2: the request-target has no SP, HTAB or other control
+// characters (incl. bare CR). obs-text (raw UTF-8) is allowed.
+inline bool is_request_target(const std::string &s) {
+  return std::all_of(s.begin(), s.end(), is_field_vchar);
 }
 
 } // namespace fields
@@ -13296,12 +13300,7 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     return false;
   }
 
-  // RFC 9112 §2.2/§3.2: reject control characters (incl. bare CR) in the
-  // request-target. obs-text is allowed since some clients send raw UTF-8.
-  if (!std::all_of(req.target.begin(), req.target.end(),
-                   detail::fields::is_field_vchar)) {
-    return false;
-  }
+  if (!detail::fields::is_request_target(req.target)) { return false; }
 
   {
     // Skip URL fragment

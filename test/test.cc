@@ -4060,6 +4060,37 @@ TEST(PathUrlEncodeTest, StreamingCRLFInTargetIsEncoded) {
   }
 }
 
+TEST(PathUrlEncodeTest, ControlCharsInPathAreEncoded) {
+  // Every control character is percent-encoded, not just CR/LF, so the target
+  // passes the request-target check in write_request_line.
+  Server svr;
+
+  std::string target;
+  svr.set_pre_routing_handler([&](const Request &req, Response &res) {
+    target = req.target;
+    res.status = StatusCode::OK_200;
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  {
+    Client cli(HOST, port);
+
+    auto res = cli.Get("/a\tb\x1b\x7f");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("/a%09b%1B%7F", target);
+  }
+}
+
 TEST(PathUrlEncodeTest, StreamingCRLFRejectedWhenPathEncodeDisabled) {
   // Nothing may reach the wire: a raw CR/LF target would split the request
   // line and inject headers.
@@ -10092,7 +10123,7 @@ ssize_t write_request_line(Stream &strm, const std::string &method,
 } // namespace detail
 } // namespace httplib
 
-TEST(RequestLineInjectionTest, RejectsCRLFInTarget) {
+TEST(RequestLineInjectionTest, RejectsInvalidCharsInTarget) {
   // A well-formed target is written verbatim.
   {
     detail::BufferStream strm;
@@ -10101,15 +10132,18 @@ TEST(RequestLineInjectionTest, RejectsCRLFInTarget) {
     EXPECT_EQ("GET /path?a=b HTTP/1.1\r\n", strm.get_buffer());
   }
 
-  // A target carrying CR/LF must be rejected before anything reaches the wire,
-  // otherwise it splits the request line and injects a header or a whole
-  // request. This is what a decoded redirect Location ("%0D%0A") turns into
-  // when path encoding is disabled.
+  // A target carrying CR/LF, SP or other control octets must be rejected
+  // before anything reaches the wire, otherwise it splits the request line and
+  // injects a header or a whole request. This is what a decoded redirect
+  // Location ("%0D%0A") turns into when path encoding is disabled.
   const std::string evil_targets[] = {
       "/a\r\nInjected: pwned",
       "/a\rInjected",
       "/a\nInjected",
       "/a\r\n\r\nGET /evil HTTP/1.1\r\nHost: victim\r\n\r\n",
+      "/a b",
+      "/a\tb",
+      "/a\x7f",
   };
   for (const auto &evil : evil_targets) {
     detail::BufferStream strm;
@@ -10120,11 +10154,11 @@ TEST(RequestLineInjectionTest, RejectsCRLFInTarget) {
 }
 
 TEST(RequestLineInjectionTest, ClientRejectsCRLFTargetEndToEnd) {
-  // End-to-end counterpart to RejectsCRLFInTarget. With path encoding disabled
-  // the client transmits the target verbatim, so a CR/LF-bearing target -- what
-  // a redirect Location "%0D%0A" decodes to -- reaches write_request. The
-  // client must fail cleanly with Error::Write instead of putting a
-  // request-line-less, header-injecting request on the wire.
+  // End-to-end counterpart to RejectsInvalidCharsInTarget. With path encoding
+  // disabled the client transmits the target verbatim, so a CR/LF-bearing
+  // target -- what a redirect Location "%0D%0A" decodes to -- reaches
+  // write_request. The client must fail cleanly with Error::Write instead of
+  // putting a request-line-less, header-injecting request on the wire.
   Server svr;
 
   svr.Get("/a", [](const Request &, Response &res) {
