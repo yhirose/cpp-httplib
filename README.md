@@ -452,6 +452,9 @@ svr.set_logger([](const httplib::Request& req, const httplib::Response& res) {
 });
 ```
 
+> [!NOTE]
+> `req.path` is percent-decoded and may contain control characters such as CR/LF. Escape request data before writing it to a log file (see [docker/main.cc](docker/main.cc) for an example).
+
 #### Pre-compression Logging
 
 You can also set a pre-compression logger to capture request/response data before compression is applied:

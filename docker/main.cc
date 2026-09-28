@@ -48,6 +48,23 @@ std::string get_error_time_format() {
   return ss.str();
 }
 
+// Escape a value for a log line the way NGINX does: '"', '\\', control
+// bytes and non-ASCII bytes become \xHH. Request fields are attacker-controlled
+// (e.g. a raw CR in the request target or a decoded %0D%0A in req.path), so
+// writing them verbatim would let a client forge extra log lines.
+std::string escape_log(const std::string &s) {
+  std::string out;
+  out.reserve(s.size());
+  for (unsigned char c : s) {
+    if (c == '"' || c == '\\' || c < 0x20 || c >= 0x7f) {
+      out += std::format("\\x{:02X}", c);
+    } else {
+      out += static_cast<char>(c);
+    }
+  }
+  return out;
+}
+
 // NGINX Combined log format:
 // $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent
 // "$http_referer" "$http_user_agent"
@@ -55,7 +72,9 @@ void nginx_access_logger(const Request &req, const Response &res) {
   std::string remote_user =
       "-"; // cpp-httplib doesn't have built-in auth user tracking
   auto time_local = get_time_format();
-  auto request = std::format("{} {} {}", req.method, req.path, req.version);
+  // $request is the original request line, so log the raw target rather than
+  // the percent-decoded req.path.
+  auto request = std::format("{} {} {}", req.method, req.target, req.version);
   auto status = res.status;
   auto body_bytes_sent = res.body.size();
   auto http_referer = req.get_header_value("Referer");
@@ -64,9 +83,9 @@ void nginx_access_logger(const Request &req, const Response &res) {
   if (http_user_agent.empty()) http_user_agent = "-";
 
   std::cout << std::format("{} - {} [{}] \"{}\" {} {} \"{}\" \"{}\"",
-                           req.remote_addr, remote_user, time_local, request,
-                           status, body_bytes_sent, http_referer,
-                           http_user_agent)
+                           req.remote_addr, remote_user, time_local,
+                           escape_log(request), status, body_bytes_sent,
+                           escape_log(http_referer), escape_log(http_user_agent))
             << std::endl;
 }
 
@@ -79,14 +98,15 @@ void nginx_error_logger(const Error &err, const Request *req) {
 
   if (req) {
     auto request =
-        std::format("{} {} {}", req->method, req->path, req->version);
+        std::format("{} {} {}", req->method, req->target, req->version);
     auto host = req->get_header_value("Host");
     if (host.empty()) host = "-";
 
     std::cerr << std::format("{} [{}] {}, client: {}, request: "
                              "\"{}\", host: \"{}\"",
                              time_local, level, to_string(err),
-                             req->remote_addr, request, host)
+                             req->remote_addr, escape_log(request),
+                             escape_log(host))
               << std::endl;
   } else {
     // If no request context, just log the error
