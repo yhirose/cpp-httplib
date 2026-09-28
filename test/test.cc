@@ -22647,6 +22647,64 @@ TEST_F(SSEIntegrationTest, AutoReconnectAfterDisconnect) {
   EXPECT_GE(message_count.load(), 2);
 }
 
+// Test: A retry field that is not all ASCII digits is ignored
+TEST_F(SSEIntegrationTest, NonDigitRetryFieldIgnored) {
+  std::atomic<int> connection_count{0};
+
+  server_->Get("/bad-retry",
+               [&connection_count](const Request &, Response &res) {
+                 connection_count.fetch_add(1);
+                 res.set_chunked_content_provider(
+                     "text/event-stream", [](size_t offset, DataSink &sink) {
+                       if (offset == 0) {
+                         std::string event = "retry: -1\ndata: hello\n\n";
+                         sink.write(event.data(), event.size());
+                       }
+                       return false;
+                     });
+               });
+
+  Client client("localhost", get_port());
+  sse::SSEClient sse(client, "/bad-retry");
+
+  sse.set_reconnect_interval(10000);
+  sse.start_async();
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  sse.stop();
+
+  EXPECT_EQ(connection_count.load(), 1);
+}
+
+// Test: A retry field of all ASCII digits sets the reconnection time
+TEST_F(SSEIntegrationTest, DigitRetryFieldApplied) {
+  std::atomic<int> connection_count{0};
+
+  server_->Get("/zero-retry",
+               [&connection_count](const Request &, Response &res) {
+                 connection_count.fetch_add(1);
+                 res.set_chunked_content_provider(
+                     "text/event-stream", [](size_t offset, DataSink &sink) {
+                       if (offset == 0) {
+                         std::string event = "retry: 0\ndata: hello\n\n";
+                         sink.write(event.data(), event.size());
+                       }
+                       return false;
+                     });
+               });
+
+  Client client("localhost", get_port());
+  sse::SSEClient sse(client, "/zero-retry");
+
+  sse.set_reconnect_interval(10000);
+  sse.start_async();
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  sse.stop();
+
+  EXPECT_GE(connection_count.load(), 2);
+}
+
 // Test: Last-Event-ID sent on reconnect
 TEST_F(SSEIntegrationTest, LastEventIdSentOnReconnect) {
   std::atomic<int> connection_count{0};
