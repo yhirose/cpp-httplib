@@ -4366,7 +4366,8 @@ public:
   void stop();
 
 private:
-  bool parse_sse_line(const std::string &line, SSEMessage &msg, int &retry_ms);
+  bool parse_sse_line(const std::string &line, SSEMessage &msg, int &retry_ms,
+                      bool &has_data);
   void run_event_loop();
   void dispatch_event(const SSEMessage &msg);
   bool should_reconnect(int count) const;
@@ -4876,7 +4877,7 @@ inline void SSEClient::stop() {
 }
 
 inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
-                                      int &retry_ms) {
+                                      int &retry_ms, bool &has_data) {
   // Blank line signals end of event
   if (line.empty() || line == "\r") { return true; }
 
@@ -4885,16 +4886,11 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
 
   // Find the colon separator
   auto colon_pos = line.find(':');
-  if (colon_pos == std::string::npos) {
-    // Line with no colon is treated as field name with empty value
-    return false;
-  }
-
   auto field = line.substr(0, colon_pos);
   std::string value;
 
   // Value starts after colon, skip optional single space
-  if (colon_pos + 1 < line.size()) {
+  if (colon_pos != std::string::npos && colon_pos + 1 < line.size()) {
     auto value_start = colon_pos + 1;
     if (line[value_start] == ' ') { value_start++; }
     value = line.substr(value_start);
@@ -4907,8 +4903,9 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
     msg.event = value;
   } else if (field == "data") {
     // Multiple data lines are concatenated with newlines
-    if (!msg.data.empty()) { msg.data += "\n"; }
+    if (has_data) { msg.data += "\n"; }
     msg.data += value;
+    has_data = true;
   } else if (field == "id") {
     // Empty id is valid (clears the last event ID)
     msg.id = value;
@@ -4982,6 +4979,7 @@ inline void SSEClient::run_event_loop() {
     // Event receiving loop
     std::string buffer;
     SSEMessage current_msg;
+    bool has_data = false;
 
     while (running_.load() && result.next()) {
       buffer.append(result.data(), result.size());
@@ -4997,9 +4995,9 @@ inline void SSEClient::run_event_loop() {
 
         // Parse the line and check if event is complete
         auto event_complete =
-            parse_sse_line(line, current_msg, reconnect_interval_ms_);
+            parse_sse_line(line, current_msg, reconnect_interval_ms_, has_data);
 
-        if (event_complete && !current_msg.data.empty()) {
+        if (event_complete && has_data) {
           // Update last_event_id for reconnection
           if (!current_msg.id.empty()) { last_event_id_ = current_msg.id; }
 
@@ -5007,6 +5005,7 @@ inline void SSEClient::run_event_loop() {
           dispatch_event(current_msg);
 
           current_msg.clear();
+          has_data = false;
         }
       }
 
