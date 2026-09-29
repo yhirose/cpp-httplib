@@ -23362,6 +23362,67 @@ TEST(WebSocketTest, InvalidUTF8TextFrame) {
   EXPECT_FALSE(ws::impl::is_valid_utf8("\xF4\x90\x80\x80")); // Beyond U+10FFFF
 }
 
+TEST(WebSocketTest, RejectsUnofferedSubprotocol) {
+  // RFC 6455 Section 4.1: the client MUST fail the connection if the server's
+  // Sec-WebSocket-Protocol names a subprotocol the client did not offer.
+  const std::string accept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
+
+  auto response = [&](const std::string &protocol_line) {
+    std::string r = "HTTP/1.1 101 Switching Protocols\r\n"
+                    "Upgrade: websocket\r\n"
+                    "Connection: Upgrade\r\n"
+                    "Sec-WebSocket-Accept: " +
+                    accept + "\r\n";
+    r += protocol_line;
+    r += "\r\n";
+    return r;
+  };
+
+  // Server selects a subprotocol that was offered: accepted.
+  {
+    detail::BufferStream strm;
+    auto r = response("Sec-WebSocket-Protocol: superchat\r\n");
+    strm.write(r.data(), r.size());
+    detail::WebSocketUpgradeResponse upgrade;
+    EXPECT_TRUE(detail::read_websocket_upgrade_response(
+        strm, accept, "chat, superchat", upgrade));
+    EXPECT_EQ("superchat", upgrade.selected_subprotocol);
+  }
+
+  // Server selects a subprotocol the client never offered: rejected.
+  {
+    detail::BufferStream strm;
+    auto r = response("Sec-WebSocket-Protocol: admin\r\n");
+    strm.write(r.data(), r.size());
+    detail::WebSocketUpgradeResponse upgrade;
+    EXPECT_FALSE(
+        detail::read_websocket_upgrade_response(strm, accept, "chat", upgrade));
+    EXPECT_EQ(Error::WebSocketHandshake, upgrade.error);
+  }
+
+  // Server selects no subprotocol: accepted (the server may decline).
+  {
+    detail::BufferStream strm;
+    auto r = response("");
+    strm.write(r.data(), r.size());
+    detail::WebSocketUpgradeResponse upgrade;
+    EXPECT_TRUE(
+        detail::read_websocket_upgrade_response(strm, accept, "chat", upgrade));
+    EXPECT_TRUE(upgrade.selected_subprotocol.empty());
+  }
+
+  // Client offered none but the server named one anyway: rejected.
+  {
+    detail::BufferStream strm;
+    auto r = response("Sec-WebSocket-Protocol: chat\r\n");
+    strm.write(r.data(), r.size());
+    detail::WebSocketUpgradeResponse upgrade;
+    EXPECT_FALSE(
+        detail::read_websocket_upgrade_response(strm, accept, "", upgrade));
+    EXPECT_EQ(Error::WebSocketHandshake, upgrade.error);
+  }
+}
+
 TEST(WebSocketTest, ConnectAndDisconnect) {
   Server svr;
   svr.WebSocket("/ws", [](const Request &, ws::WebSocket &ws) {
