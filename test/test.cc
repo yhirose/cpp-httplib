@@ -3754,6 +3754,34 @@ TEST(RedirectToDifferentPort, OverflowPortNumber) {
   EXPECT_FALSE(res);
 }
 
+TEST(RedirectToDifferentPort, TrailingCharactersInPort) {
+  Server svr;
+  auto port = svr.bind_to_any_port(HOST);
+  svr.Get("/redir", [&](const Request & /*req*/, Response &res) {
+    // The server's own port followed by junk must not be followed
+    res.set_redirect("http://" + std::string(HOST) + ":" +
+                     std::to_string(port) + "junk/target");
+  });
+  svr.Get("/target", [&](const Request & /*req*/, Response &res) {
+    res.set_content("target", "text/plain");
+  });
+
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/redir");
+  EXPECT_FALSE(res);
+}
+
 TEST(RedirectFromPageWithContent, Redirect) {
   Server svr;
 
@@ -13845,6 +13873,11 @@ TEST(HostAndPortPropertiesTest, OverflowPortNumber) {
 TEST(HostAndPortPropertiesTest, PortOutOfRange) {
   // Port 99999 exceeds valid range (1-65535) — should not crash
   httplib::Client cli("http://www.google.com:99999");
+  ASSERT_FALSE(cli.is_valid());
+}
+
+TEST(HostAndPortPropertiesTest, TrailingCharactersInPort) {
+  httplib::Client cli("http://www.google.com:80abc");
   ASSERT_FALSE(cli.is_valid());
 }
 

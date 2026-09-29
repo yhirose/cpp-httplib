@@ -834,7 +834,9 @@ inline from_chars_result<double> from_chars(const char *first, const char *last,
 inline bool parse_port(const char *s, size_t len, int &port) {
   int val = 0;
   auto r = from_chars(s, s + len, val);
-  if (r.ec != std::errc{} || val < 1 || val > 65535) { return false; }
+  if (r.ec != std::errc{} || r.ptr != s + len || val < 1 || val > 65535) {
+    return false;
+  }
   port = val;
   return true;
 }
