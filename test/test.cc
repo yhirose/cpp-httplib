@@ -3247,6 +3247,53 @@ TEST(DigestAuthTest, ChallengeMissingRealmDoesNotCrash) {
   run_digest_challenge_missing_field_test("Digest nonce=\"n\", qop=\"auth\"");
 }
 
+// A hostile server can put a '"' in realm/nonce/opaque, or a non-token
+// algorithm, in its challenge. parse_www_authenticate() de-escapes quoted-pairs
+// when storing the values, so the header builder has to re-escape them (and
+// keep algorithm a bare token); otherwise the value breaks out of its
+// quoted-string and injects extra auth-params into the client's Authorization.
+TEST(DigestAuthTest, EscapesInjectedAuthParams) {
+  std::atomic<int> hits{0};
+  std::string authorization;
+
+  Server svr;
+  svr.Get("/x", [&](const Request &req, Response &res) {
+    if (++hits == 1) {
+      res.status = StatusCode::Unauthorized_401;
+      // On the wire the quotes embedded in the values are backslash-escaped.
+      res.set_header("WWW-Authenticate",
+                     "Digest realm=\"testrealm\", "
+                     "nonce=\"n\\\"; injected=\\\"x\", "
+                     "algorithm=\"MD5, injected2=\\\"y\\\"\", qop=\"auth\"");
+    } else {
+      authorization = req.get_header_value("Authorization");
+      res.set_content("ok", "text/plain");
+    }
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_digest_auth("hello", "world");
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(2, hits.load());
+
+  EXPECT_EQ(0u, authorization.rfind("Digest ", 0));
+  // The nonce (de-escaped to  n"; injected="x ) must be re-escaped so it stays
+  // inside its quoted-string rather than starting an "injected" auth-param.
+  EXPECT_NE(std::string::npos,
+            authorization.find("nonce=\"n\\\"; injected=\\\"x\""));
+  // A non-token algorithm falls back to a bare MD5 token, dropping the payload.
+  EXPECT_EQ(std::string::npos, authorization.find("injected2"));
+}
+
 #endif
 
 TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {

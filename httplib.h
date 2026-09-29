@@ -10099,6 +10099,19 @@ inline std::string unescape_quoted_pairs(const std::string &s) {
   return out;
 }
 
+// Inverse of unescape_quoted_pairs: prepares a value to sit inside a
+// quoted-string. RFC 9110 §5.6.4 requires a literal '\' or '"' to be sent as a
+// quoted-pair, so the recipient recovers the original value.
+inline std::string escape_quoted_pairs(const std::string &s) {
+  std::string out;
+  out.reserve(s.size());
+  for (auto c : s) {
+    if (c == '\\' || c == '"') { out += '\\'; }
+    out += c;
+  }
+  return out;
+}
+
 inline bool parse_www_authenticate(const Response &res,
                                    std::map<std::string, std::string> &auth,
                                    bool is_proxy) {
@@ -10602,7 +10615,13 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
   }
 
   std::string algo = "MD5";
-  if (auth.find("algorithm") != auth.end()) { algo = auth.at("algorithm"); }
+  if (auth.find("algorithm") != auth.end()) {
+    // algorithm is an unquoted token (RFC 7616 §3.4). A server value that is
+    // not a token would otherwise be emitted verbatim and could carry commas
+    // or quotes that inject further auth-params into the header below.
+    const auto &a = auth.at("algorithm");
+    if (fields::is_token(a)) { algo = a; }
+  }
 
   std::string response;
   {
@@ -10625,14 +10644,23 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 
   auto opaque = (auth.find("opaque") != auth.end()) ? auth.at("opaque") : "";
 
-  auto field = "Digest username=\"" + username + "\", realm=\"" +
-               auth.at("realm") + "\", nonce=\"" + auth.at("nonce") +
-               "\", uri=\"" + req.path + "\", algorithm=" + algo +
-               (qop.empty() ? ", response=\""
-                            : ", qop=" + qop + ", nc=" + nc + ", cnonce=\"" +
-                                  cnonce + "\", response=\"") +
-               response + "\"" +
-               (opaque.empty() ? "" : ", opaque=\"" + opaque + "\"");
+  // Every value placed inside a quoted-string is escaped so a '"' in it cannot
+  // close the string early. realm, nonce and opaque come straight from the
+  // server's challenge (parse_www_authenticate() already de-escaped them), so
+  // without this a crafted challenge injects extra auth-params into the header.
+  auto field =
+      "Digest username=\"" + detail::escape_quoted_pairs(username) +
+      "\", realm=\"" + detail::escape_quoted_pairs(auth.at("realm")) +
+      "\", nonce=\"" + detail::escape_quoted_pairs(auth.at("nonce")) +
+      "\", uri=\"" + detail::escape_quoted_pairs(req.path) +
+      "\", algorithm=" + algo +
+      (qop.empty() ? ", response=\""
+                   : ", qop=" + qop + ", nc=" + nc + ", cnonce=\"" + cnonce +
+                         "\", response=\"") +
+      response + "\"" +
+      (opaque.empty()
+           ? ""
+           : ", opaque=\"" + detail::escape_quoted_pairs(opaque) + "\"");
 
   auto key = is_proxy ? "Proxy-Authorization" : "Authorization";
   return std::make_pair(key, field);
