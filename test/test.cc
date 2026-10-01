@@ -9921,6 +9921,61 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   return send_request_in_parts(read_timeout_sec, {req}, resp, port);
 }
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// Like send_request_in_parts(), over TLS. The server certificate is not
+// verified. Uses OpenSSL directly, since the TLS helpers in httplib::detail and
+// httplib::tls are not declared in the split httplib.h.
+static bool send_ssl_request_in_parts(time_t read_timeout_sec,
+                                      const std::vector<std::string> &parts,
+                                      std::string *resp, int port) {
+  auto error = Error::Success;
+
+  auto client_sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0,
+      /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+
+  if (client_sock == INVALID_SOCKET) { return false; }
+  auto sock_guard =
+      detail::scope_exit([&] { detail::close_socket(client_sock); });
+  detail::set_socket_opt_time(client_sock, SOL_SOCKET, SO_RCVTIMEO,
+                              read_timeout_sec, 0);
+
+  auto ctx = SSL_CTX_new(TLS_client_method());
+  if (!ctx) { return false; }
+  auto ctx_guard = detail::scope_exit([&] { SSL_CTX_free(ctx); });
+
+  auto ssl = SSL_new(ctx);
+  if (!ssl) { return false; }
+  auto ssl_guard = detail::scope_exit([&] {
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+  });
+
+  SSL_set_fd(ssl, static_cast<int>(client_sock));
+  if (SSL_connect(ssl) != 1) { return false; }
+
+  for (size_t i = 0; i < parts.size(); i++) {
+    const auto &part = parts[i];
+    if (SSL_write(ssl, part.data(), static_cast<int>(part.size())) !=
+        static_cast<int>(part.size())) {
+      return false;
+    }
+    if (i + 1 < parts.size()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  }
+
+  char buf[512];
+  int n;
+  while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+    if (resp) { resp->append(buf, static_cast<size_t>(n)); }
+  }
+  return true;
+}
+#endif
+
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   Server svr;
   std::string header_value;
@@ -11405,6 +11460,195 @@ TEST(KeepAliveTest, MaxCount) {
     }
   }
 }
+
+// A client may pipeline its requests, i.e. send several requests on one
+// connection without waiting for each response (RFC 9112 9.3.2). The server
+// must answer all of them, in order, and must not wait for the keep-alive
+// timeout before serving a request whose bytes it has already read.
+// Plain HTTP, or HTTPS with the test certificate if `ssl` is set.
+static std::unique_ptr<Server> make_test_server(bool ssl) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  if (ssl) {
+    return std::unique_ptr<Server>(
+        new SSLServer(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE));
+  }
+#else
+  (void)ssl;
+#endif
+  return std::unique_ptr<Server>(new Server());
+}
+
+static bool send_test_request_in_parts(bool ssl, time_t read_timeout_sec,
+                                       const std::vector<std::string> &parts,
+                                       std::string *resp, int port) {
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  if (ssl) {
+    return send_ssl_request_in_parts(read_timeout_sec, parts, resp, port);
+  }
+#endif
+  return send_request_in_parts(read_timeout_sec, parts, resp, port);
+}
+
+static void
+test_pipelined_requests(const std::vector<std::string> &parts,
+                        const std::vector<std::string> &expected_bodies,
+                        bool ssl = false) {
+  auto svr_ptr = make_test_server(ssl);
+  auto &svr = *svr_ptr;
+  svr.set_keep_alive_timeout(5);
+  svr.Get("/hi/(\\d+)", [](const Request &req, Response &res) {
+    res.set_content("hi " + req.matches[1].str(), "text/plain");
+  });
+  svr.Put("/echo/(\\d+)", [](const Request &req, Response &res) {
+    res.set_content("echo " + req.matches[1].str() + ":" + req.body,
+                    "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  auto start = std::chrono::steady_clock::now();
+  std::string res;
+  ASSERT_TRUE(send_test_request_in_parts(ssl, 10, parts, &res, port));
+  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - start)
+                        .count();
+
+  // The last request asks to close the connection, so the server closes it as
+  // soon as all responses are sent, well before the keep-alive timeout.
+  EXPECT_LT(elapsed_ms, 2000);
+
+  size_t responses = 0;
+  for (auto pos = res.find("HTTP/1.1 200 OK"); pos != std::string::npos;
+       pos = res.find("HTTP/1.1 200 OK", pos + 1)) {
+    responses++;
+  }
+  EXPECT_EQ(expected_bodies.size(), responses);
+
+  // Responses come in the order of the requests
+  size_t pos = 0;
+  for (const auto &body : expected_bodies) {
+    pos = res.find(body, pos);
+    ASSERT_NE(std::string::npos, pos) << "missing or out of order: " << body;
+    pos += body.size();
+  }
+}
+
+TEST(KeepAliveTest, PipelinedRequests) {
+  test_pipelined_requests({"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                           "GET /hi/2 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                           "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\n"
+                           "Connection: close\r\n\r\n"},
+                          {"hi 1", "hi 2", "hi 3"});
+}
+
+TEST(KeepAliveTest, PipelinedRequestsWithBody) {
+  test_pipelined_requests(
+      {"PUT /echo/1 HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 5\r\n\r\nfirst"
+       "PUT /echo/2 HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 6\r\n\r\nsecond"
+       "PUT /echo/3 HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 5\r\nConnection: close\r\n\r\nthird"},
+      {"echo 1:first", "echo 2:second", "echo 3:third"});
+}
+
+// The second request is split: its start arrives together with the first
+// request, its remainder arrives later on the socket.
+TEST(KeepAliveTest, PipelinedRequestSplitAcrossReads) {
+  test_pipelined_requests({"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                           "GET /hi/2 HTTP/1.1\r\nHo",
+                           "st: localhost\r\n\r\n"
+                           "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\n"
+                           "Connection: close\r\n\r\n"},
+                          {"hi 1", "hi 2", "hi 3"});
+}
+
+// Where an unparsable request ends is unknown, so the server must close the
+// connection instead of parsing what follows as the next request.
+static void test_pipelined_request_after_invalid_request(bool ssl) {
+  auto svr_ptr = make_test_server(ssl);
+  auto &svr = *svr_ptr;
+  svr.set_keep_alive_timeout(5);
+  auto processed = false;
+  svr.Get("/hi", [&](const Request &, Response &res) {
+    processed = true;
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  auto start = std::chrono::steady_clock::now();
+  std::string res;
+  ASSERT_TRUE(send_test_request_in_parts(
+      ssl, 10,
+      {"INVALID REQUEST LINE\r\n\r\n"
+       "GET /hi HTTP/1.1\r\nHost: localhost\r\n\r\n"},
+      &res, port));
+  auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - start)
+                        .count();
+
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, 24));
+  EXPECT_EQ(std::string::npos, res.find("HTTP/1.1 200 OK"));
+  EXPECT_FALSE(processed);
+  EXPECT_LT(elapsed_ms, 2000);
+}
+
+TEST(KeepAliveTest, PipelinedRequestAfterInvalidRequestIsNotProcessed) {
+  test_pipelined_request_after_invalid_request(false);
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// Over TLS, the next request is kept as already decrypted data by the TLS
+// library rather than in the stream's buffer.
+TEST(KeepAliveTest, SSLPipelinedRequests) {
+  test_pipelined_requests({"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                           "GET /hi/2 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                           "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\n"
+                           "Connection: close\r\n\r\n"},
+                          {"hi 1", "hi 2", "hi 3"}, true);
+}
+
+TEST(KeepAliveTest, SSLPipelinedRequestsWithBody) {
+  test_pipelined_requests(
+      {"PUT /echo/1 HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 5\r\n\r\nfirst"
+       "PUT /echo/2 HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 6\r\n\r\nsecond"
+       "PUT /echo/3 HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 5\r\nConnection: close\r\n\r\nthird"},
+      {"echo 1:first", "echo 2:second", "echo 3:third"}, true);
+}
+
+TEST(KeepAliveTest, SSLPipelinedRequestSplitAcrossReads) {
+  test_pipelined_requests({"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                           "GET /hi/2 HTTP/1.1\r\nHo",
+                           "st: localhost\r\n\r\n"
+                           "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\n"
+                           "Connection: close\r\n\r\n"},
+                          {"hi 1", "hi 2", "hi 3"}, true);
+}
+
+TEST(KeepAliveTest, SSLPipelinedRequestAfterInvalidRequestIsNotProcessed) {
+  test_pipelined_request_after_invalid_request(true);
+}
+#endif
 
 TEST(KeepAliveTest, Issue1041) {
   Server svr;
