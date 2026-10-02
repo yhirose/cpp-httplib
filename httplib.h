@@ -5120,7 +5120,8 @@ bool is_peer_closed(session_t session, socket_t sock);
 
 // Certificate verification
 cert_t get_peer_cert(const_session_t session);
-// The certificates the peer sent, leaf first. Free each with free_cert().
+// The certificates the peer sent, leaf first. Free each with free_cert(), and
+// do not use them after free_session(), as with get_peer_cert().
 size_t get_peer_certs(const_session_t session, std::vector<cert_t> &certs);
 void free_cert(cert_t cert);
 bool verify_hostname(cert_t cert, const char *hostname);
@@ -10733,10 +10734,11 @@ inline bool verify_cert_with_windows_schannel(
   });
   for (auto cert : peer_certs) {
     std::vector<unsigned char> der;
-    tls::get_cert_der(cert, der);
-    CertAddEncodedCertificateToStore(store, X509_ASN_ENCODING, der.data(),
-                                     static_cast<DWORD>(der.size()),
-                                     CERT_STORE_ADD_USE_EXISTING, nullptr);
+    if (store && tls::get_cert_der(cert, der)) {
+      CertAddEncodedCertificateToStore(store, X509_ASN_ENCODING, der.data(),
+                                       static_cast<DWORD>(der.size()),
+                                       CERT_STORE_ADD_USE_EXISTING, nullptr);
+    }
   }
 
   // Setup chain parameters
@@ -20910,8 +20912,8 @@ inline size_t get_peer_certs(const_session_t session,
   certs.clear();
   // Mbed TLS parses the whole received chain into a list headed by the peer
   // certificate, owned by the session like get_peer_cert()'s result
-  for (auto crt = static_cast<mbedtls_x509_crt *>(get_peer_cert(session)); crt;
-       crt = crt->next) {
+  for (auto crt = static_cast<mbedtls_x509_crt *>(get_peer_cert(session));
+       crt && crt->raw.len > 0; crt = crt->next) {
     certs.push_back(static_cast<cert_t>(crt));
   }
   return certs.size();
