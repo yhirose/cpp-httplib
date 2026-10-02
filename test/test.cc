@@ -9921,10 +9921,182 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   return send_request_in_parts(read_timeout_sec, {req}, resp, port);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-// Like send_request_in_parts(), over TLS. The server certificate is not
-// verified. Uses OpenSSL directly, since the TLS helpers in httplib::detail and
-// httplib::tls are not declared in the split httplib.h.
+#ifdef CPPHTTPLIB_SSL_ENABLED
+// A minimal TLS client on a connected socket, written against the TLS library
+// directly since the TLS helpers in httplib::detail and httplib::tls are not
+// declared in the split httplib.h. The server certificate is not verified.
+class RawTlsClient {
+public:
+  explicit RawTlsClient(socket_t sock);
+  ~RawTlsClient();
+  RawTlsClient(const RawTlsClient &) = delete;
+  RawTlsClient &operator=(const RawTlsClient &) = delete;
+
+  bool connect();
+  bool write(const std::string &data);
+  // Returns the number of bytes read, or 0 at the end of the stream or on an
+  // error.
+  size_t read(char *buf, size_t size);
+
+private:
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+  SSL_CTX *ctx_ = nullptr;
+  SSL *ssl_ = nullptr;
+#elif defined(CPPHTTPLIB_MBEDTLS_SUPPORT)
+  mbedtls_net_context net_;
+  mbedtls_ssl_config conf_;
+  mbedtls_ssl_context ssl_;
+#ifndef CPPHTTPLIB_MBEDTLS_V4
+  mbedtls_entropy_context entropy_;
+  mbedtls_ctr_drbg_context ctr_drbg_;
+#endif
+  bool ready_ = false;
+#elif defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+  WOLFSSL_CTX *ctx_ = nullptr;
+  WOLFSSL *ssl_ = nullptr;
+#endif
+};
+
+#if defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+RawTlsClient::RawTlsClient(socket_t sock) {
+  ctx_ = SSL_CTX_new(TLS_client_method());
+  if (ctx_) { ssl_ = SSL_new(ctx_); }
+  if (ssl_) { SSL_set_fd(ssl_, static_cast<int>(sock)); }
+}
+
+RawTlsClient::~RawTlsClient() {
+  if (ssl_) {
+    SSL_shutdown(ssl_);
+    SSL_free(ssl_);
+  }
+  if (ctx_) { SSL_CTX_free(ctx_); }
+}
+
+bool RawTlsClient::connect() { return ssl_ && SSL_connect(ssl_) == 1; }
+
+bool RawTlsClient::write(const std::string &data) {
+  return SSL_write(ssl_, data.data(), static_cast<int>(data.size())) ==
+         static_cast<int>(data.size());
+}
+
+size_t RawTlsClient::read(char *buf, size_t size) {
+  auto n = SSL_read(ssl_, buf, static_cast<int>(size));
+  return n > 0 ? static_cast<size_t>(n) : 0;
+}
+#elif defined(CPPHTTPLIB_MBEDTLS_SUPPORT)
+RawTlsClient::RawTlsClient(socket_t sock) {
+  mbedtls_net_init(&net_);
+  net_.fd = static_cast<int>(sock);
+  mbedtls_ssl_config_init(&conf_);
+  mbedtls_ssl_init(&ssl_);
+#ifdef CPPHTTPLIB_MBEDTLS_V4
+  if (psa_crypto_init() != PSA_SUCCESS) { return; }
+#else
+  mbedtls_entropy_init(&entropy_);
+  mbedtls_ctr_drbg_init(&ctr_drbg_);
+  if (mbedtls_ctr_drbg_seed(&ctr_drbg_, mbedtls_entropy_func, &entropy_,
+                            nullptr, 0) != 0) {
+    return;
+  }
+  mbedtls_ssl_conf_rng(&conf_, mbedtls_ctr_drbg_random, &ctr_drbg_);
+#endif
+  if (mbedtls_ssl_config_defaults(&conf_, MBEDTLS_SSL_IS_CLIENT,
+                                  MBEDTLS_SSL_TRANSPORT_STREAM,
+                                  MBEDTLS_SSL_PRESET_DEFAULT) != 0) {
+    return;
+  }
+  mbedtls_ssl_conf_authmode(&conf_, MBEDTLS_SSL_VERIFY_NONE);
+  if (mbedtls_ssl_setup(&ssl_, &conf_) != 0) { return; }
+  mbedtls_ssl_set_bio(&ssl_, &net_, mbedtls_net_send, mbedtls_net_recv,
+                      nullptr);
+  ready_ = true;
+}
+
+RawTlsClient::~RawTlsClient() {
+  if (ready_) { mbedtls_ssl_close_notify(&ssl_); }
+  mbedtls_ssl_free(&ssl_);
+  mbedtls_ssl_config_free(&conf_);
+#ifndef CPPHTTPLIB_MBEDTLS_V4
+  mbedtls_ctr_drbg_free(&ctr_drbg_);
+  mbedtls_entropy_free(&entropy_);
+#endif
+  // The socket is owned by the caller, so mbedtls_net_free() is not called.
+}
+
+// A TLS 1.3 NewSessionTicket is reported as a "retry" result, not as data.
+static bool is_mbedtls_retry(int ret) {
+  return ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE
+#if defined(MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
+         || ret == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET
+#endif
+      ;
+}
+
+bool RawTlsClient::connect() {
+  if (!ready_) { return false; }
+  int ret;
+  while ((ret = mbedtls_ssl_handshake(&ssl_)) != 0) {
+    if (!is_mbedtls_retry(ret)) { return false; }
+  }
+  return true;
+}
+
+bool RawTlsClient::write(const std::string &data) {
+  size_t off = 0;
+  while (off < data.size()) {
+    auto ret = mbedtls_ssl_write(
+        &ssl_, reinterpret_cast<const unsigned char *>(data.data()) + off,
+        data.size() - off);
+    if (ret > 0) {
+      off += static_cast<size_t>(ret);
+    } else if (!is_mbedtls_retry(ret)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+size_t RawTlsClient::read(char *buf, size_t size) {
+  while (true) {
+    auto ret =
+        mbedtls_ssl_read(&ssl_, reinterpret_cast<unsigned char *>(buf), size);
+    if (ret > 0) { return static_cast<size_t>(ret); }
+    if (!is_mbedtls_retry(ret)) { return 0; }
+  }
+}
+#elif defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+RawTlsClient::RawTlsClient(socket_t sock) {
+  ctx_ = wolfSSL_CTX_new(wolfSSLv23_client_method());
+  if (!ctx_) { return; }
+  wolfSSL_CTX_set_verify(ctx_, WOLFSSL_VERIFY_NONE, nullptr);
+  ssl_ = wolfSSL_new(ctx_);
+  if (ssl_) { wolfSSL_set_fd(ssl_, static_cast<int>(sock)); }
+}
+
+RawTlsClient::~RawTlsClient() {
+  if (ssl_) {
+    wolfSSL_shutdown(ssl_);
+    wolfSSL_free(ssl_);
+  }
+  if (ctx_) { wolfSSL_CTX_free(ctx_); }
+}
+
+bool RawTlsClient::connect() {
+  return ssl_ && wolfSSL_connect(ssl_) == WOLFSSL_SUCCESS;
+}
+
+bool RawTlsClient::write(const std::string &data) {
+  return wolfSSL_write(ssl_, data.data(), static_cast<int>(data.size())) ==
+         static_cast<int>(data.size());
+}
+
+size_t RawTlsClient::read(char *buf, size_t size) {
+  auto n = wolfSSL_read(ssl_, buf, static_cast<int>(size));
+  return n > 0 ? static_cast<size_t>(n) : 0;
+}
+#endif
+
+// Like send_request_in_parts(), over TLS.
 static bool send_ssl_request_in_parts(time_t read_timeout_sec,
                                       const std::vector<std::string> &parts,
                                       std::string *resp, int port) {
@@ -9942,35 +10114,20 @@ static bool send_ssl_request_in_parts(time_t read_timeout_sec,
   detail::set_socket_opt_time(client_sock, SOL_SOCKET, SO_RCVTIMEO,
                               read_timeout_sec, 0);
 
-  auto ctx = SSL_CTX_new(TLS_client_method());
-  if (!ctx) { return false; }
-  auto ctx_guard = detail::scope_exit([&] { SSL_CTX_free(ctx); });
-
-  auto ssl = SSL_new(ctx);
-  if (!ssl) { return false; }
-  auto ssl_guard = detail::scope_exit([&] {
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
-  });
-
-  SSL_set_fd(ssl, static_cast<int>(client_sock));
-  if (SSL_connect(ssl) != 1) { return false; }
+  RawTlsClient tls(client_sock);
+  if (!tls.connect()) { return false; }
 
   for (size_t i = 0; i < parts.size(); i++) {
-    const auto &part = parts[i];
-    if (SSL_write(ssl, part.data(), static_cast<int>(part.size())) !=
-        static_cast<int>(part.size())) {
-      return false;
-    }
+    if (!tls.write(parts[i])) { return false; }
     if (i + 1 < parts.size()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 
   char buf[512];
-  int n;
-  while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
-    if (resp) { resp->append(buf, static_cast<size_t>(n)); }
+  size_t n;
+  while ((n = tls.read(buf, sizeof(buf))) > 0) {
+    if (resp) { resp->append(buf, n); }
   }
   return true;
 }
@@ -11467,7 +11624,7 @@ TEST(KeepAliveTest, MaxCount) {
 // timeout before serving a request whose bytes it has already read.
 // Plain HTTP, or HTTPS with the test certificate if `ssl` is set.
 static std::unique_ptr<Server> make_test_server(bool ssl) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   if (ssl) {
     return std::unique_ptr<Server>(
         new SSLServer(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE));
@@ -11481,7 +11638,7 @@ static std::unique_ptr<Server> make_test_server(bool ssl) {
 static bool send_test_request_in_parts(bool ssl, time_t read_timeout_sec,
                                        const std::vector<std::string> &parts,
                                        std::string *resp, int port) {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
   if (ssl) {
     return send_ssl_request_in_parts(read_timeout_sec, parts, resp, port);
   }
@@ -11614,7 +11771,7 @@ TEST(KeepAliveTest, PipelinedRequestAfterInvalidRequestIsNotProcessed) {
   test_pipelined_request_after_invalid_request(false);
 }
 
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+#ifdef CPPHTTPLIB_SSL_ENABLED
 // Over TLS, the next request is kept as already decrypted data by the TLS
 // library rather than in the stream's buffer.
 TEST(KeepAliveTest, SSLPipelinedRequests) {
