@@ -13967,6 +13967,34 @@ TEST(SSLClientTest, WindowsCertificateVerification_ServerIntermediates_Online) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error())
                    << " ssl_backend_error=" << res.ssl_backend_error();
 }
+
+// A root missing from the trust store is left to CryptoAPI, which must still
+// reject a chain whose root Windows does not trust either.
+TEST(SSLClientTest, WindowsCertificateVerification_UnknownIssuerRejected) {
+  // Issued by the test root CA, which is not in the Windows root store
+  SSLServer svr(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, PORT);
+  // Keep the hostname check from failing first
+  cli.enable_server_hostname_verification(false);
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+}
 #endif
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {

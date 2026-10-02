@@ -10736,9 +10736,12 @@ inline bool verify_cert_with_windows_schannel(
   auto store = cert_context->hCertStore;
 #endif
 
-  // Setup chain parameters
+  // Setup chain parameters. The SSL policy does not check the key usage.
+  LPSTR server_auth = const_cast<LPSTR>(szOID_PKIX_KP_SERVER_AUTH);
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
+  chain_para.RequestedUsage.Usage.cUsageIdentifier = 1;
+  chain_para.RequestedUsage.Usage.rgpszUsageIdentifier = &server_auth;
 
   // Build certificate chain with revocation checking
   PCCERT_CHAIN_CONTEXT chain_context = nullptr;
@@ -10936,6 +10939,15 @@ inline bool setup_client_tls_session(
   if (verification_status == SSLVerifierResponse::NoDecisionMade &&
       server_certificate_verification) {
     auto verify_result = get_verify_result(session);
+#if defined(CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE) &&          \
+    defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+    // Windows adds a root it trusts to its store only when CryptoAPI needs it,
+    // so leave a root missing from the store to the CryptoAPI check below
+    if (options.windows_cert_verification &&
+        verify_result == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY) {
+      verify_result = X509_V_OK;
+    }
+#endif
     if (verify_result != 0) {
       return fail(Error::SSLServerVerification, 0,
                   static_cast<uint64_t>(verify_result));
@@ -10970,6 +10982,8 @@ inline bool setup_client_tls_session(
                 session)) {
           return fail(Error::SSLServerVerification, 0, wincrypt_error);
         }
+      } else {
+        return fail(Error::SSLServerVerification, 0, get_error());
       }
     }
 #endif
