@@ -13958,6 +13958,15 @@ TEST(SSLClientTest, WindowsCertificateVerification_Disabled) {
   auto res = cli.Get("/");
   if (res) { EXPECT_NE(StatusCode::InternalServerError_500, res->status); }
 }
+
+// The server sends an intermediate cross-signed by a root Windows trusts,
+// while the leaf's AIA URL leads to one under a root Windows does not trust.
+TEST(SSLClientTest, WindowsCertificateVerification_ServerIntermediates_Online) {
+  SSLClient cli("accounts.spotify.com", 443);
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error())
+                   << " ssl_backend_error=" << res.ssl_backend_error();
+}
 #endif
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {

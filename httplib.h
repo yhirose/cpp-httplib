@@ -10698,10 +10698,9 @@ inline bool match_hostname(const std::string &pattern,
 // Verify certificate using Windows CertGetCertificateChain API.
 // This provides real-time certificate validation with Windows Update
 // integration, independent of the TLS backend (OpenSSL or MbedTLS).
-inline bool
-verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
-                                  const std::string &hostname,
-                                  bool verify_hostname, uint64_t &out_error) {
+inline bool verify_cert_with_windows_schannel(
+    const std::vector<unsigned char> &der_cert, const std::string &hostname,
+    bool verify_hostname, uint64_t &out_error, tls::const_session_t session) {
   if (der_cert.empty()) { return false; }
 
   out_error = 0;
@@ -10719,6 +10718,24 @@ verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
   auto cert_guard =
       scope_exit([&] { CertFreeCertificateContext(cert_context); });
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  // Add the intermediates the server sent. Without them CryptoAPI follows the
+  // leaf's AIA URL, which may lead to an issuer under an untrusted root.
+  auto store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, 0, nullptr);
+  auto store_guard = scope_exit([&] { CertCloseStore(store, 0); });
+  auto sk = SSL_get_peer_cert_chain(static_cast<const SSL *>(session));
+  for (int i = 1; sk && i < sk_X509_num(sk); i++) {
+    std::vector<unsigned char> der;
+    tls::get_cert_der(sk_X509_value(sk, i), der);
+    CertAddEncodedCertificateToStore(store, X509_ASN_ENCODING, der.data(),
+                                     static_cast<DWORD>(der.size()),
+                                     CERT_STORE_ADD_USE_EXISTING, nullptr);
+  }
+#else
+  (void)session;
+  auto store = cert_context->hCertStore;
+#endif
+
   // Setup chain parameters
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
@@ -10726,7 +10743,7 @@ verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
   // Build certificate chain with revocation checking
   PCCERT_CHAIN_CONTEXT chain_context = nullptr;
   auto chain_result = CertGetCertificateChain(
-      nullptr, cert_context, nullptr, cert_context->hCertStore, &chain_para,
+      nullptr, cert_context, nullptr, store, &chain_para,
       CERT_CHAIN_CACHE_END_CERT | CERT_CHAIN_REVOCATION_CHECK_END_CERT |
           CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
       nullptr, &chain_context);
@@ -10949,8 +10966,8 @@ inline bool setup_client_tls_session(
       if (get_cert_der(server_cert, der)) {
         uint64_t wincrypt_error = 0;
         if (!verify_cert_with_windows_schannel(
-                der, host, options.server_hostname_verification,
-                wincrypt_error)) {
+                der, host, options.server_hostname_verification, wincrypt_error,
+                session)) {
           return fail(Error::SSLServerVerification, 0, wincrypt_error);
         }
       }
