@@ -25289,14 +25289,15 @@ TEST(SymlinkTest, SymlinkEscapeFromBaseDirectory) {
 }
 #endif
 
-TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
-  // A GET request with Content-Length to a static file handler must have its
-  // body drained before the keep-alive connection is reused. Otherwise the
-  // unread body bytes are interpreted as the next HTTP request.
-  //
-  // The body is sent AFTER receiving the first response (as in the original
-  // PoC) so that the stream_line_reader cannot buffer it together with the
-  // headers of the first request.
+// Sends `outer_head` (with every "{len}" replaced by the length of an embedded
+// "GET /smuggled" request), reads the first response, and only then sends the
+// embedded request as the body. Returns how many times /smuggled ran.
+//
+// The body is sent AFTER receiving the first response (as in the original
+// PoC) so that the stream_line_reader cannot buffer it together with the
+// headers of the first request.
+static int count_smuggled_requests(const std::string &outer_head,
+                                   std::string &first_response) {
   Server svr;
   svr.set_mount_point("/", "./www");
 
@@ -25304,6 +25305,9 @@ TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
   svr.Get("/smuggled", [&](const Request &, Response &res) {
     smuggled_count++;
     res.set_content("oops", "text/plain");
+  });
+  svr.Post("/post", [&](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
   });
 
   auto port = svr.bind_to_any_port("localhost");
@@ -25320,28 +25324,28 @@ TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
       /*connection_timeout_sec=*/2, 0,
       /*read_timeout_sec=*/2, 0,
       /*write_timeout_sec=*/2, 0, std::string(), error);
-  ASSERT_NE(INVALID_SOCKET, sock);
+  EXPECT_NE(INVALID_SOCKET, sock);
+  if (sock == INVALID_SOCKET) { return -1; }
   auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
 
-  // The "smuggled" request will be sent as the body of the outer GET
+  // The "smuggled" request will be sent as the body of the outer request
   std::string smuggled = "GET /smuggled HTTP/1.1\r\n"
                          "Host: localhost\r\n"
                          "Connection: close\r\n"
                          "\r\n";
 
+  auto head = outer_head;
+  auto len = std::to_string(smuggled.size());
+  for (auto pos = head.find("{len}"); pos != std::string::npos;
+       pos = head.find("{len}", pos + len.size())) {
+    head.replace(pos, 5, len);
+  }
+
   // Step 1: Send only the outer request headers (no body yet)
-  std::string outer_headers = "GET /file HTTP/1.1\r\n"
-                              "Host: localhost\r\n"
-                              "Content-Length: " +
-                              std::to_string(smuggled.size()) +
-                              "\r\n"
-                              "\r\n";
+  auto sent = send(sock, head.data(), head.size(), 0);
+  EXPECT_EQ(static_cast<ssize_t>(head.size()), sent);
 
-  auto sent = send(sock, outer_headers.data(), outer_headers.size(), 0);
-  ASSERT_EQ(static_cast<ssize_t>(outer_headers.size()), sent);
-
-  // Step 2: Read the first response (server serves file without reading body)
-  std::string first_response;
+  // Step 2: Read the first response
   char buf[4096];
   for (;;) {
     auto n = recv(sock, buf, sizeof(buf), 0);
@@ -25363,23 +25367,103 @@ TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
       }
     }
   }
-  ASSERT_TRUE(first_response.find("HTTP/1.1 200") != std::string::npos);
 
-  // Step 3: Now send the body, which looks like a new HTTP request.
-  // On a vulnerable server the keep-alive loop reads this as a second request.
-  sent = send(sock, smuggled.data(), smuggled.size(), 0);
-  ASSERT_EQ(static_cast<ssize_t>(smuggled.size()), sent);
+  // Step 3: Now send the body, which looks like a new HTTP request. On a
+  // vulnerable server the keep-alive loop reads this as a second request. The
+  // server may already have closed the connection, so the result is ignored.
+  send(sock, smuggled.data(), smuggled.size(), 0);
 
-  // Step 4: Try to read a second response (should NOT exist after fix)
-  std::string second_response;
+  // Half-close so that a server which drained the body sees EOF and closes,
+  // instead of the read below waiting for the read timeout.
+#ifdef _WIN32
+  ::shutdown(sock, SD_SEND);
+#else
+  ::shutdown(sock, SHUT_WR);
+#endif
+
+  // Step 4: Read until the server closes the connection
   for (;;) {
     auto n = recv(sock, buf, sizeof(buf), 0);
     if (n <= 0) break;
-    second_response.append(buf, static_cast<size_t>(n));
   }
 
-  // The smuggled request must NOT have been processed
-  EXPECT_EQ(0, smuggled_count.load());
+  return smuggled_count.load();
+}
+
+TEST(RequestSmugglingTest, UnconsumedGETBodyOnFileHandler) {
+  // A GET request with Content-Length to a static file handler must have its
+  // body drained before the keep-alive connection is reused. Otherwise the
+  // unread body bytes are interpreted as the next HTTP request.
+  std::string first_response;
+  EXPECT_EQ(0, count_smuggled_requests("GET /file HTTP/1.1\r\n"
+                                       "Host: localhost\r\n"
+                                       "Content-Length: {len}\r\n"
+                                       "\r\n",
+                                       first_response));
+  EXPECT_EQ(0u, first_response.find("HTTP/1.1 200"));
+}
+
+TEST(RequestSmugglingTest, InvalidContentLengthRejected) {
+  // RFC 9112 §6.3: a Content-Length that is not a valid decimal length must
+  // be answered with 400 and the connection closed. Treating it as "no body"
+  // leaves the body to be parsed as the next request.
+  const char *values[] = {"{len}, {len}", "+{len}", "0x2e", "", " {len}x"};
+  const char *targets[] = {
+      "GET /file",      // handler that never reads the body
+      "GET /not-found", // no handler matches (404)
+      "POST /post",     // handler that reads the body
+  };
+  for (auto target : targets) {
+    for (auto value : values) {
+      std::string first_response;
+      EXPECT_EQ(0, count_smuggled_requests(std::string(target) +
+                                               " HTTP/1.1\r\n"
+                                               "Host: localhost\r\n"
+                                               "Content-Length: " +
+                                               value + "\r\n\r\n",
+                                           first_response))
+          << target << " with Content-Length: " << value;
+      EXPECT_EQ(0u, first_response.find("HTTP/1.1 400"))
+          << target << " with Content-Length: " << value;
+    }
+  }
+}
+
+TEST(RequestSmugglingTest, RejectedRequestLineClosesConnection) {
+  // A 400 for an unparseable request line leaves the rest of the message
+  // unread, so the connection must be closed rather than reused.
+  std::string first_response;
+  EXPECT_EQ(0, count_smuggled_requests("FOO /file HTTP/1.1\r\n"
+                                       "Host: localhost\r\n"
+                                       "Content-Length: {len}\r\n"
+                                       "\r\n",
+                                       first_response));
+  EXPECT_EQ(0u, first_response.find("HTTP/1.1 400"));
+}
+
+TEST(RequestSmugglingTest, RejectedHeadersCloseConnection) {
+  // Same as above for a header block that fails to parse.
+  std::string first_response;
+  EXPECT_EQ(0, count_smuggled_requests("GET /file HTTP/1.1\r\n"
+                                       "Host: localhost\r\n"
+                                       "Bad Header\r\n"
+                                       "Content-Length: {len}\r\n"
+                                       "\r\n",
+                                       first_response));
+  EXPECT_EQ(0u, first_response.find("HTTP/1.1 400"));
+}
+
+TEST(RequestSmugglingTest, ErrorResponseClosesConnection) {
+  // RFC 9112 §9.6: an error response carries "Connection: close", so the
+  // server must not read another request on that connection, even when the
+  // request had no body to drain.
+  std::string first_response;
+  EXPECT_EQ(0, count_smuggled_requests("GET /not-found HTTP/1.1\r\n"
+                                       "Host: localhost\r\n"
+                                       "\r\n",
+                                       first_response));
+  EXPECT_EQ(0u, first_response.find("HTTP/1.1 404"));
+  EXPECT_NE(std::string::npos, first_response.find("Connection: close"));
 }
 
 TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {

@@ -14380,8 +14380,21 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   res.version = "HTTP/1.1";
   res.headers = default_headers_;
 
-  // Request line and headers
+  // RFC 9112 §9.6: a server that sends the "close" connection option must
+  // close the connection after that response, whichever path wrote it (an
+  // error status, a handler, or a rejected request). Reading on would also
+  // parse whatever the client sent next on a connection it considers done.
+  auto honor_connection_close = detail::scope_exit([&] {
+    if (detail::has_header_token(res.headers, "Connection", "close")) {
+      connection_closed = true;
+    }
+  });
+
+  // Request line and headers. A rejected message leaves the rest of it (and
+  // any body) unread, so the connection cannot be reused: the leftover bytes
+  // would be parsed as the next request.
   if (!parse_request_line(line_reader.ptr(), req)) {
+    connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     output_error_log(Error::InvalidRequestLine, &req);
     return write_response(strm, close_connection, req, res);
@@ -14389,20 +14402,28 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
   // Request headers
   if (!detail::read_headers(strm, req.headers)) {
+    connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     output_error_log(Error::InvalidHeaders, &req);
     return write_response(strm, close_connection, req, res);
   }
 
-  // RFC 9112 §6.3: Reject requests whose framing is ambiguous, which would
-  // otherwise let an intermediary and this parser disagree on where the body
-  // ends and enable request smuggling. Two cases: a non-zero Content-Length
-  // alongside any Transfer-Encoding (Content-Length: 0 is tolerated for
-  // compatibility with existing clients), and a Transfer-Encoding whose final
-  // coding is not chunked, which leaves the body length undeterminable. The
-  // latter must not fall through to the "no body" path, or the body bytes are
-  // parsed as the next request on a persistent connection.
-  if (detail::has_conflicting_content_length(req.headers) ||
+  // RFC 9112 §6.3: Reject requests whose framing is invalid or ambiguous,
+  // which would otherwise let an intermediary and this parser disagree on
+  // where the body ends and enable request smuggling. Three cases: a
+  // Content-Length that is not a valid decimal length (e.g. "42, 42", "+42"
+  // or empty), which would otherwise be read as "no body"; a non-zero
+  // Content-Length alongside any Transfer-Encoding (Content-Length: 0 is
+  // tolerated for compatibility with existing clients); and a
+  // Transfer-Encoding whose final coding is not chunked, which leaves the body
+  // length undeterminable. None of them may fall through to the "no body"
+  // path, or the body bytes are parsed as the next request on a persistent
+  // connection.
+  auto is_invalid_content_length = false;
+  detail::get_header_value_u64(req.headers, "Content-Length", 0, 0,
+                               is_invalid_content_length);
+  if (is_invalid_content_length ||
+      detail::has_conflicting_content_length(req.headers) ||
       (req.has_header("Transfer-Encoding") &&
        !detail::is_chunked_transfer_encoding(req.headers))) {
     connection_closed = true;
@@ -14675,17 +14696,13 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // keep-alive. Without framing there is no body to drain — reading would
   // consume the next request (issue #2450). If the response has committed the
   // connection to close, there is no next request to protect.
-  if (!req.body_consumed_ && detail::has_framed_body(req)) {
-    if (detail::has_header_token(res.headers, "Connection", "close")) {
+  if (!req.body_consumed_ && detail::has_framed_body(req) &&
+      !detail::has_header_token(res.headers, "Connection", "close")) {
+    int dummy_status;
+    if (!detail::read_content(
+            strm, req, payload_max_length_, dummy_status, nullptr,
+            [](const char *, size_t, size_t, size_t) { return true; }, false)) {
       connection_closed = true;
-    } else {
-      int dummy_status;
-      if (!detail::read_content(
-              strm, req, payload_max_length_, dummy_status, nullptr,
-              [](const char *, size_t, size_t, size_t) { return true; },
-              false)) {
-        connection_closed = true;
-      }
     }
   }
 
