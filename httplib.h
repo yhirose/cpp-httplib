@@ -6616,10 +6616,12 @@ process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
   assert(keep_alive_max_count > 0);
   auto ret = false;
   auto count = keep_alive_max_count;
-  while (count > 0 && keep_alive(svr_sock, sock, keep_alive_timeout_sec)) {
+  size_t pending_bytes = 0;
+  while (count > 0 && (pending_bytes > 0 ||
+                       keep_alive(svr_sock, sock, keep_alive_timeout_sec))) {
     auto close_connection = count == 1;
     auto connection_closed = false;
-    ret = callback(close_connection, connection_closed);
+    ret = callback(close_connection, connection_closed, pending_bytes);
     if (!ret || connection_closed) { break; }
     count--;
   }
@@ -6633,15 +6635,20 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
                       time_t keep_alive_timeout_sec, time_t read_timeout_sec,
                       time_t read_timeout_usec, time_t write_timeout_sec,
                       time_t write_timeout_usec, T callback) {
+  // One stream per connection, not per request: bytes it read ahead belong to
+  // the next pipelined request and must survive into it (issue #2599).
+  SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
+                    write_timeout_sec, write_timeout_usec);
   return process_server_socket_core(
       svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
-      [&](bool close_connection, bool &connection_closed) {
-        SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
-                          write_timeout_sec, write_timeout_usec);
-        // process_server_socket_core() only gets here once keep_alive() has
-        // seen the socket go readable.
-        strm.set_readable_hint();
-        return callback(strm, close_connection, connection_closed);
+      [&](bool close_connection, bool &connection_closed,
+          size_t &pending_bytes) {
+        // Without buffered bytes, process_server_socket_core() only gets here
+        // once keep_alive() has seen the socket go readable.
+        if (!strm.is_readable()) { strm.set_readable_hint(); }
+        auto ret = callback(strm, close_connection, connection_closed);
+        strm.buffered_data(pending_bytes);
+        return ret;
       });
 }
 
@@ -10557,12 +10564,16 @@ inline bool process_server_socket_ssl(
     time_t write_timeout_usec, T callback) {
   return process_server_socket_core(
       svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
-      [&](bool close_connection, bool &connection_closed) {
+      [&](bool close_connection, bool &connection_closed,
+          size_t &pending_bytes) {
         SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
                              write_timeout_sec, write_timeout_usec);
         // See the non-TLS path in process_server_socket().
-        strm.set_readable_hint();
-        return callback(strm, close_connection, connection_closed);
+        if (!strm.is_readable()) { strm.set_readable_hint(); }
+        auto ret = callback(strm, close_connection, connection_closed);
+        // Read-ahead bytes stay in the TLS session, which outlives strm.
+        pending_bytes = static_cast<size_t>(tls::pending(session));
+        return ret;
       });
 }
 

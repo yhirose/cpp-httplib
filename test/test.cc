@@ -11472,6 +11472,98 @@ TEST(KeepAliveTest, Issue1959) {
   EXPECT_LT(elapsed, 5000);
 }
 
+TEST(KeepAliveTest, PipelinedRequests) {
+  Server svr;
+
+  svr.Get("/a", [](const Request &, Response &res) {
+    res.set_content("response-a", "text/plain");
+  });
+  svr.Get("/b", [](const Request &, Response &res) {
+    res.set_content("response-b", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    if (!svr.is_running()) return;
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Error err;
+  int sock =
+      detail::create_client_socket("localhost", "", PORT, AF_UNSPEC, false,
+                                   false, nullptr, 0, 0, 5, 0, 5, 0, "", err);
+  ASSERT_NE(sock, INVALID_SOCKET);
+
+  std::string requests =
+      "GET /a HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n"
+      "GET /b HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n";
+  ASSERT_EQ(static_cast<ssize_t>(requests.size()),
+            send(sock, requests.data(), requests.size(), 0));
+
+  std::string response;
+  char buf[4096];
+  while (response.find("response-b") == std::string::npos) {
+    auto n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0) break;
+    response.append(buf, static_cast<size_t>(n));
+  }
+  detail::close_socket(sock);
+
+  EXPECT_NE(response.find("response-a"), std::string::npos);
+  EXPECT_NE(response.find("response-b"), std::string::npos);
+}
+
+TEST(KeepAliveTest, PipelinedPartialRequestHonorsReadTimeout) {
+  Server svr;
+  svr.set_read_timeout(1, 0);
+
+  svr.Get("/a", [](const Request &, Response &res) {
+    res.set_content("response-a", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    if (!svr.is_running()) return;
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Error err;
+  int sock =
+      detail::create_client_socket("localhost", "", PORT, AF_UNSPEC, false,
+                                   false, nullptr, 0, 0, 5, 0, 5, 0, "", err);
+  ASSERT_NE(sock, INVALID_SOCKET);
+
+  // The second request is cut off mid-header and never completed. Once the
+  // buffered part is used up, the server must still wait for the rest under
+  // its read timeout, then answer 400, rather than block on the socket
+  // indefinitely.
+  std::string requests = "GET /a HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                         "GET /b HTTP/1.1\r\nHost: loc";
+  ASSERT_EQ(static_cast<ssize_t>(requests.size()),
+            send(sock, requests.data(), requests.size(), 0));
+
+  auto start = std::chrono::steady_clock::now();
+  std::string response;
+  char buf[4096];
+  while (response.find("400 Bad Request") == std::string::npos) {
+    auto n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0) break;
+    response.append(buf, static_cast<size_t>(n));
+  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - start)
+                     .count();
+  detail::close_socket(sock);
+
+  EXPECT_NE(response.find("response-a"), std::string::npos);
+  EXPECT_NE(response.find("400 Bad Request"), std::string::npos);
+  EXPECT_LT(elapsed, 4000);
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(KeepAliveTest, SSLClientReconnection) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
