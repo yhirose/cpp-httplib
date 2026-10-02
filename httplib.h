@@ -3442,6 +3442,9 @@ private:
 
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   bool enable_windows_cert_verification_ = true;
+  // Like ca_cert_store_set_, tracks what ctx_ cannot report back: whether
+  // set_server_certificate_verifier() installed a verifier.
+  bool server_certificate_verifier_set_ = false;
 #endif
 
   friend class ClientImpl;
@@ -10700,7 +10703,7 @@ inline bool match_hostname(const std::string &pattern,
 #ifdef _WIN32
 // Verify certificate using Windows CertGetCertificateChain API.
 // This provides real-time certificate validation with Windows Update
-// integration, independent of the TLS backend (OpenSSL or MbedTLS).
+// integration, independent of the TLS backend.
 inline bool verify_cert_with_windows_schannel(
     const std::vector<unsigned char> &der_cert, const std::string &hostname,
     bool verify_hostname, uint64_t &out_error, tls::const_session_t session) {
@@ -10744,6 +10747,13 @@ inline bool verify_cert_with_windows_schannel(
   // Setup chain parameters
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
+
+  // Require the server authentication usage along the chain, which also
+  // rejects roots that Windows trusts only for other purposes.
+  LPSTR server_auth = const_cast<LPSTR>(szOID_PKIX_KP_SERVER_AUTH);
+  chain_para.RequestedUsage.dwType = USAGE_MATCH_TYPE_AND;
+  chain_para.RequestedUsage.Usage.cUsageIdentifier = 1;
+  chain_para.RequestedUsage.Usage.rgpszUsageIdentifier = &server_auth;
 
   // Build certificate chain with revocation checking
   PCCERT_CHAIN_CONTEXT chain_context = nullptr;
@@ -10856,6 +10866,9 @@ struct ClientTlsSessionOptions {
   // The caller decides whether Schannel has anything to say about this
   // connection; see SSLClient::initialize_ssl().
   bool windows_cert_verification = false;
+  // A server certificate verifier works on the backend's chain verification,
+  // so the backend keeps deciding and Schannel only adds its own check.
+  bool server_certificate_verifier_set = false;
 #endif
 };
 
@@ -10890,12 +10903,24 @@ inline bool setup_client_tls_session(
     return fail(Error::SSLConnection, 0, 0);
   }
 
+  // With Windows verification on and no server certificate verifier set,
+  // Schannel is the only chain verifier. The backend's trust store is a
+  // snapshot of the Windows stores that lacks the roots Windows fetches on
+  // demand, so the backend's verdict is not used.
+  auto windows_verifies_chain = false;
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  windows_verifies_chain = options.windows_cert_verification &&
+                           !options.server_certificate_verifier_set;
+#endif
+
 #if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
   // Mbed TLS and wolfSSL need the verification mode set explicitly; OpenSSL
-  // uses SSL_VERIFY_NONE and does all verification post-handshake. Chain
-  // verification happens during the handshake even for IP hosts; the
-  // certificate identity is verified post-handshake via verify_hostname().
-  set_verify_client(ctx, server_certificate_verification);
+  // uses SSL_VERIFY_NONE and does all verification post-handshake. Unless
+  // Schannel verifies the chain instead, chain verification happens during
+  // the handshake even for IP hosts; the certificate identity is verified
+  // post-handshake via verify_hostname().
+  set_verify_client(ctx,
+                    server_certificate_verification && !windows_verifies_chain);
 #endif
 
   {
@@ -10940,10 +10965,12 @@ inline bool setup_client_tls_session(
 
   if (verification_status == SSLVerifierResponse::NoDecisionMade &&
       server_certificate_verification) {
-    auto verify_result = get_verify_result(session);
-    if (verify_result != 0) {
-      return fail(Error::SSLServerVerification, 0,
-                  static_cast<uint64_t>(verify_result));
+    if (!windows_verifies_chain) {
+      auto verify_result = get_verify_result(session);
+      if (verify_result != 0) {
+        return fail(Error::SSLServerVerification, 0,
+                    static_cast<uint64_t>(verify_result));
+      }
     }
 
     auto server_cert = get_peer_cert(session);
@@ -10963,18 +10990,17 @@ inline bool setup_client_tls_session(
     }
 
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-    // Additional Windows Schannel verification.
-    // This provides real-time certificate validation with Windows Update
-    // integration, working with both OpenSSL and MbedTLS backends.
+    // Windows Schannel verification, which lets Windows fetch missing roots
+    // and intermediates on demand. It must not be skipped: unless a server
+    // certificate verifier is set, it is the only chain check.
     if (options.windows_cert_verification) {
       std::vector<unsigned char> der;
-      if (get_cert_der(server_cert, der)) {
-        uint64_t wincrypt_error = 0;
-        if (!verify_cert_with_windows_schannel(
-                der, host, options.server_hostname_verification, wincrypt_error,
-                session)) {
-          return fail(Error::SSLServerVerification, 0, wincrypt_error);
-        }
+      uint64_t wincrypt_error = 0;
+      if (!get_cert_der(server_cert, der) ||
+          !verify_cert_with_windows_schannel(
+              der, host, options.server_hostname_verification, wincrypt_error,
+              session)) {
+        return fail(Error::SSLServerVerification, 0, wincrypt_error);
       }
     }
 #endif
@@ -18515,6 +18541,9 @@ inline void SSLClient::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
 inline void
 SSLClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
   if (!ctx_) { return; }
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  server_certificate_verifier_set_ = static_cast<bool>(verifier);
+#endif
   tls::set_verify_callback(ctx_, verifier);
 }
 
@@ -18576,6 +18605,9 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
       enable_windows_cert_verification_ &&
       system_ca_mode_ != SystemCAMode::Disabled && ca_cert_file_path_.empty() &&
       ca_cert_dir_path_.empty() && ca_cert_pem_.empty() && !ca_cert_store_set_;
+  // Only a verifier set through set_server_certificate_verifier() is seen
+  // here, not one installed with tls::set_verify_callback() directly.
+  options.server_certificate_verifier_set = server_certificate_verifier_set_;
 #endif
 
   tls::session_t session = nullptr;

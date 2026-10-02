@@ -13967,6 +13967,32 @@ TEST(SSLClientTest, WindowsCertificateVerification_ServerIntermediates_Online) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error())
                    << " ssl_backend_error=" << res.ssl_backend_error();
 }
+
+// Windows, not the backend, decides on the chain: the error carries a
+// CryptoAPI trust status, which no backend error for a self-signed
+// certificate has.
+TEST(SSLClientTest, WindowsCertificateVerification_RejectsUntrustedRoot) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+  EXPECT_NE(0u, res.ssl_backend_error() & CERT_TRUST_IS_UNTRUSTED_ROOT)
+      << "ssl_backend_error=" << res.ssl_backend_error();
+}
 #endif
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {

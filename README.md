@@ -230,7 +230,7 @@ cpp-httplib automatically integrates with the OS certificate store on macOS and 
 | Platform | Behavior | Disable (compile time) |
 | :------- | :------- | :--------------------- |
 | macOS | Loads system certs from Keychain (link `CoreFoundation` and `Security` with `-framework`). Requires Apple Clang; GCC is not supported for this feature. | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
-| Windows | Verifies certs via CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`) with revocation checking | `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` |
+| Windows | Verifies the certificate chain with CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`) instead of the TLS backend, with revocation checking. Windows fetches missing roots and intermediates on demand. With a custom CA, the TLS backend verifies the chain instead; with `set_server_certificate_verifier()`, both do. | `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` |
 
 On Windows, verification can also be disabled at runtime:
 
