@@ -1,6 +1,10 @@
 [system]
 theme = "monotone"
+<<<<<<< HEAD
 langs = ["en", "ja"]
+=======
+langs = ["en", "ja", "zh"]
+>>>>>>> 76a0d19 (init)
 
 [site]
 title = "cpp-httplib"
