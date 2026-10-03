@@ -5120,6 +5120,9 @@ bool is_peer_closed(session_t session, socket_t sock);
 
 // Certificate verification
 cert_t get_peer_cert(const_session_t session);
+// The certificates the peer sent, leaf first. Free each with free_cert(), and
+// do not use them after free_session(), as with get_peer_cert().
+size_t get_peer_certs(const_session_t session, std::vector<cert_t> &certs);
 void free_cert(cert_t cert);
 bool verify_hostname(cert_t cert, const char *hostname);
 uint64_t hostname_mismatch_code();
@@ -10698,10 +10701,9 @@ inline bool match_hostname(const std::string &pattern,
 // Verify certificate using Windows CertGetCertificateChain API.
 // This provides real-time certificate validation with Windows Update
 // integration, independent of the TLS backend (OpenSSL or MbedTLS).
-inline bool
-verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
-                                  const std::string &hostname,
-                                  bool verify_hostname, uint64_t &out_error) {
+inline bool verify_cert_with_windows_schannel(
+    const std::vector<unsigned char> &der_cert, const std::string &hostname,
+    bool verify_hostname, uint64_t &out_error, tls::const_session_t session) {
   if (der_cert.empty()) { return false; }
 
   out_error = 0;
@@ -10719,6 +10721,26 @@ verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
   auto cert_guard =
       scope_exit([&] { CertFreeCertificateContext(cert_context); });
 
+  // Give CryptoAPI the certificates the server sent. Without them it follows
+  // the leaf's AIA URL, which may lead to an issuer under an untrusted root.
+  std::vector<tls::cert_t> peer_certs;
+  tls::get_peer_certs(session, peer_certs);
+  auto store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, 0, nullptr);
+  auto store_guard = scope_exit([&] {
+    for (auto cert : peer_certs) {
+      tls::free_cert(cert);
+    }
+    if (store) { CertCloseStore(store, 0); }
+  });
+  for (auto cert : peer_certs) {
+    std::vector<unsigned char> der;
+    if (store && tls::get_cert_der(cert, der)) {
+      CertAddEncodedCertificateToStore(store, X509_ASN_ENCODING, der.data(),
+                                       static_cast<DWORD>(der.size()),
+                                       CERT_STORE_ADD_USE_EXISTING, nullptr);
+    }
+  }
+
   // Setup chain parameters
   CERT_CHAIN_PARA chain_para = {};
   chain_para.cbSize = sizeof(chain_para);
@@ -10726,7 +10748,7 @@ verify_cert_with_windows_schannel(const std::vector<unsigned char> &der_cert,
   // Build certificate chain with revocation checking
   PCCERT_CHAIN_CONTEXT chain_context = nullptr;
   auto chain_result = CertGetCertificateChain(
-      nullptr, cert_context, nullptr, cert_context->hCertStore, &chain_para,
+      nullptr, cert_context, nullptr, store, &chain_para,
       CERT_CHAIN_CACHE_END_CERT | CERT_CHAIN_REVOCATION_CHECK_END_CERT |
           CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT,
       nullptr, &chain_context);
@@ -10949,8 +10971,8 @@ inline bool setup_client_tls_session(
       if (get_cert_der(server_cert, der)) {
         uint64_t wincrypt_error = 0;
         if (!verify_cert_with_windows_schannel(
-                der, host, options.server_hostname_verification,
-                wincrypt_error)) {
+                der, host, options.server_hostname_verification, wincrypt_error,
+                session)) {
           return fail(Error::SSLServerVerification, 0, wincrypt_error);
         }
       }
@@ -19523,6 +19545,24 @@ inline cert_t get_peer_cert(const_session_t session) {
       static_cast<SSL *>(const_cast<void *>(session))));
 }
 
+inline size_t get_peer_certs(const_session_t session,
+                             std::vector<cert_t> &certs) {
+  certs.clear();
+  if (!session) { return 0; }
+  auto ssl = static_cast<const SSL *>(session);
+  // On the server side, the chain leaves out the peer's own certificate
+  if (SSL_is_server(ssl)) {
+    if (auto leaf = get_peer_cert(session)) { certs.push_back(leaf); }
+  }
+  auto sk = SSL_get_peer_cert_chain(ssl);
+  for (int i = 0; sk && i < sk_X509_num(sk); i++) {
+    auto x509 = sk_X509_value(sk, i);
+    X509_up_ref(x509);
+    certs.push_back(static_cast<cert_t>(x509));
+  }
+  return certs.size();
+}
+
 inline void free_cert(cert_t cert) {
   if (cert) { X509_free(static_cast<X509 *>(cert)); }
 }
@@ -20867,6 +20907,18 @@ inline cert_t get_peer_cert(const_session_t session) {
   return const_cast<mbedtls_x509_crt *>(cert);
 }
 
+inline size_t get_peer_certs(const_session_t session,
+                             std::vector<cert_t> &certs) {
+  certs.clear();
+  // Mbed TLS parses the whole received chain into a list headed by the peer
+  // certificate, owned by the session like get_peer_cert()'s result
+  for (auto crt = static_cast<mbedtls_x509_crt *>(get_peer_cert(session));
+       crt && crt->raw.len > 0; crt = crt->next) {
+    certs.push_back(static_cast<cert_t>(crt));
+  }
+  return certs.size();
+}
+
 inline void free_cert(cert_t cert) {
   // Mbed TLS: peer certificate is owned by the SSL context.
   // No-op here, but callers should still call this for cross-backend
@@ -22022,6 +22074,24 @@ inline cert_t get_peer_cert(const_session_t session) {
 
   WOLFSSL_X509 *cert = wolfSSL_get_peer_certificate(wsession->ssl);
   return static_cast<cert_t>(cert);
+}
+
+inline size_t get_peer_certs(const_session_t session,
+                             std::vector<cert_t> &certs) {
+  certs.clear();
+  if (!session) { return 0; }
+  // wolfSSL keeps the received chain only when built with SESSION_CERTS
+#ifdef SESSION_CERTS
+  auto wsession =
+      static_cast<impl::WolfSSLSession *>(const_cast<void *>(session));
+  auto chain = wolfSSL_get_peer_chain(wsession->ssl);
+  auto count = chain ? wolfSSL_get_chain_count(chain) : 0;
+  for (int i = 0; i < count; i++) {
+    auto x509 = wolfSSL_get_chain_X509(chain, i);
+    if (x509) { certs.push_back(static_cast<cert_t>(x509)); }
+  }
+#endif
+  return certs.size();
 }
 
 inline void free_cert(cert_t cert) {
