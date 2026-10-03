@@ -6612,6 +6612,54 @@ TEST_F(ServerTest, PostMethod303Redirect) {
   EXPECT_EQ("/2", res->location);
 }
 
+TEST(RedirectTest, SeeOtherDoesNotResendContentProviderBody) {
+  // 303 must be retrieved with GET and must not replay the previous body.
+  // A buffered Post clears `req.body`, but a content provider lives beside it
+  // and used to be sent again on the follow-up request.
+  Server svr;
+  std::string method;
+  std::string body;
+  std::string content_length;
+
+  svr.Post("/up", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("/down", StatusCode::SeeOther_303);
+  });
+  svr.Get("/down", [&](const Request &req, Response &res) {
+    method = req.method;
+    body = req.body;
+    content_length = req.get_header_value("Content-Length");
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli("127.0.0.1", port);
+  cli.set_follow_location(true);
+  const std::string payload = "SECRET-BODY";
+  auto res = cli.Post(
+      "/up", payload.size(),
+      [&](size_t offset, size_t length, DataSink &sink) {
+        if (offset >= payload.size()) { return true; }
+        auto n = (std::min)(length, payload.size() - offset);
+        return sink.write(payload.data() + offset, n);
+      },
+      "text/plain");
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("ok", res->body);
+  EXPECT_EQ("GET", method);
+  EXPECT_TRUE(body.empty());
+  EXPECT_TRUE(content_length.empty());
+}
+
 TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   auto res = cli_.Get("/dir/test.abcde");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());

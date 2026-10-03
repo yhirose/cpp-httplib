@@ -8972,6 +8972,12 @@ inline bool redirect(T &cli, Request &req, Response &res,
     new_req.method = "GET";
     new_req.body.clear();
     new_req.headers.clear();
+    // A sized or chunked provider is not part of `body`. Leaving it set makes
+    // the follow-up GET upload the original payload (RFC 9110 15.4.4).
+    new_req.content_length_ = 0;
+    new_req.content_provider_ = nullptr;
+    new_req.is_chunked_content_provider_ = false;
+    new_req.upload_progress = nullptr;
   }
 
   Response new_res;
