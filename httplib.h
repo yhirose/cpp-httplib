@@ -4377,7 +4377,7 @@ public:
 
 private:
   bool parse_sse_line(const std::string &line, SSEMessage &msg, int &retry_ms,
-                      bool &has_data);
+                      bool &has_data, bool &has_id);
   void run_event_loop();
   void dispatch_event(const SSEMessage &msg);
   bool should_reconnect(int count) const;
@@ -4887,7 +4887,8 @@ inline void SSEClient::stop() {
 }
 
 inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
-                                      int &retry_ms, bool &has_data) {
+                                      int &retry_ms, bool &has_data,
+                                      bool &has_id) {
   // Blank line signals end of event
   if (line.empty()) { return true; }
 
@@ -4917,6 +4918,7 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
   } else if (field == "id") {
     // Empty id is valid (clears the last event ID)
     msg.id = value;
+    has_id = true;
   } else if (field == "retry") {
     // Parse retry interval in milliseconds
     // Per the SSE spec, a value that is not all ASCII digits is ignored.
@@ -4987,7 +4989,8 @@ inline void SSEClient::run_event_loop() {
     // Event receiving loop
     std::string buffer;
     SSEMessage current_msg;
-    bool has_data = false;
+    auto has_data = false;
+    auto has_id = false;
 
     while (running_.load() && result.next()) {
       buffer.append(result.data(), result.size());
@@ -5006,13 +5009,13 @@ inline void SSEClient::run_event_loop() {
         if (!line.empty() && line.back() == '\r') { line.pop_back(); }
 
         // Parse the line and check if event is complete
-        auto event_complete =
-            parse_sse_line(line, current_msg, reconnect_interval_ms_, has_data);
+        auto event_complete = parse_sse_line(
+            line, current_msg, reconnect_interval_ms_, has_data, has_id);
 
         if (event_complete) {
           // Update last_event_id for reconnection, even for an event that
-          // has no data
-          if (!current_msg.id.empty()) { last_event_id_ = current_msg.id; }
+          // has no data. An empty id clears it.
+          if (has_id) { last_event_id_ = current_msg.id; }
 
           // An event without a data field is not dispatched
           if (has_data) { dispatch_event(current_msg); }
@@ -5020,6 +5023,7 @@ inline void SSEClient::run_event_loop() {
           // Reset the message for the next event either way
           current_msg.clear();
           has_data = false;
+          has_id = false;
         }
       }
 

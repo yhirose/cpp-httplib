@@ -22470,6 +22470,30 @@ TEST_F(SSEParsingTest, EventWithoutDataUpdatesLastEventId) {
   EXPECT_EQ(msgs[0].data, "42");
 }
 
+TEST_F(SSEParsingTest, EmptyEventIdClearsLastEventId) {
+  // The first connection sets an id and then clears it with an empty one; the
+  // second reports whether it was reconnected with a Last-Event-ID
+  std::atomic<int> connection_count{0};
+  server_->Get("/id-clear", [&](const Request &req, Response &res) {
+    if (connection_count++ == 0) {
+      res.set_content("id: 1\ndata: first\n\nid:\ndata: second\n\n",
+                      "text/event-stream");
+    } else {
+      res.set_content(
+          std::string("data: ") +
+              (req.has_header("Last-Event-ID") ? "sent" : "not sent") +
+              "\n\nevent: end\ndata: end\n\n",
+          "text/event-stream");
+    }
+  });
+
+  auto msgs = collect("/id-clear");
+  ASSERT_EQ(msgs.size(), 3u);
+  EXPECT_EQ(msgs[0].id, "1");
+  EXPECT_EQ(msgs[1].id, "");
+  EXPECT_EQ(msgs[2].data, "not sent");
+}
+
 TEST_F(SSEParsingTest, CompleteEventParsing) {
   auto msgs = parse("event: notification\nid: evt-42\n"
                     "data: {\"type\":\"alert\"}\nretry: 1000\n\n");
