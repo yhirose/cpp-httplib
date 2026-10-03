@@ -866,10 +866,16 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
   if (sep != std::string::npos) {
     uc.scheme = url.substr(0, sep);
 
-    // Scheme must be [a-z]+ only
+    // RFC 3986 section 3.1: scheme is case-insensitive. Store the lowercase
+    // form so later comparisons against "http" / "https" / "ws" / "wss" accept
+    // "HTTP://" and "Https://". Digits and other bytes are still rejected.
     if (uc.scheme.empty()) { return false; }
-    for (auto c : uc.scheme) {
-      if (c < 'a' || c > 'z') { return false; }
+    for (auto &c : uc.scheme) {
+      if (c >= 'A' && c <= 'Z') {
+        c = static_cast<char>(c - 'A' + 'a');
+      } else if (c < 'a' || c > 'z') {
+        return false;
+      }
     }
 
     pos = sep + 3;

@@ -6612,6 +6612,41 @@ TEST_F(ServerTest, PostMethod303Redirect) {
   EXPECT_EQ("/2", res->location);
 }
 
+TEST(RedirectLocationTest, FollowsUppercaseScheme) {
+  // "HTTP" is the same scheme as "http". Rejecting it used to fail the whole
+  // Result with Error::Unknown and drop the response that had already arrived.
+  Server svr;
+  bool hit = false;
+  int port = 0;
+
+  svr.Get("/scheme", [&](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::Found_302;
+    res.set_header("Location",
+                   "HTTP://127.0.0.1:" + std::to_string(port) + "/b");
+  });
+  svr.Get("/b", [&](const Request & /*req*/, Response &res) {
+    hit = true;
+    res.set_content("reached", "text/plain");
+  });
+
+  port = svr.bind_to_any_port("127.0.0.1");
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli("127.0.0.1", port);
+  cli.set_follow_location(true);
+  auto res = cli.Get("/scheme");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("reached", res->body);
+  EXPECT_TRUE(hit);
+}
+
 TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   auto res = cli_.Get("/dir/test.abcde");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -18250,8 +18285,20 @@ TEST(ParseUrlTest, VariousPatterns) {
     EXPECT_TRUE(uc.path.empty());
   }
   {
+    // Scheme is case-insensitive (RFC 3986). The stored form is lowercase so
+    // callers can keep comparing against "http" / "https".
     detail::UrlComponents uc;
-    ASSERT_FALSE(detail::parse_url("HTTP://example.com/path", uc));
+    ASSERT_TRUE(detail::parse_url("HTTP://example.com/path", uc));
+    EXPECT_EQ("http", uc.scheme);
+    EXPECT_EQ("example.com", uc.host);
+    EXPECT_EQ("/path", uc.path);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("Https://example.com/Path", uc));
+    EXPECT_EQ("https", uc.scheme);
+    EXPECT_EQ("example.com", uc.host);
+    EXPECT_EQ("/Path", uc.path);
   }
   {
     detail::UrlComponents uc;
