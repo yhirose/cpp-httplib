@@ -6624,18 +6624,30 @@ inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
   return false;
 }
 
-template <typename T>
-inline bool
-process_server_socket_core(const std::atomic<socket_t> &svr_sock, socket_t sock,
-                           size_t keep_alive_max_count,
-                           time_t keep_alive_timeout_sec, T callback) {
+// `has_buffered_request` reports whether the connection's stream already holds
+// bytes of the next request. A client may pipeline its requests (RFC 9112
+// 9.3.2), so reading one request can pull the start of the next one into the
+// stream's buffer; that request must be served without waiting for the socket
+// to become readable again, since its bytes are no longer on the socket.
+// `callback` is told whether keep_alive() has just seen the socket go readable.
+template <typename P, typename T>
+inline bool process_server_socket_core(const std::atomic<socket_t> &svr_sock,
+                                       socket_t sock,
+                                       size_t keep_alive_max_count,
+                                       time_t keep_alive_timeout_sec,
+                                       P has_buffered_request, T callback) {
   assert(keep_alive_max_count > 0);
   auto ret = false;
   auto count = keep_alive_max_count;
-  while (count > 0 && keep_alive(svr_sock, sock, keep_alive_timeout_sec)) {
+  while (count > 0) {
+    auto socket_readable = false;
+    if (!has_buffered_request()) {
+      if (!keep_alive(svr_sock, sock, keep_alive_timeout_sec)) { break; }
+      socket_readable = true;
+    }
     auto close_connection = count == 1;
     auto connection_closed = false;
-    ret = callback(close_connection, connection_closed);
+    ret = callback(socket_readable, close_connection, connection_closed);
     if (!ret || connection_closed) { break; }
     count--;
   }
@@ -6649,14 +6661,16 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
                       time_t keep_alive_timeout_sec, time_t read_timeout_sec,
                       time_t read_timeout_usec, time_t write_timeout_sec,
                       time_t write_timeout_usec, T callback) {
+  // One stream per connection: its read buffer can already hold the start of
+  // the next, pipelined request.
+  SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
+                    write_timeout_sec, write_timeout_usec);
   return process_server_socket_core(
       svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
-      [&](bool close_connection, bool &connection_closed) {
-        SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
-                          write_timeout_sec, write_timeout_usec);
-        // process_server_socket_core() only gets here once keep_alive() has
-        // seen the socket go readable.
-        strm.set_readable_hint();
+      [&]() { return strm.is_readable(); },
+      [&](bool socket_readable, bool close_connection,
+          bool &connection_closed) {
+        if (socket_readable) { strm.set_readable_hint(); }
         return callback(strm, close_connection, connection_closed);
       });
 }
@@ -10584,13 +10598,16 @@ inline bool process_server_socket_ssl(
     socket_t sock, size_t keep_alive_max_count, time_t keep_alive_timeout_sec,
     time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, T callback) {
+  // See process_server_socket(). The TLS library keeps already decrypted bytes
+  // of a pipelined request, which keep_alive() cannot see on the socket.
+  SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
+                       write_timeout_sec, write_timeout_usec);
   return process_server_socket_core(
       svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
-      [&](bool close_connection, bool &connection_closed) {
-        SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
-                             write_timeout_sec, write_timeout_usec);
-        // See the non-TLS path in process_server_socket().
-        strm.set_readable_hint();
+      [&]() { return strm.is_readable(); },
+      [&](bool socket_readable, bool close_connection,
+          bool &connection_closed) {
+        if (socket_readable) { strm.set_readable_hint(); }
         return callback(strm, close_connection, connection_closed);
       });
 }
@@ -14446,6 +14463,13 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
   // Connection has been closed on client
   if (!line_reader.getline()) { return false; }
+
+  // RFC 9112 2.2: ignore an empty line received before the request-line. Some
+  // clients send an extra CRLF after a request body, which would otherwise be
+  // parsed as the next request on a persistent connection.
+  if (strcmp(line_reader.ptr(), "\r\n") == 0 && !line_reader.getline()) {
+    return false;
+  }
 
   Request req;
   req.start_time_ = std::chrono::steady_clock::now();

@@ -11481,6 +11481,134 @@ TEST(KeepAliveTest, MaxCount) {
   }
 }
 
+// A client may pipeline its requests (RFC 9112 9.3.2), so reading one request
+// can pull the next one into the server's buffer. The server must serve it
+// without waiting for the socket to become readable again. The keep-alive
+// timeout outlasts the client's read timeout, so a request left waiting for it
+// shows up as a missing response.
+static void serve_pipelining_routes(Server &svr,
+                                    const std::function<void(int)> &client) {
+  svr.set_keep_alive_timeout(5);
+  svr.Get("/hi/(\\d+)", [](const Request &req, Response &res) {
+    res.set_content("hi " + req.matches[1].str(), "text/plain");
+  });
+  svr.Post("/echo", [](const Request &req, Response &res) {
+    res.set_content("echo " + req.body, "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  client(port);
+}
+
+static std::string
+send_pipelined_requests(const std::vector<std::string> &parts) {
+  Server svr;
+  std::string res;
+  serve_pipelining_routes(svr, [&](int port) {
+    EXPECT_TRUE(send_request_in_parts(2, parts, &res, port));
+  });
+  return res;
+}
+
+static void expect_in_order(const std::string &res,
+                            const std::vector<std::string> &bodies) {
+  size_t pos = 0;
+  for (const auto &body : bodies) {
+    pos = res.find(body, pos);
+    ASSERT_NE(std::string::npos, pos) << "missing or out of order: " << body;
+    pos += body.size();
+  }
+}
+
+TEST(KeepAliveTest, PipelinedRequests) {
+  auto res = send_pipelined_requests(
+      {"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+       "POST /echo HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 4\r\n\r\nbody"
+       "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"});
+  expect_in_order(res, {"hi 1", "echo body", "hi 3"});
+}
+
+// The second request starts in the server's buffer and ends on the socket.
+TEST(KeepAliveTest, PipelinedRequestSplitAcrossReads) {
+  auto res =
+      send_pipelined_requests({"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                               "GET /hi/2 HTTP/1.1\r\nHo",
+                               "st: localhost\r\nConnection: close\r\n\r\n"});
+  expect_in_order(res, {"hi 1", "hi 2"});
+}
+
+// RFC 9112 2.2: an empty line before the request-line is ignored, so an extra
+// CRLF after a body does not turn into a 400 for the next request.
+TEST(KeepAliveTest, EmptyLineBeforeRequestLineIsIgnored) {
+  auto res = send_pipelined_requests(
+      {"POST /echo HTTP/1.1\r\nHost: localhost\r\n"
+       "Content-Length: 4\r\n\r\nbody\r\n"
+       "GET /hi/2 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"});
+  EXPECT_EQ(std::string::npos, res.find("400 Bad Request"));
+  expect_in_order(res, {"echo body", "hi 2"});
+}
+
+// Where an unparsable request ends is unknown, so what follows it in the buffer
+// must not be served as the next request.
+TEST(KeepAliveTest, PipelinedRequestAfterInvalidRequestIsNotServed) {
+  auto res = send_pipelined_requests(
+      {"INVALID REQUEST LINE\r\n\r\n"
+       "GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"});
+  EXPECT_EQ("HTTP/1.1 400 Bad Request", res.substr(0, 24));
+  EXPECT_EQ(std::string::npos, res.find("hi 1"));
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// Over TLS, the next request is held by the TLS library as already decrypted
+// data rather than on the socket.
+TEST(KeepAliveTest, SSLPipelinedRequests) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  std::string res;
+  serve_pipelining_routes(svr, [&](int port) {
+    auto error = Error::Success;
+    auto sock = detail::create_client_socket(
+        HOST, "", port, AF_UNSPEC, false, false, nullptr,
+        /*connection_timeout_sec=*/5, 0,
+        /*read_timeout_sec=*/2, 0,
+        /*write_timeout_sec=*/5, 0, std::string(), error);
+    ASSERT_NE(INVALID_SOCKET, sock);
+    auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+    auto ctx = SSL_CTX_new(TLS_client_method());
+    auto ssl = SSL_new(ctx);
+    auto ssl_se = detail::scope_exit([&] {
+      SSL_free(ssl);
+      SSL_CTX_free(ctx);
+    });
+    SSL_set_fd(ssl, static_cast<int>(sock));
+    ASSERT_EQ(1, SSL_connect(ssl));
+
+    // One write, so all three requests arrive in one TLS record
+    const std::string req =
+        "GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        "GET /hi/2 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    ASSERT_EQ(static_cast<int>(req.size()),
+              SSL_write(ssl, req.data(), static_cast<int>(req.size())));
+
+    char buf[512];
+    int n;
+    while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+      res.append(buf, static_cast<size_t>(n));
+    }
+  });
+  expect_in_order(res, {"hi 1", "hi 2", "hi 3"});
+}
+#endif
+
 TEST(KeepAliveTest, Issue1041) {
   Server svr;
   svr.set_keep_alive_timeout(3);
