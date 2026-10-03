@@ -7500,7 +7500,10 @@ inline std::string
 find_content_type(const std::string &path,
                   const std::map<std::string, std::string> &user_data,
                   const std::string &default_content_type) {
-  auto ext = file_extension(path);
+  // Extensions are matched case-insensitively. The built-in switch and the
+  // user map are both keyed by the lowercase form, so "HTML" and "html"
+  // select the same type. file_extension() keeps the original case.
+  auto ext = case_ignore::to_lower(file_extension(path));
 
   auto it = user_data.find(ext);
   if (it != user_data.end()) { return it->second; }
@@ -13135,7 +13138,7 @@ inline bool Server::remove_mount_point(const std::string &mount_point) {
 inline Server &
 Server::set_file_extension_and_mimetype_mapping(const std::string &ext,
                                                 const std::string &mime) {
-  file_extension_and_mimetype_map_[ext] = mime;
+  file_extension_and_mimetype_map_[detail::case_ignore::to_lower(ext)] = mime;
   return *this;
 }
 

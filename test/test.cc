@@ -18170,6 +18170,23 @@ TEST(RouteMatcherTest, LongLiteralPatternIsNotSubjectToTheRegexPathLimit) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(FindContentTypeTest, ExtensionCaseIsIgnored) {
+  const std::string fallback = "application/octet-stream";
+  EXPECT_EQ("text/html",
+            detail::find_content_type("dir/index.html", {}, fallback));
+  EXPECT_EQ("text/html",
+            detail::find_content_type("dir/index.HTML", {}, fallback));
+  EXPECT_EQ("text/html",
+            detail::find_content_type("dir/index.Html", {}, fallback));
+  EXPECT_EQ("image/jpeg", detail::find_content_type("a.JPG", {}, fallback));
+  EXPECT_EQ("image/jpeg", detail::find_content_type("a.jpeg", {}, fallback));
+
+  std::map<std::string, std::string> user{{"abcde", "text/abcde"}};
+  EXPECT_EQ("text/abcde",
+            detail::find_content_type("f.ABCDE", user, fallback));
+  EXPECT_EQ(fallback, detail::find_content_type("f.unknown", user, fallback));
+}
+
 TEST(ParseUrlTest, VariousPatterns) {
   {
     detail::UrlComponents uc;
