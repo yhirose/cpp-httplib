@@ -831,14 +831,19 @@ inline from_chars_result<double> from_chars(const char *first, const char *last,
   return {p, std::errc{}};
 }
 
-inline bool parse_port(const char *s, size_t len, int &port) {
+inline bool parse_int_in_range(const char *s, size_t len, int lo, int hi,
+                               int &out) {
   int val = 0;
   auto r = from_chars(s, s + len, val);
-  if (r.ec != std::errc{} || r.ptr != s + len || val < 1 || val > 65535) {
+  if (r.ec != std::errc{} || r.ptr != s + len || val < lo || val > hi) {
     return false;
   }
-  port = val;
+  out = val;
   return true;
+}
+
+inline bool parse_port(const char *s, size_t len, int &port) {
+  return parse_int_in_range(s, len, 1, 65535, port);
 }
 
 inline bool parse_port(const std::string &s, int &port) {
@@ -12470,14 +12475,10 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
     struct in_addr v4;
     if (inet_pton(AF_INET, addr_part.c_str(), &v4) == 1) {
       int prefix = 32;
-      if (!prefix_part.empty()) {
-        auto r = from_chars(prefix_part.data(),
-                            prefix_part.data() + prefix_part.size(), prefix);
-        if (r.ec != std::errc{} ||
-            r.ptr != prefix_part.data() + prefix_part.size()) {
-          return false;
-        }
-        if (prefix < 0 || prefix > 32) { return false; }
+      if (!prefix_part.empty() &&
+          !parse_int_in_range(prefix_part.data(), prefix_part.size(), 0, 32,
+                              prefix)) {
+        return false;
       }
       out.kind = NoProxyKind::IPv4Cidr;
       std::memcpy(out.net.data(), &v4, sizeof(v4));
@@ -12489,14 +12490,10 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
   struct in6_addr v6;
   if (inet_pton(AF_INET6, addr_part.c_str(), &v6) == 1) {
     int prefix = 128;
-    if (!prefix_part.empty()) {
-      auto r = from_chars(prefix_part.data(),
-                          prefix_part.data() + prefix_part.size(), prefix);
-      if (r.ec != std::errc{} ||
-          r.ptr != prefix_part.data() + prefix_part.size()) {
-        return false;
-      }
-      if (prefix < 0 || prefix > 128) { return false; }
+    if (!prefix_part.empty() &&
+        !parse_int_in_range(prefix_part.data(), prefix_part.size(), 0, 128,
+                            prefix)) {
+      return false;
     }
     out.kind = NoProxyKind::IPv6Cidr;
     std::memcpy(out.net.data(), &v6, sizeof(v6));
