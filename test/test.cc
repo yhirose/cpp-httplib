@@ -14361,6 +14361,9 @@ TEST(SSLClientServerTest, ClientCertMissing) {
 
   SSLClient cli(HOST, PORT);
   cli.set_connection_timeout(30);
+  // cert.pem does not match HOST. Skip the hostname check, which runs before
+  // the chain check on Windows, so the result does not depend on the order.
+  cli.enable_server_hostname_verification(false);
 
   auto res = cli.Get("/test");
   ASSERT_TRUE(!res);
