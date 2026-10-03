@@ -8272,9 +8272,11 @@ struct WebSocketUpgradeResponse {
   std::string selected_subprotocol;
 };
 
-inline bool read_websocket_upgrade_response(Stream &strm,
-                                            const std::string &expected_accept,
-                                            WebSocketUpgradeResponse &upgrade) {
+inline bool
+read_websocket_upgrade_response(Stream &strm,
+                                const std::string &expected_accept,
+                                const std::string &offered_subprotocols,
+                                WebSocketUpgradeResponse &upgrade) {
   // Read status line
   const auto bufsiz = 2048;
   char buf[bufsiz];
@@ -8329,6 +8331,28 @@ inline bool read_websocket_upgrade_response(Stream &strm,
   auto proto_it = headers.find("Sec-WebSocket-Protocol");
   if (proto_it != headers.end()) {
     upgrade.selected_subprotocol = proto_it->second;
+  }
+
+  // RFC 6455 4.1: the server may name at most one subprotocol, and it has to
+  // be one the client offered. A value the client never listed (including any
+  // value at all when the client offered none) means the server steered the
+  // connection to a subprotocol that was not agreed, so the client must fail
+  // the handshake rather than hand it to application code via subprotocol().
+  // Sec-WebSocket-Accept is already checked strictly just above; this closes
+  // the matching gap for the negotiated subprotocol.
+  if (!upgrade.selected_subprotocol.empty()) {
+    auto was_offered = false;
+    split(offered_subprotocols.data(),
+          offered_subprotocols.data() + offered_subprotocols.size(), ',',
+          [&](const char *b, const char *e) {
+            if (std::string(b, e) == upgrade.selected_subprotocol) {
+              was_offered = true;
+            }
+          });
+    if (!was_offered) {
+      upgrade.error = Error::WebSocketHandshake;
+      return false;
+    }
   }
 
   return true;
@@ -10325,7 +10349,10 @@ inline bool perform_websocket_handshake(Stream &strm, Request &req,
 
   // Verify 101 response and Sec-WebSocket-Accept header
   auto expected_accept = websocket_accept_key(client_key);
-  return read_websocket_upgrade_response(strm, expected_accept, upgrade);
+  auto offered_subprotocols =
+      get_combined_header_value(req.headers, "Sec-WebSocket-Protocol");
+  return read_websocket_upgrade_response(strm, expected_accept,
+                                         offered_subprotocols, upgrade);
 }
 
 inline bool is_ip_address(const std::string &host) {
