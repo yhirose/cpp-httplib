@@ -22678,6 +22678,45 @@ TEST_F(SSEIntegrationTest, MultiLineDataIntegration) {
   EXPECT_EQ(received_data, "line1\nline2\nline3");
 }
 
+TEST_F(SSEIntegrationTest, EmptyDataLines) {
+  server_->Get("/empty-data-lines", [](const Request &, Response &res) {
+    res.set_chunked_content_provider("text/event-stream", [](size_t offset,
+                                                             DataSink &sink) {
+      if (offset == 0) {
+        const std::string events = "data:\n\ndata:\ndata: hello\n\ndata\n\n";
+        sink.write(events.data(), events.size());
+      }
+      return false;
+    });
+  });
+
+  Client client("localhost", get_port());
+  sse::SSEClient sse(client, "/empty-data-lines");
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::vector<std::string> received;
+
+  sse.on_message([&](const sse::SSEMessage &msg) {
+    std::lock_guard<std::mutex> lock(mutex);
+    received.push_back(msg.data);
+    cv.notify_all();
+  });
+  sse.set_max_reconnect_attempts(1);
+  sse.start_async();
+
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait_for(lock, std::chrono::seconds(2),
+                [&] { return received.size() >= 3; });
+  }
+  sse.stop();
+
+  ASSERT_GE(received.size(), 3u);
+  EXPECT_EQ(received[0], "");
+  EXPECT_EQ(received[1], "\nhello");
+  EXPECT_EQ(received[2], "");
+}
+
 // Test: Auto-reconnect after server disconnection
 TEST_F(SSEIntegrationTest, AutoReconnectAfterDisconnect) {
   std::atomic<int> connection_count{0};
