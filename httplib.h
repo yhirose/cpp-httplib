@@ -8976,6 +8976,9 @@ inline bool redirect(T &cli, Request &req, Response &res,
     new_req.method = "GET";
     new_req.body.clear();
     new_req.headers.clear();
+    new_req.content_length_ = 0;
+    new_req.content_provider_ = nullptr;
+    new_req.is_chunked_content_provider_ = false;
   }
 
   Response new_res;
@@ -15738,7 +15741,7 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  auto path = decode_path_component(next_path) + next_query;
+  auto path = std::move(next_path) + next_query;
 
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {
@@ -15993,9 +15996,9 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     // Write request line and headers
     if (detail::write_request_line(bstrm, req.method, path_with_query) < 0) {
       // A rejected method (not a token, e.g. carrying CR/LF) or target (e.g.
-      // CR/LF smuggled in via a decoded redirect Location under
-      // set_path_encode(false)) must fail the request cleanly instead of
-      // emitting a request-line-less, header-injecting request.
+      // CR/LF in a caller-supplied path under set_path_encode(false)) must
+      // fail the request cleanly instead of emitting a request-line-less,
+      // header-injecting request.
       error = Error::Write;
       rejected_locally = true;
       output_error_log(error, &req);

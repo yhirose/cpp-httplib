@@ -10209,8 +10209,7 @@ TEST(RequestLineInjectionTest, RejectsInvalidCharsInTarget) {
 
   // A target carrying CR/LF, SP or other control octets must be rejected
   // before anything reaches the wire, otherwise it splits the request line and
-  // injects a header or a whole request. This is what a decoded redirect
-  // Location ("%0D%0A") turns into when path encoding is disabled.
+  // injects a header or a whole request.
   const std::string evil_targets[] = {
       "/a\r\nInjected: pwned",
       "/a\rInjected",
@@ -10231,9 +10230,9 @@ TEST(RequestLineInjectionTest, RejectsInvalidCharsInTarget) {
 TEST(RequestLineInjectionTest, ClientRejectsCRLFTargetEndToEnd) {
   // End-to-end counterpart to RejectsInvalidCharsInTarget. With path encoding
   // disabled the client transmits the target verbatim, so a CR/LF-bearing
-  // target -- what a redirect Location "%0D%0A" decodes to -- reaches
-  // write_request. The client must fail cleanly with Error::Write instead of
-  // putting a request-line-less, header-injecting request on the wire.
+  // target reaches write_request. The client must fail cleanly with
+  // Error::Write instead of putting a request-line-less, header-injecting
+  // request on the wire.
   Server svr;
 
   svr.Get("/a", [](const Request &, Response &res) {
@@ -17494,6 +17493,138 @@ TEST(TaskQueueTest, MaxQueuedRequests) {
 #else
   EXPECT_NO_THROW(task_queue->shutdown());
 #endif
+}
+
+TEST(RedirectTest, SeeOtherDoesNotResendContentProviderBody) {
+  Server svr;
+  std::string method;
+  std::string body;
+  auto has_content_length = false;
+  auto has_transfer_encoding = false;
+  std::atomic<int> bad_requests{0};
+
+  // Leftover body bytes get parsed as a malformed request and answered with
+  // 400
+  svr.set_logger([&](const Request & /*req*/, const Response &res) {
+    if (res.status == StatusCode::BadRequest_400) { bad_requests++; }
+  });
+
+  svr.Post("/up", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("/down", StatusCode::SeeOther_303);
+  });
+  svr.Get("/down", [&](const Request &req, Response &res) {
+    method = req.method;
+    body = req.body;
+    has_content_length = req.has_header("Content-Length");
+    has_transfer_encoding = req.has_header("Transfer-Encoding");
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  const std::string payload = "SECRET-BODY";
+
+  auto check = [&](Client &cli, const Result &res) {
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("ok", res->body);
+    EXPECT_EQ("GET", method);
+    EXPECT_TRUE(body.empty());
+    EXPECT_FALSE(has_content_length);
+    EXPECT_FALSE(has_transfer_encoding);
+
+    // Nothing of the original body may be left on the connection
+    auto res2 = cli.Get("/down");
+    ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
+    EXPECT_EQ(StatusCode::OK_200, res2->status);
+    EXPECT_EQ("ok", res2->body);
+    EXPECT_EQ(0, bad_requests);
+  };
+
+  // With content length
+  {
+    Client cli(HOST, port);
+    cli.set_keep_alive(true);
+    cli.set_follow_location(true);
+
+    auto res = cli.Post(
+        "/up", payload.size(),
+        [&](size_t offset, size_t length, DataSink &sink) {
+          return sink.write(payload.data() + offset, length);
+        },
+        "text/plain");
+    check(cli, res);
+  }
+
+  // Without content length (chunked)
+  {
+    Client cli(HOST, port);
+    cli.set_keep_alive(true);
+    cli.set_follow_location(true);
+
+    auto res = cli.Post(
+        "/up",
+        [&](size_t /*offset*/, DataSink &sink) {
+          sink.write(payload.data(), payload.size());
+          sink.done();
+          return true;
+        },
+        "text/plain");
+    check(cli, res);
+  }
+}
+
+TEST(RedirectTest, LocationPathIsNotDecoded) {
+  Server svr;
+  std::string target;
+
+  svr.Get(R"(/start/.*)", [](const Request &req, Response &res) {
+    // Echo the still-encoded name back in the Location
+    const std::string prefix = "/start/";
+    res.status = StatusCode::Found_302;
+    res.set_header("Location", "/dest/" + req.target.substr(prefix.size()));
+  });
+  svr.Get(R"(/dest.*)", [&](const Request &req, Response &res) {
+    target = req.target;
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // Decoding the Location path would turn the first four into a path
+  // separator, a query delimiter, a fragment delimiter and a different
+  // percent-encoded octet. The rest must keep reaching the server as they are.
+  const std::vector<std::string> names = {
+      "a%2Fb", "x%3Fy", "x%23y", "a%2520b", "a%20b", "%C3%BC", "a-b_c.d~e",
+  };
+
+  for (auto path_encode : {true, false}) {
+    Client cli(HOST, port);
+    cli.set_follow_location(true);
+    cli.set_path_encode(path_encode);
+
+    for (const auto &name : names) {
+      target.clear();
+      auto res = cli.Get("/start/" + name);
+      ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+      EXPECT_EQ(StatusCode::OK_200, res->status);
+      EXPECT_EQ("/dest/" + name, target);
+    }
+  }
 }
 
 TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
