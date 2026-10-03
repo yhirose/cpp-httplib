@@ -4889,10 +4889,10 @@ inline void SSEClient::stop() {
 inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
                                       int &retry_ms, bool &has_data) {
   // Blank line signals end of event
-  if (line.empty() || line == "\r") { return true; }
+  if (line.empty()) { return true; }
 
   // Lines starting with ':' are comments (ignored)
-  if (!line.empty() && line[0] == ':') { return false; }
+  if (line[0] == ':') { return false; }
 
   // Find the colon separator
   auto colon_pos = line.find(':');
@@ -4904,8 +4904,6 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
     auto value_start = colon_pos + 1;
     if (line[value_start] == ' ') { value_start++; }
     value = line.substr(value_start);
-    // Remove trailing \r if present
-    if (!value.empty() && value.back() == '\r') { value.pop_back(); }
   }
 
   // Handle known fields
@@ -5003,17 +5001,23 @@ inline void SSEClient::run_event_loop() {
         auto line = buffer.substr(line_start, newline_pos - line_start);
         line_start = newline_pos + 1;
 
+        // Strip the \r of a CRLF line ending so that every field, including
+        // one without a colon, sees the same line
+        if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+
         // Parse the line and check if event is complete
         auto event_complete =
             parse_sse_line(line, current_msg, reconnect_interval_ms_, has_data);
 
-        if (event_complete && has_data) {
-          // Update last_event_id for reconnection
+        if (event_complete) {
+          // Update last_event_id for reconnection, even for an event that
+          // has no data
           if (!current_msg.id.empty()) { last_event_id_ = current_msg.id; }
 
-          // Dispatch event to appropriate handler
-          dispatch_event(current_msg);
+          // An event without a data field is not dispatched
+          if (has_data) { dispatch_event(current_msg); }
 
+          // Reset the message for the next event either way
           current_msg.clear();
           has_data = false;
         }
