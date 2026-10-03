@@ -22830,11 +22830,9 @@ inline void WebSocket::start_heartbeat() {
   if (ping_interval_sec_ == 0) { return; }
   ping_thread_ = std::thread([this]() {
     std::unique_lock<std::mutex> lock(ping_mutex_);
-    while (!closed_) {
-      // The predicate keeps a spurious wakeup from sending a ping early
-      ping_cv_.wait_for(lock, std::chrono::seconds(ping_interval_sec_),
-                        [this]() { return closed_.load(); });
-      if (closed_) { break; }
+    // The predicate keeps a spurious wakeup from sending a ping early
+    while (!ping_cv_.wait_for(lock, std::chrono::seconds(ping_interval_sec_),
+                              [this]() { return closed_.load(); })) {
       // If the peer has failed to respond to the previous pings, give up.
       // RFC 6455 does not define a pong-timeout mechanism; this is an
       // opt-in liveness check controlled by max_missed_pongs_.
