@@ -15734,7 +15734,12 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
 
-  auto path = decode_path_component(next_path) + next_query;
+  // Do not decode the Location path. decode_path_component turns %2F and %3F
+  // into real delimiters, so the follow-up request-target is a different URI
+  // from the one the redirect named (RFC 3986 2.2 / 6.2.2.2). encode_request_target
+  // still percent-encodes raw controls when path encoding is on, and
+  // write_request_line rejects them when it is off.
+  auto path = std::move(next_path) + next_query;
 
   // Same host redirect - use current client
   if (next_scheme == scheme && next_host == host_ && next_port == port_) {

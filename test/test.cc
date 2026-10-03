@@ -6612,6 +6612,50 @@ TEST_F(ServerTest, PostMethod303Redirect) {
   EXPECT_EQ("/2", res->location);
 }
 
+TEST(RedirectLocationTest, PreservesEncodedSlashAndQuestion) {
+  // %2F and %3F are reserved. Following the redirect must not turn them into
+  // a path separator or a query delimiter.
+  Server svr;
+  std::string target;
+  bool saw_y = false;
+
+  svr.Get("/start-slash", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("/a%2Fb", StatusCode::Found_302);
+  });
+  svr.Get("/start-q", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("/x%3Fy", StatusCode::Found_302);
+  });
+  svr.Get(R"(.*)", [&](const Request &req, Response &res) {
+    target = req.target;
+    saw_y = req.has_param("y");
+    res.set_content("catch", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli("127.0.0.1", port);
+  cli.set_follow_location(true);
+
+  target.clear();
+  auto slash = cli.Get("/start-slash");
+  ASSERT_TRUE(slash) << "Error: " << to_string(slash.error());
+  EXPECT_EQ("/a%2Fb", target);
+
+  target.clear();
+  saw_y = false;
+  auto question = cli.Get("/start-q");
+  ASSERT_TRUE(question) << "Error: " << to_string(question.error());
+  EXPECT_EQ("/x%3Fy", target);
+  EXPECT_FALSE(saw_y);
+}
+
 TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   auto res = cli_.Get("/dir/test.abcde");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
