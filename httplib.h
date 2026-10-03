@@ -5839,7 +5839,9 @@ inline std::string encode_path(const std::string &s) {
   std::string result;
   result.reserve(s.size());
 
-  for (size_t i = 0; s[i]; i++) {
+  // Walk s.size(), not until a zero byte. std::string may contain an embedded
+  // NUL; stopping there drops the rest of the path instead of encoding it.
+  for (size_t i = 0; i < s.size(); i++) {
     switch (s[i]) {
     case ' ': result += "%20"; break;
     case '+': result += "%2B"; break;

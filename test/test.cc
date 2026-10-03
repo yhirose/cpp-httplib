@@ -18170,6 +18170,15 @@ TEST(RouteMatcherTest, LongLiteralPatternIsNotSubjectToTheRegexPathLimit) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(EncodePathTest, EncodesEmbeddedNul) {
+  // The loop used to stop at the first zero byte, so a path with an embedded
+  // NUL was truncated and the remainder never reached the request-target.
+  std::string in("/a\0/b", 5);
+  EXPECT_EQ(5u, in.size());
+  EXPECT_EQ("/a%00/b", detail::encode_path(in));
+  EXPECT_EQ("/a%20b", detail::encode_path("/a b"));
+}
+
 TEST(ParseUrlTest, VariousPatterns) {
   {
     detail::UrlComponents uc;
