@@ -25001,6 +25001,52 @@ TEST(WebSocketTest, ClientRejectsResponseWithoutUpgradeToken) {
   EXPECT_FALSE(client.is_open());
 }
 
+TEST(WebSocketTest, ClientRejectsUnofferedSubprotocol) {
+  Server svr;
+  svr.Get("/ws", [](const Request &req, Response &res) {
+    res.status = StatusCode::SwitchingProtocol_101;
+    res.set_header("Upgrade", "websocket");
+    res.set_header("Connection", "Upgrade");
+    res.set_header("Sec-WebSocket-Accept",
+                   detail::websocket_accept_key(
+                       req.get_header_value("Sec-WebSocket-Key")));
+    res.set_header("Sec-WebSocket-Protocol", "admin");
+  });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  const auto url = "ws://localhost:" + std::to_string(port) + "/ws";
+
+  // Server selects a subprotocol the client never offered
+  {
+    Headers headers = {{"Sec-WebSocket-Protocol", "chat"}};
+    ws::WebSocketClient client(url, headers);
+
+    auto res = client.connect();
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::WebSocketHandshake, res.error());
+    EXPECT_FALSE(client.is_open());
+    EXPECT_TRUE(client.subprotocol().empty());
+  }
+
+  // Client offered none but the server named one anyway
+  {
+    ws::WebSocketClient client(url);
+
+    auto res = client.connect();
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::WebSocketHandshake, res.error());
+    EXPECT_FALSE(client.is_open());
+    EXPECT_TRUE(client.subprotocol().empty());
+  }
+}
+
 TEST(WebSocketTest, HostHeaderOverUnixSocket) {
   // The socket path doubles as the URL host, so it must not contain '/'.
   const char *shard = getenv("GTEST_SHARD_INDEX");
