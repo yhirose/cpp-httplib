@@ -8299,13 +8299,7 @@ read_websocket_upgrade_response(Stream &strm,
     upgrade.selected_subprotocol = proto_it->second;
   }
 
-  // RFC 6455 4.1: the server may name at most one subprotocol, and it has to
-  // be one the client offered. A value the client never listed (including any
-  // value at all when the client offered none) means the server steered the
-  // connection to a subprotocol that was not agreed, so the client must fail
-  // the handshake rather than hand it to application code via subprotocol().
-  // Sec-WebSocket-Accept is already checked strictly just above; this closes
-  // the matching gap for the negotiated subprotocol.
+  // Verify the subprotocol is one the client offered (RFC 6455 4.1)
   if (!upgrade.selected_subprotocol.empty()) {
     auto was_offered = false;
     split(offered_subprotocols.data(),

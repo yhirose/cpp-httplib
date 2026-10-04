@@ -24604,10 +24604,6 @@ TEST(WebSocketTest, ClientRejectsResponseWithoutUpgradeToken) {
 }
 
 TEST(WebSocketTest, ClientRejectsUnofferedSubprotocol) {
-  // RFC 6455 Section 4.1: the client MUST fail the connection if the server's
-  // Sec-WebSocket-Protocol names a subprotocol the client did not offer. The
-  // peer answers with an otherwise valid 101, so the subprotocol is the only
-  // thing left for the client to reject.
   Server svr;
   svr.Get("/ws", [](const Request &req, Response &res) {
     res.status = StatusCode::SwitchingProtocol_101;
@@ -24629,7 +24625,7 @@ TEST(WebSocketTest, ClientRejectsUnofferedSubprotocol) {
 
   const auto url = "ws://localhost:" + std::to_string(port) + "/ws";
 
-  // Server selects a subprotocol the client never offered: rejected.
+  // Server selects a subprotocol the client never offered
   {
     Headers headers = {{"Sec-WebSocket-Protocol", "chat"}};
     ws::WebSocketClient client(url, headers);
@@ -24641,7 +24637,7 @@ TEST(WebSocketTest, ClientRejectsUnofferedSubprotocol) {
     EXPECT_TRUE(client.subprotocol().empty());
   }
 
-  // Client offered none but the server named one anyway: rejected.
+  // Client offered none but the server named one anyway
   {
     ws::WebSocketClient client(url);
 
