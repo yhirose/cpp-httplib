@@ -14692,6 +14692,12 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
                             protocols.emplace_back(b, e);
                           });
             selected_subprotocol = entry.sub_protocol_selector(protocols);
+
+            // Ignore a selection the client did not offer (RFC 6455 4.2.2)
+            if (std::find(protocols.begin(), protocols.end(),
+                          selected_subprotocol) == protocols.end()) {
+              selected_subprotocol.clear();
+            }
           }
         }
 

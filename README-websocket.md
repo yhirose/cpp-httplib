@@ -119,7 +119,7 @@ using SubProtocolSelector =
     std::function<std::string(const std::vector<std::string> &protocols)>;
 ```
 
-The `SubProtocolSelector` receives the list of subprotocols proposed by the client (from the `Sec-WebSocket-Protocol` header) and returns the selected one. Return an empty string to decline all proposed subprotocols.
+The `SubProtocolSelector` receives the list of subprotocols proposed by the client (from the `Sec-WebSocket-Protocol` header) and returns the selected one. Return an empty string to decline all proposed subprotocols. A returned value that the client did not propose is ignored.
 
 ### WebSocket (Server-side)
 

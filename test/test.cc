@@ -24061,6 +24061,18 @@ protected:
           }
           return "";
         });
+
+    server_->WebSocket(
+        "/ws-subprotocol-unoffered",
+        [](const Request &, ws::WebSocket &ws) {
+          std::string msg;
+          while (ws.read(msg)) {
+            ws.send(msg);
+          }
+        },
+        [](const std::vector<std::string> &) -> std::string {
+          return "admin";
+        });
   }
 
   void start_server() {
@@ -24398,6 +24410,18 @@ TEST_F(WebSocketIntegrationTest, SubProtocolNoMatch) {
   ASSERT_TRUE(client.connect());
 
   // Server should not have selected any subprotocol
+  EXPECT_TRUE(client.subprotocol().empty());
+
+  client.close();
+}
+
+TEST_F(WebSocketIntegrationTest, SubProtocolSelectorReturnsUnoffered) {
+  Headers headers = {{"Sec-WebSocket-Protocol", "chat"}};
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                                 "/ws-subprotocol-unoffered",
+                             headers);
+  ASSERT_TRUE(client.connect());
+
   EXPECT_TRUE(client.subprotocol().empty());
 
   client.close();
