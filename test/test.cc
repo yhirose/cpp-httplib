@@ -42,6 +42,7 @@ inline std::string u8_to_string(const char8_t *s) {
 #define SERVER_CERT2_FILE "./cert2.pem"
 #define SERVER_CERT_IP_CN_FILE "./cert_ip_cn.pem"
 #define SERVER_CERT_IPV6_FILE "./cert_ipv6.pem"
+#define SERVER_CERT_SAN_TYPES_FILE "./cert_san_types.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
 #define CA_CERT_FILE "./ca-bundle.crt"
 #define CLIENT_CA_CERT_FILE "./rootCA.cert.pem"
@@ -14868,6 +14869,131 @@ TEST(SSLClientServerTest, TlsVerifyHostnameIpv6San) {
       << "verify_hostname should not match a non-matching IPv6 address";
   EXPECT_FALSE(cn_ipv6_matched)
       << "An IPv6 host must not be authenticated via the certificate CN";
+}
+
+// A subjectAltName entry authenticates a host only through its own GeneralName
+// type: a dNSName for a DNS host, an iPAddress for an IP host. The value bytes
+// do not tell the two apart. The dNSName "a.zz" is 61 2e 7a 7a, which is also
+// the address 97.46.122.122, and the address 42.46.122.122 is 2a 2e 7a 7a,
+// which reads as "*.zz".
+TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
+  using namespace httplib::tls;
+
+  // SANs: DNS:a.zz, IP:42.46.122.122
+  SSLServer svr(SERVER_CERT_SAN_TYPES_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  bool verify_callback_called = false;
+  bool dns_san_matched = false;
+  bool ip_san_matched = false;
+  bool ip_matched_via_dns_san = true;
+  bool dns_matched_via_ip_san = true;
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.set_connection_timeout(5);
+
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    verify_callback_called = true;
+    if (!ctx.cert) return false;
+
+    // Each entry still matches a host of its own type.
+    dns_san_matched = ctx.check_hostname("a.zz");
+    ip_san_matched = ctx.check_hostname("42.46.122.122");
+
+    // The bytes of the dNSName are this address.
+    ip_matched_via_dns_san = ctx.check_hostname("97.46.122.122");
+    // The bytes of the iPAddress read as the pattern "*.zz".
+    dns_matched_via_ip_san = ctx.check_hostname("b.zz");
+
+    return true; // Accept for the purpose of this test
+  });
+
+  cli.Get("/test");
+
+  ASSERT_TRUE(verify_callback_called)
+      << "Verify callback should have been called";
+  EXPECT_TRUE(dns_san_matched) << "verify_hostname should match a dNSName SAN";
+  EXPECT_TRUE(ip_san_matched)
+      << "verify_hostname should match an iPAddress SAN";
+  EXPECT_FALSE(ip_matched_via_dns_san)
+      << "An IP host must not be authenticated via a dNSName SAN";
+  EXPECT_FALSE(dns_matched_via_ip_san)
+      << "A DNS host must not be authenticated via an iPAddress SAN";
+}
+
+// sans() must report each subjectAltName entry under its own GeneralName type,
+// with the value the certificate carries.
+TEST(SSLClientServerTest, TlsCertSansEntryTypes) {
+  using namespace httplib::tls;
+
+  // SANs: DNS:a.zz, IP:42.46.122.122
+  SSLServer svr(SERVER_CERT_SAN_TYPES_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  bool verify_callback_called = false;
+  std::vector<SanEntry> sans;
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.set_connection_timeout(5);
+
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    verify_callback_called = true;
+    if (!ctx.cert) return false;
+
+    sans = ctx.sans();
+
+    return true; // Accept for the purpose of this test
+  });
+
+  cli.Get("/test");
+
+  ASSERT_TRUE(verify_callback_called)
+      << "Verify callback should have been called";
+
+  auto has_san = [&](SanType type, const std::string &value) {
+    return std::any_of(sans.begin(), sans.end(), [&](const SanEntry &san) {
+      return san.type == type && san.value == value;
+    });
+  };
+
+  EXPECT_TRUE(has_san(SanType::DNS, "a.zz"))
+      << "sans() should report the dNSName SAN";
+  EXPECT_TRUE(has_san(SanType::IP, "42.46.122.122"))
+      << "sans() should report the iPAddress SAN";
+
+  // Neither value may show up under the other type.
+  EXPECT_FALSE(has_san(SanType::IP, "97.46.122.122"))
+      << "sans() must not report the dNSName SAN as an address";
+  EXPECT_FALSE(has_san(SanType::DNS, "*.zz"))
+      << "sans() must not report the iPAddress SAN as a DNS name";
 }
 #endif
 

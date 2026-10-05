@@ -137,6 +137,16 @@ cert_ipv6_pem = custom_target(
   command: [openssl, 'req', '-x509', '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-subj', '/CN=::1', '-addext', 'subjectAltName=IP:2001:db8::1', '-out', '@OUTPUT@']
 )
 
+# cert_san_types.pem: a dNSName SAN and an iPAddress SAN whose value bytes read
+# as the other type ("a.zz" is the address 97.46.122.122, and 42.46.122.122 is
+# "*.zz"); each entry must only match a host of its own type.
+cert_san_types_pem = custom_target(
+  'cert_san_types_pem',
+  input: key_pem,
+  output: 'cert_san_types.pem',
+  command: [openssl, 'req', '-x509', '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-subj', '/CN=san-types', '-addext', 'subjectAltName=DNS:a.zz,IP:42.46.122.122', '-out', '@OUTPUT@']
+)
+
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
@@ -178,7 +188,8 @@ test(
     client_encrypted_pbes1_key_pem,
     client_encrypted_cert_pem,
     cert_ip_cn_pem,
-    cert_ipv6_pem
+    cert_ipv6_pem,
+    cert_san_types_pem
   ],
   workdir: meson.current_build_dir(),
   timeout: 300

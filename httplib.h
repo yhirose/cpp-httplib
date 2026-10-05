@@ -21057,28 +21057,29 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   auto is_ip = ip_len > 0;
 
   // Check Subject Alternative Names (SAN)
-  // In Mbed TLS 3.x, subject_alt_names contains raw values without ASN.1 tags
+  // Mbed TLS keeps each entry's GeneralName tag in buf.tag and its bare value
+  // in buf.p / buf.len:
   // - DNS names: raw string bytes
   // - IP addresses: raw IP bytes (4 for IPv4, 16 for IPv6)
+  // The value alone does not say which it is. The four bytes of the dNSName
+  // "a.zz" are also the address 97.46.122.122, and the address 42.46.122.122
+  // reads as "*.zz", so the type has to come from the tag.
   const mbedtls_x509_sequence *san = &mcert->subject_alt_names;
   while (san != nullptr && san->buf.p != nullptr && san->buf.len > 0) {
     const unsigned char *p = san->buf.p;
     size_t len = san->buf.len;
+    auto san_type = san->buf.tag & MBEDTLS_ASN1_TAG_VALUE_MASK;
 
     if (is_ip) {
       // For an IP host, only a matching iPAddress SAN of the same family
       // (4 bytes for IPv4, 16 bytes for IPv6) may authenticate it.
-      if (len == ip_len && memcmp(p, ip_bytes, ip_len) == 0) { return true; }
-    } else {
-      // Check if this SAN is a DNS name (printable ASCII string)
-      bool is_dns = len > 0;
-      for (size_t i = 0; i < len && is_dns; i++) {
-        if (p[i] < 32 || p[i] > 126) { is_dns = false; }
+      if (san_type == MBEDTLS_X509_SAN_IP_ADDRESS && len == ip_len &&
+          memcmp(p, ip_bytes, ip_len) == 0) {
+        return true;
       }
-      if (is_dns) {
-        std::string san_name(reinterpret_cast<const char *>(p), len);
-        if (detail::match_hostname(san_name, host_str)) { return true; }
-      }
+    } else if (san_type == MBEDTLS_X509_SAN_DNS_NAME) {
+      std::string san_name(reinterpret_cast<const char *>(p), len);
+      if (detail::match_hostname(san_name, host_str)) { return true; }
     }
     san = san->next;
   }
@@ -21157,65 +21158,47 @@ inline bool get_cert_sans(cert_t cert, std::vector<SanEntry> &sans) {
   const mbedtls_x509_sequence *cur = &x509->subject_alt_names;
   while (cur != nullptr) {
     if (cur->buf.len > 0) {
-      // Mbed TLS stores SAN as ASN.1 sequences
-      // The tag byte indicates the type
+      // Mbed TLS keeps the GeneralName tag in buf.tag. buf.p / buf.len are the
+      // bare value, with no tag or length octets in front of it.
       const unsigned char *p = cur->buf.p;
-      size_t len = cur->buf.len;
+      size_t value_len = cur->buf.len;
 
-      // First byte is the tag
-      unsigned char tag = *p;
-      p++;
-      len--;
-
-      // Parse length (simple single-byte length assumed)
-      if (len > 0 && *p < 0x80) {
-        size_t value_len = *p;
-        p++;
-        len--;
-
-        if (value_len <= len) {
-          SanEntry entry;
-          // ASN.1 context tags for GeneralName
-          switch (tag & 0x1F) {
-          case 2: // dNSName
-            entry.type = SanType::DNS;
-            entry.value =
-                std::string(reinterpret_cast<const char *>(p), value_len);
-            break;
-          case 7: // iPAddress
-            entry.type = SanType::IP;
-            if (value_len == 4) {
-              // IPv4
-              char buf[16];
-              snprintf(buf, sizeof(buf), "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
-              entry.value = buf;
-            } else if (value_len == 16) {
-              // IPv6
-              char buf[64];
-              snprintf(buf, sizeof(buf),
-                       "%02x%02x:%02x%02x:%02x%02x:%02x%02x:"
-                       "%02x%02x:%02x%02x:%02x%02x:%02x%02x",
-                       p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8],
-                       p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
-              entry.value = buf;
-            }
-            break;
-          case 1: // rfc822Name (email)
-            entry.type = SanType::EMAIL;
-            entry.value =
-                std::string(reinterpret_cast<const char *>(p), value_len);
-            break;
-          case 6: // uniformResourceIdentifier
-            entry.type = SanType::URI;
-            entry.value =
-                std::string(reinterpret_cast<const char *>(p), value_len);
-            break;
-          default: entry.type = SanType::OTHER; break;
-          }
-
-          if (!entry.value.empty()) { sans.push_back(std::move(entry)); }
+      SanEntry entry;
+      switch (cur->buf.tag & MBEDTLS_ASN1_TAG_VALUE_MASK) {
+      case MBEDTLS_X509_SAN_DNS_NAME:
+        entry.type = SanType::DNS;
+        entry.value = std::string(reinterpret_cast<const char *>(p), value_len);
+        break;
+      case MBEDTLS_X509_SAN_IP_ADDRESS:
+        entry.type = SanType::IP;
+        if (value_len == 4) {
+          // IPv4
+          char buf[16];
+          snprintf(buf, sizeof(buf), "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
+          entry.value = buf;
+        } else if (value_len == 16) {
+          // IPv6
+          char buf[64];
+          snprintf(buf, sizeof(buf),
+                   "%02x%02x:%02x%02x:%02x%02x:%02x%02x:"
+                   "%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                   p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9],
+                   p[10], p[11], p[12], p[13], p[14], p[15]);
+          entry.value = buf;
         }
+        break;
+      case MBEDTLS_X509_SAN_RFC822_NAME:
+        entry.type = SanType::EMAIL;
+        entry.value = std::string(reinterpret_cast<const char *>(p), value_len);
+        break;
+      case MBEDTLS_X509_SAN_UNIFORM_RESOURCE_IDENTIFIER:
+        entry.type = SanType::URI;
+        entry.value = std::string(reinterpret_cast<const char *>(p), value_len);
+        break;
+      default: entry.type = SanType::OTHER; break;
       }
+
+      if (!entry.value.empty()) { sans.push_back(std::move(entry)); }
     }
     cur = cur->next;
   }
