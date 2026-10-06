@@ -34,8 +34,6 @@ openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=127.0.0.1" -
 #                 must be ignored.
 openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=::1" -addext "subjectAltName=IP:2001:db8::1" -out cert_ipv6.pem
 
-# cert_san_types.pem: a dNSName SAN and an iPAddress SAN whose value bytes read
-#                 as the other type: "a.zz" is the address 97.46.122.122, and
-#                 42.46.122.122 is "*.zz". Each entry must only match a host of
-#                 its own type.
+# cert_san_types.pem: the bytes of each SAN read as the other type:
+#                 DNS:a.zz is 97.46.122.122, IP:42.46.122.122 is "*.zz".
 openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=san-types" -addext "subjectAltName=DNS:a.zz,IP:42.46.122.122" -out cert_san_types.pem

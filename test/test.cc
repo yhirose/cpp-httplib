@@ -14871,11 +14871,8 @@ TEST(SSLClientServerTest, TlsVerifyHostnameIpv6San) {
       << "An IPv6 host must not be authenticated via the certificate CN";
 }
 
-// A subjectAltName entry authenticates a host only through its own GeneralName
-// type: a dNSName for a DNS host, an iPAddress for an IP host. The value bytes
-// do not tell the two apart. The dNSName "a.zz" is 61 2e 7a 7a, which is also
-// the address 97.46.122.122, and the address 42.46.122.122 is 2a 2e 7a 7a,
-// which reads as "*.zz".
+// A SAN entry must only match a host of its own type: the bytes of the dNSName
+// "a.zz" are also 97.46.122.122, and 42.46.122.122 reads as "*.zz".
 TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
   using namespace httplib::tls;
 
@@ -14910,13 +14907,10 @@ TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
     verify_callback_called = true;
     if (!ctx.cert) return false;
 
-    // Each entry still matches a host of its own type.
     dns_san_matched = ctx.check_hostname("a.zz");
     ip_san_matched = ctx.check_hostname("42.46.122.122");
 
-    // The bytes of the dNSName are this address.
     ip_matched_via_dns_san = ctx.check_hostname("97.46.122.122");
-    // The bytes of the iPAddress read as the pattern "*.zz".
     dns_matched_via_ip_san = ctx.check_hostname("b.zz");
 
     return true; // Accept for the purpose of this test
@@ -14935,8 +14929,7 @@ TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
       << "A DNS host must not be authenticated via an iPAddress SAN";
 }
 
-// sans() must report each subjectAltName entry under its own GeneralName type,
-// with the value the certificate carries.
+// sans() must report each SAN entry under its own type.
 TEST(SSLClientServerTest, TlsCertSansEntryTypes) {
   using namespace httplib::tls;
 
@@ -14989,7 +14982,6 @@ TEST(SSLClientServerTest, TlsCertSansEntryTypes) {
   EXPECT_TRUE(has_san(SanType::IP, "42.46.122.122"))
       << "sans() should report the iPAddress SAN";
 
-  // Neither value may show up under the other type.
   EXPECT_FALSE(has_san(SanType::IP, "97.46.122.122"))
       << "sans() must not report the dNSName SAN as an address";
   EXPECT_FALSE(has_san(SanType::DNS, "*.zz"))

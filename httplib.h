@@ -21056,14 +21056,8 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   auto ip_len = impl::parse_ip_address(host_str, ip_bytes);
   auto is_ip = ip_len > 0;
 
-  // Check Subject Alternative Names (SAN)
-  // Mbed TLS keeps each entry's GeneralName tag in buf.tag and its bare value
-  // in buf.p / buf.len:
-  // - DNS names: raw string bytes
-  // - IP addresses: raw IP bytes (4 for IPv4, 16 for IPv6)
-  // The value alone does not say which it is. The four bytes of the dNSName
-  // "a.zz" are also the address 97.46.122.122, and the address 42.46.122.122
-  // reads as "*.zz", so the type has to come from the tag.
+  // Check Subject Alternative Names (SAN). Mbed TLS keeps the GeneralName type
+  // in buf.tag and the raw value in buf.p / buf.len.
   const mbedtls_x509_sequence *san = &mcert->subject_alt_names;
   while (san != nullptr && san->buf.p != nullptr && san->buf.len > 0) {
     const unsigned char *p = san->buf.p;
@@ -21158,8 +21152,6 @@ inline bool get_cert_sans(cert_t cert, std::vector<SanEntry> &sans) {
   const mbedtls_x509_sequence *cur = &x509->subject_alt_names;
   while (cur != nullptr) {
     if (cur->buf.len > 0) {
-      // Mbed TLS keeps the GeneralName tag in buf.tag. buf.p / buf.len are the
-      // bare value, with no tag or length octets in front of it.
       const unsigned char *p = cur->buf.p;
       size_t value_len = cur->buf.len;
 
