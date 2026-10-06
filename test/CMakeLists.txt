@@ -146,6 +146,13 @@ if(HTTPLIB_IS_USING_OPENSSL)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
+    # cert_san_types.pem: the bytes of each SAN read as the other type:
+    #                 DNS:a.zz is 97.46.122.122, IP:42.46.122.122 is "*.zz".
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} req -x509 -key key.pem -sha256 -days 3650 -nodes -subj /CN=san-types -addext subjectAltName=DNS:a.zz,IP:42.46.122.122 -out cert_san_types.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 endif()
 
 add_subdirectory(fuzzing)
