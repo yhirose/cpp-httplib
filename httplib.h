@@ -10855,8 +10855,18 @@ inline bool verify_cert_with_windows_schannel(
       scope_exit([&] { CertFreeCertificateChain(chain_context); });
 
   // Check if chain has errors
-  if (chain_context->TrustStatus.dwErrorStatus != CERT_TRUST_NO_ERROR) {
-    out_error = chain_context->TrustStatus.dwErrorStatus;
+  //
+  // For a private CA where unavailable revocation information is acceptable,
+  // ignore only the "unknown/offline" flags while preserving all other
+  // certificate errors:
+  const auto ignored_errors =
+    CERT_TRUST_REVOCATION_STATUS_UNKNOWN |
+    CERT_TRUST_IS_OFFLINE_REVOCATION;
+  const auto trust_errors =
+    chain_context->TrustStatus.dwErrorStatus & ~ignored_errors;
+
+  if (trust_errors != CERT_TRUST_NO_ERROR) {
+    out_error = trust_errors;
     return false;
   }
 
