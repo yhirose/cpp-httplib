@@ -9910,8 +9910,10 @@ inline bool range_error(Request &req, Response &res) {
         last_pos = content_len;
       }
 
+      // RFC 9110 14.1.2: a suffix-length longer than the representation
+      // selects the entire representation.
       if (first_pos == -1) {
-        first_pos = content_len - last_pos;
+        first_pos = (std::max)(static_cast<ssize_t>(0), content_len - last_pos);
         last_pos = content_len - 1;
       }
 
