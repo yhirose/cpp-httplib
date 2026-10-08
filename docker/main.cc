@@ -76,7 +76,9 @@ void nginx_access_logger(const Request &req, const Response &res) {
   // the percent-decoded req.path.
   auto request = std::format("{} {} {}", req.method, req.target, req.version);
   auto status = res.status;
-  auto body_bytes_sent = res.body.size();
+  // A static file is sent by a content provider, which leaves res.body empty.
+  auto body_bytes_sent =
+      req.method == "HEAD" ? 0 : res.get_header_value_u64("Content-Length");
   auto http_referer = req.get_header_value("Referer");
   if (http_referer.empty()) http_referer = "-";
   auto http_user_agent = req.get_header_value("User-Agent");
