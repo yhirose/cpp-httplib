@@ -179,18 +179,20 @@ protected:
 TEST_F(WebSocketPongTimeoutTest, ClientDetectsNonResponsivePeer) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
   client.set_websocket_max_missed_pongs(2);
+  // A read timeout asked for at runtime is reported as Timeout, so it cannot
+  // be mistaken for the Fail a pong timeout produces.
+  client.set_read_timeout(10);
   ASSERT_TRUE(client.connect());
   ASSERT_TRUE(client.is_open());
 
   // Client pings every 1s (compile-time default in this test file).
   // With max_missed_pongs = 2, the heartbeat thread should self-close within
-  // roughly 3s. Poll is_open() up to 6s.
+  // roughly 3s, and that has to end a read() already waiting on the peer.
   auto start = std::chrono::steady_clock::now();
-  while (client.is_open() &&
-         std::chrono::steady_clock::now() - start < std::chrono::seconds(6)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
-
+  std::string msg;
+  EXPECT_EQ(client.read(msg), ws::Fail);
+  EXPECT_TRUE(std::chrono::steady_clock::now() - start <
+              std::chrono::seconds(6));
   EXPECT_FALSE(client.is_open());
 }
 

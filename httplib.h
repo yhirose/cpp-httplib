@@ -22843,6 +22843,14 @@ inline void WebSocket::start_heartbeat() {
       if (max_missed_pongs_ > 0 && unacked_pings_ >= max_missed_pongs_) {
         lock.unlock();
         close(CloseStatus::GoingAway, "pong timeout");
+        // Wake a read() blocked on the unresponsive peer. Only the read side
+        // is shut down: a TLS backend answers the EOF with an alert, and
+        // writing it to a socket closed for writing raises SIGPIPE.
+#ifdef _WIN32
+        shutdown(strm_.socket(), SD_RECEIVE);
+#else
+        shutdown(strm_.socket(), SHUT_RD);
+#endif
         return;
       }
       lock.unlock();
