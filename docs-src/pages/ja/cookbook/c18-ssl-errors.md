@@ -24,11 +24,11 @@ if (!res) {
 }
 ```
 
-`ssl_error()`はバックエンドに依存しないTLSエラーの種別で、`httplib::tls::ErrorCode`を`int`にした値です。`ssl_backend_error()`にはバックエンド固有のエラー値が入ります。OpenSSLの場合、ハンドシェイクに失敗したときは`ERR_get_error()`の値、証明書の検証に失敗したときは検証結果のコード（`X509_V_ERR_*`）です。
+`ssl_error()`は、どのTLSバックエンドでも共通のエラー種別（`httplib::tls::ErrorCode`）を`int`で返します。`ssl_backend_error()`は、バックエンドが返したエラー値そのものです。OpenSSLなら、ハンドシェイクの失敗では`ERR_get_error()`の値が、証明書検証の失敗では検証結果のコード（`X509_V_ERR_*`）が入ります。
 
 ## OpenSSLのエラーを文字列化する
 
-`ssl_backend_error()`で取得した値は、失敗の種類に合ったOpenSSLの関数で文字列にするとデバッグに便利です。
+`ssl_backend_error()`の値は、OpenSSLの関数で文字列にしておくとデバッグに便利です。使う関数は失敗の種類によって変わります。
 
 ```cpp
 #include <openssl/err.h>

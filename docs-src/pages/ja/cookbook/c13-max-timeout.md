@@ -16,7 +16,7 @@ cli.set_max_timeout(5000); // 5秒（ミリ秒単位）
 auto res = cli.Get("/slow-endpoint");
 ```
 
-ミリ秒単位で指定します。リクエスト開始からの経過時間がこの値を超えると、レスポンスの受信待ちが打ち切られます。接続と送信の待ち時間そのものは短縮されないので、そちらは`set_connection_timeout`と`set_write_timeout`で抑えます。
+ミリ秒単位で指定します。リクエストを始めてからこの時間が過ぎると、レスポンスを待っている途中でも打ち切られます。ただし、接続や送信で待たされる時間まで短くなるわけではありません。そちらは`set_connection_timeout`と`set_write_timeout`で調整します。
 
 ## `std::chrono`で指定する
 

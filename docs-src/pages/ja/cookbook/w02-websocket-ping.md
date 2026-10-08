@@ -67,7 +67,7 @@ cli.set_websocket_max_missed_pongs(2); // 2回連続でPongが返ってこなけ
 
 サーバー側にも同じ`set_websocket_max_missed_pongs()`があります。
 
-たとえばPing間隔が30秒で`max_missed_pongs = 2`なら、無応答のピアは応答が止まってから60〜90秒で検出され、`CloseStatus::GoingAway`（理由は`"pong timeout"`）で接続が閉じられます。そのとき`read()`で待っていた呼び出しは`Fail`を返します。
+たとえばPing間隔が30秒で`max_missed_pongs = 2`なら、相手が応答しなくなってから60〜90秒で検出され、`CloseStatus::GoingAway`（理由は`"pong timeout"`）で接続が閉じられます。このとき`read()`で受信を待っていた場合は、`Fail`が返ります。
 
 この仕組みは`read()`を呼んでPongフレームを消費したタイミングでカウンタがリセットされます。つまり通常のWebSocketクライアントのように`read()`をループで回していれば、特に意識することなく動きます。
 

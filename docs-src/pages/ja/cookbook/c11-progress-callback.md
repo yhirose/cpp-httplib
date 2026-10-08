@@ -21,7 +21,7 @@ auto res = cli.Get("/large-file",
 std::cout << std::endl;
 ```
 
-コールバックはデータを受信するたびに呼ばれます。`total`はContent-Lengthから取得した値です。Content-Lengthのないレスポンス（chunked転送など）では、進捗コールバックは呼ばれません。
+コールバックはデータを受信するたびに呼ばれます。`total`はContent-Lengthの値です。chunked転送のようにContent-Lengthのないレスポンスでは、進捗コールバックは一度も呼ばれません。
 
 ## アップロードの進捗
 
@@ -54,7 +54,7 @@ auto res = cli.Get("/large-file",
   });
 ```
 
-> **Note:** Content-Lengthのないレスポンスでは進捗コールバックが呼ばれないので、この方法では中断できません。その場合は`ContentReceiver`から`false`を返します。
+> **Note:** Content-Lengthのないレスポンスでは進捗コールバックが呼ばれないため、この方法は使えません。代わりに`ContentReceiver`から`false`を返して中断します。
 
 > **Note:** `ContentReceiver`と進捗コールバックは同時に使えます。ファイルに書き出しながら進捗を表示したいときは、両方を渡しましょう。
 

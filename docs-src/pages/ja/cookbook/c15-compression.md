@@ -28,7 +28,7 @@ std::string big_payload = build_payload();
 auto res = cli.Post("/api/data", big_payload, "application/json");
 ```
 
-`set_compress(true)`を呼んでおくと、POSTやPUTのリクエストボディが圧縮されて送信されます。方式は、ビルドで有効なものからBrotli、gzip、Zstdの順に選ばれます。サーバー側が対応している必要があります。
+`set_compress(true)`を呼んでおくと、POSTやPUTのリクエストボディが圧縮されて送信されます。圧縮方式は、ビルドで有効にしたもののうち、Brotli、gzip、Zstdの順で最初に当てはまるものです。サーバー側もその方式に対応している必要があります。
 
 ## レスポンスを解凍する
 
@@ -44,4 +44,4 @@ std::cout << res->body << std::endl;
 
 デフォルトで有効なので、通常は何もしなくても解凍されます。あえて生の圧縮データを触りたいときだけ`set_decompress(false)`にしましょう。
 
-> **Warning:** 圧縮ライブラリを1つも有効にせずにビルドすると、`set_compress(true)`を呼んでもリクエストは圧縮されません。また、ビルドに含まれていない方式で圧縮されたレスポンスを受け取ると、リクエストは`Error::UnsupportedContentEncoding`で失敗します。マクロの定義を忘れていないか、最初に確認しましょう。
+> **Warning:** 圧縮ライブラリを1つも有効にしていないビルドでは、`set_compress(true)`を呼んでもリクエストは圧縮されません。また、ビルドで有効にしていない方式で圧縮されたレスポンスが返ってくると、リクエストは`Error::UnsupportedContentEncoding`で失敗します。うまく動かないときは、まずマクロの定義を確認しましょう。

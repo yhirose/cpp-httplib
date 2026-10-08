@@ -21,7 +21,7 @@ llama.cpp/
     └── httplib.h            # cpp-httplib (bundled version)
 ```
 
-The implementation is split across several files by role. It is a large code base, but once you understand the structure, you can narrow down the parts worth reading.
+The implementation is split across several files by role. Together they run to more than 20,000 lines, but once you understand the structure, you can narrow down the parts worth reading.
 
 ## 7.2 OpenAI-Compatible API
 
@@ -145,7 +145,7 @@ Let's organize the differences we've covered.
 | SSE format | Tokens only | OpenAI-compatible JSON |
 | KV cache | Cleared each time | Prefix reuse |
 | Structured output | None | JSON Schema / grammar constraints |
-| Code size | ~200 lines | Several thousand lines |
+| Code size | ~200 lines | Over 20,000 lines |
 
 Our code is simple because of the assumption that "one person uses it as a desktop app." If you're building a server for multiple users or one that integrates with the existing ecosystem, `llama-server`'s design serves as a valuable reference.
 
