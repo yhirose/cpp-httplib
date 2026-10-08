@@ -43,6 +43,7 @@ inline std::string u8_to_string(const char8_t *s) {
 #define SERVER_CERT_IP_CN_FILE "./cert_ip_cn.pem"
 #define SERVER_CERT_IPV6_FILE "./cert_ipv6.pem"
 #define SERVER_CERT_SAN_TYPES_FILE "./cert_san_types.pem"
+#define SERVER_CERT_WILDCARD_SAN_FILE "./cert_wildcard_san.pem"
 #define SERVER_PRIVATE_KEY_FILE "./key.pem"
 #define CA_CERT_FILE "./ca-bundle.crt"
 #define CLIENT_CA_CERT_FILE "./rootCA.cert.pem"
@@ -14938,6 +14939,61 @@ TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
       << "An IP host must not be authenticated via a dNSName SAN";
   EXPECT_FALSE(dns_matched_via_ip_san)
       << "A DNS host must not be authenticated via an iPAddress SAN";
+}
+
+// RFC 6125 6.4.3: only the leftmost label of a dNSName may be a wildcard, so
+// "www.*.example.test" names one host and not every host under example.test.
+TEST(SSLClientServerTest, TlsVerifyHostnameWildcardLabel) {
+  using namespace httplib::tls;
+
+  // SANs: DNS:*.leftmost.example.test, DNS:www.*.example.test
+  SSLServer svr(SERVER_CERT_WILDCARD_SAN_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  bool verify_callback_called = false;
+  bool leftmost_wildcard_matched = false;
+  bool wildcard_spanned_labels = true;
+  bool inner_wildcard_matched = true;
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(true);
+  cli.set_ca_cert_path(CA_CERT_FILE);
+  cli.set_connection_timeout(5);
+
+  cli.set_server_certificate_verifier([&](const VerifyContext &ctx) -> bool {
+    verify_callback_called = true;
+    if (!ctx.cert) return false;
+
+    leftmost_wildcard_matched = ctx.check_hostname("a.leftmost.example.test");
+
+    wildcard_spanned_labels = ctx.check_hostname("a.b.leftmost.example.test");
+    inner_wildcard_matched = ctx.check_hostname("www.evil.example.test");
+
+    return true; // Accept for the purpose of this test
+  });
+
+  cli.Get("/test");
+
+  ASSERT_TRUE(verify_callback_called)
+      << "Verify callback should have been called";
+  EXPECT_TRUE(leftmost_wildcard_matched)
+      << "A leftmost wildcard should match a single label";
+  EXPECT_FALSE(wildcard_spanned_labels)
+      << "A wildcard label must not match more than one label";
+  EXPECT_FALSE(inner_wildcard_matched)
+      << "A wildcard outside the leftmost label must not be honoured";
 }
 
 // sans() must report each SAN entry under its own type.

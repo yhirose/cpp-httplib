@@ -153,6 +153,15 @@ if(HTTPLIB_IS_USING_OPENSSL)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND_ERROR_IS_FATAL ANY
     )
+    # cert_wildcard_san.pem: a leftmost wildcard next to one that is not
+    #                 leftmost. "*.leftmost.example.test" matches a single
+    #                 label; the wildcard in "www.*.example.test" must not be
+    #                 honoured.
+    execute_process(
+        COMMAND ${OPENSSL_COMMAND} req -x509 -key key.pem -sha256 -days 3650 -nodes -subj /CN=wildcard-san -addext subjectAltName=DNS:*.leftmost.example.test,DNS:www.*.example.test -out cert_wildcard_san.pem
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 endif()
 
 add_subdirectory(fuzzing)
