@@ -10759,11 +10759,7 @@ inline bool match_hostname(const std::string &pattern,
   // Compare each component with wildcard support
   // Supports: "*" (full wildcard), "prefix*" (partial wildcard)
   // https://bugs.launchpad.net/ubuntu/+source/firefox-3.0/+bug/376484
-  //
-  // RFC 6125 6.4.3: the wildcard is only honoured in the leftmost label, so
-  // every other label has to match literally. OpenSSL's X509_check_host()
-  // already refuses a wildcard anywhere else; the backends that route their
-  // dNSName and CN comparisons through here need the same restriction.
+  // Only the leftmost label may carry a wildcard (RFC 6125 6.4.3)
   auto itr = pattern_components.begin();
   for (const auto &h : host_components) {
     auto &p = *itr;
