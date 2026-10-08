@@ -20,7 +20,7 @@ auto res = cli.Get("/slow-endpoint");
 
 ## `std::chrono`で指定する
 
-こちらも`std::chrono`の期間を受け取るオーバーロードがあります。
+こちらにも、`std::chrono`の期間を受け取るオーバーロードがあります。
 
 ```cpp
 using namespace std::chrono_literals;

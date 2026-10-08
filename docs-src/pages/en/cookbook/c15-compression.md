@@ -4,7 +4,7 @@ order: 15
 status: "draft"
 ---
 
-cpp-httplib supports compression when sending and decompression when receiving. You just need to build it with zlib or Brotli enabled.
+cpp-httplib supports compression when sending and decompression when receiving. You just need to build it with zlib, Brotli, or Zstd enabled.
 
 ## Build-time setup
 
@@ -13,10 +13,11 @@ To use compression, define these macros before including `httplib.h`:
 ```cpp
 #define CPPHTTPLIB_ZLIB_SUPPORT    // gzip / deflate
 #define CPPHTTPLIB_BROTLI_SUPPORT  // brotli
+#define CPPHTTPLIB_ZSTD_SUPPORT    // zstd
 #include <httplib.h>
 ```
 
-You'll also need to link against `zlib` or `brotli`.
+You'll also need to link against `zlib`, `brotli`, or `zstd`, whichever you enabled.
 
 ## Compress the request body
 

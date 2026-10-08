@@ -3,11 +3,11 @@ title: "Static File Server"
 order: 4
 ---
 
-cpp-httplibは、HTMLやCSS、画像ファイルなどの静的ファイルも配信できます。面倒な設定は要りません。`set_mount_point()` を1行呼ぶだけです。
+cpp-httplibは、HTMLやCSS、画像ファイルなどの静的ファイルも配信できます。面倒な設定は要りません。`set_mount_point()`を1行呼ぶだけです。
 
-## set_mount_point の基本
+## set_mount_pointの基本
 
-さっそくやってみましょう。`set_mount_point()` は、URLのパスとローカルディレクトリを紐づけます。
+さっそくやってみましょう。`set_mount_point()`は、URLのパスとローカルディレクトリを紐づけます。
 
 ```cpp
 #include "httplib.h"
@@ -23,9 +23,9 @@ int main() {
 }
 ```
 
-第1引数がURLのマウントポイント、第2引数がローカルのディレクトリパスです。この例だと、`/` へのリクエストを `./html` ディレクトリから配信します。
+第1引数がURLのマウントポイント、第2引数がローカルのディレクトリパスです。この例だと、`/`へのリクエストを`./html`ディレクトリから配信します。
 
-試してみましょう。まず `html` ディレクトリを作って、`index.html` を置きます。
+試してみましょう。まず`html`ディレクトリを作って、`index.html`を置きます。
 
 ```sh
 mkdir html
@@ -49,9 +49,9 @@ g++ -std=c++17 -o server server.cpp -pthread
 ./server
 ```
 
-ブラウザで `http://localhost:8080` を開いてみてください。`html/index.html` の内容が表示されるはずです。`http://localhost:8080/index.html` でも同じページが返ります。
+ブラウザで`http://localhost:8080`を開いてみてください。`html/index.html`の内容が表示されるはずです。`http://localhost:8080/index.html`でも同じページが返ります。
 
-もちろん、前章のクライアントコードや `curl` でもアクセスできますよ。
+もちろん、前章のクライアントコードや`curl`でもアクセスできますよ。
 
 ```cpp
 httplib::Client cli("http://localhost:8080");
@@ -67,7 +67,7 @@ curl http://localhost:8080
 
 ## 複数のマウントポイント
 
-`set_mount_point()` は何回でも呼べます。URLのパスごとに、別々のディレクトリを割り当てられます。
+`set_mount_point()`は何回でも呼べます。URLのパスごとに、別々のディレクトリを割り当てられます。
 
 ```cpp
 svr.set_mount_point("/", "./public");
@@ -75,7 +75,7 @@ svr.set_mount_point("/assets", "./static/assets");
 svr.set_mount_point("/docs", "./documentation");
 ```
 
-`/assets/style.css` なら `./static/assets/style.css` を、`/docs/guide.html` なら `./documentation/guide.html` を配信します。
+`/assets/style.css`なら`./static/assets/style.css`を、`/docs/guide.html`なら`./documentation/guide.html`を配信します。
 
 ## ハンドラーとの組み合わせ
 
@@ -99,7 +99,7 @@ svr.listen("0.0.0.0", 8080);
 
 ## レスポンスヘッダーの追加
 
-`set_mount_point()` の第3引数にヘッダーを渡すと、静的ファイルのレスポンスにカスタムヘッダーを付けられます。キャッシュ制御に便利です。
+`set_mount_point()`の第3引数にヘッダーを渡すと、静的ファイルのレスポンスにカスタムヘッダーを付けられます。キャッシュ制御に便利です。
 
 ```cpp
 svr.set_mount_point("/", "./public", {
@@ -111,7 +111,7 @@ svr.set_mount_point("/", "./public", {
 
 ## 静的ファイルサーバー用のDockerファイル
 
-cpp-httplibのリポジトリには、静的ファイルサーバー用の `Dockerfile` が含まれています。Docker Hubにビルド済みイメージも公開しているので、1コマンドで起動できます。
+cpp-httplibのリポジトリには、静的ファイルサーバー用の`Dockerfile`が含まれています。Docker Hubにビルド済みイメージも公開しているので、1コマンドで起動できます。
 
 ```sh
 > docker run -p 8080:80 -v ./my-site:/html yhirose4dockerhub/cpp-httplib-server
@@ -123,7 +123,7 @@ Press Ctrl+C to shutdown gracefully...
 192.168.65.1 - - [22/Feb/2026:12:00:01 +0000] "GET /favicon.ico HTTP/1.1" 404 152 "-" "Mozilla/5.0 ..."
 ```
 
-`./my-site` ディレクトリの中身が、そのままポート8080で配信されます。NGINXと同じログ形式で、アクセスの様子を確認できますよ。
+`./my-site`ディレクトリの中身が、そのままポート8080で配信されます。NGINXと同じログ形式で、アクセスの様子を確認できますよ。
 
 ## 次のステップ
 

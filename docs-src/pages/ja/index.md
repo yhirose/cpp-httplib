@@ -3,7 +3,7 @@ title: "cpp-httplib"
 order: 0
 ---
 
-[cpp-httplib](https://github.com/yhirose/cpp-httplib)は、C++用のHTTP/HTTPSライブラリです。[`httplib.h`](https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h) というヘッダーファイルを1枚コピーするだけで使えます。
+[cpp-httplib](https://github.com/yhirose/cpp-httplib)は、C++用のHTTP/HTTPSライブラリです。[`httplib.h`](https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h)というヘッダーファイルを1枚コピーするだけで使えます。
 
 C++でちょっとしたHTTPサーバーやクライアントが必要になったとき、すぐに動くものが欲しいですよね。cpp-httplibはまさにそのために作られました。サーバーもクライアントも、数行のコードで書き始められます。
 

@@ -14,7 +14,7 @@ svr.set_mount_point("/", "./public");
 svr.listen("0.0.0.0", 8080);
 ```
 
-`./public/index.html`が`http://localhost:8080/index.html`で、`./public/css/style.css`が`http://localhost:8080/css/style.css`でアクセスできます。ディレクトリ構造がそのままURLに反映されます。
+`./public/index.html`には`http://localhost:8080/index.html`で、`./public/css/style.css`には`http://localhost:8080/css/style.css`でアクセスできます。ディレクトリ構造がそのままURLに反映されます。
 
 ## 複数のマウントポイント
 
@@ -26,7 +26,7 @@ svr.set_mount_point("/assets", "./dist/assets");
 svr.set_mount_point("/uploads", "./var/uploads");
 ```
 
-同じパスに複数のマウントを登録することもできます。その場合は登録順に探されて、見つかった最初のものが返ります。
+同じパスに複数のマウントを登録することもできます。その場合は登録した順に探し、最初に見つかったファイルを返します。
 
 ## APIハンドラと組み合わせる
 
@@ -44,7 +44,7 @@ svr.set_mount_point("/", "./public");
 
 ## MIMEタイプを追加する
 
-拡張子からContent-Typeを決めるマッピングは組み込みですが、カスタムの拡張子を追加できます。
+拡張子からContent-Typeを決める対応表は組み込まれていますが、独自の拡張子を追加することもできます。
 
 ```cpp
 svr.set_file_extension_and_mimetype_mapping("wasm", "application/wasm");

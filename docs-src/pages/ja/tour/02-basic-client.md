@@ -3,7 +3,7 @@ title: "Basic Client"
 order: 2
 ---
 
-cpp-httplibはサーバーだけでなく、HTTPクライアント機能も備えています。`httplib::Client` を使って、GETやPOSTリクエストを送ってみましょう。
+cpp-httplibはサーバーだけでなく、HTTPクライアント機能も備えています。`httplib::Client`を使って、GETやPOSTリクエストを送ってみましょう。
 
 ## テスト用サーバーの準備
 
@@ -77,9 +77,9 @@ int main() {
 }
 ```
 
-`httplib::Client` のコンストラクターにサーバーのアドレスを渡し、`Get()` でリクエストを送ります。戻り値の `res` からステータスコードやボディを取得できます。
+`httplib::Client`のコンストラクターにサーバーのアドレスを渡し、`Get()`でリクエストを送ります。戻り値の`res`からステータスコードやボディを取得できます。
 
-対応する `curl` コマンドはこうなります。
+対応する`curl`コマンドはこうなります。
 
 ```sh
 curl http://localhost:8080/hi
@@ -104,11 +104,11 @@ if (res) {
 }
 ```
 
-`res->body` は `std::string` なので、JSON レスポンスをパースしたい場合は [nlohmann/json](https://github.com/nlohmann/json) などの JSON ライブラリにそのまま渡せます。
+`res->body`は`std::string`なので、JSONレスポンスをパースしたい場合は[nlohmann/json](https://github.com/nlohmann/json)などのJSONライブラリにそのまま渡せます。
 
 ## クエリパラメーター
 
-GETリクエストにクエリパラメーターを付けるには、URLに直接書くか、`httplib::Params` を使います。
+GETリクエストにクエリパラメーターを付けるには、URLに直接書くか、`httplib::Params`を使います。
 
 ```cpp
 auto res = cli.Get("/search", httplib::Params{{"q", "cpp-httplib"}});
@@ -117,7 +117,7 @@ if (res) {
 }
 ```
 
-`httplib::Params` を使うと、特殊文字のURLエンコードを自動で行ってくれます。
+`httplib::Params`を使うと、特殊文字のURLエンコードを自動で行ってくれます。
 
 ```sh
 curl "http://localhost:8080/search?q=cpp-httplib"
@@ -126,7 +126,7 @@ curl "http://localhost:8080/search?q=cpp-httplib"
 
 ## パスパラメーター
 
-URLのパスに値を直接埋め込む場合も、クライアント側は特別なAPIは不要です。パスをそのまま `Get()` に渡すだけです。
+URLのパスに値を直接埋め込む場合も、クライアント側は特別なAPIは不要です。パスをそのまま`Get()`に渡すだけです。
 
 ```cpp
 auto res = cli.Get("/users/42");
@@ -140,7 +140,7 @@ curl http://localhost:8080/users/42
 # User ID: 42
 ```
 
-テスト用サーバーには、正規表現でIDを数字のみに絞った `/files/(\d+)` もあります。
+テスト用サーバーには、正規表現でIDを数字のみに絞った`/files/(\d+)`もあります。
 
 ```cpp
 auto res = cli.Get("/files/42");
@@ -154,11 +154,11 @@ curl http://localhost:8080/files/42
 # File ID: 42
 ```
 
-`/files/abc` のように数字以外を渡すと404が返ります。仕組みは次章で解説します。
+`/files/abc`のように数字以外を渡すと404が返ります。仕組みは次章で解説します。
 
 ## リクエストヘッダー
 
-カスタムHTTPヘッダーを付けるには、`httplib::Headers` を渡します。`Get()` や `Post()` のどちらでも使えます。
+カスタムHTTPヘッダーを付けるには、`httplib::Headers`を渡します。`Get()`や`Post()`のどちらでも使えます。
 
 ```cpp
 auto res = cli.Get("/hi", httplib::Headers{
@@ -172,7 +172,7 @@ curl -H "Authorization: Bearer my-token" http://localhost:8080/hi
 
 ## POSTリクエスト
 
-テキストデータをPOSTしてみましょう。`Post()` の第2引数にボディ、第3引数にContent-Typeを指定します。
+テキストデータをPOSTしてみましょう。`Post()`の第2引数にボディ、第3引数にContent-Typeを指定します。
 
 ```cpp
 auto res = cli.Post("/post", "Hello, Server!", "text/plain");
@@ -182,7 +182,7 @@ if (res) {
 }
 ```
 
-テスト用サーバーの `/post` はボディをそのまま返すので、送った文字列がそのまま返ってきます。
+テスト用サーバーの`/post`はボディをそのまま返すので、送った文字列がそのまま返ってきます。
 
 ```sh
 curl -X POST -H "Content-Type: text/plain" -d "Hello, Server!" http://localhost:8080/post
@@ -191,7 +191,7 @@ curl -X POST -H "Content-Type: text/plain" -d "Hello, Server!" http://localhost:
 
 ## フォームデータの送信
 
-HTMLフォームのように、キーと値のペアを送ることもできます。`httplib::Params` を使います。
+HTMLフォームのように、キーと値のペアを送ることもできます。`httplib::Params`を使います。
 
 ```cpp
 auto res = cli.Post("/submit", httplib::Params{
@@ -205,7 +205,7 @@ if (res) {
 }
 ```
 
-これは `application/x-www-form-urlencoded` 形式で送信されます。
+これは`application/x-www-form-urlencoded`形式で送信されます。
 
 ```sh
 curl -X POST -d "name=Alice&age=30" http://localhost:8080/submit
@@ -213,7 +213,7 @@ curl -X POST -d "name=Alice&age=30" http://localhost:8080/submit
 
 ## ファイルのPOST
 
-ファイルをアップロードするには、`httplib::UploadFormDataItems` を使ってマルチパートフォームデータとして送信します。
+ファイルをアップロードするには、`httplib::UploadFormDataItems`を使ってマルチパートフォームデータとして送信します。
 
 ```cpp
 auto res = cli.Post("/upload", httplib::UploadFormDataItems{
@@ -224,7 +224,7 @@ if (res) {
 }
 ```
 
-`UploadFormDataItems` の各要素は `{name, content, filename, content_type}` の4つのフィールドで構成されます。
+`UploadFormDataItems`の各要素は`{name, content, filename, content_type}`の4つのフィールドで構成されます。
 
 ```sh
 curl -F "file=Hello, File!;filename=hello.txt;type=text/plain" http://localhost:8080/upload
@@ -232,7 +232,7 @@ curl -F "file=Hello, File!;filename=hello.txt;type=text/plain" http://localhost:
 
 ## エラーハンドリング
 
-ネットワーク通信では、サーバーに接続できない場合があります。`res` が有効かどうかを必ず確認しましょう。
+ネットワーク通信では、サーバーに接続できない場合があります。`res`が有効かどうかを必ず確認しましょう。
 
 ```cpp
 httplib::Client cli("http://localhost:9999");  // 存在しないポート
@@ -256,8 +256,8 @@ std::cout << res->body << std::endl;
 
 エラーには2つのレベルがあります。
 
-- **接続エラー**: サーバーに到達できなかった場合。`res` が偽になり、`res.error()` でエラーの種類を取得できます
-- **HTTPエラー**: サーバーからエラーステータス（404、500など）が返ってきた場合。`res` は真ですが、`res->status` を確認する必要があります
+- **接続エラー**: サーバーに到達できなかった場合。`res`が偽になり、`res.error()`でエラーの種類を取得できます
+- **HTTPエラー**: サーバーからエラーステータス（404、500など）が返ってきた場合。`res`は真ですが、`res->status`を確認する必要があります
 
 ## 次のステップ
 

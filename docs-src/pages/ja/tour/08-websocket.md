@@ -30,13 +30,13 @@ int main() {
 }
 ```
 
-`svr.WebSocket()` でWebSocketハンドラーを登録します。3章の `svr.Get()` や `svr.Post()` と同じ感覚ですね。
+`svr.WebSocket()`でWebSocketハンドラーを登録します。3章の`svr.Get()`や`svr.Post()`と同じ感覚ですね。
 
-ハンドラーの中では、`ws.read(msg)` でメッセージを待ちます。接続が閉じられると `read()` が `false` を返すので、ループを抜けます。`ws.send(msg)` でメッセージを送り返します。
+ハンドラーの中では、`ws.read(msg)`でメッセージを待ちます。接続が閉じられると`read()`が`false`を返すので、ループを抜けます。`ws.send(msg)`でメッセージを送り返します。
 
 ## クライアントからの接続
 
-`httplib::ws::WebSocketClient` を使ってサーバーに接続してみましょう。
+`httplib::ws::WebSocketClient`を使ってサーバーに接続してみましょう。
 
 ```cpp
 #include "httplib.h"
@@ -63,11 +63,11 @@ int main() {
 }
 ```
 
-コンストラクタには `ws://host:port/path` 形式のURLを渡します。`connect()` で接続を開始し、`send()` と `read()` でメッセージをやり取りします。
+コンストラクタには`ws://host:port/path`形式のURLを渡します。`connect()`で接続を開始し、`send()`と`read()`でメッセージをやり取りします。
 
 ## テキストとバイナリ
 
-WebSocketにはテキストとバイナリの2種類のメッセージがあります。`read()` の戻り値で区別できます。
+WebSocketにはテキストとバイナリの2種類のメッセージがあります。`read()`の戻り値で区別できます。
 
 ```cpp
 svr.WebSocket("/ws", [](const httplib::Request &, httplib::ws::WebSocket &ws) {
@@ -90,7 +90,7 @@ svr.WebSocket("/ws", [](const httplib::Request &, httplib::ws::WebSocket &ws) {
 
 ## リクエスト情報へのアクセス
 
-ハンドラーの第1引数 `req` から、ハンドシェイク時のHTTPリクエスト情報を読み取れます。認証トークンの確認などに便利です。
+ハンドラーの第1引数`req`から、ハンドシェイク時のHTTPリクエスト情報を読み取れます。認証トークンの確認などに便利です。
 
 ```cpp
 svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws) {
@@ -111,7 +111,7 @@ svr.WebSocket("/ws", [](const httplib::Request &req, httplib::ws::WebSocket &ws)
 
 ## WSSで使う
 
-HTTPS上のWebSocket（WSS）にも対応しています。サーバー側は `httplib::SSLServer` にWebSocketハンドラーを登録するだけです。
+HTTPS上のWebSocket（WSS）にも対応しています。サーバー側は`httplib::SSLServer`にWebSocketハンドラーを登録するだけです。
 
 ```cpp
 httplib::SSLServer svr("cert.pem", "key.pem");
@@ -126,7 +126,7 @@ svr.WebSocket("/ws", [](const httplib::Request &, httplib::ws::WebSocket &ws) {
 svr.listen("0.0.0.0", 8443);
 ```
 
-クライアント側は `wss://` スキームを使います。
+クライアント側は`wss://`スキームを使います。
 
 ```cpp
 httplib::ws::WebSocketClient client("wss://localhost:8443/ws");
@@ -134,7 +134,7 @@ httplib::ws::WebSocketClient client("wss://localhost:8443/ws");
 
 ## 次のステップ
 
-WebSocketの基本がわかりましたね。ここまでで Tourは終わりです。
+WebSocketの基本がわかりましたね。ここまででTourは終わりです。
 
 次のページでは、Tourで取り上げなかった機能をまとめて紹介します。
 

@@ -17,7 +17,7 @@ order: 6
 
 モデルは初回起動時に自動ダウンロードされるので、ユーザーに渡すのはバイナリ1つだけです。
 
-## 6.1 webview/webview を導入する
+## 6.1 webview/webviewを導入する
 
 [webview/webview](https://github.com/webview/webview)は、OS標準のWebViewコンポーネント（macOSならWKWebView、LinuxならWebKitGTK、WindowsならWebView2）をC/C++から使えるようにするライブラリです。Electronのように独自ブラウザを同梱するわけではないので、バイナリサイズへの影響はほぼありません。
 
@@ -78,7 +78,7 @@ int main() {
 
 5章の`signal_handler`は不要になります。デスクトップアプリではウインドウを閉じることがアプリの終了を意味するからです。
 
-## 6.3 cpp-embedlib で静的ファイルを埋め込む
+## 6.3 cpp-embedlibで静的ファイルを埋め込む
 
 5章では`public/`ディレクトリからファイルを配信していました。これだと配布時に`public/`も一緒に渡す必要があります。[cpp-embedlib](https://github.com/yhirose/cpp-embedlib)を使うと、HTML・CSS・JavaScriptをバイナリに埋め込んで、配布物をバイナリ1つにまとめられます。
 
@@ -108,7 +108,7 @@ target_link_libraries(translate-app PRIVATE
 
 `cpp_embedlib_add`は、`public/`配下のファイルをコンパイル時にバイナリに変換し、`WebAssets`という静的ライブラリを作ります。リンクすると`Web::FS`というオブジェクトから埋め込みファイルにアクセスできます。`cpp-embedlib-httplib`は`httplib::mount()`関数を提供するヘルパーライブラリです。
 
-### set_mount_point を httplib::mount に置き換える
+### set_mount_pointをhttplib::mountに置き換える
 
 5章の`set_mount_point`をcpp-embedlibの`httplib::mount`に置き換えるだけです。
 

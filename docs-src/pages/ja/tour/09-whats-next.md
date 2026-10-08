@@ -7,7 +7,7 @@ Tourお疲れさまでした！ cpp-httplibの基本はひと通り押さえま�
 
 ## Streaming API
 
-LLMのストリーミング応答や大きなファイルのダウンロードでは、レスポンス全体をメモリに載せたくないですよね。`stream::Get()` を使えば、データをチャンクごとに処理できます。
+LLMのストリーミング応答や大きなファイルのダウンロードでは、レスポンス全体をメモリに載せたくないですよね。`stream::Get()`を使えば、データをチャンクごとに処理できます。
 
 ```cpp
 httplib::Client cli("http://localhost:11434");
@@ -21,7 +21,7 @@ if (result) {
 }
 ```
 
-`Get()` に `content_receiver` コールバックを渡す方法もあります。こちらはKeep-Aliveと併用できます。
+`Get()`に`content_receiver`コールバックを渡す方法もあります。こちらはKeep-Aliveと併用できます。
 
 ```cpp
 httplib::Client cli("http://localhost:8080");
@@ -32,7 +32,7 @@ cli.Get("/stream", [](const char *data, size_t len) {
 });
 ```
 
-サーバー側には `set_content_provider()` と `set_chunked_content_provider()` があります。サイズがわかっているなら前者、不明なら後者を使ってください。
+サーバー側には`set_content_provider()`と`set_chunked_content_provider()`があります。サイズがわかっているなら前者、不明なら後者を使ってください。
 
 ```cpp
 // サイズ指定あり（Content-Length が設定される）
@@ -55,7 +55,7 @@ svr.Get("/stream", [](const auto &, auto &res) {
 });
 ```
 
-大きなファイルのアップロードには `make_file_provider()` が便利です。ファイルを全部メモリに読み込まず、ストリーミングで送れます。
+大きなファイルのアップロードには`make_file_provider()`が便利です。ファイルを全部メモリに読み込まず、ストリーミングで送れます。
 
 ```cpp
 httplib::Client cli("http://localhost:8080");
@@ -67,7 +67,7 @@ auto res = cli.Post("/upload", {}, {}, {
 
 ## Server-Sent Events (SSE)
 
-SSEクライアントも用意しています。自動再接続や `Last-Event-ID` による再開にも対応しています。
+SSEクライアントも用意しています。自動再接続や`Last-Event-ID`による再開にも対応しています。
 
 ```cpp
 httplib::Client cli("http://localhost:8080");
@@ -160,7 +160,7 @@ svr.set_post_routing_handler([](const auto &req, auto &res) {
 });
 ```
 
-`res.user_data` を使うと、ミドルウェアからハンドラーにデータを渡せます。認証トークンのデコード結果を共有するときに便利です。
+`res.user_data`を使うと、ミドルウェアからハンドラーにデータを渡せます。認証トークンのデコード結果を共有するときに便利です。
 
 ```cpp
 svr.set_pre_routing_handler([](const auto &req, auto &res) {

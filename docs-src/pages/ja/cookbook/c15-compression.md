@@ -4,7 +4,7 @@ order: 15
 status: "draft"
 ---
 
-cpp-httplibは送信時の圧縮と受信時の解凍をサポートしています。ただし、zlibまたはBrotliを有効にしてビルドしておく必要があります。
+cpp-httplibは送信時の圧縮と受信時の解凍をサポートしています。ただし、zlib、Brotli、Zstdのいずれかを有効にしてビルドしておく必要があります。
 
 ## ビルド時の準備
 
@@ -13,10 +13,11 @@ cpp-httplibは送信時の圧縮と受信時の解凍をサポートしていま
 ```cpp
 #define CPPHTTPLIB_ZLIB_SUPPORT    // gzip / deflate
 #define CPPHTTPLIB_BROTLI_SUPPORT  // brotli
+#define CPPHTTPLIB_ZSTD_SUPPORT    // zstd
 #include <httplib.h>
 ```
 
-リンク時に`zlib`や`brotli`のライブラリも必要です。
+有効にした方式に応じて、`zlib`、`brotli`、`zstd`のライブラリもリンクします。
 
 ## リクエストボディを圧縮して送る
 

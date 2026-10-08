@@ -3,7 +3,7 @@ title: "HTTPS Client"
 order: 6
 ---
 
-前章でOpenSSLのセットアップが済んだので、さっそくHTTPSクライアントを使ってみましょう。2章で使った `httplib::Client` がそのまま使えます。コンストラクタに `https://` 付きのURLを渡すだけです。
+前章でOpenSSLのセットアップが済んだので、さっそくHTTPSクライアントを使ってみましょう。2章で使った`httplib::Client`がそのまま使えます。コンストラクタに`https://`付きのURLを渡すだけです。
 
 ## GETリクエスト
 
@@ -27,7 +27,7 @@ int main() {
 }
 ```
 
-2章では `httplib::Client cli("http://localhost:8080")` と書きましたよね。スキームを `https://` に変えるだけです。`Get()` や `Post()` など、2章で学んだAPIはすべてそのまま使えます。
+2章では`httplib::Client cli("http://localhost:8080")`と書きましたよね。スキームを`https://`に変えるだけです。`Get()`や`Post()`など、2章で学んだAPIはすべてそのまま使えます。
 
 ```sh
 curl https://nghttp2.org/
@@ -43,13 +43,13 @@ httplib::Client cli("https://localhost:8443");
 
 ## CA証明書の検証
 
-`httplib::Client` はHTTPS接続時、デフォルトでサーバー証明書を検証します。信頼できるCA（認証局）が発行した証明書を持つサーバーにしか接続しません。
+`httplib::Client`はHTTPS接続時、デフォルトでサーバー証明書を検証します。信頼できるCA（認証局）が発行した証明書を持つサーバーにしか接続しません。
 
 CA証明書は、macOSならKeychain、LinuxならシステムのCA証明書ストア、WindowsならWindowsの証明書ストアから自動で読み込みます。ほとんどの場合、追加の設定は要りません。
 
 ### CA証明書ファイルの指定
 
-環境によってはシステムのCA証明書が見つからないこともあります。そのときは `set_ca_cert_path()` でパスを直接指定してください。
+環境によってはシステムのCA証明書が見つからないこともあります。そのときは`set_ca_cert_path()`でパスを直接指定してください。
 
 ```cpp
 httplib::Client cli("https://nghttp2.org");
@@ -81,9 +81,9 @@ curl -k https://localhost:8443/
 
 ## リダイレクトの追跡
 
-HTTPSサイトへのアクセスでは、リダイレクトに遭遇することがよくあります。たとえば `http://` から `https://` へ、あるいは `www` なしから `www` ありへ転送されるケースです。
+HTTPSサイトへのアクセスでは、リダイレクトに遭遇することがよくあります。たとえば`http://`から`https://`へ、あるいは`www`なしから`www`ありへ転送されるケースです。
 
-デフォルトではリダイレクトを追跡しません。リダイレクト先は `Location` ヘッダーで確認できます。
+デフォルトではリダイレクトを追跡しません。リダイレクト先は`Location`ヘッダーで確認できます。
 
 ```cpp
 httplib::Client cli("https://nghttp2.org");
@@ -99,7 +99,7 @@ if (res) {
 curl https://nghttp2.org/httpbin/redirect/3
 ```
 
-`set_follow_location(true)` を設定すると、リダイレクトを自動で追跡して、最終的なレスポンスを返してくれます。
+`set_follow_location(true)`を設定すると、リダイレクトを自動で追跡して、最終的なレスポンスを返してくれます。
 
 ```cpp
 httplib::Client cli("https://nghttp2.org");

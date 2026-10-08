@@ -38,7 +38,7 @@ if (res) {
 
 ## ステータスコードとの使い分け
 
-`res`が truthy でも、HTTPステータスコードが4xxや5xxのこともあります。この2つは別物です。
+`res`がtruthyでも、HTTPステータスコードが4xxや5xxのこともあります。この2つは別物です。
 
 ```cpp
 auto res = cli.Get("/api/data");

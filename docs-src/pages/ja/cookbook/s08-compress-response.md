@@ -69,7 +69,7 @@ svr.set_static_file_compression_max_length(1024 * 1024);
 
 どちらの境界も`0`で無効にできます。コンパイル時のデフォルトは`CPPHTTPLIB_STATIC_FILE_COMPRESSION_MIN_LENGTH`と`CPPHTTPLIB_STATIC_FILE_COMPRESSION_MAX_LENGTH`で決まります。
 
-圧縮しても`Content-Length`は付いたままなので、`HEAD`は`GET`と同じサイズを返します。細かい挙動として、Rangeリクエストは非圧縮の表現から切り出して返し、`ETag`には`W/"...-gzip"`のように使われた圧縮方式が入ります。
+圧縮しても`Content-Length`は付いたままなので、`HEAD`は`GET`と同じサイズを返します。細かい点が2つあります。Rangeリクエストには圧縮前のデータから該当範囲を切り出して返します。また、`ETag`には`W/"...-gzip"`のように、使った圧縮方式が入ります。
 
 なお`set_content_provider()`で登録したコンテンツプロバイダは対象外です。圧縮器を通すと、内部バッファが埋まるまで書き込みが送出されず、ボディを少しずつ生成するプロバイダが止まってしまうためです。生成したボディを圧縮したい場合は`set_chunked_content_provider()`を使ってください。
 

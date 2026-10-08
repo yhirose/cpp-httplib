@@ -51,6 +51,6 @@ res.user_data.set("started_at", std::chrono::steady_clock::now());
 
 ## 注意点
 
-`user_data`は`Response`に乗っています（`req.user_data`ではありません）。これは、ハンドラには`Response&`として可変参照が渡されるためです。一見不思議ですが、「ハンドラ間で共有する可変コンテキスト」として覚えておくと素直です。
+`user_data`は`Response`に乗っています（`req.user_data`ではありません）。これは、ハンドラには`Response&`として可変参照が渡されるためです。一見不思議ですが、「ハンドラ間で共有する可変コンテキスト」だと考えると納得がいきます。
 
 > **Warning:** `user_data.get<T>()`は型が一致しないと`nullptr`を返します。保存時と取得時で同じ型を指定してください。`AuthUser`で入れて`const AuthUser`で取ろうとすると失敗します。

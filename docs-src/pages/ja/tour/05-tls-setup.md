@@ -19,7 +19,7 @@ order: 5
 
 ## コンパイルオプション
 
-TLS機能を有効にするには、`CPPHTTPLIB_OPENSSL_SUPPORT` マクロを定義してコンパイルします。前章までのコンパイルコマンドに、いくつかオプションが増えます。
+TLS機能を有効にするには、`CPPHTTPLIB_OPENSSL_SUPPORT`マクロを定義してコンパイルします。前章までのコンパイルコマンドに、いくつかオプションが増えます。
 
 ```sh
 # macOS (Homebrew)
@@ -48,7 +48,7 @@ cl /EHsc /std:c++17 /DCPPHTTPLIB_OPENSSL_SUPPORT server.cpp libssl.lib libcrypto
 
 ## 動作確認
 
-ちゃんと動くか確認してみましょう。`httplib::Client` にHTTPSのURLを渡してアクセスするだけのプログラムです。
+ちゃんと動くか確認してみましょう。`httplib::Client`にHTTPSのURLを渡してアクセスするだけのプログラムです。
 
 ```cpp
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -67,7 +67,7 @@ int main() {
 }
 ```
 
-コンパイルして実行してみてください。`Status: 200` と表示されれば、セットアップ完了です。
+コンパイルして実行してみてください。`Status: 200`と表示されれば、セットアップ完了です。
 
 ## 他のTLSバックエンド
 

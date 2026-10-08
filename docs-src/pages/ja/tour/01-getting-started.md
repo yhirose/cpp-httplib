@@ -5,7 +5,7 @@ order: 1
 
 cpp-httplibを始めるのに必要なのは、`httplib.h`とC++コンパイラーだけです。ファイルをダウンロードして、Hello Worldサーバーを動かすところまでやってみましょう。
 
-## httplib.h の入手
+## httplib.hの入手
 
 GitHubから直接ダウンロードできます。常に最新版を使ってください。
 
@@ -13,19 +13,19 @@ GitHubから直接ダウンロードできます。常に最新版を使って�
 curl -LO https://github.com/yhirose/cpp-httplib/raw/refs/tags/latest/httplib.h
 ```
 
-ダウンロードした `httplib.h` をプロジェクトのディレクトリに置けば、準備完了です。
+ダウンロードした`httplib.h`をプロジェクトのディレクトリに置けば、準備完了です。
 
 ## コンパイラーの準備
 
 | OS | 開発環境 | セットアップ |
 | -- | -------- | ------------ |
 | macOS | Apple Clang | Xcode Command Line Tools (`xcode-select --install`) |
-| Ubuntu | clang++ または g++ | `apt install clang` または `apt install g++` |
-| Windows | MSVC | Visual Studio 2022 以降（C++ コンポーネントを含めてインストール） |
+| Ubuntu | clang++またはg++ | `apt install clang`または`apt install g++` |
+| Windows | MSVC | Visual Studio 2022以降（C++コンポーネントを含めてインストール） |
 
-## Hello World サーバー
+## Hello Worldサーバー
 
-次のコードを `server.cpp` として保存しましょう。
+次のコードを`server.cpp`として保存しましょう。
 
 ```cpp
 #include "httplib.h"
@@ -70,16 +70,16 @@ cl /EHsc /std:c++17 server.cpp
 server.exe
 ```
 
-ブラウザで `http://localhost:8080` を開いてください。"Hello, World!" と表示されれば成功です。
+ブラウザで`http://localhost:8080`を開いてください。"Hello, World!"と表示されれば成功です。
 
-`curl` でも確認できます。
+`curl`でも確認できます。
 
 ```sh
 curl http://localhost:8080/
 # Hello, World!
 ```
 
-サーバーを停止するには、ターミナルで `Ctrl+C` を押します。
+サーバーを停止するには、ターミナルで`Ctrl+C`を押します。
 
 ## 次のステップ
 

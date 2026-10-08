@@ -7,15 +7,15 @@ order: 3
 
 ## サーバーの起動
 
-ルーティングを登録したら、最後に `svr.listen()` を呼んでサーバーを起動します。
+ルーティングを登録したら、最後に`svr.listen()`を呼んでサーバーを起動します。
 
 ```cpp
 svr.listen("0.0.0.0", 8080);
 ```
 
-第1引数はホスト、第2引数はポート番号です。`"0.0.0.0"` を指定すると、すべてのネットワークインターフェースでリクエストを受け付けます。自分のマシンからのアクセスだけに限定したいときは `"127.0.0.1"` を使います。
+第1引数はホスト、第2引数はポート番号です。`"0.0.0.0"`を指定すると、すべてのネットワークインターフェースでリクエストを受け付けます。自分のマシンからのアクセスだけに限定したいときは`"127.0.0.1"`を使います。
 
-`listen()` はブロッキング呼び出しです。サーバーが停止するまで、この行から先には進みません。ターミナルで `Ctrl+C` を押すか、別スレッドから `svr.stop()` を呼ぶまでサーバーは動き続けます。
+`listen()`はブロッキング呼び出しです。サーバーが停止するまで、この行から先には進みません。ターミナルで`Ctrl+C`を押すか、別スレッドから`svr.stop()`を呼ぶまでサーバーは動き続けます。
 
 ## ルーティング
 
@@ -29,7 +29,7 @@ svr.Get("/hi", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
-`svr.Get()` は、GETリクエストに対するハンドラーを登録します。第1引数がパス、第2引数がハンドラー関数です。`/hi` にGETリクエストが来たら、このラムダが呼ばれます。
+`svr.Get()`は、GETリクエストに対するハンドラーを登録します。第1引数がパス、第2引数がハンドラー関数です。`/hi`にGETリクエストが来たら、このラムダが呼ばれます。
 
 HTTPメソッドごとにメソッドが用意されています。
 
@@ -40,7 +40,7 @@ svr.Put("/path",    handler);  // PUT
 svr.Delete("/path", handler);  // DELETE
 ```
 
-ハンドラーのシグネチャは `(const httplib::Request &req, httplib::Response &res)` です。`auto` を使って短く書くこともできます。
+ハンドラーのシグネチャは`(const httplib::Request &req, httplib::Response &res)`です。`auto`を使って短く書くこともできます。
 
 ```cpp
 svr.Get("/hi", [](const auto &req, auto &res) {
@@ -52,11 +52,11 @@ svr.Get("/hi", [](const auto &req, auto &res) {
 
 ## リクエストオブジェクト
 
-ハンドラーの第1引数 `req` から、クライアントが送ってきた情報を読み取れます。
+ハンドラーの第1引数`req`から、クライアントが送ってきた情報を読み取れます。
 
 ### ボディ
 
-`req.body` でリクエストボディを取得できます。型は `std::string` です。
+`req.body`でリクエストボディを取得できます。型は`std::string`です。
 
 ```cpp
 svr.Post("/post", [](const auto &req, auto &res) {
@@ -67,7 +67,7 @@ svr.Post("/post", [](const auto &req, auto &res) {
 
 ### ヘッダー
 
-`req.get_header_value()` でリクエストヘッダーの値を取得できます。
+`req.get_header_value()`でリクエストヘッダーの値を取得できます。
 
 ```cpp
 svr.Get("/check", [](const auto &req, auto &res) {
@@ -78,7 +78,7 @@ svr.Get("/check", [](const auto &req, auto &res) {
 
 ### クエリパラメーターとフォームデータ
 
-`req.get_param_value()` でパラメーターを取得できます。GETのクエリパラメーターと、POSTのフォームデータの両方に使えます。
+`req.get_param_value()`でパラメーターを取得できます。GETのクエリパラメーターと、POSTのフォームデータの両方に使えます。
 
 ```cpp
 svr.Get("/search", [](const auto &req, auto &res) {
@@ -87,9 +87,9 @@ svr.Get("/search", [](const auto &req, auto &res) {
 });
 ```
 
-`/search?q=cpp-httplib` にアクセスすると、`q` の値は `"cpp-httplib"` になります。
+`/search?q=cpp-httplib`にアクセスすると、`q`の値は`"cpp-httplib"`になります。
 
-すべてのパラメーターをループで処理したいときは、`req.params` を使います。
+すべてのパラメーターをループで処理したいときは、`req.params`を使います。
 
 ```cpp
 svr.Post("/submit", [](const auto &req, auto &res) {
@@ -103,7 +103,7 @@ svr.Post("/submit", [](const auto &req, auto &res) {
 
 ### ファイルアップロード
 
-マルチパートフォームでアップロードされたファイルは、`req.form.get_file()` で取得します。
+マルチパートフォームでアップロードされたファイルは、`req.form.get_file()`で取得します。
 
 ```cpp
 svr.Post("/upload", [](const auto &req, auto &res) {
@@ -113,11 +113,11 @@ svr.Post("/upload", [](const auto &req, auto &res) {
 });
 ```
 
-`f.filename` でファイル名、`f.content` でファイルの中身にアクセスできます。
+`f.filename`でファイル名、`f.content`でファイルの中身にアクセスできます。
 
 ## パスパラメーター
 
-URLの一部を変数として受け取りたいことがあります。たとえば `/users/42` の `42` を取得したい場合です。`:param` 記法を使うと、URLの一部をキャプチャできます。
+URLの一部を変数として受け取りたいことがあります。たとえば`/users/42`の`42`を取得したい場合です。`:param`記法を使うと、URLの一部をキャプチャできます。
 
 ```cpp
 svr.Get("/users/:id", [](const auto &req, auto &res) {
@@ -126,7 +126,7 @@ svr.Get("/users/:id", [](const auto &req, auto &res) {
 });
 ```
 
-`/users/42` にアクセスすると、`req.path_params.at("id")` は `"42"` を返します。`/users/100` なら `"100"` です。
+`/users/42`にアクセスすると、`req.path_params.at("id")`は`"42"`を返します。`/users/100`なら`"100"`です。
 
 複数のパスパラメーターも使えます。
 
@@ -140,7 +140,7 @@ svr.Get("/users/:user_id/posts/:post_id", [](const auto &req, auto &res) {
 
 ### 正規表現パターン
 
-`:param` の代わりに正規表現をパスに書くこともできます。キャプチャグループの値は `req.matches` で取得します。型は `std::smatch` です。
+`:param`の代わりに正規表現をパスに書くこともできます。キャプチャグループの値は`req.matches`で取得します。型は`std::smatch`です。
 
 ```cpp
 // 数字のみのIDを受け付ける
@@ -150,15 +150,15 @@ svr.Get(R"(/files/(\d+))", [](const auto &req, auto &res) {
 });
 ```
 
-`/files/42` にはマッチしますが、`/files/abc` にはマッチしません。入力値を絞り込みたいときに便利です。
+`/files/42`にはマッチしますが、`/files/abc`にはマッチしません。入力値を絞り込みたいときに便利です。
 
 ## レスポンスの組み立て
 
-ハンドラーの第2引数 `res` を使って、クライアントに返すレスポンスを組み立てます。
+ハンドラーの第2引数`res`を使って、クライアントに返すレスポンスを組み立てます。
 
 ### ボディとContent-Type
 
-`res.set_content()` でボディとContent-Typeを設定します。これだけでステータスコード200のレスポンスが返ります。
+`res.set_content()`でボディとContent-Typeを設定します。これだけでステータスコード200のレスポンスが返ります。
 
 ```cpp
 svr.Get("/hi", [](const auto &req, auto &res) {
@@ -168,7 +168,7 @@ svr.Get("/hi", [](const auto &req, auto &res) {
 
 ### ステータスコード
 
-ステータスコードを変えたいときは、`res.status` に代入します。
+ステータスコードを変えたいときは、`res.status`に代入します。
 
 ```cpp
 svr.Get("/not-found", [](const auto &req, auto &res) {
@@ -179,7 +179,7 @@ svr.Get("/not-found", [](const auto &req, auto &res) {
 
 ### レスポンスヘッダー
 
-`res.set_header()` でレスポンスヘッダーを追加できます。
+`res.set_header()`でレスポンスヘッダーを追加できます。
 
 ```cpp
 svr.Get("/with-header", [](const auto &req, auto &res) {
@@ -200,7 +200,7 @@ svr.Get("/hi", [](const auto &, auto &res) {
 });
 ```
 
-最もシンプルなハンドラーです。リクエストの情報は使わないので、`req` の変数名を省略しています。`"Hello!"` というテキストをそのまま返します。
+最もシンプルなハンドラーです。リクエストの情報は使わないので、`req`の変数名を省略しています。`"Hello!"`というテキストをそのまま返します。
 
 ### GET /search
 
@@ -211,7 +211,7 @@ svr.Get("/search", [](const auto &req, auto &res) {
 });
 ```
 
-`req.get_param_value("q")` でクエリパラメーター `q` の値を取り出します。`/search?q=cpp-httplib` なら、レスポンスは `"Query: cpp-httplib"` になります。
+`req.get_param_value("q")`でクエリパラメーター`q`の値を取り出します。`/search?q=cpp-httplib`なら、レスポンスは`"Query: cpp-httplib"`になります。
 
 ### POST /post
 
@@ -221,7 +221,7 @@ svr.Post("/post", [](const auto &req, auto &res) {
 });
 ```
 
-クライアントが送ったリクエストボディを、そのままレスポンスとして返すエコーサーバーです。`req.body` にボディが丸ごと入っています。
+クライアントが送ったリクエストボディを、そのままレスポンスとして返すエコーサーバーです。`req.body`にボディが丸ごと入っています。
 
 ### POST /submit
 
@@ -235,7 +235,7 @@ svr.Post("/submit", [](const auto &req, auto &res) {
 });
 ```
 
-フォームデータとして送られたキーと値のペアを、`req.params` でループ処理しています。構造化束縛 `auto &[key, val]` を使って、各ペアを取り出しています。
+フォームデータとして送られたキーと値のペアを、`req.params`でループ処理しています。構造化束縛`auto &[key, val]`を使って、各ペアを取り出しています。
 
 ### POST /upload
 
@@ -247,7 +247,7 @@ svr.Post("/upload", [](const auto &req, auto &res) {
 });
 ```
 
-マルチパートフォームで送られたファイルを受け取ります。`req.form.get_file("file")` で `"file"` という名前のフィールドを取得し、`f.filename` と `f.content.size()` でファイル名とサイズを返しています。
+マルチパートフォームで送られたファイルを受け取ります。`req.form.get_file("file")`で`"file"`という名前のフィールドを取得し、`f.filename`と`f.content.size()`でファイル名とサイズを返しています。
 
 ### GET /users/:id
 
@@ -258,7 +258,7 @@ svr.Get("/users/:id", [](const auto &req, auto &res) {
 });
 ```
 
-`:id` の部分がパスパラメーターです。`req.path_params.at("id")` で値を取り出しています。`/users/42` なら `"42"`、`/users/alice` なら `"alice"` が得られます。
+`:id`の部分がパスパラメーターです。`req.path_params.at("id")`で値を取り出しています。`/users/42`なら`"42"`、`/users/alice`なら`"alice"`が得られます。
 
 ### GET /files/(\d+)
 
@@ -269,7 +269,7 @@ svr.Get(R"(/files/(\d+))", [](const auto &req, auto &res) {
 });
 ```
 
-正規表現 `(\d+)` で数字だけのIDにマッチします。`/files/42` にはマッチしますが、`/files/abc` は404になります。`req.matches[1]` で最初のキャプチャグループの値を取得しています。
+正規表現`(\d+)`で数字だけのIDにマッチします。`/files/42`にはマッチしますが、`/files/abc`は404になります。`req.matches[1]`で最初のキャプチャグループの値を取得しています。
 
 ## 次のステップ
 
