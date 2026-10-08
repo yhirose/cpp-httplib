@@ -21191,6 +21191,55 @@ TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
   }
 }
 
+// A payload max length of 0 means no limit, however the body is framed.
+TEST(PayloadMaxLengthZeroTest, ClientReadsChunkedAndUnframedResponse) {
+  for (const char *response : {"HTTP/1.1 200 OK\r\n"
+                               "Transfer-Encoding: chunked\r\n"
+                               "\r\n"
+                               "5\r\nhello\r\n0\r\n\r\n",
+                               "HTTP/1.1 200 OK\r\n"
+                               "Connection: close\r\n"
+                               "\r\n"
+                               "hello"}) {
+    with_single_response(response, [&](Client &cli) {
+      cli.set_payload_max_length(0);
+      auto res = cli.Get("/");
+      ASSERT_TRUE(res) << response;
+      EXPECT_EQ("hello", res->body) << response;
+    });
+  }
+}
+
+TEST(PayloadMaxLengthZeroTest, ServerReadsChunkedRequest) {
+  Server svr;
+  svr.set_payload_max_length(0);
+  svr.Post("/echo", [](const Request &req, Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Post(
+      "/echo",
+      [](size_t /*offset*/, DataSink &sink) {
+        sink.write("hello", 5);
+        sink.done();
+        return true;
+      },
+      "text/plain");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("hello", res->body);
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(OpenStreamTest, Gzip) {
   Client cli("127.0.0.1", port_);

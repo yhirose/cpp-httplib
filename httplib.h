@@ -8412,8 +8412,9 @@ read_content_without_length(Stream &strm, size_t payload_max_length,
     if (n < 0) { return ReadContentResult::Error; }
 
     // Check if adding this data would exceed the payload limit
-    if (r > payload_max_length ||
-        payload_max_length - r < static_cast<size_t>(n)) {
+    if (payload_max_length > 0 &&
+        (r > payload_max_length ||
+         payload_max_length - r < static_cast<size_t>(n))) {
       return ReadContentResult::PayloadTooLarge;
     }
 
@@ -8448,8 +8449,9 @@ inline ReadContentResult read_content_chunked(Stream &strm, T &x,
       return ReadContentResult::Success;
     }
 
-    if (total_len > payload_max_length ||
-        payload_max_length - total_len < static_cast<size_t>(n)) {
+    if (payload_max_length > 0 &&
+        (total_len > payload_max_length ||
+         payload_max_length - total_len < static_cast<size_t>(n))) {
       return ReadContentResult::PayloadTooLarge;
     }
 
