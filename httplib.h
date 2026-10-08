@@ -10858,12 +10858,6 @@ inline bool verify_cert_with_windows_schannel(
   auto chain_guard =
       scope_exit([&] { CertFreeCertificateChain(chain_context); });
 
-  // Check if chain has errors
-  if (chain_context->TrustStatus.dwErrorStatus != CERT_TRUST_NO_ERROR) {
-    out_error = chain_context->TrustStatus.dwErrorStatus;
-    return false;
-  }
-
   // Verify SSL policy
   SSL_EXTRA_CERT_CHAIN_POLICY_PARA extra_policy_para = {};
   extra_policy_para.cbSize = sizeof(extra_policy_para);
