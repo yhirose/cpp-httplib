@@ -7242,8 +7242,21 @@ TEST_F(ServerTest, GetStreamedWithRangeSuffix1) {
 }
 
 TEST_F(ServerTest, GetStreamedWithRangeSuffix2) {
+  // RFC 9110 14.1.2: a suffix-length longer than the representation selects
+  // the entire representation.
+  for (auto range : {"bytes=-8", "bytes=-9999"}) {
+    auto res = cli_.Get("/streamed-with-range", Headers{{"Range", range}});
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::PartialContent_206, res->status) << range;
+    EXPECT_EQ("7", res->get_header_value("Content-Length")) << range;
+    EXPECT_EQ("bytes 0-6/7", res->get_header_value("Content-Range")) << range;
+    EXPECT_EQ(std::string("abcdefg"), res->body) << range;
+  }
+}
+
+TEST_F(ServerTest, GetStreamedWithRangeSuffixZero) {
   auto res =
-      cli_.Get("/streamed-with-range?error", Headers{{"Range", "bytes=-9999"}});
+      cli_.Get("/streamed-with-range?error", Headers{{"Range", "bytes=-0"}});
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
   EXPECT_EQ("0", res->get_header_value("Content-Length"));
