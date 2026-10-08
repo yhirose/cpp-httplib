@@ -4412,6 +4412,8 @@ private:
 
 namespace ws {
 
+class WebSocketClient;
+
 enum class Opcode : uint8_t {
   Continuation = 0x0,
   Text = 0x1,
@@ -4513,7 +4515,7 @@ public:
 
 private:
   friend class httplib::Server;
-  friend class WebSocketClient;
+  friend class httplib::ws::WebSocketClient;
 
   WebSocket(
       Stream &strm, const Request &req, bool is_server,
