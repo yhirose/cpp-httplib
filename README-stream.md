@@ -4,7 +4,7 @@ This document describes the streaming extensions for cpp-httplib, providing an i
 
 > **Important Notes**:
 >
-> - **No Keep-Alive**: Each `stream::Get()` call uses a dedicated connection that is closed after the response is fully read. For connection reuse, use `Client::Get()`.
+> - **No Keep-Alive**: Each `stream::Get()` call uses a dedicated connection that is closed when the returned `stream::Result` is destroyed. For connection reuse, use `Client::Get()`.
 > - **Single iteration only**: The `next()` method can only iterate through the body once.
 > - **Result is not thread-safe**: While `stream::Get()` can be called from multiple threads simultaneously, the returned `stream::Result` must be used from a single thread only.
 
@@ -114,7 +114,6 @@ The `httplib.h` header provides a more ergonomic iterator-style API.
 #include "httplib.h"
 
 httplib::Client cli("http://localhost:8080");
-cli.set_follow_location(true);
 ...
 
 // Simple GET
@@ -243,23 +242,29 @@ int main() {
 ```cpp
 #include "httplib.h"
 
+// Keeps the client and its stream alive until the response has been sent.
+struct Upstream {
+    httplib::Client cli{"http://backend:8080"};
+    httplib::ClientImpl::StreamHandle handle;
+};
+
 httplib::Server svr;
 
 svr.Get("/proxy/(.*)", [](const httplib::Request& req, httplib::Response& res) {
-    httplib::Client upstream("http://backend:8080");
-    auto handle = upstream.open_stream("/" + req.matches[1].str());
-    
-    if (!handle.is_valid()) {
+    auto upstream = std::make_shared<Upstream>();
+    upstream->handle = upstream->cli.open_stream("GET", "/" + req.matches[1].str());
+
+    if (!upstream->handle.is_valid()) {
         res.status = 502;
         return;
     }
-    
-    res.status = handle.response->status;
+
+    res.status = upstream->handle.response->status;
     res.set_chunked_content_provider(
-        handle.response->get_header_value("Content-Type"),
-        [handle = std::move(handle)](size_t, httplib::DataSink& sink) mutable {
+        upstream->handle.response->get_header_value("Content-Type"),
+        [upstream](size_t, httplib::DataSink& sink) {
             char buf[8192];
-            auto n = handle.read(buf, sizeof(buf));
+            auto n = upstream->handle.read(buf, sizeof(buf));
             if (n > 0) {
                 sink.write(buf, static_cast<size_t>(n));
                 return true;

@@ -33,7 +33,7 @@ Learn more in the [official documentation](https://yhirose.github.io/cpp-httplib
 httplib::Server svr;
 
 // HTTPS
-httplib::SSLServer svr;
+httplib::SSLServer svr("./cert.pem", "./key.pem");
 
 svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
   res.set_content("Hello World!", "text/plain");
@@ -71,7 +71,7 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 | wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` | 5.x supported; must build with `--enable-opensslall` |
 
 > [!NOTE]
-> **Mbed TLS / wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable.
+> **wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable.
 
 > [!NOTE]
 > **BoringSSL (best-effort):** BoringSSL builds under `CPPHTTPLIB_OPENSSL_SUPPORT` and is exercised by CI against current upstream. Because BoringSSL does not guarantee API stability, support is best-effort — breakage may occasionally land. Two known behavioral differences vs OpenSSL: (1) BoringSSL's public headers require C++14 or later, so consumers must compile accordingly; (2) hostname verification is SAN-only per RFC 6125 §6.4.4 (no CN fallback).
@@ -86,7 +86,7 @@ httplib::SSLServer svr("./cert.pem", "./key.pem");
 
 // Client
 httplib::Client cli("https://localhost:1234"); // scheme + host
-httplib::SSLClient cli("localhost:1234"); // host
+httplib::SSLClient cli("localhost"); // host (port 443)
 httplib::SSLClient cli("localhost", 1234); // host, port
 
 // Use your CA bundle
@@ -103,8 +103,8 @@ cli.enable_server_hostname_verification(false);
 
 When SSL operations fail, cpp-httplib provides detailed error information through `ssl_error()` and `ssl_backend_error()`:
 
-- `ssl_error()` - Returns the TLS-level error code (e.g., `SSL_ERROR_SSL` for OpenSSL)
-- `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL/wolfSSL, return value for Mbed TLS)
+- `ssl_error()` - Returns the TLS-level error as a backend-independent `httplib::tls::ErrorCode` value (e.g., `Fatal`, `CertVerifyFailed`), cast to `int`
+- `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL/wolfSSL, return value for Mbed TLS). With OpenSSL, a certificate verification failure reports the verify result (`X509_V_ERR_*`) here instead
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT  // or CPPHTTPLIB_MBEDTLS_SUPPORT or CPPHTTPLIB_WOLFSSL_SUPPORT
@@ -337,7 +337,7 @@ Note the following:
 * The method name must be a valid HTTP method token (RFC 9110) and must be registered before `listen()` is called.
 * `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `CONNECT`, `OPTIONS`, `TRACE`, `PATCH` and `PRI` cannot be registered this way. Use the dedicated methods above instead.
 * A rejected registration makes `is_valid()` return `false`, and `listen()` then fails rather than starting a server with a route that would never fire.
-* Static file serving and WebSocket upgrades remain `GET`/`HEAD` only.
+* Static file serving remains `GET`/`HEAD` only, and WebSocket upgrades `GET` only.
 * `Allow` and the WebDAV `DAV:` header are not generated automatically. Register an `Options` handler if clients need them.
 
 ### Bind a socket to multiple interfaces and any available port
@@ -518,7 +518,7 @@ svr.set_exception_handler([](const auto& req, auto& res, std::exception_ptr ep) 
 ```
 
 > [!CAUTION]
-> if you don't provide the `catch (...)` block for a rethrown exception pointer, an uncaught exception will end up causing the server crash. Be careful!
+> If you don't provide the `catch (...)` block for a rethrown exception pointer, an exception that is not a `std::exception` escapes the handler. The server keeps running, but that connection is dropped without a response, and the error logger receives `Error::UserCallbackException`.
 
 ### Pre routing handler
 
@@ -569,21 +569,21 @@ svr.set_pre_request_handler([](const auto& req, auto& res) {
 Request received
   │
   ├─ expect_100_continue_handler  (when the request has "Expect: 100-continue")
-  │     └─ returns a status other than 100 → stop here
+  │     └─ returns a status other than 100 → go straight to post_routing_handler
   │
   ├─ pre_routing_handler          route not matched yet, body not read
-  │     └─ returns Handled → stop here
+  │     └─ returns Handled → go straight to post_routing_handler
   │
-  ├─ file_request_handler         (GET/HEAD, static file serving)
+  ├─ file_request_handler         when a static file is served (GET only)
   │
   ├─ route matching → req.matched_route is set
   │
   ├─ pre_request_handler          route matched, body NOT read yet
-  │     └─ returns Handled → stop here (route handler is skipped)
+  │     └─ returns Handled → go straight to post_routing_handler
   │
   ├─ route handler                Get/Post/...; the request body is read first
   │
-  └─ post_routing_handler         after routing completes
+  └─ post_routing_handler         just before the response is written
 
   On a thrown exception → exception_handler
   On an error status (4xx/5xx) → error_handler
@@ -611,7 +611,7 @@ svr.set_pre_routing_handler([](const auto& req, auto& res) {
   return Server::HandlerResponse::Unhandled;
 });
 
-svr.Get("/me", [](const auto& /*req*/, auto& res) {
+svr.Get("/me", [](const Request& /*req*/, Response& res) {
   auto* ctx = res.user_data.get<AuthContext>("auth");
   if (!ctx) {
     res.status = StatusCode::Unauthorized_401;
@@ -908,7 +908,7 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 
 `ThreadPool` is used as the **default** task queue, with dynamic scaling support. By default, it maintains a base thread count of 8 or `std::thread::hardware_concurrency() - 1` (whichever is greater), and can scale up to 4x that count under load. You can change these with `CPPHTTPLIB_THREAD_POOL_COUNT` and `CPPHTTPLIB_THREAD_POOL_MAX_COUNT`.
 
-When all threads are busy and a new task arrives, a temporary thread is spawned (up to the maximum). When a dynamic thread finishes its task and the queue is empty, or after an idle timeout, it exits automatically. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
+When all threads are busy and a new task arrives, a temporary thread is spawned (up to the maximum). A dynamic thread exits automatically once it has waited for the idle timeout without receiving a task. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
 
 If you want to set the thread counts at runtime:
 
@@ -1042,6 +1042,8 @@ enum class Error {
   HTTPParsing,
   InvalidRangeHeader,
   UnsupportedContentEncoding,
+  WebSocketHandshake,
+  UserCallbackException,
 };
 ```
 
@@ -1257,7 +1259,7 @@ std::string body = ...;
 
 auto res = cli.Post(
   "/stream", body.size(),
-  [](size_t offset, size_t length, DataSink &sink) {
+  [&](size_t offset, size_t length, DataSink &sink) {
     sink.write(body.data() + offset, length);
     return true; // return 'false' if you want to cancel the request.
   },
@@ -1310,7 +1312,7 @@ cli.set_bearer_token_auth("token");
 ```
 
 > [!NOTE]
-> OpenSSL is required for Digest Authentication.
+> A TLS backend (OpenSSL, Mbed TLS, or wolfSSL) is required for Digest Authentication.
 
 ### Proxy server support
 
@@ -1328,12 +1330,12 @@ cli.set_proxy_bearer_token_auth("pass");
 ```
 
 > [!NOTE]
-> OpenSSL is required for Digest Authentication.
+> A TLS backend (OpenSSL, Mbed TLS, or wolfSSL) is required for Digest Authentication.
 
 #### Bypass the proxy for specific hosts (`NO_PROXY`)
 
 ```cpp
-cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
+cli.set_no_proxy({"internal.corp", "10.0.0.0/8", ".dev.local"});
 ```
 
 Each pattern is `*`, a hostname suffix, an IP literal, or a CIDR block.
@@ -1478,8 +1480,8 @@ for (auto it = req.headers.equal_range("Accept-Encoding").first;
   std::cout << it->second << std::endl;
 }
 
-// get_header_value(key, id) reaches a specific one directly.
-auto second = req.get_header_value("Accept-Encoding", 1); // "br"
+// get_header_value(key, def, id) reaches a specific one directly.
+auto second = req.get_header_value("Accept-Encoding", "", 1); // "br"
 ```
 
 `Headers` matches field names case-insensitively, as before. `Params`, `FormFields`, and `FormFiles` are case-sensitive.
@@ -1489,7 +1491,7 @@ auto second = req.get_header_value("Accept-Encoding", 1); // "br"
 
 ## Payload Limit
 
-The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely.
+The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely. On the client, a request made with a content receiver is not limited unless you call `set_payload_max_length()` yourself, so that a large download can be streamed without raising the limit first.
 
 ## Compression
 
@@ -1498,10 +1500,15 @@ The server can apply compression to the following MIME type contents:
 - all text types except text/event-stream
 - image/svg+xml
 - application/javascript
+- application/x-javascript
 - application/json
+- application/ld+json
 - application/xml
-- application/protobuf
 - application/xhtml+xml
+- application/rss+xml
+- application/atom+xml
+- application/xslt+xml
+- application/protobuf
 
 A response that already carries `Content-Encoding` is sent as it is. A handler serving content it encoded itself, an asset compressed at build time for instance, keeps its own coding and its own bytes:
 
@@ -1638,7 +1645,6 @@ Process large responses without loading everything into memory.
 
 ```c++
 httplib::Client cli("localhost", 8080);
-cli.set_follow_location(true);
 ...
 
 auto result = httplib::stream::Get(cli, "/large-file");
@@ -1718,7 +1724,7 @@ SSL is also supported via `wss://` scheme (e.g. `WebSocketClient("wss://example.
 
 > **WebSocket extensions are not supported.** `permessage-deflate` and other RFC 6455 extensions are not implemented. If a client proposes them via `Sec-WebSocket-Extensions`, the server silently declines them in its handshake response.
 
-> **Unresponsive-peer detection.** Heartbeat pings also serve as a liveness probe when `set_websocket_max_missed_pongs(n)` is set: if the client sends `n` consecutive pings without receiving a pong, it will close the connection. Disabled by default (`0`).
+> **Unresponsive-peer detection.** Heartbeat pings also serve as a liveness probe when `set_websocket_max_missed_pongs(n)` is set: once `n` consecutive pings have gone unanswered, the connection is closed and a `read()` waiting on it fails. Both `WebSocketClient` and `Server` have the setter. Disabled by default (`0`).
 
 See [README-websocket.md](README-websocket.md) for more details.
 
@@ -1727,12 +1733,14 @@ See [README-websocket.md](README-websocket.md) for more details.
 `set_socket_opt` is a convenience wrapper around `setsockopt` for setting integer socket options:
 
 ```cpp
-auto sock = svr.socket();
-httplib::set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1);
+svr.set_socket_options([](socket_t sock) {
+  httplib::default_socket_options(sock);
+  httplib::set_socket_opt(sock, SOL_SOCKET, SO_KEEPALIVE, 1);
+});
 ```
 
 > [!TIP]
-> For most use cases, prefer `set_tcp_nodelay(true)` or `set_socket_options(callback)` on the Server/Client instead of calling `set_socket_opt` directly.
+> `set_socket_options` replaces the default socket options, so call `default_socket_options()` in the callback to keep them. For `TCP_NODELAY`, `set_tcp_nodelay(true)` is simpler.
 
 ## Split httplib.h into .h and .cc
 
@@ -1761,7 +1769,9 @@ Dockerfile for static HTTP server is available. Port number of this HTTP server 
 ...
 
 > docker run --rm -it -p 8080:80 -v ./docker/html:/html cpp-httplib-server
-Serving HTTP on 0.0.0.0 port 80 ...
+Serving HTTP on 0.0.0.0:80
+Mount point: / -> ./html
+Press Ctrl+C to shutdown gracefully...
 192.168.65.1 - - [31/Aug/2024:21:33:56 +0000] "GET / HTTP/1.1" 200 599 "-" "curl/8.7.1"
 192.168.65.1 - - [31/Aug/2024:21:34:26 +0000] "GET / HTTP/1.1" 200 599 "-" "Mozilla/5.0 ..."
 192.168.65.1 - - [31/Aug/2024:21:34:26 +0000] "GET /favicon.ico HTTP/1.1" 404 152 "-" "Mozilla/5.0 ..."
@@ -1771,7 +1781,9 @@ From Docker Hub
 
 ```bash
 > docker run --rm -it -p 8080:80 -v ./docker/html:/html yhirose4dockerhub/cpp-httplib-server
-Serving HTTP on 0.0.0.0 port 80 ...
+Serving HTTP on 0.0.0.0:80
+Mount point: / -> ./html
+Press Ctrl+C to shutdown gracefully...
 192.168.65.1 - - [31/Aug/2024:21:33:56 +0000] "GET / HTTP/1.1" 200 599 "-" "curl/8.7.1"
 192.168.65.1 - - [31/Aug/2024:21:34:26 +0000] "GET / HTTP/1.1" 200 599 "-" "Mozilla/5.0 ..."
 192.168.65.1 - - [31/Aug/2024:21:34:26 +0000] "GET /favicon.ico HTTP/1.1" 404 152 "-" "Mozilla/5.0 ..."
@@ -1783,19 +1795,13 @@ NOTE
 ### Regular Expression Stack Overflow
 
 > [!CAUTION]
-> When using complex regex patterns in route handlers, be aware that certain patterns may cause stack overflow during pattern matching. This is a known issue with `std::regex` implementations and affects the `dispatch_request()` method.
-> 
+> `std::regex` implementations can overflow the stack while matching a long input, even with a pattern as simple as `.*`. To keep a request from triggering this, a regex route is never applied to a path longer than `CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH` (256 by default); such a path does not match the route. Raising the limit brings the risk back with it.
+>
+> Path parameters are matched without `std::regex` and have no such limit, so prefer them where they fit:
+>
 > ```cpp
-> // This pattern can cause stack overflow with large input
-> svr.Get(".*", handler);
-> ```
-> 
-> Consider using simpler patterns or path parameters to avoid this issue:
-> 
-> ```cpp
-> // Safer alternatives
 > svr.Get("/users/:id", handler);           // Path parameters
-> svr.Get(R"(/api/v\d+/.*)", handler);     // More specific patterns
+> svr.Get(R"(/api/v\d+/.*)", handler);     // Regex route, limited to short paths
 > ```
 
 ### g++

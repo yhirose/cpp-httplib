@@ -151,9 +151,8 @@ bool is_open() const;
 explicit WebSocketClient(const std::string &scheme_host_port_path,
                          const Headers &headers = {});
 
-// Constructor with a client certificate for mutual TLS (wss:// only,
-// requires CPPHTTPLIB_OPENSSL_SUPPORT). The certificate is ignored for
-// ws:// URLs.
+// Constructor with a client certificate for mutual TLS (wss:// only, SSL
+// builds only). The certificate is ignored for ws:// URLs.
 struct PemMemory {
   const char *cert_pem;
   size_t cert_pem_len;
@@ -199,7 +198,7 @@ void set_write_timeout(const std::chrono::duration<Rep, Period> &duration);
 template <class Rep, class Period>
 void set_connection_timeout(const std::chrono::duration<Rep, Period> &duration);
 
-// SSL configuration (wss:// only, requires CPPHTTPLIB_OPENSSL_SUPPORT)
+// SSL configuration (wss:// only, SSL builds only)
 void set_ca_cert_path(const std::string &ca_cert_file_path,
                       const std::string &ca_cert_dir_path = std::string());
 void set_ca_cert_store(tls::ca_store_t store);
@@ -473,7 +472,7 @@ ws.set_websocket_max_missed_pongs(2); // close after 2 consecutive unacked pings
 
 The server side has the same `set_websocket_max_missed_pongs()`.
 
-With the default ping interval of 30 seconds, `max_missed_pongs = 2` detects a dead peer within ~60 seconds. The counter is reset every time a Pong frame is received, so the mechanism only works when your code is actively calling `read()` — exactly the pattern a normal WebSocket client already uses.
+With the default ping interval of 30 seconds, `max_missed_pongs = 2` detects a dead peer 60 to 90 seconds after it stops answering: the count is checked once per interval, just before the next ping goes out. A `read()` waiting on the peer at that moment returns `Fail`. The counter is reset every time a Pong frame is received, so the mechanism only works when your code is actively calling `read()`, which is exactly the pattern a normal WebSocket client already uses.
 
 **The default is `0`**, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses are not checked. On the server side a dead connection still does not linger: while a handler is inside `read()`, `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop. A client has no such backstop — it waits forever unless you set a read timeout — so there `max_missed_pongs` is what notices an unresponsive peer at all. On either side it is also the knob for noticing one *faster* than the 5-minute fallback.
 
