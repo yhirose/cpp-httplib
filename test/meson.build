@@ -146,6 +146,16 @@ cert_san_types_pem = custom_target(
   command: [openssl, 'req', '-x509', '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-subj', '/CN=san-types', '-addext', 'subjectAltName=DNS:a.zz,IP:42.46.122.122', '-out', '@OUTPUT@']
 )
 
+# cert_wildcard_san.pem: a leftmost wildcard next to one that is not leftmost.
+# "*.leftmost.example.test" matches a single label; the wildcard in
+# "www.*.example.test" must not be honoured.
+cert_wildcard_san_pem = custom_target(
+  'cert_wildcard_san_pem',
+  input: key_pem,
+  output: 'cert_wildcard_san.pem',
+  command: [openssl, 'req', '-x509', '-key', '@INPUT@', '-sha256', '-days', '3650', '-nodes', '-subj', '/CN=wildcard-san', '-addext', 'subjectAltName=DNS:*.leftmost.example.test,DNS:www.*.example.test', '-out', '@OUTPUT@']
+)
+
 # Copy test files to the build directory
 configure_file(input: 'ca-bundle.crt', output: 'ca-bundle.crt', copy: true)
 configure_file(input: 'image.jpg',     output: 'image.jpg',     copy: true)
@@ -188,7 +198,8 @@ test(
     client_encrypted_cert_pem,
     cert_ip_cn_pem,
     cert_ipv6_pem,
-    cert_san_types_pem
+    cert_san_types_pem,
+    cert_wildcard_san_pem
   ],
   workdir: meson.current_build_dir(),
   timeout: 300

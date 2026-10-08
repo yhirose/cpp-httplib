@@ -37,3 +37,8 @@ openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=::1" -addext
 # cert_san_types.pem: the bytes of each SAN read as the other type:
 #                 DNS:a.zz is 97.46.122.122, IP:42.46.122.122 is "*.zz".
 openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=san-types" -addext "subjectAltName=DNS:a.zz,IP:42.46.122.122" -out cert_san_types.pem
+
+# cert_wildcard_san.pem: a leftmost wildcard next to one that is not leftmost.
+#                 "*.leftmost.example.test" matches a single label; the
+#                 wildcard in "www.*.example.test" must not be honoured.
+openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=wildcard-san" -addext "subjectAltName=DNS:*.leftmost.example.test,DNS:www.*.example.test" -out cert_wildcard_san.pem
