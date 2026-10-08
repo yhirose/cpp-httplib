@@ -95,7 +95,7 @@ svr.set_mount_point("/", "./public");
 svr.listen("0.0.0.0", 8080);
 ```
 
-Handlers take priority. The handler responds to `/api/hello`. For every other path, the server looks for a file in `./public`.
+The server looks for a file in `./public` first and calls the handler when there is none. So the handler responds to `/api/hello` unless you put a file at `./public/api/hello`.
 
 ## Adding response headers
 

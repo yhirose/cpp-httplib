@@ -37,7 +37,7 @@ svr.Get("/me", [](const httplib::Request &req, httplib::Response &res) {
 
 ## Typical value types
 
-Strings, numbers, structs, `std::shared_ptr` — anything copyable or movable works.
+Strings, numbers, structs, `std::shared_ptr`: anything copyable works.
 
 ```cpp
 res.user_data.set("user_id", std::string{"42"});

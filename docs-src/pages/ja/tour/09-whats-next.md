@@ -50,7 +50,7 @@ svr.Get("/stream", [](const auto &, auto &res) {
     res.set_chunked_content_provider("text/plain",
         [](size_t offset, httplib::DataSink &sink) {
             sink.write("chunk\n", 6);
-            return true;  // falseを返すと終了
+            return true;  // 終了するときはsink.done()を呼ぶ
         });
 });
 ```
@@ -155,7 +155,7 @@ svr.set_pre_routing_handler([](const auto &req, auto &res) {
 });
 
 svr.set_post_routing_handler([](const auto &req, auto &res) {
-    // レスポンスが返された後に実行される
+    // レスポンスを送信する直前に実行される
     res.set_header("X-Server", "cpp-httplib");
 });
 ```
@@ -168,7 +168,7 @@ svr.set_pre_routing_handler([](const auto &req, auto &res) {
     return httplib::Server::HandlerResponse::Unhandled;
 });
 
-svr.Get("/me", [](const auto &req, auto &res) {
+svr.Get("/me", [](const httplib::Request &req, httplib::Response &res) {
     auto *user = res.user_data.get<std::string>("auth_user");
     res.set_content("Hello, " + *user, "text/plain");
 });
@@ -205,7 +205,7 @@ TCP以外に、Unix Domain Socketでの通信にも対応しています。同�
 // サーバー
 httplib::Server svr;
 svr.set_address_family(AF_UNIX);
-svr.listen("/tmp/httplib.sock", 0);
+svr.listen("/tmp/httplib.sock", 80);  // ポート番号は使われない（0以外を渡す）
 ```
 
 ```cpp

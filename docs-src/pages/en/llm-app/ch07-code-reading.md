@@ -11,13 +11,17 @@ Over the course of six chapters, we built a translation desktop app from scratch
 ## 7.1 Source Code Location
 
 ```ascii
-llama.cpp/tools/server/
-├── server.cpp           # Main server implementation
-├── httplib.h            # cpp-httplib (bundled version)
-└── ...
+llama.cpp/
+├── tools/server/
+│   ├── server.cpp           # Entry point
+│   ├── server-http.cpp      # HTTP server (the layer that uses cpp-httplib)
+│   ├── server-context.cpp   # Inference and slot management
+│   └── ...
+└── vendor/cpp-httplib/
+    └── httplib.h            # cpp-httplib (bundled version)
 ```
 
-The code is contained in a single `server.cpp`. It runs to several thousand lines, but once you understand the structure, you can narrow down the parts worth reading.
+The implementation is split across several files by role. It is a large code base, but once you understand the structure, you can narrow down the parts worth reading.
 
 ## 7.2 OpenAI-Compatible API
 

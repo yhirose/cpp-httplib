@@ -30,7 +30,7 @@ You can even mount multiple directories at the same path — they're searched in
 
 ## Combine with API handlers
 
-Static files and API handlers coexist happily. Handlers registered with `Get()` and friends take priority; the mount points are searched only when nothing matches.
+Static files and API handlers coexist happily. For GET and HEAD, the mount points are searched first; handlers registered with `Get()` and friends run only when no file is found.
 
 ```cpp
 svr.Get("/api/users", [](const auto &req, auto &res) {

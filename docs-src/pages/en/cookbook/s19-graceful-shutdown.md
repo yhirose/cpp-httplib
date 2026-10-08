@@ -52,6 +52,6 @@ int main() {
 
 ## What happens to in-flight requests
 
-When you call `stop()`, new connections are refused, but requests already being processed are **allowed to finish**. Once all workers drain, `listen()` returns. That's what makes it graceful.
+When you call `stop()`, new connections are refused, but handlers that are already running are **allowed to finish**. A response still being sent by a content provider (a streaming response, for example) is cut short, though. Once all workers drain, `listen()` returns. That's what makes it graceful.
 
 > **Warning:** There's a wait between calling `stop()` and `listen()` returning — it's the time in-flight requests take to finish. To enforce a timeout, you'll need to add your own shutdown timer in application code.

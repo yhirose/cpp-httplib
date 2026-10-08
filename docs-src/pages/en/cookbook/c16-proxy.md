@@ -55,7 +55,7 @@ You often want internal endpoints to skip the proxy. Configure a bypass list wit
 
 ```cpp
 cli.set_proxy("proxy.internal", 8080);
-cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
+cli.set_no_proxy({"internal.corp", "10.0.0.0/8", ".dev.local"});
 ```
 
 Each entry is one of:

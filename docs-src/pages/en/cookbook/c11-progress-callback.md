@@ -21,7 +21,7 @@ auto res = cli.Get("/large-file",
 std::cout << std::endl;
 ```
 
-The callback fires each time data arrives. `total` comes from the Content-Length header — if the server doesn't send one, it may be `0`. In that case, you can't compute a percentage, so just display bytes received.
+The callback fires each time data arrives. `total` comes from the Content-Length header. For a response without one (chunked transfer, for example), the progress callback is not called at all.
 
 ## Upload progress
 
@@ -53,6 +53,8 @@ auto res = cli.Get("/large-file",
     return !cancelled.load();
   });
 ```
+
+> **Note:** A response without Content-Length never calls the progress callback, so it cannot be cancelled this way. Return `false` from a `ContentReceiver` instead.
 
 > **Note:** `ContentReceiver` and the progress callback can be used together. When you want to stream to a file and show progress at the same time, pass both.
 

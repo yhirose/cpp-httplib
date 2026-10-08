@@ -37,7 +37,7 @@ svr.Get("/me", [](const httplib::Request &req, httplib::Response &res) {
 
 ## よくある型
 
-`std::string`、数値、構造体、`std::shared_ptr`など、コピーかムーブできる値なら何でも入れられます。
+`std::string`、数値、構造体、`std::shared_ptr`など、コピーできる値なら何でも入れられます。
 
 ```cpp
 res.user_data.set("user_id", std::string{"42"});

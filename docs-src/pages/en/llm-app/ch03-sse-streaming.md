@@ -73,7 +73,7 @@ A few key points:
 - After writing to `sink.os`, you can check whether the client is still connected with `sink.os.good()`. If the client has disconnected, it returns `false` to stop inference
 - Each token is escaped as a JSON string using `json(token).dump()` before sending. This is safe even for tokens containing newlines or quotes
 - The first three arguments of `dump(-1, ' ', false, ...)` are the defaults. What matters is the fourth argument, `json::error_handler_t::replace`. Since the LLM returns tokens at the subword level, multi-byte characters (such as Japanese) can be split mid-character across tokens. Passing an incomplete UTF-8 byte sequence directly to `dump()` would throw an exception, so `replace` safely substitutes them. The browser reassembles the bytes on its end, so everything displays correctly
-- The entire lambda is wrapped in `try/catch`. `llm.chat()` can throw exceptions for reasons such as exceeding the context window. If an exception goes uncaught inside the lambda, the server will crash, so we return the error as an SSE event instead
+- The entire lambda is wrapped in `try/catch`. `llm.chat()` can throw exceptions for reasons such as exceeding the context window. If an exception goes uncaught inside the lambda, cpp-httplib just drops the connection and the client never learns the cause, so we return the error as an SSE event instead
 - `data: [DONE]` follows the OpenAI API convention to signal the end of the stream to the client
 
 ## 3.4 Complete Code
@@ -106,10 +106,6 @@ void signal_handler(int sig) {
 int main() {
   // Load the GGUF model
   auto llm = llamalib::Llama{"models/gemma-2-2b-it-Q4_K_M.gguf"};
-
-  // LLM inference takes time, so set a longer timeout (default is 5 seconds)
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
 
   // Log requests and responses
   svr.set_logger([](const auto &req, const auto &res) {

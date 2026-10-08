@@ -48,7 +48,7 @@ svr.set_pre_routing_handler([](const auto &req, auto &res) {
   return httplib::Server::HandlerResponse::Unhandled;
 });
 
-svr.set_logger([](const auto &req, const auto &res) {
+svr.set_logger([](const httplib::Request &req, const httplib::Response &res) {
   auto *start = res.user_data.get<std::chrono::steady_clock::time_point>("start");
   auto elapsed = start
     ? std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -18,10 +18,6 @@ Simply pass the path to a model file to `llamalib::Llama`, and model loading, co
 int main() {
   auto llm = llamalib::Llama{"models/gemma-2-2b-it-Q4_K_M.gguf"};
 
-  // LLM inference takes time, so set a longer timeout (default is 5 seconds)
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
-
   // ... Build and start the HTTP server ...
 }
 ```
@@ -78,7 +74,7 @@ svr.Post("/translate",
 });
 ```
 
-`llm.chat()` can throw exceptions during inference (for example, when the context length is exceeded). By catching them with `try/catch` and returning the error as JSON, we prevent the server from crashing.
+`llm.chat()` can throw exceptions during inference (for example, when the context length is exceeded). We catch them with `try/catch` and return the error as JSON. Left uncaught, cpp-httplib would still answer with a 500, but the client would not learn the cause.
 
 ## 2.3 Complete Code
 
@@ -110,10 +106,6 @@ void signal_handler(int sig) {
 int main() {
   // Load the model downloaded in Chapter 1
   auto llm = llamalib::Llama{"models/gemma-2-2b-it-Q4_K_M.gguf"};
-
-  // LLM inference takes time, so set a longer timeout (default is 5 seconds)
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
 
   // Log requests and responses
   svr.set_logger([](const auto &req, const auto &res) {

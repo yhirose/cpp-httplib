@@ -41,7 +41,7 @@ sse.on_event("leave", [](const auto &msg) {
 });
 ```
 
-`on_message()` serves as a generic fallback for unnamed events (the default `message` type).
+`on_message()` is the generic fallback: it receives every event that has no handler registered through `on_event()`. With `on_event("message", ...)` registered as above, `message` events go there instead.
 
 ## Connection lifecycle and errors
 
@@ -55,7 +55,7 @@ sse.on_error([](httplib::Error err) {
 });
 ```
 
-Hook into connection open and error events. Even when the error handler fires, `SSEClient` keeps trying to reconnect in the background.
+Hook into connection open and error events. Even when the error handler fires, `SSEClient` keeps trying to reconnect in the background. The exceptions are a 204, 403, or 404 response, after which it stops.
 
 ## Run asynchronously
 

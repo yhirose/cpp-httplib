@@ -30,7 +30,7 @@ svr.set_mount_point("/uploads", "./var/uploads");
 
 ## APIハンドラと組み合わせる
 
-静的ファイルとAPIハンドラは共存できます。`Get()`などで登録したハンドラが優先され、マッチしなかったときにマウントポイントが探されます。
+静的ファイルとAPIハンドラは共存できます。GETとHEADでは先にマウントポイントのファイルが探され、見つからなかったときに`Get()`などで登録したハンドラが呼ばれます。
 
 ```cpp
 svr.Get("/api/users", [](const auto &req, auto &res) {

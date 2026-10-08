@@ -55,7 +55,7 @@ cli.set_bearer_token_auth("api-token"); // エンドサーバー向け
 
 ```cpp
 cli.set_proxy("proxy.internal", 8080);
-cli.set_no_proxy({"internal.corp", "10.0.0.0/8", "*.dev.local"});
+cli.set_no_proxy({"internal.corp", "10.0.0.0/8", ".dev.local"});
 ```
 
 エントリは次のいずれかです。

@@ -17,7 +17,7 @@ auto res = cli.Post("/api/users", j.dump(), "application/json");
 
 `Post()`の第2引数にJSON文字列、第3引数にContent-Typeを渡します。`Put()`や`Patch()`でも同じ形です。
 
-> **Warning:** 第3引数のContent-Typeを省略すると、サーバー側でJSONとして認識されないことがあります。`"application/json"`を必ず指定しましょう。
+> **Warning:** 第3引数のContent-Typeに`"application/json"`以外を渡すと、サーバー側でJSONとして認識されないことがあります。`"application/json"`を必ず指定しましょう。
 
 ## JSONレスポンスを受け取る
 

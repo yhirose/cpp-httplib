@@ -19,7 +19,7 @@ svr.Get("/", [](const auto &, auto &res) {
 svr.listen("/tmp/httplib.sock", 80);
 ```
 
-Call `set_address_family(AF_UNIX)` first, then pass the socket file path as the first argument to `listen()`. The port number is unused but required by the signature — pass any value.
+Call `set_address_family(AF_UNIX)` first, then pass the socket file path as the first argument to `listen()`. The port number is unused but required by the signature. Pass any value other than `0`, which makes `listen()` fail.
 
 ## Client side
 

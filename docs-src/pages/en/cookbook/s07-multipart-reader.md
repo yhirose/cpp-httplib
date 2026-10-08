@@ -96,7 +96,7 @@ svr.Post("/upload",
   });
 ```
 
-When `content_reader` returns `false`, set the response status yourself. The rest of the body is left unread and the connection is closed, so a client that is still sending sees the connection drop.
+When `content_reader` returns `false`, the response status becomes 400 (413 if the body exceeded the size limit). Set it yourself if you want a different one. The rest of the body is left unread and the connection is closed, so a client that is still sending sees the connection drop.
 
 > **Warning:** When you use `HandlerWithContentReader`, `req.body` stays **empty**. Handle the body yourself inside the callbacks.
 

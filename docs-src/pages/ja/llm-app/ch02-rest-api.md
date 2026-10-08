@@ -18,10 +18,6 @@ llama.cppのAPIを直接扱うとコードが長くなるので、薄いラッ�
 int main() {
   auto llm = llamalib::Llama{"models/gemma-2-2b-it-Q4_K_M.gguf"};
 
-  // LLM推論は時間がかかるのでタイムアウトを長めに設定（デフォルトは5秒）
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
-
   // ... HTTPサーバーの構築・起動 ...
 }
 ```
@@ -78,7 +74,7 @@ svr.Post("/translate",
 });
 ```
 
-`llm.chat()`は推論中に例外を投げることがあります（コンテキスト長の超過など）。`try/catch`で捕捉してエラーをJSONで返すことで、サーバーがクラッシュするのを防ぎます。
+`llm.chat()`は推論中に例外を投げることがあります（コンテキスト長の超過など）。`try/catch`で捕捉して、エラーの内容をJSONで返します。捕捉しなくてもcpp-httplibが500を返しますが、原因はクライアントに伝わりません。
 
 ## 2.3 全体のコード
 
@@ -110,10 +106,6 @@ void signal_handler(int sig) {
 int main() {
   // 1章でダウンロードしたモデルをロード
   auto llm = llamalib::Llama{"models/gemma-2-2b-it-Q4_K_M.gguf"};
-
-  // LLM推論は時間がかかるのでタイムアウトを長めに設定（デフォルトは5秒）
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
 
   // リクエストとレスポンスをログに記録
   svr.set_logger([](const auto &req, const auto &res) {

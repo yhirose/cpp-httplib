@@ -15,14 +15,15 @@ svr.Get("/download", [](const httplib::Request &req, httplib::Response &res) {
   res.set_content_provider(
     total_size, "application/octet-stream",
     [](size_t offset, size_t length, httplib::DataSink &sink) {
-      auto data = read_range_from_file("large.bin", offset, length);
+      auto n = std::min(length, size_t(64 * 1024));
+      auto data = read_range_from_file("large.bin", offset, n);
       sink.write(data.data(), data.size());
       return true;
     });
 });
 ```
 
-The lambda is called repeatedly with `offset` and `length`. Read just that range and write it to `sink`. Only a small chunk sits in memory at any given time.
+The lambda is called repeatedly with `offset`, the position sent so far, and `length`, the number of bytes still to send. Cap how much you read per call and write it to `sink`, and only a small chunk sits in memory at any given time.
 
 ## Just send a file
 

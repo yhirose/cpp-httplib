@@ -29,8 +29,8 @@ Use `if (res)` to check success. On failure, `res.error()` returns a `httplib::E
 | --- | --- |
 | `Error::Connection` | Couldn't connect to the server |
 | `Error::ConnectionTimeout` | Connection timeout (`set_connection_timeout`) |
-| `Error::Read` / `Error::Write` | Error during send or receive |
-| `Error::Timeout` | Overall timeout set via `set_max_timeout` |
+| `Error::Read` / `Error::Write` | Error during send or receive. A timeout from `set_read_timeout` or `set_max_timeout` is also reported as `Error::Read` |
+| `Error::Timeout` | A body read timed out in `stream::Get()` or `SSEClient` |
 | `Error::ExceedRedirectCount` | Too many redirects |
 | `Error::SSLConnection` | TLS handshake failed |
 | `Error::SSLServerVerification` | Server certificate verification failed |

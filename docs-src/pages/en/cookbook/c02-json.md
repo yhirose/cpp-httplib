@@ -17,7 +17,7 @@ auto res = cli.Post("/api/users", j.dump(), "application/json");
 
 Pass the JSON string as the second argument to `Post()` and the Content-Type as the third. The same pattern works with `Put()` and `Patch()`.
 
-> **Warning:** If you omit the Content-Type (the third argument), the server may not recognize the body as JSON. Always specify `"application/json"`.
+> **Warning:** If the Content-Type (the third argument) is anything other than `"application/json"`, the server may not recognize the body as JSON. Always specify `"application/json"`.
 
 ## Receive a JSON response
 

@@ -32,7 +32,7 @@ svr.Get("/api/data", [](const httplib::Request &req, httplib::Response &res) {
 
 ## 圧縮の優先順位
 
-クライアントが複数の方式を受け入れる場合、Brotli → Zstd → gzipの順に選ばれます（ビルドで有効になっている中から）。クライアント側では気にせず、一番効率の良い方式で圧縮されます。
+クライアントが複数の方式を受け入れる場合、`Accept-Encoding`のq値が最も高い方式が選ばれます。q値が同じなら、Brotli → gzip → Zstdの順です（ビルドで有効になっている中から）。
 
 ## ストリーミングレスポンスも圧縮される
 

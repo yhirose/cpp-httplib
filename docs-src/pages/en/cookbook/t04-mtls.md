@@ -55,7 +55,7 @@ httplib::SSLClient cli("api.example.com", 443,
 auto res = cli.Get("/");
 ```
 
-Note you're using `SSLClient` directly, not `Client`. If the private key has a password, pass it as the fifth argument.
+If the certificate and key paths are all you need, `Client` takes them too: `httplib::Client cli("https://api.example.com", "client-cert.pem", "client-key.pem")`. When the private key has a password, use `SSLClient` and pass it as the fifth argument.
 
 The client side has the same `PemMemory` struct too, letting you set the client certificate from PEM in memory.
 

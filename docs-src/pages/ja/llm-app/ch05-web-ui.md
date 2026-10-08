@@ -939,7 +939,6 @@ bool download_model(const ModelInfo &model,
                     std::function<bool(int)> progress_cb) {
   httplib::Client cli("https://huggingface.co");
   cli.set_follow_location(true);  // Hugging FaceはCDNにリダイレクトする
-  cli.set_read_timeout(std::chrono::hours(1)); // 大きなモデルに備えて長めに
 
   auto url = "/" + model.repo + "/resolve/main/" + model.filename;
   auto path = get_models_dir() / model.filename;
@@ -1007,10 +1006,6 @@ int main() {
     std::cout << std::endl;
   }
   auto llm = llamalib::Llama{path};
-
-  // LLM推論は時間がかかるのでタイムアウトを長めに設定（デフォルトは5秒）
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
 
   svr.set_logger([](const auto &req, const auto &res) {
     std::cout << req.method << " " << req.path << " -> " << res.status

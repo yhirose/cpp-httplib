@@ -67,7 +67,7 @@ cli.set_websocket_max_missed_pongs(2); // close after 2 consecutive unacked ping
 
 The server side has the same `set_websocket_max_missed_pongs()`.
 
-With a 30-second ping interval and `max_missed_pongs = 2`, a dead peer is detected within roughly 60 seconds and the connection is closed with `CloseStatus::GoingAway` and the reason `"pong timeout"`.
+With a 30-second ping interval and `max_missed_pongs = 2`, a dead peer is detected 60 to 90 seconds after it stops answering, and the connection is closed with `CloseStatus::GoingAway` and the reason `"pong timeout"`. A `read()` waiting on the peer at that moment returns `Fail`.
 
 The counter is reset whenever `read()` consumes an incoming Pong frame, so this only works if your code is actively calling `read()` in a loop — which is what a normal WebSocket client does anyway.
 

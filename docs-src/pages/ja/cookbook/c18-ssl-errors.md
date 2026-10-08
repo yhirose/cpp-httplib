@@ -24,19 +24,24 @@ if (!res) {
 }
 ```
 
-`ssl_error()`はSSLライブラリが返したエラーコード（OpenSSLの`SSL_get_error()`の値など）、`ssl_backend_error()`はバックエンドがさらに詳しく提供するエラー値です。OpenSSLなら`ERR_get_error()`の値が入ります。
+`ssl_error()`はバックエンドに依存しないTLSエラーの種別で、`httplib::tls::ErrorCode`を`int`にした値です。`ssl_backend_error()`にはバックエンド固有のエラー値が入ります。OpenSSLの場合、ハンドシェイクに失敗したときは`ERR_get_error()`の値、証明書の検証に失敗したときは検証結果のコード（`X509_V_ERR_*`）です。
 
 ## OpenSSLのエラーを文字列化する
 
-`ssl_backend_error()`で取得した値を、OpenSSLの`ERR_error_string()`で文字列にするとデバッグに便利です。
+`ssl_backend_error()`で取得した値は、失敗の種類に合ったOpenSSLの関数で文字列にするとデバッグに便利です。
 
 ```cpp
 #include <openssl/err.h>
+#include <openssl/x509.h>
 
-if (res.ssl_backend_error() != 0) {
+if (res.error() == httplib::Error::SSLConnection) {
   char buf[256];
   ERR_error_string_n(res.ssl_backend_error(), buf, sizeof(buf));
   std::cerr << "openssl: " << buf << std::endl;
+} else if (res.error() == httplib::Error::SSLServerVerification ||
+           res.error() == httplib::Error::SSLServerHostnameVerification) {
+  auto code = static_cast<long>(res.ssl_backend_error());
+  std::cerr << "openssl: " << X509_verify_cert_error_string(code) << std::endl;
 }
 ```
 

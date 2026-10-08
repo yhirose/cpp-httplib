@@ -15,14 +15,15 @@ svr.Get("/download", [](const httplib::Request &req, httplib::Response &res) {
   res.set_content_provider(
     total_size, "application/octet-stream",
     [](size_t offset, size_t length, httplib::DataSink &sink) {
-      auto data = read_range_from_file("large.bin", offset, length);
+      auto n = std::min(length, size_t(64 * 1024));
+      auto data = read_range_from_file("large.bin", offset, n);
       sink.write(data.data(), data.size());
       return true;
     });
 });
 ```
 
-ラムダが呼ばれるたびに`offset`と`length`が渡されるので、その範囲だけ読み込んで`sink.write()`で送ります。メモリには常に少量のチャンクしか載りません。
+ラムダは、送信済みの位置`offset`と残りのバイト数`length`を受け取って繰り返し呼ばれます。1回に読み込む量を自分で区切って`sink.write()`で送れば、メモリには常に少量のチャンクしか載りません。
 
 ## ファイルをそのまま返す
 

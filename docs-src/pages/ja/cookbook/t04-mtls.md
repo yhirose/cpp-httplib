@@ -55,7 +55,7 @@ httplib::SSLClient cli("api.example.com", 443,
 auto res = cli.Get("/");
 ```
 
-`Client`ではなく`SSLClient`を直接使う点に注意してください。秘密鍵にパスワードがある場合は第5引数で渡せます。
+証明書と鍵のパスだけなら、`httplib::Client cli("https://api.example.com", "client-cert.pem", "client-key.pem")`のように`Client`にも渡せます。秘密鍵にパスワードがある場合は`SSLClient`を使い、第5引数で渡します。
 
 クライアント側にも同じ`PemMemory`構造体があり、メモリ上のPEMからクライアント証明書を設定できます。
 

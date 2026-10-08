@@ -16,7 +16,7 @@ cli.set_max_timeout(5000); // 5 seconds (in milliseconds)
 auto res = cli.Get("/slow-endpoint");
 ```
 
-The value is in milliseconds. Connection, send, and receive together — the whole request is aborted if it exceeds the limit.
+The value is in milliseconds. Once that much time has passed since the request started, waiting for the response is cut off. The limit does not shorten the connection and write waits themselves, so bound those with `set_connection_timeout` and `set_write_timeout`.
 
 ## Use `std::chrono`
 

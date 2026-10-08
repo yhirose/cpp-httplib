@@ -19,7 +19,7 @@ svr.Get("/", [](const auto &, auto &res) {
 svr.listen("/tmp/httplib.sock", 80);
 ```
 
-`set_address_family(AF_UNIX)`を呼んでから、`listen()`の第1引数にソケットファイルのパスを渡します。第2引数のポート番号は使われませんが、シグネチャの都合で何か渡す必要があります。
+`set_address_family(AF_UNIX)`を呼んでから、`listen()`の第1引数にソケットファイルのパスを渡します。第2引数のポート番号は使われませんが、シグネチャの都合で`0`以外の値を渡す必要があります（`0`だと`listen()`が失敗します）。
 
 ## クライアント側
 

@@ -200,8 +200,8 @@ auto res = cli.Post("/submit", httplib::Params{
 });
 if (res) {
     std::cout << res->body << std::endl;
-    // age = 30
     // name = Alice
+    // age = 30
 }
 ```
 
@@ -241,7 +241,7 @@ auto res = cli.Get("/hi");
 if (!res) {
     // Connection error
     std::cout << "Error: " << httplib::to_string(res.error()) << std::endl;
-    // Error: Connection
+    // Error: Could not establish connection
     return 1;
 }
 

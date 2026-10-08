@@ -73,7 +73,7 @@ svr.Post("/translate/stream",
 - `sink.os`に書き込んだ後、`sink.os.good()`でクライアントがまだ接続しているかを確認できます。切断されていたら`false`を返して推論を止めます
 - 各トークンは`json(token).dump()`でJSON文字列としてエスケープしてから送ります。改行やクォートを含むトークンでも安全です
 - `dump(-1, ' ', false, ...)`の最初の3つの引数はデフォルトと同じです。重要なのは第4引数の`json::error_handler_t::replace`です。LLMはトークンをサブワード単位で返すため、マルチバイト文字（日本語など）の途中でトークンが切れることがあります。不完全なUTF-8バイト列をそのまま`dump()`に渡すと例外が飛ぶので、`replace`で安全に置換します。ブラウザ側で結合されるため、表示上の問題はありません
-- `try/catch`でラムダ全体を囲んでいます。`llm.chat()`はコンテキストウィンドウの超過などで例外を投げることがあります。ラムダ内で例外が未捕捉だとサーバーがクラッシュするので、エラーをSSEイベントとして返します
+- `try/catch`でラムダ全体を囲んでいます。`llm.chat()`はコンテキストウィンドウの超過などで例外を投げることがあります。ラムダ内で例外が未捕捉だと、cpp-httplibは接続を切るだけでエラーの内容がクライアントに伝わらないので、エラーをSSEイベントとして返します
 - `data: [DONE]`はOpenAI APIと同じ慣習で、ストリームの終了をクライアントに伝えます
 
 ## 3.4 全体のコード
@@ -106,10 +106,6 @@ void signal_handler(int sig) {
 int main() {
   // GGUFモデルをロード
   auto llm = llamalib::Llama{"models/gemma-2-2b-it-Q4_K_M.gguf"};
-
-  // LLM推論は時間がかかるのでタイムアウトを長めに設定（デフォルトは5秒）
-  svr.set_read_timeout(300);
-  svr.set_write_timeout(300);
 
   // リクエストとレスポンスをログに記録
   svr.set_logger([](const auto &req, const auto &res) {

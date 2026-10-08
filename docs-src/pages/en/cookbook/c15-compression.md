@@ -28,7 +28,7 @@ std::string big_payload = build_payload();
 auto res = cli.Post("/api/data", big_payload, "application/json");
 ```
 
-With `set_compress(true)`, the body of POST or PUT requests gets gzipped before sending. The server needs to handle compressed bodies too.
+With `set_compress(true)`, the body of POST or PUT requests is compressed before sending. The encoding is the first one enabled in your build, in the order Brotli, gzip, Zstd. The server needs to handle compressed bodies too.
 
 ## Decompress the response
 
@@ -44,4 +44,4 @@ With `set_decompress(true)`, the client automatically decompresses responses tha
 
 It's on by default, so normally you don't need to do anything. Set it to `false` only if you want the raw compressed bytes.
 
-> **Warning:** If you build without `CPPHTTPLIB_ZLIB_SUPPORT`, calling `set_compress()` or `set_decompress()` does nothing. If compression isn't working, check the macro definition first.
+> **Warning:** If you build without any compression library, `set_compress(true)` leaves the request uncompressed. And a response compressed with an encoding your build lacks makes the request fail with `Error::UnsupportedContentEncoding`. If compression isn't working, check the macro definitions first.

@@ -29,8 +29,8 @@ if (res) {
 | --- | --- |
 | `Error::Connection` | サーバーに接続できなかった |
 | `Error::ConnectionTimeout` | 接続タイムアウト（`set_connection_timeout`） |
-| `Error::Read` / `Error::Write` | 送受信中のエラー |
-| `Error::Timeout` | `set_max_timeout`で設定した全体タイムアウト |
+| `Error::Read` / `Error::Write` | 送受信中のエラー。`set_read_timeout`や`set_max_timeout`によるタイムアウトも`Error::Read`になる |
+| `Error::Timeout` | `stream::Get()`や`SSEClient`で、ボディの読み取りがタイムアウトした |
 | `Error::ExceedRedirectCount` | リダイレクト回数が上限を超えた |
 | `Error::SSLConnection` | TLSハンドシェイクに失敗 |
 | `Error::SSLServerVerification` | サーバー証明書の検証に失敗 |

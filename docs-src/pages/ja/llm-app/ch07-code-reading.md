@@ -11,13 +11,17 @@ order: 7
 ## 7.1 ソースコードの場所
 
 ```ascii
-llama.cpp/tools/server/
-├── server.cpp           # メインのサーバー実装
-├── httplib.h            # cpp-httplib（同梱版）
-└── ...
+llama.cpp/
+├── tools/server/
+│   ├── server.cpp           # エントリポイント
+│   ├── server-http.cpp      # HTTPサーバー（cpp-httplibを使う層）
+│   ├── server-context.cpp   # 推論とスロットの管理
+│   └── ...
+└── vendor/cpp-httplib/
+    └── httplib.h            # cpp-httplib（同梱版）
 ```
 
-ファイルは1つの`server.cpp`にまとまっています。数千行ありますが、構造を知っていれば読むべき箇所は絞れます。
+実装は役割ごとに複数のファイルに分かれています。全体の規模は大きいですが、構造を知っていれば読むべき箇所は絞れます。
 
 ## 7.2 OpenAI互換API
 

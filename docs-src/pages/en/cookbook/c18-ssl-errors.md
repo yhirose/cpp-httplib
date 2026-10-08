@@ -24,19 +24,24 @@ if (!res) {
 }
 ```
 
-`ssl_error()` returns the error code from the SSL library (e.g., OpenSSL's `SSL_get_error()`). `ssl_backend_error()` gives you the backend's more detailed error value — for OpenSSL, that's `ERR_get_error()`.
+`ssl_error()` is a backend-independent TLS error category: an `httplib::tls::ErrorCode` cast to `int`. `ssl_backend_error()` gives you the backend's own error value. With OpenSSL that is `ERR_get_error()` when the handshake failed, and the verify result (`X509_V_ERR_*`) when certificate verification failed.
 
 ## Format OpenSSL errors as strings
 
-When you have a value from `ssl_backend_error()`, pass it to OpenSSL's `ERR_error_string()` to get a readable message.
+When you have a value from `ssl_backend_error()`, pass it to the OpenSSL function that matches the kind of failure to get a readable message.
 
 ```cpp
 #include <openssl/err.h>
+#include <openssl/x509.h>
 
-if (res.ssl_backend_error() != 0) {
+if (res.error() == httplib::Error::SSLConnection) {
   char buf[256];
   ERR_error_string_n(res.ssl_backend_error(), buf, sizeof(buf));
   std::cerr << "openssl: " << buf << std::endl;
+} else if (res.error() == httplib::Error::SSLServerVerification ||
+           res.error() == httplib::Error::SSLServerHostnameVerification) {
+  auto code = static_cast<long>(res.ssl_backend_error());
+  std::cerr << "openssl: " << X509_verify_cert_error_string(code) << std::endl;
 }
 ```
 
