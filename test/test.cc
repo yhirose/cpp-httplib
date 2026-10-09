@@ -22744,6 +22744,14 @@ TEST_F(SSEParsingTest, FieldNameOnlyWithCarriageReturn) {
   EXPECT_EQ(msgs[0].data, "");
 }
 
+TEST_F(SSEParsingTest, LeadingByteOrderMarkIgnored) {
+  // A UTF-8 BOM at the start of the stream is not part of the first field name
+  auto msgs = parse("\xEF\xBB\xBF"
+                    "data: hello\n\n");
+  ASSERT_EQ(msgs.size(), 1u);
+  EXPECT_EQ(msgs[0].data, "hello");
+}
+
 TEST_F(SSEParsingTest, UnknownFieldsIgnored) {
   auto msgs = parse("unknown: value\ndata: hello\n\n");
   ASSERT_EQ(msgs.size(), 1u);

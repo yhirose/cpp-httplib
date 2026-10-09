@@ -4993,9 +4993,23 @@ inline void SSEClient::run_event_loop() {
     SSEMessage current_msg;
     auto has_data = false;
     auto has_id = false;
+    auto bom_checked = false;
 
     while (running_.load() && result.next()) {
       buffer.append(result.data(), result.size());
+
+      // A UTF-8 BOM at the start of the stream is ignored per the SSE spec
+      if (!bom_checked) {
+        static const char bom[] = "\xEF\xBB\xBF";
+        if (buffer.size() < 3) {
+          if (buffer.compare(0, buffer.size(), bom, buffer.size()) == 0) {
+            continue;
+          }
+        } else if (buffer.compare(0, 3, bom) == 0) {
+          buffer.erase(0, 3);
+        }
+        bom_checked = true;
+      }
 
       // Process complete lines in the buffer
       size_t line_start = 0;
