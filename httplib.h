@@ -4993,6 +4993,7 @@ inline void SSEClient::run_event_loop() {
     SSEMessage current_msg;
     auto has_data = false;
     auto has_id = false;
+    auto first_line = true;
 
     while (running_.load() && result.next()) {
       buffer.append(result.data(), result.size());
@@ -5009,6 +5010,12 @@ inline void SSEClient::run_event_loop() {
         // Strip the \r of a CRLF line ending so that every field, including
         // one without a colon, sees the same line
         if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+
+        // A UTF-8 BOM at the start of the stream is ignored per the SSE spec
+        if (first_line) {
+          first_line = false;
+          if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) { line.erase(0, 3); }
+        }
 
         // Parse the line and check if event is complete
         auto event_complete = parse_sse_line(
