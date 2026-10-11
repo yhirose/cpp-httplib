@@ -3968,6 +3968,7 @@ bool is_field_content(const std::string &s);
 bool is_field_value(const std::string &s);
 bool is_field_valid(const std::string &name, const std::string &value);
 bool is_request_target(const std::string &s);
+bool is_host(const std::string &s);
 
 } // namespace fields
 } // namespace detail
@@ -10312,6 +10313,60 @@ inline bool is_request_target(const std::string &s) {
   return std::all_of(s.begin(), s.end(), is_field_vchar);
 }
 
+// uri-host [ ":" port ] (RFC 9112 §3.2): the host is an IP-literal in
+// brackets or a reg-name built from unreserved, sub-delims and
+// percent-encoded octets (RFC 3986 §3.2.2), and the port is decimal digits.
+// Bytes such as '/', '@' or SP cannot appear in a host at all.
+inline bool is_host(const std::string &s) {
+  size_t i = 0;
+  auto n = s.size();
+  int v = 0;
+
+  if (n == 0) { return false; }
+
+  if (s[0] == '[') {
+    // IP-literal: alnum, ':' and '.' cover IPv6, its IPv4-mapped form and
+    // IPvFuture; '%' with unreserved bytes admits a percent-encoded zone id
+    // such as "%25eth0" (RFC 6874).
+    auto close = s.find(']');
+    if (close == std::string::npos || close == 1) { return false; }
+    for (size_t j = 1; j < close; j++) {
+      auto c = s[j];
+      if (!is_ascii_alnum(c) && c != ':' && c != '.' && c != '%' && c != '-' &&
+          c != '_' && c != '~') {
+        return false;
+      }
+    }
+    i = close + 1;
+  } else {
+    while (i < n && s[i] != ':') {
+      auto c = s[i];
+      if (c == '%') {
+        if (i + 2 >= n || !is_hex(s[i + 1], v) || !is_hex(s[i + 2], v)) {
+          return false;
+        }
+        i += 3;
+      } else if (is_ascii_alnum(c) || c == '-' || c == '.' || c == '_' ||
+                 c == '~' || c == '!' || c == '$' || c == '&' || c == '\'' ||
+                 c == '(' || c == ')' || c == '*' || c == '+' || c == ',' ||
+                 c == ';' || c == '=') {
+        i++;
+      } else {
+        return false;
+      }
+    }
+    if (i == 0) { return false; }
+  }
+
+  if (i == n) { return true; }
+  if (s[i++] != ':') { return false; }
+  while (i < n) {
+    if (!is_ascii_digit(s[i])) { return false; }
+    i++;
+  }
+  return true;
+}
+
 } // namespace fields
 
 inline bool perform_websocket_handshake(Stream &strm, Request &req,
@@ -14568,6 +14623,34 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     return write_response(strm, close_connection, req, res);
+  }
+
+  // RFC 9112 §3.2: a request with more than one Host field line or a Host
+  // value outside the uri-host[:port] grammar must be answered with 400. Host
+  // names the request's authority: intermediaries route, cache and filter by
+  // it, and applications build absolute URLs from it, so a second differing
+  // line or a value like "trusted@evil.test/x" lets a sender choose which
+  // layer sees which host (host-header poisoning). Identical repeated lines
+  // are tolerated the same way duplicated Content-Length values are, and an
+  // empty value stays valid: RFC 9110 §7.2 has a client send one when the
+  // target URI has no authority.
+  {
+    auto host_range = req.headers.equal_range("Host");
+    if (host_range.first != host_range.second) {
+      const auto &host_value = host_range.first->second;
+      auto host_valid =
+          host_value.empty() || detail::fields::is_host(host_value);
+      for (auto it = std::next(host_range.first);
+           host_valid && it != host_range.second; ++it) {
+        if (it->second != host_value) { host_valid = false; }
+      }
+      if (!host_valid) {
+        connection_closed = true;
+        res.status = StatusCode::BadRequest_400;
+        output_error_log(Error::HTTPParsing, &req);
+        return write_response(strm, close_connection, req, res);
+      }
+    }
   }
 
   // Check if the request URI doesn't exceed the limit

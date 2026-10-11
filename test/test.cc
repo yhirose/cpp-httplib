@@ -19686,6 +19686,146 @@ TEST(RequestSmugglingTest, DuplicateContentLengthSameValues) {
   ASSERT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
 }
 
+TEST(HostHeaderValidationTest, MultipleDifferingValues) {
+  auto handled = false;
+
+  Server svr;
+  svr.Get("/test", [&](const Request &, Response &) { handled = true; });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_FALSE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  // Two Host field lines with different values — must be rejected (RFC 9112)
+  auto req = "GET /test HTTP/1.1\r\n"
+             "Host: expected.example\r\n"
+             "Host: evil.example\r\n"
+             "\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("HTTP/1.1 400 Bad Request",
+            response.substr(0, response.find("\r\n")));
+}
+
+TEST(HostHeaderValidationTest, MultipleIdenticalValues) {
+  auto handled = false;
+
+  Server svr;
+  svr.Get("/test", [&](const Request &, Response &res) {
+    handled = true;
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_TRUE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  // Repeated Host field lines carrying the same value are tolerated, like
+  // duplicated Content-Length values
+  auto req = "GET /test HTTP/1.1\r\n"
+             "Host: example.com\r\n"
+             "Host: example.com\r\n"
+             "\r\n";
+
+  std::string response;
+  ASSERT_TRUE(send_request(1, req, &response));
+  ASSERT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
+}
+
+TEST(HostHeaderValidationTest, InvalidValues) {
+  auto handled = false;
+
+  Server svr;
+  svr.Get("/test", [&](const Request &, Response &) { handled = true; });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_FALSE(handled);
+  });
+
+  svr.wait_until_ready();
+
+  const char *invalid_hosts[] = {
+      "evil.example/phish",   // path smuggled into the authority
+      "trusted@evil.example", // userinfo trick
+      "evil.example?x=1",     // query
+      "evil.example second",  // space
+      "evil.example:8o80",    // non-digit port
+      "[::1",                 // unterminated IP-literal
+      "::1:8080",             // IPv6 literal without brackets
+      "%zz.example",          // broken percent-encoding
+  };
+
+  for (auto host : invalid_hosts) {
+    auto req = "GET /test HTTP/1.1\r\nHost: " + std::string(host) + "\r\n\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 400 Bad Request",
+              response.substr(0, response.find("\r\n")))
+        << "Host: " << host;
+  }
+}
+
+TEST(HostHeaderValidationTest, ValidValues) {
+  size_t handled = 0;
+
+  Server svr;
+  svr.Get("/test", [&](const Request &, Response &res) {
+    handled++;
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const char *valid_hosts[] = {
+      "localhost",
+      "localhost:1234",
+      "example.com.",
+      "an_host-1.example",
+      "xn--bcher-kva.example",
+      "127.0.0.1:8080",
+      "[::1]",
+      "[::1]:8080",
+      "[fe80::1%25eth0]",
+      "", // RFC 9110 §7.2: empty when the target URI has no authority
+  };
+
+  for (auto host : valid_hosts) {
+    auto req = "GET /test HTTP/1.1\r\nHost: " + std::string(host) + "\r\n\r\n";
+
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response));
+    EXPECT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")))
+        << "Host: " << host;
+  }
+
+  EXPECT_EQ(handled, sizeof(valid_hosts) / sizeof(valid_hosts[0]));
+}
+
 TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
   Server svr;
 
