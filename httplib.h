@@ -4917,7 +4917,7 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
     if (has_data) { msg.data += "\n"; }
     msg.data += value;
     has_data = true;
-  } else if (field == "id") {
+  } else if (field == "id" && value.find('\0') == std::string::npos) {
     // Empty id is valid (clears the last event ID)
     msg.id = value;
     has_id = true;

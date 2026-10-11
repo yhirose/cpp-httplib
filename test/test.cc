@@ -22760,6 +22760,14 @@ TEST_F(SSEParsingTest, EmptyEventId) {
   EXPECT_EQ(msgs[0].id, "");
 }
 
+TEST_F(SSEParsingTest, NullEventIdIgnored) {
+  auto msgs = parse(std::string("id: valid\nid: before") + '\0' +
+                    "after\ndata: test\n\n");
+  ASSERT_EQ(msgs.size(), 1u);
+  EXPECT_EQ(msgs[0].id, "valid");
+  EXPECT_EQ(msgs[0].data, "test");
+}
+
 TEST_F(SSEParsingTest, CommentsIgnored) {
   auto msgs = parse(": this is a comment\ndata: hello\n\n");
   ASSERT_EQ(msgs.size(), 1u);
@@ -22867,6 +22875,24 @@ TEST_F(SSEParsingTest, EmptyEventIdClearsLastEventId) {
   EXPECT_EQ(msgs[0].id, "1");
   EXPECT_EQ(msgs[1].id, "");
   EXPECT_EQ(msgs[2].data, "not sent");
+}
+
+TEST_F(SSEParsingTest, NullEventIdDoesNotReplaceLastEventId) {
+  std::atomic<int> connection_count{0};
+  server_->Get("/id-null", [&](const Request &req, Response &res) {
+    if (connection_count++ == 0) {
+      res.set_content(std::string("id: 42\n\nid: before") + '\0' + "after\n\n",
+                      "text/event-stream");
+    } else {
+      res.set_content("data: " + req.get_header_value("Last-Event-ID") +
+                          "\n\nevent: end\ndata: end\n\n",
+                      "text/event-stream");
+    }
+  });
+
+  auto msgs = collect("/id-null");
+  ASSERT_EQ(msgs.size(), 1u);
+  EXPECT_EQ(msgs[0].data, "42");
 }
 
 TEST_F(SSEParsingTest, CompleteEventParsing) {
