@@ -19716,7 +19716,7 @@ TEST(HostHeaderValidationTest, AmbiguousOrInvalidHostRejected) {
       "Host: my_service\r\n",
       "Host: [::1]:8080\r\n",
       "Host: [fe80::1%25eth0]\r\n",
-      "Host: \r\n", // RFC 9110 §7.2: the target URI has no authority
+      "Host: \r\n", // RFC 9112 §3.2: the target URI has no authority
   };
   for (auto host_lines : accepted) {
     EXPECT_EQ("HTTP/1.1 200 OK", status_line(host_lines)) << host_lines;
