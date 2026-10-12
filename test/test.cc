@@ -1941,6 +1941,38 @@ TEST(HeadersOrderTest, EmplaceFrontPrepends) {
             entries_to_string(headers));
 }
 
+TEST(ParseHeaderValueTest, CaseInsensitiveRangeUnit) {
+  for (auto unit : {"bytes", "Bytes", "BYTES", "bYtEs"}) {
+    Ranges ranges;
+    EXPECT_TRUE(
+        detail::parse_range_header(std::string(unit) + "=1-3,-2,4-", ranges));
+    EXPECT_EQ(ranges, (Ranges{{1, 3}, {-1, 2}, {4, -1}}));
+  }
+  Ranges ranges;
+  EXPECT_FALSE(detail::parse_range_header("BytesExtra=1-3", ranges));
+}
+
+TEST(ParseHeaderValueTest, CaseInsensitiveRangeUnitInRequest) {
+  Server svr;
+  svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("0123456789", "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  auto thread = std::thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+  });
+  svr.wait_until_ready();
+  Client cli(HOST, port);
+  auto res = cli.Get("/", Headers{{"Range", "Bytes=1-3"}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 206);
+  EXPECT_EQ(res->body, "123");
+  EXPECT_EQ(res->get_header_value("Content-Range"), "bytes 1-3/10");
+}
+
 TEST(ParseHeaderValueTest, Range) {
   {
     Ranges ranges;
