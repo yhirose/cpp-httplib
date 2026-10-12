@@ -4918,9 +4918,12 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
     msg.data += value;
     has_data = true;
   } else if (field == "id") {
-    // Empty id is valid (clears the last event ID)
-    msg.id = value;
-    has_id = true;
+    // An id that cannot be sent back as Last-Event-ID is ignored. Empty id is
+    // valid (clears the last event ID)
+    if (detail::fields::is_field_value(value)) {
+      msg.id = value;
+      has_id = true;
+    }
   } else if (field == "retry") {
     // Parse retry interval in milliseconds
     // Per the SSE spec, a value that is not all ASCII digits is ignored.

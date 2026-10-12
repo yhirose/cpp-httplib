@@ -22869,6 +22869,28 @@ TEST_F(SSEParsingTest, EmptyEventIdClearsLastEventId) {
   EXPECT_EQ(msgs[2].data, "not sent");
 }
 
+TEST_F(SSEParsingTest, UnsendableEventIdKeepsLastEventId) {
+  // The first connection sets an id and then sends ids that cannot be carried
+  // in a header; the second echoes back the Last-Event-ID it was reconnected
+  // with
+  std::atomic<int> connection_count{0};
+  server_->Get("/id-unsendable", [&](const Request &req, Response &res) {
+    if (connection_count++ == 0) {
+      res.set_content(std::string("id: 42\n\nid: a") + '\0' +
+                          "b\n\nid: \x01\n\nid:  7\n\nid: 7 \n\n",
+                      "text/event-stream");
+    } else {
+      res.set_content("data: " + req.get_header_value("Last-Event-ID") +
+                          "\n\nevent: end\ndata: end\n\n",
+                      "text/event-stream");
+    }
+  });
+
+  auto msgs = collect("/id-unsendable");
+  ASSERT_EQ(msgs.size(), 1u);
+  EXPECT_EQ(msgs[0].data, "42");
+}
+
 TEST_F(SSEParsingTest, CompleteEventParsing) {
   auto msgs = parse("event: notification\nid: evt-42\n"
                     "data: {\"type\":\"alert\"}\nretry: 1000\n\n");
