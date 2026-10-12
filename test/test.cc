@@ -22793,6 +22793,37 @@ TEST_F(SSEParsingTest, FieldNameOnlyWithCarriageReturn) {
   EXPECT_EQ(msgs[0].data, "");
 }
 
+TEST_F(SSEParsingTest, CarriageReturnLineEnding) {
+  auto msgs = parse("event: update\rdata: hello\r\r");
+  ASSERT_EQ(msgs.size(), 1u);
+  EXPECT_EQ(msgs[0].event, "update");
+  EXPECT_EQ(msgs[0].data, "hello");
+}
+
+TEST_F(SSEParsingTest, LineEndingSplitAcrossChunks) {
+  // Chunk boundaries fall inside every \r\n and right before the first one
+  std::vector<std::string> chunks = {"event: update", "\r", "\ndata: hello\r",
+                                     "\n\r", "\nevent: end\ndata: end\n\n"};
+  server_->Get("/split", [chunks](const Request &, Response &res) {
+    auto i = std::make_shared<size_t>(0);
+    res.set_chunked_content_provider(
+        "text/event-stream", [chunks, i](size_t /*offset*/, DataSink &sink) {
+          if (*i == chunks.size()) {
+            sink.done();
+          } else {
+            sink.write(chunks[*i].data(), chunks[*i].size());
+            (*i)++;
+          }
+          return true;
+        });
+  });
+
+  auto msgs = collect("/split");
+  ASSERT_EQ(msgs.size(), 1u);
+  EXPECT_EQ(msgs[0].event, "update");
+  EXPECT_EQ(msgs[0].data, "hello");
+}
+
 TEST_F(SSEParsingTest, LeadingByteOrderMarkIgnored) {
   // Only a BOM at the start of the stream is ignored
   auto msgs = parse("\xEF\xBB\xBF"

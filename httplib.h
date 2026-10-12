@@ -4997,22 +4997,29 @@ inline void SSEClient::run_event_loop() {
     auto has_data = false;
     auto has_id = false;
     auto first_line = true;
+    auto after_cr = false;
 
     while (running_.load() && result.next()) {
+      // What is left in the buffer has no line ending
+      auto search_pos = buffer.size();
       buffer.append(result.data(), result.size());
 
-      // Process complete lines in the buffer
+      // Process complete lines in the buffer. A line ends with \r\n, \n or \r
+      // per the SSE spec
       size_t line_start = 0;
-      size_t newline_pos;
+      size_t eol_pos;
 
-      while ((newline_pos = buffer.find('\n', line_start)) !=
+      while ((eol_pos = buffer.find_first_of("\r\n", search_pos)) !=
              std::string::npos) {
-        auto line = buffer.substr(line_start, newline_pos - line_start);
-        line_start = newline_pos + 1;
+        auto line = buffer.substr(line_start, eol_pos - line_start);
+        line_start = eol_pos + 1;
+        search_pos = line_start;
 
-        // Strip the \r of a CRLF line ending so that every field, including
-        // one without a colon, sees the same line
-        if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+        // The \n of a \r\n may arrive in a later chunk than its \r
+        auto is_lf_of_crlf =
+            after_cr && line.empty() && buffer[eol_pos] == '\n';
+        after_cr = buffer[eol_pos] == '\r';
+        if (is_lf_of_crlf) { continue; }
 
         // A UTF-8 BOM at the start of the stream is ignored per the SSE spec
         if (first_line) {
