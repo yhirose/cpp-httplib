@@ -2033,6 +2033,13 @@ TEST(ParseHeaderValueTest, Range) {
     EXPECT_EQ(0, ranges[0].first);
     EXPECT_EQ(-1, ranges[0].second);
   }
+
+  // RFC 9110 14.1: range unit names are case-insensitive.
+  for (const auto &s : {"Bytes=1-10", "BYTES=1-10", "bYtEs=1-10"}) {
+    Ranges ranges;
+    EXPECT_TRUE(detail::parse_range_header(s, ranges)) << s;
+    EXPECT_EQ((Ranges{{1, 10}}), ranges) << s;
+  }
 }
 
 TEST(ParseAcceptEncoding1, AcceptEncoding) {

@@ -9189,7 +9189,7 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
     return std::all_of(str.cbegin(), str.cend(), is_ascii_digit);
   };
 
-  if (s.size() > 7 && s.compare(0, 6, "bytes=") == 0) {
+  if (s.size() > 7 && case_ignore::equal(s.substr(0, 6), "bytes=")) {
     const auto pos = static_cast<size_t>(6);
     const auto len = static_cast<size_t>(s.size() - 6);
     auto all_valid_ranges = true;
