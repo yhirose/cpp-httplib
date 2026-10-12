@@ -26900,6 +26900,66 @@ TEST(NoProxyTest, ProxyAuthorizationSentWhenNotBypassed) {
   EXPECT_TRUE(s.last_had_proxy_authz());
 }
 
+TEST(ProxyBasicAuthTest, OneEmptyCredentialStillSendsAuthorization) {
+  no_proxy_test::ScopedServer proxy;
+  ASSERT_GT(proxy.port(), 0);
+  proxy.svr().Get(".*", [](const Request &req, Response &res) {
+    res.set_content(req.get_header_value("Proxy-Authorization"), "text/plain");
+  });
+  proxy.listen();
+  struct {
+    const char *user;
+    const char *pass;
+    const char *expected;
+  } cases[] = {
+      {"proxy-user", "", "Basic cHJveHktdXNlcjo="},
+      {"", "proxy-pass", "Basic OnByb3h5LXBhc3M="},
+      {"proxy-user", "proxy-pass", "Basic cHJveHktdXNlcjpwcm94eS1wYXNz"},
+      {"", "", ""},
+  };
+  for (const auto &c : cases) {
+    SCOPED_TRACE(c.user);
+    Client cli("origin.example", 80);
+    cli.set_proxy("127.0.0.1", proxy.port());
+    cli.set_proxy_basic_auth(c.user, c.pass);
+    auto res = cli.Get("/value");
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ(c.expected, res->body);
+  }
+}
+
+TEST(ProxyBasicAuthTest, OneEmptyCredentialSurvivesCrossHostRedirect) {
+  no_proxy_test::ScopedServer proxy;
+  ASSERT_GT(proxy.port(), 0);
+  proxy.svr().Get(".*", [](const Request &req, Response &res) {
+    if (req.path.find("/start") != std::string::npos) {
+      res.status = 302;
+      res.set_header("Location", "http://other.example/final");
+      return;
+    }
+    res.set_content(req.get_header_value("Proxy-Authorization"), "text/plain");
+  });
+  proxy.listen();
+  struct {
+    const char *user;
+    const char *pass;
+    const char *expected;
+  } cases[] = {
+      {"proxy-user", "", "Basic cHJveHktdXNlcjo="},
+      {"", "proxy-pass", "Basic OnByb3h5LXBhc3M="},
+  };
+  for (const auto &c : cases) {
+    SCOPED_TRACE(c.user);
+    Client cli("origin.example", 80);
+    cli.set_proxy("127.0.0.1", proxy.port());
+    cli.set_proxy_basic_auth(c.user, c.pass);
+    cli.set_follow_location(true);
+    auto res = cli.Get("/start");
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ(c.expected, res->body);
+  }
+}
+
 TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
   ProxyAndTargetServers s;
   auto cli = make_client("anything.test", s);
