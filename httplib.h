@@ -3968,6 +3968,7 @@ bool is_field_content(const std::string &s);
 bool is_field_value(const std::string &s);
 bool is_field_valid(const std::string &name, const std::string &value);
 bool is_request_target(const std::string &s);
+bool is_host(const std::string &s);
 
 } // namespace fields
 } // namespace detail
@@ -10322,6 +10323,17 @@ inline bool is_request_target(const std::string &s) {
   return std::all_of(s.begin(), s.end(), is_field_vchar);
 }
 
+// RFC 9110 §7.2: the bytes of uri-host [ ":" port ], i.e. unreserved,
+// sub-delims, "%", ":" and the IP-literal brackets. An empty value is valid.
+inline bool is_host(const std::string &s) {
+  return std::all_of(s.begin(), s.end(), [](char c) {
+    return is_ascii_alnum(c) || c == '-' || c == '.' || c == '_' || c == '~' ||
+           c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' ||
+           c == ')' || c == '*' || c == '+' || c == ',' || c == ';' ||
+           c == '=' || c == '%' || c == ':' || c == '[' || c == ']';
+  });
+}
+
 } // namespace fields
 
 inline bool perform_websocket_handshake(Stream &strm, Request &req,
@@ -14577,6 +14589,16 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
        !detail::is_chunked_transfer_encoding(req.headers))) {
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
+    return write_response(strm, close_connection, req, res);
+  }
+
+  // RFC 9112 §3.2: Reject more than one Host field line or an invalid Host
+  // value, so that every recipient of the request sees the same authority.
+  if (req.get_header_value_count("Host") > 1 ||
+      !detail::fields::is_host(req.get_header_value("Host"))) {
+    connection_closed = true;
+    res.status = StatusCode::BadRequest_400;
+    output_error_log(Error::InvalidHeaders, &req);
     return write_response(strm, close_connection, req, res);
   }
 

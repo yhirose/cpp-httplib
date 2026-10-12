@@ -19686,6 +19686,58 @@ TEST(RequestSmugglingTest, DuplicateContentLengthSameValues) {
   ASSERT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
 }
 
+TEST(HostHeaderValidationTest, AmbiguousOrInvalidHostRejected) {
+  Server svr;
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  auto status_line = [&](const std::string &host_lines) {
+    std::string res;
+    send_request(
+        5, "GET /test HTTP/1.1\r\n" + host_lines + "Connection: close\r\n\r\n",
+        &res, port);
+    return res.substr(0, res.find("\r\n"));
+  };
+
+  const char *accepted[] = {
+      "Host: localhost\r\n",
+      "Host: a.example:8080\r\n",
+      "Host: my_service\r\n",
+      "Host: [::1]:8080\r\n",
+      "Host: [fe80::1%25eth0]\r\n",
+      "Host: \r\n", // RFC 9110 §7.2: the target URI has no authority
+  };
+  for (auto host_lines : accepted) {
+    EXPECT_EQ("HTTP/1.1 200 OK", status_line(host_lines)) << host_lines;
+  }
+
+  const char *rejected[] = {
+      "Host: a.example\r\nHost: b.example\r\n",
+      "Host: a.example\r\nHost: a.example\r\n",
+      "Host: a@b.example\r\n",
+      "Host: a.example/b\r\n",
+      "Host: a.example\\b\r\n",
+      "Host: a.example?b\r\n",
+      "Host: a.example#b\r\n",
+      "Host: a.example b.example\r\n",
+  };
+  for (auto host_lines : rejected) {
+    EXPECT_EQ("HTTP/1.1 400 Bad Request", status_line(host_lines))
+        << host_lines;
+  }
+}
+
 TEST(HeaderSmugglingTest, ChunkedTrailerHeadersMerged) {
   Server svr;
 
