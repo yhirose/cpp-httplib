@@ -3483,7 +3483,9 @@ inline size_t get_header_value_u64(const Headers &headers,
   is_invalid_value = false;
   auto rng = headers.equal_range(key);
   auto it = rng.first;
-  std::advance(it, static_cast<ssize_t>(id));
+  for (size_t i = 0; i < id && it != rng.second; ++i) {
+    ++it;
+  }
   if (it != rng.second) {
     if (is_numeric(it->second)) {
       // Parse at size_t width so an out-of-range Content-Length is reported
@@ -8147,7 +8149,9 @@ inline const char *get_header_value(const Headers &headers,
 
   auto rng = headers.equal_range(key);
   auto it = rng.first;
-  std::advance(it, static_cast<ssize_t>(id));
+  for (size_t i = 0; i < id && it != rng.second; ++i) {
+    ++it;
+  }
   if (it != rng.second) { return it->second.c_str(); }
   return def;
 }
@@ -8201,7 +8205,9 @@ inline typename Map::mapped_type
 get_multimap_value(const Map &m, const std::string &key, size_t id) {
   auto rng = m.equal_range(key);
   auto it = rng.first;
-  std::advance(it, static_cast<ssize_t>(id));
+  for (size_t i = 0; i < id && it != rng.second; ++i) {
+    ++it;
+  }
   if (it != rng.second) { return it->second; }
   return typename Map::mapped_type();
 }
@@ -11707,7 +11713,9 @@ inline std::string MultipartFormData::get_field(const std::string &key,
                                                 size_t id) const {
   auto rng = fields.equal_range(key);
   auto it = rng.first;
-  std::advance(it, static_cast<ssize_t>(id));
+  for (size_t i = 0; i < id && it != rng.second; ++i) {
+    ++it;
+  }
   if (it != rng.second) { return it->second.content; }
   return std::string();
 }

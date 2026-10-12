@@ -1736,6 +1736,74 @@ TEST(ParseDispositionParamsTest, QuotedValuesSurviveTheRoundTrip) {
   EXPECT_EQ("a;b=report.pdf", file_filename);
 }
 
+TEST(IndexedValueTest, MaximumIndexYieldsHeaderDefaults) {
+  Request req;
+  req.headers = {{"A", "1"}, {"B", "2"}, {"C", "3"}};
+  const auto id = (std::numeric_limits<size_t>::max)();
+  EXPECT_EQ("fallback", req.get_header_value("B", "fallback", id));
+  EXPECT_EQ(99U, req.get_header_value_u64("B", 99, id));
+  EXPECT_EQ("fallback", req.get_header_value("Missing", "fallback", id));
+  Response res;
+  res.headers = req.headers;
+  EXPECT_EQ("fallback", res.get_header_value("B", "fallback", id));
+  EXPECT_EQ(99U, res.get_header_value_u64("B", 99, id));
+}
+
+TEST(IndexedValueTest, MaximumIndexYieldsParameterAndTrailerDefaults) {
+  Request req;
+  req.params = {{"A", "1"}, {"B", "2"}, {"C", "3"}};
+  req.trailers = {{"A", "1"}, {"B", "2"}, {"C", "3"}};
+  const auto id = (std::numeric_limits<size_t>::max)();
+  EXPECT_EQ("", req.get_param_value("B", id));
+  EXPECT_EQ("", req.get_param_value("Missing", id));
+  EXPECT_EQ("", req.get_trailer_value("B", id));
+  Response res;
+  res.trailers = req.trailers;
+  EXPECT_EQ("", res.get_trailer_value("B", id));
+}
+
+TEST(IndexedValueTest, MaximumIndexYieldsMultipartDefaults) {
+  MultipartFormData form;
+  for (const auto &entry : Params{{"A", "1"}, {"B", "2"}, {"C", "3"}}) {
+    form.fields.emplace(entry.first, FormField{entry.first, entry.second, {}});
+    form.files.emplace(
+        entry.first,
+        FormData{entry.first, entry.second, "f", "text/plain", {}});
+  }
+  const auto id = (std::numeric_limits<size_t>::max)();
+  EXPECT_EQ("", form.get_field("B", id));
+  EXPECT_EQ("", form.get_file("B", id).content);
+  EXPECT_EQ("", form.get_field("Missing", id));
+  EXPECT_EQ("", form.get_file("Missing", id).content);
+}
+
+TEST(IndexedValueTest, LargePositiveIndexAndDuplicateOrder) {
+  Request req;
+  req.headers = {{"A", "1"}, {"B", "2"}, {"C", "3"}, {"B", "4"}};
+  req.params = {{"A", "1"}, {"B", "2"}, {"C", "3"}, {"B", "4"}};
+  req.trailers = req.headers;
+  for (const auto &entry : req.params) {
+    req.form.fields.emplace(entry.first,
+                            FormField{entry.first, entry.second, {}});
+    req.form.files.emplace(
+        entry.first,
+        FormData{entry.first, entry.second, "f", "text/plain", {}});
+  }
+  EXPECT_EQ("2", req.get_header_value("B", "fallback", 0));
+  EXPECT_EQ("4", req.get_header_value("B", "fallback", 1));
+  EXPECT_EQ(4U, req.get_header_value_u64("B", 99, 1));
+  EXPECT_EQ("4", req.get_param_value("B", 1));
+  EXPECT_EQ("4", req.form.get_field("B", 1));
+  EXPECT_EQ("4", req.form.get_file("B", 1).content);
+  const auto id = (std::numeric_limits<size_t>::max)() / 2;
+  EXPECT_EQ("fallback", req.get_header_value("B", "fallback", id));
+  EXPECT_EQ(99U, req.get_header_value_u64("B", 99, id));
+  EXPECT_EQ("", req.get_param_value("B", id));
+  EXPECT_EQ("", req.get_trailer_value("B", id));
+  EXPECT_EQ("", req.form.get_field("B", id));
+  EXPECT_EQ("", req.form.get_file("B", id).content);
+}
+
 TEST(GetHeaderValueTest, DefaultValue) {
   Headers headers = {{"Dummy", "Dummy"}};
   auto val = detail::get_header_value(headers, "Content-Type", "text/plain", 0);
