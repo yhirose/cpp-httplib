@@ -924,6 +924,44 @@ TEST(ParseAcceptHeaderTest, BasicAcceptParsing) {
   EXPECT_EQ(result2[2], "text/plain"); // lowest q value
 }
 
+TEST(ParseAcceptHeaderTest, QuotedParameters) {
+  const char *values[] = {
+      "text/html;profile=\"a,b\";q=0.8,application/json;q=0.9",
+      "text/html;profile=\"a;q=0.1\";q=0.8,application/json;q=0.9",
+      "text/html;profile=\"a\\\",b\";q=0.8,application/json;q=0.9",
+  };
+  for (auto value : values) {
+    std::vector<std::string> result;
+    EXPECT_TRUE(detail::parse_accept_header(value, result)) << value;
+    EXPECT_EQ(result,
+              (std::vector<std::string>{"application/json", "text/html"}));
+  }
+}
+
+TEST(ParseAcceptHeaderTest, QuotedParametersInRequest) {
+  Server svr;
+  svr.Get("/", [](const Request &req, Response &res) {
+    EXPECT_EQ(req.accept_content_types,
+              (std::vector<std::string>{"application/json", "text/html"}));
+    res.set_content("ok", "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  auto thread = std::thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+  });
+  svr.wait_until_ready();
+  Client cli(HOST, port);
+  auto res =
+      cli.Get("/", Headers{{"Accept", "text/html;profile=\"a,b;q=0.1\";q=0.8,"
+                                      "application/json;q=0.9"}});
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+  EXPECT_EQ(res->body, "ok");
+}
+
 TEST(ParseAcceptHeaderTest, MixedQualityValues) {
   // Mixed with and without quality values
   std::vector<std::string> result;

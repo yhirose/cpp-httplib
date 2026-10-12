@@ -6126,6 +6126,11 @@ inline void split_unquoted(const char *b, const char *e, char d, size_t m,
   auto in_quotes = false;
 
   while (e ? (b + i < e) : (b[i] != '\0')) {
+    if (in_quotes && b[i] == '\\' &&
+        (e ? (b + i + 1 < e) : (b[i + 1] != '\0'))) {
+      i += 2;
+      continue;
+    }
     if (b[i] == '"') {
       in_quotes = !in_quotes;
     } else if (b[i] == d && !in_quotes && count < m) {
@@ -7662,35 +7667,36 @@ inline bool parse_quality(const char *b, const char *e, std::string &token,
   if (token.empty()) { return false; }
   if (params_len == 0) { return true; }
 
-  // Scan parameters for q= (stops on first match)
+  // Scan parameters for q=, ignoring separators inside quoted values.
   bool invalid = false;
-  split_find(params_b, params_b + params_len, ';',
-             (std::numeric_limits<size_t>::max)(),
-             [&](const char *pb, const char *pe) -> bool {
-               // Match exactly "q=" or "Q=" (not "query=" etc.)
-               auto len = static_cast<size_t>(pe - pb);
-               if (len < 2) { return false; }
-               if ((pb[0] != 'q' && pb[0] != 'Q') || pb[1] != '=') {
-                 return false;
-               }
+  bool found_quality = false;
+  split_unquoted(params_b, params_b + params_len, ';',
+                 [&](const char *pb, const char *pe) {
+                   if (found_quality) { return; }
+                   // Match exactly "q=" or "Q=" (not "query=" etc.)
+                   auto len = static_cast<size_t>(pe - pb);
+                   if (len < 2) { return; }
+                   if ((pb[0] != 'q' && pb[0] != 'Q') || pb[1] != '=') {
+                     return;
+                   }
+                   found_quality = true;
 
-               // Trim the value portion
-               auto r = trim(pb, pe, 2, len);
-               if (r.first >= r.second) {
-                 invalid = true;
-                 return true;
-               }
+                   // Trim the value portion
+                   auto r = trim(pb, pe, 2, len);
+                   if (r.first >= r.second) {
+                     invalid = true;
+                     return;
+                   }
 
-               double v = 0.0;
-               auto res = from_chars(pb + r.first, pb + r.second, v);
-               if (res.ec != std::errc{} || res.ptr != pb + r.second ||
-                   v < 0.0 || v > 1.0) {
-                 invalid = true;
-                 return true;
-               }
-               quality = v;
-               return true;
-             });
+                   double v = 0.0;
+                   auto res = from_chars(pb + r.first, pb + r.second, v);
+                   if (res.ec != std::errc{} || res.ptr != pb + r.second ||
+                       v < 0.0 || v > 1.0) {
+                     invalid = true;
+                     return;
+                   }
+                   quality = v;
+                 });
 
   return !invalid;
 }
@@ -9267,40 +9273,41 @@ inline bool parse_accept_header(const std::string &s,
   // Split by comma and parse each entry. RFC 9110 Section 5.6.1.2: a recipient
   // has to parse and ignore empty list elements, so a leading, trailing or
   // doubled comma must not turn a legal Accept value into 400 Bad Request.
-  // split() skips them, and the header length limit bounds how many a sender
-  // can send, so ignoring all of them cannot be used as a denial-of-service
-  // vector.
-  split(s.data(), s.data() + s.size(), ',', [&](const char *b, const char *e) {
-    std::string entry(b, e);
-    entry = trim_copy(entry);
+  // split_unquoted() skips them, and the header length limit bounds how many a
+  // sender can send, so ignoring all of them cannot be used as a
+  // denial-of-service vector.
+  split_unquoted(
+      s.data(), s.data() + s.size(), ',', [&](const char *b, const char *e) {
+        std::string entry(b, e);
+        entry = trim_copy(entry);
 
-    AcceptEntry accept_entry;
-    accept_entry.order = order++;
+        AcceptEntry accept_entry;
+        accept_entry.order = order++;
 
-    if (!parse_quality(entry.data(), entry.data() + entry.size(),
-                       accept_entry.media_type, accept_entry.quality)) {
-      has_invalid_entry = true;
-      return;
-    }
+        if (!parse_quality(entry.data(), entry.data() + entry.size(),
+                           accept_entry.media_type, accept_entry.quality)) {
+          has_invalid_entry = true;
+          return;
+        }
 
-    // Remove additional parameters from media type
-    accept_entry.media_type = extract_media_type(accept_entry.media_type);
+        // Remove additional parameters from media type
+        accept_entry.media_type = extract_media_type(accept_entry.media_type);
 
-    // Basic validation of media type format
-    if (accept_entry.media_type.empty()) {
-      has_invalid_entry = true;
-      return;
-    }
+        // Basic validation of media type format
+        if (accept_entry.media_type.empty()) {
+          has_invalid_entry = true;
+          return;
+        }
 
-    // Check for basic media type format (should contain '/' or be '*')
-    if (accept_entry.media_type != "*" &&
-        accept_entry.media_type.find('/') == std::string::npos) {
-      has_invalid_entry = true;
-      return;
-    }
+        // Check for basic media type format (should contain '/' or be '*')
+        if (accept_entry.media_type != "*" &&
+            accept_entry.media_type.find('/') == std::string::npos) {
+          has_invalid_entry = true;
+          return;
+        }
 
-    entries.push_back(std::move(accept_entry));
-  });
+        entries.push_back(std::move(accept_entry));
+      });
 
   // Return false if any invalid entry was found
   if (has_invalid_entry) { return false; }
