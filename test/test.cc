@@ -1119,6 +1119,39 @@ TEST(ParseAcceptHeaderTest, EmptyListElementsAreIgnored) {
   EXPECT_FALSE(detail::parse_accept_header(",invalidtype,", result));
 }
 
+// RFC 9110 Section 5.6.6: a parameter value may be a quoted-string, and a ','
+// or ';' inside one does not end the list element or the parameter. Section
+// 5.6.4: nor does a '"' that a backslash escapes end the quoted-string.
+TEST(ParseAcceptHeaderTest, DelimitersInQuotedParameterValues) {
+  struct {
+    const char *value;
+    std::vector<std::string> expected;
+  } cases[] = {
+      {"text/html;profile=\"a,b\",application/json",
+       {"text/html", "application/json"}},
+      // A "q=" inside a quoted value is not the weight
+      {"text/html;profile=\"a;q=0.1\",application/json;q=0.5",
+       {"text/html", "application/json"}},
+      // The weight after a quoted value still applies
+      {"text/html;profile=\"a,b;q=0.1\";q=0.8,application/json;q=0.9",
+       {"application/json", "text/html"}},
+      {"text/html;profile=\"a\\\",b\";q=0.8,application/json;q=0.9",
+       {"application/json", "text/html"}},
+      {"text/html;profile=\"a\\\"b\",application/json",
+       {"text/html", "application/json"}},
+      // An escaped backslash does not escape the '"' after it
+      {"text/html;profile=\"a\\\\\",application/json",
+       {"text/html", "application/json"}},
+  };
+
+  for (const auto &c : cases) {
+    std::vector<std::string> result;
+    EXPECT_TRUE(detail::parse_accept_header(c.value, result))
+        << "value: " << c.value;
+    EXPECT_EQ(c.expected, result) << "value: " << c.value;
+  }
+}
+
 TEST(ParseAcceptHeaderTest, ContentTypesPopulatedAndInvalidHeaderHandling) {
   Server svr;
 

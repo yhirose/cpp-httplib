@@ -9247,8 +9247,30 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
 } catch (...) { return false; }
 #endif
 
+// Removes each quoted-string, honoring a quoted-pair (RFC 9110 Section 5.6.4)
+inline std::string remove_quoted_strings(const std::string &s) {
+  std::string out;
+  auto in_quotes = false;
+  for (size_t i = 0; i < s.size(); i++) {
+    if (s[i] == '"') {
+      in_quotes = !in_quotes;
+    } else if (!in_quotes) {
+      out += s[i];
+    } else if (s[i] == '\\') {
+      i++;
+    }
+  }
+  return out;
+}
+
 inline bool parse_accept_header(const std::string &s,
                                 std::vector<std::string> &content_types) {
+  // Parameter values are not used here, so a quoted-string is dropped rather
+  // than parsed: a ',' or ';' inside one must not be read as a delimiter.
+  if (s.find('"') != std::string::npos) {
+    return parse_accept_header(remove_quoted_strings(s), content_types);
+  }
+
   content_types.clear();
 
   // Empty string is considered valid (no preference)
