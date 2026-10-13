@@ -1923,6 +1923,28 @@ TEST(HeadersOrderTest, IdBeyondTheLastDuplicateYieldsDefault) {
   EXPECT_EQ("def", req.get_header_value("X-Missing", "def", 3));
 }
 
+TEST(HeadersOrderTest, HugeIdYieldsDefault) {
+  Request req;
+  req.set_header("X-First", "1");
+  req.set_header("X-Test", "2");
+  req.params.emplace("first", "1");
+  req.params.emplace("test", "2");
+  req.form.fields.emplace("first", FormField{"first", "1", {}});
+  req.form.fields.emplace("test", FormField{"test", "2", {}});
+  req.form.files.emplace("first", FormData{"first", "1", "", "", {}});
+  req.form.files.emplace("test", FormData{"test", "2", "", "", {}});
+
+  // The second one is negative when read as a signed value
+  const auto max_id = (std::numeric_limits<size_t>::max)();
+  for (auto id : {max_id / 2, max_id}) {
+    EXPECT_EQ("def", req.get_header_value("X-Test", "def", id));
+    EXPECT_EQ(7U, req.get_header_value_u64("X-Test", 7, id));
+    EXPECT_EQ("", req.get_param_value("test", id));
+    EXPECT_EQ("", req.form.get_field("test", id));
+    EXPECT_EQ("", req.form.get_file("test", id).content);
+  }
+}
+
 TEST(HeadersOrderTest, TraversalFollowsInsertionOrder) {
   Headers headers;
   headers.emplace("Host", "example.com");
