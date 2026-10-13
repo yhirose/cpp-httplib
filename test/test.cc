@@ -26962,6 +26962,39 @@ TEST(NoProxyTest, ProxyAuthorizationSentWhenNotBypassed) {
   EXPECT_TRUE(s.last_had_proxy_authz());
 }
 
+TEST(NoProxyTest, ProxyAuthorizationSentWithOneEmptyCredential) {
+  std::atomic<int> hits{0};
+  std::atomic<int> hits_with_authz{0};
+
+  no_proxy_test::ScopedServer proxy_mock;
+  proxy_mock.svr().Get(".*", [&](const Request &req, Response &res) {
+    hits++;
+    if (req.has_header("Proxy-Authorization")) { hits_with_authz++; }
+    if (req.target.find("/redir") != std::string::npos) {
+      res.set_redirect("http://other.example/landed");
+    } else {
+      res.set_content("via-proxy", "text/plain");
+    }
+  });
+  proxy_mock.listen();
+
+  for (const auto &c : {std::make_pair("u", ""), std::make_pair("", "p")}) {
+    hits = 0;
+    hits_with_authz = 0;
+
+    Client cli("public.example", 80);
+    cli.set_proxy("127.0.0.1", proxy_mock.port());
+    cli.set_proxy_basic_auth(c.first, c.second);
+    cli.set_follow_location(true);
+
+    // The redirect to another host goes through the proxy as well
+    auto res = cli.Get("/redir");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(2, hits.load());
+    EXPECT_EQ(2, hits_with_authz.load());
+  }
+}
+
 TEST(NoProxyTest, EmptyNoProxyKeepsProxyOn) {
   ProxyAndTargetServers s;
   auto cli = make_client("anything.test", s);

@@ -15944,7 +15944,8 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   if (!proxy_host_.empty() && proxy_port_ != -1) {
     client.set_proxy(proxy_host_, proxy_port_);
 
-    if (!proxy_basic_auth_username_.empty()) {
+    if (!proxy_basic_auth_username_.empty() ||
+        !proxy_basic_auth_password_.empty()) {
       client.set_proxy_basic_auth(proxy_basic_auth_username_,
                                   proxy_basic_auth_password_);
     }
@@ -16047,8 +16048,8 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   // otherwise NO_PROXY-matched requests, and requests inside a TLS tunnel,
   // would leak proxy credentials to the destination server.
   if (is_proxy_enabled_for_host(host_) && (!is_ssl() || is_connect)) {
-    if (!proxy_basic_auth_username_.empty() &&
-        !proxy_basic_auth_password_.empty() &&
+    if ((!proxy_basic_auth_username_.empty() ||
+         !proxy_basic_auth_password_.empty()) &&
         !req.has_header("Proxy-Authorization")) {
       req.headers.insert(make_basic_authentication_header(
           proxy_basic_auth_username_, proxy_basic_auth_password_, true));
