@@ -23487,20 +23487,25 @@ TEST_F(SSEIntegrationTest, NonDigitRetryFieldIgnored) {
 
 // Test: A retry field of all ASCII digits sets the reconnection time
 TEST_F(SSEIntegrationTest, DigitRetryFieldApplied) {
-  std::atomic<int> connection_count{0};
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::vector<std::chrono::steady_clock::time_point> connected_at;
 
-  server_->Get("/zero-retry",
-               [&connection_count](const Request &, Response &res) {
-                 connection_count.fetch_add(1);
-                 res.set_chunked_content_provider(
-                     "text/event-stream", [](size_t offset, DataSink &sink) {
-                       if (offset == 0) {
-                         std::string event = "retry: 0\ndata: hello\n\n";
-                         sink.write(event.data(), event.size());
-                       }
-                       return false;
-                     });
-               });
+  server_->Get("/zero-retry", [&](const Request &, Response &res) {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      connected_at.push_back(std::chrono::steady_clock::now());
+      cv.notify_all();
+    }
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string event = "retry: 0\ndata: hello\n\n";
+            sink.write(event.data(), event.size());
+          }
+          return false;
+        });
+  });
 
   Client client("localhost", get_port());
   sse::SSEClient sse(client, "/zero-retry");
@@ -23508,13 +23513,21 @@ TEST_F(SSEIntegrationTest, DigitRetryFieldApplied) {
   sse.set_reconnect_interval(10000);
   sse.start_async();
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait_for(lock, std::chrono::seconds(5),
+                [&] { return connected_at.size() >= 2; });
+  }
   sse.stop();
 
   // The server-supplied interval is applied, but never below 100ms, so
   // "retry: 0" does not cause a busy reconnect loop
-  EXPECT_GE(connection_count.load(), 2);
-  EXPECT_LE(connection_count.load(), 10);
+  std::lock_guard<std::mutex> lock(mutex);
+  ASSERT_GE(connected_at.size(), 2u);
+  auto interval_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         connected_at[1] - connected_at[0])
+                         .count();
+  EXPECT_GE(interval_ms, 100);
 }
 
 // Test: Last-Event-ID sent on reconnect
