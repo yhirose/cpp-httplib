@@ -574,6 +574,34 @@ TEST(Base64EncodeTest, KnownAnswers) {
                                 "\x00\x01\x02\x03\xff\xfe\xc0\x80\x7f", 9)));
 }
 
+TEST(FillRandomBytesTest, FillsRequestedRangeAndVaries) {
+  // Writes exactly the requested number of bytes and nothing outside it.
+  unsigned char buf[8];
+  for (size_t n = 0; n <= 4; n++) {
+    std::fill(std::begin(buf), std::end(buf), 0xAB);
+    detail::fill_random_bytes(buf, n);
+    for (size_t i = n; i < sizeof(buf); i++) {
+      EXPECT_EQ(0xAB, buf[i]); // bytes past n are untouched
+    }
+  }
+
+  // Masking keys (RFC 6455 5.3) must not be a fixed or degenerate value. Draw
+  // many and check the output spans the whole byte range and is not constant,
+  // which a broken or constant generator would fail.
+  std::array<bool, 256> seen{};
+  bool all_equal = true;
+  unsigned char first[4];
+  detail::fill_random_bytes(first, sizeof(first));
+  for (int iter = 0; iter < 4096; iter++) {
+    unsigned char key[4];
+    detail::fill_random_bytes(key, sizeof(key));
+    for (unsigned char c : key) { seen[c] = true; }
+    if (std::memcmp(key, first, sizeof(key)) != 0) { all_equal = false; }
+  }
+  EXPECT_FALSE(all_equal);
+  EXPECT_TRUE(std::all_of(seen.begin(), seen.end(), [](bool b) { return b; }));
+}
+
 TEST(EncodeQueryParamTest, ParseUnescapedChararactersTest) {
   string unescapedCharacters = "-_.!~*'()";
 
