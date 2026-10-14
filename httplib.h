@@ -5604,16 +5604,7 @@ inline bool is_websocket_upgrade(const Request &req) {
   return true;
 }
 
-// Fill `out` with `n` bytes from the platform's non-deterministic random
-// source. RFC 6455 Section 5.3 requires a client's masking key to be
-// unpredictable and drawn from a strong source of entropy, so that an on-path
-// intermediary cannot predict it and choose the bytes placed on the wire. A
-// std::mt19937 seeded once from a single 32-bit value does not meet that: its
-// output is fully determined by that seed and its state is recoverable from a
-// run of outputs. std::random_device is the standard's non-deterministic
-// source (backed by the operating system CSPRNG on the supported platforms),
-// and taking the bytes a byte at a time keeps the result independent of the
-// generator's width and endianness.
+// RFC 6455 Section 5.3: the masking key must be unpredictable
 inline void fill_random_bytes(unsigned char *out, size_t n) {
   thread_local std::random_device rd;
   size_t filled = 0;
