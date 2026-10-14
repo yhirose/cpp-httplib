@@ -5604,6 +5604,18 @@ inline bool is_websocket_upgrade(const Request &req) {
   return true;
 }
 
+// RFC 6455 Section 5.3: the masking key must be unpredictable
+inline void fill_random_bytes(unsigned char *out, size_t n) {
+  thread_local std::random_device rd;
+  size_t filled = 0;
+  while (filled < n) {
+    auto v = rd();
+    for (size_t b = 0; b < sizeof(v) && filled < n; ++b, ++filled) {
+      out[filled] = static_cast<unsigned char>((v >> (b * 8)) & 0xFFu);
+    }
+  }
+}
+
 inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
                                   const char *data, size_t len, bool fin,
                                   bool mask) {
@@ -5639,10 +5651,8 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
 
   if (mask) {
     // Generate random mask key
-    thread_local std::mt19937 rng(std::random_device{}());
     uint8_t mask_key[4];
-    auto r = rng();
-    std::memcpy(mask_key, &r, 4);
+    fill_random_bytes(mask_key, sizeof(mask_key));
     if (strm.write(reinterpret_cast<char *>(mask_key), 4) < 0) { return false; }
 
     // Write masked payload in chunks
@@ -10364,13 +10374,10 @@ inline bool is_host(const std::string &s) {
 
 inline bool perform_websocket_handshake(Stream &strm, Request &req,
                                         WebSocketUpgradeResponse &upgrade) {
-  // Generate random Sec-WebSocket-Key
-  thread_local std::mt19937 rng(std::random_device{}());
+  // Generate a random 16-byte Sec-WebSocket-Key (RFC 6455 Section 4.1)
   std::string key_bytes(16, '\0');
-  for (size_t i = 0; i < 16; i += 4) {
-    auto r = rng();
-    std::memcpy(&key_bytes[i], &r, (std::min)(size_t(4), size_t(16 - i)));
-  }
+  fill_random_bytes(reinterpret_cast<unsigned char *>(&key_bytes[0]),
+                    key_bytes.size());
   auto client_key = base64_encode(key_bytes);
 
   req.headers.erase("Upgrade");
