@@ -5604,7 +5604,7 @@ inline bool is_websocket_upgrade(const Request &req) {
   return true;
 }
 
-// RFC 6455 Section 5.3: the masking key must be unpredictable
+// Unpredictable bytes for masking keys (RFC 6455 Section 5.3) and nonces
 inline void fill_random_bytes(unsigned char *out, size_t n) {
   thread_local std::random_device rd;
   size_t filled = 0;
@@ -9675,19 +9675,10 @@ inline std::string random_string(size_t length) {
   constexpr const char data[] =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-  thread_local auto engine([]() {
-    // std::random_device might actually be deterministic on some
-    // platforms, but due to lack of support in the c++ standard library,
-    // doing better requires either some ugly hacks or breaking portability.
-    std::random_device seed_gen;
-    // Request 128 bits of entropy for initialization
-    std::seed_seq seed_sequence{seed_gen(), seed_gen(), seed_gen(), seed_gen()};
-    return std::mt19937(seed_sequence);
-  }());
-
-  std::string result;
-  for (size_t i = 0; i < length; i++) {
-    result += data[engine() % (sizeof(data) - 1)];
+  std::string result(length, '\0');
+  fill_random_bytes(reinterpret_cast<unsigned char *>(&result[0]), length);
+  for (auto &c : result) {
+    c = data[static_cast<unsigned char>(c) % (sizeof(data) - 1)];
   }
   return result;
 }
