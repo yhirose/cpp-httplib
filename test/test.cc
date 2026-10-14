@@ -6660,6 +6660,14 @@ TEST_F(ServerTest, GetMethodOutOfBaseDirMountWithBackslash) {
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
+TEST_F(ServerTest, GetMethodDirMountRedirectOnDirWithoutBackslash) {
+  cli_.set_follow_location(true);
+  auto res = cli_.Get("/mount/dir");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("/mount/dir/", res->location);
+}
+
 TEST_F(ServerTest, PostMethod303) {
   auto res = cli_.Post("/1", "body", "text/plain");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
