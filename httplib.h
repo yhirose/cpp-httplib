@@ -13869,7 +13869,12 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
         detail::FileStat stat(path);
 
         if (stat.is_dir()) {
-          res.set_redirect(req.path + "/", StatusCode::MovedPermanently_301);
+          // Relative to the request, so a path such as "//dir" cannot turn
+          // into another host. "./" keeps a ':' in the name from being
+          // read as a scheme.
+          auto name = req.path.substr(req.path.rfind('/') + 1);
+          res.set_redirect("./" + encode_path_component(name) + "/",
+                           StatusCode::MovedPermanently_301);
           return true;
         }
 
