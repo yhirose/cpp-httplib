@@ -13869,7 +13869,7 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
         detail::FileStat stat(path);
 
         if (stat.is_dir()) {
-          res.set_redirect(sub_path + "/", StatusCode::MovedPermanently_301);
+          res.set_redirect(req.path + "/", StatusCode::MovedPermanently_301);
           return true;
         }
 
