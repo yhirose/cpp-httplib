@@ -18,6 +18,14 @@
 #endif
 #endif
 
+#if defined(__SANITIZE_THREAD__)
+#define CPPHTTPLIB_THREAD_SANITIZER
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define CPPHTTPLIB_THREAD_SANITIZER
+#endif
+#endif
+
 /*
  * Configuration
  */
@@ -7017,7 +7025,9 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
   *res = result_addrinfo;
   return 0;
 #elif defined(_GNU_SOURCE) && defined(__GLIBC__) &&                            \
-    (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2))
+    (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2)) &&             \
+    !defined(CPPHTTPLIB_THREAD_SANITIZER)
+  // Skipped under TSan: glibc's internal resolver thread is invisible to it.
   // #2431: gai_cancel() is non-blocking and may return EAI_NOTCANCELED while
   // the resolver worker still references the stack-local gaicb. The cancel
   // path therefore waits (gai_suspend with no timeout) for the worker to
