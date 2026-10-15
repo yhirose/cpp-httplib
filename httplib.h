@@ -7027,10 +7027,7 @@ inline int getaddrinfo_with_timeout(const char *node, const char *service,
 #elif defined(_GNU_SOURCE) && defined(__GLIBC__) &&                            \
     (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 2)) &&             \
     !defined(CPPHTTPLIB_THREAD_SANITIZER)
-  // Not used under ThreadSanitizer: glibc runs getaddrinfo_a() lookups in a
-  // thread it creates internally, bypassing the pthread_create interceptor,
-  // so TSan never initializes that thread and it crashes on first allocation.
-  // The std::thread fallback below is used instead.
+  // Skipped under TSan: glibc's internal resolver thread is invisible to it.
   // #2431: gai_cancel() is non-blocking and may return EAI_NOTCANCELED while
   // the resolver worker still references the stack-local gaicb. The cancel
   // path therefore waits (gai_suspend with no timeout) for the worker to
