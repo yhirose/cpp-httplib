@@ -4013,8 +4013,7 @@ struct MbedTlsContext {
   bool is_server = false;
   bool verify_client = false;
   bool has_verify_callback = false;
-  // Installed by tls::set_verify_callback(); run by the sessions created from
-  // this context.
+  // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
 
   MbedTlsContext();
@@ -4040,9 +4039,7 @@ struct WolfSSLContext {
   bool is_server = false;
   bool verify_client = false;
   bool has_verify_callback = false;
-  // Installed by tls::set_verify_callback(); run by the sessions created from
-  // this context (each one points its verify-callback ctx back at this
-  // struct in create_session()).
+  // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
   std::string ca_pem_data_; // accumulated PEM for get_ca_names/get_ca_certs
 
@@ -20248,15 +20245,8 @@ struct MbedTlsSession {
   // OpenSSL and wolfSSL keep them independent).
   bool suppress_hostname_mismatch = false;
 
-  // The context this session was created from; mbedtls_verify_callback()
-  // runs its verify_callback.
+  // The context this session was created from.
   const MbedTlsContext *ctx = nullptr;
-
-  // Copied from the owning MbedTlsContext at creation. set_sni() uses this to
-  // decide which verify callback to install when hostname verification is
-  // disabled: mbedtls_verify_callback() when a user callback is wired for this
-  // context, or a self-contained one otherwise.
-  bool has_verify_callback = false;
 
   MbedTlsSession() { mbedtls_ssl_init(&ssl); }
 
@@ -20430,8 +20420,7 @@ inline void mbedtls_clear_cn_mismatch(uint32_t *flags) {
 }
 
 // Verify callback used when hostname verification is disabled for a session
-// that has no user-supplied verify callback of its own (MbedTlsSession::
-// has_verify_callback is false).
+// that has no user-supplied verify callback of its own.
 inline int mbedtls_mask_hostname_mismatch_callback(void *data,
                                                    mbedtls_x509_crt *, int,
                                                    uint32_t *flags) {
@@ -20878,7 +20867,6 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   // Set per-session verify callback with session pointer if callback is
   // registered
   session->ctx = mctx;
-  session->has_verify_callback = mctx->has_verify_callback;
   if (mctx->has_verify_callback) {
     mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback,
                            session);
@@ -20915,7 +20903,7 @@ inline bool set_sni(session_t session, const char *hostname,
     // consulting it (see suppress_hostname_mismatch above) - reinstalling it
     // here would be redundant. Otherwise install the self-contained masking
     // callback.
-    if (!msession->has_verify_callback) {
+    if (!msession->ctx->has_verify_callback) {
       mbedtls_ssl_set_verify(&msession->ssl,
                              impl::mbedtls_mask_hostname_mismatch_callback,
                              msession);
@@ -21731,8 +21719,7 @@ inline int wolfssl_sni_callback(WOLFSSL *ssl, int *ret, void *exArg) {
 // wolfSSL verify callback wrapper
 inline int wolfssl_verify_callback(int preverify_ok,
                                    WOLFSSL_X509_STORE_CTX *x509_ctx) {
-  // userCtx carries the pointer create_session() passed to
-  // wolfSSL_SetCertCbCtx()
+  // userCtx is the context passed to wolfSSL_SetCertCbCtx()
   auto wctx = x509_ctx ? static_cast<const WolfSSLContext *>(x509_ctx->userCtx)
                        : nullptr;
   if (!wctx || !wctx->verify_callback) { return preverify_ok; }
@@ -22026,7 +22013,7 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
 
   wolfSSL_set_fd(session->ssl, static_cast<int>(sock));
 
-  // Lets wolfssl_verify_callback() find this context's verify_callback
+  // Lets wolfssl_verify_callback() find the context
   wolfSSL_SetCertCbCtx(session->ssl, wctx);
 
   return static_cast<session_t>(session);
