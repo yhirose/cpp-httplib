@@ -11720,6 +11720,32 @@ TEST(MountTest, Unmount) {
   EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
+TEST(MountTest, MissingFileFallsThroughToHandlers) {
+  Server svr;
+  ASSERT_TRUE(svr.set_mount_point("/", "./www"));
+  svr.Get("/api/hello", [](const Request &, Response &res) {
+    res.set_content("api", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  auto res = cli.Get("/dir/test.html");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  res = cli.Get("/api/hello");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("api", res->body);
+}
+
 TEST(MountTest, PathSegmentBoundary) {
   Server svr;
 

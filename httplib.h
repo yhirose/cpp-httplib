@@ -13340,16 +13340,19 @@ inline bool Server::set_mount_point(const std::string &mount_point,
   if (stat.is_dir()) {
     std::string mnt = !mount_point.empty() ? mount_point : "/";
     if (!mnt.empty() && mnt[0] == '/') {
+      // Without the resolved directory, a file could not be checked to be
+      // inside it.
       std::string resolved_base;
-      if (detail::canonicalize_path(dir.c_str(), resolved_base)) {
-#if defined(_WIN32)
-        if (resolved_base.back() != '\\' && resolved_base.back() != '/') {
-          resolved_base += '\\';
-        }
-#else
-        if (resolved_base.back() != '/') { resolved_base += '/'; }
-#endif
+      if (!detail::canonicalize_path(dir.c_str(), resolved_base)) {
+        return false;
       }
+#if defined(_WIN32)
+      if (resolved_base.back() != '\\' && resolved_base.back() != '/') {
+        resolved_base += '\\';
+      }
+#else
+      if (resolved_base.back() != '/') { resolved_base += '/'; }
+#endif
       base_dirs_.push_back(
           {std::move(mnt), dir, std::move(resolved_base), std::move(headers)});
       return true;
@@ -14017,15 +14020,17 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
         if (path.back() == '/') { path += "index.html"; }
 
         // Defense-in-depth: is_valid_path blocks ".." traversal in the URL,
-        // but symlinks/junctions can still escape the base directory.
-        if (!entry.resolved_base_dir.empty()) {
-          std::string resolved_path;
-          if (detail::canonicalize_path(path.c_str(), resolved_path) &&
-              !detail::is_path_within_base(resolved_path,
-                                           entry.resolved_base_dir)) {
-            res.status = StatusCode::Forbidden_403;
-            return true;
-          }
+        // but symlinks/junctions can still escape the base directory. A path
+        // that cannot be resolved, which includes one that does not exist, is
+        // not served from here.
+        std::string resolved_path;
+        if (!detail::canonicalize_path(path.c_str(), resolved_path)) {
+          continue;
+        }
+        if (!detail::is_path_within_base(resolved_path,
+                                         entry.resolved_base_dir)) {
+          res.status = StatusCode::Forbidden_403;
+          return true;
         }
 
         detail::FileStat stat(path);
