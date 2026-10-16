@@ -3103,6 +3103,24 @@ protected:
 #endif
 };
 
+namespace detail {
+
+// Stands in for a client that Client could not make from its arguments, so a
+// request fails rather than going through a null pointer.
+class InvalidClientImpl final : public ClientImpl {
+public:
+  InvalidClientImpl() : ClientImpl(std::string(), 0) {}
+  bool is_valid() const override { return false; }
+
+private:
+  bool create_and_connect_socket(Socket &, Error &error) override {
+    error = Error::Connection;
+    return false;
+  }
+};
+
+} // namespace detail
+
 class Client {
 public:
   // Universal interface
@@ -17697,6 +17715,7 @@ inline Client::Client(const std::string &scheme_host_port,
       std::string msg = "'" + scheme + "' scheme is not supported.";
       throw std::invalid_argument(msg);
 #endif
+      cli_ = detail::make_unique<detail::InvalidClientImpl>();
       return;
     }
 
@@ -17705,7 +17724,10 @@ inline Client::Client(const std::string &scheme_host_port,
     auto host = std::move(uc.host);
 
     auto port = is_ssl ? 443 : 80;
-    if (!uc.port.empty() && !detail::parse_port(uc.port, port)) { return; }
+    if (!uc.port.empty() && !detail::parse_port(uc.port, port)) {
+      cli_ = detail::make_unique<detail::InvalidClientImpl>();
+      return;
+    }
 
     if (is_ssl) {
 #ifdef CPPHTTPLIB_SSL_ENABLED

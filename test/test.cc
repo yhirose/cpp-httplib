@@ -14627,6 +14627,10 @@ TEST(HostAndPortPropertiesTest, PortOutOfRange) {
   // Port 99999 exceeds valid range (1-65535) — should not crash
   httplib::Client cli("http://www.google.com:99999");
   ASSERT_FALSE(cli.is_valid());
+
+  auto res = cli.Get("/");
+  EXPECT_FALSE(res);
+  EXPECT_EQ(Error::Connection, res.error());
 }
 
 TEST(HostAndPortPropertiesTest, TrailingCharactersInPort) {
