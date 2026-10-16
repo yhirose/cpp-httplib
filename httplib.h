@@ -10902,30 +10902,50 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
   return std::make_pair(key, field);
 }
 
+// Follows X509_check_host, which the OpenSSL backend uses, so that every
+// backend accepts the same names.
 inline bool match_hostname(const std::string &pattern,
                            const std::string &hostname) {
+  // A trailing dot on the host is ignored
+  auto host = hostname;
+  if (host.size() > 1 && host.back() == '.') { host.pop_back(); }
+
   // Exact match (case-insensitive)
-  if (detail::case_ignore::equal(hostname, pattern)) { return true; }
+  if (detail::case_ignore::equal(host, pattern)) { return true; }
 
-  // Split both pattern and hostname into components by '.'
-  std::vector<std::string> pattern_components;
-  if (!pattern.empty()) {
-    split(pattern.data(), pattern.data() + pattern.size(), '.',
-          [&](const char *b, const char *e) {
-            pattern_components.emplace_back(b, e);
-          });
-  }
-
-  std::vector<std::string> host_components;
-  if (!hostname.empty()) {
-    split(hostname.data(), hostname.data() + hostname.size(), '.',
-          [&](const char *b, const char *e) {
-            host_components.emplace_back(b, e);
-          });
+  // Split both pattern and hostname into components by '.', keeping any empty
+  // one, which no name may have
+  auto labels = [](const std::string &s) {
+    std::vector<std::string> v;
+    size_t b = 0;
+    while (true) {
+      auto e = s.find('.', b);
+      v.push_back(s.substr(b, e - b));
+      if (e == std::string::npos) { return v; }
+      b = e + 1;
+    }
+  };
+  auto pattern_components = labels(pattern);
+  auto host_components = labels(host);
+  auto has_empty_label = [](const std::vector<std::string> &v) {
+    return std::any_of(v.begin(), v.end(),
+                       [](const std::string &l) { return l.empty(); });
+  };
+  if (has_empty_label(pattern_components) || has_empty_label(host_components)) {
+    return false;
   }
 
   // Component count must match
   if (host_components.size() != pattern_components.size()) { return false; }
+
+  // A wildcard needs two labels after it, so that "*.com" matches nothing,
+  // and an IDNA label may not have one
+  const auto &leftmost = pattern_components.front();
+  if (leftmost.find('*') != std::string::npos &&
+      (pattern_components.size() < 3 ||
+       case_ignore::equal(leftmost.substr(0, 4), "xn--"))) {
+    return false;
+  }
 
   // Compare each component with wildcard support
   // Supports: "*" (full wildcard), "prefix*" (partial wildcard)

@@ -562,6 +562,9 @@ find_content_type(const std::string &path,
                   const std::string &default_content_type);
 bool can_compress_content_type(const std::string &content_type);
 bool is_prohibited_header_name(const std::string &name);
+#ifdef CPPHTTPLIB_SSL_ENABLED
+bool match_hostname(const std::string &pattern, const std::string &hostname);
+#endif
 } // namespace detail
 } // namespace httplib
 
@@ -644,6 +647,26 @@ TEST(FileExtensionTest, TakesTheAlphanumericSuffix) {
   auto long_ext = std::string(CPPHTTPLIB_MAX_LINE_LENGTH, 'a');
   EXPECT_EQ(long_ext, detail::file_extension("a." + long_ext));
 }
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(MatchHostnameTest, FollowsX509CheckHost) {
+  EXPECT_TRUE(detail::match_hostname("*.example.com", "www.example.com"));
+  EXPECT_TRUE(detail::match_hostname("www*.example.com", "www1.example.com"));
+  EXPECT_TRUE(detail::match_hostname("www.example.com", "WWW.example.com."));
+
+  // A wildcard needs two labels after it, in the leftmost label only
+  EXPECT_FALSE(detail::match_hostname("*.com", "example.com"));
+  EXPECT_FALSE(detail::match_hostname("*", "localhost"));
+  EXPECT_FALSE(detail::match_hostname("vic*.test", "victim.test"));
+  EXPECT_FALSE(detail::match_hostname("www.*.com", "www.a.com"));
+  EXPECT_FALSE(
+      detail::match_hostname("xn--*.example.com", "xn--a.example.com"));
+
+  // No name may have an empty label
+  EXPECT_FALSE(detail::match_hostname("*.example.com", "a..example.com"));
+  EXPECT_FALSE(detail::match_hostname("a..example.com", "a.example.com"));
+}
+#endif
 
 TEST(CaseIgnoreHashTest, IgnoresCaseAndTakesLongKeys) {
   detail::case_ignore::hash hash;
