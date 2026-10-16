@@ -13535,6 +13535,63 @@ TEST(ClientPayloadTest, DoesNotReserveTheClaimedLength) {
   EXPECT_FALSE(cli.Get("/"));
 }
 
+TEST(ExpectContinueTest, EarlyFinalResponseClosesConnection) {
+  std::atomic<bool> closed_by_client{false};
+  auto server_thread = std::thread([&] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<uint16_t>(PORT));
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    int opt = 1;
+    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+                 reinterpret_cast<const char *>(&opt),
+#else
+                 &opt,
+#endif
+                 sizeof(opt));
+    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(srv, 1);
+
+    auto cli = ::accept(srv, nullptr, nullptr);
+    if (cli != INVALID_SOCKET) {
+      detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 3, 0);
+
+      // Answer the head without asking for the body, and keep the connection.
+      std::string head;
+      char c;
+      while (head.find("\r\n\r\n") == std::string::npos &&
+             ::recv(cli, &c, 1, 0) == 1) {
+        head += c;
+      }
+      std::string res =
+          "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+      ::send(cli, res.data(), static_cast<int>(res.size()), 0);
+
+      // Bytes here would be read as the body the first request declared.
+      char buf[256];
+      closed_by_client = ::recv(cli, buf, sizeof(buf), 0) == 0;
+      detail::close_socket(cli);
+    }
+    detail::close_socket(srv);
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  Client cli("127.0.0.1", PORT);
+  cli.set_keep_alive(true);
+  cli.set_read_timeout(1, 0);
+  // Long enough for the client to send Expect: 100-continue.
+  auto res = cli.Post("/upload", std::string(2048, 'B'), "text/plain");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+  cli.Get("/second");
+
+  server_thread.join();
+  EXPECT_TRUE(closed_by_client);
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 // `payload_max_length` is not enforced on decompressed body in ContentReader
 // path.

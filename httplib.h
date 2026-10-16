@@ -16596,8 +16596,13 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
         output_error_log(error, &req);
         return false;
       }
+    } else {
+      // A final response came first, so the body this request declared was
+      // never sent, and the server may still be waiting for it. The
+      // connection cannot carry another request.
+      std::lock_guard<std::mutex> guard(socket_mutex_);
+      socket_should_be_closed_when_request_is_done_ = true;
     }
-    // If not 100 Continue, server returned an error; proceed with that response
   }
 
   // Body
