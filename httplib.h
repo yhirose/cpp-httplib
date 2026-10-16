@@ -1997,6 +1997,10 @@ public:
     (void)usec;
   }
 
+  // Bounds the reads from now on to `msec` in total, on top of the timeout of
+  // each one. 0 lifts the bound.
+  virtual void set_max_timeout(time_t msec) { (void)msec; }
+
   // Bytes already pulled off the socket and sitting in this stream's own
   // buffer. Exposing them lets a line reader scan for a terminator in one
   // pass instead of asking for a byte at a time. A stream that does no
@@ -6739,6 +6743,7 @@ public:
   socket_t socket() const override;
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
+  void set_max_timeout(time_t msec) override;
   const char *buffered_data(size_t &size) const override;
   void consume_buffered(size_t size) override;
 
@@ -6759,7 +6764,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
-  const std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  std::chrono::time_point<std::chrono::steady_clock> start_time_;
 
   std::vector<char> read_buff_;
   size_t read_buff_off_ = 0;
@@ -10631,6 +10636,7 @@ public:
   socket_t socket() const override;
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
+  void set_max_timeout(time_t msec) override;
 
   // See SocketStream::set_readable_hint().
   void set_readable_hint() { readable_hint_ = true; }
@@ -10645,7 +10651,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
-  const std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  std::chrono::time_point<std::chrono::steady_clock> start_time_;
   bool readable_hint_ = false;
 };
 
@@ -12594,6 +12600,11 @@ inline void SocketStream::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_usec_ = usec;
 }
 
+inline void SocketStream::set_max_timeout(time_t msec) {
+  max_timeout_msec_ = msec;
+  start_time_ = std::chrono::steady_clock::now();
+}
+
 // Buffer stream implementation
 inline bool BufferStream::is_readable() const { return true; }
 
@@ -13124,6 +13135,11 @@ inline time_t SSLSocketStream::duration() const {
 inline void SSLSocketStream::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
+}
+
+inline void SSLSocketStream::set_max_timeout(time_t msec) {
+  max_timeout_msec_ = msec;
+  start_time_ = std::chrono::steady_clock::now();
 }
 
 inline WebSocketSSLStream::WebSocketSSLStream(socket_t sock,
@@ -14777,6 +14793,10 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
   detail::stream_line_reader line_reader(strm, buf.data(), buf.size());
 
+  // The read timeout bounds the request line and headers as a whole, so a
+  // client sending them a byte at a time cannot hold the worker any longer.
+  strm.set_max_timeout(read_timeout_sec_ * 1000 + read_timeout_usec_ / 1000);
+
   // Connection has been closed on client
   if (!line_reader.getline()) { return false; }
 
@@ -14825,6 +14845,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     output_error_log(Error::InvalidHeaders, &req);
     return write_response(strm, close_connection, req, res);
   }
+  strm.set_max_timeout(0);
 
   // RFC 9112 §6.3: Reject requests whose framing is invalid or ambiguous,
   // which would otherwise let an intermediary and this parser disagree on

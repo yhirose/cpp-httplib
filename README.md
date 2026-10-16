@@ -898,6 +898,8 @@ svr.set_read_timeout(std::chrono::seconds(5));
 svr.set_keep_alive_timeout(std::chrono::seconds(10));
 ```
 
+The read timeout bounds the request line and headers as a whole, and each read of a request body.
+
 ### Set maximum payload length for reading a request body
 
 ```c++
@@ -916,6 +918,8 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 `ThreadPool` is used as the **default** task queue, with dynamic scaling support. By default, it maintains a base thread count of 8 or `std::thread::hardware_concurrency() - 1` (whichever is greater), and can scale up to 4x that count under load. You can change these with `CPPHTTPLIB_THREAD_POOL_COUNT` and `CPPHTTPLIB_THREAD_POOL_MAX_COUNT`.
 
 When all threads are busy and a new task arrives, a temporary thread is spawned (up to the maximum). A dynamic thread exits automatically once it has waited for the idle timeout without receiving a task. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
+
+A connection holds its thread while it is served: between requests up to the keep-alive timeout, through a request body sent slowly but within the read timeout, and for the whole life of a WebSocket. Enough of them leave no thread for anyone else, so in front of untrusted clients, put a reverse proxy that limits connections per client, and reject unwanted WebSocket upgrades in the pre-request handler.
 
 If you want to set the thread counts at runtime:
 

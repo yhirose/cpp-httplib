@@ -10457,6 +10457,105 @@ TEST(SSLClientServerTest, ReadTimeoutBoundsTheWholeHandshake) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// send_request_in_parts() over TLS, each part in a TLS record of its own.
+static bool send_ssl_request_in_parts(time_t read_timeout_sec,
+                                      const std::vector<std::string> &parts,
+                                      std::string *resp = nullptr,
+                                      int port = PORT) {
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0, read_timeout_sec, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  if (sock == INVALID_SOCKET) { return false; }
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  auto ctx = SSL_CTX_new(TLS_client_method());
+  auto ssl = SSL_new(ctx);
+  auto ssl_se = detail::scope_exit([&] {
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+  });
+  SSL_set_fd(ssl, static_cast<int>(sock));
+  if (SSL_connect(ssl) != 1) { return false; }
+
+  for (size_t i = 0; i < parts.size(); i++) {
+    const auto &part = parts[i];
+    if (SSL_write(ssl, part.data(), static_cast<int>(part.size())) !=
+        static_cast<int>(part.size())) {
+      return false;
+    }
+    if (i + 1 < parts.size()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  }
+
+  char buf[512];
+  int n;
+  while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+    if (resp) { resp->append(buf, static_cast<size_t>(n)); }
+  }
+  return true;
+}
+#endif
+
+// The request line, then a header value a byte at a time.
+static std::vector<std::string> slow_request_head_parts() {
+  std::vector<std::string> parts{"GET / HTTP/1.1\r\nHost: x\r\nX-Slow: "};
+  parts.resize(26, "a");
+  parts.emplace_back("\r\n\r\n");
+  return parts;
+}
+
+// `send` takes 2.5 seconds over slow_request_head_parts(), each wait well
+// within the one-second read timeout. The server gives up a second in, before
+// the head is complete.
+static void
+expect_slow_request_head_dropped(Server &svr,
+                                 const std::function<std::string()> &send) {
+  std::atomic<bool> handled(false);
+  svr.Get("/", [&](const Request &, Response &res) {
+    handled = true;
+    res.set_content("ok", "text/plain");
+  });
+  svr.set_read_timeout(1, 0);
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  auto resp = send();
+  EXPECT_FALSE(handled);
+  EXPECT_EQ(std::string::npos, resp.find("200 OK"));
+}
+
+TEST(ServerRequestParsingTest, ReadTimeoutBoundsTheWholeRequestHead) {
+  Server svr;
+  expect_slow_request_head_dropped(svr, [] {
+    std::string resp;
+    send_request_in_parts(5, slow_request_head_parts(), &resp);
+    return resp;
+  });
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(SSLClientServerTest, ReadTimeoutBoundsTheWholeRequestHead) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  expect_slow_request_head_dropped(svr, [] {
+    std::string resp;
+    send_ssl_request_in_parts(5, slow_request_head_parts(), &resp);
+    return resp;
+  });
+}
+#endif
+
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   Server svr;
   std::string header_value;
@@ -12111,37 +12210,13 @@ TEST(KeepAliveTest, SSLPipelinedRequests) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   std::string res;
   serve_pipelining_routes(svr, [&](int port) {
-    auto error = Error::Success;
-    auto sock = detail::create_client_socket(
-        HOST, "", port, AF_UNSPEC, false, false, nullptr,
-        /*connection_timeout_sec=*/5, 0,
-        /*read_timeout_sec=*/2, 0,
-        /*write_timeout_sec=*/5, 0, std::string(), error);
-    ASSERT_NE(INVALID_SOCKET, sock);
-    auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
-
-    auto ctx = SSL_CTX_new(TLS_client_method());
-    auto ssl = SSL_new(ctx);
-    auto ssl_se = detail::scope_exit([&] {
-      SSL_free(ssl);
-      SSL_CTX_free(ctx);
-    });
-    SSL_set_fd(ssl, static_cast<int>(sock));
-    ASSERT_EQ(1, SSL_connect(ssl));
-
-    // One write, so all three requests arrive in one TLS record
-    const std::string req =
-        "GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
-        "GET /hi/2 HTTP/1.1\r\nHost: localhost\r\n\r\n"
-        "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
-    ASSERT_EQ(static_cast<int>(req.size()),
-              SSL_write(ssl, req.data(), static_cast<int>(req.size())));
-
-    char buf[512];
-    int n;
-    while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
-      res.append(buf, static_cast<size_t>(n));
-    }
+    // One part, so all three requests arrive in one TLS record
+    EXPECT_TRUE(send_ssl_request_in_parts(
+        2,
+        {"GET /hi/1 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+         "GET /hi/2 HTTP/1.1\r\nHost: localhost\r\n\r\n"
+         "GET /hi/3 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"},
+        &res, port));
   });
   expect_in_order(res, {"hi 1", "hi 2", "hi 3"});
 }
