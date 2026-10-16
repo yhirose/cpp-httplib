@@ -10998,6 +10998,28 @@ inline bool load_client_ca_config(tls::ctx_t ctx,
   return ret;
 }
 
+// Serializes the CA certificates installed in ctx as PEM, so they can be
+// loaded into another context.
+inline std::string ca_certs_to_pem(tls::ctx_t ctx) {
+  std::string pem;
+  std::vector<tls::cert_t> certs;
+  tls::get_ca_certs(ctx, certs);
+  for (auto cert : certs) {
+    std::vector<unsigned char> der;
+    if (tls::get_cert_der(cert, der)) {
+      auto b64 = base64_encode(std::string(der.begin(), der.end()));
+      pem += "-----BEGIN CERTIFICATE-----\n";
+      for (size_t i = 0; i < b64.size(); i += 64) {
+        pem += b64.substr(i, 64);
+        pem += '\n';
+      }
+      pem += "-----END CERTIFICATE-----\n";
+    }
+    tls::free_cert(cert);
+  }
+  return pem;
+}
+
 // The parts of session setup that only SSLClient needs, plus the handful
 // WebSocketClient also exposes; everything else takes the defaults, which is
 // what keeps the two clients on one implementation.
@@ -15901,6 +15923,27 @@ inline bool ClientImpl::create_redirect_client(
     }
     if (!ca_cert_file_path_.empty()) {
       redirect_client.set_ca_cert_path(ca_cert_file_path_, ca_cert_dir_path_);
+    }
+
+    if (is_ssl()) {
+      auto &self = static_cast<SSLClient &>(*this);
+
+      // A store handed to set_ca_cert_store() is owned by ctx_ and leaves no
+      // PEM behind. Without it the redirect client would fall back to the
+      // system CAs and trust roots this client was configured to exclude.
+      if (self.ca_cert_store_set_) {
+        std::string pem;
+        {
+          std::lock_guard<std::mutex> guard(self.ctx_mutex_);
+          pem = detail::ca_certs_to_pem(self.ctx_);
+        }
+        if (!pem.empty()) {
+          redirect_client.load_ca_cert_store(pem.data(), pem.size());
+        }
+        redirect_client.ca_cert_store_set_ = true;
+      }
+
+      redirect_client.session_verifier_ = self.session_verifier_;
     }
 
     // Client certificates are set through constructor for SSLClient
@@ -21426,19 +21469,11 @@ inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
   if (!ctx) { return 0; }
   auto *mbed_ctx = static_cast<impl::MbedTlsContext *>(ctx);
 
-  // Iterate through the CA chain
+  // Iterate through the CA chain. The certificates stay owned by the context,
+  // as free_cert() does not release anything on this backend.
   mbedtls_x509_crt *cert = &mbed_ctx->ca_chain;
   while (cert != nullptr && cert->raw.len > 0) {
-    // Create a copy of the certificate for the caller
-    auto *copy = new mbedtls_x509_crt;
-    mbedtls_x509_crt_init(copy);
-    int ret = mbedtls_x509_crt_parse_der(copy, cert->raw.p, cert->raw.len);
-    if (ret == 0) {
-      certs.push_back(static_cast<cert_t>(copy));
-    } else {
-      mbedtls_x509_crt_free(copy);
-      delete copy;
-    }
+    certs.push_back(static_cast<cert_t>(cert));
     cert = cert->next;
   }
   return certs.size();

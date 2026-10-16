@@ -15919,6 +15919,103 @@ TEST(SSLClientRedirectTest, CertFile) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
+
+// A store set via set_ca_cert_store() must be carried over to the client that
+// follows a cross-host redirect, rather than replaced by the system CAs.
+TEST(SSLClientRedirectTest, SetCaCertStore) {
+  auto ssl_port = PORT + 1;
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/index");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+// The session verifier must also run for the host a redirect leads to.
+TEST(SSLClientRedirectTest, SessionVerifier) {
+  auto ssl_port = PORT + 1;
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  // Accept the first host only.
+  std::atomic<int> sessions{0};
+  cli.set_session_verifier([&](tls::session_t) -> SSLVerifierResponse {
+    return sessions++ == 0 ? SSLVerifierResponse::CertificateAccepted
+                           : SSLVerifierResponse::CertificateRejected;
+  });
+
+  auto res = cli.Get("/index");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+  EXPECT_EQ(2, sessions.load());
+}
 #endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
