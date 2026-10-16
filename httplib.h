@@ -22879,10 +22879,17 @@ inline ReadResult WebSocket::read(std::string &msg) {
           // already in `msg` and read() has no way to resume it, so it is a
           // failure like any other. Timeouts are only ever seen on a message
           // boundary.
-          if (impl::read_websocket_frame(
-                  strm_, cont_opcode, cont_payload, cont_fin, is_server_,
-                  CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) !=
-              impl::FrameRead::Ok) {
+          // Only what is left of the limit, but room for a control frame,
+          // which may come between the fragments.
+          auto max_len =
+              CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH == 0
+                  ? size_t(0)
+                  : (std::max)(size_t(125),
+                               CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH -
+                                   msg.size());
+          if (impl::read_websocket_frame(strm_, cont_opcode, cont_payload,
+                                         cont_fin, is_server_,
+                                         max_len) != impl::FrameRead::Ok) {
             closed_ = true;
             return Fail;
           }

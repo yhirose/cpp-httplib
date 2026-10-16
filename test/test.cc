@@ -26458,6 +26458,69 @@ TEST(WebSocketTest, CloseDoesNotStealBytesFromConcurrentRead) {
   }
 }
 
+TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
+  std::atomic<bool> done{false};
+  std::string received;
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    if (ws.read(msg) == ws::Binary) { received = msg; }
+    done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(port));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0,
+            ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+
+  // Frames with an all-zero mask key, so the payload goes out verbatim.
+  auto frame = [](uint8_t first_byte, const std::string &payload) {
+    std::string f;
+    f += static_cast<char>(first_byte);
+    f += static_cast<char>(0x80 | payload.size());
+    f.append(4, '\0');
+    return f + payload;
+  };
+  std::string data = "GET /ws HTTP/1.1\r\n"
+                     "Host: 127.0.0.1\r\n"
+                     "Upgrade: websocket\r\n"
+                     "Connection: Upgrade\r\n"
+                     "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n"
+                     "Sec-WebSocket-Version: 13\r\n"
+                     "\r\n";
+  data += frame(0x02, "Hel"); // Binary, more to come
+  data += frame(0x89, "p");   // FIN + Ping
+  data += frame(0x80, "lo");  // FIN + Continuation
+#ifdef _WIN32
+  ::send(sock, data.data(), static_cast<int>(data.size()), 0);
+#else
+  ::send(sock, data.data(), data.size(), 0);
+#endif
+
+  for (int i = 0; i < 500 && !done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(done);
+  EXPECT_EQ("Hello", received);
+}
+
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 class WebSocketSSLIntegrationTest : public ::testing::Test {
 protected:
