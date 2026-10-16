@@ -10434,6 +10434,7 @@ TEST(HeadersOrderTest, ReceivedFieldsKeepTheirOrder) {
   svr.wait_until_ready();
 
   const std::string req = "GET /order HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
                           "X-First: 1\r\n"
                           "X-Dup: a\r\n"
                           "X-Second: 2\r\n"
@@ -10444,7 +10445,9 @@ TEST(HeadersOrderTest, ReceivedFieldsKeepTheirOrder) {
   std::string res;
   ASSERT_TRUE(send_request(5, req, &res, port));
   EXPECT_EQ("HTTP/1.1 200 OK", res.substr(0, 15));
-  EXPECT_EQ("X-First=1 X-Dup=a X-Second=2 X-Dup=b Connection=close ", received);
+  EXPECT_EQ(
+      "Host=localhost X-First=1 X-Dup=a X-Second=2 X-Dup=b Connection=close ",
+      received);
 }
 
 TEST(HeadersOrderTest, SentFieldsKeepTheirOrder) {
@@ -10836,10 +10839,34 @@ TEST(ServerRequestParsingTest, ExcessiveWhitespaceInUnparsableHeaderLine) {
                    "\r\n");
 }
 
+TEST(ServerRequestParsingTest, StrictRequestLine) {
+  const char *rejected[] = {
+      // RFC 9112 §3: one SP between the parts, and nothing else
+      "GET  /hi HTTP/1.1\r\nHost: localhost\r\n\r\n",
+      "GET\t/hi HTTP/1.1\r\nHost: localhost\r\n\r\n",
+      "GET /hi\tHTTP/1.1\r\nHost: localhost\r\n\r\n",
+      "GET /hi HTTP/1.1 \r\nHost: localhost\r\n\r\n",
+      // A request-target has no fragment
+      "GET /hi#x HTTP/1.1\r\nHost: localhost\r\n\r\n",
+      // An HTTP/1.1 request needs a Host
+      "GET /hi HTTP/1.1\r\n\r\n",
+  };
+  for (auto request : rejected) {
+    std::string out;
+    test_raw_request(request, &out);
+    EXPECT_EQ("HTTP/1.1 400 Bad Request", out.substr(0, 24)) << request;
+  }
+
+  std::string out;
+  test_raw_request("GET /hi HTTP/1.0\r\n\r\n", &out);
+  EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
+}
+
 TEST(ServerRequestParsingTest, AmbiguousTransferEncodingClosesConnection) {
   // RFC 9112 §6.1
   const char *requests[] = {
       "PUT /put_hi HTTP/1.1\r\n"
+      "Host: localhost\r\n"
       "Content-Length: 0\r\n"
       "Transfer-Encoding: chunked\r\n"
       "\r\n"
@@ -10921,6 +10948,7 @@ TEST(ServerRequestParsingTest, InvalidControlCharInURL) {
 TEST(ServerRequestParsingTest, NonAsciiInURLAccepted) {
   std::string out;
   test_raw_request("GET /hi?q=\xE3\x81\x82 HTTP/1.1\r\n"
+                   "Host: localhost\r\n"
                    "Connection: close\r\n\r\n",
                    &out);
   EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
@@ -11052,6 +11080,7 @@ TEST(ServerRequestParsingTest, EmptyFieldValue) {
   std::string out;
 
   test_raw_request("GET /header_field_value_check HTTP/1.1\r\n"
+                   "Host: localhost\r\n"
                    "Test: \r\n\r\n",
                    &out);
   EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15));
@@ -17556,6 +17585,7 @@ TEST(MultipartFormDataTest, AlternateFilename) {
   svr.wait_until_ready();
 
   auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
              "Content-Type: multipart/form-data;boundary=--------\r\n"
              "Content-Length: 399\r\n"
              "\r\n"
@@ -17624,6 +17654,7 @@ TEST(MultipartFormDataTest, AlternateFilenameLongValueAndCaseInsensitive) {
                      "------------\r\n";
 
   auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
              "Content-Type: multipart/form-data;boundary=--------\r\n"
              "Content-Length: " +
              std::to_string(body.size()) + "\r\n\r\n" + body;
@@ -17658,6 +17689,7 @@ TEST(MultipartFormDataTest, CloseDelimiterWithoutCRLF) {
   svr.wait_until_ready();
 
   auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
              "Content-Type: multipart/form-data;boundary=--------\r\n"
              "Content-Length: 146\r\n"
              "\r\n----------\r\n"
@@ -17702,6 +17734,7 @@ TEST(MultipartFormDataTest, ContentLength) {
   svr.wait_until_ready();
 
   auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
              "Content-Type: multipart/form-data;boundary=--------\r\n"
              "Content-Length: 167\r\n"
              "\r\n----------\r\n"
@@ -17756,6 +17789,7 @@ TEST(MultipartFormDataTest, AccessPartHeaders) {
   svr.wait_until_ready();
 
   auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
              "Content-Type: multipart/form-data;boundary=--------\r\n"
              "Content-Length: 232\r\n"
              "\r\n----------\r\n"
@@ -17810,6 +17844,7 @@ TEST(MultipartFormDataTest, LargeHeader) {
                         "--" +
                         boundary + "--\r\n";
   std::string header_prefix = "POST /test HTTP/1.1\r\n"
+                              "Host: localhost\r\n"
                               "Content-Type: multipart/form-data;boundary=" +
                               boundary +
                               "\r\n"
@@ -18176,6 +18211,7 @@ static void expect_split_multipart_ok(const std::string &body1,
   // response drain ends immediately instead of idling until the read timeout.
   const std::string head =
       "POST /post HTTP/1.1\r\n"
+      "Host: localhost\r\n"
       "Content-Type: multipart/form-data; boundary=zzzz\r\n"
       "Connection: close\r\n"
       "Content-Length: " +
@@ -20505,6 +20541,7 @@ TEST(RequestSmugglingTest, DuplicateContentLengthSameValues) {
 
   // Two Content-Length headers with same value — should be accepted (RFC 9110)
   auto req = "POST /test HTTP/1.1\r\n"
+             "Host: localhost\r\n"
              "Content-Length: 5\r\n"
              "Content-Length: 5\r\n"
              "\r\n"
@@ -20650,6 +20687,7 @@ TEST(HeaderSmugglingTest, DuplicateTrailerFieldLinesDeclareAllTrailers) {
   svr.wait_until_ready();
 
   const std::string req = "GET / HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
                           "Transfer-Encoding: chunked\r\n"
                           "Trailer: X-Hello\r\n"
                           "Trailer: X-World, Content-Length\r\n"
@@ -20758,6 +20796,7 @@ TEST(HeaderSmugglingTest, DeclaredTrailerNamesAreCappedAtHeaderMaxCount) {
   trailer_decl += "\r\n";
 
   const std::string req = "GET / HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
                           "Transfer-Encoding: chunked\r\n" +
                           trailer_decl +
                           "\r\n"

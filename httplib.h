@@ -9197,8 +9197,11 @@ inline std::string normalize_query_string(const std::string &query) {
 // Build the request target that goes on the wire from a caller-supplied path.
 // Shared by the buffered send path and the streaming API so that both put the
 // same bytes in the request line for the same input.
-inline std::string encode_request_target(const std::string &target,
+inline std::string encode_request_target(const std::string &uri,
                                          bool path_encode) {
+  // The fragment stays with the client (RFC 9110 §7.1).
+  auto target = uri.substr(0, uri.find('#'));
+
   // `substr(0, npos)` yields the whole string, which is what the no-query
   // case needs.
   auto query_pos = target.find('?');
@@ -13597,19 +13600,19 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
   len -= 2;
 
   {
-    size_t count = 0;
-
-    detail::split(s, s + len, ' ', [&](const char *b, const char *e) {
-      switch (count) {
-      case 0: req.method = std::string(b, e); break;
-      case 1: req.target = std::string(b, e); break;
-      case 2: req.version = std::string(b, e); break;
-      default: break;
-      }
-      count++;
-    });
-
-    if (count != 3) { return false; }
+    // RFC 9112 §3: exactly one SP between the method, the target and the
+    // version. Taking other whitespace as a separator too lets recipients
+    // that parse more strictly see a different request.
+    auto end = s + len;
+    auto sp1 = std::find(s, end, ' ');
+    auto sp2 = sp1 == end ? end : std::find(sp1 + 1, end, ' ');
+    if (sp2 == end || std::find(sp2 + 1, end, ' ') != end || sp1 == s ||
+        sp2 == sp1 + 1 || sp2 + 1 == end) {
+      return false;
+    }
+    req.method.assign(s, sp1);
+    req.target.assign(sp1 + 1, sp2);
+    req.version.assign(sp2 + 1, end);
   }
 
   // A method outside the built-in set is accepted only when a handler has been
@@ -13627,17 +13630,15 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     return false;
   }
 
-  if (!detail::fields::is_request_target(req.target)) { return false; }
+  // A request-target has no fragment (RFC 9112 §3.2), and one stripped here
+  // would leave this server routing a different path than a cache or a
+  // filter in front of it sees.
+  if (!detail::fields::is_request_target(req.target) ||
+      req.target.find('#') != std::string::npos) {
+    return false;
+  }
 
   {
-    // Skip URL fragment
-    for (size_t i = 0; i < req.target.size(); i++) {
-      if (req.target[i] == '#') {
-        req.target.erase(i);
-        break;
-      }
-    }
-
     detail::divide(req.target, '?',
                    [&](const char *lhs_data, std::size_t lhs_size,
                        const char *rhs_data, std::size_t rhs_size) {
@@ -14768,10 +14769,12 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     connection_closed = true;
   }
 
-  // RFC 9112 §3.2: Reject more than one Host field line or an invalid Host
-  // value, so that every recipient of the request sees the same authority.
+  // RFC 9112 §3.2: Reject more than one Host field line, an invalid Host
+  // value, or none in HTTP/1.1, so that every recipient of the request sees
+  // the same authority.
   if (req.get_header_value_count("Host") > 1 ||
-      !detail::fields::is_host(req.get_header_value("Host"))) {
+      !detail::fields::is_host(req.get_header_value("Host")) ||
+      (req.version == "HTTP/1.1" && !req.has_header("Host"))) {
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     output_error_log(Error::InvalidHeaders, &req);
