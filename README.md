@@ -100,7 +100,7 @@ cli.enable_server_hostname_verification(false);
 ```
 
 > [!NOTE]
-> The CA certificates are loaded when the client makes its first connection. Changing `set_ca_cert_path()` or `enable_system_ca()` after that has no effect, so make the settings before the first request, or use a new client.
+> The CA certificates are loaded when the client makes its first connection. Changing `set_ca_cert_path()` or `enable_system_ca()` after that has no effect, so make the settings before the first request, or use a new client. `set_ca_cert_store()` and `load_ca_cert_store()` take effect at once. `WebSocketClient` works the same way.
 
 ### SSL Error Handling
 
@@ -343,6 +343,8 @@ Note the following:
 * Static file serving remains `GET`/`HEAD` only, and WebSocket upgrades `GET` only.
 * `Allow` and the WebDAV `DAV:` header are not generated automatically. Register an `Options` handler if clients need them.
 
+The request line itself is read strictly, as RFC 9112 asks: a single space between its three parts, no fragment (`#...`) in the target, and a `Host` header in every HTTP/1.1 request. Anything else gets `400 Bad Request`.
+
 ### Bind a socket to multiple interfaces and any available port
 
 ```cpp
@@ -441,7 +443,7 @@ svr.set_file_request_handler([](const Request &req, Response &res) {
 });
 ```
 
-It is not called for a `HEAD` request, nor when the file has not changed and `304 Not Modified` is sent, so do not rely on it for access control; use `set_pre_routing_handler()` for that.
+It is not called for `HEAD` requests or `304 Not Modified` responses, so do not use it for access control; use `set_pre_routing_handler()`.
 
 ### Logging
 
@@ -1337,6 +1339,8 @@ cli.set_proxy_bearer_token_auth("pass");
 > [!NOTE]
 > A TLS backend (OpenSSL, Mbed TLS, or wolfSSL) is required for Digest Authentication.
 
+When the proxy refuses the `CONNECT` of an HTTPS request, the request fails with `Error::ProxyConnection`. Only a `407 Proxy Authentication Required` comes back as the response, since any other answer from the proxy could be taken for the origin's.
+
 #### Bypass the proxy for specific hosts (`NO_PROXY`)
 
 ```cpp
@@ -1393,7 +1397,9 @@ res = cli.Get("/");
 res->status; // 200
 ```
 
-On a redirect to another host, `Authorization`, `Cookie` and `Proxy-Authorization` are dropped along with the credentials set with `set_basic_auth()` and the like, and the client certificate is not presented. Other headers, the default ones included, go along (RFC 9110 §15.4), and so do the timeouts, the payload limit and the TLS verification settings.
+A URL with userinfo (`http://user:pass@host/`) is not supported, neither for a `Client` nor in a `Location`; use `set_basic_auth()` for the credentials.
+
+On a redirect to another host, `Authorization`, `Cookie` and `Proxy-Authorization` are dropped along with the credentials set with `set_basic_auth()`, `set_bearer_token_auth()` and `set_digest_auth()`, and the client certificate is not presented. Other headers, the default ones included, go along (RFC 9110 §15.4), and so do the timeouts, the payload limit and the TLS verification settings.
 
 ### Use a specific network interface
 

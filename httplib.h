@@ -673,6 +673,15 @@ inline bool equal(const std::string &a, const std::string &b) {
          });
 }
 
+// For a literal, without building a std::string from it.
+template <size_t N>
+inline bool equal(const std::string &a, const char (&b)[N]) {
+  return a.size() == N - 1 &&
+         std::equal(a.begin(), a.end(), b, [](char ca, char cb) {
+           return to_lower(ca) == to_lower(cb);
+         });
+}
+
 struct equal_to {
   bool operator()(const std::string &a, const std::string &b) const {
     return equal(a, b);
@@ -3988,9 +3997,9 @@ public:
   bool is_open() const;
   size_t size() const;
   const char *data() const;
-  // Copies up to len bytes from offset into buf and returns how many. Unlike
-  // reading data(), it gives fewer, down to 0, for a file that has shrunk
-  // since it was opened, rather than a SIGBUS.
+  // Copies up to len bytes from offset into buf and returns how many: fewer,
+  // down to 0, if the file has shrunk since it was opened, where reading
+  // data() would raise SIGBUS.
   size_t read(size_t offset, char *buf, size_t len) const;
 
 private:
@@ -5053,6 +5062,7 @@ inline void SSEClient::run_event_loop() {
     auto has_id = false;
     auto first_line = true;
     auto after_cr = false;
+    auto event_too_long = false;
 
     while (running_.load() && result.next()) {
       // What is left in the buffer has no line ending
@@ -5110,6 +5120,7 @@ inline void SSEClient::run_event_loop() {
           buffer.size() + current_msg.data.size() >
               CPPHTTPLIB_SSE_MAX_EVENT_LENGTH) {
         if (on_error_) { on_error_(Error::ExceedMaxPayloadSize); }
+        event_too_long = true;
         break;
       }
     }
@@ -5117,7 +5128,8 @@ inline void SSEClient::run_event_loop() {
     // Connection ended
     connected_.store(false);
 
-    if (!running_.load()) { break; }
+    // Reconnecting would only get the same event again
+    if (!running_.load() || event_too_long) { break; }
 
     // Check for read errors
     if (result.has_read_error()) {
@@ -5804,7 +5816,8 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
     }
   }
 
-  // A max_len of 0 means no limit, as payload_max_length does.
+  // A max_len of 0 means no limit, as payload_max_length does, and a length
+  // size_t cannot hold (32-bit builds) is refused either way.
   if ((max_len > 0 && payload_len > max_len) ||
       payload_len > (std::numeric_limits<size_t>::max)()) {
     return FrameRead::Fail;
@@ -6524,22 +6537,6 @@ inline const char *mmap::data() const {
   return is_open_empty_file ? "" : static_cast<const char *>(addr_);
 }
 
-inline size_t mmap::read(size_t offset, char *buf, size_t len) const {
-  if (offset >= size_) { return 0; }
-  len = (std::min)(len, size_ - offset);
-#if defined(_WIN32)
-  // Windows does not let a mapped file be truncated.
-  std::memcpy(buf, static_cast<const char *>(addr_) + offset, len);
-  return len;
-#else
-  ssize_t n;
-  do {
-    n = ::pread(fd_, buf, len, static_cast<off_t>(offset));
-  } while (n < 0 && errno == EINTR);
-  return n > 0 ? static_cast<size_t>(n) : 0;
-#endif
-}
-
 inline void mmap::close() {
 #if defined(_WIN32)
   if (addr_) {
@@ -6590,6 +6587,20 @@ template <typename T> inline ssize_t handle_EINTR(T fn) {
     break;
   }
   return res;
+}
+
+inline size_t mmap::read(size_t offset, char *buf, size_t len) const {
+  if (offset >= size_) { return 0; }
+  len = (std::min)(len, size_ - offset);
+#if defined(_WIN32)
+  // Windows does not let a mapped file be truncated.
+  std::memcpy(buf, static_cast<const char *>(addr_) + offset, len);
+  return len;
+#else
+  auto n = handle_EINTR(
+      [&]() { return ::pread(fd_, buf, len, static_cast<off_t>(offset)); });
+  return n > 0 ? static_cast<size_t>(n) : 0;
+#endif
 }
 
 inline ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags) {
@@ -7634,7 +7645,11 @@ find_content_type(const std::string &path,
                   const std::string &default_content_type) {
   auto ext = file_extension(path);
 
+  // Extensions are matched regardless of case, as web servers do, with an
+  // exact match to a user mapping first
+  auto lower_ext = case_ignore::to_lower(ext);
   auto it = user_data.find(ext);
+  if (it == user_data.end()) { it = user_data.find(lower_ext); }
   if (it != user_data.end()) { return it->second; }
 
   static const struct {
@@ -7692,8 +7707,6 @@ find_content_type(const std::string &path,
       {"wasm", "application/wasm"},
   };
 
-  // Extensions are matched regardless of case, as web servers do
-  auto lower_ext = case_ignore::to_lower(ext);
   for (const auto &t : types) {
     if (lower_ext == t.ext) { return t.type; }
   }
@@ -7718,8 +7731,10 @@ extract_media_type(const std::string &content_type,
                        std::string key;
                        std::string val;
                        divide_param_pair(b, e, key, val);
+                       // Parameter names are case-insensitive (RFC 9110
+                       // §5.6.6)
                        if (!key.empty()) {
-                         params->emplace(trim_copy(key),
+                         params->emplace(case_ignore::to_lower(trim_copy(key)),
                                          trim_double_quotes_copy(val));
                        }
                      });
@@ -8229,23 +8244,12 @@ create_compressor() {
 #endif
 }
 
-// Whether s is lit, ignoring case, with the lengths compared first.
-template <size_t N>
-inline bool equals_literal_ignoring_case(const std::string &s,
-                                         const char (&lit)[N]) {
-  return s.size() == N - 1 &&
-         std::equal(s.begin(), s.end(), lit, [](char a, char b) {
-           return case_ignore::to_lower(a) == case_ignore::to_lower(b);
-         });
-}
-
 inline bool is_prohibited_header_name(const std::string &name) {
-  // Field names are case-insensitive (RFC 9110 §5.1), and every header lookup
-  // by name runs this.
-  return equals_literal_ignoring_case(name, "REMOTE_ADDR") ||
-         equals_literal_ignoring_case(name, "REMOTE_PORT") ||
-         equals_literal_ignoring_case(name, "LOCAL_ADDR") ||
-         equals_literal_ignoring_case(name, "LOCAL_PORT");
+  // Field names are case-insensitive (RFC 9110 §5.1)
+  return case_ignore::equal(name, "REMOTE_ADDR") ||
+         case_ignore::equal(name, "REMOTE_PORT") ||
+         case_ignore::equal(name, "LOCAL_ADDR") ||
+         case_ignore::equal(name, "LOCAL_PORT");
 }
 
 inline bool has_header(const Headers &headers, const std::string &key) {
@@ -8958,8 +8962,7 @@ write_content_without_length(Stream &strm,
 }
 
 // Runs a known-length content provider to completion and compresses what it
-// writes into `out`. Nothing is buffered in identity form: a provider backed
-// by an mmap hands the compressor a pointer straight into the mapping.
+// writes into `out`, chunk by chunk, without holding the identity form.
 inline bool compress_content_provider(const ContentProvider &content_provider,
                                       size_t length, compressor &cmp,
                                       std::string &out) {
@@ -9008,15 +9011,17 @@ inline void set_file_content_provider(Response &res,
                                       const std::shared_ptr<mmap> &m,
                                       const std::string &content_type,
                                       EncodingType encoding) {
+  // One read and one write move up to this much of the file at a time.
+  auto buf = std::make_shared<std::vector<char>>(
+      (std::min)(m->size(), size_t(256 * 1024)));
   res.set_content_provider(
       m->size(), content_type,
-      [m](size_t offset, size_t length, DataSink &sink) -> bool {
+      [m, buf](size_t offset, size_t length, DataSink &sink) -> bool {
         // Never read past the file, which ends the response early if it has
         // shrunk since it was opened.
-        char buf[CPPHTTPLIB_SEND_BUFSIZ];
-        auto n = m->read(offset, buf, (std::min)(length, sizeof(buf)));
+        auto n = m->read(offset, buf->data(), (std::min)(length, buf->size()));
         if (n == 0) { return false; }
-        sink.write(buf, n);
+        sink.write(buf->data(), n);
         return true;
       });
 
@@ -11682,20 +11687,17 @@ inline std::string decode_path_component(const std::string &component) {
       if (component[i + 1] == 'u') {
         // Unicode %uXXXX encoding
         auto val = 0;
-        if (detail::from_hex_to_i(component, i + 2, 4, val)) {
-          // 4 digits Unicode codes: val is 0x0000-0xFFFF (from 4 hex digits),
-          // so to_utf8 writes at most 3 bytes. buff[4] is safe.
-          char buff[4];
-          size_t len = detail::to_utf8(val, buff);
-          if (len > 0) {
-            result.append(buff, len);
-            i += 5; // 'u0000'
-          } else {
-            // A surrogate is no character. Dropping it would join what is on
-            // either side of it, so the escape is kept as it is.
-            result += component[i];
-          }
+        // 4 digits Unicode codes: val is 0x0000-0xFFFF (from 4 hex digits),
+        // so to_utf8 writes at most 3 bytes. buff[4] is safe.
+        char buff[4];
+        size_t len = 0;
+        if (detail::from_hex_to_i(component, i + 2, 4, val) &&
+            (len = detail::to_utf8(val, buff)) > 0) {
+          result.append(buff, len);
+          i += 5; // 'u0000'
         } else {
+          // Not 4 hex digits, or a surrogate, which is no character: the
+          // escape is kept as it is rather than joining its neighbours
           result += component[i];
         }
       } else {
@@ -13689,12 +13691,10 @@ inline bool Server::parse_request_line(const char *s, Request &req) const {
     // version. Taking other whitespace as a separator too lets recipients
     // that parse more strictly see a different request.
     auto end = s + len;
+    if (std::count(s, end, ' ') != 2) { return false; }
     auto sp1 = std::find(s, end, ' ');
-    auto sp2 = sp1 == end ? end : std::find(sp1 + 1, end, ' ');
-    if (sp2 == end || std::find(sp2 + 1, end, ' ') != end || sp1 == s ||
-        sp2 == sp1 + 1 || sp2 + 1 == end) {
-      return false;
-    }
+    auto sp2 = std::find(sp1 + 1, end, ' ');
+    if (sp1 == s || sp2 == sp1 + 1 || sp2 + 1 == end) { return false; }
     req.method.assign(s, sp1);
     req.target.assign(sp1 + 1, sp2);
     req.version.assign(sp2 + 1, end);
@@ -14849,8 +14849,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     return write_response(strm, close_connection, req, res);
   }
 
-  // RFC 9112 §6.1: answer a request that also has a Content-Length, or an
-  // HTTP/1.0 one, by its Transfer-Encoding, but close the connection after.
+  // RFC 9112 §6.1: a Transfer-Encoding alongside a Content-Length, or in an
+  // HTTP/1.0 request, is honoured, but the connection closes after the
+  // response.
   if (req.has_header("Transfer-Encoding") &&
       (req.has_header("Content-Length") || req.version == "HTTP/1.0")) {
     connection_closed = true;
@@ -14859,9 +14860,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // RFC 9112 §3.2: Reject more than one Host field line, an invalid Host
   // value, or none in HTTP/1.1, so that every recipient of the request sees
   // the same authority.
-  if (req.get_header_value_count("Host") > 1 ||
-      !detail::fields::is_host(req.get_header_value("Host")) ||
-      (req.version == "HTTP/1.1" && !req.has_header("Host"))) {
+  auto host_count = req.get_header_value_count("Host");
+  if (host_count > 1 || (host_count == 0 && req.version == "HTTP/1.1") ||
+      !detail::fields::is_host(req.get_header_value("Host"))) {
     connection_closed = true;
     res.status = StatusCode::BadRequest_400;
     output_error_log(Error::InvalidHeaders, &req);
@@ -14966,11 +14967,14 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // Run pre_routing_handler_ and pre_request_handler_ before upgrading so
   // that authentication and other middleware can reject the request with an
   // HTTP response (e.g., 401) before the protocol switches.
+  // The response says so when this connection closes after it.
+  auto close_after_response = close_connection || connection_closed;
+
   if (detail::is_websocket_upgrade(req)) {
     if (pre_routing_handler_ &&
         pre_routing_handler_(req, res) == HandlerResponse::Handled) {
       if (res.status == -1) { res.status = StatusCode::OK_200; }
-      return write_response_with_content(strm, close_connection, req, res);
+      return write_response_with_content(strm, close_after_response, req, res);
     }
     // Find matching WebSocket handler
     for (const auto &entry : websocket_handlers_) {
@@ -14979,7 +14983,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         if (pre_request_handler_ &&
             pre_request_handler_(req, res) == HandlerResponse::Handled) {
           if (res.status == -1) { res.status = StatusCode::OK_200; }
-          return write_response_with_content(strm, close_connection, req, res);
+          return write_response_with_content(strm, close_after_response, req,
+                                             res);
         }
 
         // Compute accept key
@@ -15087,8 +15092,6 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
   }
 #endif
-  // The response says so when this connection closes after it.
-  auto close = close_connection || connection_closed;
   auto ret = false;
   if (routed) {
     if (res.status == -1) {
@@ -15122,17 +15125,17 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
 
     if (file_open_error) {
-      ret = write_response(strm, close, req, res);
+      ret = write_response(strm, close_after_response, req, res);
     } else if (detail::range_error(req, res)) {
       detail::clear_content(res);
       res.status = StatusCode::RangeNotSatisfiable_416;
-      ret = write_response(strm, close, req, res);
+      ret = write_response(strm, close_after_response, req, res);
     } else {
-      ret = write_response_with_content(strm, close, req, res);
+      ret = write_response_with_content(strm, close_after_response, req, res);
     }
   } else {
     if (res.status == -1) { res.status = StatusCode::NotFound_404; }
-    ret = write_response(strm, close, req, res);
+    ret = write_response(strm, close_after_response, req, res);
   }
 
   // Drain any unconsumed framed body to prevent request smuggling on
@@ -15350,11 +15353,12 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
     return req.method == "CONNECT";
   }
 
-  // Skip interim responses, such as 100 Continue (unless Expect:
-  // 100-continue is handled by the caller) and 103 Early Hints, along with
-  // their header fields. 101 ends HTTP on the connection, so it is final.
-  while (skip_100_continue && 100 <= res.status && res.status < 200 &&
-         res.status != StatusCode::SwitchingProtocol_101) {
+  // Skip interim (1xx) responses along with their header fields, except a 100
+  // Continue the caller handles itself for Expect: 100-continue. 101 ends
+  // HTTP on the connection, so it is final.
+  while (100 <= res.status && res.status < 200 &&
+         res.status != StatusCode::SwitchingProtocol_101 &&
+         (skip_100_continue || res.status != StatusCode::Continue_100)) {
     Headers interim_headers;
     if (!detail::read_headers(strm, interim_headers)) { return false; }
     if (!line_reader.getline()) { return false; } // next response line
@@ -15759,17 +15763,21 @@ inline ssize_t ClientImpl::StreamHandle::read_with_decompression(char *buf,
 
     if (n <= 0) { return n; }
 
+    auto exceeded = false;
     bool decompress_ok = decompressor_->decompress(
         compressed_buf, static_cast<size_t>(n),
-        [this](const char *data, size_t data_len) {
+        [&](const char *data, size_t data_len) {
           decompress_buffer_.append(data, data_len);
           auto limit = body_reader_.payload_max_length;
-          return limit == 0 ||
-                 decompressed_bytes_read_ + decompress_buffer_.size() <= limit;
+          exceeded =
+              limit > 0 &&
+              decompressed_bytes_read_ + decompress_buffer_.size() > limit;
+          return !exceeded;
         });
 
     if (!decompress_ok) {
-      body_reader_.last_error = Error::Read;
+      body_reader_.last_error =
+          exceeded ? Error::ExceedMaxPayloadSize : Error::Read;
       return -1;
     }
 
@@ -15934,8 +15942,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   if (!ret) { return false; }
 
-  if (detail::has_header_token(res.headers, "Connection", "close") ||
-      (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
+  {
     // NOTE: this requires a not-entirely-obvious chain of calls to be correct
     // for this to be safe.
 
@@ -15944,7 +15951,13 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     // to call it from a different thread since it's a thread-safety issue
     // to do these things to the socket if another thread is using the socket.
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    disconnect(/*gracefully=*/true);
+    // Also when the request asked for it (e.g. a body that was never sent),
+    // so that a redirect or an auth retry below does not reuse the socket.
+    if (socket_should_be_closed_when_request_is_done_ ||
+        detail::has_header_token(res.headers, "Connection", "close") ||
+        (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
+      disconnect(/*gracefully=*/true);
+    }
   }
 
   if (300 < res.status && res.status < 400 && follow_location_) {
@@ -17888,6 +17901,9 @@ inline Client::Client(const std::string &scheme_host_port,
       cli_ = detail::make_unique<ClientImpl>(host, port, client_cert_path,
                                              client_key_path);
     }
+  } else if (scheme_host_port.find("//") != std::string::npos) {
+    // A URL, but not one this client can use, such as one with userinfo
+    cli_ = detail::make_unique<detail::InvalidClientImpl>();
   } else {
     // NOTE: Update TEST(UniversalClientImplTest, Ipv6LiteralAddress)
     // if port param below changes.
@@ -18846,13 +18862,13 @@ inline bool SSLClient::connect_with_proxy(
   }
 
   // If status code is not 200, proxy request is failed.
-  // Set error to ProxyConnection. A refusal such as 407 is returned as the
-  // response of the request, so the caller sees why; any other status would
-  // read as the answer of the origin, which it never reached.
+  // Set error to ProxyConnection. A 407 is returned as the response of the
+  // request, so the caller sees the proxy asks for credentials; any other
+  // status would read as the answer of the origin, which it never reached.
   if (proxy_res.status != StatusCode::OK_200) {
     error = Error::ProxyConnection;
     output_error_log(error, nullptr);
-    if (400 <= proxy_res.status && proxy_res.status < 600) {
+    if (proxy_res.status == StatusCode::ProxyAuthenticationRequired_407) {
       res = std::move(proxy_res);
     } else {
       success = false;
@@ -19712,8 +19728,8 @@ inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
 inline ctx_t create_server_context() {
   SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
   if (ctx) {
-    // No renegotiation, which would run a handshake outside the one that
-    // SSLServer::update_certs_pem() waits for, as the other backends have it
+    // No renegotiation, as on the other backends: it would run a handshake
+    // that SSLServer::update_certs_pem() does not wait for
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION |
                                  SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION |
                                  SSL_OP_NO_RENEGOTIATION);
@@ -22911,53 +22927,15 @@ inline std::vector<std::string> get_ca_names(ctx_t ctx) {
 inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
                                const char *key_pem, const char *password) {
   if (!ctx || !cert_pem || !key_pem) { return false; }
-  auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
 
-  // Try the pair on a scratch context first, so a bad one leaves the server
-  // with its old certificate and key rather than half of each.
-  {
-    auto tmp = wolfSSL_CTX_new(wolfTLSv1_2_server_method());
-    if (!tmp) { return false; }
-    auto se = detail::scope_exit([&] { wolfSSL_CTX_free(tmp); });
-    if (password) { impl::set_wolfssl_password_cb(tmp, password); }
-    if (wolfSSL_CTX_use_certificate_buffer(
-            tmp, reinterpret_cast<const unsigned char *>(cert_pem),
-            static_cast<long>(strlen(cert_pem)),
-            SSL_FILETYPE_PEM) != SSL_SUCCESS ||
-        wolfSSL_CTX_use_PrivateKey_buffer(
-            tmp, reinterpret_cast<const unsigned char *>(key_pem),
-            static_cast<long>(strlen(key_pem)),
-            SSL_FILETYPE_PEM) != SSL_SUCCESS) {
-      impl::wolfssl_last_error() =
-          static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
-      return false;
-    }
-  }
+  // Try the pair on a scratch context first, so that a bad one leaves the
+  // server's certificate and key as they were
+  auto tmp = create_server_context();
+  if (!tmp) { return false; }
+  auto se = detail::scope_exit([&] { free_context(tmp); });
+  if (!set_client_cert_pem(tmp, cert_pem, key_pem, password)) { return false; }
 
-  // Load new certificate
-  int ret = wolfSSL_CTX_use_certificate_buffer(
-      wctx->ctx, reinterpret_cast<const unsigned char *>(cert_pem),
-      static_cast<long>(strlen(cert_pem)), SSL_FILETYPE_PEM);
-  if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
-    return false;
-  }
-
-  // Set password if provided
-  if (password) { impl::set_wolfssl_password_cb(wctx->ctx, password); }
-
-  // Load new private key
-  ret = wolfSSL_CTX_use_PrivateKey_buffer(
-      wctx->ctx, reinterpret_cast<const unsigned char *>(key_pem),
-      static_cast<long>(strlen(key_pem)), SSL_FILETYPE_PEM);
-  if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
-    return false;
-  }
-
-  return true;
+  return set_client_cert_pem(ctx, cert_pem, key_pem, password);
 }
 
 inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
@@ -22970,17 +22948,8 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
   if (!store) { return false; }
   free_ca_store(store);
   wolfSSL_CTX_UnloadCAs(wctx->ctx);
-
-  int ret = wolfSSL_CTX_load_verify_buffer(
-      wctx->ctx, reinterpret_cast<const unsigned char *>(ca_pem),
-      static_cast<long>(strlen(ca_pem)), SSL_FILETYPE_PEM);
-  if (ret != SSL_SUCCESS) {
-    impl::wolfssl_last_error() =
-        static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
-    return false;
-  }
-  wctx->ca_pem_data_ = ca_pem;
-  return true;
+  wctx->ca_pem_data_.clear();
+  return load_ca_pem(ctx, ca_pem, strlen(ca_pem));
 }
 
 inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
@@ -23093,10 +23062,6 @@ inline ReadResult WebSocket::read(std::string &msg) {
           Opcode cont_opcode;
           std::string cont_payload;
           bool cont_fin;
-          // A timeout is not reportable here: half of a fragmented message is
-          // already in `msg` and read() has no way to resume it, so it is a
-          // failure like any other. Timeouts are only ever seen on a message
-          // boundary.
           // Only what is left of the limit, but room for a control frame,
           // which may come between the fragments.
           auto max_len =
@@ -23105,6 +23070,10 @@ inline ReadResult WebSocket::read(std::string &msg) {
                   : (std::max)(size_t(125),
                                CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH -
                                    msg.size());
+          // A timeout is not reportable here: half of a fragmented message is
+          // already in `msg` and read() has no way to resume it, so it is a
+          // failure like any other. Timeouts are only ever seen on a message
+          // boundary.
           if (impl::read_websocket_frame(strm_, cont_opcode, cont_payload,
                                          cont_fin, is_server_,
                                          max_len) != impl::FrameRead::Ok) {
@@ -23173,8 +23142,15 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
   payload.push_back(static_cast<char>((code >> 8) & 0xFF));
   payload.push_back(static_cast<char>(code & 0xFF));
   // RFC 6455 Section 5.5: control frame payload must not exceed 125 bytes
-  // Close frame has 2-byte status code, so reason is limited to 123 bytes
-  payload += reason.substr(0, 123);
+  // Close frame has 2-byte status code, so reason is limited to 123 bytes,
+  // cut back to a whole UTF-8 character
+  auto short_reason = reason.substr(0, 123);
+  while (!short_reason.empty() && !impl::is_valid_utf8(short_reason)) {
+    short_reason.pop_back();
+  }
+  payload += short_reason;
+  // A code that may not be sent, such as NoStatus, goes without a payload
+  if (!impl::is_valid_close_payload(payload)) { payload.clear(); }
   {
     std::lock_guard<std::mutex> lock(write_mutex_);
     detail::write_websocket_frame(strm_, Opcode::Close, payload.data(),

@@ -703,8 +703,13 @@ TEST(CanCompressContentTypeTest, ComparesWholeTypes) {
 
 TEST(MultipartFormDataTest, MediaTypeIgnoresCase) {
   Request req;
-  req.set_header("Content-Type", "Multipart/Form-Data; boundary=x");
+  req.set_header("Content-Type", "Multipart/Form-Data; Boundary=x");
   EXPECT_TRUE(req.is_multipart_form_data());
+
+  std::string boundary;
+  EXPECT_TRUE(detail::parse_multipart_boundary(
+      req.get_header_value("Content-Type"), boundary));
+  EXPECT_EQ("x", boundary);
 }
 
 TEST(ProhibitedHeaderNameTest, ComparesWholeNames) {
@@ -13639,156 +13644,6 @@ TEST(ClientPayloadTest, DoesNotReserveTheClaimedLength) {
   EXPECT_FALSE(cli.Get("/"));
 }
 
-// Accepts one connection on 127.0.0.1:port, reads the request head and sends
-// back the given bytes, which httplib::Server could not be made to send.
-static void serve_raw_once(int port, const std::string &response) {
-  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
-  default_socket_options(srv);
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(static_cast<uint16_t>(port));
-  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-  int opt = 1;
-  ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
-#ifdef _WIN32
-               reinterpret_cast<const char *>(&opt),
-#else
-               &opt,
-#endif
-               sizeof(opt));
-  ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
-  ::listen(srv, 1);
-
-  auto cli = ::accept(srv, nullptr, nullptr);
-  if (cli != INVALID_SOCKET) {
-    detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 3, 0);
-    std::string head;
-    char c;
-    while (head.find("\r\n\r\n") == std::string::npos &&
-           ::recv(cli, &c, 1, 0) == 1) {
-      head += c;
-    }
-    ::send(cli, response.data(), static_cast<int>(response.size()), 0);
-    detail::close_socket(cli);
-  }
-  detail::close_socket(srv);
-}
-
-TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
-  const char *responses[] = {
-      "HTTP/1.1 103 Early Hints\r\n"
-      "Link: </style.css>; rel=preload\r\n"
-      "\r\n"
-      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
-      "HTTP/1.1 100 Continue\r\n"
-      "X-Note: interim\r\n"
-      "\r\n"
-      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
-  };
-
-  for (auto response : responses) {
-    std::thread t([&]() { serve_raw_once(PORT, response); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    Client cli("127.0.0.1", PORT);
-    auto res = cli.Get("/");
-    t.join();
-    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-    EXPECT_EQ(StatusCode::OK_200, res->status);
-    EXPECT_EQ("ok", res->body);
-  }
-}
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-TEST(ProxyConnectTest, OnlyARefusalIsPassedOn) {
-  // Anything but 200 or a refusal would read as the origin's own response.
-  {
-    std::thread t([] {
-      serve_raw_once(PORT, "HTTP/1.1 201 Created\r\n"
-                           "Set-Cookie: session=from-proxy\r\n"
-                           "Content-Length: 0\r\n\r\n");
-    });
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SSLClient cli("example.com", 443);
-    cli.set_proxy("127.0.0.1", PORT);
-    auto res = cli.Get("/");
-    t.join();
-    EXPECT_FALSE(res);
-    EXPECT_EQ(Error::ProxyConnection, res.error());
-  }
-  {
-    std::thread t([] {
-      serve_raw_once(PORT, "HTTP/1.1 407 Proxy Authentication Required\r\n"
-                           "Content-Length: 0\r\n\r\n");
-    });
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SSLClient cli("example.com", 443);
-    cli.set_proxy("127.0.0.1", PORT);
-    auto res = cli.Get("/");
-    t.join();
-    ASSERT_TRUE(res);
-    EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
-  }
-}
-#endif
-
-TEST(ExpectContinueTest, EarlyFinalResponseClosesConnection) {
-  std::atomic<bool> closed_by_client{false};
-  auto server_thread = std::thread([&] {
-    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
-    default_socket_options(srv);
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(static_cast<uint16_t>(PORT));
-    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    int opt = 1;
-    ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
-#ifdef _WIN32
-                 reinterpret_cast<const char *>(&opt),
-#else
-                 &opt,
-#endif
-                 sizeof(opt));
-    ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
-    ::listen(srv, 1);
-
-    auto cli = ::accept(srv, nullptr, nullptr);
-    if (cli != INVALID_SOCKET) {
-      detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 3, 0);
-
-      // Answer the head without asking for the body, and keep the connection.
-      std::string head;
-      char c;
-      while (head.find("\r\n\r\n") == std::string::npos &&
-             ::recv(cli, &c, 1, 0) == 1) {
-        head += c;
-      }
-      std::string res =
-          "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
-      ::send(cli, res.data(), static_cast<int>(res.size()), 0);
-
-      // Bytes here would be read as the body the first request declared.
-      char buf[256];
-      closed_by_client = ::recv(cli, buf, sizeof(buf), 0) == 0;
-      detail::close_socket(cli);
-    }
-    detail::close_socket(srv);
-  });
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-  Client cli("127.0.0.1", PORT);
-  cli.set_keep_alive(true);
-  cli.set_read_timeout(1, 0);
-  // Long enough for the client to send Expect: 100-continue.
-  auto res = cli.Post("/upload", std::string(2048, 'B'), "text/plain");
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
-  cli.Get("/second");
-
-  server_thread.join();
-  EXPECT_TRUE(closed_by_client);
-}
-
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 // `payload_max_length` is not enforced on decompressed body in ContentReader
 // path.
@@ -15038,6 +14893,12 @@ TEST(HostAndPortPropertiesTest, PortOutOfRange) {
   auto res = cli.Get("/");
   EXPECT_FALSE(res);
   EXPECT_EQ(Error::Connection, res.error());
+}
+
+TEST(HostAndPortPropertiesTest, UserinfoIsNotSupported) {
+  httplib::Client cli("http://user:pass@localhost:1234");
+  ASSERT_FALSE(cli.is_valid());
+  EXPECT_FALSE(cli.Get("/"));
 }
 
 TEST(HostAndPortPropertiesTest, TrailingCharactersInPort) {
@@ -19752,8 +19613,8 @@ TEST(ParseUrlTest, FragmentHandling) {
 }
 
 TEST(ParseUrlTest, UserinfoHandling) {
-  // userinfo is not supported. Parsers that honour it, or take a backslash for
-  // '/', would see evil.com where the host used to be the whole authority.
+  // userinfo, and a backslash some parsers take for '/', are rejected: such
+  // parsers would see evil.com as the host.
   const char *urls[] = {"http://user@evil.com/", "http://user:pass@evil.com/",
                         "http://evil.com\\@good.com/", "//user@evil.com/x"};
   for (auto url : urls) {
@@ -22172,9 +22033,14 @@ TEST_F(OpenStreamTest, ProhibitedTrailersAreIgnored_Stream) {
   EXPECT_EQ(std::string(""), handle.response->get_header_value("X-Allowed"));
 }
 
-static std::thread serve_single_response(std::promise<int> &port_promise,
-                                         const std::string &response) {
-  return std::thread([&port_promise, response] {
+// Accepts one connection on an OS-assigned port, which it hands over through
+// port_promise, reads the request head and sends back response. after_send,
+// if given, runs on the connection before it is closed.
+static std::thread
+serve_single_response(std::promise<int> &port_promise,
+                      const std::string &response,
+                      std::function<void(socket_t)> after_send = nullptr) {
+  return std::thread([&port_promise, response, after_send] {
     auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
     default_socket_options(srv);
     detail::set_socket_opt_time(srv, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
@@ -22237,6 +22103,7 @@ static std::thread serve_single_response(std::promise<int> &port_promise,
 #endif
              0);
 
+      if (after_send) { after_send(cli); }
       detail::close_socket(cli);
     }
     detail::close_socket(srv);
@@ -22314,6 +22181,134 @@ static void with_single_response(const std::string &response, Fn fn) {
   Client cli("127.0.0.1", port);
   fn(cli);
 }
+
+TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
+  const char *responses[] = {
+      "HTTP/1.1 103 Early Hints\r\n"
+      "Link: </style.css>; rel=preload\r\n"
+      "\r\n"
+      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+      "HTTP/1.1 100 Continue\r\n"
+      "X-Note: interim\r\n"
+      "\r\n"
+      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+  };
+
+  for (auto response : responses) {
+    with_single_response(response, [](Client &cli) {
+      auto res = cli.Get("/");
+      ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+      EXPECT_EQ(StatusCode::OK_200, res->status);
+      EXPECT_EQ("ok", res->body);
+    });
+  }
+}
+
+TEST(ExpectContinueTest, EarlyFinalResponseClosesConnection) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+  // The server answers the head without asking for the body. Bytes it then
+  // reads on the connection would be taken for the body the request declared.
+  auto closed_by_client = false;
+  std::promise<int> port_promise;
+  auto server_thread = serve_single_response(
+      port_promise, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n",
+      [&](socket_t sock) {
+        detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 3, 0);
+        char buf[256];
+        closed_by_client = ::recv(sock, buf, sizeof(buf), 0) == 0;
+      });
+
+  Client cli("127.0.0.1", port_promise.get_future().get());
+  cli.set_keep_alive(true);
+  cli.set_read_timeout(1, 0);
+  // Long enough for the client to send Expect: 100-continue.
+  auto res = cli.Post("/upload", std::string(2048, 'B'), "text/plain");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+  cli.Get("/second");
+
+  server_thread.join();
+  EXPECT_TRUE(closed_by_client);
+}
+
+TEST(InterimResponseTest, SkippedWhileWaitingForContinue) {
+  // Long enough for the client to send Expect: 100-continue
+  with_single_response(
+      "HTTP/1.1 103 Early Hints\r\n"
+      "Link: </style.css>; rel=preload\r\n"
+      "\r\n"
+      "HTTP/1.1 401 Unauthorized\r\n"
+      "Content-Length: 0\r\n\r\n",
+      [](Client &cli) {
+        cli.set_read_timeout(2, 0);
+        auto res = cli.Post("/upload", std::string(2048, 'B'), "text/plain");
+        ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+        EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
+      });
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(ExpectContinueTest, AuthRetryAfterEarlyResponseUsesANewConnection) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+  auto reused = false;
+  std::promise<int> port_promise;
+  auto server_thread = serve_single_response(
+      port_promise,
+      "HTTP/1.1 401 Unauthorized\r\n"
+      "WWW-Authenticate: Digest realm=\"r\", nonce=\"n\", qop=\"auth\"\r\n"
+      "Content-Length: 0\r\n\r\n",
+      [&](socket_t sock) {
+        detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 3, 0);
+        char buf[256];
+        reused = ::recv(sock, buf, sizeof(buf), 0) > 0;
+      });
+
+  Client cli("127.0.0.1", port_promise.get_future().get());
+  cli.set_keep_alive(true);
+  cli.set_digest_auth("user", "pass");
+  cli.set_read_timeout(1, 0);
+  cli.Post("/upload", std::string(2048, 'B'), "text/plain");
+
+  server_thread.join();
+  EXPECT_FALSE(reused);
+}
+
+TEST(ProxyConnectTest, OnlyAProxyAuthChallengeIsPassedOn) {
+  // Any other answer to CONNECT would read as the origin's response.
+  struct {
+    const char *response;
+    bool passed_on;
+  } cases[] = {
+      {"HTTP/1.1 201 Created\r\n"
+       "Set-Cookie: session=from-proxy\r\n"
+       "Content-Length: 0\r\n\r\n",
+       false},
+      {"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n", false},
+      {"HTTP/1.1 407 Proxy Authentication Required\r\n"
+       "Content-Length: 0\r\n\r\n",
+       true},
+  };
+
+  for (const auto &c : cases) {
+    std::promise<int> port_promise;
+    auto server_thread = serve_single_response(port_promise, c.response);
+    SSLClient cli("example.com", 443);
+    cli.set_proxy("127.0.0.1", port_promise.get_future().get());
+    auto res = cli.Get("/");
+    server_thread.join();
+
+    EXPECT_EQ(Error::ProxyConnection, res.error()) << c.response;
+    ASSERT_EQ(c.passed_on, static_cast<bool>(res)) << c.response;
+    if (res) {
+      EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
+    }
+  }
+}
+#endif
 
 // RFC 9112 §6.3: a response that pairs a non-zero Content-Length with
 // Transfer-Encoding is framed ambiguously. Both read paths delimit its body by
@@ -24217,7 +24212,8 @@ TEST_F(SSEIntegrationTest, TooLongEventEndsTheConnection) {
   });
 
   Client client("localhost", get_port());
-  // A stream that may run forever, so that only the event is bounded.
+  // Lift the payload limit, so that only the event limit can end this endless
+  // stream.
   client.set_payload_max_length(0);
   sse::SSEClient sse(client, "/endless-line");
   std::atomic<bool> too_long{false};
@@ -26982,8 +26978,8 @@ TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
   });
   svr.wait_until_ready();
 
-  // The Close each payload is answered with: an echo when it is valid, and
-  // 1002 otherwise.
+  // Each Close payload and the reply it should get: an echo when valid, 1002
+  // otherwise.
   std::vector<std::pair<std::string, std::string>> cases = {
       {std::string("\x03\xe8") + "bye", std::string("\x03\xe8") + "bye"},
       {std::string("\x03"), std::string("\x03\xea")},         // 1 byte
