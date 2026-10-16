@@ -27003,6 +27003,37 @@ protected:
   int port_ = 0;
 };
 
+TEST_F(WebSocketSSLIntegrationTest, VerifiersDecide) {
+  auto url = "wss://localhost:" + std::to_string(port_) + "/ws-echo";
+  {
+    ws::WebSocketClient client(url);
+    client.enable_server_certificate_verification(false);
+    auto calls = 0;
+    client.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+      calls++;
+      return false;
+    });
+    EXPECT_FALSE(client.connect());
+    EXPECT_GT(calls, 0);
+  }
+  {
+    ws::WebSocketClient client(url);
+    client.enable_server_certificate_verification(false);
+    client.set_session_verifier([](tls::session_t) {
+      return SSLVerifierResponse::CertificateRejected;
+    });
+    EXPECT_FALSE(client.connect());
+  }
+  {
+    ws::WebSocketClient client(url);
+    client.enable_server_certificate_verification(false);
+    client.set_session_verifier([](tls::session_t) {
+      return SSLVerifierResponse::CertificateAccepted;
+    });
+    EXPECT_TRUE(client.connect());
+  }
+}
+
 TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
   ws::WebSocketClient client("wss://localhost:" + std::to_string(port_) +
                              "/ws-echo");

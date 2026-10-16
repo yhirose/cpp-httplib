@@ -204,6 +204,10 @@ void set_ca_cert_path(const std::string &ca_cert_file_path,
 void set_ca_cert_store(tls::ca_store_t store);
 void enable_server_certificate_verification(bool enabled);
 void enable_server_hostname_verification(bool enabled);
+// The same verifiers as SSLClient's, e.g. to pin the server's certificate
+void set_server_certificate_verifier(tls::VerifyCallback verifier);
+void set_session_verifier(
+    std::function<SSLVerifierResponse(tls::session_t)> verifier);
 ```
 
 ## Examples

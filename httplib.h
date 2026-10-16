@@ -4670,6 +4670,9 @@ public:
   void enable_server_certificate_verification(bool enabled);
   void enable_server_hostname_verification(bool enabled);
   void enable_system_ca(bool enabled);
+  void set_server_certificate_verifier(tls::VerifyCallback verifier);
+  void set_session_verifier(
+      std::function<SSLVerifierResponse(tls::session_t)> verifier);
 #endif
 
 private:
@@ -4717,6 +4720,7 @@ private:
   SystemCAMode system_ca_mode_ = SystemCAMode::Auto;
   bool server_certificate_verification_ = true;
   bool server_hostname_verification_ = true;
+  std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 #endif
 };
 
@@ -23360,6 +23364,7 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
 
     detail::ClientTlsSessionOptions options;
     options.server_hostname_verification = server_hostname_verification_;
+    options.session_verifier = session_verifier_;
 
     detail::ClientTlsSessionError tls_error;
     if (!detail::setup_client_tls_session(host_, tls_ctx_, tls_session_, sock_,
@@ -23542,6 +23547,16 @@ WebSocketClient::set_ca_cert_path(const std::string &ca_cert_file_path,
                                   const std::string &ca_cert_dir_path) {
   ca_cert_file_path_ = ca_cert_file_path;
   ca_cert_dir_path_ = ca_cert_dir_path;
+}
+
+inline void
+WebSocketClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
+  if (tls_ctx_) { tls::set_verify_callback(tls_ctx_, std::move(verifier)); }
+}
+
+inline void WebSocketClient::set_session_verifier(
+    std::function<SSLVerifierResponse(tls::session_t)> verifier) {
+  session_verifier_ = std::move(verifier);
 }
 
 inline void WebSocketClient::set_ca_cert_store(tls::ca_store_t store) {
