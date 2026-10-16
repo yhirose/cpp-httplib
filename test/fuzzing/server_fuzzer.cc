@@ -11,8 +11,19 @@ public:
     if (size + read_pos_ > size_) { size = size_ - read_pos_; }
     memcpy(ptr, data_ + read_pos_, size);
     read_pos_ += size;
+    // Like SocketStream, pull in more than was asked for, which the line
+    // reader then takes through buffered_data(), so both of its paths run.
+    buffered_end_ =
+        (std::max)(buffered_end_, (std::min)(size_, read_pos_ + 4096));
     return static_cast<ssize_t>(size);
   }
+
+  const char *buffered_data(size_t &size) const override {
+    size = buffered_end_ > read_pos_ ? buffered_end_ - read_pos_ : 0;
+    return size ? reinterpret_cast<const char *>(data_ + read_pos_) : nullptr;
+  }
+
+  void consume_buffered(size_t size) override { read_pos_ += size; }
 
   ssize_t write(const char *ptr, size_t size) override {
     response_.append(ptr, size);
@@ -47,6 +58,7 @@ private:
   const uint8_t *data_;
   size_t size_;
   size_t read_pos_;
+  size_t buffered_end_ = 0;
   std::string response_;
 };
 
