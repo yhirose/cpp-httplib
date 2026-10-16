@@ -4014,7 +4014,6 @@ struct MbedTlsContext {
   mbedtls_pk_context own_key;
   bool is_server = false;
   bool verify_client = false;
-  bool has_verify_callback = false;
   // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
 
@@ -20425,16 +20424,6 @@ inline void mbedtls_clear_cn_mismatch(uint32_t *flags) {
   *flags &= ~static_cast<uint32_t>(hostname_mismatch_code());
 }
 
-// Verify callback used when hostname verification is disabled for a session
-// that has no user-supplied verify callback of its own.
-inline int mbedtls_mask_hostname_mismatch_callback(void *data,
-                                                   mbedtls_x509_crt *, int,
-                                                   uint32_t *flags) {
-  (void)data;
-  mbedtls_clear_cn_mismatch(flags);
-  return 0;
-}
-
 inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
                                    int cert_depth, uint32_t *flags);
 
@@ -20836,7 +20825,7 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   } else {
     // If a verify callback is set, use OPTIONAL mode to ensure the callback
     // is called (matching OpenSSL behavior). Otherwise use NONE.
-    mbedtls_ssl_conf_authmode(&mctx->conf, mctx->has_verify_callback
+    mbedtls_ssl_conf_authmode(&mctx->conf, mctx->verify_callback
                                                ? MBEDTLS_SSL_VERIFY_OPTIONAL
                                                : MBEDTLS_SSL_VERIFY_NONE);
   }
@@ -20870,13 +20859,11 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   mbedtls_ssl_set_bio(&session->ssl, &session->sock, impl::mbedtls_net_send_cb,
                       impl::mbedtls_net_recv_cb, nullptr);
 
-  // Set per-session verify callback with session pointer if callback is
-  // registered
+  // Set the per-session verify callback. It looks up the context's user
+  // callback, if any, when the handshake runs, so it does not matter whether
+  // set_verify_callback() is called before or after this session is created.
   session->ctx = mctx;
-  if (mctx->has_verify_callback) {
-    mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback,
-                           session);
-  }
+  mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback, session);
 
   return static_cast<session_t>(session);
 }
@@ -20902,19 +20889,8 @@ inline bool set_sni(session_t session, const char *hostname,
 
   msession->hostname = hostname;
 
-  if (!verify_hostname) {
-    msession->suppress_hostname_mismatch = true;
-    // If a user verify callback is already wired for this session,
-    // mbedtls_verify_callback() masks the mismatch flag itself before
-    // consulting it (see suppress_hostname_mismatch above) - reinstalling it
-    // here would be redundant. Otherwise install the self-contained masking
-    // callback.
-    if (!msession->ctx->has_verify_callback) {
-      mbedtls_ssl_set_verify(&msession->ssl,
-                             impl::mbedtls_mask_hostname_mismatch_callback,
-                             msession);
-    }
-  }
+  // mbedtls_verify_callback() masks the mismatch flag for this session
+  if (!verify_hostname) { msession->suppress_hostname_mismatch = true; }
 
   return true;
 }
@@ -21592,9 +21568,8 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   auto *mbed_ctx = static_cast<impl::MbedTlsContext *>(ctx);
 
   mbed_ctx->verify_callback = std::move(callback);
-  mbed_ctx->has_verify_callback = static_cast<bool>(mbed_ctx->verify_callback);
 
-  if (mbed_ctx->has_verify_callback) {
+  if (mbed_ctx->verify_callback) {
     // Set OPTIONAL mode to ensure callback is called even when verification
     // is disabled (matching OpenSSL behavior where SSL_VERIFY_PEER is set).
     // The callback itself is wired per session in create_session().
