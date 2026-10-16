@@ -3454,9 +3454,9 @@ private:
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 
-  // The verifier given to set_server_certificate_verifier(). ctx_ cannot
-  // report it back, and the backends keep it in a slot shared by every
-  // client, so this copy is what a redirect client is given.
+  // The verifier given to set_server_certificate_verifier(), kept for the
+  // redirect client: ctx_ cannot report it back, and the backends keep it in
+  // a per-thread slot that any other client may overwrite.
   tls::VerifyCallback server_certificate_verifier_;
 
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
