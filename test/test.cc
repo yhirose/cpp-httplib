@@ -5355,8 +5355,97 @@ TEST(NoContentTest, ContentLength) {
     auto res = cli.Get("/hi");
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ(StatusCode::NoContent_204, res->status);
-    EXPECT_EQ("0", res->get_header_value("Content-Length"));
+    // RFC 9110 8.6: none in a 204 response
+    EXPECT_FALSE(res->has_header("Content-Length"));
   }
+}
+
+TEST(ResponseFramingTest, HandlerFramingHeadersAreReplaced) {
+  Server svr;
+
+  svr.Get("/body", [](const Request & /*req*/, Response &res) {
+    res.set_header("Content-Length", "5");
+    res.set_content("hello world", "text/plain");
+  });
+  svr.Get("/chunked", [](const Request & /*req*/, Response &res) {
+    // A body that reads as the last chunk, were it taken as chunked
+    res.set_header("Transfer-Encoding", "chunked");
+    res.set_content("0\r\n\r\n", "text/plain");
+  });
+  svr.Get("/provider", [](const Request & /*req*/, Response &res) {
+    res.set_header("Content-Length", "2");
+    res.set_content_provider(5, "text/plain",
+                             [](size_t offset, size_t length, DataSink &sink) {
+                               sink.write(&"hello"[offset], length);
+                               return true;
+                             });
+  });
+  svr.Get("/empty", [](const Request & /*req*/, Response &res) {
+    res.set_header("Content-Length", "1234");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_read_timeout(1, 0);
+
+  auto expect_body = [&](const Result &res, const std::string &body) {
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(body, res->body);
+    EXPECT_EQ(1u, res->get_header_value_count("Content-Length"));
+    EXPECT_FALSE(res->has_header("Transfer-Encoding"));
+  };
+
+  Headers identity{{"Accept-Encoding", ""}};
+  expect_body(cli.Get("/body", identity), "hello world");
+  expect_body(cli.Get("/chunked", identity), "0\r\n\r\n");
+  expect_body(cli.Get("/body",
+                      Headers{{"Accept-Encoding", ""}, {"Range", "bytes=0-1"}}),
+              "he");
+  expect_body(cli.Get("/provider", identity), "hello");
+  expect_body(cli.Get("/empty", identity), "");
+
+  // A HEAD response may give the length of the body a GET would get.
+  auto res = cli.Head("/empty");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("1234", res->get_header_value("Content-Length"));
+}
+
+TEST(ResponseFramingTest, PostRoutingHandlerChangesAreFramed) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_content("short", "text/plain");
+  });
+  svr.set_post_routing_handler([](const Request & /*req*/, Response &res) {
+    res.body += " with a footer";
+    res.set_header("Transfer-Encoding", "chunked");
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_read_timeout(1, 0);
+
+  auto res = cli.Get("/", Headers{{"Accept-Encoding", ""}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("short with a footer", res->body);
+  EXPECT_EQ("19", res->get_header_value("Content-Length"));
+  EXPECT_FALSE(res->has_header("Transfer-Encoding"));
 }
 
 TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
@@ -11604,7 +11693,7 @@ TEST(UploadProgressTest, PostContentProviderProgress) {
       },
       [](Client &cli, UploadProgress progress_callback) {
         return cli.Post(
-            "/test", 10,
+            "/test", 9,
             [](size_t /*offset*/, size_t /*length*/, DataSink &sink) -> bool {
               sink.os << "test data";
               return true;
@@ -12615,6 +12704,115 @@ TEST(DataSinkTest, LengthFramedProviderThatFinishesEarlyFailsTheResponse) {
   // would leave the writer looping over a provider that never makes progress.
   auto res = cli.Get("/");
   EXPECT_FALSE(res);
+}
+
+// Read as the next response by a peer that sees it after a framed body.
+static const std::string smuggled_response =
+    "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nSMUGGLED";
+
+TEST(DataSinkTest, LengthFramedProviderCannotWritePastTheLength) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider(
+        5, "text/plain",
+        [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+          auto data = "AAAAA" + smuggled_response;
+          sink.write(data.data(), data.size());
+          return true;
+        });
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  std::string resp;
+  ASSERT_TRUE(send_request(1, "GET / HTTP/1.1\r\nHost: x\r\n\r\n", &resp));
+  EXPECT_EQ("AAAAA", resp.substr(resp.find("\r\n\r\n") + 4));
+
+  resp.clear();
+  ASSERT_TRUE(send_request(
+      1, "GET / HTTP/1.1\r\nHost: x\r\nRange: bytes=0-1\r\n\r\n", &resp));
+  EXPECT_EQ("AA", resp.substr(resp.find("\r\n\r\n") + 4));
+}
+
+TEST(NoContentTest, BodyIsNotSent) {
+  Server svr;
+
+  svr.Get("/204", [](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::NoContent_204;
+    res.set_content(smuggled_response, "text/plain");
+  });
+  svr.Get("/304", [](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::NotModified_304;
+    res.set_chunked_content_provider(
+        "text/plain", [](size_t /*offset*/, DataSink &sink) {
+          sink.write(smuggled_response.data(), smuggled_response.size());
+          sink.done();
+          return true;
+        });
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  for (auto path : {"/204", "/304"}) {
+    std::string resp;
+    ASSERT_TRUE(send_request(
+        1, std::string("GET ") + path + " HTTP/1.1\r\nHost: x\r\n\r\n", &resp));
+    EXPECT_EQ(resp.size(), resp.find("\r\n\r\n") + 4) << path;
+    EXPECT_EQ(std::string::npos, resp.find("Content-Length")) << path;
+    EXPECT_EQ(std::string::npos, resp.find("Transfer-Encoding")) << path;
+  }
+}
+
+TEST(DataSinkTest, RequestProviderCannotWritePastTheLength) {
+  Server svr;
+
+  std::atomic<bool> smuggled(false);
+  svr.Post("/", [](const Request & /*req*/, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+  svr.Get("/smuggled", [&](const Request & /*req*/, Response & /*res*/) {
+    smuggled = true;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // What follows the body would be read as the next request.
+  Client cli(HOST, port);
+  auto res = cli.Post(
+      "/", 5,
+      [](size_t /*offset*/, size_t /*length*/, DataSink &sink) {
+        std::string data = "helloGET /smuggled HTTP/1.1\r\nHost: x\r\n\r\n";
+        sink.write(data.data(), data.size());
+        return true;
+      },
+      "text/plain");
+
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::Write, res.error());
+  EXPECT_FALSE(smuggled);
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT

@@ -8857,6 +8857,12 @@ inline bool write_content_with_progress(Stream &strm,
 
   data_sink.write = [&](const char *d, size_t l) -> bool {
     if (ok) {
+      // Bytes past `length` would follow the framed body, where the peer reads
+      // them as the next message. Write only what fits and fail the rest.
+      if (l > end_offset - offset) {
+        l = end_offset - offset;
+        ok = false;
+      }
       if (write_data(strm, d, l)) {
         offset += l;
 
@@ -12060,6 +12066,58 @@ inline void prefer_assigned_body(Response &res) {
   }
 }
 
+// RFC 9112 6.3: a 1xx, 204 or 304 response ends with its header section.
+inline bool body_allowed_for_status(int status) {
+  return status >= 200 && status != StatusCode::NoContent_204 &&
+         status != StatusCode::NotModified_304;
+}
+
+// Only a 206 response is served as a partial representation. range_error()
+// validates `req.ranges` only for a 2xx status, so slicing under any other
+// status would start from an unchecked offset.
+inline bool is_partial_content(const Request &req, const Response &res) {
+  return !req.ranges.empty() && res.status == StatusCode::PartialContent_206;
+}
+
+// Sets the Content-Length or Transfer-Encoding framing the body that
+// Server::write_response_core() writes. Only the library sets them: one from a
+// handler would go out next to it, or describe some other body.
+inline void set_framing_headers(const Request &req, Response &res,
+                                const std::string &boundary,
+                                const std::string &content_type) {
+  // A HEAD response may give the length a GET would have had (RFC 9110 9.3.2).
+  auto head_length = req.method == "HEAD"
+                         ? res.get_header_value("Content-Length")
+                         : std::string();
+  res.headers.erase("Content-Length");
+  res.headers.erase("Transfer-Encoding");
+
+  if (!body_allowed_for_status(res.status)) { return; }
+
+  if (res.content_provider_) {
+    if (res.content_length_ == 0) {
+      if (res.is_chunked_content_provider_) {
+        res.set_header("Transfer-Encoding", "chunked");
+      }
+      return;
+    }
+
+    // The part Server::write_content_with_provider() writes.
+    auto length = res.content_length_;
+    if (is_partial_content(req, res)) {
+      length = req.ranges.size() == 1
+                   ? get_range_offset_and_length(req.ranges[0], length).second
+                   : get_multipart_ranges_data_length(req, boundary,
+                                                      content_type, length);
+    }
+    res.set_header("Content-Length", std::to_string(length));
+  } else if (!res.body.empty()) {
+    res.set_header("Content-Length", std::to_string(res.body.size()));
+  } else {
+    res.set_header("Content-Length", head_length.empty() ? "0" : head_length);
+  }
+}
+
 } // namespace detail
 
 inline size_t Response::get_header_value_u64(const std::string &key, size_t def,
@@ -13777,6 +13835,9 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     need_apply_ranges = true;
   }
 
+  if (!detail::body_allowed_for_status(res.status)) {
+    detail::clear_content(res);
+  }
   detail::prefer_assigned_body(res);
 
   std::string content_type;
@@ -13807,16 +13868,17 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     res.set_header("Content-Type", "text/plain");
   }
 
-  if (res.body.empty() && !res.content_length_ && !res.content_provider_ &&
-      !res.has_header("Content-Length")) {
-    res.set_header("Content-Length", "0");
-  }
+  detail::set_framing_headers(req, res, boundary, content_type);
 
   if (req.method == "HEAD" && !res.has_header("Accept-Ranges")) {
     res.set_header("Accept-Ranges", "bytes");
   }
 
-  if (post_routing_handler_) { post_routing_handler_(req, res); }
+  if (post_routing_handler_) {
+    post_routing_handler_(req, res);
+    // Again, for a body or framing headers the handler changed.
+    detail::set_framing_headers(req, res, boundary, content_type);
+  }
 
   // Response line and headers
   detail::BufferStream bstrm;
@@ -13826,7 +13888,8 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   // Combine a small body with the headers so the whole response leaves in a
   // single write. A large body is written on its own instead: a copy of it
   // costs more than the extra write saves.
-  auto send_body = req.method != "HEAD";
+  auto send_body =
+      req.method != "HEAD" && detail::body_allowed_for_status(res.status);
   auto body_is_separate = false;
   auto provider_done = false;
   if (send_body && !res.body.empty() && !res.content_provider_) {
@@ -13879,15 +13942,7 @@ Server::write_content_with_provider(Stream &strm, const Request &req,
   };
 
   if (res.content_length_ > 0) {
-    // Only a 206 response is served as a partial representation, matching the
-    // condition `apply_ranges()` used to decide the Content-Length and the
-    // multipart boundary. Since `detail::range_error()` validates `req.ranges`
-    // only for a 2xx status, slicing under any other status would write a body
-    // that disagrees with the header already sent, from an unchecked offset.
-    auto is_partial =
-        !req.ranges.empty() && res.status == StatusCode::PartialContent_206;
-
-    if (!is_partial) {
+    if (!detail::is_partial_content(req, res)) {
       return detail::write_content(strm, res.content_provider_, 0,
                                    res.content_length_, is_shutting_down);
     } else if (req.ranges.size() == 1) {
@@ -14588,8 +14643,8 @@ Server::static_file_encoding(const Request &req, const Response &res,
   return detail::encoding_type(req, res, content_type);
 }
 
-// Compresses a file-backed content provider into `res.body` and takes over the
-// framing headers. Returns false when the response is left untouched.
+// Compresses a file-backed content provider into `res.body`. Returns false when
+// the response is left untouched.
 inline bool Server::apply_static_file_compression(const Request &req,
                                                   Response &res) const {
   auto type = res.content_coding_;
@@ -14617,7 +14672,6 @@ inline bool Server::apply_static_file_compression(const Request &req,
 
   res.set_header("Content-Encoding", detail::encoding_name(type));
   res.set_header("Vary", "Accept-Encoding");
-  res.set_header("Content-Length", std::to_string(res.body.size()));
 
   return true;
 }
@@ -14631,7 +14685,7 @@ inline void Server::apply_ranges(const Request &req, Response &res,
   // ordinary body: `Content-Length` and HEAD keep working, and the response
   // takes the same path as `set_content()` from here on. Range requests never
   // get a content coding, so `Content-Range` still names identity bytes and
-  // none of the framing below applies.
+  // none of the range handling below applies.
   if (apply_static_file_compression(req, res)) { return; }
 
   if (req.ranges.size() > 1 && res.status == StatusCode::PartialContent_206) {
@@ -14650,34 +14704,19 @@ inline void Server::apply_ranges(const Request &req, Response &res,
   auto type = detail::encoding_type(req, res);
 
   if (res.body.empty()) {
-    if (res.content_length_ > 0) {
-      size_t length = 0;
-      if (req.ranges.empty() || res.status != StatusCode::PartialContent_206) {
-        length = res.content_length_;
-      } else if (req.ranges.size() == 1) {
-        auto offset_and_length = detail::get_range_offset_and_length(
-            req.ranges[0], res.content_length_);
+    if (res.content_length_ > 0 && req.ranges.size() == 1 &&
+        res.status == StatusCode::PartialContent_206) {
+      auto offset_and_length = detail::get_range_offset_and_length(
+          req.ranges[0], res.content_length_);
 
-        length = offset_and_length.second;
-
-        auto content_range = detail::make_content_range_header_field(
-            offset_and_length, res.content_length_);
-        res.set_header("Content-Range", content_range);
-      } else {
-        length = detail::get_multipart_ranges_data_length(
-            req, boundary, content_type, res.content_length_);
-      }
-      res.set_header("Content-Length", std::to_string(length));
-    } else {
-      if (res.content_provider_) {
-        if (res.is_chunked_content_provider_) {
-          res.set_header("Transfer-Encoding", "chunked");
-          res.content_coding_ = type;
-          if (type != detail::EncodingType::None) {
-            res.set_header("Content-Encoding", detail::encoding_name(type));
-            res.set_header("Vary", "Accept-Encoding");
-          }
-        }
+      auto content_range = detail::make_content_range_header_field(
+          offset_and_length, res.content_length_);
+      res.set_header("Content-Range", content_range);
+    } else if (res.is_chunked_content_provider_) {
+      res.content_coding_ = type;
+      if (type != detail::EncodingType::None) {
+        res.set_header("Content-Encoding", detail::encoding_name(type));
+        res.set_header("Vary", "Accept-Encoding");
       }
     }
   } else {
@@ -14720,7 +14759,6 @@ inline void Server::apply_ranges(const Request &req, Response &res,
     }
 
     res.content_length_ = res.body.size();
-    res.set_header("Content-Length", std::to_string(res.content_length_));
   }
 }
 

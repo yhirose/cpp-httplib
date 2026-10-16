@@ -790,6 +790,8 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 });
 ```
 
+Write at most `length` bytes per call. Anything past it is not sent, and the response fails.
+
 Without content length:
 
 ```cpp
@@ -1126,6 +1128,8 @@ cli.set_default_headers({
 });
 auto res = cli.Get("/hi");
 ```
+
+A `Content-Length` or `Transfer-Encoding` among these headers is sent in place of the one the library would send, so it has to describe the body as written. Leave both out when passing on the headers of another message, as a proxy does.
 
 ### POST
 
