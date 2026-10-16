@@ -20423,25 +20423,18 @@ inline void mbedtls_clear_cn_mismatch(uint32_t *flags) {
   *flags &= ~static_cast<uint32_t>(hostname_mismatch_code());
 }
 
-inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
-                                   int cert_depth, uint32_t *flags);
-
 // MbedTLS verify callback wrapper
 inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
                                    int cert_depth, uint32_t *flags) {
   // data points to the MbedTlsSession
   auto *session = static_cast<MbedTlsSession *>(data);
 
-  // set_sni() disabled hostname verification for this session: drop the
-  // CN/SAN mismatch flag so it doesn't fail the chain check below, mirroring
-  // the OpenSSL/wolfSSL backends where identity checking is independent of
-  // SNI. The final pass/fail decision still comes from the remaining flags
-  // (or, below, from the user's own verify callback).
-  if (session && session->suppress_hostname_mismatch) {
-    mbedtls_clear_cn_mismatch(flags);
-  }
+  // set_sni() disabled hostname verification for this session: ignore the
+  // CN/SAN mismatch flag, as the OpenSSL/wolfSSL backends do. The final
+  // pass/fail decision still comes from the remaining flags (or, below, from
+  // the user's own verify callback).
+  if (session->suppress_hostname_mismatch) { mbedtls_clear_cn_mismatch(flags); }
 
-  if (!session || !session->ctx) { return 0; }
   const auto &callback = session->ctx->verify_callback;
   if (!callback) { return 0; } // Continue with default verification
 
@@ -20858,9 +20851,9 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   mbedtls_ssl_set_bio(&session->ssl, &session->sock, impl::mbedtls_net_send_cb,
                       impl::mbedtls_net_recv_cb, nullptr);
 
-  // Set the per-session verify callback. It looks up the context's user
-  // callback, if any, when the handshake runs, so it does not matter whether
-  // set_verify_callback() is called before or after this session is created.
+  // Always install the verify callback: it reads the context's user callback
+  // when the handshake runs, so the order of set_verify_callback() and this
+  // call does not matter.
   session->ctx = mctx;
   mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback, session);
 
@@ -20888,7 +20881,6 @@ inline bool set_sni(session_t session, const char *hostname,
 
   msession->hostname = hostname;
 
-  // mbedtls_verify_callback() masks the mismatch flag for this session
   if (!verify_hostname) { msession->suppress_hostname_mismatch = true; }
 
   return true;
