@@ -5832,6 +5832,19 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
   return FrameRead::Ok;
 }
 
+// RFC 6455 §5.5.1, §7.4: a Close payload is empty, or a status code that may
+// be sent followed by a UTF-8 reason.
+inline bool is_valid_close_payload(const std::string &payload) {
+  if (payload.empty()) { return true; }
+  if (payload.size() < 2) { return false; }
+  auto code = (static_cast<uint8_t>(payload[0]) << 8) |
+              static_cast<uint8_t>(payload[1]);
+  auto may_be_sent = (1000 <= code && code <= 1003) ||
+                     (1007 <= code && code <= 1014) ||
+                     (3000 <= code && code <= 4999);
+  return may_be_sent && is_valid_utf8(payload.substr(2));
+}
+
 } // namespace impl
 } // namespace ws
 
@@ -22907,6 +22920,20 @@ inline bool WebSocket::send_frame(Opcode op, const char *data, size_t len,
 }
 
 inline ReadResult WebSocket::read(std::string &msg) {
+  // RFC 6455 §5.5.1: a Close is echoed back, unless its payload is malformed,
+  // which is answered with a protocol error instead.
+  auto answer_close = [&](const std::string &payload) {
+    if (closed_.exchange(true)) { return; }
+    auto reply = payload;
+    if (!impl::is_valid_close_payload(payload)) {
+      auto code = static_cast<uint16_t>(CloseStatus::ProtocolError);
+      reply = {static_cast<char>(code >> 8), static_cast<char>(code & 0xff)};
+    }
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    detail::write_websocket_frame(strm_, Opcode::Close, reply.data(),
+                                  reply.size(), true, !is_server_);
+  };
+
   std::unique_lock<std::mutex> read_lock(read_mutex_);
   while (!closed_) {
     Opcode opcode;
@@ -22940,12 +22967,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
       continue;
     }
     case Opcode::Close: {
-      if (!closed_.exchange(true)) {
-        // Echo close frame back
-        std::lock_guard<std::mutex> lock(write_mutex_);
-        detail::write_websocket_frame(strm_, Opcode::Close, payload.data(),
-                                      payload.size(), true, !is_server_);
-      }
+      answer_close(payload);
       return Fail;
     }
     case Opcode::Text:
@@ -22990,12 +23012,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
             continue;
           }
           if (cont_opcode == Opcode::Close) {
-            if (!closed_.exchange(true)) {
-              std::lock_guard<std::mutex> lock(write_mutex_);
-              detail::write_websocket_frame(
-                  strm_, Opcode::Close, cont_payload.data(),
-                  cont_payload.size(), true, !is_server_);
-            }
+            answer_close(cont_payload);
             return Fail;
           }
           // RFC 6455: continuation frames must use opcode 0x0
