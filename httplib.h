@@ -21603,11 +21603,9 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   if (mbed_ctx->has_verify_callback) {
     // Set OPTIONAL mode to ensure callback is called even when verification
     // is disabled (matching OpenSSL behavior where SSL_VERIFY_PEER is set).
-    // The callback itself is wired per session in create_session(), which
-    // passes the session so mbedtls_verify_callback() can reach this context.
+    // The callback itself is wired per session in create_session().
     mbedtls_ssl_conf_authmode(&mbed_ctx->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
   }
-  mbedtls_ssl_conf_verify(&mbed_ctx->conf, nullptr, nullptr);
   return true;
 }
 
