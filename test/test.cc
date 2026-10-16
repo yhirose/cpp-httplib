@@ -4657,6 +4657,53 @@ TEST(SSLClientServerTest, UpdateCertsPemWithClientAuth) {
   ASSERT_TRUE(handler_called);
   EXPECT_EQ("ok", res->body);
 }
+
+TEST(SSLClientServerTest, UpdateCertsPemWaitsForHandshakeInProgress) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // A connection that sends no ClientHello keeps its handshake in progress,
+  // once the server has had a moment to start it.
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", PORT, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0,
+      /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+  std::string cert_pem, key_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+
+  auto update = std::async(std::launch::async, [&]() {
+    return svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str());
+  });
+  EXPECT_EQ(std::future_status::timeout,
+            update.wait_for(std::chrono::milliseconds(200)));
+
+  detail::close_socket(sock);
+  EXPECT_TRUE(update.get());
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
 #endif
 
 TEST(ErrorHandlerTest, ContentLength) {

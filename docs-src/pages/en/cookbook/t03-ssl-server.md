@@ -60,7 +60,7 @@ Before a certificate expires, you may want to swap it out without restarting the
 svr.update_certs_pem(new_cert_pem, new_key_pem);
 ```
 
-Existing connections keep using the old cert; new connections use the new one.
+Existing connections keep using the old cert; new connections use the new one. It waits for handshakes in progress to finish, at most the read timeout, and new connections wait until it returns.
 
 ## Generating a test certificate
 

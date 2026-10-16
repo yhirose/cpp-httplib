@@ -3373,7 +3373,14 @@ private:
   bool process_and_close_socket(socket_t sock) override;
 
   tls::ctx_t ctx_ = nullptr;
+  // update_certs_pem() replaces the certificates and CAs that handshakes read
+  // from ctx_, so it waits for the handshakes in progress, which their timeout
+  // bounds, and new ones wait while it is pending so that they cannot keep it
+  // waiting.
   std::mutex ctx_mutex_;
+  std::condition_variable ctx_cv_;
+  size_t handshakes_in_progress_ = 0;
+  size_t updates_pending_ = 0;
 
   int last_ssl_error_ = 0;
 };
@@ -18497,11 +18504,12 @@ inline bool SSLServer::is_valid() const {
 inline bool SSLServer::process_and_close_socket(socket_t sock) {
   using namespace tls;
 
-  // Create TLS session with mutex protection
   session_t session = nullptr;
   {
-    std::lock_guard<std::mutex> guard(ctx_mutex_);
+    std::unique_lock<std::mutex> lock(ctx_mutex_);
+    ctx_cv_.wait(lock, [&] { return updates_pending_ == 0; });
     session = create_session(static_cast<ctx_t>(ctx_), sock);
+    if (session) { handshakes_in_progress_++; }
   }
 
   if (!session) {
@@ -18524,8 +18532,13 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
   // Perform TLS accept handshake with timeout
   TlsError tls_err;
-  if (!accept_nonblocking(session, sock, read_timeout_sec_, read_timeout_usec_,
-                          &tls_err)) {
+  auto accepted = accept_nonblocking(session, sock, read_timeout_sec_,
+                                     read_timeout_usec_, &tls_err);
+  {
+    std::lock_guard<std::mutex> guard(ctx_mutex_);
+    if (--handshakes_in_progress_ == 0) { ctx_cv_.notify_all(); }
+  }
+  if (!accepted) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
     // Map TlsError to legacy ssl_error for backward compatibility
     if (tls_err.code == ErrorCode::WantRead) {
@@ -18572,7 +18585,13 @@ inline bool SSLServer::update_certs_pem(const char *cert_pem,
                                         const char *client_ca_pem,
                                         const char *password) {
   if (!ctx_) { return false; }
-  std::lock_guard<std::mutex> guard(ctx_mutex_);
+  std::unique_lock<std::mutex> lock(ctx_mutex_);
+  updates_pending_++;
+  auto se = detail::scope_exit([&] {
+    if (--updates_pending_ == 0) { ctx_cv_.notify_all(); }
+  });
+  ctx_cv_.wait(lock, [&] { return handshakes_in_progress_ == 0; });
+
   if (!tls::update_server_cert(ctx_, cert_pem, key_pem, password)) {
     return false;
   }
