@@ -19498,11 +19498,14 @@ TEST(ParseUrlTest, FragmentHandling) {
 }
 
 TEST(ParseUrlTest, UserinfoHandling) {
-  // Userinfo with @ but no colon — host includes @
-  detail::UrlComponents uc;
-  ASSERT_TRUE(detail::parse_url("http://user@host.com/path", uc));
-  EXPECT_EQ("user@host.com", uc.host);
-  EXPECT_EQ("/path", uc.path);
+  // userinfo is not supported. Parsers that honour it, or take a backslash for
+  // '/', would see evil.com where the host used to be the whole authority.
+  const char *urls[] = {"http://user@evil.com/", "http://user:pass@evil.com/",
+                        "http://evil.com\\@good.com/", "//user@evil.com/x"};
+  for (auto url : urls) {
+    detail::UrlComponents uc;
+    EXPECT_FALSE(detail::parse_url(url, uc)) << url;
+  }
 }
 
 TEST(ParseUrlTest, IPv6EdgeCases) {

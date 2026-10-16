@@ -889,6 +889,12 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
   auto has_authority = has_authority_prefix || (!url.empty() && url[0] != '/' &&
                                                 url[0] != '?' && url[0] != '#');
   if (has_authority) {
+    // userinfo is not supported, and a backslash that some parsers take for
+    // '/' would leave them seeing another host than this one.
+    if (url.find_first_of("@\\", pos) < url.find_first_of("/?#", pos)) {
+      return false;
+    }
+
     if (pos < url.size() && url[pos] == '[') {
       auto close = url.find(']', pos);
       if (close == std::string::npos) { return false; }
