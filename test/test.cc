@@ -12145,6 +12145,236 @@ TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   EXPECT_EQ("helloworld", res->body);
 }
 
+// A body set after a content provider must replace it, not be sent through it.
+TEST(ResponseContentSourceTest, FileRequestHandlerCanReplaceFile) {
+  Server svr;
+  svr.set_mount_point("/", "./www");
+  svr.set_file_request_handler([](const Request &req, Response &res) {
+    if (req.path == "/dir/test.html") {
+      res.status = StatusCode::Forbidden_403;
+      res.set_content(std::string(5000, 'D'), "text/plain");
+    } else if (req.path == "/file") {
+      res.status = StatusCode::Forbidden_403;
+      res.body = "Denied";
+    }
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  {
+    auto res = cli.Get("/dir/test.html");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+    EXPECT_EQ(std::string(5000, 'D'), res->body);
+    EXPECT_EQ(1U, res->get_header_value_count("Content-Type"));
+  }
+
+  {
+    auto res = cli.Get("/file");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+    EXPECT_EQ("Denied", res->body);
+  }
+
+  {
+    auto res = cli.Get("/dir/index.html");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ(0U, res->body.find("<html>"));
+  }
+}
+
+TEST(ResponseContentSourceTest, ErrorAndExceptionHandlersReplaceProvider) {
+  Server svr;
+
+  std::vector<bool> released;
+  std::mutex released_mutex;
+  auto releaser = [&](bool success) {
+    std::lock_guard<std::mutex> guard(released_mutex);
+    released.push_back(success);
+  };
+
+  auto provider = [](size_t offset, size_t length, DataSink &sink) {
+    return sink.write(&"hello"[offset], length);
+  };
+
+  svr.Get("/sized", [&](const Request &, Response &res) {
+    res.status = StatusCode::NotFound_404;
+    res.set_content_provider(5, "text/plain", provider, releaser);
+  });
+  svr.Get("/chunked", [&](const Request &, Response &res) {
+    res.status = StatusCode::ServiceUnavailable_503;
+    res.set_chunked_content_provider(
+        "text/plain",
+        [](size_t, DataSink &sink) {
+          sink.os << "chunk";
+          sink.done();
+          return true;
+        },
+        releaser);
+  });
+  svr.Get("/throw", [&](const Request &, Response &res) -> void {
+    res.set_content_provider(5, "text/plain", provider, releaser);
+    throw std::runtime_error("after the provider");
+  });
+
+  svr.set_error_handler([](const Request &req, Response &res) {
+    // Leave the exception handler's content to it.
+    if (req.path == "/throw") { return Server::HandlerResponse::Unhandled; }
+    res.set_content(std::string(1000, 'E'), "text/html");
+    return Server::HandlerResponse::Handled;
+  });
+  svr.set_exception_handler(
+      [](const Request &, Response &res, std::exception_ptr) {
+        res.status = StatusCode::InternalServerError_500;
+        res.set_content(std::string(1000, 'X'), "text/html");
+      });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  {
+    auto res = cli.Get("/sized");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::NotFound_404, res->status);
+    EXPECT_EQ(std::string(1000, 'E'), res->body);
+    EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
+  }
+
+  {
+    auto res = cli.Get("/chunked");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::ServiceUnavailable_503, res->status);
+    EXPECT_EQ(std::string(1000, 'E'), res->body);
+    EXPECT_FALSE(res->has_header("Transfer-Encoding"));
+  }
+
+  {
+    auto res = cli.Get("/throw");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+    EXPECT_EQ(std::string(1000, 'X'), res->body);
+  }
+
+  std::lock_guard<std::mutex> guard(released_mutex);
+  EXPECT_EQ((std::vector<bool>{false, false, false}), released);
+}
+
+TEST(ResponseContentSourceTest, LastContentSetterWins) {
+  Server svr;
+
+  auto abc = [](size_t offset, size_t length, DataSink &sink) {
+    return sink.write(&"abc"[offset], length);
+  };
+
+  svr.Get("/file-then-body", [](const Request &, Response &res) {
+    res.set_file_content("./www/dir/test.html");
+    res.set_content("body", "text/plain");
+  });
+  svr.Get("/body-then-file", [](const Request &, Response &res) {
+    res.set_content(std::string(100, 'B'), "text/plain");
+    res.set_file_content("./www/dir/test.html");
+  });
+  svr.Get("/body-then-provider", [&](const Request &, Response &res) {
+    res.set_content(std::string(100, 'B'), "text/plain");
+    res.set_content_provider(3, "text/plain", abc);
+  });
+  svr.Get("/provider-then-body", [&](const Request &, Response &res) {
+    res.set_content_provider(3, "text/plain", abc);
+    res.set_content(std::string(100, 'B'), "text/plain");
+  });
+  svr.Get("/provider-then-direct-body", [&](const Request &, Response &res) {
+    res.set_content_provider(3, "text/plain", abc);
+    res.body = "direct";
+  });
+  svr.Get("/file-then-direct-body", [](const Request &, Response &res) {
+    res.set_file_content("./www/dir/test.html");
+    res.body = "direct";
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  auto expect_body = [&](const char *path, const std::string &body) {
+    // Uncompressed, so Content-Length can be compared with the body.
+    auto res = cli.Get(path, Headers{{"Accept-Encoding", ""}});
+    ASSERT_TRUE(res) << path << " Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << path;
+    EXPECT_EQ(body, res->body) << path;
+    EXPECT_EQ(std::to_string(body.size()),
+              res->get_header_value("Content-Length"))
+        << path;
+  };
+
+  expect_body("/file-then-body", "body");
+  expect_body("/body-then-file", "test.html");
+  expect_body("/body-then-provider", "abc");
+  expect_body("/provider-then-body", std::string(100, 'B'));
+  expect_body("/provider-then-direct-body", "direct");
+  expect_body("/file-then-direct-body", "direct");
+
+  // Ranges are checked against the body, not the dropped provider.
+  {
+    auto res = cli.Get("/provider-then-direct-body",
+                       Headers{{make_range_header({{1, 2}})}});
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::PartialContent_206, res->status);
+    EXPECT_EQ("ir", res->body);
+  }
+  {
+    auto res = cli.Get("/file-then-direct-body",
+                       Headers{{make_range_header({{7, 8}})}});
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+  }
+}
+
+TEST(ResponseContentSourceTest, FileContentProviderStaysWithinFile) {
+  auto mm = std::make_shared<detail::mmap>("./www/dir/test.html");
+  ASSERT_TRUE(mm->is_open());
+
+  Response res;
+  detail::set_file_content_provider(res, mm, "text/html",
+                                    detail::EncodingType::None);
+
+  std::string out;
+  DataSink sink;
+  sink.write = [&](const char *d, size_t l) {
+    out.append(d, l);
+    return true;
+  };
+
+  EXPECT_TRUE(res.content_provider_(0, mm->size() + 4096, sink));
+  EXPECT_EQ("test.html", out);
+  EXPECT_FALSE(res.content_provider_(mm->size(), 1, sink));
+  EXPECT_EQ("test.html", out);
+}
+
 TEST(LongPollingTest, ClientCloseDetection) {
   Server svr;
 

@@ -8901,7 +8901,9 @@ inline void set_file_content_provider(Response &res,
   res.set_content_provider(
       m->size(), content_type,
       [m](size_t offset, size_t length, DataSink &sink) -> bool {
-        sink.write(m->data() + offset, length);
+        // Never read past the mapping.
+        if (offset >= m->size()) { return false; }
+        sink.write(m->data() + offset, (std::min)(length, m->size() - offset));
         return true;
       });
 
@@ -11829,6 +11831,43 @@ inline std::string MultipartFormDataWriter::finish() const {
 }
 
 // Response implementation
+namespace detail {
+
+// A response has one content source: `body`, a content provider, or a file.
+// Each content setter calls this so that the one called last wins.
+inline void clear_content_provider(Response &res) {
+  auto releaser = std::move(res.content_provider_resource_releaser_);
+  auto success = res.content_provider_success_;
+
+  res.content_length_ = 0;
+  res.content_provider_ = nullptr;
+  res.content_provider_resource_releaser_ = nullptr;
+  res.is_chunked_content_provider_ = false;
+  res.is_file_content_provider_ = false;
+  res.content_provider_success_ = false;
+  res.content_coding_ = EncodingType::None;
+  res.file_content_path_.clear();
+  res.file_content_content_type_.clear();
+
+  if (releaser) { releaser(success); }
+}
+
+inline void clear_content(Response &res) {
+  res.body.clear();
+  clear_content_provider(res);
+}
+
+// `body` is public, so it can be assigned directly after a provider or a file
+// was set. It came last, so it wins.
+inline void prefer_assigned_body(Response &res) {
+  if (!res.body.empty() &&
+      (res.content_provider_ || !res.file_content_path_.empty())) {
+    clear_content_provider(res);
+  }
+}
+
+} // namespace detail
+
 inline size_t Response::get_header_value_u64(const std::string &key, size_t def,
                                              size_t id) const {
   return detail::get_header_value_u64(headers, key, def, id);
@@ -11878,12 +11917,12 @@ inline void Response::set_redirect(const std::string &url, int stat) {
 
 inline void Response::set_content(const char *s, size_t n,
                                   const std::string &content_type) {
-  body.assign(s, n);
+  body.assign(s, n); // Before the releaser runs; it may own `s`.
+  detail::clear_content_provider(*this);
 
   auto rng = headers.equal_range("Content-Type");
   headers.erase(rng.first, rng.second);
   set_header("Content-Type", content_type);
-  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_content(const std::string &s,
@@ -11894,57 +11933,52 @@ inline void Response::set_content(const std::string &s,
 inline void Response::set_content(std::string &&s,
                                   const std::string &content_type) {
   body = std::move(s);
+  detail::clear_content_provider(*this);
 
   auto rng = headers.equal_range("Content-Type");
   headers.erase(rng.first, rng.second);
   set_header("Content-Type", content_type);
-  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_content_provider(
     size_t in_length, const std::string &content_type, ContentProvider provider,
     ContentProviderResourceReleaser resource_releaser) {
+  detail::clear_content(*this);
+
   set_header("Content-Type", content_type);
   content_length_ = in_length;
   if (in_length > 0) { content_provider_ = std::move(provider); }
   content_provider_resource_releaser_ = std::move(resource_releaser);
-  is_chunked_content_provider_ = false;
-  is_file_content_provider_ = false;
-  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_content_provider(
     const std::string &content_type, ContentProviderWithoutLength provider,
     ContentProviderResourceReleaser resource_releaser) {
+  detail::clear_content(*this);
+
   set_header("Content-Type", content_type);
-  content_length_ = 0;
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
-  is_chunked_content_provider_ = false;
-  is_file_content_provider_ = false;
-  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_chunked_content_provider(
     const std::string &content_type, ContentProviderWithoutLength provider,
     ContentProviderResourceReleaser resource_releaser) {
-  set_header("Content-Type", content_type);
-  content_length_ = 0;
-  content_provider_ = detail::ContentProviderAdapter(std::move(provider));
-  content_provider_resource_releaser_ = std::move(resource_releaser);
+  set_content_provider(content_type, std::move(provider),
+                       std::move(resource_releaser));
   is_chunked_content_provider_ = true;
-  is_file_content_provider_ = false;
-  content_coding_ = detail::EncodingType::None;
 }
 
 inline void Response::set_file_content(const std::string &path,
                                        const std::string &content_type) {
+  detail::clear_content(*this);
+
   file_content_path_ = path;
   file_content_content_type_ = content_type;
 }
 
 inline void Response::set_file_content(const std::string &path) {
-  file_content_path_ = path;
+  set_file_content(path, std::string());
 }
 
 // Result implementation
@@ -13540,6 +13574,8 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     need_apply_ranges = true;
   }
 
+  detail::prefer_assigned_body(res);
+
   std::string content_type;
   std::string boundary;
   if (need_apply_ranges) { apply_ranges(req, res, content_type, boundary); }
@@ -14247,9 +14283,7 @@ inline bool Server::routing(Request &req, Response &res, Stream &strm) {
           // Enforce the limit: override any status the handler may have set
           // and return false so the error path sends a plain 413 response.
           res.status = StatusCode::PayloadTooLarge_413;
-          res.body.clear();
-          res.content_length_ = 0;
-          res.content_provider_ = nullptr;
+          detail::clear_content(res);
           return false;
         }
         return true;
@@ -14372,12 +14406,9 @@ inline bool Server::apply_static_file_compression(const Request &req,
 
   res.body.swap(compressed);
 
-  // The provider was consumed in full, so a resource releaser registered with
-  // it should hear about a success when the response goes away.
+  // The provider was consumed in full, so its releaser hears about a success.
   res.content_provider_success_ = true;
-  res.content_provider_ = nullptr;
-  res.content_length_ = 0;
-  res.content_coding_ = detail::EncodingType::None;
+  detail::clear_content_provider(res);
 
   res.set_header("Content-Encoding", detail::encoding_name(type));
   res.set_header("Vary", "Accept-Encoding");
@@ -14865,15 +14896,15 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
                                       : StatusCode::PartialContent_206;
     }
 
+    // Before the Range checks below, so they see the body's own length.
+    detail::prefer_assigned_body(res);
+
     // Serve file content by using a content provider
     auto file_open_error = false;
     if (!res.file_content_path_.empty()) {
       const auto &path = res.file_content_path_;
       auto mm = std::make_shared<detail::mmap>(path.c_str());
       if (!mm->is_open()) {
-        res.body.clear();
-        res.content_length_ = 0;
-        res.content_provider_ = nullptr;
         res.status = StatusCode::NotFound_404;
         output_error_log(Error::OpenFile, &req);
         file_open_error = true;
@@ -14893,9 +14924,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     if (file_open_error) {
       ret = write_response(strm, close_connection, req, res);
     } else if (detail::range_error(req, res)) {
-      res.body.clear();
-      res.content_length_ = 0;
-      res.content_provider_ = nullptr;
+      detail::clear_content(res);
       res.status = StatusCode::RangeNotSatisfiable_416;
       ret = write_response(strm, close_connection, req, res);
     } else {
