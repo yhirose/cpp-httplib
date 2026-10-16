@@ -15280,9 +15280,13 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
     return req.method == "CONNECT";
   }
 
-  // Ignore '100 Continue' (only when not using Expect: 100-continue explicitly)
-  while (skip_100_continue && res.status == StatusCode::Continue_100) {
-    if (!line_reader.getline()) { return false; } // CRLF
+  // Skip interim responses, such as 100 Continue (unless Expect:
+  // 100-continue is handled by the caller) and 103 Early Hints, along with
+  // their header fields. 101 ends HTTP on the connection, so it is final.
+  while (skip_100_continue && 100 <= res.status && res.status < 200 &&
+         res.status != StatusCode::SwitchingProtocol_101) {
+    Headers interim_headers;
+    if (!detail::read_headers(strm, interim_headers)) { return false; }
     if (!line_reader.getline()) { return false; } // next response line
 
     if (!detail::parse_status_line(line_reader.ptr(), res.version, res.status,

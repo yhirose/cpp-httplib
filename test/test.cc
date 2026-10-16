@@ -13535,6 +13535,66 @@ TEST(ClientPayloadTest, DoesNotReserveTheClaimedLength) {
   EXPECT_FALSE(cli.Get("/"));
 }
 
+// Accepts one connection on 127.0.0.1:port, reads the request head and sends
+// back the given bytes, which httplib::Server could not be made to send.
+static void serve_raw_once(int port, const std::string &response) {
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(port));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  int opt = 1;
+  ::setsockopt(srv, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+               reinterpret_cast<const char *>(&opt),
+#else
+               &opt,
+#endif
+               sizeof(opt));
+  ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+  ::listen(srv, 1);
+
+  auto cli = ::accept(srv, nullptr, nullptr);
+  if (cli != INVALID_SOCKET) {
+    detail::set_socket_opt_time(cli, SOL_SOCKET, SO_RCVTIMEO, 3, 0);
+    std::string head;
+    char c;
+    while (head.find("\r\n\r\n") == std::string::npos &&
+           ::recv(cli, &c, 1, 0) == 1) {
+      head += c;
+    }
+    ::send(cli, response.data(), static_cast<int>(response.size()), 0);
+    detail::close_socket(cli);
+  }
+  detail::close_socket(srv);
+}
+
+TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
+  const char *responses[] = {
+      "HTTP/1.1 103 Early Hints\r\n"
+      "Link: </style.css>; rel=preload\r\n"
+      "\r\n"
+      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+      "HTTP/1.1 100 Continue\r\n"
+      "X-Note: interim\r\n"
+      "\r\n"
+      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+  };
+
+  for (auto response : responses) {
+    std::thread t([&]() { serve_raw_once(PORT, response); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    Client cli("127.0.0.1", PORT);
+    auto res = cli.Get("/");
+    t.join();
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+    EXPECT_EQ("ok", res->body);
+  }
+}
+
 TEST(ExpectContinueTest, EarlyFinalResponseClosesConnection) {
   std::atomic<bool> closed_by_client{false};
   auto server_thread = std::thread([&] {
