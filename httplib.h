@@ -2952,8 +2952,6 @@ protected:
   bool write_content_with_provider(Stream &strm, const Request &req,
                                    Error &error) const;
 
-  void copy_settings(const ClientImpl &rhs);
-
   void output_log(const Request &req, const Response &res) const;
   void output_error_log(const Error &err, const Request *req) const;
 
@@ -15079,52 +15077,6 @@ inline ClientImpl::~ClientImpl() {
 }
 
 inline bool ClientImpl::is_valid() const { return true; }
-
-inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
-  client_cert_path_ = rhs.client_cert_path_;
-  client_key_path_ = rhs.client_key_path_;
-  connection_timeout_sec_ = rhs.connection_timeout_sec_;
-  read_timeout_sec_ = rhs.read_timeout_sec_;
-  read_timeout_usec_ = rhs.read_timeout_usec_;
-  write_timeout_sec_ = rhs.write_timeout_sec_;
-  write_timeout_usec_ = rhs.write_timeout_usec_;
-  max_timeout_msec_ = rhs.max_timeout_msec_;
-  basic_auth_username_ = rhs.basic_auth_username_;
-  basic_auth_password_ = rhs.basic_auth_password_;
-  bearer_token_auth_token_ = rhs.bearer_token_auth_token_;
-  keep_alive_ = rhs.keep_alive_;
-  follow_location_ = rhs.follow_location_;
-  path_encode_ = rhs.path_encode_;
-  address_family_ = rhs.address_family_;
-  tcp_nodelay_ = rhs.tcp_nodelay_;
-  ipv6_v6only_ = rhs.ipv6_v6only_;
-  socket_options_ = rhs.socket_options_;
-  compress_ = rhs.compress_;
-  decompress_ = rhs.decompress_;
-  payload_max_length_ = rhs.payload_max_length_;
-  has_payload_max_length_ = rhs.has_payload_max_length_;
-  interface_ = rhs.interface_;
-  proxy_host_ = rhs.proxy_host_;
-  proxy_port_ = rhs.proxy_port_;
-  proxy_basic_auth_username_ = rhs.proxy_basic_auth_username_;
-  proxy_basic_auth_password_ = rhs.proxy_basic_auth_password_;
-  proxy_bearer_token_auth_token_ = rhs.proxy_bearer_token_auth_token_;
-  no_proxy_entries_ = rhs.no_proxy_entries_;
-  logger_ = rhs.logger_;
-  error_logger_ = rhs.error_logger_;
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-  digest_auth_username_ = rhs.digest_auth_username_;
-  digest_auth_password_ = rhs.digest_auth_password_;
-  proxy_digest_auth_username_ = rhs.proxy_digest_auth_username_;
-  proxy_digest_auth_password_ = rhs.proxy_digest_auth_password_;
-  ca_cert_file_path_ = rhs.ca_cert_file_path_;
-  ca_cert_dir_path_ = rhs.ca_cert_dir_path_;
-  server_certificate_verification_ = rhs.server_certificate_verification_;
-  server_hostname_verification_ = rhs.server_hostname_verification_;
-  system_ca_mode_ = rhs.system_ca_mode_;
-#endif
-}
 
 inline bool
 ClientImpl::is_proxy_enabled_for_host(const std::string &host) const {
