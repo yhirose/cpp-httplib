@@ -3988,6 +3988,10 @@ public:
   bool is_open() const;
   size_t size() const;
   const char *data() const;
+  // Copies up to len bytes from offset into buf and returns how many. Unlike
+  // reading data(), it gives fewer, down to 0, for a file that has shrunk
+  // since it was opened, rather than a SIGBUS.
+  size_t read(size_t offset, char *buf, size_t len) const;
 
 private:
 #if defined(_WIN32)
@@ -6520,6 +6524,22 @@ inline const char *mmap::data() const {
   return is_open_empty_file ? "" : static_cast<const char *>(addr_);
 }
 
+inline size_t mmap::read(size_t offset, char *buf, size_t len) const {
+  if (offset >= size_) { return 0; }
+  len = (std::min)(len, size_ - offset);
+#if defined(_WIN32)
+  // Windows does not let a mapped file be truncated.
+  std::memcpy(buf, static_cast<const char *>(addr_) + offset, len);
+  return len;
+#else
+  ssize_t n;
+  do {
+    n = ::pread(fd_, buf, len, static_cast<off_t>(offset));
+  } while (n < 0 && errno == EINTR);
+  return n > 0 ? static_cast<size_t>(n) : 0;
+#endif
+}
+
 inline void mmap::close() {
 #if defined(_WIN32)
   if (addr_) {
@@ -8991,9 +9011,12 @@ inline void set_file_content_provider(Response &res,
   res.set_content_provider(
       m->size(), content_type,
       [m](size_t offset, size_t length, DataSink &sink) -> bool {
-        // Never read past the mapping.
-        if (offset >= m->size()) { return false; }
-        sink.write(m->data() + offset, (std::min)(length, m->size() - offset));
+        // Never read past the file, which ends the response early if it has
+        // shrunk since it was opened.
+        char buf[CPPHTTPLIB_SEND_BUFSIZ];
+        auto n = m->read(offset, buf, (std::min)(length, sizeof(buf)));
+        if (n == 0) { return false; }
+        sink.write(buf, n);
         return true;
       });
 

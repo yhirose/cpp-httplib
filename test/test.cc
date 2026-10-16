@@ -12797,6 +12797,45 @@ TEST(ResponseContentSourceTest, LastContentSetterWins) {
   }
 }
 
+#if defined(CPPHTTPLIB_SSL_ENABLED) && !defined(_WIN32)
+TEST(FileContentTest, TruncatedWhileServedEndsTheResponse) {
+  const char *path = "./truncated_while_served.txt";
+  const size_t size = 32 * 1024 * 1024;
+  {
+    std::ofstream f(path, std::ios::binary);
+    f << std::string(size, 'x');
+  }
+  auto se_file = detail::scope_exit([&] { std::remove(path); });
+
+  // Over TLS, where the bytes are encrypted in this process rather than
+  // copied by send().
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  svr.Get("/file", [&](const Request &, Response &res) {
+    res.set_file_content(path, "text/plain");
+  });
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // The file shrinks once the first bytes are in, as a rewrite in place
+  // would, and reading the mapping past its new end used to raise SIGBUS.
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  size_t received = 0;
+  auto res = cli.Get("/file", [&](const char *, size_t len) {
+    if (received == 0) { EXPECT_EQ(0, ::truncate(path, 0)); }
+    received += len;
+    return true;
+  });
+  EXPECT_FALSE(res);
+  EXPECT_LT(received, size);
+}
+#endif
+
 // Forward declaration (see the base64_encode note).
 namespace httplib {
 namespace detail {
