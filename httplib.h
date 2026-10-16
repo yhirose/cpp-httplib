@@ -21699,6 +21699,14 @@ inline int context_ex_data_index() {
   return index;
 }
 
+// Each WOLFSSL points back to its WolfSSLSession, the session_t that every
+// other tls:: function takes.
+inline int session_ex_data_index() {
+  static const auto index =
+      wolfSSL_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
+  return index;
+}
+
 // wolfSSL verify callback wrapper
 inline int wolfssl_verify_callback(int preverify_ok,
                                    WOLFSSL_X509_STORE_CTX *x509_ctx) {
@@ -21716,7 +21724,7 @@ inline int wolfssl_verify_callback(int preverify_ok,
   int err = wolfSSL_X509_STORE_CTX_get_error(x509_ctx);
 
   VerifyContext verify_ctx;
-  verify_ctx.session = static_cast<session_t>(ssl);
+  verify_ctx.session = wolfSSL_get_ex_data(ssl, session_ex_data_index());
   verify_ctx.cert = static_cast<cert_t>(cert);
   verify_ctx.depth = depth;
   verify_ctx.preverify_ok = (preverify_ok != 0);
@@ -21993,6 +22001,12 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   if (!session->ssl) {
     impl::wolfssl_last_error() =
         static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+    delete session;
+    return nullptr;
+  }
+
+  if (wolfSSL_set_ex_data(session->ssl, impl::session_ex_data_index(),
+                          session) != WOLFSSL_SUCCESS) {
     delete session;
     return nullptr;
   }
