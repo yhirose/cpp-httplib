@@ -12354,6 +12354,15 @@ TEST(ResponseContentSourceTest, LastContentSetterWins) {
   }
 }
 
+// Forward declaration (see the base64_encode note).
+namespace httplib {
+namespace detail {
+void set_file_content_provider(Response &res, const std::shared_ptr<mmap> &m,
+                               const std::string &content_type,
+                               EncodingType encoding);
+} // namespace detail
+} // namespace httplib
+
 TEST(ResponseContentSourceTest, FileContentProviderStaysWithinFile) {
   auto mm = std::make_shared<detail::mmap>("./www/dir/test.html");
   ASSERT_TRUE(mm->is_open());
