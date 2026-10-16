@@ -18776,12 +18776,17 @@ inline bool SSLClient::connect_with_proxy(
   }
 
   // If status code is not 200, proxy request is failed.
-  // Set error to ProxyConnection and return proxy response
-  // as the response of the request
+  // Set error to ProxyConnection. A refusal such as 407 is returned as the
+  // response of the request, so the caller sees why; any other status would
+  // read as the answer of the origin, which it never reached.
   if (proxy_res.status != StatusCode::OK_200) {
     error = Error::ProxyConnection;
     output_error_log(error, nullptr);
-    res = std::move(proxy_res);
+    if (400 <= proxy_res.status && proxy_res.status < 600) {
+      res = std::move(proxy_res);
+    } else {
+      success = false;
+    }
     // Thread-safe to close everything because we are assuming there are
     // no requests in flight
     shutdown_ssl(socket, true);

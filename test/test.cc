@@ -13595,6 +13595,39 @@ TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
   }
 }
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(ProxyConnectTest, OnlyARefusalIsPassedOn) {
+  // Anything but 200 or a refusal would read as the origin's own response.
+  {
+    std::thread t([] {
+      serve_raw_once(PORT, "HTTP/1.1 201 Created\r\n"
+                           "Set-Cookie: session=from-proxy\r\n"
+                           "Content-Length: 0\r\n\r\n");
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    SSLClient cli("example.com", 443);
+    cli.set_proxy("127.0.0.1", PORT);
+    auto res = cli.Get("/");
+    t.join();
+    EXPECT_FALSE(res);
+    EXPECT_EQ(Error::ProxyConnection, res.error());
+  }
+  {
+    std::thread t([] {
+      serve_raw_once(PORT, "HTTP/1.1 407 Proxy Authentication Required\r\n"
+                           "Content-Length: 0\r\n\r\n");
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    SSLClient cli("example.com", 443);
+    cli.set_proxy("127.0.0.1", PORT);
+    auto res = cli.Get("/");
+    t.join();
+    ASSERT_TRUE(res);
+    EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
+  }
+}
+#endif
+
 TEST(ExpectContinueTest, EarlyFinalResponseClosesConnection) {
   std::atomic<bool> closed_by_client{false};
   auto server_thread = std::thread([&] {
