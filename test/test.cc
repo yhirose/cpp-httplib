@@ -25543,10 +25543,14 @@ private:
 };
 
 TEST(WebSocketFrameTest, MultiByteFieldsSplitAcrossReads) {
-  // A 200-byte payload uses the 16-bit extended length, so the header, the
-  // length and the mask key are all multi-byte fields here. Each used to be
-  // read with a single read() call, which fails as soon as one is split.
-  std::string body(200, 'x');
+  // The payload uses the 16-bit extended length, so the header, the length
+  // and the mask key are all multi-byte fields here. Each used to be read
+  // with a single read() call, which fails as soon as one is split. The
+  // payload is also a little over one read chunk, so it is read in two.
+  std::string body;
+  for (size_t i = 0; i < CPPHTTPLIB_RECV_BUFSIZ + 3; i++) {
+    body += static_cast<char>(i % 251);
+  }
   const uint8_t mask[4] = {0x0a, 0x0b, 0x0c, 0x0d};
 
   std::string frame;
@@ -25566,11 +25570,35 @@ TEST(WebSocketFrameTest, MultiByteFieldsSplitAcrossReads) {
   std::string payload;
   bool fin = false;
   ASSERT_EQ(ws::impl::read_websocket_frame(strm, opcode, payload, fin,
-                                           /*expect_masked=*/true, 1024),
+                                           /*expect_masked=*/true, body.size()),
             ws::impl::FrameRead::Ok);
   EXPECT_TRUE(fin);
   EXPECT_EQ(opcode, ws::Opcode::Text);
   EXPECT_EQ(payload, body);
+}
+
+TEST(WebSocketFrameTest, PayloadGrowsOnlyAsItArrives) {
+  // The header announces the largest payload allowed, and only 3 bytes of it
+  // ever arrive.
+  uint64_t len = CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH;
+  std::string frame;
+  frame += static_cast<char>(0x82); // FIN + Binary
+  frame += static_cast<char>(127);  // 64-bit length follows
+  for (int shift = 56; shift >= 0; shift -= 8) {
+    frame += static_cast<char>((len >> shift) & 0xff);
+  }
+  frame += "abc";
+
+  detail::BufferStream strm;
+  strm.write(frame.data(), frame.size());
+  ws::Opcode opcode;
+  std::string payload;
+  bool fin;
+  EXPECT_EQ(
+      ws::impl::read_websocket_frame(strm, opcode, payload, fin, false,
+                                     CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH),
+      ws::impl::FrameRead::Fail);
+  EXPECT_LT(payload.capacity(), 2 * CPPHTTPLIB_RECV_BUFSIZ);
 }
 
 TEST(WebSocketTest, QueryStringInHandshake) {

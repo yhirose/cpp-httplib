@@ -5766,12 +5766,17 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
     }
   }
 
-  // Read payload
-  payload.resize(static_cast<size_t>(payload_len));
-  if (payload_len > 0 &&
-      read_exact(strm, &payload[0], static_cast<size_t>(payload_len)) !=
-          FrameRead::Ok) {
-    return FrameRead::Fail;
+  // Grow the payload only as it arrives, since a header alone can announce
+  // max_len bytes that never come.
+  payload.clear();
+  auto len = static_cast<size_t>(payload_len);
+  while (payload.size() < len) {
+    auto offset = payload.size();
+    auto n = (std::min)(len - offset, CPPHTTPLIB_RECV_BUFSIZ);
+    payload.resize(offset + n);
+    if (read_exact(strm, &payload[offset], n) != FrameRead::Ok) {
+      return FrameRead::Fail;
+    }
   }
 
   // Unmask if needed
