@@ -554,6 +554,12 @@ namespace detail {
 bool parse_status_line(const char *line, std::string &version, int &status,
                        std::string &reason);
 std::string file_extension(const std::string &path);
+std::string
+find_content_type(const std::string &path,
+                  const std::map<std::string, std::string> &user_data,
+                  const std::string &default_content_type);
+bool can_compress_content_type(const std::string &content_type);
+bool is_prohibited_header_name(const std::string &name);
 } // namespace detail
 } // namespace httplib
 
@@ -635,6 +641,36 @@ TEST(FileExtensionTest, TakesTheAlphanumericSuffix) {
   // Long enough to overflow the stack when matched with std::regex.
   auto long_ext = std::string(CPPHTTPLIB_MAX_LINE_LENGTH, 'a');
   EXPECT_EQ(long_ext, detail::file_extension("a." + long_ext));
+}
+
+TEST(FindContentTypeTest, ComparesWholeExtensions) {
+  EXPECT_EQ("text/html", detail::find_content_type("/a.html", {}, ""));
+  EXPECT_EQ("image/svg+xml", detail::find_content_type("/a.svg", {}, ""));
+  EXPECT_EQ("text/javascript", detail::find_content_type("/a.js", {}, ""));
+
+  // Same 26-bit hash as html, svg and js.
+  EXPECT_EQ("", detail::find_content_type("/a.qo2yh", {}, ""));
+  EXPECT_EQ("", detail::find_content_type("/a.q4g", {}, ""));
+  EXPECT_EQ("", detail::find_content_type("/a.l5", {}, ""));
+}
+
+TEST(CanCompressContentTypeTest, ComparesWholeTypes) {
+  EXPECT_TRUE(detail::can_compress_content_type("application/json"));
+  EXPECT_TRUE(detail::can_compress_content_type("text/plain; charset=utf-8"));
+  EXPECT_FALSE(detail::can_compress_content_type("text/event-stream"));
+  EXPECT_FALSE(detail::can_compress_content_type("image/png"));
+
+  // Same 26-bit hash as application/json.
+  EXPECT_FALSE(detail::can_compress_content_type("VY_LQ"));
+}
+
+TEST(ProhibitedHeaderNameTest, ComparesWholeNames) {
+  EXPECT_TRUE(detail::is_prohibited_header_name("REMOTE_ADDR"));
+  EXPECT_TRUE(detail::is_prohibited_header_name("LOCAL_PORT"));
+  EXPECT_FALSE(detail::is_prohibited_header_name("Host"));
+
+  // Same 26-bit hash as REMOTE_ADDR.
+  EXPECT_FALSE(detail::is_prohibited_header_name("IIJRp"));
 }
 
 // Forward declaration: in split builds split.py strips `inline` and moves the

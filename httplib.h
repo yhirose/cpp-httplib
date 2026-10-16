@@ -7551,43 +7551,6 @@ inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
   }
 }
 
-// Recursive form retained so operator""_t below can compute hashes for
-// switch-case labels at compile time (C++11 constexpr forbids loops). Do not
-// call from runtime paths with arbitrary-length inputs — use str2tag()
-// instead, which is iterative and stack-safe.
-inline constexpr unsigned int str2tag_core(const char *s, size_t l,
-                                           unsigned int h) {
-  return (l == 0)
-             ? h
-             : str2tag_core(
-                   s + 1, l - 1,
-                   // Unsets the 6 high bits of h, therefore no overflow happens
-                   (((std::numeric_limits<unsigned int>::max)() >> 6) &
-                    h * 33) ^
-                       static_cast<unsigned char>(*s));
-}
-
-inline unsigned int str2tag(const std::string &s) {
-  // Iterative form of str2tag_core: the recursive constexpr version is kept
-  // for compile-time UDL evaluation of short string literals, but at runtime
-  // we may receive arbitrarily long inputs (e.g. fuzzed Content-Type) that
-  // would blow the stack with one frame per character.
-  unsigned int h = 0;
-  for (auto c : s) {
-    h = (((std::numeric_limits<unsigned int>::max)() >> 6) & h * 33) ^
-        static_cast<unsigned char>(c);
-  }
-  return h;
-}
-
-namespace udl {
-
-inline constexpr unsigned int operator""_t(const char *s, size_t l) {
-  return str2tag_core(s, l, 0);
-}
-
-} // namespace udl
-
 inline std::string
 find_content_type(const std::string &path,
                   const std::map<std::string, std::string> &user_data,
@@ -7597,61 +7560,65 @@ find_content_type(const std::string &path,
   auto it = user_data.find(ext);
   if (it != user_data.end()) { return it->second; }
 
-  using udl::operator""_t;
+  static const struct {
+    const char *ext;
+    const char *type;
+  } types[] = {
+      {"css", "text/css"},
+      {"csv", "text/csv"},
+      {"htm", "text/html"},
+      {"html", "text/html"},
+      {"js", "text/javascript"},
+      {"mjs", "text/javascript"},
+      {"txt", "text/plain"},
+      {"vtt", "text/vtt"},
 
-  switch (str2tag(ext)) {
-  default: return default_content_type;
+      {"apng", "image/apng"},
+      {"avif", "image/avif"},
+      {"bmp", "image/bmp"},
+      {"gif", "image/gif"},
+      {"png", "image/png"},
+      {"svg", "image/svg+xml"},
+      {"webp", "image/webp"},
+      {"ico", "image/x-icon"},
+      {"tif", "image/tiff"},
+      {"tiff", "image/tiff"},
+      {"jpg", "image/jpeg"},
+      {"jpeg", "image/jpeg"},
 
-  case "css"_t: return "text/css";
-  case "csv"_t: return "text/csv";
-  case "htm"_t:
-  case "html"_t: return "text/html";
-  case "js"_t:
-  case "mjs"_t: return "text/javascript";
-  case "txt"_t: return "text/plain";
-  case "vtt"_t: return "text/vtt";
+      {"mp4", "video/mp4"},
+      {"mpeg", "video/mpeg"},
+      {"webm", "video/webm"},
 
-  case "apng"_t: return "image/apng";
-  case "avif"_t: return "image/avif";
-  case "bmp"_t: return "image/bmp";
-  case "gif"_t: return "image/gif";
-  case "png"_t: return "image/png";
-  case "svg"_t: return "image/svg+xml";
-  case "webp"_t: return "image/webp";
-  case "ico"_t: return "image/x-icon";
-  case "tif"_t: return "image/tiff";
-  case "tiff"_t: return "image/tiff";
-  case "jpg"_t:
-  case "jpeg"_t: return "image/jpeg";
+      {"mp3", "audio/mp3"},
+      {"mpga", "audio/mpeg"},
+      {"weba", "audio/webm"},
+      {"wav", "audio/wave"},
 
-  case "mp4"_t: return "video/mp4";
-  case "mpeg"_t: return "video/mpeg";
-  case "webm"_t: return "video/webm";
+      {"otf", "font/otf"},
+      {"ttf", "font/ttf"},
+      {"woff", "font/woff"},
+      {"woff2", "font/woff2"},
 
-  case "mp3"_t: return "audio/mp3";
-  case "mpga"_t: return "audio/mpeg";
-  case "weba"_t: return "audio/webm";
-  case "wav"_t: return "audio/wave";
+      {"7z", "application/x-7z-compressed"},
+      {"atom", "application/atom+xml"},
+      {"pdf", "application/pdf"},
+      {"json", "application/json"},
+      {"rss", "application/rss+xml"},
+      {"tar", "application/x-tar"},
+      {"xht", "application/xhtml+xml"},
+      {"xhtml", "application/xhtml+xml"},
+      {"xslt", "application/xslt+xml"},
+      {"xml", "application/xml"},
+      {"gz", "application/gzip"},
+      {"zip", "application/zip"},
+      {"wasm", "application/wasm"},
+  };
 
-  case "otf"_t: return "font/otf";
-  case "ttf"_t: return "font/ttf";
-  case "woff"_t: return "font/woff";
-  case "woff2"_t: return "font/woff2";
-
-  case "7z"_t: return "application/x-7z-compressed";
-  case "atom"_t: return "application/atom+xml";
-  case "pdf"_t: return "application/pdf";
-  case "json"_t: return "application/json";
-  case "rss"_t: return "application/rss+xml";
-  case "tar"_t: return "application/x-tar";
-  case "xht"_t:
-  case "xhtml"_t: return "application/xhtml+xml";
-  case "xslt"_t: return "application/xslt+xml";
-  case "xml"_t: return "application/xml";
-  case "gz"_t: return "application/gzip";
-  case "zip"_t: return "application/zip";
-  case "wasm"_t: return "application/wasm";
+  for (const auto &t : types) {
+    if (ext == t.ext) { return t.type; }
   }
+  return default_content_type;
 }
 
 inline std::string
@@ -7685,28 +7652,26 @@ extract_media_type(const std::string &content_type,
 }
 
 inline bool can_compress_content_type(const std::string &content_type) {
-  using udl::operator""_t;
-
   auto mime_type = extract_media_type(content_type);
-  auto tag = str2tag(mime_type);
 
-  switch (tag) {
-  case "image/svg+xml"_t:
-  case "application/javascript"_t:
-  case "application/x-javascript"_t:
-  case "application/json"_t:
-  case "application/ld+json"_t:
-  case "application/xml"_t:
-  case "application/xhtml+xml"_t:
-  case "application/rss+xml"_t:
-  case "application/atom+xml"_t:
-  case "application/xslt+xml"_t:
-  case "application/protobuf"_t: return true;
+  static const char *const compressible[] = {
+      "image/svg+xml",
+      "application/javascript",
+      "application/x-javascript",
+      "application/json",
+      "application/ld+json",
+      "application/xml",
+      "application/xhtml+xml",
+      "application/rss+xml",
+      "application/atom+xml",
+      "application/xslt+xml",
+      "application/protobuf",
+  };
 
-  case "text/event-stream"_t: return false;
-
-  default: return !mime_type.rfind("text/", 0);
+  for (auto type : compressible) {
+    if (mime_type == type) { return true; }
   }
+  return mime_type != "text/event-stream" && !mime_type.rfind("text/", 0);
 }
 
 inline bool parse_quality(const char *b, const char *e, std::string &token,
@@ -8184,16 +8149,18 @@ create_compressor() {
 #endif
 }
 
-inline bool is_prohibited_header_name(const std::string &name) {
-  using udl::operator""_t;
+// s == lit, comparing the lengths first, which operator== may not do.
+template <size_t N>
+inline bool equals_literal(const std::string &s, const char (&lit)[N]) {
+  return s.size() == N - 1 && !s.compare(0, N - 1, lit);
+}
 
-  switch (str2tag(name)) {
-  case "REMOTE_ADDR"_t:
-  case "REMOTE_PORT"_t:
-  case "LOCAL_ADDR"_t:
-  case "LOCAL_PORT"_t: return true;
-  default: return false;
-  }
+inline bool is_prohibited_header_name(const std::string &name) {
+  // Every header lookup by name runs this.
+  return equals_literal(name, "REMOTE_ADDR") ||
+         equals_literal(name, "REMOTE_PORT") ||
+         equals_literal(name, "LOCAL_ADDR") ||
+         equals_literal(name, "LOCAL_PORT");
 }
 
 inline bool has_header(const Headers &headers, const std::string &key) {
