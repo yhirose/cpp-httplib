@@ -9465,11 +9465,14 @@ public:
       }
       case 1: { // New entry
         clear_file_info();
+        header_searched_ = 0;
         state_ = 2;
         break;
       }
       case 2: { // Headers
-        auto pos = buf_find(crlf_);
+        // Resume where the last call stopped looking, so that a line arriving
+        // a few bytes at a time is not searched from its start each time.
+        auto pos = buf_find(crlf_, header_searched_);
         if (pos > CPPHTTPLIB_HEADER_MAX_LENGTH) { return false; }
         while (pos < buf_size()) {
           // Empty line
@@ -9550,7 +9553,11 @@ public:
           buf_erase(pos + crlf_.size());
           pos = buf_find(crlf_);
         }
-        if (state_ != 3) { return true; }
+        if (state_ != 3) {
+          // The CR of the CRLF may be the last byte so far.
+          header_searched_ = buf_size() > 0 ? buf_size() - 1 : 0;
+          return true;
+        }
         break;
       }
       case 3: { // Body
@@ -9668,6 +9675,7 @@ private:
   bool is_valid_ = false;
   FormData file_;
   size_t header_count_ = 0;
+  size_t header_searched_ = 0;
 
   // Buffer
   bool start_with(const std::string &a, size_t spos, size_t epos,
@@ -9689,10 +9697,10 @@ private:
     return start_with(buf_, buf_spos_, buf_epos_, s);
   }
 
-  size_t buf_find(const std::string &s) const {
+  size_t buf_find(const std::string &s, size_t from = 0) const {
     auto c = s.front();
 
-    size_t off = buf_spos_;
+    size_t off = buf_spos_ + from;
     while (off < buf_epos_) {
       auto pos = off;
       while (true) {

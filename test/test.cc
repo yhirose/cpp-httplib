@@ -1872,6 +1872,49 @@ TEST(ParseDispositionParamsTest, QuotedValues) {
   }
 }
 
+TEST(MultipartFormDataTest, PartArrivingAByteAtATime) {
+  Server svr;
+  std::string filename;
+  std::string content;
+  svr.Post("/upload", [&](const Request &req, Response &) {
+    const auto &file = req.form.get_file("file");
+    filename = file.filename;
+    content = file.content;
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  std::string body = "--B\r\n"
+                     "Content-Disposition: form-data; name=\"file\"; "
+                     "filename=\"a.txt\"\r\n"
+                     "Content-Type: text/plain\r\n"
+                     "\r\n"
+                     "hello\r\n"
+                     "--B--\r\n";
+  Client cli(HOST, PORT);
+  auto res = cli.Post(
+      "/upload",
+      [&](size_t offset, DataSink &sink) {
+        if (offset < body.size()) {
+          sink.write(&body[offset], 1);
+        } else {
+          sink.done();
+        }
+        return true;
+      },
+      "multipart/form-data; boundary=B");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("a.txt", filename);
+  EXPECT_EQ("hello", content);
+}
+
 TEST(ParseDispositionParamsTest, QuotedValuesSurviveTheRoundTrip) {
   // escape_multipart_field() only escapes '"', CR and LF, so a name or
   // filename holding '=' or ';' reaches the server's parameter parser as is.
