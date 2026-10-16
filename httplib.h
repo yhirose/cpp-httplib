@@ -676,17 +676,13 @@ struct equal_to {
 
 struct hash {
   size_t operator()(const std::string &key) const {
-    return hash_core(key.data(), key.size(), 0);
-  }
-
-  size_t hash_core(const char *s, size_t l, size_t h) const {
-    return (l == 0) ? h
-                    : hash_core(s + 1, l - 1,
-                                // Unsets the 6 high bits of h, therefore no
-                                // overflow happens
-                                (((std::numeric_limits<size_t>::max)() >> 6) &
-                                 h * 33) ^
-                                    static_cast<unsigned char>(to_lower(*s)));
+    size_t h = 0;
+    for (auto c : key) {
+      // Unsets the 6 high bits of h, therefore no overflow happens
+      h = (((std::numeric_limits<size_t>::max)() >> 6) & h * 33) ^
+          static_cast<unsigned char>(to_lower(c));
+    }
+    return h;
   }
 };
 

@@ -643,6 +643,15 @@ TEST(FileExtensionTest, TakesTheAlphanumericSuffix) {
   EXPECT_EQ(long_ext, detail::file_extension("a." + long_ext));
 }
 
+TEST(CaseIgnoreHashTest, IgnoresCaseAndTakesLongKeys) {
+  detail::case_ignore::hash hash;
+  EXPECT_EQ(hash("Content-Type"), hash("content-TYPE"));
+  EXPECT_NE(hash("Content-Type"), hash("Content-Length"));
+
+  // Long enough to overflow the stack if hashed one call per character.
+  EXPECT_EQ(hash(std::string(1 << 20, 'A')), hash(std::string(1 << 20, 'a')));
+}
+
 TEST(FindContentTypeTest, ComparesWholeExtensions) {
   EXPECT_EQ("text/html", detail::find_content_type("/a.html", {}, ""));
   EXPECT_EQ("image/svg+xml", detail::find_content_type("/a.svg", {}, ""));
