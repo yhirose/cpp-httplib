@@ -22411,6 +22411,17 @@ TEST_F(StreamApiTest, GetWithParams) {
   EXPECT_TRUE(read_body(result).find("foo=bar") != std::string::npos);
 }
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+TEST_F(StreamApiTest, GetCompressedWithNoPayloadLimit) {
+  httplib::Client cli(HOST, PORT);
+  cli.set_payload_max_length(0);
+  auto result = httplib::stream::Get(cli, "/hello");
+  ASSERT_TRUE(result.is_valid());
+  EXPECT_FALSE(result.get_header_value("Content-Encoding").empty());
+  EXPECT_EQ("Hello World!", read_body(result));
+}
+#endif
+
 TEST_F(StreamApiTest, GetConnectionError) {
   httplib::Client cli(HOST, 9999);
   EXPECT_FALSE(httplib::stream::Get(cli, "/hello").is_valid());

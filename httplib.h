@@ -15598,10 +15598,8 @@ inline ssize_t ClientImpl::StreamHandle::read_with_decompression(char *buf,
         [this](const char *data, size_t data_len) {
           decompress_buffer_.append(data, data_len);
           auto limit = body_reader_.payload_max_length;
-          if (decompressed_bytes_read_ + decompress_buffer_.size() > limit) {
-            return false;
-          }
-          return true;
+          return limit == 0 ||
+                 decompressed_bytes_read_ + decompress_buffer_.size() <= limit;
         });
 
     if (!decompress_ok) {
