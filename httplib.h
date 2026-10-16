@@ -7668,8 +7668,10 @@ find_content_type(const std::string &path,
       {"wasm", "application/wasm"},
   };
 
+  // Extensions are matched regardless of case, as web servers do
+  auto lower_ext = case_ignore::to_lower(ext);
   for (const auto &t : types) {
-    if (ext == t.ext) { return t.type; }
+    if (lower_ext == t.ext) { return t.type; }
   }
   return default_content_type;
 }
@@ -7705,7 +7707,8 @@ extract_media_type(const std::string &content_type,
 }
 
 inline bool can_compress_content_type(const std::string &content_type) {
-  auto mime_type = extract_media_type(content_type);
+  // Media types are case-insensitive (RFC 9110 §8.3.1)
+  auto mime_type = case_ignore::to_lower(extract_media_type(content_type));
 
   static const char *const compressible[] = {
       "image/svg+xml",
@@ -8202,18 +8205,23 @@ create_compressor() {
 #endif
 }
 
-// s == lit, comparing the lengths first, which operator== may not do.
+// Whether s is lit, ignoring case, with the lengths compared first.
 template <size_t N>
-inline bool equals_literal(const std::string &s, const char (&lit)[N]) {
-  return s.size() == N - 1 && !s.compare(0, N - 1, lit);
+inline bool equals_literal_ignoring_case(const std::string &s,
+                                         const char (&lit)[N]) {
+  return s.size() == N - 1 &&
+         std::equal(s.begin(), s.end(), lit, [](char a, char b) {
+           return case_ignore::to_lower(a) == case_ignore::to_lower(b);
+         });
 }
 
 inline bool is_prohibited_header_name(const std::string &name) {
-  // Every header lookup by name runs this.
-  return equals_literal(name, "REMOTE_ADDR") ||
-         equals_literal(name, "REMOTE_PORT") ||
-         equals_literal(name, "LOCAL_ADDR") ||
-         equals_literal(name, "LOCAL_PORT");
+  // Field names are case-insensitive (RFC 9110 §5.1), and every header lookup
+  // by name runs this.
+  return equals_literal_ignoring_case(name, "REMOTE_ADDR") ||
+         equals_literal_ignoring_case(name, "REMOTE_PORT") ||
+         equals_literal_ignoring_case(name, "LOCAL_ADDR") ||
+         equals_literal_ignoring_case(name, "LOCAL_PORT");
 }
 
 inline bool has_header(const Headers &headers, const std::string &key) {
@@ -11885,7 +11893,8 @@ inline size_t Request::get_param_value_count(const std::string &key) const {
 
 inline bool Request::is_multipart_form_data() const {
   const auto &content_type = get_header_value("Content-Type");
-  return detail::extract_media_type(content_type) == "multipart/form-data";
+  return detail::case_ignore::equal(detail::extract_media_type(content_type),
+                                    "multipart/form-data");
 }
 
 // Multipart FormData implementation
@@ -13931,8 +13940,8 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
             return true;
           })) {
     const auto &content_type = req.get_header_value("Content-Type");
-    if (detail::extract_media_type(content_type) ==
-        "application/x-www-form-urlencoded") {
+    if (detail::case_ignore::equal(detail::extract_media_type(content_type),
+                                   "application/x-www-form-urlencoded")) {
       if (req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
         res.status = StatusCode::PayloadTooLarge_413; // NOTE: should be 414?
         output_error_log(Error::ExceedMaxPayloadSize, &req);

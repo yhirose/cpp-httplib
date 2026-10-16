@@ -681,6 +681,7 @@ TEST(FindContentTypeTest, ComparesWholeExtensions) {
   EXPECT_EQ("text/html", detail::find_content_type("/a.html", {}, ""));
   EXPECT_EQ("image/svg+xml", detail::find_content_type("/a.svg", {}, ""));
   EXPECT_EQ("text/javascript", detail::find_content_type("/a.js", {}, ""));
+  EXPECT_EQ("text/html", detail::find_content_type("/INDEX.HTML", {}, ""));
 
   // Same 26-bit hash as html, svg and js.
   EXPECT_EQ("", detail::find_content_type("/a.qo2yh", {}, ""));
@@ -693,15 +694,24 @@ TEST(CanCompressContentTypeTest, ComparesWholeTypes) {
   EXPECT_TRUE(detail::can_compress_content_type("text/plain; charset=utf-8"));
   EXPECT_FALSE(detail::can_compress_content_type("text/event-stream"));
   EXPECT_FALSE(detail::can_compress_content_type("image/png"));
+  EXPECT_TRUE(detail::can_compress_content_type("Application/JSON"));
+  EXPECT_FALSE(detail::can_compress_content_type("Text/Event-Stream"));
 
   // Same 26-bit hash as application/json.
   EXPECT_FALSE(detail::can_compress_content_type("VY_LQ"));
+}
+
+TEST(MultipartFormDataTest, MediaTypeIgnoresCase) {
+  Request req;
+  req.set_header("Content-Type", "Multipart/Form-Data; boundary=x");
+  EXPECT_TRUE(req.is_multipart_form_data());
 }
 
 TEST(ProhibitedHeaderNameTest, ComparesWholeNames) {
   EXPECT_TRUE(detail::is_prohibited_header_name("REMOTE_ADDR"));
   EXPECT_TRUE(detail::is_prohibited_header_name("LOCAL_PORT"));
   EXPECT_FALSE(detail::is_prohibited_header_name("Host"));
+  EXPECT_TRUE(detail::is_prohibited_header_name("remote_addr"));
 
   // Same 26-bit hash as REMOTE_ADDR.
   EXPECT_FALSE(detail::is_prohibited_header_name("IIJRp"));
