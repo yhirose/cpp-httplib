@@ -99,6 +99,9 @@ cli.enable_server_certificate_verification(false);
 cli.enable_server_hostname_verification(false);
 ```
 
+> [!NOTE]
+> The CA certificates are loaded when the client makes its first connection. Changing `set_ca_cert_path()` or `enable_system_ca()` after that has no effect, so make the settings before the first request, or use a new client.
+
 ### SSL Error Handling
 
 When SSL operations fail, cpp-httplib provides detailed error information through `ssl_error()` and `ssl_backend_error()`:
