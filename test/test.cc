@@ -14520,7 +14520,7 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
 }
 #endif
 
-// ClientCertPresent uses get_peer_cert() - works with all TLS backends
+// Client certificate tests - work with all TLS backends
 #ifdef CPPHTTPLIB_SSL_ENABLED
 using ClientCertServerSetup = std::function<void(SSLServer &)>;
 
@@ -14529,8 +14529,6 @@ void ClientCertPresent(
     const std::string &client_private_key_file,
     const std::string &client_encrypted_private_key_pass = std::string(),
     const ClientCertServerSetup &setup = nullptr) {
-  using namespace httplib::tls;
-
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
@@ -14583,7 +14581,7 @@ void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
   ASSERT_TRUE(svr.is_valid());
   if (setup) { setup(svr); }
 
-  svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
+  svr.Get("/test", [](const Request &, Response &) { FAIL(); });
 
   auto port = svr.bind_to_any_port(HOST);
   ASSERT_LT(0, port);
@@ -14603,13 +14601,12 @@ void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
   cli.enable_server_certificate_verification(false);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(!res);
+  ASSERT_FALSE(res);
   // The server rejects the client during the handshake, or on TLS 1.3 right
   // after it, which the client only notices on its first read
   EXPECT_TRUE(res.error() == Error::SSLConnection || res.error() == Error::Read)
       << to_string(res.error());
 
-  // Verify backend error is captured
   if (res.error() == Error::SSLConnection) {
     EXPECT_NE(0UL, res.ssl_backend_error());
   }
