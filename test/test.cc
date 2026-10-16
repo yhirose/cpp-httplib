@@ -14522,15 +14522,19 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
 
 // ClientCertPresent uses get_peer_cert() - works with all TLS backends
 #ifdef CPPHTTPLIB_SSL_ENABLED
+using ClientCertServerSetup = std::function<void(SSLServer &)>;
+
 void ClientCertPresent(
     const std::string &client_cert_file,
     const std::string &client_private_key_file,
-    const std::string &client_encrypted_private_key_pass = std::string()) {
+    const std::string &client_encrypted_private_key_pass = std::string(),
+    const ClientCertServerSetup &setup = nullptr) {
   using namespace httplib::tls;
 
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
+  if (setup) { setup(svr); }
 
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
@@ -14542,7 +14546,9 @@ void ClientCertPresent(
     EXPECT_EQ("Common Name", common_name);
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -14551,7 +14557,7 @@ void ClientCertPresent(
 
   svr.wait_until_ready();
 
-  SSLClient cli(HOST, PORT, client_cert_file, client_private_key_file,
+  SSLClient cli(HOST, port, client_cert_file, client_private_key_file,
                 client_encrypted_private_key_pass);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
@@ -14571,23 +14577,13 @@ TEST(SSLClientServerTest, ClientEncryptedCertPresent) {
                     CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
 
-// A server that requires client certificates must keep requiring them after a
-// verify callback is set on its context, or set and then cleared again.
-void ClientCertStillRequired(bool clear_callback) {
-  using namespace httplib::tls;
-
+void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
-  svr.Get("/test", [](const Request &, Response &res) {
-    res.set_content("test", "text/plain");
-  });
+  if (setup) { setup(svr); }
 
-  ASSERT_TRUE(set_verify_callback(svr.tls_context(),
-                                  [](const VerifyContext &) { return true; }));
-  if (clear_callback) {
-    ASSERT_TRUE(set_verify_callback(svr.tls_context(), nullptr));
-  }
+  svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
 
   auto port = svr.bind_to_any_port(HOST);
   ASSERT_LT(0, port);
@@ -14597,23 +14593,43 @@ void ClientCertStillRequired(bool clear_callback) {
     t.join();
     ASSERT_FALSE(svr.is_running());
   });
+
   svr.wait_until_ready();
 
-  {
-    SSLClient cli(HOST, port);
-    cli.enable_server_certificate_verification(false);
-    cli.set_connection_timeout(30);
-    EXPECT_FALSE(cli.Get("/test"));
-  }
+  SSLClient cli(HOST, port);
+  cli.set_connection_timeout(30);
+  // Skip the server certificate check, so that the request fails because the
+  // client certificate is missing rather than because cert.pem is not trusted
+  cli.enable_server_certificate_verification(false);
 
-  {
-    SSLClient cli(HOST, port, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
-    cli.enable_server_certificate_verification(false);
-    cli.set_connection_timeout(30);
-    auto res = cli.Get("/test");
-    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-    EXPECT_EQ(StatusCode::OK_200, res->status);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(!res);
+  // The server rejects the client during the handshake, or on TLS 1.3 right
+  // after it, which the client only notices on its first read
+  EXPECT_TRUE(res.error() == Error::SSLConnection || res.error() == Error::Read)
+      << to_string(res.error());
+
+  // Verify backend error is captured
+  if (res.error() == Error::SSLConnection) {
+    EXPECT_NE(0UL, res.ssl_backend_error());
   }
+}
+
+TEST(SSLClientServerTest, ClientCertMissing) { ClientCertMissing(); }
+
+// A server that requires client certificates must keep requiring them after a
+// verify callback is set on its context, or set and then cleared again.
+void ClientCertStillRequired(bool clear_callback) {
+  auto setup = [clear_callback](SSLServer &svr) {
+    ASSERT_TRUE(tls::set_verify_callback(
+        svr.tls_context(), [](const tls::VerifyContext &) { return true; }));
+    if (clear_callback) {
+      ASSERT_TRUE(tls::set_verify_callback(svr.tls_context(), nullptr));
+    }
+  };
+  ClientCertMissing(setup);
+  ClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE, std::string(),
+                    setup);
 }
 
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackSet) {
@@ -14690,41 +14706,6 @@ TEST(SSLClientServerTest, PemMemoryClientEncryptedCertPresent) {
   PemMemoryClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
                              CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
                              CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
-}
-
-TEST(SSLClientServerTest, ClientCertMissing) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
-                CLIENT_CA_CERT_DIR);
-  ASSERT_TRUE(svr.is_valid());
-
-  svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
-
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  SSLClient cli(HOST, PORT);
-  cli.set_connection_timeout(30);
-  // cert.pem does not match HOST. Skip the hostname check, which runs before
-  // the chain check on Windows, so the result does not depend on the order.
-  cli.enable_server_hostname_verification(false);
-
-  auto res = cli.Get("/test");
-  ASSERT_TRUE(!res);
-  // When client cert is missing and server requires it, connection fails
-  // Error type depends on backend implementation
-  EXPECT_TRUE(res.error() == Error::SSLServerVerification ||
-              res.error() == Error::SSLConnection);
-
-  // Verify backend error is captured
-  // Note: This test may have different error codes depending on the exact
-  // verification failure
-  EXPECT_NE(0UL, res.ssl_backend_error());
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
