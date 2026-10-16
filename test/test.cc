@@ -23809,6 +23809,35 @@ TEST_F(SSEIntegrationTest, SuccessfulConnection) {
   EXPECT_TRUE(message_received.load());
 }
 
+TEST_F(SSEIntegrationTest, TooLongEventEndsTheConnection) {
+  // A data line that never ends.
+  server_->Get("/endless-line", [](const Request &, Response &res) {
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) { sink.write("data: ", 6); }
+          std::string chunk(64 * 1024, 'A');
+          return sink.write(chunk.data(), chunk.size());
+        });
+  });
+
+  Client client("localhost", get_port());
+  // A stream that may run forever, so that only the event is bounded.
+  client.set_payload_max_length(0);
+  sse::SSEClient sse(client, "/endless-line");
+  std::atomic<bool> too_long{false};
+  sse.on_error([&](Error err) {
+    if (err == Error::ExceedMaxPayloadSize) { too_long = true; }
+  });
+  sse.set_max_reconnect_attempts(1);
+  sse.start_async();
+
+  for (int i = 0; i < 500 && !too_long; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  sse.stop();
+  EXPECT_TRUE(too_long);
+}
+
 // Test: on_message callback
 TEST_F(SSEIntegrationTest, OnMessageCallback) {
   // Endpoint that sends multiple events then closes

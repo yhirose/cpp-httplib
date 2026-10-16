@@ -138,6 +138,10 @@
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (100 * 1024 * 1024) // 100MB
 #endif
 
+#ifndef CPPHTTPLIB_SSE_MAX_EVENT_LENGTH
+#define CPPHTTPLIB_SSE_MAX_EVENT_LENGTH (16 * 1024 * 1024) // 16MB
+#endif
+
 #ifndef CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH
 #define CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH 8192
 #endif
@@ -5084,6 +5088,15 @@ inline void SSEClient::run_event_loop() {
 
       // Keep unprocessed data in buffer
       buffer.erase(0, line_start);
+
+      // Neither an event nor a line still waiting for its end may grow
+      // without bound. 0 means no limit.
+      if (CPPHTTPLIB_SSE_MAX_EVENT_LENGTH > 0 &&
+          buffer.size() + current_msg.data.size() >
+              CPPHTTPLIB_SSE_MAX_EVENT_LENGTH) {
+        if (on_error_) { on_error_(Error::ExceedMaxPayloadSize); }
+        break;
+      }
     }
 
     // Connection ended
