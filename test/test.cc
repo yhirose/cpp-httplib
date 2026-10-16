@@ -14571,6 +14571,59 @@ TEST(SSLClientServerTest, ClientEncryptedCertPresent) {
                     CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
 
+// A server that requires client certificates must keep requiring them after a
+// verify callback is set on its context, or set and then cleared again.
+void ClientCertStillRequired(bool clear_callback) {
+  using namespace httplib::tls;
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
+                CLIENT_CA_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  ASSERT_TRUE(set_verify_callback(svr.tls_context(),
+                                  [](const VerifyContext &) { return true; }));
+  if (clear_callback) {
+    ASSERT_TRUE(set_verify_callback(svr.tls_context(), nullptr));
+  }
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  {
+    SSLClient cli(HOST, port);
+    cli.enable_server_certificate_verification(false);
+    cli.set_connection_timeout(30);
+    EXPECT_FALSE(cli.Get("/test"));
+  }
+
+  {
+    SSLClient cli(HOST, port, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+    cli.enable_server_certificate_verification(false);
+    cli.set_connection_timeout(30);
+    auto res = cli.Get("/test");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
+}
+
+TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackSet) {
+  ClientCertStillRequired(false);
+}
+
+TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
+  ClientCertStillRequired(true);
+}
+
 // PEM memory-based constructor tests (works with all TLS backends)
 void PemMemoryClientCertPresent(
     const std::string &client_cert_file,
