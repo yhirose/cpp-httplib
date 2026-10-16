@@ -6196,8 +6196,12 @@ inline void split_unquoted(const char *b, const char *e, char d, size_t m,
   size_t count = 1;
   auto in_quotes = false;
 
-  while (e ? (b + i < e) : (b[i] != '\0')) {
-    if (b[i] == '"') {
+  auto has = [&](size_t j) { return e ? (b + j < e) : (b[j] != '\0'); };
+  while (has(i)) {
+    if (in_quotes && b[i] == '\\' && has(i + 1)) {
+      // A quoted-pair, whose second character does not end the string.
+      i++;
+    } else if (b[i] == '"') {
       in_quotes = !in_quotes;
     } else if (b[i] == d && !in_quotes && count < m) {
       auto r = trim(b, e, beg, i);
@@ -9241,6 +9245,22 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   return !boundary.empty() && boundary.size() <= 70;
 }
 
+// Takes the quotes off a parameter value. Only \" and \\ are quoted-pairs
+// here, as browsers send any other backslash, such as one in a Windows path,
+// as it is.
+inline std::string unquote_disposition_param(const std::string &s) {
+  if (s.size() < 2 || s.front() != '"' || s.back() != '"') { return s; }
+  std::string out;
+  for (size_t i = 1; i + 1 < s.size(); i++) {
+    if (s[i] == '\\' && i + 2 < s.size() &&
+        (s[i + 1] == '"' || s[i + 1] == '\\')) {
+      i++;
+    }
+    out += s[i];
+  }
+  return out;
+}
+
 inline void parse_disposition_params(const std::string &s, Params &params) {
   std::set<std::string> cache;
   split_unquoted(s.data(), s.data() + s.size(), ';',
@@ -9255,7 +9275,7 @@ inline void parse_disposition_params(const std::string &s, Params &params) {
 
                    if (!key.empty()) {
                      params.emplace(trim_double_quotes_copy(key),
-                                    trim_double_quotes_copy(val));
+                                    unquote_disposition_param(val));
                    }
                  });
 }

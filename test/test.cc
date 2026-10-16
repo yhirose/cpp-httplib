@@ -1857,6 +1857,12 @@ TEST(ParseDispositionParamsTest, QuotedValues) {
       // A parameter with no key is dropped rather than turned into one whose
       // key is the value
       {"=nokey; name=\"file5\"", {{"name", "file5"}}},
+      // An escaped quote does not end the value
+      {"name=\"a\\\"; filename=evil.php\"",
+       {{"name", "a\"; filename=evil.php"}}},
+      // Other backslashes, as in a Windows path, are kept
+      {"name=\"f\"; filename=\"C:\\dir\\a.txt\"",
+       {{"name", "f"}, {"filename", "C:\\dir\\a.txt"}}},
   };
 
   for (const auto &c : cases) {
