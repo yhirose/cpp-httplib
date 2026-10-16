@@ -26689,6 +26689,74 @@ TEST(RequestSmugglingTest, ErrorResponseClosesConnection) {
   EXPECT_NE(std::string::npos, first_response.find("Connection: close"));
 }
 
+TEST(RequestSmugglingTest, AbortedContentReaderClosesConnection) {
+  // A content reader that stops early leaves the stream inside the body.
+  // Draining the whole Content-Length from there, or reading the body again,
+  // reads into the next request, and whatever follows is parsed as a request
+  // of its own.
+  Server svr;
+  std::atomic<int> smuggled_count(0);
+  svr.Get("/smuggled", [&](const Request &, Response &) { smuggled_count++; });
+  svr.Post("/upload", [](const Request &req, Response &res,
+                         const ContentReader &content_reader) {
+    // Stop at the last chunk, so the whole body has been read however it
+    // arrives.
+    auto length = req.get_header_value_u64("Content-Length");
+    size_t total = 0;
+    auto consumed = content_reader([&](const char *, size_t n) {
+      total += n;
+      return total < length;
+    });
+    EXPECT_FALSE(consumed);
+    if (req.has_param("retry")) {
+      EXPECT_FALSE(content_reader([](const char *, size_t) { return true; }));
+    }
+    // Replace the 400 the aborted read set, which would close the connection.
+    res.set_redirect("/done");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  // A front end sees the second request as a POST whose body is the GET. The
+  // first body is as long as the POST's headers, so draining it again reads
+  // exactly those and leaves the GET to be parsed next.
+  std::string inner = "GET /smuggled HTTP/1.1\r\n"
+                      "Host: localhost\r\n"
+                      "\r\n";
+  std::string second_head = "POST /post HTTP/1.1\r\n"
+                            "Host: localhost\r\n"
+                            "Content-Length: " +
+                            std::to_string(inner.size()) +
+                            "\r\n"
+                            "\r\n";
+  for (auto target : {"/upload", "/upload?retry"}) {
+    smuggled_count = 0;
+    std::string request = "POST " + std::string(target) +
+                          " HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
+                          "Content-Length: " +
+                          std::to_string(second_head.size()) +
+                          "\r\n"
+                          "\r\n" +
+                          std::string(second_head.size(), 'A') + second_head +
+                          inner;
+
+    std::string response;
+    ASSERT_TRUE(send_request(2, request, &response, port)) << target;
+
+    EXPECT_EQ(0u, response.find("HTTP/1.1 302")) << target;
+    EXPECT_NE(std::string::npos, response.find("Connection: close")) << target;
+    EXPECT_EQ(std::string::npos, response.find("HTTP/1.1", 1)) << target;
+    EXPECT_EQ(0, smuggled_count.load()) << target;
+  }
+}
+
 TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
   // RFC 9112 §6.3: A request with both Content-Length and Transfer-Encoding
   // must be rejected with 400 Bad Request.

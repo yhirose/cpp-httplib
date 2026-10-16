@@ -1811,6 +1811,7 @@ struct Request {
   bool is_multipart_form_data() const;
 
   // private members...
+  bool body_read_started_ = false;
   bool body_consumed_ = false;
   bool expect_100_continue_pending_ = false;
   size_t redirect_count_ = CPPHTTPLIB_REDIRECT_MAX_COUNT;
@@ -13586,7 +13587,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
       400 <= res.status || // Don't leave connections open after errors
       // The client withholds the body until `100 Continue`, which was never
       // sent, so whether and when the body follows is unknown.
-      (req.expect_100_continue_pending_ && detail::has_framed_body(req))) {
+      (req.expect_100_continue_pending_ && detail::has_framed_body(req)) ||
+      // The body was left partway, e.g. by a content receiver that returned
+      // false, so the rest of it cannot be told from the next request.
+      (req.body_read_started_ && !req.body_consumed_)) {
     res.set_header("Connection", "close");
   } else {
     std::string s = "timeout=";
@@ -13858,12 +13862,19 @@ inline bool Server::read_content_core(
   }
 #endif
 
+  // A second read would start where the first one stopped, or in the next
+  // request.
+  if (req.body_read_started_) { return false; }
+
   // The client is waiting for this before it sends the body.
   if (req.expect_100_continue_pending_) {
     req.expect_100_continue_pending_ = false;
     detail::write_response_line(strm, StatusCode::Continue_100);
     strm.write("\r\n");
   }
+
+  // Set before reading, since a receiver may also stop by throwing.
+  req.body_read_started_ = true;
 
   if (!detail::read_content(strm, req, payload_max_length_, res.status, nullptr,
                             out, true)) {
@@ -14938,11 +14949,13 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // Drain any unconsumed framed body to prevent request smuggling on
   // keep-alive. Without framing there is no body to drain — reading would
   // consume the next request (issue #2450). If the response has committed the
-  // connection to close, there is no next request to protect.
+  // connection to close, there is no next request to protect. A body read in
+  // part cannot be drained from where it stopped, so the connection closes.
   if (!req.body_consumed_ && detail::has_framed_body(req) &&
       !detail::has_header_token(res.headers, "Connection", "close")) {
     int dummy_status;
-    if (!detail::read_content(
+    if (req.body_read_started_ ||
+        !detail::read_content(
             strm, req, payload_max_length_, dummy_status, nullptr,
             [](const char *, size_t, size_t, size_t) { return true; }, false)) {
       connection_closed = true;
