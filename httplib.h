@@ -14761,6 +14761,13 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     return write_response(strm, close_connection, req, res);
   }
 
+  // RFC 9112 §6.1: answer a request that also has a Content-Length, or an
+  // HTTP/1.0 one, by its Transfer-Encoding, but close the connection after.
+  if (req.has_header("Transfer-Encoding") &&
+      (req.has_header("Content-Length") || req.version == "HTTP/1.0")) {
+    connection_closed = true;
+  }
+
   // RFC 9112 §3.2: Reject more than one Host field line or an invalid Host
   // value, so that every recipient of the request sees the same authority.
   if (req.get_header_value_count("Host") > 1 ||
@@ -14990,6 +14997,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
   }
 #endif
+  // The response says so when this connection closes after it.
+  auto close = close_connection || connection_closed;
   auto ret = false;
   if (routed) {
     if (res.status == -1) {
@@ -15023,17 +15032,17 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
 
     if (file_open_error) {
-      ret = write_response(strm, close_connection, req, res);
+      ret = write_response(strm, close, req, res);
     } else if (detail::range_error(req, res)) {
       detail::clear_content(res);
       res.status = StatusCode::RangeNotSatisfiable_416;
-      ret = write_response(strm, close_connection, req, res);
+      ret = write_response(strm, close, req, res);
     } else {
-      ret = write_response_with_content(strm, close_connection, req, res);
+      ret = write_response_with_content(strm, close, req, res);
     }
   } else {
     if (res.status == -1) { res.status = StatusCode::NotFound_404; }
-    ret = write_response(strm, close_connection, req, res);
+    ret = write_response(strm, close, req, res);
   }
 
   // Drain any unconsumed framed body to prevent request smuggling on

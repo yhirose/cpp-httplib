@@ -10836,6 +10836,29 @@ TEST(ServerRequestParsingTest, ExcessiveWhitespaceInUnparsableHeaderLine) {
                    "\r\n");
 }
 
+TEST(ServerRequestParsingTest, AmbiguousTransferEncodingClosesConnection) {
+  // RFC 9112 §6.1
+  const char *requests[] = {
+      "PUT /put_hi HTTP/1.1\r\n"
+      "Content-Length: 0\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n"
+      "0\r\n\r\n",
+      "PUT /put_hi HTTP/1.0\r\n"
+      "Connection: keep-alive\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n"
+      "0\r\n\r\n",
+  };
+
+  for (auto request : requests) {
+    std::string out;
+    test_raw_request(request, &out);
+    EXPECT_EQ("HTTP/1.1 200 OK", out.substr(0, 15)) << request;
+    EXPECT_NE(std::string::npos, out.find("Connection: close")) << request;
+  }
+}
+
 TEST(ServerRequestParsingTest, InvalidFirstChunkLengthInRequest) {
   std::string out;
 
