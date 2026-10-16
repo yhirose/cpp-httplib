@@ -4039,7 +4039,6 @@ struct WolfSSLContext {
   WOLFSSL_CTX *ctx = nullptr;
   bool is_server = false;
   bool verify_client = false;
-  bool has_verify_callback = false;
   // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
   std::string ca_pem_data_; // accumulated PEM for get_ca_names/get_ca_certs
@@ -21965,9 +21964,9 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   if (require) {
     wolfSSL_CTX_set_verify(
         wctx->ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-        wctx->has_verify_callback ? impl::wolfssl_verify_callback : nullptr);
+        wctx->verify_callback ? impl::wolfssl_verify_callback : nullptr);
   } else {
-    if (wctx->has_verify_callback) {
+    if (wctx->verify_callback) {
       wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
                              impl::wolfssl_verify_callback);
     } else {
@@ -22725,9 +22724,8 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
 
   wctx->verify_callback = std::move(callback);
-  wctx->has_verify_callback = static_cast<bool>(wctx->verify_callback);
 
-  if (wctx->has_verify_callback) {
+  if (wctx->verify_callback) {
     wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
                            impl::wolfssl_verify_callback);
   } else {
