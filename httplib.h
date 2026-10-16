@@ -4013,6 +4013,9 @@ struct MbedTlsContext {
   bool is_server = false;
   bool verify_client = false;
   bool has_verify_callback = false;
+  // Installed by tls::set_verify_callback(); run by the sessions created from
+  // this context.
+  VerifyCallback verify_callback;
 
   MbedTlsContext();
   ~MbedTlsContext();
@@ -4037,6 +4040,10 @@ struct WolfSSLContext {
   bool is_server = false;
   bool verify_client = false;
   bool has_verify_callback = false;
+  // Installed by tls::set_verify_callback(); run by the sessions created from
+  // this context (each one points its verify-callback ctx back at this
+  // struct in create_session()).
+  VerifyCallback verify_callback;
   std::string ca_pem_data_; // accumulated PEM for get_ca_names/get_ca_certs
 
   WolfSSLContext();
@@ -18933,16 +18940,6 @@ inline PeerCert get_peer_cert_from_session(const_session_t session) {
 
 namespace impl {
 
-inline VerifyCallback &get_verify_callback() {
-  static thread_local VerifyCallback callback;
-  return callback;
-}
-
-inline VerifyCallback &get_mbedtls_verify_callback() {
-  static thread_local VerifyCallback callback;
-  return callback;
-}
-
 // Check if a string is an IPv4 address
 inline bool is_ipv4_address(const std::string &str) {
   int dots = 0;
@@ -19268,15 +19265,28 @@ inline STACK_OF(X509_NAME) *
   return ca_list;
 }
 
+// SSL_CTX ex_data slot holding the heap-allocated VerifyCallback installed by
+// set_verify_callback(); freed by set_verify_callback() and free_context().
+inline int openssl_verify_callback_index() {
+  static const int index =
+      SSL_CTX_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
+  return index;
+}
+
+inline VerifyCallback *get_openssl_verify_callback(const SSL_CTX *ssl_ctx) {
+  return static_cast<VerifyCallback *>(
+      SSL_CTX_get_ex_data(ssl_ctx, openssl_verify_callback_index()));
+}
+
 // OpenSSL verify callback wrapper
 inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
-  auto &callback = get_verify_callback();
-  if (!callback) { return preverify_ok; }
-
   // Get SSL object from X509_STORE_CTX
   auto ssl = static_cast<SSL *>(
       X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
   if (!ssl) { return preverify_ok; }
+
+  auto callback = get_openssl_verify_callback(SSL_get_SSL_CTX(ssl));
+  if (!callback || !*callback) { return preverify_ok; }
 
   // Get current certificate and depth
   auto cert = X509_STORE_CTX_get_current_cert(ctx);
@@ -19293,7 +19303,7 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   verify_ctx.error_string =
       (error != X509_V_OK) ? X509_verify_cert_error_string(error) : nullptr;
 
-  return callback(verify_ctx) ? 1 : 0;
+  return (*callback)(verify_ctx) ? 1 : 0;
 }
 
 // X509_STORE_get0_objects is deprecated since OpenSSL 4.0 because it is not
@@ -19334,7 +19344,10 @@ inline ctx_t create_client_context() {
 }
 
 inline void free_context(ctx_t ctx) {
-  if (ctx) { SSL_CTX_free(static_cast<SSL_CTX *>(ctx)); }
+  if (!ctx) { return; }
+  auto ssl_ctx = static_cast<SSL_CTX *>(ctx);
+  delete impl::get_openssl_verify_callback(ssl_ctx);
+  SSL_CTX_free(ssl_ctx);
 }
 
 inline bool set_min_version(ctx_t ctx, Version version) {
@@ -20165,9 +20178,20 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   if (!ctx) { return false; }
   auto ssl_ctx = static_cast<SSL_CTX *>(ctx);
 
-  impl::get_verify_callback() = std::move(callback);
+  VerifyCallback *stored = nullptr;
+  if (callback) {
+    stored = new (std::nothrow) VerifyCallback(std::move(callback));
+    if (!stored) { return false; }
+  }
+  auto old = impl::get_openssl_verify_callback(ssl_ctx);
+  if (SSL_CTX_set_ex_data(ssl_ctx, impl::openssl_verify_callback_index(),
+                          stored) != 1) {
+    delete stored;
+    return false;
+  }
+  delete old;
 
-  if (impl::get_verify_callback()) {
+  if (stored) {
     SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, impl::openssl_verify_callback);
   } else {
     SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, nullptr);
@@ -20224,13 +20248,14 @@ struct MbedTlsSession {
   // OpenSSL and wolfSSL keep them independent).
   bool suppress_hostname_mismatch = false;
 
+  // The context this session was created from; mbedtls_verify_callback()
+  // runs its verify_callback.
+  const MbedTlsContext *ctx = nullptr;
+
   // Copied from the owning MbedTlsContext at creation. set_sni() uses this to
   // decide which verify callback to install when hostname verification is
-  // disabled: mbedtls_verify_callback() when a user callback is genuinely
-  // wired for this context, or a self-contained one otherwise, so a session
-  // that never opted into a callback never consults the process-wide
-  // set_verify_callback() slot (which some other, unrelated client may have
-  // populated).
+  // disabled: mbedtls_verify_callback() when a user callback is wired for this
+  // context, or a self-contained one otherwise.
   bool has_verify_callback = false;
 
   MbedTlsSession() { mbedtls_ssl_init(&ssl); }
@@ -20406,9 +20431,7 @@ inline void mbedtls_clear_cn_mismatch(uint32_t *flags) {
 
 // Verify callback used when hostname verification is disabled for a session
 // that has no user-supplied verify callback of its own (MbedTlsSession::
-// has_verify_callback is false). Deliberately does not consult
-// get_verify_callback(): that slot is process-wide, so reading it here would
-// pick up whatever another, unrelated client last installed there.
+// has_verify_callback is false).
 inline int mbedtls_mask_hostname_mismatch_callback(void *data,
                                                    mbedtls_x509_crt *, int,
                                                    uint32_t *flags) {
@@ -20435,7 +20458,8 @@ inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
     mbedtls_clear_cn_mismatch(flags);
   }
 
-  auto &callback = get_verify_callback();
+  if (!session || !session->ctx) { return 0; }
+  const auto &callback = session->ctx->verify_callback;
   if (!callback) { return 0; } // Continue with default verification
 
   // Build context
@@ -20853,6 +20877,7 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
 
   // Set per-session verify callback with session pointer if callback is
   // registered
+  session->ctx = mctx;
   session->has_verify_callback = mctx->has_verify_callback;
   if (mctx->has_verify_callback) {
     mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback,
@@ -20889,7 +20914,7 @@ inline bool set_sni(session_t session, const char *hostname,
     // mbedtls_verify_callback() masks the mismatch flag itself before
     // consulting it (see suppress_hostname_mismatch above) - reinstalling it
     // here would be redundant. Otherwise install the self-contained masking
-    // callback, which never touches the process-wide callback slot.
+    // callback.
     if (!msession->has_verify_callback) {
       mbedtls_ssl_set_verify(&msession->ssl,
                              impl::mbedtls_mask_hostname_mismatch_callback,
@@ -21572,19 +21597,17 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   if (!ctx) { return false; }
   auto *mbed_ctx = static_cast<impl::MbedTlsContext *>(ctx);
 
-  impl::get_verify_callback() = std::move(callback);
-  mbed_ctx->has_verify_callback =
-      static_cast<bool>(impl::get_verify_callback());
+  mbed_ctx->verify_callback = std::move(callback);
+  mbed_ctx->has_verify_callback = static_cast<bool>(mbed_ctx->verify_callback);
 
   if (mbed_ctx->has_verify_callback) {
     // Set OPTIONAL mode to ensure callback is called even when verification
-    // is disabled (matching OpenSSL behavior where SSL_VERIFY_PEER is set)
+    // is disabled (matching OpenSSL behavior where SSL_VERIFY_PEER is set).
+    // The callback itself is wired per session in create_session(), which
+    // passes the session so mbedtls_verify_callback() can reach this context.
     mbedtls_ssl_conf_authmode(&mbed_ctx->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-    mbedtls_ssl_conf_verify(&mbed_ctx->conf, impl::mbedtls_verify_callback,
-                            nullptr);
-  } else {
-    mbedtls_ssl_conf_verify(&mbed_ctx->conf, nullptr, nullptr);
   }
+  mbedtls_ssl_conf_verify(&mbed_ctx->conf, nullptr, nullptr);
   return true;
 }
 
@@ -21710,8 +21733,12 @@ inline int wolfssl_sni_callback(WOLFSSL *ssl, int *ret, void *exArg) {
 // wolfSSL verify callback wrapper
 inline int wolfssl_verify_callback(int preverify_ok,
                                    WOLFSSL_X509_STORE_CTX *x509_ctx) {
-  auto &callback = get_verify_callback();
-  if (!callback) { return preverify_ok; }
+  // userCtx carries the pointer create_session() passed to
+  // wolfSSL_SetCertCbCtx()
+  auto wctx = x509_ctx ? static_cast<const WolfSSLContext *>(x509_ctx->userCtx)
+                       : nullptr;
+  if (!wctx || !wctx->verify_callback) { return preverify_ok; }
+  const auto &callback = wctx->verify_callback;
 
   WOLFSSL_X509 *cert = wolfSSL_X509_STORE_CTX_get_current_cert(x509_ctx);
   int depth = wolfSSL_X509_STORE_CTX_get_error_depth(x509_ctx);
@@ -22000,6 +22027,9 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   }
 
   wolfSSL_set_fd(session->ssl, static_cast<int>(sock));
+
+  // Lets wolfssl_verify_callback() find this context's verify_callback
+  wolfSSL_SetCertCbCtx(session->ssl, wctx);
 
   return static_cast<session_t>(session);
 }
@@ -22728,8 +22758,8 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   if (!ctx) { return false; }
   auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
 
-  impl::get_verify_callback() = std::move(callback);
-  wctx->has_verify_callback = static_cast<bool>(impl::get_verify_callback());
+  wctx->verify_callback = std::move(callback);
+  wctx->has_verify_callback = static_cast<bool>(wctx->verify_callback);
 
   if (wctx->has_verify_callback) {
     wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,

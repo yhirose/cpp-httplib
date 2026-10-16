@@ -15429,6 +15429,88 @@ TEST(VerifyCallbackTest, VerifyContextFields) {
   EXPECT_TRUE(saw_leaf_cert);
 }
 
+// Each client's verifier is stored with its own TLS context, so configuring a
+// second client on the same thread must not replace the first one's.
+TEST(VerifyCallbackTest, PerClientVerifiersOnSameThread) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  std::atomic<int> count1{0};
+  std::atomic<int> count2{0};
+
+  SSLClient cli1(HOST, PORT);
+  cli1.enable_server_certificate_verification(false);
+  cli1.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    count1++;
+    return true;
+  });
+
+  SSLClient cli2(HOST, PORT);
+  cli2.enable_server_certificate_verification(false);
+  cli2.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    count2++;
+    return true;
+  });
+
+  auto res1 = cli1.Get("/test");
+  ASSERT_TRUE(res1) << "Error: " << to_string(res1.error());
+  EXPECT_GT(count1.load(), 0);
+  EXPECT_EQ(0, count2.load());
+
+  count1 = 0;
+  auto res2 = cli2.Get("/test");
+  ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
+  EXPECT_EQ(0, count1.load());
+  EXPECT_GT(count2.load(), 0);
+}
+
+// A verifier set on one thread must still run when the request is made from
+// another thread.
+TEST(VerifyCallbackTest, VerifierRunsOnAnotherThread) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  std::atomic<int> count{0};
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    count++;
+    return true;
+  });
+
+  Result res;
+  thread worker([&]() { res = cli.Get("/test"); });
+  worker.join();
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_GT(count.load(), 0);
+}
+
 TEST(TlsVerifyErrorTest, GetVerifyErrorString) {
   using httplib::tls::TlsError;
 
