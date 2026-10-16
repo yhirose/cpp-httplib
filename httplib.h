@@ -4013,8 +4013,7 @@ struct MbedTlsContext {
   mbedtls_x509_crt own_cert;
   mbedtls_pk_context own_key;
   bool is_server = false;
-  // Whether the peer's certificate is required; set by
-  // tls::set_verify_client(). A client verifies the server by default.
+  // Peer certificate required (set_verify_client()); a client defaults to true
   bool verify_client = false;
   // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
@@ -4040,8 +4039,7 @@ namespace impl {
 struct WolfSSLContext {
   WOLFSSL_CTX *ctx = nullptr;
   bool is_server = false;
-  // Whether the peer's certificate is required; set by
-  // tls::set_verify_client(). A client verifies the server by default.
+  // Peer certificate required (set_verify_client()); a client defaults to true
   bool verify_client = false;
   // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
@@ -19311,8 +19309,8 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   return (*callback)(verify_ctx) ? 1 : 0;
 }
 
-// The verify mode follows from whether the peer's certificate is required and
-// whether a verify callback is set, however the two were last changed.
+// Sets the verify mode from whether the peer's certificate is required and
+// whether a verify callback is set.
 inline void apply_verify_mode(SSL_CTX *ssl_ctx, bool require) {
   auto callback = get_openssl_verify_callback(ssl_ctx);
   auto has_callback = callback && *callback;
@@ -20474,11 +20472,10 @@ inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
   return MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
 }
 
-// The authentication mode follows from whether the peer's certificate is
-// required and whether a verify callback is set, however the two were last
-// changed. OPTIONAL makes sure the callback runs even if verification is not
-// required (matching OpenSSL, where SSL_VERIFY_PEER is set).
-inline void apply_authmode(MbedTlsContext &mctx) {
+// Sets the authentication mode from whether the peer's certificate is required
+// and whether a verify callback is set. OPTIONAL lets the callback run even if
+// verification is not required (matching OpenSSL's SSL_VERIFY_PEER).
+inline void apply_verify_mode(MbedTlsContext &mctx) {
   auto mode = MBEDTLS_SSL_VERIFY_NONE;
   if (mctx.verify_client) {
     mode = MBEDTLS_SSL_VERIFY_REQUIRED;
@@ -20533,7 +20530,7 @@ inline ctx_t create_client_context() {
 
   // Default: verify peer certificate
   ctx->verify_client = true;
-  impl::apply_authmode(*ctx);
+  impl::apply_verify_mode(*ctx);
 
   // Set minimum TLS version to 1.2
 #ifdef CPPHTTPLIB_MBEDTLS_V3
@@ -20588,7 +20585,7 @@ inline ctx_t create_server_context() {
 #endif
 
   // Default: don't verify client
-  impl::apply_authmode(*ctx);
+  impl::apply_verify_mode(*ctx);
 
   // Set minimum TLS version to 1.2
 #ifdef CPPHTTPLIB_MBEDTLS_V3
@@ -20837,7 +20834,7 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   if (!ctx) { return; }
   auto mctx = static_cast<impl::MbedTlsContext *>(ctx);
   mctx->verify_client = require;
-  impl::apply_authmode(*mctx);
+  impl::apply_verify_mode(*mctx);
 }
 
 inline session_t create_session(ctx_t ctx, socket_t sock) {
@@ -21577,7 +21574,7 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
 
   // The callback itself is wired per session in create_session()
   mbed_ctx->verify_callback = std::move(callback);
-  impl::apply_authmode(*mbed_ctx);
+  impl::apply_verify_mode(*mbed_ctx);
   return true;
 }
 
@@ -21734,8 +21731,8 @@ inline int wolfssl_verify_callback(int preverify_ok,
   return accepted ? 1 : 0;
 }
 
-// The verify mode follows from whether the peer's certificate is required and
-// whether a verify callback is set, however the two were last changed.
+// Sets the verify mode from whether the peer's certificate is required and
+// whether a verify callback is set.
 inline void apply_verify_mode(WolfSSLContext &wctx) {
   auto has_callback = static_cast<bool>(wctx.verify_callback);
   auto mode = wctx.verify_client
