@@ -16098,6 +16098,61 @@ TEST(SSLClientRedirectTest, SessionVerifier) {
   EXPECT_EQ(Error::SSLServerVerification, res.error());
   EXPECT_EQ(2, sessions.load());
 }
+
+// So must the verifier given to set_server_certificate_verifier().
+TEST(SSLClientRedirectTest, ServerCertificateVerifier) {
+  auto ssl_port = PORT + 1;
+  std::atomic<bool> redirected{false};
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    redirected = true;
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  // Accept the host that redirects only; the verifier runs once per
+  // certificate in the chain, so count the calls made after the redirect.
+  std::atomic<int> calls_after_redirect{0};
+  cli.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    if (!redirected) { return true; }
+    calls_after_redirect++;
+    return false;
+  });
+
+  auto res = cli.Get("/index");
+  ASSERT_FALSE(res);
+  EXPECT_LT(0, calls_after_redirect.load());
+}
 #endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
