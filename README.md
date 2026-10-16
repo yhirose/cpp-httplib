@@ -441,6 +441,8 @@ svr.set_file_request_handler([](const Request &req, Response &res) {
 });
 ```
 
+It is not called for a `HEAD` request, nor when the file has not changed and `304 Not Modified` is sent, so do not rely on it for access control; use `set_pre_routing_handler()` for that.
+
 ### Logging
 
 cpp-httplib provides separate logging capabilities for access logs and error logs, similar to web servers like Nginx and Apache.
@@ -1808,6 +1810,8 @@ NOTE
 > svr.Get("/users/:id", handler);           // Path parameters
 > svr.Get(R"(/api/v\d+/.*)", handler);     // Regex route, limited to short paths
 > ```
+>
+> The limit is no guarantee on a thread with a small stack, such as one of musl's 128KB threads, where a pattern like `(\w|-)+` can already overflow on a shorter path; lower the limit there. Nor does it bound the time a pattern with nested repetition, such as `((\w+-?)+)`, can take to fail on a few dozen characters. Keep regex routes simple.
 
 ### g++
 

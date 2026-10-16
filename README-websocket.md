@@ -121,6 +121,8 @@ using SubProtocolSelector =
 
 The `SubProtocolSelector` receives the list of subprotocols proposed by the client (from the `Sec-WebSocket-Protocol` header) and returns the selected one. Return an empty string to decline all proposed subprotocols. A returned value that the client did not propose is ignored.
 
+The handler is called whatever the `Origin` of the handshake. A browser sends its cookies along with a WebSocket handshake that another site starts, so if cookies authenticate the connection, check `req.get_header_value("Origin")` against the origins you serve first (cross-site WebSocket hijacking).
+
 ### WebSocket (Server-side)
 
 Passed to the handler registered with `Server::WebSocket()`. The handler runs in a dedicated thread per connection.
