@@ -15659,6 +15659,53 @@ TEST(VerifyCallbackTest, VerifyContextFields) {
   EXPECT_TRUE(saw_leaf_cert);
 }
 
+// A verifier belongs to the client that set it, not to the thread that set it.
+TEST(VerifyCallbackTest, VerifierStaysWithItsClient) {
+  using namespace httplib::tls;
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto rejecting_calls = 0;
+  SSLClient rejecting(HOST, port);
+  rejecting.enable_server_certificate_verification(false);
+  rejecting.set_server_certificate_verifier([&](const VerifyContext &) {
+    rejecting_calls++;
+    return false;
+  });
+
+  auto accepting_calls = 0;
+  SSLClient accepting(HOST, port);
+  accepting.enable_server_certificate_verification(false);
+  // Set on another thread than the requests below.
+  thread([&]() {
+    accepting.set_server_certificate_verifier([&](const VerifyContext &) {
+      accepting_calls++;
+      return true;
+    });
+  }).join();
+
+  // Requested on another thread than the verifier was set on.
+  thread([&]() { EXPECT_FALSE(rejecting.Get("/test")); }).join();
+  EXPECT_GT(rejecting_calls, 0);
+
+  auto res = accepting.Get("/test");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_GT(accepting_calls, 0);
+}
+
 TEST(TlsVerifyErrorTest, GetVerifyErrorString) {
   using httplib::tls::TlsError;
 
