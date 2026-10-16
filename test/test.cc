@@ -25811,6 +25811,26 @@ TEST(WebSocketFrameTest, MultiByteFieldsSplitAcrossReads) {
   EXPECT_EQ(payload, body);
 }
 
+TEST(WebSocketFrameTest, ZeroMaxLenMeansNoLimit) {
+  std::string body(2000, 'x');
+  std::string frame;
+  frame += static_cast<char>(0x82); // FIN + Binary
+  frame += static_cast<char>(126);  // 16-bit length follows
+  frame += static_cast<char>(body.size() >> 8);
+  frame += static_cast<char>(body.size() & 0xff);
+  frame += body;
+
+  detail::BufferStream strm;
+  strm.write(frame.data(), frame.size());
+  ws::Opcode opcode;
+  std::string payload;
+  bool fin;
+  EXPECT_EQ(
+      ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 0),
+      ws::impl::FrameRead::Ok);
+  EXPECT_EQ(body, payload);
+}
+
 TEST(WebSocketFrameTest, PayloadGrowsOnlyAsItArrives) {
   // The header announces the largest payload allowed, and only 3 bytes of it
   // ever arrive.

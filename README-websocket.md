@@ -435,7 +435,7 @@ if (ws.connect()) {
 
 | Macro                                       | Default           | Description                                              |
 |---------------------------------------------|-------------------|----------------------------------------------------------|
-| `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`   | `16777216` (16MB) | Maximum payload size per message                         |
+| `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`   | `16777216` (16MB) | Maximum payload size per message (`0` means no limit)    |
 | `CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND` | `0`         | Client read timeout (seconds); `0` waits forever         |
 | `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` | `300`       | Server read timeout (seconds)                            |
 | `CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND` | `5`               | Timeout for waiting peer's Close response (seconds)      |

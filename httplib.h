@@ -5758,7 +5758,11 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
     }
   }
 
-  if (payload_len > max_len) { return FrameRead::Fail; }
+  // A max_len of 0 means no limit, as payload_max_length does.
+  if ((max_len > 0 && payload_len > max_len) ||
+      payload_len > (std::numeric_limits<size_t>::max)()) {
+    return FrameRead::Fail;
+  }
 
   // Read mask key if present
   uint8_t mask_key[4] = {0};
@@ -22887,7 +22891,8 @@ inline ReadResult WebSocket::read(std::string &msg) {
             return Fail;
           }
           msg += cont_payload;
-          if (msg.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
+          if (CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH > 0 &&
+              msg.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
             closed_ = true;
             return Fail;
           }
