@@ -69,6 +69,7 @@ namespace tls {
 // Declared here for the split build, where the TLS abstraction declarations
 // live below the split border; the definition is linked from httplib.cc.
 ca_store_t create_ca_store(const char *pem, size_t len);
+bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
 } // namespace tls
 } // namespace httplib
 #endif
