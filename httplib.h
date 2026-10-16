@@ -11187,21 +11187,21 @@ inline bool setup_client_tls_session(
                            !options.server_certificate_verifier_set;
 #endif
 
-#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
-  // Mbed TLS and wolfSSL need the verification mode set explicitly; OpenSSL
-  // uses SSL_VERIFY_NONE and does all verification post-handshake. Unless
-  // Schannel verifies the chain instead, chain verification happens during
-  // the handshake even for IP hosts; the certificate identity is verified
-  // post-handshake via verify_hostname().
-  set_verify_client(ctx,
-                    server_certificate_verification && !windows_verifies_chain);
-#endif
-
   {
     std::unique_lock<std::mutex> guard;
     if (options.ctx_mutex) {
       guard = std::unique_lock<std::mutex>(*options.ctx_mutex);
     }
+#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
+    // Mbed TLS and wolfSSL need the verification mode set explicitly, on the
+    // context, so under the same lock; OpenSSL uses SSL_VERIFY_NONE and does
+    // all verification post-handshake. Unless Schannel verifies the chain
+    // instead, chain verification happens during the handshake even for IP
+    // hosts; the certificate identity is verified post-handshake via
+    // verify_hostname().
+    set_verify_client(ctx, server_certificate_verification &&
+                               !windows_verifies_chain);
+#endif
     session = create_session(ctx, sock);
   }
   if (!session) { return fail(Error::SSLConnection, 0, get_error()); }
