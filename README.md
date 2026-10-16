@@ -1391,6 +1391,8 @@ res = cli.Get("/");
 res->status; // 200
 ```
 
+On a redirect to another host, `Authorization`, `Cookie` and `Proxy-Authorization` are dropped along with the credentials set with `set_basic_auth()` and the like, and the client certificate is not presented. Other headers, the default ones included, go along (RFC 9110 §15.4), and so do the timeouts, the payload limit and the TLS verification settings.
+
 ### Use a specific network interface
 
 > [!NOTE]
