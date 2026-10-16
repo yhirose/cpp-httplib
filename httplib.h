@@ -463,6 +463,7 @@ using socket_t = int;
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
@@ -19675,8 +19676,11 @@ inline bool set_client_cert_file(ctx_t ctx, const char *cert_path,
 inline ctx_t create_server_context() {
   SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
   if (ctx) {
+    // No renegotiation, which would run a handshake outside the one that
+    // SSLServer::update_certs_pem() waits for, as the other backends have it
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION |
-                                 SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+                                 SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION |
+                                 SSL_OP_NO_RENEGOTIATION);
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
   }
   return static_cast<ctx_t>(ctx);
@@ -20311,6 +20315,19 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
   if (ca_list) {
     // SSL_CTX_set_client_CA_list takes ownership of ca_list
     SSL_CTX_set_client_CA_list(ssl_ctx, ca_list);
+  }
+
+  // A resumed session is not verified again, so forget the sessions and the
+  // ticket keys from before, or a client verified under the old CAs could go
+  // on resuming.
+#if OPENSSL_VERSION_NUMBER >= 0x30400000L
+  SSL_CTX_flush_sessions_ex(ssl_ctx, (std::numeric_limits<time_t>::max)());
+#else
+  SSL_CTX_flush_sessions(ssl_ctx, (std::numeric_limits<long>::max)());
+#endif
+  unsigned char ticket_keys[80];
+  if (RAND_bytes(ticket_keys, sizeof(ticket_keys)) == 1) {
+    SSL_CTX_set_tlsext_ticket_keys(ssl_ctx, ticket_keys, sizeof(ticket_keys));
   }
 
   return true;
@@ -21650,15 +21667,20 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
   if (!ctx || !cert_pem || !key_pem) { return false; }
   auto *mbed_ctx = static_cast<impl::MbedTlsContext *>(ctx);
 
-  // Free existing certificate and key
-  mbedtls_x509_crt_free(&mbed_ctx->own_cert);
-  mbedtls_pk_free(&mbed_ctx->own_key);
-  mbedtls_x509_crt_init(&mbed_ctx->own_cert);
-  mbedtls_pk_init(&mbed_ctx->own_key);
+  // Parse into new objects first, so that a bad pair leaves the old one in
+  // place, and swap them in after; the old ones are freed on the way out.
+  mbedtls_x509_crt cert;
+  mbedtls_pk_context key;
+  mbedtls_x509_crt_init(&cert);
+  mbedtls_pk_init(&key);
+  auto se = detail::scope_exit([&] {
+    mbedtls_x509_crt_free(&cert);
+    mbedtls_pk_free(&key);
+  });
 
   // Parse certificate PEM
   int ret = mbedtls_x509_crt_parse(
-      &mbed_ctx->own_cert, reinterpret_cast<const unsigned char *>(cert_pem),
+      &cert, reinterpret_cast<const unsigned char *>(cert_pem),
       strlen(cert_pem) + 1);
   if (ret != 0) {
     impl::mbedtls_last_error() = ret;
@@ -21668,14 +21690,14 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
   // Parse private key PEM
 #if defined(CPPHTTPLIB_MBEDTLS_V3) && !defined(CPPHTTPLIB_MBEDTLS_V4)
   ret = mbedtls_pk_parse_key(
-      &mbed_ctx->own_key, reinterpret_cast<const unsigned char *>(key_pem),
+      &key, reinterpret_cast<const unsigned char *>(key_pem),
       strlen(key_pem) + 1,
       password ? reinterpret_cast<const unsigned char *>(password) : nullptr,
       password ? strlen(password) : 0, mbedtls_ctr_drbg_random,
       &mbed_ctx->ctr_drbg);
 #else
   ret = mbedtls_pk_parse_key(
-      &mbed_ctx->own_key, reinterpret_cast<const unsigned char *>(key_pem),
+      &key, reinterpret_cast<const unsigned char *>(key_pem),
       strlen(key_pem) + 1,
       password ? reinterpret_cast<const unsigned char *>(password) : nullptr,
       password ? strlen(password) : 0);
@@ -21684,6 +21706,9 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
     impl::mbedtls_last_error() = ret;
     return false;
   }
+
+  std::swap(mbed_ctx->own_cert, cert);
+  std::swap(mbed_ctx->own_key, key);
 
   // Configure SSL to use the new certificate and key
   ret = mbedtls_ssl_conf_own_cert(&mbed_ctx->conf, &mbed_ctx->own_cert,
@@ -21700,18 +21725,20 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
   if (!ctx || !ca_pem) { return false; }
   auto *mbed_ctx = static_cast<impl::MbedTlsContext *>(ctx);
 
-  // Free existing CA chain
-  mbedtls_x509_crt_free(&mbed_ctx->ca_chain);
-  mbedtls_x509_crt_init(&mbed_ctx->ca_chain);
+  // Parse into a new chain first, so that a bad one leaves the old in place
+  mbedtls_x509_crt chain;
+  mbedtls_x509_crt_init(&chain);
+  auto se = detail::scope_exit([&] { mbedtls_x509_crt_free(&chain); });
 
   // Parse CA PEM
   int ret = mbedtls_x509_crt_parse(
-      &mbed_ctx->ca_chain, reinterpret_cast<const unsigned char *>(ca_pem),
+      &chain, reinterpret_cast<const unsigned char *>(ca_pem),
       strlen(ca_pem) + 1);
   if (ret != 0) {
     impl::mbedtls_last_error() = ret;
     return false;
   }
+  std::swap(mbed_ctx->ca_chain, chain);
 
   // Update SSL config to use new CA chain
   mbedtls_ssl_conf_ca_chain(&mbed_ctx->conf, &mbed_ctx->ca_chain, nullptr);
@@ -22850,6 +22877,27 @@ inline bool update_server_cert(ctx_t ctx, const char *cert_pem,
   if (!ctx || !cert_pem || !key_pem) { return false; }
   auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
 
+  // Try the pair on a scratch context first, so a bad one leaves the server
+  // with its old certificate and key rather than half of each.
+  {
+    auto tmp = wolfSSL_CTX_new(wolfTLSv1_2_server_method());
+    if (!tmp) { return false; }
+    auto se = detail::scope_exit([&] { wolfSSL_CTX_free(tmp); });
+    if (password) { impl::set_wolfssl_password_cb(tmp, password); }
+    if (wolfSSL_CTX_use_certificate_buffer(
+            tmp, reinterpret_cast<const unsigned char *>(cert_pem),
+            static_cast<long>(strlen(cert_pem)),
+            SSL_FILETYPE_PEM) != SSL_SUCCESS ||
+        wolfSSL_CTX_use_PrivateKey_buffer(
+            tmp, reinterpret_cast<const unsigned char *>(key_pem),
+            static_cast<long>(strlen(key_pem)),
+            SSL_FILETYPE_PEM) != SSL_SUCCESS) {
+      impl::wolfssl_last_error() =
+          static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
+      return false;
+    }
+  }
+
   // Load new certificate
   int ret = wolfSSL_CTX_use_certificate_buffer(
       wctx->ctx, reinterpret_cast<const unsigned char *>(cert_pem),
@@ -22880,6 +22928,13 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
   if (!ctx || !ca_pem) { return false; }
   auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
 
+  // Replace the CAs rather than add to them, as the other backends do, once
+  // the new ones are known to load
+  auto store = create_ca_store(ca_pem, strlen(ca_pem));
+  if (!store) { return false; }
+  free_ca_store(store);
+  wolfSSL_CTX_UnloadCAs(wctx->ctx);
+
   int ret = wolfSSL_CTX_load_verify_buffer(
       wctx->ctx, reinterpret_cast<const unsigned char *>(ca_pem),
       static_cast<long>(strlen(ca_pem)), SSL_FILETYPE_PEM);
@@ -22888,6 +22943,7 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
         static_cast<uint64_t>(wolfSSL_ERR_peek_last_error());
     return false;
   }
+  wctx->ca_pem_data_ = ca_pem;
   return true;
 }
 

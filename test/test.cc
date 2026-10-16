@@ -4777,6 +4777,38 @@ TEST(SSLClientServerTest, UpdateCertsPemWithClientAuth) {
   EXPECT_EQ("ok", res->body);
 }
 
+TEST(SSLClientServerTest, UpdateCertsPemReplacesClientCA) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  auto get = [] {
+    SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+    cli.enable_server_certificate_verification(false);
+    return cli.Get("/test");
+  };
+  ASSERT_TRUE(get());
+
+  // A CA that did not sign the client's certificate takes the old one's place.
+  std::string cert_pem, key_pem, ca_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+  read_file(SERVER_CERT2_FILE, ca_pem);
+  ASSERT_TRUE(
+      svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(), ca_pem.c_str()));
+  EXPECT_FALSE(get());
+}
+
 TEST(SSLClientServerTest, UpdateCertsPemWaitsForHandshakeInProgress) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
