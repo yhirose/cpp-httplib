@@ -13382,6 +13382,30 @@ TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
   }
 }
 
+TEST(ClientPayloadTest, DoesNotReserveTheClaimedLength) {
+  Server svr;
+  svr.Get("/", [](const Request &, Response &res) {
+    // Claims far more than it sends, then drops the connection.
+    res.set_content_provider(size_t(1) << 41, "text/plain",
+                             [](size_t, size_t, DataSink &sink) {
+                               sink.write("abc", 3);
+                               return false;
+                             });
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_payload_max_length(0);
+  EXPECT_FALSE(cli.Get("/"));
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 // `payload_max_length` is not enforced on decompressed body in ContentReader
 // path.
