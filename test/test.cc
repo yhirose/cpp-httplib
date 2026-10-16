@@ -548,6 +548,95 @@ TEST(ChunkedTransferEncodingTest, DetectsChunkedAsFinalCoding) {
   EXPECT_FALSE(detail::is_chunked_transfer_encoding(make({"chunked", ""})));
 }
 
+// Forward declarations (see the base64_encode note below).
+namespace httplib {
+namespace detail {
+bool parse_status_line(const char *line, std::string &version, int &status,
+                       std::string &reason);
+std::string file_extension(const std::string &path);
+} // namespace detail
+} // namespace httplib
+
+TEST(ParseStatusLineTest, ParsesVersionStatusAndReason) {
+  struct {
+    const char *line;
+    const char *version;
+    int status;
+    const char *reason;
+  } cases[] = {
+      {"HTTP/1.1 200 OK\r\n", "HTTP/1.1", 200, "OK"},
+      {"HTTP/1.0 404 Not Found\r\n", "HTTP/1.0", 404, "Not Found"},
+      // The reason phrase may be empty, or left out along with its space.
+      {"HTTP/1.1 204 \r\n", "HTTP/1.1", 204, ""},
+      {"HTTP/1.1 304\r\n", "HTTP/1.1", 304, ""},
+  };
+
+  for (const auto &c : cases) {
+    std::string version;
+    int status = 0;
+    std::string reason = "unset";
+    EXPECT_TRUE(detail::parse_status_line(c.line, version, status, reason))
+        << c.line;
+    EXPECT_EQ(c.version, version);
+    EXPECT_EQ(c.status, status);
+    EXPECT_EQ(c.reason, reason);
+  }
+}
+
+TEST(ParseStatusLineTest, RejectsMalformedLines) {
+  const char *lines[] = {
+      "HTTP/2 200 OK\r\n",
+      "HTTP/1.2 200 OK\r\n",
+      "HTTP/1.1 20 OK\r\n",
+      "HTTP/1.1 2000 OK\r\n",
+      "HTTP/1.1 2x0 OK\r\n",
+      "HTTP/1.1  200 OK\r\n",
+      "HTTP/1.1 200OK\r\n",
+      "HTTP/1.1 200 O\rK\r\n",
+      "HTTP/1.1 200 OK",
+      "HTTP/1.1 200 OK\r\nX",
+      "",
+#ifndef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+      "HTTP/1.1 200 OK\n",
+#endif
+  };
+
+  for (auto line : lines) {
+    std::string version;
+    int status = 0;
+    std::string reason;
+    EXPECT_FALSE(detail::parse_status_line(line, version, status, reason))
+        << line;
+  }
+}
+
+TEST(ParseStatusLineTest, AcceptsAReasonPhraseAsLongAsALine) {
+  // Long enough to overflow the stack when matched with std::regex.
+  auto long_reason = std::string(CPPHTTPLIB_MAX_LINE_LENGTH - 15, 'A');
+  auto line = "HTTP/1.1 200 " + long_reason + "\r\n";
+
+  std::string version;
+  int status = 0;
+  std::string reason;
+  EXPECT_TRUE(detail::parse_status_line(line.c_str(), version, status, reason));
+  EXPECT_EQ(200, status);
+  EXPECT_EQ(long_reason, reason);
+}
+
+TEST(FileExtensionTest, TakesTheAlphanumericSuffix) {
+  EXPECT_EQ("txt", detail::file_extension("a.txt"));
+  EXPECT_EQ("gz", detail::file_extension("/dir/a.tar.gz"));
+  EXPECT_EQ("htaccess", detail::file_extension(".htaccess"));
+  EXPECT_EQ("", detail::file_extension("noext"));
+  EXPECT_EQ("", detail::file_extension("a."));
+  EXPECT_EQ("", detail::file_extension("dir.d/file"));
+  EXPECT_EQ("", detail::file_extension("a.b-c"));
+
+  // Long enough to overflow the stack when matched with std::regex.
+  auto long_ext = std::string(CPPHTTPLIB_MAX_LINE_LENGTH, 'a');
+  EXPECT_EQ(long_ext, detail::file_extension("a." + long_ext));
+}
+
 // Forward declaration: in split builds split.py strips `inline` and moves the
 // definition into httplib.cc, so detail::base64_encode is not visible from the
 // public httplib.h. Re-declaring it here lets the tests link against the symbol
@@ -1377,6 +1466,21 @@ TEST(ParamsToQueryTest, ConvertParamsToQuery) {
   dic.emplace("key3", "val3");
 
   EXPECT_EQ(detail::params_to_query_str(dic), "key1=val1&key2=val2&key3=val3");
+}
+
+TEST(AppendQueryParamsTest, JoinsAnExistingQuery) {
+  Params params;
+  params.emplace("a", "1");
+
+  EXPECT_EQ("/p?a=1", append_query_params("/p", params));
+  EXPECT_EQ("/p?x=0&a=1", append_query_params("/p?x=0", params));
+  EXPECT_EQ("/p?&a=1", append_query_params("/p?", params));
+  EXPECT_EQ("?x=0&a=1", append_query_params("?x=0", params));
+
+  // Long enough to overflow the stack when matched with std::regex.
+  auto long_query = std::string(CPPHTTPLIB_MAX_LINE_LENGTH, 'x');
+  EXPECT_EQ("/p?" + long_query + "&a=1",
+            append_query_params("/p?" + long_query, params));
 }
 
 // Joins every entry of a Headers or Params into "key=value " so a whole

@@ -5917,10 +5917,14 @@ inline std::string encode_path(const std::string &s) {
 }
 
 inline std::string file_extension(const std::string &path) {
-  std::smatch m;
-  thread_local auto re = std::regex("\\.([a-zA-Z0-9]+)$");
-  if (std::regex_search(path, m, re)) { return m[1].str(); }
-  return std::string();
+  auto i = path.size();
+  while (i > 0 && is_ascii_alnum(path[i - 1])) {
+    i--;
+  }
+  if (i == path.size() || i == 0 || path[i - 1] != '.') {
+    return std::string();
+  }
+  return path.substr(i);
 }
 
 inline bool is_space_or_tab(char c) { return c == ' ' || c == '\t'; }
@@ -8292,19 +8296,35 @@ inline bool read_headers(Stream &strm, Headers &headers) {
   return true;
 }
 
+// Parsed by hand: std::regex_match recurses once per character of the reason
+// phrase, which a server can make as long as a whole line.
 inline bool parse_status_line(const char *line, std::string &version,
                               int &status, std::string &reason) {
-#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
-  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
-#else
-  thread_local const std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
-#endif
+  if (std::strncmp(line, "HTTP/1.", 7) != 0 ||
+      (line[7] != '0' && line[7] != '1') || line[8] != ' ' ||
+      !is_ascii_digit(line[9]) || !is_ascii_digit(line[10]) ||
+      !is_ascii_digit(line[11])) {
+    return false;
+  }
 
-  std::cmatch m;
-  if (!std::regex_match(line, m, re)) { return false; }
-  version = std::string(m[1]);
-  status = std::stoi(std::string(m[2]));
-  reason = std::string(m[3]);
+  auto p = line + 12;
+  auto reason_begin = p;
+  if (*p == ' ') {
+    reason_begin = ++p;
+    p += std::strcspn(p, "\r\n");
+  }
+  auto reason_end = p;
+
+#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+  if (*p == '\r') { p++; }
+#else
+  if (*p++ != '\r') { return false; }
+#endif
+  if (*p++ != '\n' || *p != '\0') { return false; }
+
+  version.assign(line, 8);
+  status = (line[9] - '0') * 100 + (line[10] - '0') * 10 + (line[11] - '0');
+  reason.assign(reason_begin, reason_end);
   return true;
 }
 
@@ -11636,9 +11656,8 @@ inline std::string sanitize_filename(const std::string &filename) {
 inline std::string append_query_params(const std::string &path,
                                        const Params &params) {
   std::string path_with_query = path;
-  thread_local const std::regex re("[^?]+\\?.*");
-  auto delm = std::regex_match(path, re) ? '&' : '?';
-  path_with_query += delm + detail::params_to_query_str(params);
+  path_with_query += path.find('?') == std::string::npos ? '?' : '&';
+  path_with_query += detail::params_to_query_str(params);
   return path_with_query;
 }
 
@@ -13937,18 +13956,10 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             res.set_header(kv.first, kv.second);
           }
 
-          auto content_type_of = [&]() {
-            return detail::find_content_type(
-                path, file_extension_and_mimetype_map_, default_file_mimetype_);
-          };
-
-          // Only the ETag needs the content type this early, and only to name
-          // the coding. Deciding it here would otherwise put a regex in front
-          // of the 304 below, which serving a file never used to pay for.
-          std::string content_type;
+          auto content_type = detail::find_content_type(
+              path, file_extension_and_mimetype_map_, default_file_mimetype_);
           auto encoding = detail::EncodingType::None;
           if (static_file_compression_) {
-            content_type = content_type_of();
             encoding =
                 static_file_encoding(req, res, content_type, stat.size());
           }
@@ -13979,8 +13990,6 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
             output_error_log(Error::OpenFile, &req);
             return false;
           }
-
-          if (!static_file_compression_) { content_type = content_type_of(); }
 
           detail::set_file_content_provider(res, mm, content_type, encoding);
 
