@@ -3801,51 +3801,59 @@ TEST(RedirectToDifferentPort, Redirect) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
-static void
-TestDoNotForwardCredentialsOnRedirect(std::function<void(Client &)> set_auth) {
-  Server svr1;
-  std::string captured_authorization;
-  svr1.Get("/target", [&](const Request &req, Response &res) {
-    captured_authorization = req.get_header_value("Authorization");
-    res.set_content("OK", "text/plain");
+// GET /redir on one server redirects to /target on another port, so the
+// client follows it with a new client.
+static Result
+GetThroughRedirectToDifferentPort(Server::Handler target,
+                                  const std::function<void(Client &)> &setup,
+                                  const Headers &headers = Headers()) {
+  Server target_svr;
+  target_svr.Get("/target", target);
+
+  int target_port = 0;
+  auto target_thread = std::thread([&]() {
+    target_port = target_svr.bind_to_any_port(HOST);
+    target_svr.listen_after_bind();
   });
 
-  int svr1_port = 0;
-  auto thread1 = std::thread([&]() {
-    svr1_port = svr1.bind_to_any_port(HOST);
-    svr1.listen_after_bind();
-  });
-
-  Server svr2;
-  svr2.Get("/redir", [&](const Request & /*req*/, Response &res) {
+  Server origin_svr;
+  origin_svr.Get("/redir", [&](const Request &, Response &res) {
     res.set_redirect(
-        "http://localhost:" + std::to_string(svr1_port) + "/target", 302);
+        "http://localhost:" + std::to_string(target_port) + "/target", 302);
   });
 
-  int svr2_port = 0;
-  auto thread2 = std::thread([&]() {
-    svr2_port = svr2.bind_to_any_port(HOST);
-    svr2.listen_after_bind();
+  int origin_port = 0;
+  auto origin_thread = std::thread([&]() {
+    origin_port = origin_svr.bind_to_any_port(HOST);
+    origin_svr.listen_after_bind();
   });
   auto se = detail::scope_exit([&] {
-    svr2.stop();
-    thread2.join();
-    svr1.stop();
-    thread1.join();
-    ASSERT_FALSE(svr2.is_running());
-    ASSERT_FALSE(svr1.is_running());
+    origin_svr.stop();
+    origin_thread.join();
+    target_svr.stop();
+    target_thread.join();
   });
 
-  svr1.wait_until_ready();
-  svr2.wait_until_ready();
+  target_svr.wait_until_ready();
+  origin_svr.wait_until_ready();
 
-  Client cli("localhost", svr2_port);
+  Client cli("localhost", origin_port);
   cli.set_follow_location(true);
-  set_auth(cli);
+  setup(cli);
+  return cli.Get("/redir", headers);
+}
 
-  auto res = cli.Get("/redir");
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
+static void
+TestDoNotForwardCredentialsOnRedirect(std::function<void(Client &)> set_auth) {
+  std::string captured_authorization;
+  auto result = GetThroughRedirectToDifferentPort(
+      [&](const Request &req, Response &res) {
+        captured_authorization = req.get_header_value("Authorization");
+        res.set_content("OK", "text/plain");
+      },
+      set_auth);
+  ASSERT_TRUE(result) << "Error: " << to_string(result.error());
+  EXPECT_EQ(StatusCode::OK_200, result->status);
   // RFC 9110: credentials MUST NOT be forwarded to a different host
   EXPECT_TRUE(captured_authorization.empty());
 }
@@ -3861,52 +3869,15 @@ TEST(RedirectToDifferentPort, DoNotForwardCredentialsBearerToken) {
 }
 
 TEST(RedirectToDifferentPort, DoNotForwardCookie) {
-  Server svr1;
   std::string captured_cookie;
-  bool target_hit = false;
-  svr1.Get("/target", [&](const Request &req, Response &res) {
-    captured_cookie = req.get_header_value("Cookie");
-    target_hit = true;
-    res.set_content("OK", "text/plain");
-  });
-
-  int svr1_port = 0;
-  auto thread1 = std::thread([&]() {
-    svr1_port = svr1.bind_to_any_port(HOST);
-    svr1.listen_after_bind();
-  });
-
-  Server svr2;
-  svr2.Get("/redir", [&](const Request & /*req*/, Response &res) {
-    res.set_redirect(
-        "http://localhost:" + std::to_string(svr1_port) + "/target", 302);
-  });
-
-  int svr2_port = 0;
-  auto thread2 = std::thread([&]() {
-    svr2_port = svr2.bind_to_any_port(HOST);
-    svr2.listen_after_bind();
-  });
-  auto se = detail::scope_exit([&] {
-    svr2.stop();
-    thread2.join();
-    svr1.stop();
-    thread1.join();
-    ASSERT_FALSE(svr2.is_running());
-    ASSERT_FALSE(svr1.is_running());
-  });
-
-  svr1.wait_until_ready();
-  svr2.wait_until_ready();
-
-  Client cli("localhost", svr2_port);
-  cli.set_follow_location(true);
-
-  Headers headers = {{"Cookie", "session_id=SECRET; auth=PRIVATE"}};
-  auto res = cli.Get("/redir", headers);
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_TRUE(target_hit);
+  auto result = GetThroughRedirectToDifferentPort(
+      [&](const Request &req, Response &res) {
+        captured_cookie = req.get_header_value("Cookie");
+        res.set_content("OK", "text/plain");
+      },
+      [](Client &) {}, {{"Cookie", "session_id=SECRET; auth=PRIVATE"}});
+  ASSERT_TRUE(result) << "Error: " << to_string(result.error());
+  EXPECT_EQ(StatusCode::OK_200, result->status);
   // Cookie MUST NOT be forwarded to a different host (GHSA-22mf-w2v3-r2jv)
   EXPECT_TRUE(captured_cookie.empty());
 }
@@ -3943,6 +3914,64 @@ TEST(RedirectToSamePort, ForwardCookie) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("session_id=SECRET", captured_cookie);
 }
+
+TEST(RedirectToDifferentPort, ForwardDefaultHeadersButNotCredentials) {
+  std::string authorization;
+  std::string trace_id;
+  auto result = GetThroughRedirectToDifferentPort(
+      [&](const Request &req, Response &res) {
+        authorization = req.get_header_value("Authorization");
+        trace_id = req.get_header_value("X-Trace-Id");
+        res.set_content("OK", "text/plain");
+      },
+      [](Client &cli) {
+        cli.set_default_headers(
+            {{"Authorization", "Bearer SECRET"}, {"X-Trace-Id", "42"}});
+      });
+  ASSERT_TRUE(result) << "Error: " << to_string(result.error());
+  EXPECT_EQ(StatusCode::OK_200, result->status);
+  // Like a header given with the request, a default one goes along unless it
+  // carries credentials (RFC 9110 15.4).
+  EXPECT_TRUE(authorization.empty());
+  EXPECT_EQ("42", trace_id);
+}
+
+TEST(RedirectToDifferentPort, KeepPayloadMaxLength) {
+  auto result = GetThroughRedirectToDifferentPort(
+      [](const Request &, Response &res) {
+        res.set_content(std::string(2048, 'x'), "text/plain");
+      },
+      [](Client &cli) { cli.set_payload_max_length(1024); });
+  EXPECT_FALSE(result);
+}
+
+TEST(RedirectToDifferentPort, KeepMaxTimeout) {
+  auto result = GetThroughRedirectToDifferentPort(
+      [](const Request &req, Response &res) {
+        // Answer after a second, or once the client gives up.
+        for (auto i = 0; i < 100 && !req.is_connection_closed(); i++) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        res.set_content("late", "text/plain");
+      },
+      [](Client &cli) { cli.set_max_timeout(std::chrono::milliseconds(200)); });
+  ASSERT_FALSE(result);
+  EXPECT_EQ(Error::Read, result.error());
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(RedirectToDifferentPort, DoNotAnswerChallengeFromRedirectTarget) {
+  auto result = GetThroughRedirectToDifferentPort(
+      [](const Request &, Response &res) {
+        res.status = StatusCode::Unauthorized_401;
+        res.set_header("WWW-Authenticate",
+                       "Digest realm=\"r\", nonce=\"n\", qop=\"auth\"");
+      },
+      [](Client &cli) { cli.set_digest_auth("user", "pass"); });
+  ASSERT_TRUE(result) << "Error: " << to_string(result.error());
+  EXPECT_EQ(StatusCode::Unauthorized_401, result->status);
+}
+#endif
 
 TEST(RedirectToDifferentPort, OverflowPortNumber) {
   Server svr;
@@ -16348,6 +16377,84 @@ TEST(SSLClientRedirectTest, CertFile) {
   auto res = cli.Get("/index");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+// Redirects from a server with SERVER_CERT2_FILE to one with target_cert on
+// another port, so the client follows it with a new client.
+static Result GetThroughTlsRedirectToDifferentPort(
+    const std::function<void(SSLClient &)> &setup,
+    const char *target_cert = SERVER_CERT2_FILE) {
+  auto ssl_port = PORT + 1;
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(target_cert, SERVER_PRIVATE_KEY_FILE);
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ssl_svr1.listen("127.0.0.1", PORT); });
+  thread t2 = thread([&]() { ssl_svr2.listen("127.0.0.1", ssl_port); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+  setup(cli);
+  return cli.Get("/index");
+}
+
+TEST(SSLClientRedirectTest, KeepSessionVerifier) {
+  auto calls = 0;
+  auto res = GetThroughTlsRedirectToDifferentPort([&](SSLClient &cli) {
+    cli.enable_server_certificate_verification(false);
+    // Accept the first server only.
+    cli.set_session_verifier([&](tls::session_t) {
+      return ++calls == 1 ? SSLVerifierResponse::NoDecisionMade
+                          : SSLVerifierResponse::CertificateRejected;
+    });
+  });
+  EXPECT_FALSE(res);
+  EXPECT_EQ(2, calls);
+}
+
+TEST(SSLClientRedirectTest, KeepServerCertificateVerifier) {
+  std::string pinned;
+  auto res = GetThroughTlsRedirectToDifferentPort(
+      [&](SSLClient &cli) {
+        cli.enable_server_certificate_verification(false);
+        // Pin the first certificate seen.
+        cli.set_server_certificate_verifier([&](const tls::VerifyContext &ctx) {
+          if (pinned.empty()) { pinned = ctx.serial(); }
+          return ctx.serial() == pinned;
+        });
+      },
+      // A certificate other than the first server's.
+      SERVER_CERT_FILE);
+  EXPECT_FALSE(res);
+  EXPECT_FALSE(pinned.empty());
+}
+
+TEST(SSLClientRedirectTest, KeepCaCertStore) {
+  auto res = GetThroughTlsRedirectToDifferentPort([](SSLClient &cli) {
+    std::string cert;
+    read_file(SERVER_CERT2_FILE, cert);
+    cli.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+  });
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 #endif
 

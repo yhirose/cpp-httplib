@@ -3455,11 +3455,12 @@ private:
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 
+  // Like ca_cert_store_set_, keeps what ctx_ cannot report back: the verifier
+  // set_server_certificate_verifier() installed there.
+  tls::VerifyCallback server_certificate_verifier_;
+
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   bool enable_windows_cert_verification_ = true;
-  // Like ca_cert_store_set_, tracks what ctx_ cannot report back: whether
-  // set_server_certificate_verifier() installed a verifier.
-  bool server_certificate_verifier_set_ = false;
 #endif
 
   friend class ClientImpl;
@@ -11026,6 +11027,26 @@ inline bool load_client_ca_config(tls::ctx_t ctx,
   return ret;
 }
 
+inline std::string ca_certs_to_pem(tls::ctx_t ctx) {
+  std::vector<tls::cert_t> certs;
+  tls::get_ca_certs(ctx, certs);
+
+  std::string pem;
+  for (auto cert : certs) {
+    std::vector<unsigned char> der;
+    if (tls::get_cert_der(cert, der)) {
+      auto b64 = base64_encode(std::string(der.begin(), der.end()));
+      pem += "-----BEGIN CERTIFICATE-----\n";
+      for (size_t i = 0; i < b64.size(); i += 64) {
+        pem += b64.substr(i, 64) + "\n";
+      }
+      pem += "-----END CERTIFICATE-----\n";
+    }
+    tls::free_cert(cert);
+  }
+  return pem;
+}
+
 // The parts of session setup that only SSLClient needs, plus the handful
 // WebSocketClient also exposes; everything else takes the defaults, which is
 // what keeps the two clients on one implementation.
@@ -15818,7 +15839,10 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   if (300 < res.status && res.status < 400 && follow_location_) {
     req = std::move(req_save);
-    ret = redirect(req, res, error);
+    // The client that followed the redirect has answered any challenge it
+    // could. Retrying below would sign another host's challenge and send it
+    // here.
+    return redirect(req, res, error);
   }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
@@ -15951,12 +15975,27 @@ inline bool ClientImpl::create_redirect_client(
     redirect_client.system_ca_mode_ = system_ca_mode_;
 
     // Transfer CA certificate to redirect client
-    if (!ca_cert_pem_.empty()) {
-      redirect_client.load_ca_cert_store(ca_cert_pem_.c_str(),
-                                         ca_cert_pem_.size());
-    }
-    if (!ca_cert_file_path_.empty()) {
-      redirect_client.set_ca_cert_path(ca_cert_file_path_, ca_cert_dir_path_);
+    redirect_client.load_ca_cert_store(ca_cert_pem_.c_str(),
+                                       ca_cert_pem_.size());
+    redirect_client.set_ca_cert_path(ca_cert_file_path_, ca_cert_dir_path_);
+
+    if (is_ssl()) {
+      auto &self = static_cast<SSLClient &>(*this);
+      // A store given to set_ca_cert_store() lives only in this client's
+      // context, so pass on the CA certificates the context holds.
+      if (self.ca_cert_store_set_) {
+        auto pem = detail::ca_certs_to_pem(self.ctx_);
+        redirect_client.load_ca_cert_store(pem.data(), pem.size());
+      }
+      redirect_client.set_session_verifier(self.session_verifier_);
+      if (self.server_certificate_verifier_) {
+        redirect_client.set_server_certificate_verifier(
+            self.server_certificate_verifier_);
+      }
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+      redirect_client.enable_windows_cert_verification_ =
+          self.enable_windows_cert_verification_;
+#endif
     }
 
     // Client certificates are set through constructor for SSLClient
@@ -15989,9 +16028,14 @@ inline bool ClientImpl::create_redirect_client(
 template <typename ClientType>
 inline void ClientImpl::setup_redirect_client(ClientType &client) {
   // Copy basic settings first
-  client.set_connection_timeout(connection_timeout_sec_);
+  client.set_connection_timeout(connection_timeout_sec_,
+                                connection_timeout_usec_);
   client.set_read_timeout(read_timeout_sec_, read_timeout_usec_);
   client.set_write_timeout(write_timeout_sec_, write_timeout_usec_);
+  client.set_max_timeout(max_timeout_msec_);
+  if (has_payload_max_length_) {
+    client.set_payload_max_length(payload_max_length_);
+  }
   client.set_keep_alive(keep_alive_);
   client.set_follow_location(
       true); // Enable redirects to handle multi-step redirects
@@ -16029,6 +16073,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   }
 
   // Copy network and socket settings
+  client.addr_map_ = addr_map_;
   client.set_address_family(address_family_);
   client.set_tcp_nodelay(tcp_nodelay_);
   client.set_ipv6_v6only(ipv6_v6only_);
@@ -18764,10 +18809,8 @@ inline void SSLClient::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
 inline void
 SSLClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
   if (!ctx_) { return; }
-#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-  server_certificate_verifier_set_ = static_cast<bool>(verifier);
-#endif
-  tls::set_verify_callback(ctx_, verifier);
+  server_certificate_verifier_ = verifier;
+  tls::set_verify_callback(ctx_, std::move(verifier));
 }
 
 inline void SSLClient::set_session_verifier(
@@ -18830,7 +18873,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
       ca_cert_dir_path_.empty() && ca_cert_pem_.empty() && !ca_cert_store_set_;
   // Only a verifier set through set_server_certificate_verifier() is seen
   // here, not one installed with tls::set_verify_callback() directly.
-  options.server_certificate_verifier_set = server_certificate_verifier_set_;
+  options.server_certificate_verifier_set =
+      static_cast<bool>(server_certificate_verifier_);
 #endif
 
   tls::session_t session = nullptr;
