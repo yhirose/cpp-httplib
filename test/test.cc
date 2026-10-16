@@ -10220,6 +10220,30 @@ static bool send_request(time_t read_timeout_sec, const std::string &req,
   return send_request_in_parts(read_timeout_sec, {req}, resp, port);
 }
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(SSLClientServerTest, ReadTimeoutBoundsTheWholeHandshake) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_read_timeout(1, 0);
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  // The start of a TLS record, then the rest of it a byte every 100 ms, which
+  // keeps each wait well within the read timeout. The server gives up a
+  // second in, so the bytes sent after that fail.
+  std::vector<std::string> parts{std::string("\x16\x03\x01\x00\xff", 5)};
+  parts.resize(26, std::string(1, '\0'));
+  EXPECT_FALSE(send_request_in_parts(5, parts));
+}
+#endif
+
 TEST(ServerRequestParsingTest, TrimWhitespaceFromHeaderValues) {
   Server svr;
   std::string header_value;

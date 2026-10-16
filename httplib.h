@@ -6563,6 +6563,30 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
   return select_impl(sock, POLLOUT, sec, usec);
 }
 
+// The point sec and usec from now, for select_until(). A negative sec never
+// comes, as a negative timeout waits forever in select_impl().
+inline std::chrono::steady_clock::time_point deadline_after(time_t sec,
+                                                            time_t usec) {
+  if (sec < 0) { return std::chrono::steady_clock::time_point::max(); }
+  return std::chrono::steady_clock::now() + std::chrono::seconds(sec) +
+         std::chrono::microseconds(usec);
+}
+
+// Waits only for the time left until deadline, so that all the waits of one
+// TLS handshake come out of a single timeout.
+inline ssize_t select_until(socket_t sock, short events,
+                            std::chrono::steady_clock::time_point deadline) {
+  if (deadline == std::chrono::steady_clock::time_point::max()) {
+    return select_impl(sock, events, -1, 0);
+  }
+  auto left = std::chrono::duration_cast<std::chrono::microseconds>(
+                  deadline - std::chrono::steady_clock::now())
+                  .count();
+  if (left <= 0) { return 0; }
+  return select_impl(sock, events, static_cast<time_t>(left / 1000000),
+                     static_cast<time_t>(left % 1000000));
+}
+
 inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
                                         time_t usec) {
   struct pollfd pfd_read;
@@ -19689,19 +19713,16 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
     detail::set_nonblocking(sock, false);
   });
 
+  auto deadline = detail::deadline_after(timeout_sec, timeout_usec);
   auto res = 0;
   while ((res = SSL_connect(ssl)) != 1) {
     auto ssl_err = SSL_get_error(ssl, res);
     switch (ssl_err) {
     case SSL_ERROR_WANT_READ:
-      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
       break;
     case SSL_ERROR_WANT_WRITE:
-      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
       break;
     default: break;
     }
@@ -19736,19 +19757,16 @@ inline bool accept_nonblocking(session_t session, socket_t sock,
     detail::set_nonblocking(sock, false);
   });
 
+  auto deadline = detail::deadline_after(timeout_sec, timeout_usec);
   auto res = 0;
   while ((res = SSL_accept(ssl)) != 1) {
     auto ssl_err = SSL_get_error(ssl, res);
     switch (ssl_err) {
     case SSL_ERROR_WANT_READ:
-      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
       break;
     case SSL_ERROR_WANT_WRITE:
-      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
       break;
     default: break;
     }
@@ -21004,18 +21022,15 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
   auto cleanup =
       detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
 
+  auto deadline = detail::deadline_after(timeout_sec, timeout_usec);
   int ret;
   while ((ret = mbedtls_ssl_handshake(&msession->ssl)) != 0) {
     // Non-fatal TLS 1.3 ticket; retry immediately.
     if (impl::mbedtls_is_session_ticket(ret)) { continue; }
     if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
-      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
     } else if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
     }
 
     // TlsError or timeout
@@ -22175,17 +22190,14 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
   auto cleanup =
       detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
 
+  auto deadline = detail::deadline_after(timeout_sec, timeout_usec);
   int ret;
   while ((ret = wolfSSL_connect(wsession->ssl)) != SSL_SUCCESS) {
     int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
     if (ssl_error == SSL_ERROR_WANT_READ) {
-      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
     } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
-      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
     }
 
     // Error or timeout
@@ -22217,17 +22229,14 @@ inline bool accept_nonblocking(session_t session, socket_t sock,
   auto cleanup =
       detail::scope_exit([&]() { detail::set_nonblocking(sock, false); });
 
+  auto deadline = detail::deadline_after(timeout_sec, timeout_usec);
   int ret;
   while ((ret = wolfSSL_accept(wsession->ssl)) != SSL_SUCCESS) {
     int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
     if (ssl_error == SSL_ERROR_WANT_READ) {
-      if (detail::select_read(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
     } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
-      if (detail::select_write(sock, timeout_sec, timeout_usec) > 0) {
-        continue;
-      }
+      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
     }
 
     // Error or timeout
