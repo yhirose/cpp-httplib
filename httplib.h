@@ -3454,11 +3454,13 @@ private:
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 
+  // The verifier given to set_server_certificate_verifier(), kept for the
+  // redirect client: ctx_ cannot report it back, and the backends keep it in
+  // a per-thread slot that any other client may overwrite.
+  tls::VerifyCallback server_certificate_verifier_;
+
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   bool enable_windows_cert_verification_ = true;
-  // Like ca_cert_store_set_, tracks what ctx_ cannot report back: whether
-  // set_server_certificate_verifier() installed a verifier.
-  bool server_certificate_verifier_set_ = false;
 #endif
 
   friend class ClientImpl;
@@ -15944,6 +15946,11 @@ inline bool ClientImpl::create_redirect_client(
       }
 
       redirect_client.session_verifier_ = self.session_verifier_;
+
+      if (self.server_certificate_verifier_) {
+        redirect_client.set_server_certificate_verifier(
+            self.server_certificate_verifier_);
+      }
     }
 
     // Client certificates are set through constructor for SSLClient
@@ -18751,10 +18758,8 @@ inline void SSLClient::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
 inline void
 SSLClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
   if (!ctx_) { return; }
-#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-  server_certificate_verifier_set_ = static_cast<bool>(verifier);
-#endif
-  tls::set_verify_callback(ctx_, verifier);
+  server_certificate_verifier_ = verifier;
+  tls::set_verify_callback(ctx_, std::move(verifier));
 }
 
 inline void SSLClient::set_session_verifier(
@@ -18817,7 +18822,8 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
       ca_cert_dir_path_.empty() && ca_cert_pem_.empty() && !ca_cert_store_set_;
   // Only a verifier set through set_server_certificate_verifier() is seen
   // here, not one installed with tls::set_verify_callback() directly.
-  options.server_certificate_verifier_set = server_certificate_verifier_set_;
+  options.server_certificate_verifier_set =
+      static_cast<bool>(server_certificate_verifier_);
 #endif
 
   tls::session_t session = nullptr;
