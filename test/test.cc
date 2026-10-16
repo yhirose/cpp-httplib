@@ -459,8 +459,10 @@ TEST(DecodePathTest, UnicodeEncoding) {
   EXPECT_EQ(U8("あ"), decode_path_component("%u3042"));
   // %uFFFF = max 4-digit hex (3-byte UTF-8, must not overflow buff[4])
   EXPECT_FALSE(decode_path_component("%uFFFF").empty());
-  // %uD800 = surrogate (invalid, silently dropped)
-  EXPECT_EQ("", decode_path_component("%uD800"));
+  // %uD800 = surrogate (invalid, kept as it is rather than joining its
+  // neighbours)
+  EXPECT_EQ("%uD800", decode_path_component("%uD800"));
+  EXPECT_EQ("/ad%uD800min", decode_path_component("/ad%uD800min"));
 }
 
 TEST(DecodeQueryTest, RejectsNonHexEscapes) {

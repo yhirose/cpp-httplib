@@ -11612,8 +11612,14 @@ inline std::string decode_path_component(const std::string &component) {
           // so to_utf8 writes at most 3 bytes. buff[4] is safe.
           char buff[4];
           size_t len = detail::to_utf8(val, buff);
-          if (len > 0) { result.append(buff, len); }
-          i += 5; // 'u0000'
+          if (len > 0) {
+            result.append(buff, len);
+            i += 5; // 'u0000'
+          } else {
+            // A surrogate is no character. Dropping it would join what is on
+            // either side of it, so the escape is kept as it is.
+            result += component[i];
+          }
         } else {
           result += component[i];
         }
