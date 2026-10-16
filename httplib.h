@@ -5257,6 +5257,8 @@ const char *get_sni(const_session_t session);
 ca_store_t create_ca_store(const char *pem, size_t len);
 void free_ca_store(ca_store_t store);
 bool set_ca_store(ctx_t ctx, ca_store_t store);
+// Free each with free_cert(), and do not use them once the context's CA
+// certificates change.
 size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs);
 std::vector<std::string> get_ca_names(ctx_t ctx);
 
@@ -21432,9 +21434,9 @@ inline size_t get_peer_certs(const_session_t session,
 }
 
 inline void free_cert(cert_t cert) {
-  // Mbed TLS: peer certificate is owned by the SSL context.
-  // No-op here, but callers should still call this for cross-backend
-  // portability.
+  // Mbed TLS: every cert_t handed out points into a session's or a context's
+  // chain, so there is nothing to free. Callers still call this for the other
+  // backends.
   (void)cert;
 }
 
@@ -21739,20 +21741,10 @@ inline size_t get_ca_certs(ctx_t ctx, std::vector<cert_t> &certs) {
   if (!ctx) { return 0; }
   auto *mbed_ctx = static_cast<impl::MbedTlsContext *>(ctx);
 
-  // Iterate through the CA chain
-  mbedtls_x509_crt *cert = &mbed_ctx->ca_chain;
-  while (cert != nullptr && cert->raw.len > 0) {
-    // Create a copy of the certificate for the caller
-    auto *copy = new mbedtls_x509_crt;
-    mbedtls_x509_crt_init(copy);
-    int ret = mbedtls_x509_crt_parse_der(copy, cert->raw.p, cert->raw.len);
-    if (ret == 0) {
-      certs.push_back(static_cast<cert_t>(copy));
-    } else {
-      mbedtls_x509_crt_free(copy);
-      delete copy;
-    }
-    cert = cert->next;
+  // Owned by the context; see free_cert()
+  for (auto cert = &mbed_ctx->ca_chain; cert && cert->raw.len > 0;
+       cert = cert->next) {
+    certs.push_back(static_cast<cert_t>(cert));
   }
   return certs.size();
 }
