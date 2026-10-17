@@ -16144,32 +16144,31 @@ void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
 
 TEST(SSLClientServerTest, ClientCertMissing) { ClientCertMissing(); }
 
-// A server that requires client certificates must keep requiring them after a
-// verify callback is set on its context, or set and then cleared again.
-void ClientCertStillRequired(bool clear_callback) {
-  auto setup = [clear_callback](SSLServer &svr) {
-    ASSERT_TRUE(tls::set_verify_callback(
-        svr.tls_context(), [](const tls::VerifyContext &) { return true; }));
-    if (clear_callback) {
-      ASSERT_TRUE(tls::set_verify_callback(svr.tls_context(), nullptr));
-    }
-  };
+// A server that requires client certificates must keep requiring them after
+// setup changes it, and keep accepting a client that has one
+void ClientCertStillRequired(const ClientCertServerSetup &setup) {
   ClientCertMissing(setup);
   ClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE, std::string(),
                     setup);
 }
 
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackSet) {
-  ClientCertStillRequired(false);
+  ClientCertStillRequired([](SSLServer &svr) {
+    ASSERT_TRUE(tls::set_verify_callback(
+        svr.tls_context(), [](const tls::VerifyContext &) { return true; }));
+  });
 }
 
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
-  ClientCertStillRequired(true);
+  ClientCertStillRequired([](SSLServer &svr) {
+    ASSERT_TRUE(tls::set_verify_callback(
+        svr.tls_context(), [](const tls::VerifyContext &) { return true; }));
+    ASSERT_TRUE(tls::set_verify_callback(svr.tls_context(), nullptr));
+  });
 }
 
-// Replacing the certificates must not stop the server requiring client ones
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterUpdateCertsPem) {
-  ClientCertMissing([](SSLServer &svr) {
+  ClientCertStillRequired([](SSLServer &svr) {
     std::string cert_pem, key_pem, ca_pem;
     read_file(SERVER_CERT_FILE, cert_pem);
     read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
