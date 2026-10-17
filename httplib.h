@@ -16168,17 +16168,19 @@ inline bool ClientImpl::create_redirect_client(
     redirect_client.system_ca_mode_ = system_ca_mode_;
 
     // Transfer CA certificate to redirect client
-    redirect_client.load_ca_cert_store(ca_cert_pem_.c_str(),
-                                       ca_cert_pem_.size());
     redirect_client.set_ca_cert_path(ca_cert_file_path_, ca_cert_dir_path_);
 
     if (is_ssl()) {
       auto &self = static_cast<SSLClient &>(*this);
       // A store given to set_ca_cert_store() lives only in this client's
-      // context, so pass on the CA certificates the context holds.
+      // context, which then holds all that is trusted.
       if (self.ca_cert_store_set_) {
         auto pem = detail::ca_certs_to_pem(self.ctx_);
         redirect_client.load_ca_cert_store(pem.data(), pem.size());
+        redirect_client.ca_cert_store_set_ = true;
+      } else {
+        redirect_client.load_ca_cert_store(ca_cert_pem_.c_str(),
+                                           ca_cert_pem_.size());
       }
       redirect_client.set_session_verifier(self.session_verifier_);
       if (self.server_certificate_verifier_) {
@@ -19051,7 +19053,11 @@ inline void SSLClient::enable_windows_certificate_verification(bool enabled) {
 inline void SSLClient::load_ca_cert_store(const char *ca_cert,
                                           std::size_t size) {
   if (ctx_ && ca_cert && size > 0) {
-    ca_cert_pem_.assign(ca_cert, size); // Store for redirect transfer
+    // Every PEM loaded, for redirect transfer
+    if (!ca_cert_pem_.empty() && ca_cert_pem_.back() != '\n') {
+      ca_cert_pem_ += '\n';
+    }
+    ca_cert_pem_.append(ca_cert, size);
     tls::load_ca_pem(ctx_, ca_cert, size);
   }
 }

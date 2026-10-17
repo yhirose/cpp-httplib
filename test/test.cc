@@ -17226,7 +17226,8 @@ TEST(SSLClientRedirectTest, CertFile) {
 // another port, so the client follows it with a new client.
 static Result GetThroughTlsRedirectToDifferentPort(
     const std::function<void(SSLClient &)> &setup,
-    const char *target_cert = SERVER_CERT2_FILE) {
+    const char *target_cert = SERVER_CERT2_FILE,
+    const char *target_key = SERVER_PRIVATE_KEY_FILE) {
   auto ssl_port = PORT + 1;
 
   SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
@@ -17235,7 +17236,7 @@ static Result GetThroughTlsRedirectToDifferentPort(
                      "/index");
   });
 
-  SSLServer ssl_svr2(target_cert, SERVER_PRIVATE_KEY_FILE);
+  SSLServer ssl_svr2(target_cert, target_key);
   ssl_svr2.Get("/index", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
   });
@@ -17299,6 +17300,42 @@ TEST(SSLClientRedirectTest, KeepCaCertStore) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
+
+// The target's certificate is signed by the root CA, which the first server's
+// is not. Its name is not checked, as it carries none of 127.0.0.1.
+TEST(SSLClientRedirectTest, KeepEveryCaCertPem) {
+  auto res = GetThroughTlsRedirectToDifferentPort(
+      [](SSLClient &cli) {
+        std::string root_ca, cert;
+        read_file(CLIENT_CA_CERT_FILE, root_ca);
+        read_file(SERVER_CERT2_FILE, cert);
+        cli.load_ca_cert_store(root_ca.data(), root_ca.size());
+        cli.load_ca_cert_store(cert.data(), cert.size());
+        cli.enable_server_hostname_verification(false);
+      },
+      CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+#ifndef CPPHTTPLIB_WOLFSSL_SUPPORT
+// set_ca_cert_store() replaces the root CA loaded before it, so the target is
+// not trusted after the redirect either. (wolfSSL adds the store instead.)
+TEST(SSLClientRedirectTest, CaCertStoreReplacesEarlierPem) {
+  auto res = GetThroughTlsRedirectToDifferentPort(
+      [](SSLClient &cli) {
+        std::string root_ca, cert;
+        read_file(CLIENT_CA_CERT_FILE, root_ca);
+        read_file(SERVER_CERT2_FILE, cert);
+        cli.load_ca_cert_store(root_ca.data(), root_ca.size());
+        cli.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+        cli.enable_server_hostname_verification(false);
+      },
+      CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+}
+#endif
 #endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
