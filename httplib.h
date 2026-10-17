@@ -10725,14 +10725,11 @@ inline bool process_client_socket_ssl(
     tls::session_t session, socket_t sock, time_t read_timeout_sec,
     time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, time_t max_timeout_msec,
-    std::chrono::time_point<std::chrono::steady_clock> start_time, T callback,
-    tls::TlsError *tls_error = nullptr) {
+    std::chrono::time_point<std::chrono::steady_clock> start_time, T callback) {
   SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
                        write_timeout_sec, write_timeout_usec, max_timeout_msec,
                        start_time);
-  auto ret = callback(strm);
-  if (tls_error) { *tls_error = strm.tls_error(); }
-  return ret;
+  return callback(strm);
 }
 
 inline std::pair<std::string, std::string> make_digest_authentication_header(
@@ -15224,14 +15221,6 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
 inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
-#ifdef CPPHTTPLIB_SSL_ENABLED
-  // Don't let an earlier request's TLS error show up in this one's Result. A
-  // client that failed to set up its TLS context keeps reporting why.
-  if (is_valid()) {
-    last_ssl_error_ = 0;
-    last_backend_error_ = 0;
-  }
-#endif
   auto ret = send_(req, res, error);
   if (error == Error::SSLPeerCouldBeClosed_) {
     assert(!ret);
@@ -15243,6 +15232,15 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 }
 
 inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Don't let an earlier attempt's TLS error show up in this one's Result. A
+  // client that failed to set up its TLS context keeps reporting why.
+  if (is_valid()) {
+    last_ssl_error_ = 0;
+    last_backend_error_ = 0;
+  }
+#endif
+
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
 
@@ -15341,6 +15339,10 @@ inline Result ClientImpl::send(const Request &req) {
 inline Result ClientImpl::send_(Request &&req) {
   auto res = detail::make_unique<Response>();
   auto error = Error::Success;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Hold the request lock until the Result has read this request's TLS error
+  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+#endif
   auto ret = send(req, *res, error);
 #ifdef CPPHTTPLIB_SSL_ENABLED
   return Result{ret ? std::move(res) : nullptr, error, std::move(req.headers),
@@ -16413,6 +16415,10 @@ inline Result ClientImpl::send_with_content_provider_and_receiver(
 
   auto error = Error::Success;
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Hold the request lock until the Result has read this request's TLS error
+  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+#endif
   auto res = send_with_content_provider_and_receiver(
       req, body, content_length, std::move(content_provider),
       std::move(content_provider_without_length), content_type,
@@ -18578,20 +18584,21 @@ inline bool SSLClient::process_socket(
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     std::function<bool(Stream &strm)> callback) {
   assert(socket.ssl);
-  tls::TlsError tls_error;
-  auto ret = detail::process_client_socket_ssl(
+  return detail::process_client_socket_ssl(
       socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
       write_timeout_sec_, write_timeout_usec_, max_timeout_msec_, start_time,
-      std::move(callback), &tls_error);
-
-  // A request that failed after the handshake reports Error::Read or
-  // Error::Write; keep the TLS error behind it, such as a fatal alert from
-  // the server, for Result::ssl_error() and ssl_backend_error()
-  if (!ret && tls_error.code != tls::ErrorCode::Success) {
-    last_ssl_error_ = static_cast<int>(tls_error.code);
-    last_backend_error_ = tls_error.backend_code;
-  }
-  return ret;
+      [&](detail::SSLSocketStream &strm) {
+        auto ret = callback(strm);
+        // A request that failed after the handshake reports Error::Read or
+        // Error::Write; keep the TLS error behind it, such as a fatal alert
+        // from the server, for Result::ssl_error() and ssl_backend_error()
+        const auto &tls_error = strm.tls_error();
+        if (!ret && tls_error.code != tls::ErrorCode::Success) {
+          last_ssl_error_ = static_cast<int>(tls_error.code);
+          last_backend_error_ = tls_error.backend_code;
+        }
+        return ret;
+      });
 }
 
 inline bool SSLClient::is_ssl() const { return true; }
