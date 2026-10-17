@@ -16051,8 +16051,7 @@ void ClientCertPresent(
     const std::string &client_private_key_file,
     const std::string &client_encrypted_private_key_pass = std::string(),
     const ClientCertServerSetup &setup = nullptr) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
-                CLIENT_CA_CERT_DIR);
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
   if (setup) { setup(svr); }
 
@@ -16135,8 +16134,7 @@ void RejectsClientWithoutCert(SSLServer &svr) {
 }
 
 void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
-                CLIENT_CA_CERT_DIR);
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
   if (setup) { setup(svr); }
   RejectsClientWithoutCert(svr);
@@ -16240,8 +16238,12 @@ void PemMemoryClientCertPresent(
   SSLServer svr(server_pem);
   ASSERT_TRUE(svr.is_valid());
 
-  svr.Get("/test", [&](const Request &, Response &res) {
+  svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
+
+    auto cert = req.peer_cert();
+    ASSERT_TRUE(static_cast<bool>(cert));
+    EXPECT_EQ("Common Name", cert.subject_cn());
   });
 
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
@@ -16298,32 +16300,6 @@ TEST(SSLClientServerTest, PemMemoryClientCertMissing) {
   SSLServer svr(server_pem);
   ASSERT_TRUE(svr.is_valid());
   RejectsClientWithoutCert(svr);
-}
-
-TEST(SSLClientServerTest, TrustDirOptional) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
-  ASSERT_TRUE(svr.is_valid());
-
-  svr.Get("/test", [&](const Request &, Response &res) {
-    res.set_content("test", "text/plain");
-  });
-
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
-  cli.enable_server_certificate_verification(false);
-  cli.set_connection_timeout(30);
-
-  auto res = cli.Get("/test");
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
 TEST(SSLClientServerTest, SSLConnectTimeout) {
