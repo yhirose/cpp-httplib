@@ -4867,6 +4867,16 @@ TEST(SSLClientServerTest, UpdateCertsPemWithClientAuth) {
   EXPECT_EQ("ok", res->body);
 }
 
+// Puts a CA that did not sign the client's certificate in the old one's place.
+static bool replace_client_ca(SSLServer &svr) {
+  std::string cert_pem, key_pem, ca_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+  read_file(SERVER_CERT2_FILE, ca_pem);
+  return svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(),
+                              ca_pem.c_str());
+}
+
 TEST(SSLClientServerTest, UpdateCertsPemReplacesClientCA) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
@@ -4889,15 +4899,84 @@ TEST(SSLClientServerTest, UpdateCertsPemReplacesClientCA) {
   };
   ASSERT_TRUE(get());
 
-  // A CA that did not sign the client's certificate takes the old one's place.
-  std::string cert_pem, key_pem, ca_pem;
-  read_file(SERVER_CERT_FILE, cert_pem);
-  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
-  read_file(SERVER_CERT2_FILE, ca_pem);
-  ASSERT_TRUE(
-      svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(), ca_pem.c_str()));
+  ASSERT_TRUE(replace_client_ca(svr));
   EXPECT_FALSE(get());
 }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// A client that resumes its session gets through, but not once the client CA
+// has changed, as a resumed session does not show the certificate again.
+TEST(SSLClientServerTest, ClientResumesSessionUntilClientCAChanges) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  auto ctx = SSL_CTX_new(TLS_client_method());
+  auto ctx_se = detail::scope_exit([&] { SSL_CTX_free(ctx); });
+  ASSERT_EQ(
+      1, SSL_CTX_use_certificate_file(ctx, CLIENT_CERT_FILE, SSL_FILETYPE_PEM));
+  ASSERT_EQ(1, SSL_CTX_use_PrivateKey_file(ctx, CLIENT_PRIVATE_KEY_FILE,
+                                           SSL_FILETYPE_PEM));
+
+  SSL_SESSION *session = nullptr;
+  auto session_se = detail::scope_exit([&] { SSL_SESSION_free(session); });
+
+  // A request over a new connection, resuming `session` when there is one and
+  // keeping the connection's own in its place. Tells whether it was answered.
+  auto reused = false;
+  auto get = [&]() {
+    auto error = Error::Success;
+    auto sock = detail::create_client_socket(
+        HOST, "", PORT, AF_UNSPEC, false, false, nullptr,
+        /*connection_timeout_sec=*/5, 0,
+        /*read_timeout_sec=*/5, 0,
+        /*write_timeout_sec=*/5, 0, std::string(), error);
+    if (sock == INVALID_SOCKET) { return false; }
+    auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+    auto ssl = SSL_new(ctx);
+    auto ssl_se = detail::scope_exit([&] { SSL_free(ssl); });
+    SSL_set_fd(ssl, static_cast<int>(sock));
+    if (session) { SSL_set_session(ssl, session); }
+    if (SSL_connect(ssl) != 1) { return false; }
+    reused = SSL_session_reused(ssl) == 1;
+
+    // Reading the response also takes in a TLS 1.3 session ticket.
+    std::string req = "GET /test HTTP/1.1\r\nHost: x\r\n"
+                      "Connection: close\r\n\r\n";
+    SSL_write(ssl, req.data(), static_cast<int>(req.size()));
+    std::string res;
+    char buf[256];
+    int n;
+    while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+      res.append(buf, static_cast<size_t>(n));
+    }
+
+    // Without a proper shutdown, OpenSSL marks the session not resumable.
+    SSL_shutdown(ssl);
+    SSL_SESSION_free(session);
+    session = SSL_get1_session(ssl);
+    return res.find("200 OK") != std::string::npos;
+  };
+
+  ASSERT_TRUE(get());
+  ASSERT_TRUE(get());
+  EXPECT_TRUE(reused);
+
+  ASSERT_TRUE(replace_client_ca(svr));
+  EXPECT_FALSE(get());
+}
+#endif
 
 TEST(SSLClientServerTest, UpdateCertsPemWaitsForHandshakeInProgress) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);

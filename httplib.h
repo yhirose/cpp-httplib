@@ -19812,6 +19812,10 @@ inline ctx_t create_server_context() {
                                  SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION |
                                  SSL_OP_NO_RENEGOTIATION);
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    // Without one, a client resuming its session is sent a fatal alert once
+    // client certificates are verified.
+    static const unsigned char sid_ctx[] = "cpp-httplib";
+    SSL_CTX_set_session_id_context(ctx, sid_ctx, sizeof(sid_ctx) - 1);
   }
   return static_cast<ctx_t>(ctx);
 }
