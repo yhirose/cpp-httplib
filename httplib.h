@@ -10494,6 +10494,10 @@ public:
   // See SocketStream::set_readable_hint().
   void set_readable_hint() { readable_hint_ = true; }
 
+  // The error from the last read() or write() that failed in the TLS layer,
+  // with code Success if none did
+  const tls::TlsError &tls_error() const { return tls_error_; }
+
 private:
   bool ensure_readable();
 
@@ -10506,6 +10510,7 @@ private:
   time_t max_timeout_msec_;
   const std::chrono::time_point<std::chrono::steady_clock> start_time_;
   bool readable_hint_ = false;
+  tls::TlsError tls_error_;
 };
 
 // A TLS stream for WebSocket connections, where the receive path and the
@@ -10720,11 +10725,14 @@ inline bool process_client_socket_ssl(
     tls::session_t session, socket_t sock, time_t read_timeout_sec,
     time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, time_t max_timeout_msec,
-    std::chrono::time_point<std::chrono::steady_clock> start_time, T callback) {
+    std::chrono::time_point<std::chrono::steady_clock> start_time, T callback,
+    tls::TlsError *tls_error = nullptr) {
   SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
                        write_timeout_sec, write_timeout_usec, max_timeout_msec,
                        start_time);
-  return callback(strm);
+  auto ret = callback(strm);
+  if (tls_error) { *tls_error = strm.tls_error(); }
+  return ret;
 }
 
 inline std::pair<std::string, std::string> make_digest_authentication_header(
@@ -12791,6 +12799,7 @@ inline SSLSocketStream::SSLSocketStream(
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
       max_timeout_msec_(max_timeout_msec), start_time_(start_time) {
+  tls_error_.code = tls::ErrorCode::Success;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   // Clear AUTO_RETRY for proper non-blocking I/O timeout handling
   // Note: create_session() also clears this, but SSLClient currently
@@ -12843,6 +12852,8 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     auto ret = tls::read(session_, ptr, size, err);
     if (ret == 0 || err.code == tls::ErrorCode::PeerClosed) {
       error_ = Error::ConnectionClosed;
+    } else if (ret < 0) {
+      tls_error_ = err;
     }
     return ret;
   } else if (ensure_readable()) {
@@ -12858,7 +12869,9 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
       while (--n >= 0 && err.code == tls::ErrorCode::WantRead) {
 #endif
         if (tls::pending(session_) > 0) {
-          return tls::read(session_, ptr, size, err);
+          ret = tls::read(session_, ptr, size, err);
+          if (ret >= 0) { return ret; }
+          break;
         } else if (wait_readable()) {
           std::this_thread::sleep_for(std::chrono::microseconds{10});
           ret = tls::read(session_, ptr, size, err);
@@ -12868,6 +12881,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
         }
       }
       assert(ret < 0);
+      tls_error_ = err;
     } else if (ret == 0 || err.code == tls::ErrorCode::PeerClosed) {
       error_ = Error::ConnectionClosed;
     }
@@ -12903,6 +12917,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
         }
       }
       assert(ret < 0);
+      tls_error_ = err;
     }
     return ret;
   }
@@ -15209,6 +15224,14 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
 inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Don't let an earlier request's TLS error show up in this one's Result. A
+  // client that failed to set up its TLS context keeps reporting why.
+  if (is_valid()) {
+    last_ssl_error_ = 0;
+    last_backend_error_ = 0;
+  }
+#endif
   auto ret = send_(req, res, error);
   if (error == Error::SSLPeerCouldBeClosed_) {
     assert(!ret);
@@ -18555,10 +18578,20 @@ inline bool SSLClient::process_socket(
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     std::function<bool(Stream &strm)> callback) {
   assert(socket.ssl);
-  return detail::process_client_socket_ssl(
+  tls::TlsError tls_error;
+  auto ret = detail::process_client_socket_ssl(
       socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
       write_timeout_sec_, write_timeout_usec_, max_timeout_msec_, start_time,
-      std::move(callback));
+      std::move(callback), &tls_error);
+
+  // A request that failed after the handshake reports Error::Read or
+  // Error::Write; keep the TLS error behind it, such as a fatal alert from
+  // the server, for Result::ssl_error() and ssl_backend_error()
+  if (!ret && tls_error.code != tls::ErrorCode::Success) {
+    last_ssl_error_ = static_cast<int>(tls_error.code);
+    last_backend_error_ = tls_error.backend_code;
+  }
+  return ret;
 }
 
 inline bool SSLClient::is_ssl() const { return true; }

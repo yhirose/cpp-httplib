@@ -14612,6 +14612,8 @@ void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
   if (res.error() == Error::SSLConnection) {
     EXPECT_NE(0UL, res.ssl_backend_error());
   }
+  // A rejection noticed on the write keeps the TLS error the write hit
+  if (res.error() == Error::Write) { EXPECT_NE(0, res.ssl_error()); }
 }
 
 TEST(SSLClientServerTest, ClientCertMissing) { ClientCertMissing(); }
@@ -14637,6 +14639,39 @@ TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackSet) {
 
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
   ClientCertStillRequired(true);
+}
+
+// A TLS error from one request must not show up in a later request's Result
+TEST(SSLClientServerTest, SSLErrorNotCarriedToLaterRequest) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.set_connection_timeout(30);
+  cli.enable_server_hostname_verification(false);
+
+  // cert.pem is not trusted, so the handshake fails
+  ASSERT_FALSE(cli.Get("/test"));
+
+  cli.enable_server_certificate_verification(false);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(0, res.ssl_error());
+  EXPECT_EQ(0UL, res.ssl_backend_error());
 }
 
 // PEM memory-based constructor tests (works with all TLS backends)
