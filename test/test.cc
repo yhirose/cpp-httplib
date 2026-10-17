@@ -12457,6 +12457,35 @@ TEST(KeepAliveTest, Issue1041) {
   EXPECT_EQ(StatusCode::OK_200, result->status);
 }
 
+TEST(KeepAliveTest, MaxCountZeroSetsNoLimit) {
+  Server svr;
+  svr.set_keep_alive_max_count(0);
+  std::set<int> remote_ports;
+  svr.Get("/hi", [&](const Request &req, Response &res) {
+    remote_ports.insert(req.remote_port);
+    res.set_content("hi", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_keep_alive(true);
+  for (int i = 0; i < 3; i++) {
+    auto res = cli.Get("/hi");
+    ASSERT_TRUE(res);
+    EXPECT_EQ("timeout=5", res->get_header_value("Keep-Alive"));
+  }
+  // All three over one connection
+  EXPECT_EQ(1u, remote_ports.size());
+}
+
 TEST(KeepAliveTest, Issue1959) {
   Server svr;
   svr.set_keep_alive_timeout(5);
@@ -27409,6 +27438,32 @@ TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
   char pong[3];
   ASSERT_EQ(3, ::recv(sock, pong, sizeof(pong), MSG_WAITALL));
   EXPECT_EQ(std::string("\x8a\x01p", 3), std::string(pong, 3));
+}
+
+TEST(WebSocketTest, NegativePingIntervalSendsNoPings) {
+  Server svr;
+  svr.set_websocket_ping_interval(-1);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  // Nothing comes while the client stays quiet.
+  detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 0, 300000);
+  char c;
+  EXPECT_EQ(-1, ::recv(sock, &c, 1, 0));
 }
 
 TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {

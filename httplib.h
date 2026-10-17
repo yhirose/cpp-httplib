@@ -223,6 +223,16 @@
 #define CPPHTTPLIB_MAX_LINE_LENGTH 32768
 #endif
 
+// These bound the parsing of every request, so 0 cannot lift them.
+static_assert(CPPHTTPLIB_REQUEST_URI_MAX_LENGTH > 0,
+              "CPPHTTPLIB_REQUEST_URI_MAX_LENGTH must be positive");
+static_assert(CPPHTTPLIB_HEADER_MAX_LENGTH > 0,
+              "CPPHTTPLIB_HEADER_MAX_LENGTH must be positive");
+static_assert(CPPHTTPLIB_HEADER_MAX_COUNT > 0,
+              "CPPHTTPLIB_HEADER_MAX_COUNT must be positive");
+static_assert(CPPHTTPLIB_MAX_LINE_LENGTH > 0,
+              "CPPHTTPLIB_MAX_LINE_LENGTH must be positive");
+
 #ifndef CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH
 #define CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH 16777216
 #endif
@@ -6826,20 +6836,19 @@ inline bool process_server_socket_core(const std::atomic<socket_t> &svr_sock,
                                        size_t keep_alive_max_count,
                                        time_t keep_alive_timeout_sec,
                                        P has_buffered_request, T callback) {
-  assert(keep_alive_max_count > 0);
   auto ret = false;
-  auto count = keep_alive_max_count;
-  while (count > 0) {
+  // A keep_alive_max_count of 0 sets no limit.
+  for (size_t served = 0;
+       keep_alive_max_count == 0 || served < keep_alive_max_count; served++) {
     auto socket_readable = false;
     if (!has_buffered_request()) {
       if (!keep_alive(svr_sock, sock, keep_alive_timeout_sec)) { break; }
       socket_readable = true;
     }
-    auto close_connection = count == 1;
+    auto close_connection = served + 1 == keep_alive_max_count;
     auto connection_closed = false;
     ret = callback(socket_readable, close_connection, connection_closed);
     if (!ret || connection_closed) { break; }
-    count--;
   }
   return ret;
 }
@@ -10119,7 +10128,10 @@ inline bool range_error(Request &req, Response &res) {
     // https://www.rfc-editor.org/rfc/rfc9110#section-14.2
 
     // Too many ranges
-    if (req.ranges.size() > CPPHTTPLIB_RANGE_MAX_COUNT) { return true; }
+    if (CPPHTTPLIB_RANGE_MAX_COUNT > 0 &&
+        req.ranges.size() > CPPHTTPLIB_RANGE_MAX_COUNT) {
+      return true;
+    }
 
     for (auto &r : req.ranges) {
       auto &first_pos = r.first;
@@ -13844,8 +13856,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
   } else {
     std::string s = "timeout=";
     s += std::to_string(keep_alive_timeout_sec_);
-    s += ", max=";
-    s += std::to_string(keep_alive_max_count_);
+    if (keep_alive_max_count_ > 0) {
+      s += ", max=";
+      s += std::to_string(keep_alive_max_count_);
+    }
     res.set_header("Keep-Alive", s);
   }
 
@@ -13996,7 +14010,8 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
           },
           // Multipart FormData
           [&](const FormData &file) {
-            if (count++ == CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT) {
+            if (CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT > 0 &&
+                count++ == CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT) {
               output_error_log(Error::TooManyFormDataFiles, &req);
               return false;
             }
@@ -14026,7 +14041,8 @@ inline bool Server::read_content(Stream &strm, Request &req, Response &res) {
     const auto &content_type = req.get_header_value("Content-Type");
     if (detail::case_ignore::equal(detail::extract_media_type(content_type),
                                    "application/x-www-form-urlencoded")) {
-      if (req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
+      if (CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH > 0 &&
+          req.body.size() > CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH) {
         res.status = StatusCode::PayloadTooLarge_413; // NOTE: should be 414?
         output_error_log(Error::ExceedMaxPayloadSize, &req);
         return false;
@@ -23219,7 +23235,7 @@ inline WebSocket::~WebSocket() {
 }
 
 inline void WebSocket::start_heartbeat() {
-  if (ping_interval_sec_ == 0) { return; }
+  if (ping_interval_sec_ <= 0) { return; }
   ping_thread_ = std::thread([this]() {
     std::unique_lock<std::mutex> lock(ping_mutex_);
     // The predicate keeps a spurious wakeup from sending a ping early

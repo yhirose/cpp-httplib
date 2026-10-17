@@ -764,11 +764,12 @@ svr.Post("/content_receiver",
   });
 ```
 
-`CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT` (default 1024) caps the number of
-form-data parts only on the buffered path, where every part is accumulated into
-`req.form`. The content receiver keeps nothing, so the cap does not apply here.
-If your handler needs an upper bound on the number of parts, count them yourself
-and return `false` from the callback to stop the parser.
+`CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT` (default 1024, `0` for no limit)
+caps the number of form-data parts only on the buffered path, where every part
+is accumulated into `req.form`. The content receiver keeps nothing, so the cap
+does not apply here. If your handler needs an upper bound on the number of
+parts, count them yourself and return `false` from the callback to stop the
+parser.
 
 ### Send content with the content provider
 
@@ -884,7 +885,7 @@ svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
 ### Keep-Alive connection
 
 ```cpp
-svr.set_keep_alive_max_count(2); // Default is 100
+svr.set_keep_alive_max_count(2); // Default is 100, 0 for no limit
 svr.set_keep_alive_timeout(10);  // Default is 5
 ```
 
@@ -909,7 +910,7 @@ svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 ```
 
 > [!NOTE]
-> When the request body content type is 'www-form-urlencoded', the actual payload length shouldn't exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH`.
+> When the request body content type is 'www-form-urlencoded', the actual payload length shouldn't exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH` (`0` for no limit).
 
 ### Server-Sent Events
 

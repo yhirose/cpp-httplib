@@ -10,7 +10,7 @@ status: "draft"
 
 | API | デフォルト | 意味 |
 | --- | --- | --- |
-| `set_keep_alive_max_count` | 100 | 1本の接続で受け付けるリクエストの最大数 |
+| `set_keep_alive_max_count` | 100 | 1本の接続で受け付けるリクエストの最大数（0 で無制限） |
 | `set_keep_alive_timeout` | 5秒 | アイドル状態の接続を閉じるまでの秒数 |
 
 ## 基本の使い方

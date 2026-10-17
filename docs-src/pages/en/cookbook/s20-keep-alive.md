@@ -10,7 +10,7 @@ status: "draft"
 
 | API | Default | Meaning |
 | --- | --- | --- |
-| `set_keep_alive_max_count` | 100 | Max requests served over a single connection |
+| `set_keep_alive_max_count` | 100 | Max requests served over a single connection (0 for no limit) |
 | `set_keep_alive_timeout` | 5s | How long an idle connection is kept before closing |
 
 ## Basic usage
