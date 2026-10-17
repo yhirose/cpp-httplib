@@ -18711,11 +18711,14 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
   // Perform TLS accept handshake with timeout
   TlsError tls_err;
-  auto accepted = accept_nonblocking(session, sock, read_timeout_sec_,
-                                     read_timeout_usec_, &tls_err);
+  auto accepted = false;
   {
-    std::lock_guard<std::mutex> guard(ctx_mutex_);
-    if (--handshakes_in_progress_ == 0) { ctx_cv_.notify_all(); }
+    auto handshake_left = detail::scope_exit([&] {
+      std::lock_guard<std::mutex> guard(ctx_mutex_);
+      if (--handshakes_in_progress_ == 0) { ctx_cv_.notify_all(); }
+    });
+    accepted = accept_nonblocking(session, sock, read_timeout_sec_,
+                                  read_timeout_usec_, &tls_err);
   }
   if (!accepted) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -19230,6 +19233,19 @@ inline std::mutex &verify_callback_mutex() {
   return mutex;
 }
 
+// The TLS libraries are C, so an exception from a verify callback must not
+// unwind through them. It rejects the certificate instead.
+inline bool run_verify_callback(const VerifyCallback &callback,
+                                const VerifyContext &ctx) {
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+  return callback(ctx);
+#else
+  try {
+    return callback(ctx);
+  } catch (...) { return false; }
+#endif
+}
+
 // Check if a string is an IPv4 address
 inline bool is_ipv4_address(const std::string &str) {
   int dots = 0;
@@ -19600,7 +19616,7 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   verify_ctx.error_string =
       (error != X509_V_OK) ? X509_verify_cert_error_string(error) : nullptr;
 
-  return (*callback)(verify_ctx) ? 1 : 0;
+  return run_verify_callback(*callback, verify_ctx) ? 1 : 0;
 }
 
 // X509_STORE_get0_objects is deprecated since OpenSSL 4.0 because it is not
@@ -20786,7 +20802,7 @@ inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
     verify_ctx.error_string = nullptr;
   }
 
-  bool accepted = session->verify_callback(verify_ctx);
+  bool accepted = run_verify_callback(session->verify_callback, verify_ctx);
 
   if (accepted) {
     *flags = 0; // Clear all error flags
@@ -22092,7 +22108,7 @@ inline int wolfssl_verify_callback(int preverify_ok,
     verify_ctx.error_string = nullptr;
   }
 
-  bool accepted = (*callback)(verify_ctx);
+  bool accepted = run_verify_callback(*callback, verify_ctx);
   return accepted ? 1 : 0;
 }
 
