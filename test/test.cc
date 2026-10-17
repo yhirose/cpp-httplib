@@ -4906,6 +4906,7 @@ TEST(SSLClientServerTest, UpdateCertsPemReplacesClientCA) {
   EXPECT_FALSE(get());
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(SSLClientServerTest, ThrowingVerifyCallbackRejectsTheCertificate) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
@@ -4945,6 +4946,7 @@ TEST(SSLClientServerTest, ThrowingVerifyCallbackRejectsTheCertificate) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ("ok", res->body);
 }
+#endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 // Sends each request over a new connection with a client certificate,
@@ -13373,6 +13375,7 @@ TEST(ResponseContentSourceTest, FileRequestHandlerCanReplaceFile) {
   }
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
 TEST(ResponseContentSourceTest, ErrorAndExceptionHandlersReplaceProvider) {
   Server svr;
 
@@ -13456,6 +13459,7 @@ TEST(ResponseContentSourceTest, ErrorAndExceptionHandlersReplaceProvider) {
   std::lock_guard<std::mutex> guard(released_mutex);
   EXPECT_EQ((std::vector<bool>{false, false, false}), released);
 }
+#endif
 
 TEST(ResponseContentSourceTest, LastContentSetterWins) {
   Server svr;
