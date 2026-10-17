@@ -726,6 +726,9 @@ auto safe = httplib::sanitize_filename(file.filename);
 
 This function strips path separators (`/`, `\`), null bytes, leading/trailing whitespace, and rejects `.` and `..`. Returns an empty string if the filename is unsafe.
 
+> [!NOTE]
+> `name` and `filename` are read as quoted-strings (RFC 9110 §5.6.4), where `\"` and `\\` stand for `"` and `\`. Browsers send a backslash as it is, so from a browser, a value with `\\` in it arrives with a single `\`, and one that ends in `\` is not read correctly.
+
 ### Receive content with a content receiver
 
 ```cpp
