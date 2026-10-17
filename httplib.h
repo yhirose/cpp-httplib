@@ -23046,18 +23046,37 @@ inline bool WebSocket::send_frame(Opcode op, const char *data, size_t len,
 }
 
 inline ReadResult WebSocket::read(std::string &msg) {
-  // RFC 6455 §5.5.1: a Close is echoed back, unless its payload is malformed,
-  // which is answered with a protocol error instead.
-  auto answer_close = [&](const std::string &payload) {
-    if (closed_.exchange(true)) { return; }
-    auto reply = payload;
-    if (!impl::is_valid_close_payload(payload)) {
-      auto code = static_cast<uint16_t>(CloseStatus::ProtocolError);
-      reply = {static_cast<char>(code >> 8), static_cast<char>(code & 0xff)};
+  // Answers a control frame; any other opcode here is a protocol error.
+  // Returns false when the connection is done.
+  auto handle_control = [&](Opcode op, const std::string &payload) -> bool {
+    switch (op) {
+    case Opcode::Ping: {
+      std::lock_guard<std::mutex> lock(write_mutex_);
+      detail::write_websocket_frame(strm_, Opcode::Pong, payload.data(),
+                                    payload.size(), true, !is_server_);
+      return true;
     }
-    std::lock_guard<std::mutex> lock(write_mutex_);
-    detail::write_websocket_frame(strm_, Opcode::Close, reply.data(),
-                                  reply.size(), true, !is_server_);
+    case Opcode::Pong: {
+      std::lock_guard<std::mutex> lock(ping_mutex_);
+      unacked_pings_ = 0;
+      return true;
+    }
+    case Opcode::Close: {
+      // RFC 6455 §5.5.1: a Close is echoed back, unless its payload is
+      // malformed, which is answered with a protocol error instead.
+      if (closed_.exchange(true)) { return false; }
+      auto reply = payload;
+      if (!impl::is_valid_close_payload(payload)) {
+        auto code = static_cast<uint16_t>(CloseStatus::ProtocolError);
+        reply = {static_cast<char>(code >> 8), static_cast<char>(code & 0xff)};
+      }
+      std::lock_guard<std::mutex> lock(write_mutex_);
+      detail::write_websocket_frame(strm_, Opcode::Close, reply.data(),
+                                    reply.size(), true, !is_server_);
+      return false;
+    }
+    default: closed_ = true; return false;
+    }
   };
 
   std::unique_lock<std::mutex> read_lock(read_mutex_);
@@ -23081,21 +23100,6 @@ inline ReadResult WebSocket::read(std::string &msg) {
     }
 
     switch (opcode) {
-    case Opcode::Ping: {
-      std::lock_guard<std::mutex> lock(write_mutex_);
-      detail::write_websocket_frame(strm_, Opcode::Pong, payload.data(),
-                                    payload.size(), true, !is_server_);
-      continue;
-    }
-    case Opcode::Pong: {
-      std::lock_guard<std::mutex> lock(ping_mutex_);
-      unacked_pings_ = 0;
-      continue;
-    }
-    case Opcode::Close: {
-      answer_close(payload);
-      return Fail;
-    }
     case Opcode::Text:
     case Opcode::Binary: {
       auto result = opcode == Opcode::Text ? Text : Binary;
@@ -23125,25 +23129,10 @@ inline ReadResult WebSocket::read(std::string &msg) {
             closed_ = true;
             return Fail;
           }
-          if (cont_opcode == Opcode::Ping) {
-            std::lock_guard<std::mutex> lock(write_mutex_);
-            detail::write_websocket_frame(
-                strm_, Opcode::Pong, cont_payload.data(), cont_payload.size(),
-                true, !is_server_);
-            continue;
-          }
-          if (cont_opcode == Opcode::Pong) {
-            std::lock_guard<std::mutex> lock(ping_mutex_);
-            unacked_pings_ = 0;
-            continue;
-          }
-          if (cont_opcode == Opcode::Close) {
-            answer_close(cont_payload);
-            return Fail;
-          }
-          // RFC 6455: continuation frames must use opcode 0x0
+          // RFC 6455 5.4: the fragments are continuation frames, with only
+          // control frames between them.
           if (cont_opcode != Opcode::Continuation) {
-            closed_ = true;
+            if (handle_control(cont_opcode, cont_payload)) { continue; }
             return Fail;
           }
           msg += cont_payload;
@@ -23165,7 +23154,9 @@ inline ReadResult WebSocket::read(std::string &msg) {
       }
       return result;
     }
-    default: closed_ = true; return Fail;
+    default:
+      if (handle_control(opcode, payload)) { continue; }
+      return Fail;
     }
   }
   return Fail;

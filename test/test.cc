@@ -27294,6 +27294,11 @@ TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
   }
   ASSERT_TRUE(done);
   EXPECT_EQ("Hello", received);
+
+  // The Ping between the fragments is answered with a Pong.
+  char pong[3];
+  ASSERT_EQ(3, ::recv(sock, pong, sizeof(pong), MSG_WAITALL));
+  EXPECT_EQ(std::string("\x8a\x01p", 3), std::string(pong, 3));
 }
 
 TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
@@ -27320,23 +27325,26 @@ TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
       {std::string("\x03\xed"), std::string("\x03\xea")},     // 1005
       {std::string("\x03\xe8\xff"), std::string("\x03\xea")}, // bad UTF-8
   };
-  for (const auto &c : cases) {
-    auto sock = connect_raw_websocket(port, "/ws");
-    ASSERT_NE(INVALID_SOCKET, sock);
-    auto close_frame = masked_frame(0x88, c.first);
-    ::send(sock, close_frame.data(), static_cast<int>(close_frame.size()), 0);
+  // Also between the fragments of a message.
+  for (const auto &prefix : {std::string(), masked_frame(0x02, "a")}) {
+    for (const auto &c : cases) {
+      auto sock = connect_raw_websocket(port, "/ws");
+      ASSERT_NE(INVALID_SOCKET, sock);
+      auto frames = prefix + masked_frame(0x88, c.first);
+      ::send(sock, frames.data(), static_cast<int>(frames.size()), 0);
 
-    std::string reply;
-    char buf[256];
-    while (reply.size() < 2 + c.second.size()) {
-      auto n = ::recv(sock, buf, sizeof(buf), 0);
-      if (n <= 0) { break; }
-      reply.append(buf, static_cast<size_t>(n));
+      std::string reply;
+      char buf[256];
+      while (reply.size() < 2 + c.second.size()) {
+        auto n = ::recv(sock, buf, sizeof(buf), 0);
+        if (n <= 0) { break; }
+        reply.append(buf, static_cast<size_t>(n));
+      }
+      detail::close_socket(sock);
+      EXPECT_EQ(std::string("\x88") + static_cast<char>(c.second.size()) +
+                    c.second,
+                reply);
     }
-    detail::close_socket(sock);
-    EXPECT_EQ(std::string("\x88") + static_cast<char>(c.second.size()) +
-                  c.second,
-              reply);
   }
 }
 
