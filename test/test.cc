@@ -22664,6 +22664,29 @@ TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
   }
 }
 
+// RFC 9112 6.1: Transfer-Encoding next to a Content-Length, or in an HTTP/1.0
+// response, is faulty framing, so the connection is not reused after it.
+TEST(ClientResponseSmugglingTest, FaultyTransferEncodingClosesConnection) {
+  for (const char *response : {"HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 0\r\n"
+                               "Transfer-Encoding: chunked\r\n"
+                               "\r\n"
+                               "5\r\nhello\r\n0\r\n\r\n",
+                               "HTTP/1.0 200 Connection established\r\n"
+                               "Connection: keep-alive\r\n"
+                               "Transfer-Encoding: chunked\r\n"
+                               "\r\n"
+                               "5\r\nhello\r\n0\r\n\r\n"}) {
+    with_single_response(response, [&](Client &cli) {
+      cli.set_keep_alive(true);
+      auto res = cli.Get("/");
+      ASSERT_TRUE(res) << response;
+      EXPECT_EQ("hello", res->body);
+      EXPECT_FALSE(cli.is_socket_open()) << response;
+    });
+  }
+}
+
 // A payload max length of 0 means no limit, however the body is framed.
 TEST(PayloadMaxLengthZeroTest, ClientReadsChunkedAndUnframedResponse) {
   for (const char *response : {"HTTP/1.1 200 OK\r\n"

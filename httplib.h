@@ -8658,6 +8658,13 @@ inline bool is_chunked_transfer_encoding(const Headers &headers) {
   return case_ignore::equal(last_coding, "chunked");
 }
 
+// RFC 9112 6.1: a message framed by Transfer-Encoding next to a Content-Length,
+// or in HTTP/1.0, leaves the connection unfit to carry another one.
+template <typename T> inline bool has_faulty_transfer_encoding(const T &msg) {
+  return msg.has_header("Transfer-Encoding") &&
+         (msg.has_header("Content-Length") || msg.version == "HTTP/1.0");
+}
+
 inline bool has_conflicting_content_length(const Headers &headers) {
   // RFC 9112 §6.3: a message carrying both Transfer-Encoding and a non-zero
   // Content-Length is framed ambiguously. The body readers here delimit it by
@@ -14913,10 +14920,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // RFC 9112 §6.1: a Transfer-Encoding alongside a Content-Length, or in an
   // HTTP/1.0 request, is honoured, but the connection closes after the
   // response.
-  if (req.has_header("Transfer-Encoding") &&
-      (req.has_header("Content-Length") || req.version == "HTTP/1.0")) {
-    connection_closed = true;
-  }
+  if (detail::has_faulty_transfer_encoding(req)) { connection_closed = true; }
 
   // RFC 9112 §3.2: Reject more than one Host field line, an invalid Host
   // value, or none in HTTP/1.1, so that every recipient of the request sees
@@ -16760,11 +16764,16 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     // whose final transfer coding is not chunked is not ambiguous: its body
     // runs until the server closes the connection, so it is not rejected.
     // HEAD/204 are excluded above and a 304 carries no body.
-    if (res.status != StatusCode::NotModified_304 &&
-        detail::has_conflicting_content_length(res.headers)) {
-      error = Error::Read;
-      output_error_log(error, &req);
-      return false;
+    if (res.status != StatusCode::NotModified_304) {
+      if (detail::has_conflicting_content_length(res.headers)) {
+        error = Error::Read;
+        output_error_log(error, &req);
+        return false;
+      }
+      if (detail::has_faulty_transfer_encoding(res)) {
+        std::lock_guard<std::mutex> guard(socket_mutex_);
+        socket_should_be_closed_when_request_is_done_ = true;
+      }
     }
 
     auto redirect = 300 < res.status && res.status < 400 &&
