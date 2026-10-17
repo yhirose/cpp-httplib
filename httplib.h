@@ -17988,8 +17988,10 @@ inline Client::Client(const std::string &scheme_host_port,
       cli_ = detail::make_unique<ClientImpl>(host, port, client_cert_path,
                                              client_key_path);
     }
-  } else if (scheme_host_port.find("//") != std::string::npos) {
-    // A URL, but not one this client can use, such as one with userinfo
+  } else if (scheme_host_port.compare(0, 2, "//") == 0 ||
+             scheme_host_port.find("://") < scheme_host_port.find('/')) {
+    // A URL, but not one this client can use, such as one with userinfo. A
+    // Unix socket path may have "//" further on.
     cli_ = detail::make_unique<detail::InvalidClientImpl>();
   } else {
     // NOTE: Update TEST(UniversalClientImplTest, Ipv6LiteralAddress)

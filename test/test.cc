@@ -173,6 +173,8 @@ TEST_F(UnixSocketTest, pathname) {
   ASSERT_TRUE(svr.is_running());
 
   client_GET(pathname_);
+  // ".//x.sock", which is not taken for a URL
+  client_GET("./" + pathname_.substr(1));
 }
 
 #if defined(__linux__) ||                                                      \
@@ -15633,6 +15635,8 @@ TEST(HostAndPortPropertiesTest, UserinfoIsNotSupported) {
   httplib::Client cli("http://user:pass@localhost:1234");
   ASSERT_FALSE(cli.is_valid());
   EXPECT_FALSE(cli.Get("/"));
+
+  EXPECT_FALSE(httplib::Client("//user@localhost:1234").is_valid());
 }
 
 TEST(HostAndPortPropertiesTest, TrailingCharactersInPort) {
