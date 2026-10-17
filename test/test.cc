@@ -4978,6 +4978,90 @@ TEST(SSLClientServerTest, ClientResumesSessionUntilClientCAChanges) {
 }
 #endif
 
+#ifdef CPPHTTPLIB_WOLFSSL_SUPPORT
+// wolfSSL shares its session cache between contexts, so a resumed session
+// could carry a client certificate checked against another server's CA, or
+// against a client CA since replaced.
+TEST(SSLClientServerTest, ClientSessionIsNotResumedPastItsCA) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  // Trusts a CA that did not sign the client's certificate.
+  SSLServer other(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, SERVER_CERT2_FILE);
+  ASSERT_TRUE(other.is_valid());
+  for (auto s : {&svr, &other}) {
+    s->Get("/test", [](const Request &, Response &res) {
+      res.set_content("ok", "text/plain");
+    });
+  }
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  thread t2 = thread([&]() { ASSERT_TRUE(other.listen(HOST, PORT + 1)); });
+  auto se = detail::scope_exit([&] {
+    other.stop();
+    svr.stop();
+    t2.join();
+    t.join();
+  });
+  svr.wait_until_ready();
+  other.wait_until_ready();
+
+  auto ctx = wolfSSL_CTX_new(wolfTLSv1_2_client_method());
+  auto ctx_se = detail::scope_exit([&] { wolfSSL_CTX_free(ctx); });
+  wolfSSL_CTX_set_verify(ctx, WOLFSSL_VERIFY_NONE, nullptr);
+  ASSERT_EQ(WOLFSSL_SUCCESS, wolfSSL_CTX_use_certificate_file(
+                                 ctx, CLIENT_CERT_FILE, WOLFSSL_FILETYPE_PEM));
+  ASSERT_EQ(WOLFSSL_SUCCESS,
+            wolfSSL_CTX_use_PrivateKey_file(ctx, CLIENT_PRIVATE_KEY_FILE,
+                                            WOLFSSL_FILETYPE_PEM));
+
+  WOLFSSL_SESSION *session = nullptr;
+  auto session_se = detail::scope_exit([&] {
+    if (session) { wolfSSL_SESSION_free(session); }
+  });
+
+  // A request over a new connection, resuming `session` when there is one and
+  // keeping the connection's own in its place. Tells whether it was answered.
+  auto get = [&](int port) {
+    auto error = Error::Success;
+    auto sock = detail::create_client_socket(
+        HOST, "", port, AF_UNSPEC, false, false, nullptr,
+        /*connection_timeout_sec=*/5, 0,
+        /*read_timeout_sec=*/5, 0,
+        /*write_timeout_sec=*/5, 0, std::string(), error);
+    if (sock == INVALID_SOCKET) { return false; }
+    auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+    auto ssl = wolfSSL_new(ctx);
+    auto ssl_se = detail::scope_exit([&] { wolfSSL_free(ssl); });
+    wolfSSL_set_fd(ssl, static_cast<int>(sock));
+    if (session) { wolfSSL_set_session(ssl, session); }
+    if (wolfSSL_connect(ssl) != WOLFSSL_SUCCESS) { return false; }
+
+    std::string req = "GET /test HTTP/1.1\r\nHost: x\r\n"
+                      "Connection: close\r\n\r\n";
+    wolfSSL_write(ssl, req.data(), static_cast<int>(req.size()));
+    std::string res;
+    char buf[256];
+    int n;
+    while ((n = wolfSSL_read(ssl, buf, sizeof(buf))) > 0) {
+      res.append(buf, static_cast<size_t>(n));
+    }
+
+    wolfSSL_shutdown(ssl);
+    if (session) { wolfSSL_SESSION_free(session); }
+    session = wolfSSL_get1_session(ssl);
+    return res.find("200 OK") != std::string::npos;
+  };
+
+  ASSERT_TRUE(get(PORT));
+  EXPECT_FALSE(get(PORT + 1));
+
+  ASSERT_TRUE(get(PORT));
+  ASSERT_TRUE(replace_client_ca(svr));
+  EXPECT_FALSE(get(PORT));
+}
+#endif
+
 TEST(SSLClientServerTest, UpdateCertsPemWaitsForHandshakeInProgress) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());

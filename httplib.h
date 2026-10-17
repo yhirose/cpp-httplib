@@ -22010,6 +22010,18 @@ inline int session_ex_data_index() {
   return index;
 }
 
+// A resumed session skips the client's certificate, so a server that checks
+// one would let in a certificate checked against another server's CA, as
+// wolfSSL shares its session cache between contexts, or against a CA since
+// replaced by update_server_client_ca().
+inline void disable_server_resumption(WolfSSLContext *wctx) {
+  if (!wctx->is_server) { return; }
+  wolfSSL_CTX_set_session_cache_mode(wctx->ctx, WOLFSSL_SESS_CACHE_OFF);
+#ifdef HAVE_SESSION_TICKET
+  wolfSSL_CTX_NoTicketTLSv12(wctx->ctx);
+#endif
+}
+
 // wolfSSL verify callback wrapper
 inline int wolfssl_verify_callback(int preverify_ok,
                                    WOLFSSL_X509_STORE_CTX *x509_ctx) {
@@ -22279,6 +22291,7 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
   wctx->verify_client = require;
   if (require) {
+    impl::disable_server_resumption(wctx);
     wolfSSL_CTX_set_verify(
         wctx->ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
         wctx->verify_callback ? impl::wolfssl_verify_callback : nullptr);
@@ -23015,6 +23028,7 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   wctx->verify_callback = std::move(callback);
 
   if (wctx->verify_callback) {
+    impl::disable_server_resumption(wctx);
     wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
                            impl::wolfssl_verify_callback);
   } else {
