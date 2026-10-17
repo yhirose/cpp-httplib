@@ -11843,9 +11843,14 @@ inline std::string sanitize_filename(const std::string &filename) {
 
 inline std::string append_query_params(const std::string &path,
                                        const Params &params) {
-  std::string path_with_query = path;
-  path_with_query += path.find('?') == std::string::npos ? '?' : '&';
+  // The query ends at the fragment (RFC 3986 3.5), so the params go before it.
+  auto fragment_pos = path.find('#');
+  auto path_with_query = path.substr(0, fragment_pos);
+  path_with_query += path_with_query.find('?') == std::string::npos ? '?' : '&';
   path_with_query += detail::params_to_query_str(params);
+  if (fragment_pos != std::string::npos) {
+    path_with_query.append(path, fragment_pos, std::string::npos);
+  }
   return path_with_query;
 }
 
@@ -16370,10 +16375,12 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     // `encode_request_target`; the raw query is still needed here to decide
     // between populating `req.params` from it and falling back to building a
     // query out of caller-supplied `req.params`.
-    auto query_pos = req.path.find('?');
+    // The fragment, which is not sent, is not part of the query.
+    auto target = req.path.substr(0, req.path.find('#'));
+    auto query_pos = target.find('?');
     auto query_part = query_pos == std::string::npos
                           ? std::string()
-                          : req.path.substr(query_pos + 1);
+                          : target.substr(query_pos + 1);
 
     auto path_with_query =
         detail::encode_request_target(req.path, path_encode_);

@@ -5812,6 +5812,44 @@ TEST(URLFragmentTest, WithFragment) {
   }
 }
 
+TEST(URLFragmentTest, ParamsGoBeforeTheFragment) {
+  EXPECT_EQ("/a?b=1#f", append_query_params("/a#f", {{"b", "1"}}));
+  EXPECT_EQ("/a?q=0&b=1#f", append_query_params("/a?q=0#f", {{"b", "1"}}));
+
+  Server svr;
+  std::vector<std::string> targets;
+  svr.Get("/hi", [&](const Request &req, Response & /*res*/) {
+    targets.push_back(req.target);
+  });
+
+  auto thread = std::thread([&]() { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  EXPECT_TRUE(cli.Get("/hi#f", Params{{"a", "1"}}, Headers{}));
+  EXPECT_TRUE(cli.Get("/hi?q=0#f", Params{{"a", "1"}}, Headers{}));
+  EXPECT_TRUE(cli.open_stream("GET", "/hi#f", {{"a", "1"}}).is_valid());
+
+  // A '?' after the '#' belongs to the fragment, not to the query.
+  Request req;
+  req.method = "GET";
+  req.path = "/hi#f?x=1";
+  req.params.emplace("a", "1");
+  Response res;
+  auto error = Error::Success;
+  EXPECT_TRUE(cli.send(req, res, error));
+
+  EXPECT_EQ((std::vector<std::string>{"/hi?a=1", "/hi?q=0&a=1", "/hi?a=1",
+                                      "/hi?a=1"}),
+            targets);
+}
+
 TEST(HeaderWriter, SetHeaderWriter) {
   Server svr;
 
