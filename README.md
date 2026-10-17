@@ -1471,7 +1471,7 @@ auto res = cli.Get("/already%20encoded/path"); // Use pre-encoded paths
 ```
 
 - `set_path_encode(bool on)` - Controls automatic encoding of special characters in URL paths
-  - `true` (default): Percent-encodes characters not allowed in a URL path (spaces, control characters, `<`, `|`, non-ASCII bytes, etc.) and `+`, `,`, `;`, `'`. `%` is kept, so existing escapes aren't encoded twice
+  - `true` (default): Automatically encodes spaces, plus signs, newlines, and other special characters
   - `false`: Sends paths as-is without encoding (useful for pre-encoded URLs)
 
 ### Performance Note for Local Connections

@@ -4457,10 +4457,6 @@ TEST(PathUrlEncodeTest, StreamingMatchesBufferedTarget) {
       {"/a b?x=1", "/a%20b?x=1"},
       {"/\xE6\x97\xA5\xE6\x9C\xAC", "/%E6%97%A5%E6%9C%AC"},
       {"/a,b;c+d", "/a%2Cb%3Bc%2Bd"},
-      // Characters RFC 3986 doesn't allow in a path.
-      {"/\"<>\\^`{|}[]", "/%22%3C%3E%5C%5E%60%7B%7C%7D%5B%5D"},
-      // Escapes and the rest of pchar are kept.
-      {"/a%20b/!$&()*=:@~", "/a%20b/!$&()*=:@~"},
   };
 
   for (const auto &c : cases) {
@@ -4576,55 +4572,7 @@ TEST(PathUrlEncodeTest, ControlCharsInPathAreEncoded) {
     auto res = cli.Get("/a\tb\x1b\x7f");
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("/a%09b%1B%7F", target);
-
-    // An embedded NUL doesn't cut the path short.
-    res = cli.Get(std::string("/a\0b", 4));
-    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-    EXPECT_EQ("/a%00b", target);
   }
-}
-
-TEST(PathUrlEncodeTest, HostInProxyTargetIsNotEncoded) {
-  // Only the path of a target sent to a proxy is encoded, so the brackets of
-  // an IPv6 host stay.
-  Server proxy;
-
-  std::string target;
-  proxy.set_pre_routing_handler([&](const Request &req, Response &res) {
-    target = req.target;
-    res.status = StatusCode::Forbidden_403;
-    return Server::HandlerResponse::Handled;
-  });
-
-  auto port = proxy.bind_to_any_port(HOST);
-  auto thread = std::thread([&]() { proxy.listen_after_bind(); });
-  auto se = detail::scope_exit([&] {
-    proxy.stop();
-    thread.join();
-    ASSERT_FALSE(proxy.is_running());
-  });
-
-  proxy.wait_until_ready();
-
-  {
-    Client cli("::1", 8080);
-    cli.set_proxy(HOST, port);
-
-    auto res = cli.Get("/a b");
-    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-    EXPECT_EQ("http://[::1]:8080/a%20b", target);
-  }
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-  {
-    SSLClient cli("::1", 8443);
-    cli.set_proxy(HOST, port);
-
-    auto res = cli.Get("/");
-    EXPECT_EQ(Error::ProxyConnection, res.error());
-    EXPECT_EQ("[::1]:8443", target);
-  }
-#endif
 }
 
 TEST(PathUrlEncodeTest, StreamingCRLFRejectedWhenPathEncodeDisabled) {

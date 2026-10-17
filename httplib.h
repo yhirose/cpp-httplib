@@ -5999,24 +5999,32 @@ inline size_t FileStat::size() const {
   return ret_ >= 0 ? static_cast<size_t>(st_.st_size) : 0;
 }
 
-// Percent-encode every byte outside RFC 3986 pchar, keeping '/' and '%' so that
-// escapes pass through. '+', ',', ';' and '\'' are pchar but encoded too, as
-// some servers give '+' and ';' a special meaning.
 inline std::string encode_path(const std::string &s) {
-  static const char hex[] = "0123456789ABCDEF";
   std::string result;
   result.reserve(s.size());
 
-  for (auto c : s) {
-    // The '\0' check keeps strchr from matching the terminator.
-    if (is_ascii_alnum(c) ||
-        (c != '\0' && std::strchr("-._~!$&()*=:@/%", c) != nullptr)) {
-      result += c;
-    } else {
-      auto uc = static_cast<unsigned char>(c);
-      result += '%';
-      result += hex[uc >> 4];
-      result += hex[uc & 0x0f];
+  for (size_t i = 0; s[i]; i++) {
+    switch (s[i]) {
+    case ' ': result += "%20"; break;
+    case '+': result += "%2B"; break;
+    case '\'': result += "%27"; break;
+    case ',': result += "%2C"; break;
+    // case ':': result += "%3A"; break; // ok? probably...
+    case ';': result += "%3B"; break;
+    default:
+      auto c = static_cast<uint8_t>(s[i]);
+      // Control characters (incl. CR/LF) and non-ASCII bytes are not allowed
+      // in a request-target as-is.
+      if (c < 0x20 || c == 0x7f || c >= 0x80) {
+        result += '%';
+        char hex[4];
+        auto len = snprintf(hex, sizeof(hex) - 1, "%02X", c);
+        assert(len == 2);
+        result.append(hex, static_cast<size_t>(len));
+      } else {
+        result += s[i];
+      }
+      break;
     }
   }
 
@@ -9315,23 +9323,7 @@ inline std::string encode_request_target(const std::string &uri,
     query_part = target.substr(query_pos + 1);
   }
 
-  std::string result;
-  if (path_encode) {
-    // Encode only the path: an absolute-form target (sent to a proxy) keeps
-    // its "http://host", and a CONNECT "host:port" has no path.
-    size_t path_pos = 0;
-    if (!path_part.empty() && path_part[0] != '/') {
-      auto scheme_end = path_part.find("://");
-      path_pos = scheme_end == std::string::npos
-                     ? path_part.size()
-                     : (std::min)(path_part.find('/', scheme_end + 3),
-                                  path_part.size());
-    }
-    result = path_part.substr(0, path_pos);
-    result += encode_path(path_part.substr(path_pos));
-  } else {
-    result = std::move(path_part);
-  }
+  auto result = path_encode ? encode_path(path_part) : std::move(path_part);
 
   if (!query_part.empty()) {
     // When path encoding is disabled the caller has supplied an already-encoded
