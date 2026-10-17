@@ -16097,12 +16097,9 @@ TEST(SSLClientServerTest, ClientEncryptedCertPresent) {
                     CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
 
-void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
-                CLIENT_CA_CERT_DIR);
-  ASSERT_TRUE(svr.is_valid());
-  if (setup) { setup(svr); }
-
+// Expects svr, which must require client certificates, to reject a client
+// that has none
+void RejectsClientWithoutCert(SSLServer &svr) {
   svr.Get("/test", [](const Request &, Response &) { FAIL(); });
 
   auto port = svr.bind_to_any_port(HOST);
@@ -16137,6 +16134,14 @@ void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
   if (res.error() == Error::Write) { EXPECT_NE(0, res.ssl_error()); }
 }
 
+void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
+                CLIENT_CA_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+  if (setup) { setup(svr); }
+  RejectsClientWithoutCert(svr);
+}
+
 TEST(SSLClientServerTest, ClientCertMissing) { ClientCertMissing(); }
 
 // A server that requires client certificates must keep requiring them after a
@@ -16160,6 +16165,18 @@ TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackSet) {
 
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
   ClientCertStillRequired(true);
+}
+
+// Replacing the certificates must not stop the server requiring client ones
+TEST(SSLClientServerTest, ClientCertStillRequiredAfterUpdateCertsPem) {
+  ClientCertMissing([](SSLServer &svr) {
+    std::string cert_pem, key_pem, ca_pem;
+    read_file(SERVER_CERT_FILE, cert_pem);
+    read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+    read_file(CLIENT_CA_CERT_FILE, ca_pem);
+    ASSERT_TRUE(svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(),
+                                     ca_pem.c_str()));
+  });
 }
 
 // A TLS error from one request must not show up in a later request's Result
@@ -16261,6 +16278,27 @@ TEST(SSLClientServerTest, PemMemoryClientEncryptedCertPresent) {
   PemMemoryClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
                              CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
                              CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
+}
+
+// A server built from PEM memory with a client CA requires client certificates
+TEST(SSLClientServerTest, PemMemoryClientCertMissing) {
+  std::string server_cert_pem, server_key_pem, client_ca_pem;
+  read_file(SERVER_CERT_FILE, server_cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, server_key_pem);
+  read_file(CLIENT_CA_CERT_FILE, client_ca_pem);
+
+  SSLServer::PemMemory server_pem = {
+      server_cert_pem.c_str(),
+      server_cert_pem.size(),
+      server_key_pem.c_str(),
+      server_key_pem.size(),
+      client_ca_pem.c_str(),
+      client_ca_pem.size(),
+      nullptr // no password for server key
+  };
+  SSLServer svr(server_pem);
+  ASSERT_TRUE(svr.is_valid());
+  RejectsClientWithoutCert(svr);
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
