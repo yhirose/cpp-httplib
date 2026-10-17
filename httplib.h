@@ -4100,7 +4100,8 @@ struct WolfSSLContext {
   WOLFSSL_CTX *ctx = nullptr;
   bool is_server = false;
   bool verify_client = false;
-  VerifyCallback verify_callback;
+  // Replaced under verify_callback_mutex()
+  std::shared_ptr<VerifyCallback> verify_callback;
   std::string ca_pem_data_; // accumulated PEM for get_ca_names/get_ca_certs
 
   WolfSSLContext();
@@ -19036,6 +19037,8 @@ inline void
 SSLClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
   if (!ctx_) { return; }
   server_certificate_verifier_ = verifier;
+  // Under the lock that creating a session from ctx_ takes
+  std::lock_guard<std::mutex> guard(ctx_mutex_);
   tls::set_verify_callback(ctx_, std::move(verifier));
 }
 
@@ -19219,6 +19222,13 @@ inline PeerCert get_peer_cert_from_session(const_session_t session) {
 }
 
 namespace impl {
+
+// set_verify_callback() can replace a callback while handshakes on other
+// threads run it, so they share it, and take their reference under this lock.
+inline std::mutex &verify_callback_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
 
 // Check if a string is an IPv4 address
 inline bool is_ipv4_address(const std::string &str) {
@@ -19548,7 +19558,7 @@ inline STACK_OF(X509_NAME) *
 inline void free_verify_callback(void * /*parent*/, void *ptr,
                                  CRYPTO_EX_DATA * /*ad*/, int /*idx*/,
                                  long /*argl*/, void * /*argp*/) {
-  delete static_cast<VerifyCallback *>(ptr);
+  delete static_cast<std::shared_ptr<VerifyCallback> *>(ptr);
 }
 
 // The SSL_CTX owns its verify callback, so each client or server sees only
@@ -19566,8 +19576,13 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
       X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
   if (!ssl) { return preverify_ok; }
 
-  auto callback = static_cast<VerifyCallback *>(
-      SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), verify_callback_index()));
+  std::shared_ptr<VerifyCallback> callback;
+  {
+    std::lock_guard<std::mutex> guard(verify_callback_mutex());
+    auto stored = static_cast<std::shared_ptr<VerifyCallback> *>(
+        SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), verify_callback_index()));
+    if (stored) { callback = *stored; }
+  }
   if (!callback) { return preverify_ok; }
 
   // Get current certificate and depth
@@ -20481,9 +20496,20 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
 
   auto index = impl::verify_callback_index();
   if (index < 0) { return false; }
-  auto stored = callback ? new VerifyCallback(std::move(callback)) : nullptr;
-  delete static_cast<VerifyCallback *>(SSL_CTX_get_ex_data(ssl_ctx, index));
-  SSL_CTX_set_ex_data(ssl_ctx, index, stored);
+  std::shared_ptr<VerifyCallback> *stored = nullptr;
+  if (callback) {
+    stored = new std::shared_ptr<VerifyCallback>(
+        std::make_shared<VerifyCallback>(std::move(callback)));
+  }
+  std::shared_ptr<VerifyCallback> *previous = nullptr;
+  {
+    std::lock_guard<std::mutex> guard(impl::verify_callback_mutex());
+    previous = static_cast<std::shared_ptr<VerifyCallback> *>(
+        SSL_CTX_get_ex_data(ssl_ctx, index));
+    SSL_CTX_set_ex_data(ssl_ctx, index, stored);
+  }
+  // A handshake running the previous callback keeps it until it returns.
+  delete previous;
 
   // Keeps the other mode bits, so a server that requires a client
   // certificate goes on requiring one.
@@ -22040,7 +22066,14 @@ inline int wolfssl_verify_callback(int preverify_ok,
 
   auto wctx = static_cast<WolfSSLContext *>(wolfSSL_CTX_get_ex_data(
       wolfSSL_get_SSL_CTX(ssl), context_ex_data_index()));
-  if (!wctx || !wctx->verify_callback) { return preverify_ok; }
+  if (!wctx) { return preverify_ok; }
+
+  std::shared_ptr<VerifyCallback> callback;
+  {
+    std::lock_guard<std::mutex> guard(verify_callback_mutex());
+    callback = wctx->verify_callback;
+  }
+  if (!callback) { return preverify_ok; }
 
   WOLFSSL_X509 *cert = wolfSSL_X509_STORE_CTX_get_current_cert(x509_ctx);
   int depth = wolfSSL_X509_STORE_CTX_get_error_depth(x509_ctx);
@@ -22059,7 +22092,7 @@ inline int wolfssl_verify_callback(int preverify_ok,
     verify_ctx.error_string = nullptr;
   }
 
-  bool accepted = wctx->verify_callback(verify_ctx);
+  bool accepted = (*callback)(verify_ctx);
   return accepted ? 1 : 0;
 }
 
@@ -22298,8 +22331,10 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   if (!ctx) { return; }
   auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
   wctx->verify_client = require;
-  if (require) {
+  if (require || wctx->verify_callback) {
     impl::disable_server_resumption(wctx);
+  }
+  if (require) {
     wolfSSL_CTX_set_verify(
         wctx->ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
         wctx->verify_callback ? impl::wolfssl_verify_callback : nullptr);
@@ -23033,9 +23068,14 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   if (!ctx) { return false; }
   auto *wctx = static_cast<impl::WolfSSLContext *>(ctx);
 
-  wctx->verify_callback = std::move(callback);
+  auto stored = callback ? std::make_shared<VerifyCallback>(std::move(callback))
+                         : nullptr;
+  {
+    std::lock_guard<std::mutex> guard(impl::verify_callback_mutex());
+    // A handshake running the previous callback keeps it until it returns.
+    wctx->verify_callback.swap(stored);
+  }
 
-  if (wctx->verify_callback) { impl::disable_server_resumption(wctx); }
   // A server that requires a client certificate goes on requiring one.
   set_verify_client(ctx, wctx->verify_client);
   return true;
