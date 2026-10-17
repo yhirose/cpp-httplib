@@ -20485,11 +20485,11 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   delete static_cast<VerifyCallback *>(SSL_CTX_get_ex_data(ssl_ctx, index));
   SSL_CTX_set_ex_data(ssl_ctx, index, stored);
 
-  if (stored) {
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, impl::openssl_verify_callback);
-  } else {
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, nullptr);
-  }
+  // Keeps the other mode bits, so a server that requires a client
+  // certificate goes on requiring one.
+  SSL_CTX_set_verify(ssl_ctx,
+                     SSL_CTX_get_verify_mode(ssl_ctx) | SSL_VERIFY_PEER,
+                     stored ? impl::openssl_verify_callback : nullptr);
   return true;
 }
 
@@ -21875,9 +21875,9 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   // create_session() hands each session its own copy to run.
   mbed_ctx->verify_callback = std::move(callback);
 
-  if (mbed_ctx->verify_callback) {
-    // Set OPTIONAL mode to ensure callback is called even when verification
-    // is disabled (matching OpenSSL behavior where SSL_VERIFY_PEER is set)
+  // OPTIONAL runs the callback even when verification is disabled, as
+  // SSL_VERIFY_PEER does on OpenSSL, unless a client certificate is required.
+  if (mbed_ctx->verify_callback && !mbed_ctx->verify_client) {
     mbedtls_ssl_conf_authmode(&mbed_ctx->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
   }
   return true;
@@ -23035,18 +23035,9 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
 
   wctx->verify_callback = std::move(callback);
 
-  if (wctx->verify_callback) {
-    impl::disable_server_resumption(wctx);
-    wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
-                           impl::wolfssl_verify_callback);
-  } else {
-    wolfSSL_CTX_set_verify(
-        wctx->ctx,
-        wctx->verify_client
-            ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
-            : SSL_VERIFY_NONE,
-        nullptr);
-  }
+  if (wctx->verify_callback) { impl::disable_server_resumption(wctx); }
+  // A server that requires a client certificate goes on requiring one.
+  set_verify_client(ctx, wctx->verify_client);
   return true;
 }
 

@@ -67,8 +67,9 @@ inline std::string u8_to_string(const char8_t *s) {
 namespace httplib {
 namespace tls {
 // Declared here for the split build, where the TLS abstraction declarations
-// live below the split border; the definition is linked from httplib.cc.
+// live below the split border; the definitions are linked from httplib.cc.
 ca_store_t create_ca_store(const char *pem, size_t len);
+bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
 } // namespace tls
 } // namespace httplib
 #endif
@@ -4901,6 +4902,35 @@ TEST(SSLClientServerTest, UpdateCertsPemReplacesClientCA) {
 
   ASSERT_TRUE(replace_client_ca(svr));
   EXPECT_FALSE(get());
+}
+
+TEST(SSLClientServerTest, VerifyCallbackKeepsClientCertificateRequired) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  tls::set_verify_callback(svr.tls_context(), [](const tls::VerifyContext &v) {
+    return v.preverify_ok;
+  });
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  SSLClient without_cert(HOST, PORT);
+  without_cert.enable_server_certificate_verification(false);
+  EXPECT_FALSE(without_cert.Get("/test"));
+
+  SSLClient with_cert(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  with_cert.enable_server_certificate_verification(false);
+  auto res = with_cert.Get("/test");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("ok", res->body);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
