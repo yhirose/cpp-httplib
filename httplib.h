@@ -10888,7 +10888,8 @@ inline bool process_client_socket_ssl(
   return callback(strm);
 }
 
-// `uri` is req's request-target in origin form (RFC 7616 3.4).
+// `uri` is req's request-target in origin form, as curl sends it, also when
+// the request line carries the absolute form for a proxy.
 inline std::pair<std::string, std::string> make_digest_authentication_header(
     const Request &req, const std::string &uri,
     const std::map<std::string, std::string> &auth, size_t cnonce_count,
