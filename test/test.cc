@@ -14604,8 +14604,9 @@ void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
   auto res = cli.Get("/test");
   ASSERT_FALSE(res);
   // The server rejects the client during the handshake, or on TLS 1.3 right
-  // after it, which the client only notices on its first read
-  EXPECT_TRUE(res.error() == Error::SSLConnection || res.error() == Error::Read)
+  // after it, which the client notices on its first write or read
+  EXPECT_TRUE(res.error() == Error::SSLConnection ||
+              res.error() == Error::Write || res.error() == Error::Read)
       << to_string(res.error());
 
   if (res.error() == Error::SSLConnection) {
