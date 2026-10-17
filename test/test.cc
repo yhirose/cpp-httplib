@@ -16196,6 +16196,7 @@ TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
   bool ip_san_matched = false;
   bool ip_matched_via_dns_san = true;
   bool dns_matched_via_ip_san = true;
+  bool cn_matched_next_to_dns_san = true;
 
   SSLClient cli(HOST, port);
   cli.enable_server_certificate_verification(true);
@@ -16211,6 +16212,7 @@ TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
 
     ip_matched_via_dns_san = ctx.check_hostname("97.46.122.122");
     dns_matched_via_ip_san = ctx.check_hostname("b.zz");
+    cn_matched_next_to_dns_san = ctx.check_hostname("san-types");
 
     return true; // Accept for the purpose of this test
   });
@@ -16226,6 +16228,8 @@ TEST(SSLClientServerTest, TlsVerifyHostnameSanType) {
       << "An IP host must not be authenticated via a dNSName SAN";
   EXPECT_FALSE(dns_matched_via_ip_san)
       << "A DNS host must not be authenticated via an iPAddress SAN";
+  EXPECT_FALSE(cn_matched_next_to_dns_san)
+      << "The CN must not be consulted next to a dNSName SAN (RFC 6125)";
 }
 
 // RFC 6125 6.4.3: only the leftmost label of a dNSName may be a wildcard, so

@@ -21463,8 +21463,9 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 
   // Check Subject Alternative Names (SAN). Mbed TLS keeps the GeneralName type
   // in buf.tag and the raw value in buf.p / buf.len.
-  const mbedtls_x509_sequence *san = &mcert->subject_alt_names;
-  while (san != nullptr && san->buf.p != nullptr && san->buf.len > 0) {
+  auto has_dns_san = false;
+  for (auto san = &mcert->subject_alt_names; san; san = san->next) {
+    if (!san->buf.p || san->buf.len == 0) { continue; }
     const unsigned char *p = san->buf.p;
     size_t len = san->buf.len;
     auto san_type = san->buf.tag & MBEDTLS_ASN1_TAG_VALUE_MASK;
@@ -21477,31 +21478,21 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
         return true;
       }
     } else if (san_type == MBEDTLS_X509_SAN_DNS_NAME) {
+      has_dns_san = true;
       std::string san_name(reinterpret_cast<const char *>(p), len);
       if (detail::match_hostname(san_name, host_str)) { return true; }
     }
-    san = san->next;
   }
 
-  // Fallback: Check Common Name (CN) in subject. Skipped for IP-literal hosts:
-  // an IP identity is only valid via an iPAddress SAN, never the CN (RFC 9110;
-  // the OpenSSL backend's X509_check_ip behaves the same way).
-  if (!is_ip) {
-    char cn[256];
-    int ret = mbedtls_x509_dn_gets(cn, sizeof(cn), &mcert->subject);
-    if (ret > 0) {
-      std::string cn_str(cn);
-
-      // Look for "CN=" in the DN string
-      size_t cn_pos = cn_str.find("CN=");
-      if (cn_pos != std::string::npos) {
-        size_t start = cn_pos + 3;
-        size_t end = cn_str.find(',', start);
-        std::string cn_value =
-            cn_str.substr(start, end == std::string::npos ? end : end - start);
-
-        if (detail::match_hostname(cn_value, host_str)) { return true; }
-      }
+  // Fallback: the Common Names (CN) in the subject, as X509_check_host does it:
+  // never for an IP host, which only an iPAddress SAN names, and never next to
+  // a DNS SAN (RFC 6125 6.4.4).
+  if (is_ip || has_dns_san) { return false; }
+  for (auto name = &mcert->subject; name; name = name->next) {
+    if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_CN, &name->oid) == 0) {
+      std::string cn(reinterpret_cast<const char *>(name->val.p),
+                     name->val.len);
+      if (detail::match_hostname(cn, host_str)) { return true; }
     }
   }
 
@@ -22626,6 +22617,7 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   auto is_ip = ip_len > 0;
 
   // Check Subject Alternative Names
+  auto has_dns_san = false;
   auto *san_names = static_cast<WOLF_STACK_OF(WOLFSSL_GENERAL_NAME) *>(
       wolfSSL_X509_get_ext_d2i(x509, NID_subject_alt_name, nullptr, nullptr));
 
@@ -22638,6 +22630,7 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 
       if (!is_ip && names->type == WOLFSSL_GEN_DNS) {
         // DNS name
+        has_dns_san = true;
         unsigned char *dns_name = nullptr;
         int dns_len = wolfSSL_ASN1_STRING_to_UTF8(&dns_name, names->d.dNSName);
         if (dns_name && dns_len > 0) {
@@ -22664,21 +22657,12 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
     wolfSSL_sk_free(san_names);
   }
 
-  // Fallback: Check Common Name (CN) in subject. Skipped for IP-literal hosts:
-  // an IP identity is only valid via an iPAddress SAN, never the CN (RFC 9110;
-  // the OpenSSL backend's X509_check_ip behaves the same way).
-  auto subject = is_ip ? nullptr : wolfSSL_X509_get_subject_name(x509);
-  if (subject) {
-    char cn[256] = {};
-    int cn_len = wolfSSL_X509_NAME_get_text_by_NID(subject, NID_commonName, cn,
-                                                   sizeof(cn));
-    if (cn_len > 0) {
-      std::string cn_str(cn, static_cast<size_t>(cn_len));
-      if (detail::match_hostname(cn_str, host_str)) { return true; }
-    }
-  }
-
-  return false;
+  // Fallback: the Common Name (CN) in the subject, as X509_check_host does it:
+  // never for an IP host, which only an iPAddress SAN names, and never next to
+  // a DNS SAN (RFC 6125 6.4.4).
+  if (is_ip || has_dns_san) { return false; }
+  auto cn = get_cert_subject_cn(cert);
+  return !cn.empty() && detail::match_hostname(cn, host_str);
 }
 
 inline uint64_t hostname_mismatch_code() {
