@@ -4976,6 +4976,65 @@ TEST(SSLClientServerTest, ThrowingVerifyCallbackRejectsTheCertificate) {
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// Sends each request over a new connection with a client certificate,
+// resuming the session of the one before when there is one.
+class ResumingClient {
+public:
+  ResumingClient() : ctx_(SSL_CTX_new(TLS_client_method())) {
+    SSL_CTX_use_certificate_file(ctx_, CLIENT_CERT_FILE, SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(ctx_, CLIENT_PRIVATE_KEY_FILE,
+                                SSL_FILETYPE_PEM);
+  }
+  ~ResumingClient() {
+    SSL_SESSION_free(session_);
+    SSL_CTX_free(ctx_);
+  }
+
+  // Tells whether the request was answered.
+  bool get() {
+    auto error = Error::Success;
+    auto sock = detail::create_client_socket(
+        HOST, "", PORT, AF_UNSPEC, false, false, nullptr,
+        /*connection_timeout_sec=*/5, 0,
+        /*read_timeout_sec=*/5, 0,
+        /*write_timeout_sec=*/5, 0, std::string(), error);
+    if (sock == INVALID_SOCKET) { return false; }
+    auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+    auto ssl = SSL_new(ctx_);
+    auto ssl_se = detail::scope_exit([&] { SSL_free(ssl); });
+    SSL_set_fd(ssl, static_cast<int>(sock));
+    if (session_) { SSL_set_session(ssl, session_); }
+    if (SSL_connect(ssl) != 1) { return false; }
+    reused_ = SSL_session_reused(ssl) == 1;
+
+    // Reading the response also takes in a TLS 1.3 session ticket.
+    std::string req = "GET /test HTTP/1.1\r\nHost: x\r\n"
+                      "Connection: close\r\n\r\n";
+    SSL_write(ssl, req.data(), static_cast<int>(req.size()));
+    std::string res;
+    char buf[256];
+    int n;
+    while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+      res.append(buf, static_cast<size_t>(n));
+    }
+
+    // Without a proper shutdown, OpenSSL marks the session not resumable.
+    SSL_shutdown(ssl);
+    SSL_SESSION_free(session_);
+    session_ = SSL_get1_session(ssl);
+    return res.find("200 OK") != std::string::npos;
+  }
+
+  // Whether the last connection resumed a session
+  bool reused() const { return reused_; }
+
+private:
+  SSL_CTX *ctx_;
+  SSL_SESSION *session_ = nullptr;
+  bool reused_ = false;
+};
+
 // A client that resumes its session gets through, but not once the client CA
 // has changed, as a resumed session does not show the certificate again.
 TEST(SSLClientServerTest, ClientResumesSessionUntilClientCAChanges) {
@@ -4993,60 +5052,39 @@ TEST(SSLClientServerTest, ClientResumesSessionUntilClientCAChanges) {
   });
   svr.wait_until_ready();
 
-  auto ctx = SSL_CTX_new(TLS_client_method());
-  auto ctx_se = detail::scope_exit([&] { SSL_CTX_free(ctx); });
-  ASSERT_EQ(
-      1, SSL_CTX_use_certificate_file(ctx, CLIENT_CERT_FILE, SSL_FILETYPE_PEM));
-  ASSERT_EQ(1, SSL_CTX_use_PrivateKey_file(ctx, CLIENT_PRIVATE_KEY_FILE,
-                                           SSL_FILETYPE_PEM));
-
-  SSL_SESSION *session = nullptr;
-  auto session_se = detail::scope_exit([&] { SSL_SESSION_free(session); });
-
-  // A request over a new connection, resuming `session` when there is one and
-  // keeping the connection's own in its place. Tells whether it was answered.
-  auto reused = false;
-  auto get = [&]() {
-    auto error = Error::Success;
-    auto sock = detail::create_client_socket(
-        HOST, "", PORT, AF_UNSPEC, false, false, nullptr,
-        /*connection_timeout_sec=*/5, 0,
-        /*read_timeout_sec=*/5, 0,
-        /*write_timeout_sec=*/5, 0, std::string(), error);
-    if (sock == INVALID_SOCKET) { return false; }
-    auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
-
-    auto ssl = SSL_new(ctx);
-    auto ssl_se = detail::scope_exit([&] { SSL_free(ssl); });
-    SSL_set_fd(ssl, static_cast<int>(sock));
-    if (session) { SSL_set_session(ssl, session); }
-    if (SSL_connect(ssl) != 1) { return false; }
-    reused = SSL_session_reused(ssl) == 1;
-
-    // Reading the response also takes in a TLS 1.3 session ticket.
-    std::string req = "GET /test HTTP/1.1\r\nHost: x\r\n"
-                      "Connection: close\r\n\r\n";
-    SSL_write(ssl, req.data(), static_cast<int>(req.size()));
-    std::string res;
-    char buf[256];
-    int n;
-    while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
-      res.append(buf, static_cast<size_t>(n));
-    }
-
-    // Without a proper shutdown, OpenSSL marks the session not resumable.
-    SSL_shutdown(ssl);
-    SSL_SESSION_free(session);
-    session = SSL_get1_session(ssl);
-    return res.find("200 OK") != std::string::npos;
-  };
-
-  ASSERT_TRUE(get());
-  ASSERT_TRUE(get());
-  EXPECT_TRUE(reused);
+  ResumingClient cli;
+  ASSERT_TRUE(cli.get());
+  ASSERT_TRUE(cli.get());
+  EXPECT_TRUE(cli.reused());
 
   ASSERT_TRUE(replace_client_ca(svr));
-  EXPECT_FALSE(get());
+  EXPECT_FALSE(cli.get());
+}
+
+// A resumed session does not show the certificate again, so the server does
+// not resume one with a verify callback to run on it.
+TEST(SSLClientServerTest, NoSessionResumptionWithVerifyCallback) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  tls::set_verify_callback(svr.tls_context(), [](const tls::VerifyContext &v) {
+    return v.preverify_ok;
+  });
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  ResumingClient cli;
+  ASSERT_TRUE(cli.get());
+  ASSERT_TRUE(cli.get());
+  EXPECT_FALSE(cli.reused());
 }
 #endif
 

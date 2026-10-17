@@ -20550,6 +20550,16 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
   // A handshake running the previous callback keeps it until it returns.
   delete previous;
 
+  // A resumed handshake shows no certificate to run the callback on.
+  if (stored) {
+    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TICKET);
+    SSL_CTX_set_session_cache_mode(ssl_ctx, SSL_SESS_CACHE_OFF);
+#if !defined(OPENSSL_IS_BORINGSSL) && !defined(LIBRESSL_VERSION_NUMBER)
+    // TLS 1.3 tickets, which SSL_OP_NO_TICKET leaves on
+    SSL_CTX_set_num_tickets(ssl_ctx, 0);
+#endif
+  }
+
   // Keeps the other mode bits, so a server that requires a client
   // certificate goes on requiring one.
   SSL_CTX_set_verify(ssl_ctx,
