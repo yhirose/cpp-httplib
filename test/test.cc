@@ -4957,6 +4957,19 @@ public:
     SSL_CTX_use_certificate_file(ctx_, CLIENT_CERT_FILE, SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(ctx_, CLIENT_PRIVATE_KEY_FILE,
                                 SSL_FILETYPE_PEM);
+
+    // BoringSSL hands out a resumable TLS 1.3 session only through this
+    // callback, not through SSL_get1_session().
+    SSL_CTX_set_app_data(ctx_, this);
+    SSL_CTX_set_session_cache_mode(ctx_, SSL_SESS_CACHE_CLIENT |
+                                             SSL_SESS_CACHE_NO_INTERNAL_STORE);
+    SSL_CTX_sess_set_new_cb(ctx_, [](SSL *ssl, SSL_SESSION *session) {
+      auto self = static_cast<ResumingClient *>(
+          SSL_CTX_get_app_data(SSL_get_SSL_CTX(ssl)));
+      SSL_SESSION_free(self->session_);
+      self->session_ = session;
+      return 1; // Keeps the reference
+    });
   }
   ~ResumingClient() {
     SSL_SESSION_free(session_);
@@ -4994,8 +5007,6 @@ public:
 
     // Without a proper shutdown, OpenSSL marks the session not resumable.
     SSL_shutdown(ssl);
-    SSL_SESSION_free(session_);
-    session_ = SSL_get1_session(ssl);
     return res.find("200 OK") != std::string::npos;
   }
 
