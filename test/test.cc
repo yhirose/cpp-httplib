@@ -23031,6 +23031,28 @@ TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
   }
 }
 
+TEST(InterimResponseTest, OnlySoManyAreSkipped) {
+  const std::string interim = "HTTP/1.1 102 Processing\r\n\r\n";
+  const std::string final_response =
+      "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+  std::string interims;
+  for (auto i = 0; i < CPPHTTPLIB_INTERIM_RESPONSE_MAX_COUNT; i++) {
+    interims += interim;
+  }
+
+  with_single_response(interims + final_response, [](Client &cli) {
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("ok", res->body);
+  });
+
+  with_single_response(interims + interim + final_response, [](Client &cli) {
+    auto res = cli.Get("/");
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::Read, res.error());
+  });
+}
+
 TEST(ExpectContinueTest, EarlyFinalResponseClosesConnection) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);

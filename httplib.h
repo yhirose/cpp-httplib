@@ -130,6 +130,10 @@
 #define CPPHTTPLIB_REDIRECT_MAX_COUNT 20
 #endif
 
+#ifndef CPPHTTPLIB_INTERIM_RESPONSE_MAX_COUNT
+#define CPPHTTPLIB_INTERIM_RESPONSE_MAX_COUNT 100
+#endif
+
 #ifndef CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT
 #define CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT 1024
 #endif
@@ -15438,10 +15442,15 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
   // Skip interim (1xx) responses along with their header fields, except a 100
   // Continue the caller handles itself for Expect: 100-continue. 101 ends
-  // HTTP on the connection, so it is final.
+  // HTTP on the connection, so it is final. A server sending them without end
+  // would hold the client, so there may be only so many.
+  size_t interim_count = 0;
   while (100 <= res.status && res.status < 200 &&
          res.status != StatusCode::SwitchingProtocol_101 &&
          (skip_100_continue || res.status != StatusCode::Continue_100)) {
+    if (++interim_count > CPPHTTPLIB_INTERIM_RESPONSE_MAX_COUNT) {
+      return false;
+    }
     Headers interim_headers;
     if (!detail::read_headers(strm, interim_headers)) { return false; }
     if (!line_reader.getline()) { return false; } // next response line
