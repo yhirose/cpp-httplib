@@ -4079,7 +4079,9 @@ struct MbedTlsContext {
   mbedtls_x509_crt own_cert;
   mbedtls_pk_context own_key;
   bool is_server = false;
+  // Peer certificate required (set_verify_client()); a client defaults to true
   bool verify_client = false;
+  // Set by tls::set_verify_callback().
   VerifyCallback verify_callback;
 
   MbedTlsContext();
@@ -4103,6 +4105,7 @@ namespace impl {
 struct WolfSSLContext {
   WOLFSSL_CTX *ctx = nullptr;
   bool is_server = false;
+  // Peer certificate required (set_verify_client()); a client defaults to true
   bool verify_client = false;
   // Replaced under verify_callback_mutex()
   std::shared_ptr<VerifyCallback> verify_callback;
@@ -10655,6 +10658,10 @@ public:
   // See SocketStream::set_readable_hint().
   void set_readable_hint() { readable_hint_ = true; }
 
+  // The error from the last read() or write() that failed in the TLS layer,
+  // with code Success if none did
+  const tls::TlsError &tls_error() const { return tls_error_; }
+
 private:
   bool ensure_readable();
 
@@ -10667,6 +10674,7 @@ private:
   time_t max_timeout_msec_;
   std::chrono::time_point<std::chrono::steady_clock> start_time_;
   bool readable_hint_ = false;
+  tls::TlsError tls_error_;
 };
 
 // A TLS stream for WebSocket connections, where the receive path and the
@@ -11188,18 +11196,20 @@ inline bool load_client_ca_config(tls::ctx_t ctx,
   return ret;
 }
 
+// Serializes the CA certificates installed in ctx as PEM, so they can be
+// loaded into another context.
 inline std::string ca_certs_to_pem(tls::ctx_t ctx) {
+  std::string pem;
   std::vector<tls::cert_t> certs;
   tls::get_ca_certs(ctx, certs);
-
-  std::string pem;
   for (auto cert : certs) {
     std::vector<unsigned char> der;
     if (tls::get_cert_der(cert, der)) {
       auto b64 = base64_encode(std::string(der.begin(), der.end()));
       pem += "-----BEGIN CERTIFICATE-----\n";
       for (size_t i = 0; i < b64.size(); i += 64) {
-        pem += b64.substr(i, 64) + "\n";
+        pem += b64.substr(i, 64);
+        pem += '\n';
       }
       pem += "-----END CERTIFICATE-----\n";
     }
@@ -13078,6 +13088,7 @@ inline SSLSocketStream::SSLSocketStream(
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
       max_timeout_msec_(max_timeout_msec), start_time_(start_time) {
+  tls_error_.code = tls::ErrorCode::Success;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   // Clear AUTO_RETRY for proper non-blocking I/O timeout handling
   // Note: create_session() also clears this, but SSLClient currently
@@ -13130,6 +13141,8 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
     auto ret = tls::read(session_, ptr, size, err);
     if (ret == 0 || err.code == tls::ErrorCode::PeerClosed) {
       error_ = Error::ConnectionClosed;
+    } else if (ret < 0) {
+      tls_error_ = err;
     }
     return ret;
   } else if (ensure_readable()) {
@@ -13145,7 +13158,9 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
       while (--n >= 0 && err.code == tls::ErrorCode::WantRead) {
 #endif
         if (tls::pending(session_) > 0) {
-          return tls::read(session_, ptr, size, err);
+          ret = tls::read(session_, ptr, size, err);
+          if (ret >= 0) { return ret; }
+          break;
         } else if (wait_readable()) {
           std::this_thread::sleep_for(std::chrono::microseconds{10});
           ret = tls::read(session_, ptr, size, err);
@@ -13155,6 +13170,7 @@ inline ssize_t SSLSocketStream::read(char *ptr, size_t size) {
         }
       }
       assert(ret < 0);
+      tls_error_ = err;
     } else if (ret == 0 || err.code == tls::ErrorCode::PeerClosed) {
       error_ = Error::ConnectionClosed;
     }
@@ -13190,6 +13206,7 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
         }
       }
       assert(ret < 0);
+      tls_error_ = err;
     }
     return ret;
   }
@@ -15478,6 +15495,15 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
 }
 
 inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Don't let an earlier attempt's TLS error show up in this one's Result. A
+  // client that failed to set up its TLS context keeps reporting why.
+  if (is_valid()) {
+    last_ssl_error_ = 0;
+    last_backend_error_ = 0;
+  }
+#endif
+
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
 
@@ -15576,6 +15602,10 @@ inline Result ClientImpl::send(const Request &req) {
 inline Result ClientImpl::send_(Request &&req) {
   auto res = detail::make_unique<Response>();
   auto error = Error::Success;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Hold the request lock until the Result has read this request's TLS error
+  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+#endif
   auto ret = send(req, *res, error);
 #ifdef CPPHTTPLIB_SSL_ENABLED
   return Result{ret ? std::move(res) : nullptr, error, std::move(req.headers),
@@ -16198,7 +16228,11 @@ inline bool ClientImpl::create_redirect_client(
       // A store given to set_ca_cert_store() lives only in this client's
       // context, which then holds all that is trusted.
       if (self.ca_cert_store_set_) {
-        auto pem = detail::ca_certs_to_pem(self.ctx_);
+        std::string pem;
+        {
+          std::lock_guard<std::mutex> guard(self.ctx_mutex_);
+          pem = detail::ca_certs_to_pem(self.ctx_);
+        }
         redirect_client.load_ca_cert_store(pem.data(), pem.size());
         redirect_client.ca_cert_store_set_ = true;
       } else {
@@ -16652,6 +16686,10 @@ inline Result ClientImpl::send_with_content_provider_and_receiver(
 
   auto error = Error::Success;
 
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // Hold the request lock until the Result has read this request's TLS error
+  std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+#endif
   auto res = send_with_content_provider_and_receiver(
       req, body, content_length, std::move(content_provider),
       std::move(content_provider_without_length), content_type,
@@ -18854,7 +18892,18 @@ inline bool SSLClient::process_socket(
   return detail::process_client_socket_ssl(
       socket.ssl, socket.sock, read_timeout_sec_, read_timeout_usec_,
       write_timeout_sec_, write_timeout_usec_, max_timeout_msec_, start_time,
-      std::move(callback));
+      [&](detail::SSLSocketStream &strm) {
+        auto ret = callback(strm);
+        // A request that failed after the handshake reports Error::Read or
+        // Error::Write; keep the TLS error behind it, such as a fatal alert
+        // from the server, for Result::ssl_error() and ssl_backend_error()
+        const auto &tls_error = strm.tls_error();
+        if (!ret && tls_error.code != tls::ErrorCode::Success) {
+          last_ssl_error_ = static_cast<int>(tls_error.code);
+          last_backend_error_ = tls_error.backend_code;
+        }
+        return ret;
+      });
 }
 
 inline bool SSLClient::is_ssl() const { return true; }
@@ -19643,6 +19692,17 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   return run_verify_callback(*callback, verify_ctx) ? 1 : 0;
 }
 
+// Sets the verify mode from whether the peer's certificate is required and
+// whether a verify callback is set.
+inline void apply_verify_mode(SSL_CTX *ssl_ctx, bool require) {
+  auto has_callback =
+      SSL_CTX_get_ex_data(ssl_ctx, verify_callback_index()) != nullptr;
+  auto mode = require ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
+                      : (has_callback ? SSL_VERIFY_PEER : SSL_VERIFY_NONE);
+  SSL_CTX_set_verify(ssl_ctx, mode,
+                     has_callback ? openssl_verify_callback : nullptr);
+}
+
 // X509_STORE_get0_objects is deprecated since OpenSSL 4.0 because it is not
 // thread-safe; X509_STORE_get1_objects (OpenSSL 3.3+) returns a snapshot
 // that must be released with release_store_objects
@@ -19877,11 +19937,7 @@ inline ctx_t create_server_context() {
 
 inline void set_verify_client(ctx_t ctx, bool require) {
   if (!ctx) return;
-  SSL_CTX_set_verify(static_cast<SSL_CTX *>(ctx),
-                     require
-                         ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
-                         : SSL_VERIFY_NONE,
-                     nullptr);
+  impl::apply_verify_mode(static_cast<SSL_CTX *>(ctx), require);
 }
 
 inline session_t create_session(ctx_t ctx, socket_t sock) {
@@ -20546,7 +20602,10 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
     std::lock_guard<std::mutex> guard(impl::verify_callback_mutex());
     previous = static_cast<std::shared_ptr<VerifyCallback> *>(
         SSL_CTX_get_ex_data(ssl_ctx, index));
-    SSL_CTX_set_ex_data(ssl_ctx, index, stored);
+    if (SSL_CTX_set_ex_data(ssl_ctx, index, stored) != 1) {
+      delete stored;
+      return false;
+    }
   }
   // A handshake running the previous callback keeps it until it returns.
   delete previous;
@@ -20561,11 +20620,10 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
 #endif
   }
 
-  // Keeps the other mode bits, so a server that requires a client
-  // certificate goes on requiring one.
-  SSL_CTX_set_verify(ssl_ctx,
-                     SSL_CTX_get_verify_mode(ssl_ctx) | SSL_VERIFY_PEER,
-                     stored ? impl::openssl_verify_callback : nullptr);
+  // Keep requiring the peer's certificate if set_verify_client() asked for it
+  auto require =
+      (SSL_CTX_get_verify_mode(ssl_ctx) & SSL_VERIFY_FAIL_IF_NO_PEER_CERT) != 0;
+  impl::apply_verify_mode(ssl_ctx, require);
   return true;
 }
 
@@ -20793,31 +20851,20 @@ inline void mbedtls_clear_cn_mismatch(uint32_t *flags) {
   *flags &= ~static_cast<uint32_t>(hostname_mismatch_code());
 }
 
-// Verify callback used when hostname verification is disabled for a session
-// that has no user-supplied verify callback of its own.
-inline int mbedtls_mask_hostname_mismatch_callback(void *data,
-                                                   mbedtls_x509_crt *, int,
-                                                   uint32_t *flags) {
-  (void)data;
-  mbedtls_clear_cn_mismatch(flags);
-  return 0;
-}
-
-inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
-                                   int cert_depth, uint32_t *flags);
-
 // MbedTLS verify callback wrapper
 inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
                                    int cert_depth, uint32_t *flags) {
   // data points to the MbedTlsSession
   auto *session = static_cast<MbedTlsSession *>(data);
 
-  // set_sni() disabled hostname verification for this session: drop the
-  // CN/SAN mismatch flag so it doesn't fail the chain check below, mirroring
-  // the OpenSSL/wolfSSL backends where identity checking is independent of
-  // SNI. The final pass/fail decision still comes from the remaining flags
-  // (or, below, from the user's own verify callback).
+  // set_sni() disabled hostname verification for this session: ignore the
+  // CN/SAN mismatch flag, as the OpenSSL/wolfSSL backends do. The final
+  // pass/fail decision still comes from the remaining flags (or, below, from
+  // the user's own verify callback).
   if (session->suppress_hostname_mismatch) { mbedtls_clear_cn_mismatch(flags); }
+
+  const auto &callback = session->verify_callback;
+  if (!callback) { return 0; } // Continue with default verification
 
   // Build context
   VerifyContext verify_ctx;
@@ -20836,13 +20883,26 @@ inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
     verify_ctx.error_string = nullptr;
   }
 
-  bool accepted = run_verify_callback(session->verify_callback, verify_ctx);
+  bool accepted = run_verify_callback(callback, verify_ctx);
 
   if (accepted) {
     *flags = 0; // Clear all error flags
     return 0;
   }
   return MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
+}
+
+// Sets the authentication mode from whether the peer's certificate is required
+// and whether a verify callback is set. OPTIONAL lets the callback run even if
+// verification is not required (matching OpenSSL's SSL_VERIFY_PEER).
+inline void apply_verify_mode(MbedTlsContext &mctx) {
+  auto mode = MBEDTLS_SSL_VERIFY_NONE;
+  if (mctx.verify_client) {
+    mode = MBEDTLS_SSL_VERIFY_REQUIRED;
+  } else if (mctx.verify_callback) {
+    mode = MBEDTLS_SSL_VERIFY_OPTIONAL;
+  }
+  mbedtls_ssl_conf_authmode(&mctx.conf, mode);
 }
 
 } // namespace impl
@@ -20889,7 +20949,8 @@ inline ctx_t create_client_context() {
 #endif
 
   // Default: verify peer certificate
-  mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+  ctx->verify_client = true;
+  impl::apply_verify_mode(*ctx);
 
   // Set minimum TLS version to 1.2
 #ifdef CPPHTTPLIB_MBEDTLS_V3
@@ -20944,7 +21005,7 @@ inline ctx_t create_server_context() {
 #endif
 
   // Default: don't verify client
-  mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
+  impl::apply_verify_mode(*ctx);
 
   // Set minimum TLS version to 1.2
 #ifdef CPPHTTPLIB_MBEDTLS_V3
@@ -21193,15 +21254,7 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   if (!ctx) { return; }
   auto mctx = static_cast<impl::MbedTlsContext *>(ctx);
   mctx->verify_client = require;
-  if (require) {
-    mbedtls_ssl_conf_authmode(&mctx->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-  } else {
-    // If a verify callback is set, use OPTIONAL mode to ensure the callback
-    // is called (matching OpenSSL behavior). Otherwise use NONE.
-    mbedtls_ssl_conf_authmode(&mctx->conf, mctx->verify_callback
-                                               ? MBEDTLS_SSL_VERIFY_OPTIONAL
-                                               : MBEDTLS_SSL_VERIFY_NONE);
-  }
+  impl::apply_verify_mode(*mctx);
 }
 
 inline session_t create_session(ctx_t ctx, socket_t sock) {
@@ -21232,13 +21285,11 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   mbedtls_ssl_set_bio(&session->ssl, &session->sock, impl::mbedtls_net_send_cb,
                       impl::mbedtls_net_recv_cb, nullptr);
 
-  // Set per-session verify callback with session pointer if callback is
-  // registered
+  // Installed always, as it also masks the hostname mismatch that set_sni()
+  // may ask for. The session runs its own copy of the user's callback, which
+  // set_verify_callback() cannot replace under a handshake.
   session->verify_callback = mctx->verify_callback;
-  if (session->verify_callback) {
-    mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback,
-                           session);
-  }
+  mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback, session);
 
   return static_cast<session_t>(session);
 }
@@ -21264,18 +21315,7 @@ inline bool set_sni(session_t session, const char *hostname,
 
   msession->hostname = hostname;
 
-  if (!verify_hostname) {
-    msession->suppress_hostname_mismatch = true;
-    // If a user verify callback is already wired for this session,
-    // mbedtls_verify_callback() masks the mismatch flag itself before
-    // consulting it (see suppress_hostname_mismatch above) - reinstalling it
-    // here would be redundant. Otherwise install the masking callback alone.
-    if (!msession->verify_callback) {
-      mbedtls_ssl_set_verify(&msession->ssl,
-                             impl::mbedtls_mask_hostname_mismatch_callback,
-                             msession);
-    }
-  }
+  if (!verify_hostname) { msession->suppress_hostname_mismatch = true; }
 
   return true;
 }
@@ -21950,12 +21990,7 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
 
   // create_session() hands each session its own copy to run.
   mbed_ctx->verify_callback = std::move(callback);
-
-  // OPTIONAL runs the callback even when verification is disabled, as
-  // SSL_VERIFY_PEER does on OpenSSL, unless a client certificate is required.
-  if (mbed_ctx->verify_callback && !mbed_ctx->verify_client) {
-    mbedtls_ssl_conf_authmode(&mbed_ctx->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-  }
+  impl::apply_verify_mode(*mbed_ctx);
   return true;
 }
 
@@ -22146,6 +22181,18 @@ inline int wolfssl_verify_callback(int preverify_ok,
   return accepted ? 1 : 0;
 }
 
+// Sets the verify mode from whether the peer's certificate is required and
+// whether a verify callback is set.
+inline void apply_verify_mode(WolfSSLContext &wctx) {
+  auto has_callback = static_cast<bool>(wctx.verify_callback);
+  if (wctx.verify_client || has_callback) { disable_server_resumption(&wctx); }
+  auto mode = wctx.verify_client
+                  ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT)
+                  : (has_callback ? SSL_VERIFY_PEER : SSL_VERIFY_NONE);
+  wolfSSL_CTX_set_verify(wctx.ctx, mode,
+                         has_callback ? wolfssl_verify_callback : nullptr);
+}
+
 inline void set_wolfssl_password_cb(WOLFSSL_CTX *ctx, const char *password) {
   wolfSSL_CTX_set_default_passwd_cb_userdata(ctx, const_cast<char *>(password));
   wolfSSL_CTX_set_default_passwd_cb(
@@ -22182,7 +22229,8 @@ inline ctx_t create_client_context() {
   }
 
   // Default: verify peer certificate
-  wolfSSL_CTX_set_verify(ctx->ctx, SSL_VERIFY_PEER, nullptr);
+  ctx->verify_client = true;
+  impl::apply_verify_mode(*ctx);
 
   return static_cast<ctx_t>(ctx);
 }
@@ -22208,7 +22256,7 @@ inline ctx_t create_server_context() {
   }
 
   // Default: don't verify client
-  wolfSSL_CTX_set_verify(ctx->ctx, SSL_VERIFY_NONE, nullptr);
+  impl::apply_verify_mode(*ctx);
 
   // Enable SNI on server
   wolfSSL_CTX_SNI_SetOptions(ctx->ctx, WOLFSSL_SNI_HOST_NAME,
@@ -22381,21 +22429,7 @@ inline void set_verify_client(ctx_t ctx, bool require) {
   if (!ctx) { return; }
   auto wctx = static_cast<impl::WolfSSLContext *>(ctx);
   wctx->verify_client = require;
-  if (require || wctx->verify_callback) {
-    impl::disable_server_resumption(wctx);
-  }
-  if (require) {
-    wolfSSL_CTX_set_verify(
-        wctx->ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-        wctx->verify_callback ? impl::wolfssl_verify_callback : nullptr);
-  } else {
-    if (wctx->verify_callback) {
-      wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_PEER,
-                             impl::wolfssl_verify_callback);
-    } else {
-      wolfSSL_CTX_set_verify(wctx->ctx, SSL_VERIFY_NONE, nullptr);
-    }
-  }
+  impl::apply_verify_mode(*wctx);
 }
 
 inline session_t create_session(ctx_t ctx, socket_t sock) {
@@ -23125,9 +23159,7 @@ inline bool set_verify_callback(ctx_t ctx, VerifyCallback callback) {
     // A handshake running the previous callback keeps it until it returns.
     wctx->verify_callback.swap(stored);
   }
-
-  // A server that requires a client certificate goes on requiring one.
-  set_verify_client(ctx, wctx->verify_client);
+  impl::apply_verify_mode(*wctx);
   return true;
 }
 

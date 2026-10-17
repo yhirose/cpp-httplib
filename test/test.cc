@@ -16056,17 +16056,19 @@ TEST(SSLClientTest, SetInterfaceWithINET6) {
 }
 #endif
 
-// ClientCertPresent uses get_peer_cert() - works with all TLS backends
+// Client certificate tests - work with all TLS backends
 #ifdef CPPHTTPLIB_SSL_ENABLED
+using ClientCertServerSetup = std::function<void(SSLServer &)>;
+
 void ClientCertPresent(
     const std::string &client_cert_file,
     const std::string &client_private_key_file,
-    const std::string &client_encrypted_private_key_pass = std::string()) {
-  using namespace httplib::tls;
-
+    const std::string &client_encrypted_private_key_pass = std::string(),
+    const ClientCertServerSetup &setup = nullptr) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
                 CLIENT_CA_CERT_DIR);
   ASSERT_TRUE(svr.is_valid());
+  if (setup) { setup(svr); }
 
   svr.Get("/test", [&](const Request &req, Response &res) {
     res.set_content("test", "text/plain");
@@ -16078,7 +16080,9 @@ void ClientCertPresent(
     EXPECT_EQ("Common Name", common_name);
   });
 
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&]() { svr.listen_after_bind(); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     t.join();
@@ -16087,7 +16091,7 @@ void ClientCertPresent(
 
   svr.wait_until_ready();
 
-  SSLClient cli(HOST, PORT, client_cert_file, client_private_key_file,
+  SSLClient cli(HOST, port, client_cert_file, client_private_key_file,
                 client_encrypted_private_key_pass);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
@@ -16105,6 +16109,104 @@ TEST(SSLClientServerTest, ClientEncryptedCertPresent) {
   ClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
                     CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
                     CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
+}
+
+void ClientCertMissing(const ClientCertServerSetup &setup = nullptr) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
+                CLIENT_CA_CERT_DIR);
+  ASSERT_TRUE(svr.is_valid());
+  if (setup) { setup(svr); }
+
+  svr.Get("/test", [](const Request &, Response &) { FAIL(); });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.set_connection_timeout(30);
+  // Skip the server certificate check, so that the request fails because the
+  // client certificate is missing rather than because cert.pem is not trusted
+  cli.enable_server_certificate_verification(false);
+
+  auto res = cli.Get("/test");
+  ASSERT_FALSE(res);
+  // The server rejects the client during the handshake, or on TLS 1.3 right
+  // after it, which the client notices on its first write or read
+  EXPECT_TRUE(res.error() == Error::SSLConnection ||
+              res.error() == Error::Write || res.error() == Error::Read)
+      << to_string(res.error());
+
+  if (res.error() == Error::SSLConnection) {
+    EXPECT_NE(0UL, res.ssl_backend_error());
+  }
+  // A rejection noticed on the write keeps the TLS error the write hit
+  if (res.error() == Error::Write) { EXPECT_NE(0, res.ssl_error()); }
+}
+
+TEST(SSLClientServerTest, ClientCertMissing) { ClientCertMissing(); }
+
+// A server that requires client certificates must keep requiring them after a
+// verify callback is set on its context, or set and then cleared again.
+void ClientCertStillRequired(bool clear_callback) {
+  auto setup = [clear_callback](SSLServer &svr) {
+    ASSERT_TRUE(tls::set_verify_callback(
+        svr.tls_context(), [](const tls::VerifyContext &) { return true; }));
+    if (clear_callback) {
+      ASSERT_TRUE(tls::set_verify_callback(svr.tls_context(), nullptr));
+    }
+  };
+  ClientCertMissing(setup);
+  ClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE, std::string(),
+                    setup);
+}
+
+TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackSet) {
+  ClientCertStillRequired(false);
+}
+
+TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
+  ClientCertStillRequired(true);
+}
+
+// A TLS error from one request must not show up in a later request's Result
+TEST(SSLClientServerTest, SSLErrorNotCarriedToLaterRequest) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.set_connection_timeout(30);
+  cli.enable_server_hostname_verification(false);
+
+  // cert.pem is not trusted, so the handshake fails
+  ASSERT_FALSE(cli.Get("/test"));
+
+  cli.enable_server_certificate_verification(false);
+  auto res = cli.Get("/test");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(0, res.ssl_error());
+  EXPECT_EQ(0UL, res.ssl_backend_error());
 }
 
 // PEM memory-based constructor tests (works with all TLS backends)
@@ -16173,41 +16275,6 @@ TEST(SSLClientServerTest, PemMemoryClientEncryptedCertPresent) {
   PemMemoryClientCertPresent(CLIENT_ENCRYPTED_CERT_FILE,
                              CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
                              CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
-}
-
-TEST(SSLClientServerTest, ClientCertMissing) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE, CLIENT_CA_CERT_FILE,
-                CLIENT_CA_CERT_DIR);
-  ASSERT_TRUE(svr.is_valid());
-
-  svr.Get("/test", [&](const Request &, Response &) { ASSERT_TRUE(false); });
-
-  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-
-  svr.wait_until_ready();
-
-  SSLClient cli(HOST, PORT);
-  cli.set_connection_timeout(30);
-  // cert.pem does not match HOST. Skip the hostname check, which runs before
-  // the chain check on Windows, so the result does not depend on the order.
-  cli.enable_server_hostname_verification(false);
-
-  auto res = cli.Get("/test");
-  ASSERT_TRUE(!res);
-  // When client cert is missing and server requires it, connection fails
-  // Error type depends on backend implementation
-  EXPECT_TRUE(res.error() == Error::SSLServerVerification ||
-              res.error() == Error::SSLConnection);
-
-  // Verify backend error is captured
-  // Note: This test may have different error codes depending on the exact
-  // verification failure
-  EXPECT_NE(0UL, res.ssl_backend_error());
 }
 
 TEST(SSLClientServerTest, TrustDirOptional) {
@@ -17104,6 +17171,88 @@ TEST(VerifyCallbackTest, SessionMatchesSessionVerifier) {
   EXPECT_EQ(session_verifier_session, verifier_session);
 }
 
+// Each client's verifier is stored with its own TLS context, so configuring a
+// second client on the same thread must not replace the first one's.
+TEST(VerifyCallbackTest, PerClientVerifiersOnSameThread) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  std::atomic<int> count1{0};
+  std::atomic<int> count2{0};
+
+  SSLClient cli1(HOST, PORT);
+  cli1.enable_server_certificate_verification(false);
+  cli1.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    count1++;
+    return true;
+  });
+
+  SSLClient cli2(HOST, PORT);
+  cli2.enable_server_certificate_verification(false);
+  cli2.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    count2++;
+    return true;
+  });
+
+  auto res1 = cli1.Get("/test");
+  ASSERT_TRUE(res1) << "Error: " << to_string(res1.error());
+  EXPECT_GT(count1.load(), 0);
+  EXPECT_EQ(0, count2.load());
+
+  count1 = 0;
+  auto res2 = cli2.Get("/test");
+  ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
+  EXPECT_EQ(0, count1.load());
+  EXPECT_GT(count2.load(), 0);
+}
+
+// A verifier set on one thread must still run when the request is made from
+// another thread.
+TEST(VerifyCallbackTest, VerifierRunsOnAnotherThread) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+
+  svr.wait_until_ready();
+
+  std::atomic<int> count{0};
+
+  SSLClient cli(HOST, PORT);
+  cli.enable_server_certificate_verification(false);
+  cli.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    count++;
+    return true;
+  });
+
+  Result res;
+  thread worker([&]() { res = cli.Get("/test"); });
+  worker.join();
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_GT(count.load(), 0);
+}
+
 TEST(TlsVerifyErrorTest, GetVerifyErrorString) {
   using httplib::tls::TlsError;
 
@@ -17709,6 +17858,158 @@ TEST(SSLClientRedirectTest, CaCertStoreReplacesEarlierPem) {
   EXPECT_EQ(Error::SSLServerVerification, res.error());
 }
 #endif
+
+// A store set via set_ca_cert_store() must be carried over to the client that
+// follows a cross-host redirect, rather than replaced by the system CAs.
+TEST(SSLClientRedirectTest, SetCaCertStore) {
+  auto ssl_port = PORT + 1;
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.set_ca_cert_store(tls::create_ca_store(cert.c_str(), cert.size()));
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  auto res = cli.Get("/index");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  ASSERT_EQ(StatusCode::OK_200, res->status);
+}
+
+// The session verifier must also run for the host a redirect leads to.
+TEST(SSLClientRedirectTest, SessionVerifier) {
+  auto ssl_port = PORT + 1;
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  // Accept the first host only.
+  std::atomic<int> sessions{0};
+  cli.set_session_verifier([&](tls::session_t) -> SSLVerifierResponse {
+    return sessions++ == 0 ? SSLVerifierResponse::CertificateAccepted
+                           : SSLVerifierResponse::CertificateRejected;
+  });
+
+  auto res = cli.Get("/index");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+  EXPECT_EQ(2, sessions.load());
+}
+
+// So must the verifier given to set_server_certificate_verifier().
+TEST(SSLClientRedirectTest, ServerCertificateVerifier) {
+  auto ssl_port = PORT + 1;
+  std::atomic<bool> redirected{false};
+
+  SSLServer ssl_svr1(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr1.is_valid());
+  ssl_svr1.Get("/index", [&](const Request &, Response &res) {
+    redirected = true;
+    res.set_redirect("https://127.0.0.1:" + std::to_string(ssl_port) +
+                     "/index");
+  });
+
+  SSLServer ssl_svr2(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr2.is_valid());
+  ssl_svr2.Get("/index", [&](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+
+  thread t = thread([&]() { ASSERT_TRUE(ssl_svr1.listen("127.0.0.1", PORT)); });
+  thread t2 =
+      thread([&]() { ASSERT_TRUE(ssl_svr2.listen("127.0.0.1", ssl_port)); });
+  auto se = detail::scope_exit([&] {
+    ssl_svr2.stop();
+    ssl_svr1.stop();
+    t2.join();
+    t.join();
+    ASSERT_FALSE(ssl_svr1.is_running());
+  });
+
+  ssl_svr1.wait_until_ready();
+  ssl_svr2.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", PORT);
+  std::string cert;
+  read_file(SERVER_CERT2_FILE, cert);
+  cli.load_ca_cert_store(cert.c_str(), cert.size());
+  cli.enable_server_certificate_verification(true);
+  cli.set_follow_location(true);
+  cli.set_connection_timeout(30);
+
+  // Accept the host that redirects only; the verifier runs once per
+  // certificate in the chain, so count the calls made after the redirect.
+  std::atomic<int> calls_after_redirect{0};
+  cli.set_server_certificate_verifier([&](const tls::VerifyContext &) {
+    if (!redirected) { return true; }
+    calls_after_redirect++;
+    return false;
+  });
+
+  auto res = cli.Get("/index");
+  ASSERT_FALSE(res);
+  EXPECT_LT(0, calls_after_redirect.load());
+}
 #endif
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
