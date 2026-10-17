@@ -6692,7 +6692,7 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 // comes, as a negative timeout waits forever in select_impl().
 inline std::chrono::steady_clock::time_point deadline_after(time_t sec,
                                                             time_t usec) {
-  if (sec < 0) { return std::chrono::steady_clock::time_point::max(); }
+  if (sec < 0) { return (std::chrono::steady_clock::time_point::max)(); }
   return std::chrono::steady_clock::now() + std::chrono::seconds(sec) +
          std::chrono::microseconds(usec);
 }
@@ -6701,7 +6701,7 @@ inline std::chrono::steady_clock::time_point deadline_after(time_t sec,
 // TLS handshake come out of a single timeout.
 inline ssize_t select_until(socket_t sock, short events,
                             std::chrono::steady_clock::time_point deadline) {
-  if (deadline == std::chrono::steady_clock::time_point::max()) {
+  if (deadline == (std::chrono::steady_clock::time_point::max)()) {
     return select_impl(sock, events, -1, 0);
   }
   auto left = std::chrono::duration_cast<std::chrono::microseconds>(
