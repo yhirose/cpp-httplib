@@ -12091,8 +12091,9 @@ inline bool is_partial_content(const Request &req, const Response &res) {
 }
 
 // Sets the Content-Length or Transfer-Encoding framing the body that
-// Server::write_response_core() writes. Only the library sets them: one from a
-// handler would go out next to it, or describe some other body.
+// Server::write_response_core() writes, or closes the connection after a body
+// that has neither. Only the library sets them: one from a handler would go
+// out next to it, or describe some other body.
 inline void set_framing_headers(const Request &req, Response &res,
                                 const std::string &boundary,
                                 const std::string &content_type) {
@@ -12109,6 +12110,12 @@ inline void set_framing_headers(const Request &req, Response &res,
     if (res.content_length_ == 0) {
       if (res.is_chunked_content_provider_) {
         res.set_header("Transfer-Encoding", "chunked");
+      } else if (req.method != "HEAD") {
+        // RFC 9112 6.3: a body with neither ends where the connection does.
+        res.headers.erase("Keep-Alive");
+        if (!has_header_token(res.headers, "Connection", "close")) {
+          res.set_header("Connection", "close");
+        }
       }
       return;
     }

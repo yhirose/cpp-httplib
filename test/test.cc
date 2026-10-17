@@ -5756,6 +5756,43 @@ TEST(ResponseFramingTest, PostRoutingHandlerChangesAreFramed) {
   EXPECT_FALSE(res->has_header("Transfer-Encoding"));
 }
 
+TEST(ResponseFramingTest, BodyWithoutLengthEndsWithTheConnection) {
+  Server svr;
+
+  svr.Get("/", [](const Request & /*req*/, Response &res) {
+    res.set_header("Content-Length", "3");
+    res.set_content_provider("text/plain", [](size_t, DataSink &sink) {
+      sink.write("abc", 3);
+      sink.done();
+      return true;
+    });
+  });
+
+  thread t = thread([&] { svr.listen(HOST, PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli(HOST, PORT);
+  cli.set_keep_alive(true);
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("abc", res->body);
+  EXPECT_FALSE(res->has_header("Content-Length"));
+  EXPECT_EQ("close", res->get_header_value("Connection"));
+  EXPECT_FALSE(res->has_header("Keep-Alive"));
+
+  // No body to delimit
+  auto head = cli.Head("/");
+  ASSERT_TRUE(head) << "Error: " << to_string(head.error());
+  EXPECT_FALSE(head->has_header("Connection"));
+}
+
 TEST(RoutingHandlerTest, PreAndPostRoutingHandlers) {
 #ifdef CPPHTTPLIB_SSL_ENABLED
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
