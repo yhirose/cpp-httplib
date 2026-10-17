@@ -352,7 +352,6 @@ using socklen_t = int;
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
-#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -3990,6 +3989,8 @@ struct ChunkedDecoder {
   bool parse_trailers_into(Headers &dest, const Headers &src_headers);
 };
 
+// A regular file opened to be served: mapped on Windows, read with pread()
+// elsewhere.
 class mmap {
 public:
   mmap(const char *path);
@@ -4000,22 +4001,20 @@ public:
 
   bool is_open() const;
   size_t size() const;
-  const char *data() const;
   // Copies up to len bytes from offset into buf and returns how many: fewer,
-  // down to 0, if the file has shrunk since it was opened, where reading
-  // data() would raise SIGBUS.
+  // down to 0, if the file has shrunk since it was opened.
   size_t read(size_t offset, char *buf, size_t len) const;
 
 private:
 #if defined(_WIN32)
   HANDLE hFile_ = NULL;
   HANDLE hMapping_ = NULL;
+  void *addr_ = nullptr;
+  bool is_open_empty_file = false;
 #else
   int fd_ = -1;
 #endif
   size_t size_ = 0;
-  void *addr_ = nullptr;
-  bool is_open_empty_file = false;
 };
 
 // NOTE: https://www.rfc-editor.org/rfc/rfc9110#section-5
@@ -6518,46 +6517,33 @@ inline bool mmap::open(const char *path) {
     return false;
   }
 #else
-  fd_ = ::open(path, O_RDONLY);
+  // O_NONBLOCK so that opening a FIFO does not wait for a writer.
+  fd_ = ::open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
   if (fd_ == -1) { return false; }
 
+  // Only a regular file has a size to serve, unlike a directory or a device.
   struct stat sb;
-  if (fstat(fd_, &sb) == -1) {
+  if (fstat(fd_, &sb) == -1 || !S_ISREG(sb.st_mode) ||
+      static_cast<uint64_t>(sb.st_size) >
+          (std::numeric_limits<size_t>::max)()) {
     close();
     return false;
   }
   size_ = static_cast<size_t>(sb.st_size);
-
-  addr_ = ::mmap(NULL, size_, PROT_READ, MAP_PRIVATE, fd_, 0);
-
-  // Special treatment for an empty file...
-  if (addr_ == MAP_FAILED && size_ == 0) {
-    close();
-    is_open_empty_file = true;
-    return false;
-  }
-
-  if (addr_ == MAP_FAILED) {
-    // Clear the sentinel before `close()`, since `is_open()` only checks
-    // `addr_` against nullptr and `munmap()` must not be called with it.
-    addr_ = nullptr;
-    close();
-    return false;
-  }
 #endif
 
   return true;
 }
 
 inline bool mmap::is_open() const {
+#if defined(_WIN32)
   return is_open_empty_file ? true : addr_ != nullptr;
+#else
+  return fd_ != -1;
+#endif
 }
 
 inline size_t mmap::size() const { return size_; }
-
-inline const char *mmap::data() const {
-  return is_open_empty_file ? "" : static_cast<const char *>(addr_);
-}
 
 inline void mmap::close() {
 #if defined(_WIN32)
@@ -6578,11 +6564,6 @@ inline void mmap::close() {
 
   is_open_empty_file = false;
 #else
-  if (addr_ != nullptr) {
-    munmap(addr_, size_);
-    addr_ = nullptr;
-  }
-
   if (fd_ != -1) {
     ::close(fd_);
     fd_ = -1;

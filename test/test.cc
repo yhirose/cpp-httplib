@@ -12195,24 +12195,60 @@ TEST(MmapTest, OpenWhileFileHeldForWriting) {
   detail::mmap m(path);
   ASSERT_TRUE(m.is_open());
   EXPECT_EQ(strlen(content), m.size());
-  EXPECT_EQ(0, std::memcmp(content, m.data(), strlen(content)));
+  char buf[8];
+  ASSERT_EQ(strlen(content), m.read(0, buf, sizeof(buf)));
+  EXPECT_EQ(0, std::memcmp(content, buf, strlen(content)));
 }
 #endif
 
 #ifndef _WIN32
-// A failed ::mmap() must not be reported as an open mapping, otherwise data()
-// hands the caller the MAP_FAILED sentinel. A directory is the easiest way to
-// reach it, since ::open() and fstat() succeed for one but ::mmap() doesn't.
-TEST(MmapTest, FailedMappingIsNotOpen) {
-  const char *path = "./mmap_failed_mapping_test_dir";
+// A directory or a device has no size to serve.
+TEST(MmapTest, OnlyRegularFilesAreOpened) {
+  const char *path = "./mmap_not_regular_test_dir";
   ASSERT_EQ(0, ::mkdir(path, 0755));
   auto dir_cleanup = detail::scope_exit([&] { ::rmdir(path); });
 
+  for (auto p : {path, "/dev/null"}) {
+    detail::mmap m(p);
+    EXPECT_FALSE(m.is_open()) << p;
+    EXPECT_EQ(0U, m.size()) << p;
+  }
+
+  Server svr;
+  svr.Get("/null", [](const Request & /*req*/, Response &res) {
+    res.set_file_content("/dev/null");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto res = Client(HOST, port).Get("/null");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+}
+#endif
+
+#ifdef __linux__
+// Nothing of the file stays mapped, where a truncation would raise SIGBUS.
+TEST(MmapTest, FileIsNotMapped) {
+  const char *path = "mmap_not_mapped_test.txt";
+  {
+    std::ofstream f(path, std::ios::binary);
+    f << "hello";
+  }
+  auto file_cleanup = detail::scope_exit([&] { std::remove(path); });
+
   detail::mmap m(path);
-  EXPECT_FALSE(m.is_open());
-  EXPECT_EQ(0U, m.size());
-  EXPECT_NE(static_cast<const void *>(m.data()),
-            static_cast<const void *>(MAP_FAILED));
+  ASSERT_TRUE(m.is_open());
+
+  std::ifstream maps("/proc/self/maps");
+  std::string mappings((std::istreambuf_iterator<char>(maps)),
+                       std::istreambuf_iterator<char>());
+  EXPECT_EQ(std::string::npos, mappings.find(path));
 }
 #endif
 
