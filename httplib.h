@@ -20441,6 +20441,20 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
   auto store = create_ca_store(ca_pem, strlen(ca_pem));
   if (!store) { return false; }
 
+  // A resumed session is not verified again, so the ticket keys from before
+  // go, or a client verified under the old CAs could go on resuming.
+#if defined(OPENSSL_IS_BORINGSSL) || defined(LIBRESSL_VERSION_NUMBER)
+  unsigned char ticket_keys[48];
+#else
+  unsigned char ticket_keys[80];
+#endif
+  if (RAND_bytes(ticket_keys, sizeof(ticket_keys)) != 1 ||
+      SSL_CTX_set_tlsext_ticket_keys(ssl_ctx, ticket_keys,
+                                     sizeof(ticket_keys)) != 1) {
+    free_ca_store(store);
+    return false;
+  }
+
   // SSL_CTX_set_cert_store takes ownership
   SSL_CTX_set_cert_store(ssl_ctx, static_cast<X509_STORE *>(store));
 
@@ -20451,18 +20465,12 @@ inline bool update_server_client_ca(ctx_t ctx, const char *ca_pem) {
     SSL_CTX_set_client_CA_list(ssl_ctx, ca_list);
   }
 
-  // A resumed session is not verified again, so forget the sessions and the
-  // ticket keys from before, or a client verified under the old CAs could go
-  // on resuming.
+  // The cached sessions go for the same reason.
 #if OPENSSL_VERSION_NUMBER >= 0x30400000L
   SSL_CTX_flush_sessions_ex(ssl_ctx, (std::numeric_limits<time_t>::max)());
 #else
   SSL_CTX_flush_sessions(ssl_ctx, (std::numeric_limits<long>::max)());
 #endif
-  unsigned char ticket_keys[80];
-  if (RAND_bytes(ticket_keys, sizeof(ticket_keys)) == 1) {
-    SSL_CTX_set_tlsext_ticket_keys(ssl_ctx, ticket_keys, sizeof(ticket_keys));
-  }
 
   return true;
 }
