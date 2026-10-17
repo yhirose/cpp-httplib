@@ -170,8 +170,10 @@ bool is_valid() const;
 // only when the handshake fully succeeded; on failure it describes what went
 // wrong:
 //   res.error()             httplib::Error identifying the failing layer
-//   res.status()            HTTP status of the upgrade response (-1 if none)
-//   res.headers()           headers of the upgrade response
+//   res.status()            HTTP status of the upgrade response (-1 if none),
+//                           or of the proxy's CONNECT reply when error() is
+//                           Error::ProxyConnection
+//   res.headers()           headers of that same response
 //   res.ssl_error()         TLS error detail (wss://, SSL builds only)
 //   res.ssl_backend_error() backend-specific TLS error code (SSL builds only)
 Result connect();
@@ -186,6 +188,18 @@ bool send(const char *data, size_t len);
 void close(CloseStatus status = CloseStatus::Normal,
            const std::string &reason = "");
 bool is_open() const;
+
+// Proxy - the same setters Client has. connect() opens a CONNECT tunnel
+// through the proxy for ws:// as well as wss:// (RFC 6455 4.1); the proxy
+// credentials are sent only on the CONNECT request, never through the tunnel.
+// Hosts matching set_no_proxy() are connected to directly.
+void set_proxy(const std::string &host, int port);
+void set_proxy_basic_auth(const std::string &username,
+                          const std::string &password);
+void set_proxy_bearer_token_auth(const std::string &token);
+void set_no_proxy(const std::vector<std::string> &patterns);
+void set_proxy_digest_auth(const std::string &username,
+                           const std::string &password); // SSL builds only
 
 // Timeouts
 void set_read_timeout(time_t sec, time_t usec = 0);
