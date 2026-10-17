@@ -12068,6 +12068,12 @@ inline void clear_content(Response &res) {
   clear_content_provider(res);
 }
 
+// The Content-Type of the old content goes with it.
+inline void set_content_type(Response &res, const std::string &content_type) {
+  res.headers.erase("Content-Type");
+  res.set_header("Content-Type", content_type);
+}
+
 // `body` is public, so it can be assigned directly after a provider or a file
 // was set. It came last, so it wins.
 inline void prefer_assigned_body(Response &res) {
@@ -12189,10 +12195,7 @@ inline void Response::set_content(const char *s, size_t n,
                                   const std::string &content_type) {
   body.assign(s, n); // Before the releaser runs; it may own `s`.
   detail::clear_content_provider(*this);
-
-  auto rng = headers.equal_range("Content-Type");
-  headers.erase(rng.first, rng.second);
-  set_header("Content-Type", content_type);
+  detail::set_content_type(*this, content_type);
 }
 
 inline void Response::set_content(const std::string &s,
@@ -12204,18 +12207,15 @@ inline void Response::set_content(std::string &&s,
                                   const std::string &content_type) {
   body = std::move(s);
   detail::clear_content_provider(*this);
-
-  auto rng = headers.equal_range("Content-Type");
-  headers.erase(rng.first, rng.second);
-  set_header("Content-Type", content_type);
+  detail::set_content_type(*this, content_type);
 }
 
 inline void Response::set_content_provider(
     size_t in_length, const std::string &content_type, ContentProvider provider,
     ContentProviderResourceReleaser resource_releaser) {
   detail::clear_content(*this);
+  detail::set_content_type(*this, content_type);
 
-  set_header("Content-Type", content_type);
   content_length_ = in_length;
   if (in_length > 0) { content_provider_ = std::move(provider); }
   content_provider_resource_releaser_ = std::move(resource_releaser);
@@ -12225,8 +12225,8 @@ inline void Response::set_content_provider(
     const std::string &content_type, ContentProviderWithoutLength provider,
     ContentProviderResourceReleaser resource_releaser) {
   detail::clear_content(*this);
+  detail::set_content_type(*this, content_type);
 
-  set_header("Content-Type", content_type);
   content_provider_ = detail::ContentProviderAdapter(std::move(provider));
   content_provider_resource_releaser_ = std::move(resource_releaser);
 }
@@ -12242,6 +12242,7 @@ inline void Response::set_chunked_content_provider(
 inline void Response::set_file_content(const std::string &path,
                                        const std::string &content_type) {
   detail::clear_content(*this);
+  headers.erase("Content-Type");
 
   file_content_path_ = path;
   file_content_content_type_ = content_type;
@@ -15191,6 +15192,10 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         file_open_error = true;
       } else {
         auto content_type = res.file_content_content_type_;
+        if (content_type.empty()) {
+          // One the handler set after set_file_content()
+          content_type = res.get_header_value("Content-Type");
+        }
         if (content_type.empty()) {
           content_type = detail::find_content_type(
               path, file_extension_and_mimetype_map_, default_file_mimetype_);

@@ -13463,11 +13463,19 @@ TEST(ResponseContentSourceTest, LastContentSetterWins) {
   });
   svr.Get("/body-then-provider", [&](const Request &, Response &res) {
     res.set_content(std::string(100, 'B'), "text/plain");
-    res.set_content_provider(3, "text/plain", abc);
+    res.set_content_provider(3, "text/x-provider", abc);
   });
   svr.Get("/provider-then-body", [&](const Request &, Response &res) {
-    res.set_content_provider(3, "text/plain", abc);
+    res.set_content_provider(3, "text/x-provider", abc);
     res.set_content(std::string(100, 'B'), "text/plain");
+  });
+  svr.Get("/provider-then-file", [&](const Request &, Response &res) {
+    res.set_content_provider(3, "text/x-provider", abc);
+    res.set_file_content("./www/dir/test.html", "text/x-file");
+  });
+  svr.Get("/file-then-header", [](const Request &, Response &res) {
+    res.set_file_content("./www/dir/test.html");
+    res.set_header("Content-Type", "text/x-handler");
   });
   svr.Get("/provider-then-direct-body", [&](const Request &, Response &res) {
     res.set_content_provider(3, "text/plain", abc);
@@ -13489,7 +13497,8 @@ TEST(ResponseContentSourceTest, LastContentSetterWins) {
 
   Client cli(HOST, port);
 
-  auto expect_body = [&](const char *path, const std::string &body) {
+  auto expect_body = [&](const char *path, const std::string &body,
+                         const std::string &type) {
     // Uncompressed, so Content-Length can be compared with the body.
     auto res = cli.Get(path, Headers{{"Accept-Encoding", ""}});
     ASSERT_TRUE(res) << path << " Error: " << to_string(res.error());
@@ -13498,14 +13507,18 @@ TEST(ResponseContentSourceTest, LastContentSetterWins) {
     EXPECT_EQ(std::to_string(body.size()),
               res->get_header_value("Content-Length"))
         << path;
+    EXPECT_EQ(1u, res->get_header_value_count("Content-Type")) << path;
+    EXPECT_EQ(type, res->get_header_value("Content-Type")) << path;
   };
 
-  expect_body("/file-then-body", "body");
-  expect_body("/body-then-file", "test.html");
-  expect_body("/body-then-provider", "abc");
-  expect_body("/provider-then-body", std::string(100, 'B'));
-  expect_body("/provider-then-direct-body", "direct");
-  expect_body("/file-then-direct-body", "direct");
+  expect_body("/file-then-body", "body", "text/plain");
+  expect_body("/body-then-file", "test.html", "text/html");
+  expect_body("/body-then-provider", "abc", "text/x-provider");
+  expect_body("/provider-then-body", std::string(100, 'B'), "text/plain");
+  expect_body("/provider-then-file", "test.html", "text/x-file");
+  expect_body("/file-then-header", "test.html", "text/x-handler");
+  expect_body("/provider-then-direct-body", "direct", "text/plain");
+  expect_body("/file-then-direct-body", "direct", "text/plain");
 
   // Ranges are checked against the body, not the dropped provider.
   {
