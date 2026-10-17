@@ -24623,9 +24623,6 @@ TEST_F(SSEIntegrationTest, TooLongEventEndsTheConnection) {
   });
 
   Client client("localhost", get_port());
-  // Lift the payload limit, so that only the event limit can end this endless
-  // stream.
-  client.set_payload_max_length(0);
   sse::SSEClient sse(client, "/endless-line");
   std::atomic<bool> too_long{false};
   sse.on_error([&](Error err) {
@@ -24639,6 +24636,42 @@ TEST_F(SSEIntegrationTest, TooLongEventEndsTheConnection) {
   }
   sse.stop();
   EXPECT_TRUE(too_long);
+}
+
+TEST_F(SSEIntegrationTest, PayloadLimitDoesNotEndTheStream) {
+  // Far more in all than the client's payload limit below.
+  server_->Get("/many-events", [](const Request &, Response &res) {
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string events;
+            for (int i = 0; i < 1000; i++) {
+              events += "data: message\n\n";
+            }
+            sink.write(events.data(), events.size());
+          }
+          return false;
+        });
+  });
+
+  Client client("localhost", get_port());
+  client.set_payload_max_length(1024);
+  sse::SSEClient sse(client, "/many-events");
+  std::atomic<int> messages{0};
+  std::atomic<bool> too_large{false};
+  sse.on_message([&](const sse::SSEMessage &) { messages++; });
+  sse.on_error([&](Error err) {
+    if (err == Error::ExceedMaxPayloadSize) { too_large = true; }
+  });
+  sse.set_max_reconnect_attempts(1);
+  sse.start_async();
+
+  for (int i = 0; i < 500 && messages < 1000; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  sse.stop();
+  EXPECT_GE(messages.load(), 1000);
+  EXPECT_FALSE(too_large);
 }
 
 // Test: on_message callback

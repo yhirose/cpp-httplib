@@ -79,7 +79,7 @@ sse.set_max_reconnect_attempts(10);
 sse.set_headers({{"Authorization", "Bearer new_token"}});
 ```
 
-An event, or a line still waiting for its end, longer than `CPPHTTPLIB_SSE_MAX_EVENT_LENGTH` (16MB by default, `0` for no limit) ends the connection with `Error::ExceedMaxPayloadSize`, and the client stops rather than reconnect to the same event. The whole stream also counts against the client's `set_payload_max_length()` (100MB by default), so set it to `0` for a long-lived stream.
+An event, or a line still waiting for its end, longer than `CPPHTTPLIB_SSE_MAX_EVENT_LENGTH` (16MB by default, `0` for no limit) ends the connection with `Error::ExceedMaxPayloadSize`, and the client stops rather than reconnect to the same event. The client's `set_payload_max_length()` does not apply to the stream as a whole, which has no end.
 
 #### Control
 

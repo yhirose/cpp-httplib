@@ -593,6 +593,10 @@ namespace ws {
 class WebSocket;
 } // namespace ws
 
+namespace sse {
+class SSEClient;
+} // namespace sse
+
 namespace detail {
 
 /*
@@ -2752,6 +2756,7 @@ public:
 
   private:
     friend class ClientImpl;
+    friend class sse::SSEClient;
 
     ssize_t read_with_decompression(char *buf, size_t len);
 
@@ -5020,8 +5025,11 @@ inline void SSEClient::run_event_loop() {
       request_headers.emplace("Last-Event-ID", last_event_id_);
     }
 
-    // Open streaming connection
-    auto result = stream::Get(client_, path_, request_headers);
+    // Open streaming connection. An event stream has no end, so each event is
+    // bounded instead of the whole body.
+    auto handle = client_.open_stream("GET", path_, {}, request_headers);
+    handle.body_reader_.payload_max_length = 0;
+    stream::Result result{std::move(handle)};
 
     // Connection error handling
     if (!result) {
