@@ -2984,6 +2984,7 @@ protected:
   void close_socket(Socket &socket);
   void disconnect(bool gracefully);
 
+  std::string make_request_target(const Request &req) const;
   bool process_request(Stream &strm, Request &req, Response &res,
                        bool close_connection, Error &error);
 
@@ -9288,6 +9289,15 @@ inline std::string normalize_query_string(const std::string &query) {
   return result;
 }
 
+// The query of a client's path: what follows '?', up to the fragment.
+inline std::string query_of(const std::string &path) {
+  auto fragment_pos = path.find('#');
+  auto query_pos = path.find('?');
+  return query_pos < fragment_pos
+             ? path.substr(query_pos + 1, fragment_pos - query_pos - 1)
+             : std::string();
+}
+
 // Build the request target that goes on the wire from a caller-supplied path.
 // Shared by the buffered send path and the streaming API so that both put the
 // same bytes in the request line for the same input.
@@ -10873,9 +10883,11 @@ inline bool process_client_socket_ssl(
   return callback(strm);
 }
 
+// `uri` is req's request-target in origin form (RFC 7616 3.4).
 inline std::pair<std::string, std::string> make_digest_authentication_header(
-    const Request &req, const std::map<std::string, std::string> &auth,
-    size_t cnonce_count, const std::string &cnonce, const std::string &username,
+    const Request &req, const std::string &uri,
+    const std::map<std::string, std::string> &auth, size_t cnonce_count,
+    const std::string &cnonce, const std::string &username,
     const std::string &password, bool is_proxy = false) {
   std::string nc;
   {
@@ -10913,7 +10925,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
 
     auto A1 = username + ":" + auth.at("realm") + ":" + password;
 
-    auto A2 = req.method + ":" + req.path;
+    auto A2 = req.method + ":" + uri;
     if (qop == "auth-int") { A2 += ":" + H(req.body); }
 
     if (qop.empty()) {
@@ -10934,7 +10946,7 @@ inline std::pair<std::string, std::string> make_digest_authentication_header(
       "Digest username=\"" + detail::escape_quoted_pairs(username) +
       "\", realm=\"" + detail::escape_quoted_pairs(auth.at("realm")) +
       "\", nonce=\"" + detail::escape_quoted_pairs(auth.at("nonce")) +
-      "\", uri=\"" + detail::escape_quoted_pairs(req.path) +
+      "\", uri=\"" + detail::escape_quoted_pairs(uri) +
       "\", algorithm=" + algo +
       (qop.empty() ? ", response=\""
                    : ", qop=" + qop + ", nc=" + nc + ", cnonce=\"" + cnonce +
@@ -16052,8 +16064,8 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
         new_req.headers.erase(is_proxy ? "Proxy-Authorization"
                                        : "Authorization");
         new_req.headers.insert(detail::make_digest_authentication_header(
-            req, auth, new_req.authorization_count_, detail::random_string(10),
-            username, password, is_proxy));
+            req, make_request_target(req), auth, new_req.authorization_count_,
+            detail::random_string(10), username, password, is_proxy));
 
         Response new_res;
 
@@ -16290,6 +16302,16 @@ inline bool ClientImpl::write_content_with_provider(Stream &strm,
   }
 }
 
+// What goes on the request line for req: its path, encoded and without the
+// fragment, with `req.params` as the query when the path has none.
+inline std::string ClientImpl::make_request_target(const Request &req) const {
+  auto target = detail::encode_request_target(req.path, path_encode_);
+  if (detail::query_of(req.path).empty() && !req.params.empty()) {
+    target = append_query_params(target, req.params);
+  }
+  return target;
+}
+
 inline bool ClientImpl::write_request(Stream &strm, Request &req,
                                       bool close_connection, Error &error,
                                       bool skip_body, bool &rejected_locally) {
@@ -16359,28 +16381,13 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   {
     detail::BufferStream bstrm;
 
-    // Extract the query from req.path. The encoding itself is delegated to
-    // `encode_request_target`; the raw query is still needed here to decide
-    // between populating `req.params` from it and falling back to building a
-    // query out of caller-supplied `req.params`.
-    // The fragment, which is not sent, is not part of the query.
-    auto target = req.path.substr(0, req.path.find('#'));
-    auto query_pos = target.find('?');
-    auto query_part = query_pos == std::string::npos
-                          ? std::string()
-                          : target.substr(query_pos + 1);
+    auto path_with_query = make_request_target(req);
 
-    auto path_with_query =
-        detail::encode_request_target(req.path, path_encode_);
-
+    // The query already came in through `req.path`; still populate
+    // `req.params` for handlers/users who read them.
+    auto query_part = detail::query_of(req.path);
     if (!query_part.empty()) {
-      // The query already came in through `req.path`; still populate
-      // `req.params` for handlers/users who read them.
       detail::parse_query_text(query_part, req.params);
-    } else if (!req.params.empty()) {
-      // No query in `req.path`; build one from `req.params` so existing
-      // callers that pass `Params` separately continue to work.
-      path_with_query = append_query_params(path_with_query, req.params);
     }
 
     // Write request line and headers
@@ -18906,9 +18913,9 @@ inline bool SSLClient::connect_with_proxy(
                   req3.path = detail::make_host_and_port_string_always_port(
                       host_, port_);
                   req3.headers.insert(detail::make_digest_authentication_header(
-                      req3, auth, 1, detail::random_string(10),
-                      proxy_digest_auth_username_, proxy_digest_auth_password_,
-                      true));
+                      req3, make_request_target(req3), auth, 1,
+                      detail::random_string(10), proxy_digest_auth_username_,
+                      proxy_digest_auth_password_, true));
                   if (max_timeout_msec_ > 0) {
                     req3.start_time_ = std::chrono::steady_clock::now();
                   }

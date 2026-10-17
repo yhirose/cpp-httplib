@@ -3552,6 +3552,40 @@ TEST(DigestAuthTest, RealmContainingCommaIsNotSplit) {
       "test,realm");
 }
 
+// RFC 7616 3.4: uri is the request-target as sent, which is encoded, carries
+// the params and leaves out the fragment.
+TEST(DigestAuthTest, UriIsTheRequestTargetSent) {
+  Server svr;
+  std::string uri, target;
+  svr.Get("/a b", [&](const Request &req, Response &res) {
+    auto auth = req.get_header_value("Authorization");
+    if (auth.empty()) {
+      res.status = StatusCode::Unauthorized_401;
+      res.set_header("WWW-Authenticate",
+                     "Digest realm=\"r\", qop=\"auth\", nonce=\"n\"");
+      return;
+    }
+    auto b = auth.find("uri=\"") + 5;
+    uri = auth.substr(b, auth.find('"', b) - b);
+    target = req.target;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_digest_auth("hello", "world");
+  auto res = cli.Get("/a b#f", Params{{"x", "1"}}, Headers{});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("/a%20b?x=1", target);
+  EXPECT_EQ(target, uri);
+}
+
 // RFC 7616 Section 3.3 requires realm and nonce on every Digest challenge.
 // make_digest_authentication_header() dereferences both unconditionally, so
 // a server sending a challenge missing either one must not be treated as
