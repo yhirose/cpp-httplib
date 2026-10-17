@@ -6185,6 +6185,22 @@ inline std::string trim_double_quotes_copy(const std::string &s) {
   return s;
 }
 
+// Takes the quotes off a parameter value. Only \" and \\ are quoted-pairs
+// here, as browsers send any other backslash, such as one in a Windows path,
+// as it is.
+inline std::string unquote_param(const std::string &s) {
+  if (s.size() < 2 || s.front() != '"' || s.back() != '"') { return s; }
+  std::string out;
+  for (size_t i = 1; i + 1 < s.size(); i++) {
+    if (s[i] == '\\' && i + 2 < s.size() &&
+        (s[i + 1] == '"' || s[i + 1] == '\\')) {
+      i++;
+    }
+    out += s[i];
+  }
+  return out;
+}
+
 inline void
 divide(const char *data, std::size_t size, char d,
        std::function<void(const char *, std::size_t, const char *, std::size_t)>
@@ -7742,7 +7758,7 @@ extract_media_type(const std::string &content_type,
                        // §5.6.6)
                        if (!key.empty()) {
                          params->emplace(case_ignore::to_lower(trim_copy(key)),
-                                         trim_double_quotes_copy(val));
+                                         unquote_param(val));
                        }
                      });
     }
@@ -9328,39 +9344,22 @@ inline bool parse_multipart_boundary(const std::string &content_type,
   return !boundary.empty() && boundary.size() <= 70;
 }
 
-// Takes the quotes off a parameter value. Only \" and \\ are quoted-pairs
-// here, as browsers send any other backslash, such as one in a Windows path,
-// as it is.
-inline std::string unquote_disposition_param(const std::string &s) {
-  if (s.size() < 2 || s.front() != '"' || s.back() != '"') { return s; }
-  std::string out;
-  for (size_t i = 1; i + 1 < s.size(); i++) {
-    if (s[i] == '\\' && i + 2 < s.size() &&
-        (s[i + 1] == '"' || s[i + 1] == '\\')) {
-      i++;
-    }
-    out += s[i];
-  }
-  return out;
-}
-
 inline void parse_disposition_params(const std::string &s, Params &params) {
   std::set<std::string> cache;
-  split_unquoted(s.data(), s.data() + s.size(), ';',
-                 [&](const char *b, const char *e) {
-                   std::string kv(b, e);
-                   if (cache.find(kv) != cache.end()) { return; }
-                   cache.insert(kv);
+  split_unquoted(
+      s.data(), s.data() + s.size(), ';', [&](const char *b, const char *e) {
+        std::string kv(b, e);
+        if (cache.find(kv) != cache.end()) { return; }
+        cache.insert(kv);
 
-                   std::string key;
-                   std::string val;
-                   divide_param_pair(b, e, key, val);
+        std::string key;
+        std::string val;
+        divide_param_pair(b, e, key, val);
 
-                   if (!key.empty()) {
-                     params.emplace(trim_double_quotes_copy(key),
-                                    unquote_disposition_param(val));
-                   }
-                 });
+        if (!key.empty()) {
+          params.emplace(trim_double_quotes_copy(key), unquote_param(val));
+        }
+      });
 }
 
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
@@ -9877,22 +9876,28 @@ inline bool is_multipart_boundary_chars_valid(const std::string &boundary) {
 }
 
 // Escape a multipart field name/filename following the WHATWG HTML standard
-// ("escape a multipart form-data name"), which is what browsers send:
-// '"' -> %22, CR -> %0D, LF -> %0A
-// With escape_quote = false, only CR and LF are escaped; this is for header
-// values outside a quoted-string (e.g. Content-Type), where '"' is legal.
+// ("escape a multipart form-data name"): '"' -> %22, CR -> %0D, LF -> %0A.
+// As the value is a quoted-string, '\' -> '\\' too, which browsers leave out.
+// With quoted = false, only CR and LF are escaped; this is for header values
+// outside a quoted-string (e.g. Content-Type), where '"' and '\' are legal.
 inline std::string escape_multipart_field(const std::string &s,
-                                          bool escape_quote = true) {
+                                          bool quoted = true) {
   std::string result;
   result.reserve(s.size());
   for (auto c : s) {
     switch (c) {
     case '"':
-      if (escape_quote) {
+      if (quoted) {
         result += "%22";
       } else {
         result += c;
       }
+      break;
+    case '\\':
+      // A lone backslash would escape the character after it (RFC 9110
+      // 5.6.4).
+      if (quoted) { result += '\\'; }
+      result += c;
       break;
     case '\r': result += "%0D"; break;
     case '\n': result += "%0A"; break;

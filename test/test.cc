@@ -1739,6 +1739,37 @@ TEST(MultipartOrderTest, RepeatedNamesKeepTheirOrder) {
   EXPECT_EQ("", out_of_range);
 }
 
+TEST(MultipartFormDataTest, BackslashesInNamesSurvive) {
+  Server svr;
+  std::string file_names;
+  svr.Post("/upload", [&](const Request &req, Response &res) {
+    for (const auto &file : req.form.files) {
+      file_names += file.first + "|" + file.second.filename + " ";
+    }
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // A trailing backslash would otherwise escape the closing quote.
+  UploadFormDataItems items = {
+      {"dir\\", "x", "a.txt", "text/plain"},
+      {"b", "y", "a\\\\b.txt", "text/plain"},
+  };
+
+  Client cli(HOST, port);
+  auto res = cli.Post("/upload", items);
+  ASSERT_TRUE(res);
+  EXPECT_EQ("dir\\|a.txt b|a\\\\b.txt ", file_names);
+}
+
 TEST(MultipartOrderTest, ContentSurvivesContainerGrowth) {
   // Server::read_content() keeps a FormFields::iterator alive across the
   // content callbacks that fill the part it points at. The container is
@@ -1870,6 +1901,16 @@ TEST(ParseMultipartBoundaryTest, QuotedValueWithSemicolon) {
   string parsed;
   EXPECT_TRUE(detail::parse_multipart_boundary(content_type, parsed));
   EXPECT_EQ(parsed, "a;b");
+}
+
+TEST(ParseMultipartBoundaryTest, QuotedPairsAreUnescaped) {
+  string parsed;
+  EXPECT_TRUE(detail::parse_multipart_boundary(
+      "multipart/form-data; boundary=\"a\\\\b\"", parsed));
+  EXPECT_EQ("a\\b", parsed);
+  EXPECT_TRUE(detail::parse_multipart_boundary(
+      "multipart/form-data; boundary=\"a\\\"b\"", parsed));
+  EXPECT_EQ("a\"b", parsed);
 }
 
 TEST(ParseDispositionParamsTest, QuotedValues) {
