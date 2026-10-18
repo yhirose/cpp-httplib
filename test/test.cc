@@ -25263,6 +25263,14 @@ TEST_F(SSEParsingTest, EventWithoutDataResetsEventType) {
   EXPECT_EQ(msgs[0].data, "hello");
 }
 
+TEST_F(SSEParsingTest, EmptyEventTypeIsMessage) {
+  // Also when the empty field replaces an earlier type
+  auto msgs = parse("event:\ndata: a\n\nevent: update\nevent:\ndata: b\n\n");
+  ASSERT_EQ(msgs.size(), 2u);
+  EXPECT_EQ(msgs[0].event, "message");
+  EXPECT_EQ(msgs[1].event, "message");
+}
+
 TEST_F(SSEParsingTest, EventWithoutDataUpdatesLastEventId) {
   // The first connection sends only an id; the second echoes back the
   // Last-Event-ID it was reconnected with

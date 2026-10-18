@@ -5045,7 +5045,8 @@ inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
 
   // Handle known fields
   if (field == "event") {
-    msg.event = value;
+    // An empty event type is dispatched as "message" per the SSE spec
+    msg.event = value.empty() ? std::string("message") : std::move(value);
   } else if (field == "data") {
     // Multiple data lines are concatenated with newlines
     if (has_data) { msg.data += "\n"; }
