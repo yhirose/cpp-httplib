@@ -23632,6 +23632,17 @@ TEST_F(OpenStreamTest, Gzip) {
   EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
   EXPECT_EQ(100u * 1024u, read_all(handle).size());
 }
+
+TEST_F(OpenStreamTest, TrailersWithGzip) {
+  Client cli("127.0.0.1", port_);
+  auto handle =
+      cli.open_stream("GET", "/streamed-chunked-with-prohibited-trailer", {},
+                      {{"Accept-Encoding", "gzip"}});
+  ASSERT_TRUE(handle.is_valid());
+  EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
+  EXPECT_EQ("123456789", read_all(handle));
+  EXPECT_EQ("yes", handle.response->get_trailer_value("X-Allowed"));
+}
 #endif
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT

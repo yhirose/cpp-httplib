@@ -15941,24 +15941,11 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
 inline ssize_t ClientImpl::StreamHandle::read(char *buf, size_t len) {
   if (!is_valid() || !response) { return -1; }
 
-  if (decompressor_) { return read_with_decompression(buf, len); }
-  auto n = detail::read_body_content(stream_, body_reader_, buf, len);
+  auto n = decompressor_
+               ? read_with_decompression(buf, len)
+               : detail::read_body_content(stream_, body_reader_, buf, len);
 
-  if (n <= 0 && body_reader_.chunked && !trailers_parsed_ && stream_) {
-    trailers_parsed_ = true;
-    if (body_reader_.chunked_decoder) {
-      if (!body_reader_.chunked_decoder->parse_trailers_into(
-              response->trailers, response->headers)) {
-        return n;
-      }
-    } else {
-      detail::ChunkedDecoder dec(*stream_);
-      if (!dec.parse_trailers_into(response->trailers, response->headers)) {
-        return n;
-      }
-    }
-  }
-
+  if (n == 0) { parse_trailers_if_needed(); }
   return n;
 }
 
@@ -16014,22 +16001,14 @@ inline ssize_t ClientImpl::StreamHandle::read_with_decompression(char *buf,
 }
 
 inline void ClientImpl::StreamHandle::parse_trailers_if_needed() {
-  if (!response || !stream_ || !body_reader_.chunked || trailers_parsed_) {
+  // The trailers follow the last chunk, so there are none before it
+  auto &decoder = body_reader_.chunked_decoder;
+  if (!response || trailers_parsed_ || !decoder || !decoder->finished) {
     return;
   }
 
   trailers_parsed_ = true;
-
-  const auto bufsiz = 128;
-  char line_buf[bufsiz];
-  detail::stream_line_reader line_reader(*stream_, line_buf, bufsiz);
-
-  if (!line_reader.getline()) { return; }
-
-  if (!detail::parse_trailers(line_reader, response->trailers,
-                              response->headers)) {
-    return;
-  }
+  decoder->parse_trailers_into(response->trailers, response->headers);
 }
 
 namespace detail {
