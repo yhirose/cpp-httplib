@@ -17060,6 +17060,45 @@ TEST(VerifyCallbackTest, VerifyContextFields) {
   EXPECT_TRUE(saw_leaf_cert);
 }
 
+// A verifier that accepts runs alongside the built-in verification, and is the
+// only check once that is turned off.
+TEST(VerifyCallbackTest, AcceptingVerifierDoesNotOverrideVerification) {
+  using namespace httplib::tls;
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_hostname_verification(false);
+  auto calls = 0;
+  cli.set_server_certificate_verifier([&](const VerifyContext &) {
+    calls++;
+    return true;
+  });
+
+  // cert.pem is not trusted
+  auto res = cli.Get("/test");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+  EXPECT_GT(calls, 0);
+
+  cli.enable_server_certificate_verification(false);
+  res = cli.Get("/test");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("ok", res->body);
+}
+
 // A verifier belongs to the client that set it, not to the thread that set it.
 TEST(VerifyCallbackTest, VerifierStaysWithItsClient) {
   using namespace httplib::tls;

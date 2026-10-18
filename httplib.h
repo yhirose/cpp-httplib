@@ -20770,6 +20770,8 @@ struct MbedTlsSession {
   // ever runs the callback of its own context.
   VerifyCallback verify_callback;
 
+  bool is_server = false;
+
   MbedTlsSession() { mbedtls_ssl_init(&ssl); }
 
   ~MbedTlsSession() { mbedtls_ssl_free(&ssl); }
@@ -20949,7 +20951,7 @@ inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
 
   // set_sni() disabled hostname verification for this session: ignore the
   // CN/SAN mismatch flag, as the OpenSSL/wolfSSL backends do. The final
-  // pass/fail decision still comes from the remaining flags (or, below, from
+  // pass/fail decision still comes from the remaining flags (and, below, from
   // the user's own verify callback).
   if (session->suppress_hostname_mismatch) { mbedtls_clear_cn_mismatch(flags); }
 
@@ -20976,7 +20978,9 @@ inline int mbedtls_verify_callback(void *data, mbedtls_x509_crt *crt,
   bool accepted = run_verify_callback(callback, verify_ctx);
 
   if (accepted) {
-    *flags = 0; // Clear all error flags
+    // Overrides the built-in verification only on a server, as on OpenSSL and
+    // wolfSSL, whose clients check the verify result after the handshake
+    if (session->is_server) { *flags = 0; }
     return 0;
   }
   return MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
@@ -21379,6 +21383,7 @@ inline session_t create_session(ctx_t ctx, socket_t sock) {
   // may ask for. The session runs its own copy of the user's callback, which
   // set_verify_callback() cannot replace under a handshake.
   session->verify_callback = mctx->verify_callback;
+  session->is_server = mctx->is_server;
   mbedtls_ssl_set_verify(&session->ssl, impl::mbedtls_verify_callback, session);
 
   return static_cast<session_t>(session);
