@@ -11241,6 +11241,14 @@ inline std::string ca_certs_to_pem(tls::ctx_t ctx) {
   return pem;
 }
 
+// Returns a PemMemory field as a NUL-terminated string: its first len bytes,
+// copied to buf, or pem itself when len is 0.
+inline const char *pem_c_str(const char *pem, size_t len, std::string &buf) {
+  if (!pem || len == 0) { return pem; }
+  buf.assign(pem, len);
+  return buf.c_str();
+}
+
 // The parts of session setup that only SSLClient needs, plus the handful
 // WebSocketClient also exposes; everything else takes the defaults, which is
 // what keeps the two clients on one implementation.
@@ -18746,8 +18754,11 @@ inline SSLServer::SSLServer(const PemMemory &pem) {
   using namespace tls;
   ctx_ = create_server_context();
   if (ctx_) {
-    if (!set_server_cert_pem(ctx_, pem.cert_pem, pem.key_pem,
-                             pem.private_key_password)) {
+    std::string cert_buf, key_buf;
+    if (!set_server_cert_pem(
+            ctx_, detail::pem_c_str(pem.cert_pem, pem.cert_pem_len, cert_buf),
+            detail::pem_c_str(pem.key_pem, pem.key_pem_len, key_buf),
+            pem.private_key_password)) {
       last_ssl_error_ = static_cast<int>(get_error());
       free_context(ctx_);
       ctx_ = nullptr;
@@ -19132,8 +19143,11 @@ inline SSLClient::SSLClient(const std::string &host, int port,
   if (!ctx_) { return; }
 
   if (pem.cert_pem && pem.key_pem) {
-    if (!tls::set_client_cert_pem(ctx_, pem.cert_pem, pem.key_pem,
-                                  pem.private_key_password)) {
+    std::string cert_buf, key_buf;
+    if (!tls::set_client_cert_pem(
+            ctx_, detail::pem_c_str(pem.cert_pem, pem.cert_pem_len, cert_buf),
+            detail::pem_c_str(pem.key_pem, pem.key_pem_len, key_buf),
+            pem.private_key_password)) {
       reset_ctx_on_error();
     }
   }
@@ -23517,8 +23531,12 @@ inline WebSocketClient::WebSocketClient(
   // For ws:// URLs the client certificate is silently ignored, consistent
   // with the TLS-only setters such as set_ca_cert_path().
   if (is_valid_ && is_ssl_ && pem.cert_pem && pem.key_pem) {
-    if (!tls::set_client_cert_pem(tls_ctx_, pem.cert_pem, pem.key_pem,
-                                  pem.private_key_password)) {
+    std::string cert_buf, key_buf;
+    if (!tls::set_client_cert_pem(
+            tls_ctx_,
+            detail::pem_c_str(pem.cert_pem, pem.cert_pem_len, cert_buf),
+            detail::pem_c_str(pem.key_pem, pem.key_pem_len, key_buf),
+            pem.private_key_password)) {
       tls::free_context(tls_ctx_);
       tls_ctx_ = nullptr;
       is_valid_ = false;

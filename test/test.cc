@@ -16194,11 +16194,14 @@ TEST(SSLClientServerTest, SSLErrorNotCarriedToLaterRequest) {
   EXPECT_EQ(0UL, res.ssl_backend_error());
 }
 
-// PEM memory-based constructor tests (works with all TLS backends)
+// PEM memory-based constructor tests (works with all TLS backends).
+// exact_size passes each PEM in a buffer of its own size, with no NUL
+// terminator after it.
 void PemMemoryClientCertPresent(
     const std::string &client_cert_file,
     const std::string &client_private_key_file,
-    const std::string &client_encrypted_private_key_pass = std::string()) {
+    const std::string &client_encrypted_private_key_pass = std::string(),
+    bool exact_size = false) {
   // Read PEM files into memory
   std::string server_cert_pem, server_key_pem;
   std::string client_ca_pem;
@@ -16210,13 +16213,20 @@ void PemMemoryClientCertPresent(
   read_file(client_cert_file, client_cert_pem);
   read_file(client_private_key_file, client_key_pem);
 
+  std::list<std::vector<char>> exact_copies;
+  auto data = [&](const std::string &pem) -> const char * {
+    if (!exact_size) { return pem.c_str(); }
+    exact_copies.emplace_back(pem.begin(), pem.end());
+    return exact_copies.back().data();
+  };
+
   // Create server with PEM memory
   SSLServer::PemMemory server_pem = {
-      server_cert_pem.c_str(),
+      data(server_cert_pem),
       server_cert_pem.size(),
-      server_key_pem.c_str(),
+      data(server_key_pem),
       server_key_pem.size(),
-      client_ca_pem.c_str(),
+      data(client_ca_pem),
       client_ca_pem.size(),
       nullptr // no password for server key
   };
@@ -16245,7 +16255,7 @@ void PemMemoryClientCertPresent(
                              ? nullptr
                              : client_encrypted_private_key_pass.c_str();
   SSLClient::PemMemory client_pem = {
-      client_cert_pem.c_str(), client_cert_pem.size(), client_key_pem.c_str(),
+      data(client_cert_pem), client_cert_pem.size(), data(client_key_pem),
       client_key_pem.size(), password};
   SSLClient cli(HOST, PORT, client_pem);
   cli.enable_server_certificate_verification(false);
@@ -16285,6 +16295,36 @@ TEST(SSLClientServerTest, PemMemoryClientCertMissing) {
   SSLServer svr(server_pem);
   ASSERT_TRUE(svr.is_valid());
   RejectsClientWithoutCert(svr);
+}
+
+// The PemMemory lengths are honoured, so the PEM needs no NUL terminator
+TEST(SSLClientServerTest, PemMemoryExactSizeBuffers) {
+  PemMemoryClientCertPresent(CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE, "",
+                             true);
+}
+
+// A length shorter than the PEM cuts it short, so it no longer loads
+TEST(SSLClientServerTest, PemMemoryShortLengthCutsThePem) {
+  std::string cert, key;
+  read_file(SERVER_CERT_FILE, cert);
+  read_file(SERVER_PRIVATE_KEY_FILE, key);
+
+  for (auto cut_cert : {true, false}) {
+    auto cert_len = cut_cert ? cert.size() / 2 : cert.size();
+    auto key_len = cut_cert ? key.size() : key.size() / 2;
+
+    SSLServer::PemMemory server_pem = {
+        cert.c_str(), cert_len, key.c_str(), key_len, nullptr, 0, nullptr};
+    EXPECT_FALSE(SSLServer(server_pem).is_valid());
+
+    SSLClient::PemMemory client_pem = {cert.c_str(), cert_len, key.c_str(),
+                                       key_len, nullptr};
+    EXPECT_FALSE(SSLClient(HOST, PORT, client_pem).is_valid());
+
+    ws::WebSocketClient::PemMemory ws_pem = {cert.c_str(), cert_len,
+                                             key.c_str(), key_len, nullptr};
+    EXPECT_FALSE(ws::WebSocketClient("wss://localhost/", ws_pem).is_valid());
+  }
 }
 
 TEST(SSLClientServerTest, SSLConnectTimeout) {
@@ -28483,6 +28523,10 @@ protected:
     ws::WebSocketClient::PemMemory pem = {cert_pem.c_str(), cert_pem.size(),
                                           key_pem.c_str(), key_pem.size(),
                                           private_key_password};
+    ConnectWithPem(pem);
+  }
+
+  void ConnectWithPem(const ws::WebSocketClient::PemMemory &pem) {
     ws::WebSocketClient client(url(), pem);
     ASSERT_TRUE(client.is_valid());
     client.enable_server_certificate_verification(false);
@@ -28519,6 +28563,19 @@ TEST_F(WebSocketSSLPemMemoryTest, EncryptedClientCertAccepted) {
   ConnectWithClientCert(CLIENT_ENCRYPTED_CERT_FILE,
                         CLIENT_ENCRYPTED_PRIVATE_KEY_FILE,
                         CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
+}
+
+// The PemMemory lengths are honoured, so the PEM needs no NUL terminator
+TEST_F(WebSocketSSLPemMemoryTest, ExactSizeBuffersAccepted) {
+  std::string cert_pem, key_pem;
+  read_file(CLIENT_CERT_FILE, cert_pem);
+  read_file(CLIENT_PRIVATE_KEY_FILE, key_pem);
+  std::vector<char> cert(cert_pem.begin(), cert_pem.end());
+  std::vector<char> key(key_pem.begin(), key_pem.end());
+
+  ws::WebSocketClient::PemMemory pem = {cert.data(), cert.size(), key.data(),
+                                        key.size(), nullptr};
+  ConnectWithPem(pem);
 }
 #endif
 
