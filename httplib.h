@@ -771,6 +771,7 @@ inline from_chars_result<T> from_chars(const char *first, const char *last,
   }
   if (p == last) { return {first, std::errc::invalid_argument}; }
 
+  auto radix = static_cast<T>(base);
   T result = 0;
   for (; p != last; ++p) {
     char c = *p;
@@ -786,10 +787,11 @@ inline from_chars_result<T> from_chars(const char *first, const char *last,
     }
 
     if (digit < 0 || digit >= base) { break; }
-    if (result > ((std::numeric_limits<T>::max)() - digit) / base) {
+    auto d = static_cast<T>(digit);
+    if (result > ((std::numeric_limits<T>::max)() - d) / radix) {
       return {p, std::errc::result_out_of_range};
     }
-    result = result * base + digit;
+    result = result * radix + d;
   }
 
   if (p == first || (negative && p == first + 1)) {
@@ -5376,6 +5378,12 @@ inline std::string from_i_to_hex(size_t n) {
   return ret;
 }
 
+// A round trip rather than `n <= SIZE_MAX`, which is always true on 64-bit
+// builds and trips -Wtautological-type-limit-compare.
+inline bool fits_in_size_t(uint64_t n) {
+  return static_cast<uint64_t>(static_cast<size_t>(n)) == n;
+}
+
 inline std::string compute_etag(const FileStat &fs,
                                 const std::string &suffix = std::string()) {
   if (!fs.is_file()) { return std::string(); }
@@ -5851,7 +5859,7 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
   // A max_len of 0 means no limit, as payload_max_length does, and a length
   // size_t cannot hold (32-bit builds) is refused either way.
   if ((max_len > 0 && payload_len > max_len) ||
-      payload_len > (std::numeric_limits<size_t>::max)()) {
+      !detail::fits_in_size_t(payload_len)) {
     return FrameRead::Fail;
   }
 
@@ -6515,11 +6523,7 @@ inline bool mmap::open(const char *path) {
   // If the following line doesn't compile due to QuadPart, update Windows SDK.
   // See:
   // https://github.com/yhirose/cpp-httplib/issues/1903#issuecomment-2316520721
-  if (static_cast<ULONGLONG>(size.QuadPart) >
-      (std::numeric_limits<decltype(size_)>::max)()) {
-    // `size_t` might be 32-bits, on 32-bits Windows.
-    return false;
-  }
+  if (!fits_in_size_t(static_cast<uint64_t>(size.QuadPart))) { return false; }
   size_ = static_cast<size_t>(size.QuadPart);
 
   hMapping_ =
@@ -6551,8 +6555,7 @@ inline bool mmap::open(const char *path) {
   // Only a regular file has a size to serve, unlike a directory or a device.
   struct stat sb;
   if (fstat(fd_, &sb) == -1 || !S_ISREG(sb.st_mode) ||
-      static_cast<uint64_t>(sb.st_size) >
-          (std::numeric_limits<size_t>::max)()) {
+      !fits_in_size_t(static_cast<uint64_t>(sb.st_size))) {
     close();
     return false;
   }

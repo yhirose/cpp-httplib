@@ -27910,8 +27910,8 @@ static socket_t connect_raw_websocket(int port, const std::string &path) {
                     "\r\n";
   std::string res;
   if (::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0 &&
-      ::send(sock, req.data(), static_cast<int>(req.size()), 0) ==
-          static_cast<int>(req.size())) {
+      detail::send_socket(sock, req.data(), req.size(), 0) ==
+          static_cast<ssize_t>(req.size())) {
     char c;
     while (res.find("\r\n\r\n") == std::string::npos &&
            ::recv(sock, &c, 1, 0) == 1) {
@@ -27963,7 +27963,7 @@ TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
   auto frames = masked_frame(0x02, "Hel") + // Binary, more to come
                 masked_frame(0x89, "p") +   // FIN + Ping
                 masked_frame(0x80, "lo");   // FIN + Continuation
-  ::send(sock, frames.data(), static_cast<int>(frames.size()), 0);
+  detail::send_socket(sock, frames.data(), frames.size(), 0);
 
   for (int i = 0; i < 500 && !done; i++) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -28033,7 +28033,7 @@ TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
       auto sock = connect_raw_websocket(port, "/ws");
       ASSERT_NE(INVALID_SOCKET, sock);
       auto frames = prefix + masked_frame(0x88, c.first);
-      ::send(sock, frames.data(), static_cast<int>(frames.size()), 0);
+      detail::send_socket(sock, frames.data(), frames.size(), 0);
 
       std::string reply;
       char buf[256];
