@@ -15935,11 +15935,15 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
     return handle;
   }
 
-  // Same framing check as ClientImpl::process_request(). A HEAD or bodyless
-  // (204/304) response legitimately carries framing headers with no body.
-  if (req.method != "HEAD" &&
-      handle.response->status != StatusCode::NoContent_204 &&
-      handle.response->status != StatusCode::NotModified_304 &&
+  // RFC 9112 6.3: a response to HEAD, and a 204 or 304 response, ends with its
+  // header section whatever framing headers it carries.
+  auto bodyless = req.method == "HEAD" ||
+                  handle.response->status == StatusCode::NoContent_204 ||
+                  handle.response->status == StatusCode::NotModified_304;
+
+  // Same framing check as ClientImpl::process_request(). A bodyless response
+  // legitimately carries framing headers with no body.
+  if (!bodyless &&
       detail::has_conflicting_content_length(handle.response->headers)) {
     handle.error = Error::Read;
     handle.response.reset();
@@ -15949,7 +15953,12 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   handle.body_reader_.stream = handle.stream_;
   handle.body_reader_.payload_max_length = payload_max_length_;
 
-  if (handle.response->has_header("Content-Length")) {
+  if (bodyless) {
+    // Nothing to read: the declared length would otherwise be taken from what
+    // follows the response, or waited for until the read timeout.
+    handle.body_reader_.has_content_length = true;
+    handle.body_reader_.content_length = 0;
+  } else if (handle.response->has_header("Content-Length")) {
     bool is_invalid = false;
     auto content_length = detail::get_header_value_u64(
         handle.response->headers, "Content-Length", 0, 0, is_invalid);
@@ -15963,6 +15972,7 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   }
 
   handle.body_reader_.chunked =
+      !bodyless &&
       detail::is_chunked_transfer_encoding(handle.response->headers);
 
   auto content_encoding = detail::get_combined_header_value(

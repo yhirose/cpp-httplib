@@ -23742,6 +23742,33 @@ TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
   }
 }
 
+// RFC 9112 6.3: a response to HEAD, and a 204 or 304 response, ends with its
+// header section, so a stream opened on one has nothing to read, whatever
+// framing headers it carries. Reading the declared length instead would take
+// the bytes that follow (or block until the read timeout) and report an error
+// for a complete response.
+TEST(ClientResponseSmugglingTest, BodylessResponseStreamEndsAtOnce) {
+  struct Case {
+    const char *method;
+    const char *status;
+  };
+  for (const auto &c : {Case{"HEAD", "200 OK"}, Case{"GET", "204 No Content"},
+                        Case{"GET", "304 Not Modified"}}) {
+    for (const char *framing :
+         {"Content-Length: 5\r\n", "Transfer-Encoding: chunked\r\n"}) {
+      auto response = std::string("HTTP/1.1 ") + c.status + "\r\n" + framing +
+                      "Connection: close\r\n"
+                      "\r\n";
+      with_single_response(response, [&](Client &cli) {
+        auto handle = cli.open_stream(c.method, "/");
+        ASSERT_TRUE(handle.is_valid()) << c.method << ' ' << response;
+        EXPECT_EQ("", read_all(handle)) << c.method << ' ' << response;
+        EXPECT_FALSE(handle.has_read_error()) << c.method << ' ' << response;
+      });
+    }
+  }
+}
+
 // RFC 9112 6.1: Transfer-Encoding next to a Content-Length, or in an HTTP/1.0
 // response, is faulty framing, so the connection is not reused after it.
 TEST(ClientResponseSmugglingTest, FaultyTransferEncodingClosesConnection) {
