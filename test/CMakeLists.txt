@@ -31,6 +31,14 @@ target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/b
 target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main CURL::libcurl)
 gtest_discover_tests(httplib-test)
 
+# It overrides the heartbeat macros, which a compiled library has fixed
+if(NOT HTTPLIB_COMPILE)
+    add_executable(httplib-heartbeat-test test_websocket_heartbeat.cc)
+    target_compile_options(httplib-heartbeat-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/bigobj>")
+    target_link_libraries(httplib-heartbeat-test PRIVATE httplib GTest::gtest_main)
+    gtest_discover_tests(httplib-heartbeat-test)
+endif()
+
 file(
     COPY www www2 www3 ca-bundle.crt image.jpg
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}

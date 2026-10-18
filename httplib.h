@@ -4645,6 +4645,8 @@ private:
   int max_missed_pongs_;
   int unacked_pings_ = 0;
   std::atomic<bool> closed_{false};
+  // Set when the peer stopped answering pings, to end a read() waiting on it
+  std::atomic<bool> pong_timed_out_{false};
   // Set once the caller has bounded read() through set_read_timeout(). Until
   // then the timeout in effect is the compile-time default, and elapsing it
   // is a failure that closes the connection, not a Timeout.
@@ -10766,6 +10768,7 @@ public:
   socket_t socket() const override;
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
+  void set_read_interrupt(std::function<bool()> interrupted) override;
 
 private:
   mutable std::mutex session_mutex_;
@@ -10780,6 +10783,7 @@ private:
   time_t write_timeout_sec_;
   time_t write_timeout_usec_;
   const std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  std::function<bool()> read_interrupted_;
 };
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -13386,7 +13390,8 @@ inline bool WebSocketSSLStream::is_readable() const {
 }
 
 inline bool WebSocketSSLStream::wait_readable() const {
-  return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
+  return select_read_interruptible(sock_, read_timeout_sec_, read_timeout_usec_,
+                                   read_interrupted_) > 0;
 }
 
 inline bool WebSocketSSLStream::wait_writable() const {
@@ -13484,6 +13489,11 @@ inline time_t WebSocketSSLStream::duration() const {
 inline void WebSocketSSLStream::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
+}
+
+inline void
+WebSocketSSLStream::set_read_interrupt(std::function<bool()> interrupted) {
+  read_interrupted_ = std::move(interrupted);
 }
 
 } // namespace detail
@@ -23331,12 +23341,15 @@ inline ReadResult WebSocket::read(std::string &msg) {
     impl::FrameRead r =
         impl::read_websocket_frame(strm_, opcode, payload, fin, is_server_,
                                    CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH);
-    // A timeout landed on a frame boundary: the connection is untouched and
-    // still usable, so hand control back without closing it. That is only
-    // useful to a caller who asked for the timeout; the compile-time default
-    // is a backstop against a peer gone quiet, and elapsing it closes the
-    // connection so a plain `while (ws.read(msg))` loop ends.
-    if (r == impl::FrameRead::Timeout && read_timeout_set_) { return Timeout; }
+    // A timeout landed on a frame boundary of an open connection: it is
+    // untouched and still usable, so hand control back without closing it.
+    // That is only useful to a caller who asked for the timeout; the
+    // compile-time default is a backstop against a peer gone quiet, and
+    // elapsing it closes the connection so a plain `while (ws.read(msg))` loop
+    // ends. A wait that a pong timeout cut short finds the connection closed.
+    if (r == impl::FrameRead::Timeout && read_timeout_set_ && !closed_) {
+      return Timeout;
+    }
     if (r != impl::FrameRead::Ok) {
       closed_ = true;
       return Fail;
@@ -23465,10 +23478,16 @@ inline WebSocket::~WebSocket() {
   }
   ping_cv_.notify_all();
   if (ping_thread_.joinable()) { ping_thread_.join(); }
+  // A server's stream outlives this object
+  strm_.set_read_interrupt(nullptr);
 }
 
 inline void WebSocket::start_heartbeat() {
   if (ping_interval_sec_ <= 0) { return; }
+  // A pong timeout ends a read() blocked on the silent peer
+  if (max_missed_pongs_ > 0) {
+    strm_.set_read_interrupt([this] { return pong_timed_out_.load(); });
+  }
   ping_thread_ = std::thread([this]() {
     std::unique_lock<std::mutex> lock(ping_mutex_);
     // The predicate keeps a spurious wakeup from sending a ping early
@@ -23480,14 +23499,7 @@ inline void WebSocket::start_heartbeat() {
       if (max_missed_pongs_ > 0 && unacked_pings_ >= max_missed_pongs_) {
         lock.unlock();
         close(CloseStatus::GoingAway, "pong timeout");
-        // Wake a read() blocked on the unresponsive peer. Only the read side
-        // is shut down: a TLS backend answers the EOF with an alert, and
-        // writing it to a socket closed for writing raises SIGPIPE.
-#ifdef _WIN32
-        shutdown(strm_.socket(), SD_RECEIVE);
-#else
-        shutdown(strm_.socket(), SHUT_RD);
-#endif
+        pong_timed_out_ = true;
         return;
       }
       lock.unlock();
