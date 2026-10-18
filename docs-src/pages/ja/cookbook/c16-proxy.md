@@ -69,6 +69,20 @@ cli.set_no_proxy({"internal.corp", "10.0.0.0/8", ".dev.local"});
 
 不正な書式のエントリは黙って捨てられます。`example.com:8080`のようなポート指定エントリはサポート外です（cpp-httplibの他のホストキーAPIもホスト名のみを扱う設計のため）。
 
+## WebSocketでもプロキシを使う
+
+`ws::WebSocketClient`にも同じプロキシ設定があります。
+
+```cpp
+httplib::ws::WebSocketClient cli("wss://ws.example.com/chat");
+cli.set_proxy("proxy.internal", 8080);
+cli.set_proxy_basic_auth("user", "password");
+
+auto res = cli.connect();
+```
+
+`ws://`でも`wss://`でも、CONNECTメソッドでトンネルを張ってからWebSocketのハンドシェイクを行います。`set_no_proxy()`も同じように使えます。
+
 ## 環境変数からプロキシ設定を読み込む
 
 cpp-httplib本体は`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`を読みません。`set_ca_cert_path()`と同じで、設定APIは常に明示的にしています。環境変数を反映させたい場合は、アプリ側で読んで`set_proxy()`や`set_no_proxy()`に渡してください。

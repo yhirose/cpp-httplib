@@ -4535,7 +4535,8 @@ enum ReadResult : int { Fail = 0, Text = 1, Binary = 2, Timeout = 3 };
 // Result of WebSocketClient::connect(). Truthy only when the WebSocket
 // upgrade handshake fully succeeded. On failure error() identifies the
 // failing layer; status()/headers() expose the server's upgrade response
-// when one was received (status() is -1 otherwise).
+// when one was received (status() is -1 otherwise), or the proxy's reply to
+// CONNECT when error() is ProxyConnection.
 class Result {
 public:
   Result() = default;
@@ -4694,6 +4695,12 @@ public:
   void set_interface(const std::string &intf);
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
+  void set_proxy(const std::string &host, int port);
+  void set_proxy_basic_auth(const std::string &username,
+                            const std::string &password);
+  void set_proxy_bearer_token_auth(const std::string &token);
+  void set_no_proxy(const std::vector<std::string> &patterns);
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
   struct PemMemory {
     const char *cert_pem;
@@ -4715,13 +4722,20 @@ public:
   void set_server_certificate_verifier(tls::VerifyCallback verifier);
   void set_session_verifier(
       std::function<SSLVerifierResponse(tls::session_t)> verifier);
+  void set_proxy_digest_auth(const std::string &username,
+                             const std::string &password);
 #endif
 
 private:
   void shutdown_and_close();
+  std::pair<time_t, time_t> handshake_timeout() const;
   bool create_stream(std::unique_ptr<Stream> &strm, Error &error,
                      int &ssl_error, uint64_t &ssl_backend_error);
   void prepare_default_headers(Request &req);
+  bool is_proxy_enabled() const;
+  bool create_and_connect_socket(Error &error);
+  bool send_proxy_connect(Request &req, Response &proxy_res, Error &error);
+  bool connect_with_proxy(Response &proxy_res, Error &error);
 
   std::string host_;
   int port_;
@@ -4751,6 +4765,13 @@ private:
   // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
+  std::string proxy_host_;
+  int proxy_port_ = -1;
+  std::string proxy_basic_auth_username_;
+  std::string proxy_basic_auth_password_;
+  std::string proxy_bearer_token_auth_token_;
+  std::vector<detail::NoProxyEntry> no_proxy_entries_;
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
   bool is_ssl_ = false;
   tls::ctx_t tls_ctx_ = nullptr;
@@ -4763,6 +4784,8 @@ private:
   bool server_certificate_verification_ = true;
   bool server_hostname_verification_ = true;
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
+  std::string proxy_digest_auth_username_;
+  std::string proxy_digest_auth_password_;
 #endif
 };
 
@@ -8463,31 +8486,30 @@ struct WebSocketUpgradeResponse {
   std::string selected_subprotocol;
 };
 
+// Reads a response's status line and headers, leaving any body unread. An
+// unparsable status line is no stream error; it just leaves `status` as is.
+inline bool read_response_head(Stream &strm, int &status, Headers &headers) {
+  const auto bufsiz = 2048;
+  char buf[bufsiz];
+  stream_line_reader line_reader(strm, buf, bufsiz);
+  if (!line_reader.getline()) { return false; }
+
+  std::string version;
+  std::string reason;
+  if (!parse_status_line(line_reader.ptr(), version, status, reason)) {
+    return true;
+  }
+  return read_headers(strm, headers);
+}
+
 inline bool
 read_websocket_upgrade_response(Stream &strm,
                                 const std::string &expected_accept,
                                 const std::string &offered_subprotocols,
                                 WebSocketUpgradeResponse &upgrade) {
-  // Read status line
-  const auto bufsiz = 2048;
-  char buf[bufsiz];
-  stream_line_reader line_reader(strm, buf, bufsiz);
-  if (!line_reader.getline()) {
-    upgrade.error = Error::Read;
-    return false;
-  }
-
-  std::string version;
-  std::string reason;
-  if (!parse_status_line(line_reader.ptr(), version, upgrade.status, reason)) {
-    upgrade.error = Error::WebSocketHandshake;
-    return false;
-  }
-
-  // Read the headers even for a rejection so the caller can see why the
-  // server refused the upgrade. A non-101 response may carry a body; it is
-  // deliberately left unread since the caller closes the socket right away.
-  if (!read_headers(strm, upgrade.headers)) {
+  // The headers of a rejection are kept so the caller can see why the server
+  // refused the upgrade.
+  if (!read_response_head(strm, upgrade.status, upgrade.headers)) {
     upgrade.error = Error::Read;
     return false;
   }
@@ -10545,6 +10567,25 @@ inline bool is_host(const std::string &s) {
 
 } // namespace fields
 
+// Built in memory first, like ClientImpl::write_request, so a rejected header
+// never leaves a partial request on the wire.
+inline bool write_request_head(Stream &strm, Request &req, Error &error) {
+  BufferStream bstrm;
+  if (write_request_line(bstrm, req.method, req.path) < 0) {
+    error = Error::Write;
+    return false;
+  }
+  if (!check_and_write_headers(bstrm, req.headers, write_headers, error)) {
+    return false;
+  }
+  const auto &data = bstrm.get_buffer();
+  if (!write_data(strm, data.data(), data.size())) {
+    error = Error::Write;
+    return false;
+  }
+  return true;
+}
+
 inline bool perform_websocket_handshake(Stream &strm, Request &req,
                                         WebSocketUpgradeResponse &upgrade) {
   // Generate a random 16-byte Sec-WebSocket-Key (RFC 6455 Section 4.1)
@@ -10562,28 +10603,7 @@ inline bool perform_websocket_handshake(Stream &strm, Request &req,
   req.headers.emplace("Sec-WebSocket-Key", client_key);
   req.headers.emplace("Sec-WebSocket-Version", "13");
 
-  // Build the request in memory first, like ClientImpl::write_request does.
-  // Writing straight to the socket would leak a request line onto the wire
-  // before check_and_write_headers gets a chance to reject an invalid header,
-  // and would emit one small write per header.
-  BufferStream bstrm;
-
-  if (write_request_line(bstrm, req.method, req.path) < 0) {
-    upgrade.error = Error::Write;
-    return false;
-  }
-
-  auto error = Error::Success;
-  if (!check_and_write_headers(bstrm, req.headers, write_headers, error)) {
-    upgrade.error = error;
-    return false;
-  }
-
-  const auto &data = bstrm.get_buffer();
-  if (!write_data(strm, data.data(), data.size())) {
-    upgrade.error = Error::Write;
-    return false;
-  }
+  if (!write_request_head(strm, req, upgrade.error)) { return false; }
 
   // Verify 101 response and Sec-WebSocket-Accept header
   auto expected_accept = websocket_accept_key(client_key);
@@ -11900,6 +11920,27 @@ make_bearer_token_authentication_header(const std::string &token,
   return std::make_pair(key, std::move(field));
 }
 
+namespace detail {
+
+// Basic auth when a username or password is set, otherwise a bearer token,
+// unless the request already carries the header.
+inline void add_authorization_header(Request &req, const std::string &username,
+                                     const std::string &password,
+                                     const std::string &token, bool is_proxy) {
+  if (req.has_header(is_proxy ? "Proxy-Authorization" : "Authorization")) {
+    return;
+  }
+  if (!username.empty() || !password.empty()) {
+    req.headers.insert(
+        make_basic_authentication_header(username, password, is_proxy));
+  } else if (!token.empty()) {
+    req.headers.insert(
+        make_bearer_token_authentication_header(token, is_proxy));
+  }
+}
+
+} // namespace detail
+
 // Request implementation
 inline size_t Request::get_header_value_u64(const std::string &key, size_t def,
                                             size_t id) const {
@@ -12991,6 +13032,21 @@ inline bool parse_no_proxy_entry(const std::string &token, NoProxyEntry &out) {
   out.kind = NoProxyKind::HostnameSuffix;
   out.hostname_pattern = std::move(hostname);
   return true;
+}
+
+inline std::vector<NoProxyEntry>
+parse_no_proxy_entries(const std::vector<std::string> &patterns) {
+  std::vector<NoProxyEntry> entries;
+  entries.reserve(patterns.size());
+  for (const auto &p : patterns) {
+    auto trimmed = trim_copy(p);
+    if (trimmed.empty()) { continue; }
+    NoProxyEntry entry;
+    if (parse_no_proxy_entry(trimmed, entry)) {
+      entries.push_back(std::move(entry));
+    }
+  }
+  return entries;
 }
 
 inline NormalizedTarget normalize_target(const std::string &host) {
@@ -16415,31 +16471,19 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
   // it opens is read by the origin. Each credential goes only to its own hop.
   auto is_connect = req.method == "CONNECT";
 
-  if (!is_connect && !req.has_header("Authorization")) {
-    if (!basic_auth_password_.empty() || !basic_auth_username_.empty()) {
-      req.headers.insert(make_basic_authentication_header(
-          basic_auth_username_, basic_auth_password_, false));
-    } else if (!bearer_token_auth_token_.empty()) {
-      req.headers.insert(make_bearer_token_authentication_header(
-          bearer_token_auth_token_, false));
-    }
+  if (!is_connect) {
+    detail::add_authorization_header(req, basic_auth_username_,
+                                     basic_auth_password_,
+                                     bearer_token_auth_token_, false);
   }
 
   // Proxy-Authorization is only sent when the proxy reads this message —
   // otherwise NO_PROXY-matched requests, and requests inside a TLS tunnel,
   // would leak proxy credentials to the destination server.
   if (is_proxy_enabled_for_host(host_) && (!is_ssl() || is_connect)) {
-    if ((!proxy_basic_auth_username_.empty() ||
-         !proxy_basic_auth_password_.empty()) &&
-        !req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_basic_authentication_header(
-          proxy_basic_auth_username_, proxy_basic_auth_password_, true));
-    }
-    if (!proxy_bearer_token_auth_token_.empty() &&
-        !req.has_header("Proxy-Authorization")) {
-      req.headers.insert(make_bearer_token_authentication_header(
-          proxy_bearer_token_auth_token_, true));
-    }
+    detail::add_authorization_header(req, proxy_basic_auth_username_,
+                                     proxy_basic_auth_password_,
+                                     proxy_bearer_token_auth_token_, true);
   }
 
   // Request line and headers
@@ -17924,17 +17968,7 @@ inline void ClientImpl::set_proxy_bearer_token_auth(const std::string &token) {
 }
 
 inline void ClientImpl::set_no_proxy(const std::vector<std::string> &patterns) {
-  std::vector<detail::NoProxyEntry> parsed;
-  parsed.reserve(patterns.size());
-  for (const auto &p : patterns) {
-    auto trimmed = detail::trim_copy(p);
-    if (trimmed.empty()) { continue; }
-    detail::NoProxyEntry entry;
-    if (detail::parse_no_proxy_entry(trimmed, entry)) {
-      parsed.push_back(std::move(entry));
-    }
-  }
-  no_proxy_entries_ = std::move(parsed);
+  no_proxy_entries_ = detail::parse_no_proxy_entries(patterns);
   std::lock_guard<std::mutex> guard(socket_mutex_);
   disconnect(/*gracefully=*/true);
 }
@@ -23527,6 +23561,15 @@ inline void WebSocketClient::shutdown_and_close() {
   }
 }
 
+// The handshakes belong to establishing the connection, so an unset read
+// timeout leaves them bounded by the connection timeout instead of forever.
+inline std::pair<time_t, time_t> WebSocketClient::handshake_timeout() const {
+  if (read_timeout_sec_ == 0 && read_timeout_usec_ == 0) {
+    return {connection_timeout_sec_, connection_timeout_usec_};
+  }
+  return {read_timeout_sec_, read_timeout_usec_};
+}
+
 inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
                                            Error &error, int &ssl_error,
                                            uint64_t &ssl_backend_error) {
@@ -23536,10 +23579,6 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
   auto unbounded = read_timeout_sec_ == 0 && read_timeout_usec_ == 0;
   time_t strm_read_sec = unbounded ? -1 : read_timeout_sec_;
   time_t strm_read_usec = unbounded ? 0 : read_timeout_usec_;
-  // The handshake belongs to establishing the connection, so an unset read
-  // timeout leaves it bounded by the connection timeout instead of forever.
-  time_t hs_sec = unbounded ? connection_timeout_sec_ : read_timeout_sec_;
-  time_t hs_usec = unbounded ? connection_timeout_usec_ : read_timeout_usec_;
 #ifdef CPPHTTPLIB_SSL_ENABLED
   if (is_ssl_) {
     // A plain flag rather than SSLClient::load_certs()'s call_once: connect()
@@ -23557,11 +23596,12 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
     options.server_hostname_verification = server_hostname_verification_;
     options.session_verifier = session_verifier_;
 
+    auto timeout = handshake_timeout();
     detail::ClientTlsSessionError tls_error;
     if (!detail::setup_client_tls_session(host_, tls_ctx_, tls_session_, sock_,
                                           server_certificate_verification_,
-                                          hs_sec, hs_usec, &tls_error,
-                                          options)) {
+                                          timeout.first, timeout.second,
+                                          &tls_error, options)) {
       error = tls_error.error;
       ssl_error = tls_error.ssl_error;
       ssl_backend_error = tls_error.backend_error;
@@ -23577,8 +23617,6 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
   (void)error;
   (void)ssl_error;
   (void)ssl_backend_error;
-  (void)hs_sec;
-  (void)hs_usec;
 #endif
   strm = std::unique_ptr<Stream>(
       new detail::SocketStream(sock_, strm_read_sec, strm_read_usec,
@@ -23605,21 +23643,17 @@ inline Result WebSocketClient::connect() {
   if (!is_valid_) { return Result{Error::Connection, -1, Headers{}}; }
   shutdown_and_close();
 
-  // Check is custom IP or hostname specified for host_
-  std::string connect_host;
-  std::string ip;
-  detail::apply_addr_map(addr_map_, host_, connect_host, ip);
-
   auto error = Error::Success;
-  sock_ = detail::create_client_socket(
-      connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
-      socket_options_, connection_timeout_sec_, connection_timeout_usec_,
-      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_, interface_, error);
-
-  if (sock_ == INVALID_SOCKET) {
-    if (error == Error::Success) { error = Error::Connection; }
+  if (!create_and_connect_socket(error)) {
     return Result{error, -1, Headers{}};
+  }
+
+  if (is_proxy_enabled()) {
+    Response proxy_res;
+    if (!connect_with_proxy(proxy_res, error)) {
+      shutdown_and_close();
+      return Result{error, proxy_res.status, std::move(proxy_res.headers)};
+    }
   }
 
   std::unique_ptr<Stream> strm;
@@ -23731,6 +23765,110 @@ inline void WebSocketClient::set_hostname_addr_map(
   addr_map_ = std::move(addr_map);
 }
 
+inline bool WebSocketClient::is_proxy_enabled() const {
+  if (proxy_host_.empty() || proxy_port_ == -1) { return false; }
+  if (no_proxy_entries_.empty()) { return true; }
+  return !detail::host_matches_no_proxy(detail::normalize_target(host_),
+                                        no_proxy_entries_);
+}
+
+inline bool WebSocketClient::create_and_connect_socket(Error &error) {
+  std::string connect_host;
+  std::string ip;
+  auto port = port_;
+  if (is_proxy_enabled()) {
+    connect_host = proxy_host_;
+    port = proxy_port_;
+  } else {
+    detail::apply_addr_map(addr_map_, host_, connect_host, ip);
+  }
+
+  sock_ = detail::create_client_socket(
+      connect_host, ip, port, address_family_, tcp_nodelay_, ipv6_v6only_,
+      socket_options_, connection_timeout_sec_, connection_timeout_usec_,
+      read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+      write_timeout_usec_, interface_, error);
+  if (sock_ != INVALID_SOCKET) { return true; }
+  if (error == Error::Success) { error = Error::Connection; }
+  return false;
+}
+
+inline bool WebSocketClient::send_proxy_connect(Request &req,
+                                                Response &proxy_res,
+                                                Error &error) {
+  auto timeout = handshake_timeout();
+  detail::SocketStream strm(sock_, timeout.first, timeout.second,
+                            write_timeout_sec_, write_timeout_usec_);
+
+  if (!detail::write_request_head(strm, req, error)) { return false; }
+  if (!detail::read_response_head(strm, proxy_res.status, proxy_res.headers)) {
+    error = Error::Read;
+    return false;
+  }
+  return true;
+}
+
+// RFC 6455 4.1: ws:// is tunnelled with CONNECT as well, since a proxy need not
+// forward an Upgrade request.
+inline bool WebSocketClient::connect_with_proxy(Response &proxy_res,
+                                                Error &error) {
+  Request req;
+  req.method = "CONNECT";
+  req.path = detail::make_host_and_port_string_always_port(host_, port_);
+  req.headers.emplace("Host", req.path);
+  detail::add_default_user_agent_header(req);
+  detail::add_authorization_header(req, proxy_basic_auth_username_,
+                                   proxy_basic_auth_password_,
+                                   proxy_bearer_token_auth_token_, true);
+  if (!send_proxy_connect(req, proxy_res, error)) { return false; }
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  // A Digest challenge gets one retry on a fresh connection, like SSLClient.
+  std::map<std::string, std::string> auth;
+  if (proxy_res.status == StatusCode::ProxyAuthenticationRequired_407 &&
+      !proxy_digest_auth_username_.empty() &&
+      !proxy_digest_auth_password_.empty() &&
+      detail::parse_www_authenticate(proxy_res, auth, true)) {
+    proxy_res = Response();
+    shutdown_and_close();
+    if (!create_and_connect_socket(error)) { return false; }
+
+    req.headers.erase("Proxy-Authorization");
+    req.headers.insert(detail::make_digest_authentication_header(
+        req, req.path, auth, 1, detail::random_string(10),
+        proxy_digest_auth_username_, proxy_digest_auth_password_, true));
+    if (!send_proxy_connect(req, proxy_res, error)) { return false; }
+  }
+#endif
+
+  if (proxy_res.status != StatusCode::OK_200) {
+    error = Error::ProxyConnection;
+    return false;
+  }
+  return true;
+}
+
+inline void WebSocketClient::set_proxy(const std::string &host, int port) {
+  proxy_host_ = host;
+  proxy_port_ = port;
+}
+
+inline void WebSocketClient::set_proxy_basic_auth(const std::string &username,
+                                                  const std::string &password) {
+  proxy_basic_auth_username_ = username;
+  proxy_basic_auth_password_ = password;
+}
+
+inline void
+WebSocketClient::set_proxy_bearer_token_auth(const std::string &token) {
+  proxy_bearer_token_auth_token_ = token;
+}
+
+inline void
+WebSocketClient::set_no_proxy(const std::vector<std::string> &patterns) {
+  no_proxy_entries_ = detail::parse_no_proxy_entries(patterns);
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 
 inline void
@@ -23779,6 +23917,13 @@ inline void WebSocketClient::enable_server_hostname_verification(bool enabled) {
 
 inline void WebSocketClient::enable_system_ca(bool enabled) {
   system_ca_mode_ = enabled ? SystemCAMode::Enabled : SystemCAMode::Disabled;
+}
+
+inline void
+WebSocketClient::set_proxy_digest_auth(const std::string &username,
+                                       const std::string &password) {
+  proxy_digest_auth_username_ = username;
+  proxy_digest_auth_password_ = password;
 }
 
 #endif // CPPHTTPLIB_SSL_ENABLED
