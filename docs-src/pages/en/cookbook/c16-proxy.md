@@ -69,6 +69,20 @@ Hostname matching is case-insensitive and uses a dot-boundary rule, so an entry 
 
 Malformed entries are silently dropped. Port-specific entries such as `example.com:8080` are not supported (cpp-httplib's other host-keyed APIs are also keyed on hostname only).
 
+## Use a proxy for WebSocket
+
+`ws::WebSocketClient` has the same proxy setters.
+
+```cpp
+httplib::ws::WebSocketClient cli("wss://ws.example.com/chat");
+cli.set_proxy("proxy.internal", 8080);
+cli.set_proxy_basic_auth("user", "password");
+
+auto res = cli.connect();
+```
+
+For both `ws://` and `wss://`, the client opens a tunnel with the CONNECT method and then performs the WebSocket handshake through it. `set_no_proxy()` works the same way.
+
 ## Read proxy settings from the environment
 
 cpp-httplib doesn't touch `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` on its own — the config API is always explicit, the same way `set_ca_cert_path()` is. If you'd like that behavior, read the variables in your application and feed them to `set_proxy()` and `set_no_proxy()`.

@@ -27164,412 +27164,6 @@ TEST(WebSocketPreRequestTest, RejectWithoutAuth) {
   t.join();
 }
 
-namespace httplib {
-namespace detail {
-ssize_t select_read(socket_t sock, time_t sec, time_t usec);
-int shutdown_socket(socket_t sock) noexcept;
-} // namespace detail
-} // namespace httplib
-
-namespace websocket_proxy_test {
-
-// A minimal CONNECT proxy built on httplib's portable socket helpers, so it
-// also runs on Windows. Every CONNECT request head is recorded; `reply`
-// decides the response head for it. A 200 opens a byte-for-byte tunnel to
-// 127.0.0.1:origin_port, anything else is sent and the connection closed.
-class ScopedWsConnectProxy {
-public:
-  using Reply = std::function<std::string(const std::string &head)>;
-
-  ScopedWsConnectProxy(int origin_port, Reply reply)
-      : origin_port_(origin_port), reply_(std::move(reply)) {
-    listen_sock_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_sock_ == INVALID_SOCKET) { return; }
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    a.sin_port = 0;
-    if (::bind(listen_sock_, reinterpret_cast<sockaddr *>(&a), sizeof(a)) !=
-        0) {
-      return;
-    }
-    socklen_t alen = sizeof(a);
-    if (::getsockname(listen_sock_, reinterpret_cast<sockaddr *>(&a), &alen) !=
-        0) {
-      return;
-    }
-    if (::listen(listen_sock_, 4) != 0) { return; }
-    port_ = ntohs(a.sin_port);
-    th_ = std::thread([this] { run(); });
-  }
-
-  ~ScopedWsConnectProxy() {
-    stop_ = true;
-    if (th_.joinable()) { th_.join(); }
-    if (listen_sock_ != INVALID_SOCKET) { detail::close_socket(listen_sock_); }
-  }
-
-  int port() const { return port_; }
-
-  std::vector<std::string> connect_requests() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return connect_requests_;
-  }
-
-private:
-  void run() {
-    while (!stop_) {
-      if (detail::select_read(listen_sock_, 0, 50 * 1000) <= 0) { continue; }
-      auto client = ::accept(listen_sock_, nullptr, nullptr);
-      if (client == INVALID_SOCKET) { continue; }
-      serve(client);
-      detail::close_socket(client);
-    }
-  }
-
-  void serve(socket_t client) {
-    std::string head;
-    char buf[2048];
-    while (head.find("\r\n\r\n") == std::string::npos) {
-      if (detail::select_read(client, 5, 0) <= 0) { return; }
-      auto n = detail::read_socket(client, buf, sizeof(buf), 0);
-      if (n <= 0) { return; }
-      head.append(buf, static_cast<size_t>(n));
-    }
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      connect_requests_.push_back(head);
-    }
-
-    auto res = reply_(head);
-    detail::send_socket(client, res.data(), res.size(), 0);
-    if (res.compare(0, 12, "HTTP/1.1 200") != 0) { return; }
-
-    auto origin = ::socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in o{};
-    o.sin_family = AF_INET;
-    o.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    o.sin_port = htons(static_cast<unsigned short>(origin_port_));
-    if (::connect(origin, reinterpret_cast<sockaddr *>(&o), sizeof(o)) != 0) {
-      detail::close_socket(origin);
-      return;
-    }
-
-    // When either side stops, shut both down so the other pump returns too.
-    auto pump = [&](socket_t from, socket_t to) {
-      char b[8192];
-      for (;;) {
-        auto n = detail::read_socket(from, b, sizeof(b), 0);
-        if (n <= 0) { break; }
-        if (detail::send_socket(to, b, static_cast<size_t>(n), 0) != n) {
-          break;
-        }
-      }
-      detail::shutdown_socket(client);
-      detail::shutdown_socket(origin);
-    };
-    std::thread up([&] { pump(client, origin); });
-    pump(origin, client);
-    up.join();
-    detail::close_socket(origin);
-  }
-
-  int origin_port_;
-  Reply reply_;
-  socket_t listen_sock_ = INVALID_SOCKET;
-  int port_ = 0;
-  std::thread th_;
-  std::atomic<bool> stop_{false};
-  mutable std::mutex mutex_;
-  std::vector<std::string> connect_requests_;
-};
-
-const char *kTunnelEstablished = "HTTP/1.1 200 Connection established\r\n\r\n";
-
-ScopedWsConnectProxy::Reply always_tunnel() {
-  return [](const std::string &) { return kTunnelEstablished; };
-}
-
-// Tunnels only when the CONNECT request carries `expected` as its
-// Proxy-Authorization header; otherwise answers 407 with `challenge`.
-ScopedWsConnectProxy::Reply require_proxy_auth(const std::string &expected,
-                                               const std::string &challenge) {
-  return [=](const std::string &head) -> std::string {
-    if (head.find("\r\nProxy-Authorization: " + expected + "\r\n") !=
-        std::string::npos) {
-      return kTunnelEstablished;
-    }
-    return "HTTP/1.1 407 Proxy Authentication Required\r\n"
-           "Proxy-Authenticate: " +
-           challenge + "\r\nContent-Length: 0\r\n\r\n";
-  };
-}
-
-// A WebSocket origin on 127.0.0.1 that first reports the Authorization and
-// Proxy-Authorization headers of the upgrade request, then echoes.
-class ScopedOrigin {
-public:
-  ScopedOrigin() {
-    svr_.WebSocket("/ws", [](const Request &req, ws::WebSocket &ws) {
-      ws.send("authorization:" + req.get_header_value("Authorization") +
-              "|proxy-authorization:" +
-              req.get_header_value("Proxy-Authorization"));
-      std::string msg;
-      while (ws.read(msg)) {
-        ws.send(msg);
-      }
-    });
-    port_ = svr_.bind_to_any_port("127.0.0.1");
-    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
-    svr_.wait_until_ready();
-  }
-
-  ~ScopedOrigin() {
-    svr_.stop();
-    if (thread_.joinable()) { thread_.join(); }
-  }
-
-  int port() const { return port_; }
-  // Pinned to 127.0.0.1, the only address the proxy forwards to.
-  std::string url() const {
-    return "ws://127.0.0.1:" + std::to_string(port_) + "/ws";
-  }
-
-private:
-  Server svr_;
-  std::thread thread_;
-  int port_ = 0;
-};
-
-} // namespace websocket_proxy_test
-
-TEST(WebSocketProxyTest, TunnelsThroughConnect) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), websocket_proxy_test::always_tunnel());
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url());
-  client.set_proxy("127.0.0.1", proxy.port());
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  ASSERT_TRUE(client.send("hello"));
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ("hello", msg);
-  client.close();
-
-  auto reqs = proxy.connect_requests();
-  ASSERT_EQ(1u, reqs.size());
-  auto target = "127.0.0.1:" + std::to_string(origin.port());
-  EXPECT_EQ(0u, reqs[0].find("CONNECT " + target + " HTTP/1.1\r\n"));
-  EXPECT_NE(std::string::npos, reqs[0].find("\r\nHost: " + target + "\r\n"));
-}
-
-TEST(WebSocketProxyTest, BasicCredentialsStayWithTheirHop) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(),
-      websocket_proxy_test::require_proxy_auth(
-          "Basic " + detail::base64_encode("proxy-user:proxy-pass"),
-          "Basic realm=\"proxy\""));
-  ASSERT_NE(0, proxy.port());
-
-  // The origin's credential is passed as a constructor header: it is meant for
-  // the upgrade request inside the tunnel, never for the CONNECT request.
-  ws::WebSocketClient client(
-      origin.url(),
-      {{"Authorization",
-        "Basic " + detail::base64_encode("origin-user:origin-pass")}});
-  client.set_proxy("127.0.0.1", proxy.port());
-  client.set_proxy_basic_auth("proxy-user", "proxy-pass");
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ("authorization:Basic " +
-                detail::base64_encode("origin-user:origin-pass") +
-                "|proxy-authorization:",
-            msg);
-  client.close();
-
-  auto reqs = proxy.connect_requests();
-  ASSERT_EQ(1u, reqs.size());
-  EXPECT_EQ(std::string::npos, reqs[0].find("\r\nAuthorization: "))
-      << "origin credentials must not be sent to the proxy";
-}
-
-TEST(WebSocketProxyTest, BearerCredentialsStayWithTheirHop) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), websocket_proxy_test::require_proxy_auth(
-                         "Bearer proxy-token", "Bearer realm=\"proxy\""));
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url(),
-                             {{"Authorization", "Bearer origin-token"}});
-  client.set_proxy("127.0.0.1", proxy.port());
-  client.set_proxy_bearer_token_auth("proxy-token");
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ("authorization:Bearer origin-token|proxy-authorization:", msg);
-  client.close();
-
-  auto reqs = proxy.connect_requests();
-  ASSERT_EQ(1u, reqs.size());
-  EXPECT_EQ(std::string::npos, reqs[0].find("\r\nAuthorization: "));
-}
-
-TEST(WebSocketProxyTest, BasicCredentialsWithEmptyPasswordAreSent) {
-  // Same rule as ClientImpl: a username alone is enough to send basic auth.
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), websocket_proxy_test::require_proxy_auth(
-                         "Basic " + detail::base64_encode("proxy-user:"),
-                         "Basic realm=\"proxy\""));
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url());
-  client.set_proxy("127.0.0.1", proxy.port());
-  client.set_proxy_basic_auth("proxy-user", "");
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  client.close();
-
-  EXPECT_EQ(1u, proxy.connect_requests().size());
-}
-
-TEST(WebSocketProxyTest, ProxyRejectionReportsProxyConnection) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), websocket_proxy_test::require_proxy_auth(
-                         "Bearer proxy-token", "Basic realm=\"proxy\""));
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url());
-  client.set_proxy("127.0.0.1", proxy.port());
-  auto res = client.connect();
-  EXPECT_FALSE(res);
-  EXPECT_EQ(Error::ProxyConnection, res.error());
-  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res.status());
-  EXPECT_EQ("Basic realm=\"proxy\"",
-            res.get_header_value("Proxy-Authenticate"));
-  EXPECT_FALSE(client.is_open());
-}
-
-TEST(WebSocketProxyTest, NoProxyBypassesProxy) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), websocket_proxy_test::always_tunnel());
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url());
-  client.set_proxy("127.0.0.1", proxy.port());
-  client.set_proxy_basic_auth("proxy-user", "proxy-pass");
-  client.set_no_proxy({"127.0.0.1"});
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ("authorization:|proxy-authorization:", msg)
-      << "proxy credentials must not reach a bypassed origin";
-  client.close();
-
-  EXPECT_TRUE(proxy.connect_requests().empty());
-}
-
-TEST(WebSocketProxyTest, ProxySettingAppliesOnReconnect) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), websocket_proxy_test::always_tunnel());
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url());
-  client.set_proxy("127.0.0.1", proxy.port());
-  ASSERT_TRUE(client.connect());
-  ASSERT_TRUE(client.connect());
-  client.close();
-
-  EXPECT_EQ(2u, proxy.connect_requests().size());
-}
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-TEST(WebSocketProxyTest, DigestRetriesConnectOnFreshSocket) {
-  websocket_proxy_test::ScopedOrigin origin;
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      origin.port(), [](const std::string &head) -> std::string {
-        if (head.find(
-                "\r\nProxy-Authorization: Digest username=\"proxy-user\"") !=
-            std::string::npos) {
-          return websocket_proxy_test::kTunnelEstablished;
-        }
-        return "HTTP/1.1 407 Proxy Authentication Required\r\n"
-               "Proxy-Authenticate: Digest realm=\"proxy\", qop=\"auth\", "
-               "nonce=\"abc\", algorithm=MD5\r\n"
-               "Content-Length: 0\r\n\r\n";
-      });
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client(origin.url());
-  client.set_proxy("127.0.0.1", proxy.port());
-  client.set_proxy_digest_auth("proxy-user", "proxy-pass");
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ("authorization:|proxy-authorization:", msg);
-  client.close();
-
-  EXPECT_EQ(2u, proxy.connect_requests().size());
-}
-
-TEST(WebSocketProxyTest, WssTunnelsThroughConnect) {
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-  ASSERT_TRUE(svr.is_valid());
-  svr.WebSocket("/ws", [](const Request &req, ws::WebSocket &ws) {
-    ws.send("proxy-authorization:" +
-            req.get_header_value("Proxy-Authorization"));
-    std::string msg;
-    while (ws.read(msg)) {}
-  });
-  auto port = svr.bind_to_any_port("127.0.0.1");
-  std::thread t([&]() { svr.listen_after_bind(); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-  });
-  svr.wait_until_ready();
-
-  websocket_proxy_test::ScopedWsConnectProxy proxy(
-      port, websocket_proxy_test::require_proxy_auth("Bearer proxy-token",
-                                                     "Bearer realm=\"proxy\""));
-  ASSERT_NE(0, proxy.port());
-
-  ws::WebSocketClient client("wss://127.0.0.1:" + std::to_string(port) + "/ws");
-  client.enable_server_certificate_verification(false);
-  client.set_proxy("127.0.0.1", proxy.port());
-  client.set_proxy_bearer_token_auth("proxy-token");
-  auto res = client.connect();
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ("proxy-authorization:", msg)
-      << "Proxy-Authorization must not be sent inside the tunnel";
-  client.close();
-
-  EXPECT_EQ(1u, proxy.connect_requests().size());
-}
-#endif
-
 TEST(WebSocketServerTimeoutTest, HandlerSendsWhileNothingArrives) {
   Server svr;
 
@@ -30071,7 +29665,158 @@ TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
   EXPECT_EQ(1, target_hits.load());
 }
 
-#if defined(CPPHTTPLIB_SSL_ENABLED) && !defined(_WIN32)
+// Forward declarations (see the base64_encode note).
+namespace httplib {
+namespace detail {
+ssize_t select_read(socket_t sock, time_t sec, time_t usec);
+int shutdown_socket(socket_t sock) noexcept;
+} // namespace detail
+} // namespace httplib
+
+namespace proxy_tunnel_test {
+
+const char *const kTunnelEstablished =
+    "HTTP/1.1 200 Connection established\r\n\r\n";
+
+// Answers the head of a CONNECT request; a 200 opens the tunnel.
+using ConnectReply = std::function<std::string(const std::string &head)>;
+
+// Accepts CONNECT on 127.0.0.1, answers it with `reply` (200 by default) and,
+// once tunnelled, byte-forwards to 127.0.0.1:forward_port.
+class ScopedConnectProxy {
+public:
+  explicit ScopedConnectProxy(int forward_port, ConnectReply reply = nullptr)
+      : forward_port_(forward_port), reply_(std::move(reply)) {
+    listen_sock_ = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_sock_ == INVALID_SOCKET) { return; }
+    auto a = loopback(0);
+    auto addr = reinterpret_cast<sockaddr *>(&a);
+    socklen_t alen = sizeof(a);
+    if (::bind(listen_sock_, addr, sizeof(a)) != 0 ||
+        ::getsockname(listen_sock_, addr, &alen) != 0 ||
+        ::listen(listen_sock_, 4) != 0) {
+      return;
+    }
+    port_ = ntohs(a.sin_port);
+    th_ = std::thread([this] { run(); });
+  }
+
+  ~ScopedConnectProxy() {
+    if (th_.joinable()) {
+      stop_ = true;
+      auto wake = connect_to(port_);
+      th_.join();
+      if (wake != INVALID_SOCKET) { detail::close_socket(wake); }
+    }
+    if (listen_sock_ != INVALID_SOCKET) { detail::close_socket(listen_sock_); }
+  }
+
+  int port() const { return port_; }
+  int connect_hits() const { return connect_hits_.load(); }
+  // Head of the last CONNECT request, as the proxy saw it on the wire.
+  std::string connect_request() const {
+    std::lock_guard<std::mutex> lock(connect_request_mutex_);
+    return connect_request_;
+  }
+
+private:
+  static sockaddr_in loopback(int port) {
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = htons(static_cast<unsigned short>(port));
+    return a;
+  }
+
+  static socket_t connect_to(int port) {
+    auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) { return sock; }
+    auto a = loopback(port);
+    if (::connect(sock, reinterpret_cast<sockaddr *>(&a), sizeof(a)) != 0) {
+      detail::close_socket(sock);
+      return INVALID_SOCKET;
+    }
+    return sock;
+  }
+
+  static bool send_all(socket_t sock, const char *data, size_t size) {
+    while (size > 0) {
+      auto n = detail::send_socket(sock, data, size, 0);
+      if (n <= 0) { return false; }
+      data += n;
+      size -= static_cast<size_t>(n);
+    }
+    return true;
+  }
+
+  void run() {
+    for (;;) {
+      auto client = ::accept(listen_sock_, nullptr, nullptr);
+      if (stop_) {
+        if (client != INVALID_SOCKET) { detail::close_socket(client); }
+        return;
+      }
+      if (client == INVALID_SOCKET) { continue; }
+      serve(client);
+      detail::close_socket(client);
+    }
+  }
+
+  void serve(socket_t client) {
+    std::string head;
+    char buf[2048];
+    while (head.find("\r\n\r\n") == std::string::npos) {
+      if (detail::select_read(client, 5, 0) <= 0) { return; }
+      auto n = detail::read_socket(client, buf, sizeof(buf), 0);
+      if (n <= 0) { return; }
+      head.append(buf, static_cast<size_t>(n));
+    }
+    if (head.compare(0, 8, "CONNECT ") != 0) { return; }
+    connect_hits_++;
+    {
+      std::lock_guard<std::mutex> lock(connect_request_mutex_);
+      connect_request_ = head;
+    }
+
+    auto res = reply_ ? reply_(head) : std::string(kTunnelEstablished);
+    if (!send_all(client, res.data(), res.size()) ||
+        res.compare(0, 12, "HTTP/1.1 200") != 0) {
+      return;
+    }
+
+    auto origin = connect_to(forward_port_);
+    if (origin == INVALID_SOCKET) { return; }
+
+    // When either side stops, shut both down so the other pump returns too.
+    auto pump = [&](socket_t from, socket_t to) {
+      char b[8192];
+      for (;;) {
+        auto n = detail::read_socket(from, b, sizeof(b), 0);
+        if (n <= 0 || !send_all(to, b, static_cast<size_t>(n))) { break; }
+      }
+      detail::shutdown_socket(client);
+      detail::shutdown_socket(origin);
+    };
+    std::thread up([&] { pump(client, origin); });
+    pump(origin, client);
+    up.join();
+    detail::close_socket(origin);
+  }
+
+  int forward_port_;
+  ConnectReply reply_;
+  socket_t listen_sock_ = INVALID_SOCKET;
+  int port_ = 0;
+  std::thread th_;
+  std::atomic<bool> stop_{false};
+  std::atomic<int> connect_hits_{0};
+  mutable std::mutex connect_request_mutex_;
+  std::string connect_request_;
+};
+
+} // namespace proxy_tunnel_test
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
 namespace proxy_tunnel_test {
 
 // SSLServer counterpart to no_proxy_test::ScopedServer.
@@ -30095,130 +29840,6 @@ private:
   SSLServer svr_;
   std::thread th_;
   int port_ = 0;
-};
-
-// Accepts CONNECT, replies 200, byte-forwards to forward_port.
-class ScopedConnectProxy {
-public:
-  explicit ScopedConnectProxy(int forward_port) : forward_port_(forward_port) {
-    listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd_ < 0) { return; }
-    int yes = 1;
-    ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    a.sin_port = 0;
-    if (::bind(listen_fd_, reinterpret_cast<sockaddr *>(&a), sizeof(a)) != 0) {
-      return;
-    }
-    socklen_t alen = sizeof(a);
-    if (::getsockname(listen_fd_, reinterpret_cast<sockaddr *>(&a), &alen) !=
-        0) {
-      return;
-    }
-    port_ = ntohs(a.sin_port);
-    if (::listen(listen_fd_, 1) != 0) { return; }
-    th_ = std::thread([this] { run(); });
-  }
-
-  ~ScopedConnectProxy() {
-    stop_ = true;
-    if (listen_fd_ >= 0) {
-      ::shutdown(listen_fd_, SHUT_RDWR);
-      ::close(listen_fd_);
-    }
-    if (th_.joinable()) { th_.join(); }
-  }
-
-  int port() const { return port_; }
-  int connect_hits() const { return connect_hits_.load(); }
-  // Head of the last CONNECT request, as the proxy saw it on the wire.
-  std::string connect_request() const {
-    std::lock_guard<std::mutex> lock(connect_request_mutex_);
-    return connect_request_;
-  }
-
-private:
-  void run() {
-    while (!stop_.load()) {
-      fd_set rfds;
-      FD_ZERO(&rfds);
-      FD_SET(listen_fd_, &rfds);
-      timeval tv{0, 100 * 1000};
-      int sel = ::select(listen_fd_ + 1, &rfds, nullptr, nullptr, &tv);
-      if (sel <= 0) { continue; }
-
-      int client_fd = ::accept(listen_fd_, nullptr, nullptr);
-      if (client_fd < 0) { continue; }
-
-      std::string req;
-      char buf[2048];
-      while (req.find("\r\n\r\n") == std::string::npos) {
-        ssize_t n = ::recv(client_fd, buf, sizeof(buf), 0);
-        if (n <= 0) { break; }
-        req.append(buf, static_cast<size_t>(n));
-      }
-      if (req.compare(0, 7, "CONNECT") != 0) {
-        ::close(client_fd);
-        continue;
-      }
-      connect_hits_++;
-      {
-        std::lock_guard<std::mutex> lock(connect_request_mutex_);
-        connect_request_ = req;
-      }
-
-      const char *ok = "HTTP/1.1 200 Connection established\r\n\r\n";
-      ::send(client_fd, ok, std::strlen(ok), 0);
-
-      int origin_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-      sockaddr_in o{};
-      o.sin_family = AF_INET;
-      o.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-      o.sin_port = htons(static_cast<unsigned short>(forward_port_));
-      if (::connect(origin_fd, reinterpret_cast<sockaddr *>(&o), sizeof(o)) !=
-          0) {
-        ::close(client_fd);
-        ::close(origin_fd);
-        continue;
-      }
-
-      auto forward = [](int from, int to) {
-        char b[8192];
-        for (;;) {
-          ssize_t n = ::recv(from, b, sizeof(b), 0);
-          if (n <= 0) { break; }
-          ssize_t off = 0;
-          while (off < n) {
-            ssize_t s = ::send(to, b + off, static_cast<size_t>(n - off), 0);
-            if (s <= 0) {
-              off = n;
-              break;
-            }
-            off += s;
-          }
-        }
-        ::shutdown(to, SHUT_WR);
-      };
-
-      std::thread t1([&] { forward(client_fd, origin_fd); });
-      std::thread t2([&] { forward(origin_fd, client_fd); });
-      t1.join();
-      t2.join();
-      ::close(client_fd);
-      ::close(origin_fd);
-    }
-  }
-
-  int forward_port_ = -1;
-  int listen_fd_ = -1;
-  int port_ = 0;
-  std::thread th_;
-  std::atomic<bool> stop_{false};
-  std::atomic<int> connect_hits_{0};
-  mutable std::mutex connect_request_mutex_;
-  std::string connect_request_;
 };
 
 // Sends one request through the CONNECT proxy to the TLS origin with a
@@ -30339,6 +29960,254 @@ TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
   EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res->status);
   EXPECT_EQ(1, origin_hits.load());
   EXPECT_FALSE(origin_saw_proxy_authz.load());
+  EXPECT_EQ(1, proxy.connect_hits());
+}
+#endif
+
+namespace proxy_tunnel_test {
+
+// Tunnels only a CONNECT carrying `expected` as its Proxy-Authorization;
+// anything else gets a 407 with `challenge`.
+ConnectReply require_proxy_auth(const std::string &expected,
+                                const std::string &challenge) {
+  return [=](const std::string &head) -> std::string {
+    if (head.find("\r\nProxy-Authorization: " + expected + "\r\n") !=
+        std::string::npos) {
+      return kTunnelEstablished;
+    }
+    return "HTTP/1.1 407 Proxy Authentication Required\r\n"
+           "Proxy-Authenticate: " +
+           challenge + "\r\nContent-Length: 0\r\n\r\n";
+  };
+}
+
+// Reports the Authorization and Proxy-Authorization headers of the upgrade
+// request, then echoes.
+void report_auth_then_echo(const Request &req, ws::WebSocket &ws) {
+  ws.send(
+      "authorization:" + req.get_header_value("Authorization") +
+      "|proxy-authorization:" + req.get_header_value("Proxy-Authorization"));
+  std::string msg;
+  while (ws.read(msg)) {
+    ws.send(msg);
+  }
+}
+
+// A WebSocket origin on 127.0.0.1 serving report_auth_then_echo at /ws.
+class ScopedWebSocketOrigin {
+public:
+  ScopedWebSocketOrigin() {
+    server_.svr().WebSocket("/ws", report_auth_then_echo);
+    server_.listen();
+  }
+
+  int port() const { return server_.port(); }
+  // Pinned to 127.0.0.1, the only address the proxy forwards to.
+  std::string url() const {
+    return "ws://127.0.0.1:" + std::to_string(port()) + "/ws";
+  }
+
+private:
+  no_proxy_test::ScopedServer server_;
+};
+
+// Connects through a proxy that requires `proxy_authz`, with `origin_authz`
+// passed as a constructor header, and checks that each reaches only its hop.
+void WebSocketCredentialsStayWithTheirHop(
+    const std::function<void(ws::WebSocketClient &)> &set_proxy_credentials,
+    const std::string &proxy_authz, const std::string &origin_authz) {
+  ScopedWebSocketOrigin origin;
+  ScopedConnectProxy proxy(
+      origin.port(), require_proxy_auth(proxy_authz, "Basic realm=\"proxy\""));
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url(), {{"Authorization", origin_authz}});
+  client.set_proxy("127.0.0.1", proxy.port());
+  set_proxy_credentials(client);
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("authorization:" + origin_authz + "|proxy-authorization:", msg);
+  client.close();
+
+  EXPECT_EQ(1, proxy.connect_hits());
+  EXPECT_EQ(std::string::npos,
+            proxy.connect_request().find("\r\nAuthorization: "))
+      << "origin credentials must not be sent to the proxy";
+}
+
+} // namespace proxy_tunnel_test
+
+TEST(WebSocketProxyTest, TunnelsThroughConnect) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  ASSERT_TRUE(client.send("hello"));
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("hello", msg);
+  client.close();
+
+  EXPECT_EQ(1, proxy.connect_hits());
+  auto target = "127.0.0.1:" + std::to_string(origin.port());
+  auto connect_req = proxy.connect_request();
+  EXPECT_EQ(0u, connect_req.find("CONNECT " + target + " HTTP/1.1\r\n"));
+  EXPECT_NE(std::string::npos,
+            connect_req.find("\r\nHost: " + target + "\r\n"));
+}
+
+TEST(WebSocketProxyTest, BasicCredentialsStayWithTheirHop) {
+  proxy_tunnel_test::WebSocketCredentialsStayWithTheirHop(
+      [](ws::WebSocketClient &cli) {
+        cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+      },
+      "Basic " + detail::base64_encode("proxy-user:proxy-pass"),
+      "Basic " + detail::base64_encode("origin-user:origin-pass"));
+}
+
+TEST(WebSocketProxyTest, BearerCredentialsStayWithTheirHop) {
+  proxy_tunnel_test::WebSocketCredentialsStayWithTheirHop(
+      [](ws::WebSocketClient &cli) {
+        cli.set_proxy_bearer_token_auth("proxy-token");
+      },
+      "Bearer proxy-token", "Bearer origin-token");
+}
+
+TEST(WebSocketProxyTest, BasicCredentialsWithEmptyPasswordAreSent) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(
+      origin.port(), proxy_tunnel_test::require_proxy_auth(
+                         "Basic " + detail::base64_encode("proxy-user:"),
+                         "Basic realm=\"proxy\""));
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  client.set_proxy_basic_auth("proxy-user", "");
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  client.close();
+
+  EXPECT_EQ(1, proxy.connect_hits());
+}
+
+TEST(WebSocketProxyTest, ProxyRejectionReportsProxyConnection) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(
+      origin.port(), proxy_tunnel_test::require_proxy_auth(
+                         "Bearer proxy-token", "Basic realm=\"proxy\""));
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  auto res = client.connect();
+  EXPECT_FALSE(res);
+  EXPECT_EQ(Error::ProxyConnection, res.error());
+  EXPECT_EQ(StatusCode::ProxyAuthenticationRequired_407, res.status());
+  EXPECT_EQ("Basic realm=\"proxy\"",
+            res.get_header_value("Proxy-Authenticate"));
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST(WebSocketProxyTest, NoProxyBypassesProxy) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  client.set_proxy_basic_auth("proxy-user", "proxy-pass");
+  client.set_no_proxy({"127.0.0.1"});
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("authorization:|proxy-authorization:", msg)
+      << "proxy credentials must not reach a bypassed origin";
+  client.close();
+
+  EXPECT_EQ(0, proxy.connect_hits());
+}
+
+TEST(WebSocketProxyTest, ProxySettingAppliesOnReconnect) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.connect());
+  client.close();
+
+  EXPECT_EQ(2, proxy.connect_hits());
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(WebSocketProxyTest, DigestRetriesConnectOnFreshSocket) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(
+      origin.port(), [](const std::string &head) -> std::string {
+        if (head.find(
+                "\r\nProxy-Authorization: Digest username=\"proxy-user\"") !=
+            std::string::npos) {
+          return proxy_tunnel_test::kTunnelEstablished;
+        }
+        return "HTTP/1.1 407 Proxy Authentication Required\r\n"
+               "Proxy-Authenticate: Digest realm=\"proxy\", qop=\"auth\", "
+               "nonce=\"abc\", algorithm=MD5\r\n"
+               "Content-Length: 0\r\n\r\n";
+      });
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  client.set_proxy_digest_auth("proxy-user", "proxy-pass");
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("authorization:|proxy-authorization:", msg);
+  client.close();
+
+  EXPECT_EQ(2, proxy.connect_hits());
+}
+
+TEST(WebSocketProxyTest, WssTunnelsThroughConnect) {
+  proxy_tunnel_test::ScopedSSLServer origin;
+  origin.svr().WebSocket("/ws", proxy_tunnel_test::report_auth_then_echo);
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(
+      origin.port(), proxy_tunnel_test::require_proxy_auth(
+                         "Bearer proxy-token", "Bearer realm=\"proxy\""));
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(
+      "wss://127.0.0.1:" + std::to_string(origin.port()) + "/ws");
+  client.enable_server_certificate_verification(false);
+  client.set_proxy("127.0.0.1", proxy.port());
+  client.set_proxy_bearer_token_auth("proxy-token");
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("authorization:|proxy-authorization:", msg)
+      << "Proxy-Authorization must not be sent inside the tunnel";
+  client.close();
+
   EXPECT_EQ(1, proxy.connect_hits());
 }
 #endif
