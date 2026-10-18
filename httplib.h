@@ -2473,7 +2473,8 @@ private:
   int bind_internal(const std::string &host, int port, int socket_flags);
   bool listen_internal();
 
-  bool routing(Request &req, Response &res, Stream &strm);
+  bool routing(Request &req, Response &res, Stream &strm,
+               bool skip_pre_routing);
   bool handle_file_request(Request &req, Response &res);
   bool check_if_not_modified(const Request &req, Response &res,
                              const std::string &etag, time_t mtime) const;
@@ -14612,8 +14613,9 @@ inline bool Server::listen_internal() {
   return ret;
 }
 
-inline bool Server::routing(Request &req, Response &res, Stream &strm) {
-  if (pre_routing_handler_ &&
+inline bool Server::routing(Request &req, Response &res, Stream &strm,
+                            bool skip_pre_routing) {
+  if (!skip_pre_routing && pre_routing_handler_ &&
       pre_routing_handler_(req, res) == HandlerResponse::Handled) {
     return true;
   }
@@ -15171,7 +15173,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // The response says so when this connection closes after it.
   auto close_after_response = close_connection || connection_closed;
 
-  if (detail::is_websocket_upgrade(req)) {
+  // An upgrade request has been through pre-routing before it reaches routing()
+  auto is_upgrade = detail::is_websocket_upgrade(req);
+  if (is_upgrade) {
     if (pre_routing_handler_ &&
         pre_routing_handler_(req, res) == HandlerResponse::Handled) {
       if (res.status == -1) { res.status = StatusCode::OK_200; }
@@ -15265,16 +15269,16 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         return true;
       }
     }
-    // No matching handler - fall through to 404
+    // No WebSocket route: route it as a plain HTTP request
   }
 
   // Routing
   auto routed = false;
 #ifdef CPPHTTPLIB_NO_EXCEPTIONS
-  routed = routing(req, res, strm);
+  routed = routing(req, res, strm, is_upgrade);
 #else
   try {
-    routed = routing(req, res, strm);
+    routed = routing(req, res, strm, is_upgrade);
   } catch (std::exception &) {
     if (exception_handler_) {
       auto ep = std::current_exception();

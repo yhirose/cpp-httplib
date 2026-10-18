@@ -27435,6 +27435,85 @@ TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   t.join();
 }
 
+TEST(WebSocketPreRoutingTest, RunsOnceForUnmatchedUpgrade) {
+  Server svr;
+
+  std::atomic<int> pre_routing_calls{0};
+  std::atomic<int> pre_request_calls{0};
+  svr.set_pre_routing_handler([&](const Request &req, Response &res) {
+    pre_routing_calls++;
+    if (req.path == "/handled") {
+      res.set_content("handled", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+  svr.set_pre_request_handler([&](const Request &, Response &) {
+    pre_request_calls++;
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  svr.Get("/http", [](const Request &, Response &res) {
+    res.set_content("http", "text/plain");
+  });
+  svr.WebSocket("/ws",
+                [](const Request &, ws::WebSocket &ws) { ws.send("ws"); });
+
+  auto port = svr.bind_to_any_port("localhost");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Headers upgrade = {{"Upgrade", "websocket"},
+                     {"Connection", "Upgrade"},
+                     {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                     {"Sec-WebSocket-Version", "13"}};
+
+  auto get = [&](const char *path) {
+    pre_routing_calls = 0;
+    return Client("localhost", port).Get(path, upgrade);
+  };
+
+  // No WebSocket route, but an HTTP one
+  auto res = get("/http");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("http", res->body);
+  EXPECT_EQ(1, pre_routing_calls);
+  EXPECT_EQ(1, pre_request_calls);
+
+  // No route at all
+  res = get("/none");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+  EXPECT_EQ(1, pre_routing_calls);
+
+  // Answered by the pre-routing handler
+  res = get("/handled");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("handled", res->body);
+  EXPECT_EQ(1, pre_routing_calls);
+
+  // A WebSocket route
+  pre_routing_calls = 0;
+  pre_request_calls = 0;
+  {
+    ws::WebSocketClient client("ws://localhost:" + std::to_string(port) +
+                               "/ws");
+    ASSERT_TRUE(client.connect());
+    std::string msg;
+    ASSERT_TRUE(client.read(msg));
+    EXPECT_EQ("ws", msg);
+    client.close();
+  }
+  EXPECT_EQ(1, pre_routing_calls);
+  EXPECT_EQ(1, pre_request_calls);
+}
+
 TEST(WebSocketPreRequestTest, RejectWithoutAuth) {
   Server svr;
 
