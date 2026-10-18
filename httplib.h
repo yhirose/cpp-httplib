@@ -2020,6 +2020,12 @@ public:
   // each one. 0 lifts the bound.
   virtual void set_max_timeout(time_t msec) { (void)msec; }
 
+  // Lets a wait for data end early once `interrupted` returns true, so that
+  // another thread can stop a blocked read on every platform.
+  virtual void set_read_interrupt(std::function<bool()> interrupted) {
+    (void)interrupted;
+  }
+
   // Bytes already pulled off the socket and sitting in this stream's own
   // buffer. Exposing them lets a line reader scan for a terminator in one
   // pass instead of asking for a byte at a time. A stream that does no
@@ -5075,6 +5081,10 @@ inline void SSEClient::run_event_loop() {
     // bounded instead of the whole body.
     auto handle = client_.open_stream("GET", path_, {}, request_headers);
     handle.body_reader_.payload_max_length = 0;
+    // stop() ends a read that is waiting for the next event
+    if (handle.stream_) {
+      handle.stream_->set_read_interrupt([this] { return !running_.load(); });
+    }
     stream::Result result{std::move(handle)};
 
     // Connection error handling
@@ -6740,6 +6750,26 @@ inline ssize_t select_until(socket_t sock, short events,
                      static_cast<time_t>(left % 1000000));
 }
 
+// select_read(), but waits in slices and gives up once interrupted() returns
+// true. A local shutdown() would not wake the wait on Windows.
+inline ssize_t
+select_read_interruptible(socket_t sock, time_t sec, time_t usec,
+                          const std::function<bool()> &interrupted) {
+  if (!interrupted) { return select_read(sock, sec, usec); }
+
+  const auto slice = std::chrono::microseconds(100000);
+  auto deadline = deadline_after(sec, usec);
+  while (!interrupted()) {
+    auto left = std::chrono::duration_cast<std::chrono::microseconds>(
+        deadline - std::chrono::steady_clock::now());
+    auto wait =
+        (std::max)((std::min)(left, slice), std::chrono::microseconds(0));
+    auto ret = select_impl(sock, POLLIN, 0, static_cast<time_t>(wait.count()));
+    if (ret != 0 || wait < slice) { return ret; }
+  }
+  return 0;
+}
+
 inline Error wait_until_socket_is_ready(socket_t sock, time_t sec,
                                         time_t usec) {
   struct pollfd pfd_read;
@@ -6798,6 +6828,7 @@ public:
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
   void set_max_timeout(time_t msec) override;
+  void set_read_interrupt(std::function<bool()> interrupted) override;
   const char *buffered_data(size_t &size) const override;
   void consume_buffered(size_t size) override;
 
@@ -6819,6 +6850,7 @@ private:
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
   std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  std::function<bool()> read_interrupted_;
 
   std::vector<char> read_buff_;
   size_t read_buff_off_ = 0;
@@ -10679,6 +10711,7 @@ public:
   time_t duration() const override;
   void set_read_timeout(time_t sec, time_t usec = 0) override;
   void set_max_timeout(time_t msec) override;
+  void set_read_interrupt(std::function<bool()> interrupted) override;
 
   // See SocketStream::set_readable_hint().
   void set_readable_hint() { readable_hint_ = true; }
@@ -10698,6 +10731,7 @@ private:
   time_t write_timeout_usec_;
   time_t max_timeout_msec_;
   std::chrono::time_point<std::chrono::steady_clock> start_time_;
+  std::function<bool()> read_interrupted_;
   bool readable_hint_ = false;
   tls::TlsError tls_error_;
 };
@@ -12610,7 +12644,8 @@ inline bool SocketStream::is_readable() const {
 
 inline bool SocketStream::wait_readable() const {
   if (max_timeout_msec_ <= 0) {
-    return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
+    return select_read_interruptible(sock_, read_timeout_sec_,
+                                     read_timeout_usec_, read_interrupted_) > 0;
   }
 
   time_t read_timeout_sec;
@@ -12618,7 +12653,8 @@ inline bool SocketStream::wait_readable() const {
   calc_actual_timeout(max_timeout_msec_, duration(), read_timeout_sec_,
                       read_timeout_usec_, read_timeout_sec, read_timeout_usec);
 
-  return select_read(sock_, read_timeout_sec, read_timeout_usec) > 0;
+  return select_read_interruptible(sock_, read_timeout_sec, read_timeout_usec,
+                                   read_interrupted_) > 0;
 }
 
 inline bool SocketStream::wait_writable() const {
@@ -12747,6 +12783,11 @@ inline void SocketStream::set_read_timeout(time_t sec, time_t usec) {
 inline void SocketStream::set_max_timeout(time_t msec) {
   max_timeout_msec_ = msec;
   start_time_ = std::chrono::steady_clock::now();
+}
+
+inline void
+SocketStream::set_read_interrupt(std::function<bool()> interrupted) {
+  read_interrupted_ = std::move(interrupted);
 }
 
 // Buffer stream implementation
@@ -13174,7 +13215,8 @@ inline bool SSLSocketStream::is_readable() const {
 
 inline bool SSLSocketStream::wait_readable() const {
   if (max_timeout_msec_ <= 0) {
-    return select_read(sock_, read_timeout_sec_, read_timeout_usec_) > 0;
+    return select_read_interruptible(sock_, read_timeout_sec_,
+                                     read_timeout_usec_, read_interrupted_) > 0;
   }
 
   time_t read_timeout_sec;
@@ -13182,7 +13224,8 @@ inline bool SSLSocketStream::wait_readable() const {
   calc_actual_timeout(max_timeout_msec_, duration(), read_timeout_sec_,
                       read_timeout_usec_, read_timeout_sec, read_timeout_usec);
 
-  return select_read(sock_, read_timeout_sec, read_timeout_usec) > 0;
+  return select_read_interruptible(sock_, read_timeout_sec, read_timeout_usec,
+                                   read_interrupted_) > 0;
 }
 
 inline bool SSLSocketStream::wait_writable() const {
@@ -13307,6 +13350,11 @@ inline void SSLSocketStream::set_read_timeout(time_t sec, time_t usec) {
 inline void SSLSocketStream::set_max_timeout(time_t msec) {
   max_timeout_msec_ = msec;
   start_time_ = std::chrono::steady_clock::now();
+}
+
+inline void
+SSLSocketStream::set_read_interrupt(std::function<bool()> interrupted) {
+  read_interrupted_ = std::move(interrupted);
 }
 
 inline WebSocketSSLStream::WebSocketSSLStream(socket_t sock,

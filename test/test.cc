@@ -25593,19 +25593,16 @@ TEST_F(SSEIntegrationTest, LastEventIdHeader) {
 
 // Test: Manual stop
 TEST_F(SSEIntegrationTest, ManualStop) {
-  // Endpoint that sends one event and stays open briefly
-  std::atomic<bool> handler_running{true};
-
-  server_->Get("/stay-open", [&handler_running](const Request &,
-                                                Response &res) {
+  // Endpoint that sends one event and stays open briefly. The server outlives
+  // this test body, so the provider uses the fixture's flag, not a local.
+  server_->Get("/stay-open", [this](const Request &, Response &res) {
     res.set_chunked_content_provider(
-        "text/event-stream", [&handler_running](size_t offset, DataSink &sink) {
+        "text/event-stream", [this](size_t offset, DataSink &sink) {
           if (offset == 0) {
             std::string event = "data: connected\n\n";
             sink.write(event.data(), event.size());
           }
-          // Keep connection open while handler_running is true
-          for (int i = 0; i < 10 && handler_running.load(); ++i) {
+          for (int i = 0; i < 10 && !stop_server_.load(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
           }
           return false;
@@ -25630,12 +25627,84 @@ TEST_F(SSEIntegrationTest, ManualStop) {
   EXPECT_TRUE(sse.is_connected());
 
   // Signal handler to stop
-  handler_running.store(false);
+  stop_server_.store(true);
 
   // Stop SSE client
   sse.stop();
   EXPECT_FALSE(sse.is_connected());
 }
+
+// Sends one event, then nothing until stop is set
+static Server::Handler idle_event_stream(std::atomic<bool> &stop) {
+  return [&stop](const Request &, Response &res) {
+    res.set_chunked_content_provider(
+        "text/event-stream", [&stop](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string event = "data: hello\n\n";
+            sink.write(event.data(), event.size());
+          }
+          while (!stop.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+          return false;
+        });
+  };
+}
+
+// Both stop() and the destructor end a read blocked on /idle-stream promptly
+static void check_stop_interrupts_blocked_read(Client &client) {
+  client.set_read_timeout(30, 0);
+
+  for (auto by_destructor : {false, true}) {
+    std::atomic<bool> received{false};
+    std::chrono::steady_clock::time_point start;
+    {
+      sse::SSEClient sse(client, "/idle-stream");
+      sse.on_message([&](const sse::SSEMessage &) { received.store(true); });
+      sse.start_async();
+
+      for (int i = 0; i < 500 && !received.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      ASSERT_TRUE(received.load());
+      // Let the client block in the next read
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+      start = std::chrono::steady_clock::now();
+      if (!by_destructor) { sse.stop(); }
+    }
+    EXPECT_LT(std::chrono::steady_clock::now() - start,
+              std::chrono::seconds(2));
+  }
+}
+
+TEST_F(SSEIntegrationTest, StopInterruptsBlockedRead) {
+  server_->Get("/idle-stream", idle_event_stream(stop_server_));
+
+  Client client("localhost", get_port());
+  check_stop_interrupts_blocked_read(client);
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(SSEClientSSLTest, StopInterruptsBlockedRead) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  std::atomic<bool> done{false};
+  svr.Get("/idle-stream", idle_event_stream(done));
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    done.store(true);
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client client("https://localhost:" + std::to_string(port));
+  client.enable_server_certificate_verification(false);
+  check_stop_interrupts_blocked_read(client);
+}
+#endif
 
 // Test: SSEClient with custom headers
 TEST_F(SSEIntegrationTest, CustomHeaders) {
