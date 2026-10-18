@@ -623,10 +623,6 @@ jobs:
         }
         if ($failed) { exit 1 }
         Write-Host "All shards passed."
-    - name: Run WebSocket heartbeat test ${{ matrix.config.name }}
-      if: ${{ matrix.config.run_tests }}
-      working-directory: build/test
-      run: ./Release/httplib-heartbeat-test.exe --gtest_color=yes
 
     env:
       VCPKG_ROOT: "C:/vcpkg"

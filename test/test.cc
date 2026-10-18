@@ -28414,6 +28414,68 @@ TEST(WebSocketTest, NegativePingIntervalSendsNoPings) {
   EXPECT_EQ(-1, ::recv(sock, &c, 1, 0));
 }
 
+// The client's heartbeat gives up on a peer that leaves its pings unanswered,
+// and that has to end a read() already waiting on the peer, on every platform.
+static void check_pong_timeout_ends_read(Server &svr, const char *scheme) {
+  // The peer sends no pings, and its handler never calls read(), which is
+  // where pongs are written.
+  std::mutex mutex;
+  std::condition_variable cv;
+  auto release = false;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &) {
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait(lock, [&] { return release; });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      release = true;
+    }
+    cv.notify_all();
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client(std::string(scheme) +
+                             "://localhost:" + std::to_string(port) + "/ws");
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  client.enable_server_certificate_verification(false);
+#endif
+  // A ping a second, given up on after two go unanswered: about 3s
+  client.set_websocket_ping_interval(1);
+  client.set_websocket_max_missed_pongs(2);
+  // Well past that, so that a read the timeout ends instead stands out
+  client.set_read_timeout(10);
+  ASSERT_TRUE(client.connect());
+
+  auto start = std::chrono::steady_clock::now();
+  std::string msg;
+  EXPECT_EQ(ws::Fail, client.read(msg));
+  EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start)
+                .count(),
+            6000);
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST(WebSocketTest, PongTimeoutEndsABlockedRead) {
+  Server svr;
+  check_pong_timeout_ends_read(svr, "ws");
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(WebSocketTest, PongTimeoutEndsABlockedReadOverTLS) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  check_pong_timeout_ends_read(svr, "wss");
+}
+#endif
+
 TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
   Server svr;
   svr.set_websocket_ping_interval(0);

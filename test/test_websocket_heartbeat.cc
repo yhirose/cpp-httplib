@@ -139,28 +139,22 @@ TEST_F(WebSocketServerPingIntervalTest, ServerRuntimeInterval) {
   client.close();
 }
 
-// Verify that the client detects a non-responsive peer via unacked-ping count.
-// Setup: the server's heartbeat is disabled AND its handler never calls
-// read(), so no automatic Pong reply is ever produced. The client sends
-// pings but receives no pongs, and should close itself once the unacked
-// ping count reaches max_missed_pongs.
-class WebSocketPongTimeoutTest : public ::testing::Test {
+// A peer that never sends anything: the server's heartbeat is disabled and its
+// handler never calls read(). The pong timeout against such a peer is tested
+// in test.cc (WebSocketTest.PongTimeoutEndsABlockedRead), where every CI job
+// runs it.
+class WebSocketSilentPeerTest : public ::testing::Test {
 protected:
-  virtual std::unique_ptr<Server> make_server() {
-    return std::unique_ptr<Server>(new Server());
-  }
-
   void SetUp() override {
-    svr_ = make_server();
-    svr_->set_websocket_ping_interval(0);
-    svr_->WebSocket("/ws", [this](const Request &, ws::WebSocket &) {
+    svr_.set_websocket_ping_interval(0);
+    svr_.WebSocket("/ws", [this](const Request &, ws::WebSocket &) {
       std::unique_lock<std::mutex> lock(handler_mutex_);
       handler_cv_.wait(lock, [this]() { return release_; });
     });
 
-    port_ = svr_->bind_to_any_port("localhost");
-    thread_ = std::thread([this]() { svr_->listen_after_bind(); });
-    svr_->wait_until_ready();
+    port_ = svr_.bind_to_any_port("localhost");
+    thread_ = std::thread([this]() { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
   }
 
   void TearDown() override {
@@ -169,11 +163,11 @@ protected:
       release_ = true;
     }
     handler_cv_.notify_all();
-    svr_->stop();
+    svr_.stop();
     thread_.join();
   }
 
-  std::unique_ptr<Server> svr_;
+  Server svr_;
   int port_;
   std::thread thread_;
   std::mutex handler_mutex_;
@@ -181,50 +175,10 @@ protected:
   bool release_ = false;
 };
 
-// Client pings every 1s (compile-time default in this test file). With
-// max_missed_pongs = 2, the heartbeat thread should self-close within roughly
-// 3s, and that has to end a read() already waiting on the peer.
-static void expect_pong_timeout_ends_read(ws::WebSocketClient &client) {
-  client.set_websocket_max_missed_pongs(2);
-  // A read timeout asked for at runtime is reported as Timeout, so it cannot
-  // be mistaken for the Fail a pong timeout produces.
-  client.set_read_timeout(10);
-  ASSERT_TRUE(client.connect());
-  ASSERT_TRUE(client.is_open());
-
-  auto start = std::chrono::steady_clock::now();
-  std::string msg;
-  EXPECT_EQ(client.read(msg), ws::Fail);
-  EXPECT_TRUE(std::chrono::steady_clock::now() - start <
-              std::chrono::seconds(6));
-  EXPECT_FALSE(client.is_open());
-}
-
-TEST_F(WebSocketPongTimeoutTest, ClientDetectsNonResponsivePeer) {
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
-  expect_pong_timeout_ends_read(client);
-}
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-class WebSocketPongTimeoutSSLTest : public WebSocketPongTimeoutTest {
-protected:
-  std::unique_ptr<Server> make_server() override {
-    return std::unique_ptr<Server>(new SSLServer("./cert.pem", "./key.pem"));
-  }
-};
-
-TEST_F(WebSocketPongTimeoutSSLTest, ClientDetectsNonResponsivePeer) {
-  ws::WebSocketClient client("wss://localhost:" + std::to_string(port_) +
-                             "/ws");
-  client.enable_server_certificate_verification(false);
-  expect_pong_timeout_ends_read(client);
-}
-#endif
-
 // The compile-time client read timeout (3s here) was never asked for through
 // set_read_timeout(), so when it elapses read() reports Fail and closes the
 // connection rather than handing back a Timeout on a still-open one.
-TEST_F(WebSocketPongTimeoutTest, CompileTimeClientReadTimeoutIsFail) {
+TEST_F(WebSocketSilentPeerTest, CompileTimeClientReadTimeoutIsFail) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
   client.set_websocket_ping_interval(0);
   ASSERT_TRUE(client.connect());
@@ -293,8 +247,9 @@ TEST_F(WebSocketServerReadTimeoutTest, BackstopEndsHandlerLoop) {
 
 // Verify that a responsive peer does NOT trigger the pong-timeout mechanism,
 // even with a small max_missed_pongs budget. This is the positive counterpart
-// of ClientDetectsNonResponsivePeer: the client must actively drive read() so
-// that incoming Pong frames are consumed and the unacked counter is reset.
+// of WebSocketTest.PongTimeoutEndsABlockedRead in test.cc: the client must
+// actively drive read() so that incoming Pong frames are consumed and the
+// unacked counter is reset.
 TEST_F(WebSocketHeartbeatTest, ResponsivePeerNeverTimesOut) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) + "/ws");
   client.set_websocket_max_missed_pongs(2);
