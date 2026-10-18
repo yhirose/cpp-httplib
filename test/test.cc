@@ -23283,6 +23283,44 @@ static void with_single_response(const std::string &response, Fn fn) {
   fn(cli);
 }
 
+TEST(StreamBodyEndTest, BodyEndingAtConnectionClose) {
+  // Neither Content-Length nor chunked: the body ends at the close
+  const char *close_delimited = "HTTP/1.1 200 OK\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "hello";
+  with_single_response(close_delimited, [](Client &cli) {
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid());
+    EXPECT_EQ("hello", read_all(handle));
+    EXPECT_FALSE(handle.has_read_error());
+  });
+
+  // A close before the end of the Content-Length is still an error
+  const char *short_content_length = "HTTP/1.1 200 OK\r\n"
+                                     "Content-Length: 10\r\n"
+                                     "\r\n"
+                                     "hello";
+  with_single_response(short_content_length, [](Client &cli) {
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid());
+    read_all(handle);
+    EXPECT_EQ(Error::ConnectionClosed, handle.get_read_error());
+  });
+
+  // So is a close before the last chunk
+  const char *short_chunked = "HTTP/1.1 200 OK\r\n"
+                              "Transfer-Encoding: chunked\r\n"
+                              "\r\n"
+                              "5\r\nhello\r\n";
+  with_single_response(short_chunked, [](Client &cli) {
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid());
+    read_all(handle);
+    EXPECT_TRUE(handle.has_read_error());
+  });
+}
+
 TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
   const char *responses[] = {
       "HTTP/1.1 103 Early Hints\r\n"
@@ -25832,6 +25870,44 @@ TEST_F(SSEIntegrationTest, AutoReconnectAfterDisconnect) {
   EXPECT_GE(connection_count.load(), 2);
   // Should have received messages from multiple connections
   EXPECT_GE(message_count.load(), 2);
+}
+
+TEST_F(SSEIntegrationTest, StreamEndingAtConnectionCloseIsNotAnError) {
+  std::atomic<int> connection_count{0};
+
+  // Neither Content-Length nor chunked: the close ends the stream
+  server_->Get("/close-delimited",
+               [&connection_count](const Request &, Response &res) {
+                 connection_count.fetch_add(1);
+                 res.set_content_provider(
+                     "text/event-stream", [](size_t offset, DataSink &sink) {
+                       if (offset == 0) {
+                         std::string event = "data: hello\n\n";
+                         sink.write(event.data(), event.size());
+                       } else {
+                         sink.done();
+                       }
+                       return true;
+                     });
+               });
+
+  Client client("localhost", get_port());
+  sse::SSEClient sse(client, "/close-delimited");
+
+  std::atomic<int> error_count{0};
+  sse.on_error([&error_count](Error) { error_count.fetch_add(1); });
+
+  sse.set_reconnect_interval(100);
+  sse.start_async();
+
+  for (int i = 0; i < 500 && connection_count.load() < 2; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  sse.stop();
+
+  // Reconnects as after any end of the stream, but reports no error
+  EXPECT_GE(connection_count.load(), 2);
+  EXPECT_EQ(0, error_count.load());
 }
 
 // Test: A retry field that is not all ASCII digits is ignored

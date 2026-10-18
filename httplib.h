@@ -12404,18 +12404,15 @@ inline ssize_t detail::BodyReader::read(char *buf, size_t len) {
     }
     auto n = stream->read(buf, to_read);
 
-    if (n < 0) {
+    // Without Content-Length the body ends when the connection closes
+    // (RFC 9112 §6.3); with one, an EOF here came too early
+    if (n < 0 || (n == 0 && has_content_length)) {
       last_error = stream->get_error();
       if (last_error == Error::Success) { last_error = Error::Read; }
+    }
+    if (n <= 0) {
       eof = true;
       return n;
-    }
-    if (n == 0) {
-      // Unexpected EOF before content_length
-      last_error = stream->get_error();
-      if (last_error == Error::Success) { last_error = Error::Read; }
-      eof = true;
-      return 0;
     }
 
     bytes_read += static_cast<size_t>(n);
