@@ -21202,7 +21202,7 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
       d->read_size += size * nmemb;
       return size * nmemb;
     };
-    curl_easy_setopt(curl.get(), CURLOPT_READDATA, data);
+    curl_easy_setopt(curl.get(), CURLOPT_READDATA, &data);
     curl_easy_setopt(curl.get(), CURLOPT_READFUNCTION, read_callback);
 
     std::vector<char> buffer;
