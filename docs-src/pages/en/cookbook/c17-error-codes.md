@@ -30,6 +30,7 @@ Use `if (res)` to check success. On failure, `res.error()` returns a `httplib::E
 | `Error::Connection` | Couldn't connect to the server, or the `Client` was built from a URL it can't use (userinfo or a backslash in the authority, a bad port). In the latter case `cli.is_valid()` is `false` |
 | `Error::ConnectionTimeout` | Connection timeout (`set_connection_timeout`) |
 | `Error::Read` / `Error::Write` | Error during send or receive. A timeout from `set_read_timeout` or `set_max_timeout` is also reported as `Error::Read` |
+| `Error::ExceedMaxPayloadSize` | The response body is larger than `set_payload_max_length()` allows, also once decompressed |
 | `Error::Timeout` | A body read timed out in `stream::Get()` or `SSEClient` |
 | `Error::ExceedRedirectCount` | Too many redirects |
 | `Error::SSLConnection` | TLS handshake failed |

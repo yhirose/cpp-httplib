@@ -1268,6 +1268,8 @@ cli.set_max_timeout(std::chrono::seconds(5));
 cli.set_payload_max_length(1024 * 1024 * 512); // 512MB
 ```
 
+A response body over the limit, also once decompressed, fails the request with `Error::ExceedMaxPayloadSize`.
+
 ### Receive content with a content receiver
 
 ```c++

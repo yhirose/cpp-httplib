@@ -17019,9 +17019,13 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                                 std::move(progress), std::move(out),
                                 decompress_)) {
         if (error != Error::Canceled) {
-          // Tell the caller apart from a plain read failure when the body could
-          // not be decoded because of its Content-Encoding.
+          // Tell the caller apart from a plain read failure when the body was
+          // over the payload limit or could not be decoded because of its
+          // Content-Encoding.
           switch (content_status) {
+          case StatusCode::PayloadTooLarge_413:
+            error = Error::ExceedMaxPayloadSize;
+            break;
           case StatusCode::UnsupportedMediaType_415:
             error = Error::UnsupportedContentEncoding;
             break;

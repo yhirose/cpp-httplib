@@ -14389,6 +14389,39 @@ TEST(ClientPayloadTest, DoesNotReserveTheClaimedLength) {
   EXPECT_FALSE(cli.Get("/"));
 }
 
+// A response body over the limit is reported as ExceedMaxPayloadSize, as the
+// Stream API does, not as a plain read failure
+TEST(ClientPayloadTest, OverLimitIsExceedMaxPayloadSize) {
+  Server svr;
+  svr.Get("/big", [](const Request &, Response &res) {
+    res.set_content(std::string(100000, 'b'), "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_payload_max_length(1000);
+
+  auto res = cli.Get("/big", Headers{{"Accept-Encoding", ""}});
+  EXPECT_EQ(Error::ExceedMaxPayloadSize, res.error());
+
+  res = cli.Get("/big", Headers{{"Accept-Encoding", ""}},
+                [](const char *, size_t) { return true; });
+  EXPECT_EQ(Error::ExceedMaxPayloadSize, res.error());
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+  // Small on the wire, over the limit once decompressed
+  res = cli.Get("/big", Headers{{"Accept-Encoding", "gzip"}});
+  EXPECT_EQ(Error::ExceedMaxPayloadSize, res.error());
+#endif
+}
+
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 // `payload_max_length` is not enforced on decompressed body in ContentReader
 // path.

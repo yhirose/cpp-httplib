@@ -30,6 +30,7 @@ if (res) {
 | `Error::Connection` | サーバーに接続できなかった。または、使えないURL（authorityにuserinfoやバックスラッシュがある、ポートが不正など）から`Client`を作った。後者の場合は`cli.is_valid()`が`false`になる |
 | `Error::ConnectionTimeout` | 接続タイムアウト（`set_connection_timeout`） |
 | `Error::Read` / `Error::Write` | 送受信中のエラー。`set_read_timeout`や`set_max_timeout`によるタイムアウトも`Error::Read`になる |
+| `Error::ExceedMaxPayloadSize` | レスポンスボディが`set_payload_max_length()`の上限を超えた（解凍後に超えた場合も含む） |
 | `Error::Timeout` | `stream::Get()`や`SSEClient`で、ボディの読み取りがタイムアウトした |
 | `Error::ExceedRedirectCount` | リダイレクト回数が上限を超えた |
 | `Error::SSLConnection` | TLSハンドシェイクに失敗 |
