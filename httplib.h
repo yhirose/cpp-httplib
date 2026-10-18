@@ -16128,6 +16128,12 @@ inline bool ChunkedDecoder::parse_trailers_into(Headers &dest,
   return parse_trailers(lr, dest, src_headers);
 }
 
+// A 3xx without a Location, such as a 304, is a final response
+inline bool is_redirect(const Response &res) {
+  return 300 < res.status && res.status < 400 &&
+         !res.get_header_value("Location").empty();
+}
+
 } // namespace detail
 
 inline void
@@ -16185,7 +16191,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     }
   }
 
-  if (300 < res.status && res.status < 400 && follow_location_) {
+  if (follow_location_ && detail::is_redirect(res)) {
     req = std::move(req_save);
     // The client that followed the redirect has answered any challenge it
     // could. Retrying below would sign another host's challenge and send it
@@ -16931,9 +16937,8 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    auto redirect = 300 < res.status && res.status < 400 &&
-                    res.status != StatusCode::NotModified_304 &&
-                    follow_location_;
+    auto redirect = follow_location_ && detail::is_redirect(res) &&
+                    res.status != StatusCode::NotModified_304;
 
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {

@@ -19849,6 +19849,78 @@ TEST(RedirectTest, LocationPathIsNotDecoded) {
   }
 }
 
+TEST(RedirectTest, NotModifiedIsReturned) {
+  Server svr;
+  svr.Get("/cached", [](const Request &, Response &res) {
+    res.status = StatusCode::NotModified_304;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/cached", Headers{{"If-None-Match", "\"v1\""}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::NotModified_304, res->status);
+}
+
+TEST(RedirectTest, NoLocationIsReturned) {
+  Server svr;
+  svr.Get("/no-location", [](const Request &, Response &res) {
+    res.status = StatusCode::Found_302;
+    res.set_content("no location", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/no-location");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Found_302, res->status);
+  EXPECT_EQ("no location", res->body);
+
+  // The callbacks see the body of the response that is returned
+  auto handler_called = false;
+  auto progress_called = false;
+  std::string body;
+  auto res2 = cli.Get(
+      "/no-location",
+      [&](const Response &) {
+        handler_called = true;
+        return true;
+      },
+      [&](const char *data, size_t data_length) {
+        body.append(data, data_length);
+        return true;
+      },
+      [&](size_t, size_t) {
+        progress_called = true;
+        return true;
+      });
+  ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
+  EXPECT_EQ(StatusCode::Found_302, res2->status);
+  EXPECT_TRUE(handler_called);
+  EXPECT_TRUE(progress_called);
+  EXPECT_EQ("no location", body);
+}
+
 TEST(RedirectTest, RedirectToUrlWithQueryParameters) {
   Server svr;
 
