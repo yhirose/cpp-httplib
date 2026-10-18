@@ -4493,6 +4493,10 @@ private:
   std::atomic<bool> connected_{false};
   std::string last_event_id_;
 
+  // Socket of the open stream, for stop() to shut down
+  std::mutex stream_mutex_;
+  socket_t stream_sock_ = INVALID_SOCKET;
+
   // Async support
   std::thread async_thread_;
 };
@@ -5000,6 +5004,20 @@ inline void SSEClient::start_async() {
 
 inline void SSEClient::stop() {
   running_.store(false);
+  {
+    // Ends a blocked read. The loop withdraws the socket under this lock
+    // before closing it, so it is still open here.
+    std::lock_guard<std::mutex> lock(stream_mutex_);
+    if (stream_sock_ != INVALID_SOCKET) {
+#ifdef _WIN32
+      ::shutdown(stream_sock_, SD_BOTH);
+#else
+      // Only the read side, so that the alert TLS sends on the unexpected EOF
+      // does not raise SIGPIPE
+      ::shutdown(stream_sock_, SHUT_RD);
+#endif
+    }
+  }
   client_.stop(); // Cancel any pending operations
   if (async_thread_.joinable()) { async_thread_.join(); }
 }
@@ -5073,6 +5091,7 @@ inline void SSEClient::run_event_loop() {
     // bounded instead of the whole body.
     auto handle = client_.open_stream("GET", path_, {}, request_headers);
     handle.body_reader_.payload_max_length = 0;
+    auto sock = handle.connection_ ? handle.connection_->sock : INVALID_SOCKET;
     stream::Result result{std::move(handle)};
 
     // Connection error handling
@@ -5104,6 +5123,19 @@ inline void SSEClient::run_event_loop() {
       reconnect_count++;
       continue;
     }
+
+    // Hand the socket to stop(), unless it has already been called
+    {
+      std::lock_guard<std::mutex> lock(stream_mutex_);
+      if (!running_.load()) { break; }
+      stream_sock_ = sock;
+    }
+
+    // Destroyed before result, so the socket is withdrawn before it is closed
+    detail::scope_exit withdraw_sock([this] {
+      std::lock_guard<std::mutex> lock(stream_mutex_);
+      stream_sock_ = INVALID_SOCKET;
+    });
 
     // Connection successful
     connected_.store(true);
