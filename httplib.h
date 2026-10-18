@@ -12423,8 +12423,8 @@ inline bool ThreadPool::enqueue(std::function<void()> fn) {
     }
     jobs_.push_back(std::move(fn));
 
-    // Spawn a dynamic thread if no idle threads and under max
-    if (idle_thread_count_ == 0 &&
+    // Spawn a dynamic thread if jobs outnumber idle threads and under max
+    if (jobs_.size() > idle_thread_count_ &&
         threads_.size() + dynamic_threads_.size() < max_thread_count_) {
       cleanup_finished_threads();
       dynamic_threads_.emplace_back(std::thread([this]() { worker(true); }));

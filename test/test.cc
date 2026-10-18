@@ -19553,6 +19553,39 @@ TEST(TaskQueueTest, IdleTimeoutAtRuntime) {
   EXPECT_EQ(3u, count.load());
 }
 
+TEST(TaskQueueTest, BurstOfTasksGetsDynamicThreads) {
+  static constexpr size_t number_of_tasks{32};
+  std::unique_ptr<TaskQueue> task_queue{
+      new ThreadPool{/*num_threads=*/16, /*max_threads=*/64}};
+
+  // Let the base threads go idle so the burst below finds them waiting.
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+  std::mutex mtx;
+  std::condition_variable cv;
+  size_t running = 0;
+  bool release = false;
+
+  for (size_t i = 0; i < number_of_tasks; i++) {
+    EXPECT_TRUE(task_queue->enqueue([&] {
+      std::unique_lock<std::mutex> lock(mtx);
+      running++;
+      cv.notify_all();
+      cv.wait(lock, [&] { return release; });
+    }));
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(mtx);
+    EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(5),
+                            [&] { return running == number_of_tasks; }));
+    release = true;
+  }
+  cv.notify_all();
+
+  task_queue->shutdown();
+}
+
 TEST(TaskQueueTest, MaxQueuedRequests) {
   static constexpr unsigned int qlimit{3};
   std::unique_ptr<TaskQueue> task_queue{new ThreadPool{1, 1, qlimit}};
