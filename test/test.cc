@@ -2283,27 +2283,21 @@ TEST(ParseHeaderValueTest, Range) {
     Ranges ranges;
     auto ret = detail::parse_range_header("bytes=1-", ranges);
     EXPECT_TRUE(ret);
-    EXPECT_EQ(1u, ranges.size());
-    EXPECT_EQ(1u, ranges[0].first);
-    EXPECT_EQ(-1, ranges[0].second);
+    EXPECT_EQ((Ranges{{1, -1}}), ranges);
   }
 
   {
     Ranges ranges;
     auto ret = detail::parse_range_header("bytes=-1", ranges);
     EXPECT_TRUE(ret);
-    EXPECT_EQ(1u, ranges.size());
-    EXPECT_EQ(-1, ranges[0].first);
-    EXPECT_EQ(1u, ranges[0].second);
+    EXPECT_EQ((Ranges{{-1, 1}}), ranges);
   }
 
   {
     Ranges ranges;
     auto ret = detail::parse_range_header("bytes=1-10", ranges);
     EXPECT_TRUE(ret);
-    EXPECT_EQ(1u, ranges.size());
-    EXPECT_EQ(1u, ranges[0].first);
-    EXPECT_EQ(10u, ranges[0].second);
+    EXPECT_EQ((Ranges{{1, 10}}), ranges);
   }
 
   {
@@ -2316,11 +2310,7 @@ TEST(ParseHeaderValueTest, Range) {
     Ranges ranges;
     auto ret = detail::parse_range_header("bytes=1-10, 100-", ranges);
     EXPECT_TRUE(ret);
-    EXPECT_EQ(2u, ranges.size());
-    EXPECT_EQ(1u, ranges[0].first);
-    EXPECT_EQ(10u, ranges[0].second);
-    EXPECT_EQ(100u, ranges[1].first);
-    EXPECT_EQ(-1, ranges[1].second);
+    EXPECT_EQ((Ranges{{1, 10}, {100, -1}}), ranges);
   }
 
   {
@@ -2328,13 +2318,7 @@ TEST(ParseHeaderValueTest, Range) {
     auto ret =
         detail::parse_range_header("bytes=1-10, 100-200, 300-400", ranges);
     EXPECT_TRUE(ret);
-    EXPECT_EQ(3u, ranges.size());
-    EXPECT_EQ(1u, ranges[0].first);
-    EXPECT_EQ(10u, ranges[0].second);
-    EXPECT_EQ(100u, ranges[1].first);
-    EXPECT_EQ(200u, ranges[1].second);
-    EXPECT_EQ(300u, ranges[2].first);
-    EXPECT_EQ(400u, ranges[2].second);
+    EXPECT_EQ((Ranges{{1, 10}, {100, 200}, {300, 400}}), ranges);
   }
 
   {
@@ -9900,12 +9884,12 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res = cli_.Get("/compress", headers,
-                      [&](const char *data, uint64_t data_length) {
-                        EXPECT_EQ(100U, data_length);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/compress", headers, [&](const char *data, size_t data_length) {
+        EXPECT_EQ(100U, data_length);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
@@ -9937,12 +9921,12 @@ TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
   headers.emplace("Accept-Encoding", "");
 
   std::string body;
-  auto res = cli_.Get("/compress", headers,
-                      [&](const char *data, uint64_t data_length) {
-                        EXPECT_EQ(100U, data_length);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/compress", headers, [&](const char *data, size_t data_length) {
+        EXPECT_EQ(100U, data_length);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
@@ -9974,7 +9958,7 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
   auto res = cli_.Get("/nocompress", headers,
-                      [&](const char *data, uint64_t data_length) {
+                      [&](const char *data, size_t data_length) {
                         EXPECT_EQ(100U, data_length);
                         body.append(data, data_length);
                         return true;
@@ -10430,12 +10414,12 @@ TEST_F(ServerTest, ZstdWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "zstd");
   std::string body;
-  auto res = cli_.Get("/compress", headers,
-                      [&](const char *data, uint64_t data_length) {
-                        EXPECT_EQ(100U, data_length);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/compress", headers, [&](const char *data, size_t data_length) {
+        EXPECT_EQ(100U, data_length);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ("zstd", res->get_header_value("Content-Encoding"));
@@ -10474,12 +10458,12 @@ TEST_F(ServerTest, ZstdWithContentReceiverWithoutAcceptEncoding) {
   headers.emplace("Accept-Encoding", "");
 
   std::string body;
-  auto res = cli_.Get("/compress", headers,
-                      [&](const char *data, uint64_t data_length) {
-                        EXPECT_EQ(100U, data_length);
-                        body.append(data, data_length);
-                        return true;
-                      });
+  auto res =
+      cli_.Get("/compress", headers, [&](const char *data, size_t data_length) {
+        EXPECT_EQ(100U, data_length);
+        body.append(data, data_length);
+        return true;
+      });
 
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
@@ -10511,7 +10495,7 @@ TEST_F(ServerTest, NoZstdWithContentReceiver) {
   headers.emplace("Accept-Encoding", "zstd");
   std::string body;
   auto res = cli_.Get("/nocompress", headers,
-                      [&](const char *data, uint64_t data_length) {
+                      [&](const char *data, size_t data_length) {
                         EXPECT_EQ(100U, data_length);
                         body.append(data, data_length);
                         return true;
@@ -14383,8 +14367,9 @@ TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
 TEST(ClientPayloadTest, DoesNotReserveTheClaimedLength) {
   Server svr;
   svr.Get("/", [](const Request &, Response &res) {
-    // Claims far more than it sends, then drops the connection.
-    res.set_content_provider(size_t(1) << 41, "text/plain",
+    // Claims the most the client accepts, far more than it sends, then drops
+    // the connection.
+    res.set_content_provider(std::string().max_size(), "text/plain",
                              [](size_t, size_t, DataSink &sink) {
                                sink.write("abc", 3);
                                return false;
@@ -21164,7 +21149,7 @@ TEST(Expect100ContinueHandlerTest, ExpectationFailedIsFinalResponse) {
 TEST(Expect100ContinueTest, ServerClosesConnection) {
   static constexpr char reject[] = "Unauthorized";
   static constexpr char accept[] = "Upload accepted";
-  constexpr size_t total_size = 10 * 1024 * 1024 * 1024ULL;
+  constexpr uint64_t total_size = 10 * 1024 * 1024 * 1024ULL;
 
   Server svr;
 
@@ -21202,8 +21187,8 @@ TEST(Expect100ContinueTest, ServerClosesConnection) {
     curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, list.get());
 
     struct read_data {
-      size_t read_size;
-      size_t total_size;
+      uint64_t read_size;
+      uint64_t total_size;
     } data = {0, total_size};
     using read_callback_t =
         size_t (*)(char *ptr, size_t size, size_t nmemb, void *userdata);
@@ -25986,8 +25971,7 @@ TEST(SSLClientServerTest, UpdateCertsSetsClientCAList) {
   ASSERT_TRUE(ssl_ctx != nullptr);
 
   STACK_OF(X509_NAME) *ca_list_before = SSL_CTX_get_client_CA_list(ssl_ctx);
-  int count_before = ca_list_before ? sk_X509_NAME_num(ca_list_before) : 0;
-  EXPECT_EQ(0, count_before);
+  EXPECT_TRUE(!ca_list_before || sk_X509_NAME_num(ca_list_before) == 0);
 
   // Now update with client CA (PEM string)
   std::string cert_pem, key_pem, ca_pem;
@@ -26002,7 +25986,7 @@ TEST(SSLClientServerTest, UpdateCertsSetsClientCAList) {
   // Now client CA list should be set
   STACK_OF(X509_NAME) *ca_list_after = SSL_CTX_get_client_CA_list(ssl_ctx);
   ASSERT_TRUE(ca_list_after != nullptr);
-  EXPECT_GT(sk_X509_NAME_num(ca_list_after), 0);
+  EXPECT_TRUE(sk_X509_NAME_num(ca_list_after) > 0);
 }
 
 TEST(SSLClientServerTest, FilePathConstructorSetsClientCAList) {
@@ -26016,7 +26000,7 @@ TEST(SSLClientServerTest, FilePathConstructorSetsClientCAList) {
 
   STACK_OF(X509_NAME) *ca_list = SSL_CTX_get_client_CA_list(ssl_ctx);
   ASSERT_TRUE(ca_list != nullptr);
-  EXPECT_GT(sk_X509_NAME_num(ca_list), 0);
+  EXPECT_TRUE(sk_X509_NAME_num(ca_list) > 0);
 }
 
 #endif
@@ -28644,7 +28628,7 @@ static int count_smuggled_requests(const std::string &outer_head,
   }
 
   // Step 1: Send only the outer request headers (no body yet)
-  auto sent = send(sock, head.data(), head.size(), 0);
+  auto sent = detail::send_socket(sock, head.data(), head.size(), 0);
   EXPECT_EQ(static_cast<ssize_t>(head.size()), sent);
 
   // Step 2: Read the first response
@@ -28673,7 +28657,7 @@ static int count_smuggled_requests(const std::string &outer_head,
   // Step 3: Now send the body, which looks like a new HTTP request. On a
   // vulnerable server the keep-alive loop reads this as a second request. The
   // server may already have closed the connection, so the result is ignored.
-  send(sock, smuggled.data(), smuggled.size(), 0);
+  detail::send_socket(sock, smuggled.data(), smuggled.size(), 0);
 
   // Half-close so that a server which drained the body sees EOF and closes,
   // instead of the read below waiting for the read timeout.
@@ -28990,7 +28974,7 @@ TEST(KeepAliveTest, DeleteWithoutContentLengthDoesNotEatNextRequest) {
 
   auto send_request_and_read_response = [&](const std::string &req,
                                             std::string &out) -> bool {
-    auto sent = send(sock, req.data(), req.size(), 0);
+    auto sent = detail::send_socket(sock, req.data(), req.size(), 0);
     if (sent != static_cast<ssize_t>(req.size())) { return false; }
     char buf[4096];
     for (;;) {
@@ -29052,7 +29036,7 @@ TEST(KeepAliveTest, UnconsumedChunkedBodyIsNotDrainedWhenResponseCloses) {
                         "\r\n"
                         "4\r\n"
                         "data\r\n";
-  auto sent = send(sock, request.data(), request.size(), 0);
+  auto sent = detail::send_socket(sock, request.data(), request.size(), 0);
   ASSERT_EQ(static_cast<ssize_t>(request.size()), sent);
 
   std::string response;

@@ -3645,7 +3645,7 @@ inline void ClientImpl::set_max_timeout(
     const std::chrono::duration<Rep, Period> &duration) {
   auto msec =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-  set_max_timeout(msec);
+  set_max_timeout(static_cast<time_t>(msec));
 }
 
 template <class Rep, class Period>
@@ -12685,9 +12685,10 @@ inline void SocketStream::get_local_ip_and_port(std::string &ip,
 inline socket_t SocketStream::socket() const { return sock_; }
 
 inline time_t SocketStream::duration() const {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time_)
-      .count();
+  return static_cast<time_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - start_time_)
+          .count());
 }
 
 inline void SocketStream::set_read_timeout(time_t sec, time_t usec) {
@@ -13229,9 +13230,10 @@ inline void SSLSocketStream::get_local_ip_and_port(std::string &ip,
 inline socket_t SSLSocketStream::socket() const { return sock_; }
 
 inline time_t SSLSocketStream::duration() const {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time_)
-      .count();
+  return static_cast<time_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - start_time_)
+          .count());
 }
 
 inline void SSLSocketStream::set_read_timeout(time_t sec, time_t usec) {
@@ -13362,9 +13364,10 @@ inline void WebSocketSSLStream::get_local_ip_and_port(std::string &ip,
 inline socket_t WebSocketSSLStream::socket() const { return sock_; }
 
 inline time_t WebSocketSSLStream::duration() const {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now() - start_time_)
-      .count();
+  return static_cast<time_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - start_time_)
+          .count());
 }
 
 inline void WebSocketSSLStream::set_read_timeout(time_t sec, time_t usec) {
@@ -19750,7 +19753,7 @@ inline void free_context(ctx_t ctx) {
 inline bool set_min_version(ctx_t ctx, Version version) {
   if (!ctx) return false;
   return SSL_CTX_set_min_proto_version(static_cast<SSL_CTX *>(ctx),
-                                       static_cast<int>(version)) == 1;
+                                       static_cast<uint16_t>(version)) == 1;
 }
 
 inline bool load_ca_pem(ctx_t ctx, const char *pem, size_t len) {
@@ -20203,11 +20206,13 @@ inline size_t get_peer_certs(const_session_t session,
   if (SSL_is_server(ssl)) {
     if (auto leaf = get_peer_cert(session)) { certs.push_back(leaf); }
   }
-  auto sk = SSL_get_peer_cert_chain(ssl);
-  for (int i = 0; sk && i < sk_X509_num(sk); i++) {
-    auto x509 = sk_X509_value(sk, i);
-    X509_up_ref(x509);
-    certs.push_back(static_cast<cert_t>(x509));
+  if (auto sk = SSL_get_peer_cert_chain(ssl)) {
+    auto count = sk_X509_num(sk);
+    for (decltype(count) i = 0; i < count; i++) {
+      auto x509 = sk_X509_value(sk, i);
+      X509_up_ref(x509);
+      certs.push_back(static_cast<cert_t>(x509));
+    }
   }
   return certs.size();
 }
@@ -20409,7 +20414,8 @@ inline uint64_t get_error() { return ERR_get_error(); }
 
 inline std::string error_string(uint64_t code) {
   char buf[256];
-  ERR_error_string_n(static_cast<unsigned long>(code), buf, sizeof(buf));
+  ERR_error_string_n(static_cast<decltype(ERR_get_error())>(code), buf,
+                     sizeof(buf));
   return std::string(buf);
 }
 
@@ -20423,7 +20429,8 @@ inline ca_store_t create_ca_store(const char *pem, size_t len) {
 
   auto store = X509_STORE_new();
   if (store) {
-    for (auto i = 0; i < static_cast<int>(sk_X509_INFO_num(inf)); i++) {
+    auto count = sk_X509_INFO_num(inf);
+    for (decltype(count) i = 0; i < count; i++) {
       auto itmp = sk_X509_INFO_value(inf, i);
       if (!itmp) { continue; }
       if (itmp->x509) { X509_STORE_add_cert(store, itmp->x509); }
