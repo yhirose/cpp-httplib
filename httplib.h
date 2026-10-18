@@ -3015,6 +3015,9 @@ protected:
   Socket socket_;
   mutable std::mutex socket_mutex_;
   std::recursive_mutex request_mutex_;
+  // How many send() calls are running on this client, guarded by
+  // request_mutex_
+  size_t send_depth_ = 0;
 
   // These are all protected under socket_mutex
   size_t socket_requests_in_flight_ = 0;
@@ -3126,6 +3129,7 @@ private:
   virtual bool is_ssl() const;
 
   void transfer_socket_ownership_to_handle(StreamHandle &handle);
+  StreamHandle open_stream_(Request &req);
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 public:
@@ -15614,6 +15618,12 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
 inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
   std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
+  // A same-origin redirect and a digest retry send through here again. Only
+  // the call the caller made reports a failure, once, with its request.
+  auto outermost = send_depth_++ == 0;
+  auto se = detail::scope_exit([&] { send_depth_--; });
+  if (outermost) { error = Error::Success; }
+
   auto ret = send_(req, res, error);
   if (error == Error::SSLPeerCouldBeClosed_) {
     assert(!ret);
@@ -15621,6 +15631,9 @@ inline bool ClientImpl::send(Request &req, Response &res, Error &error) {
     // If still failing with SSLPeerCouldBeClosed_, convert to Read error
     if (error == Error::SSLPeerCouldBeClosed_) { error = Error::Read; }
   }
+
+  // Also an answer that carries an error, such as a proxy's 407
+  if (outermost && error != Error::Success) { output_error_log(error, &req); }
   return ret;
 }
 
@@ -15661,16 +15674,12 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     }
 
     if (!is_alive) {
-      if (!ensure_socket_connection(socket_, error)) {
-        output_error_log(error, &req);
-        return false;
-      }
+      if (!ensure_socket_connection(socket_, error)) { return false; }
 
       {
         auto success = true;
         if (!setup_proxy_connection(socket_, req.start_time_, res, success,
                                     error)) {
-          if (!success) { output_error_log(error, &req); }
           return success;
         }
       }
@@ -15715,10 +15724,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   });
 
   if (!ret) {
-    if (error == Error::Success) {
-      error = Error::Unknown;
-      output_error_log(error, &req);
-    }
+    if (error == Error::Success) { error = Error::Unknown; }
   }
 
   return ret;
@@ -15801,15 +15807,29 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
                         const Params &params, const Headers &headers,
                         const std::string &body,
                         const std::string &content_type) {
-  StreamHandle handle;
-  handle.response = detail::make_unique<Response>();
-  handle.error = Error::Success;
-
   // Encode the target exactly like the buffered send path does, so that the
   // same `path` produces the same request line through either API.
   auto raw_query_path =
       params.empty() ? path : append_query_params(path, params);
-  auto query_path = detail::encode_request_target(raw_query_path, path_encode_);
+
+  Request req;
+  req.method = method;
+  req.path = detail::encode_request_target(raw_query_path, path_encode_);
+  req.headers = headers;
+  req.body = body;
+
+  prepare_default_headers(req, true, content_type);
+
+  auto handle = open_stream_(req);
+  // Like a buffered request, a stream that fails to open is reported once
+  if (handle.error != Error::Success) { output_error_log(handle.error, &req); }
+  return handle;
+}
+
+inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
+  StreamHandle handle;
+  handle.response = detail::make_unique<Response>();
+  handle.error = Error::Success;
 
   handle.connection_ = detail::make_unique<ClientConnection>();
 
@@ -15867,14 +15887,6 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
 #endif
   handle.stream_ = handle.socket_stream_.get();
 
-  Request req;
-  req.method = method;
-  req.path = query_path;
-  req.headers = headers;
-  req.body = body;
-
-  prepare_default_headers(req, true, content_type);
-
   auto &strm = *handle.stream_;
 
   // Build the request line and headers in memory first, like write_request()
@@ -15902,8 +15914,8 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
     }
   }
 
-  if (!body.empty()) {
-    if (strm.write(body.data(), body.size()) < 0) {
+  if (!req.body.empty()) {
+    if (strm.write(req.body.data(), req.body.size()) < 0) {
       handle.error = Error::Write;
       handle.response.reset();
       return handle;
@@ -15919,7 +15931,7 @@ ClientImpl::open_stream(const std::string &method, const std::string &path,
 
   // Same framing check as ClientImpl::process_request(). A HEAD or bodyless
   // (204/304) response legitimately carries framing headers with no body.
-  if (method != "HEAD" &&
+  if (req.method != "HEAD" &&
       handle.response->status != StatusCode::NoContent_204 &&
       handle.response->status != StatusCode::NotModified_304 &&
       detail::has_conflicting_content_length(handle.response->headers)) {
@@ -16158,7 +16170,6 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
                                        Error &error) {
   if (req.path.empty()) {
     error = Error::Connection;
-    output_error_log(error, &req);
     return false;
   }
 
@@ -16250,7 +16261,6 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (req.redirect_count_ == 0) {
     error = Error::ExceedRedirectCount;
-    output_error_log(error, &req);
     return false;
   }
 
@@ -16375,7 +16385,6 @@ inline bool ClientImpl::create_redirect_client(
 #else
     // SSL not supported - set appropriate error
     error = Error::SSLConnection;
-    output_error_log(error, &req);
     return false;
 #endif
   } else {
@@ -16447,9 +16456,9 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   if (socket_options_) { client.set_socket_options(socket_options_); }
   if (!interface_.empty()) { client.set_interface(interface_); }
 
-  // Copy logging and headers
+  // Copy logging and headers. Not the error logger: a failure comes back to
+  // this client's send(), which reports it with the caller's request.
   if (logger_) { client.set_logger(logger_); }
-  if (error_logger_) { client.set_error_logger(error_logger_); }
 
   // NOTE: DO NOT copy default_headers_ as they may contain stale Host headers
   // Each new client should generate its own headers based on its target host
@@ -16560,13 +16569,11 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
       // header-injecting request.
       error = Error::Write;
       rejected_locally = true;
-      output_error_log(error, &req);
       return false;
     }
     if (!detail::check_and_write_headers(bstrm, req.headers, header_writer_,
                                          error)) {
       rejected_locally = true;
-      output_error_log(error, &req);
       return false;
     }
 
@@ -16574,7 +16581,6 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     auto &data = bstrm.get_buffer();
     if (!detail::write_data(strm, data.data(), data.size())) {
       error = Error::Write;
-      output_error_log(error, &req);
       return false;
     }
   }
@@ -16645,21 +16651,18 @@ inline bool ClientImpl::write_request_body(Stream &strm, Request &req,
       size_t to_write = (std::min)(CPPHTTPLIB_SEND_BUFSIZ, body_size - written);
       if (!detail::write_data(strm, data + written, to_write)) {
         error = Error::Write;
-        output_error_log(error, &req);
         return false;
       }
       written += to_write;
 
       if (!req.upload_progress(written, body_size)) {
         error = Error::Canceled;
-        output_error_log(error, &req);
         return false;
       }
     }
   } else {
     if (!detail::write_data(strm, req.body.data(), req.body.size())) {
       error = Error::Write;
-      output_error_log(error, &req);
       return false;
     }
   }
@@ -16855,7 +16858,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     if (!is_proxy_enabled) {
       if (tls::is_peer_closed(socket_.ssl, socket_.sock)) {
         error = Error::SSLPeerCouldBeClosed_;
-        output_error_log(error, &req);
         return false;
       }
     }
@@ -16895,7 +16897,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
        !read_response_line(strm, req, res, !expect_100_continue)) ||
       !detail::read_headers(strm, res.headers)) {
     if (write_request_success) { error = Error::Read; }
-    output_error_log(error, &req);
     return false;
   }
 
@@ -16913,7 +16914,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       if (!read_response_line(strm, req, res) ||
           !detail::read_headers(strm, res.headers)) {
         error = Error::Read;
-        output_error_log(error, &req);
         return false;
       }
     } else {
@@ -16935,7 +16935,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     if (res.status != StatusCode::NotModified_304) {
       if (detail::has_conflicting_content_length(res.headers)) {
         error = Error::Read;
-        output_error_log(error, &req);
         return false;
       }
       if (detail::has_faulty_transfer_encoding(res)) {
@@ -16950,7 +16949,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {
         error = Error::Canceled;
-        output_error_log(error, &req);
         return false;
       }
     }
@@ -16961,10 +16959,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
                   [&](const char *buf, size_t n, size_t off, size_t len) {
                     if (redirect) { return true; }
                     auto ret = req.content_receiver(buf, n, off, len);
-                    if (!ret) {
-                      error = Error::Canceled;
-                      output_error_log(error, &req);
-                    }
+                    if (!ret) { error = Error::Canceled; }
                     return ret;
                   })
             : static_cast<ContentReceiverWithProgress>(
@@ -16983,10 +16978,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
     auto progress = [&](size_t current, size_t total) {
       if (!req.download_progress || redirect) { return true; }
       auto ret = req.download_progress(current, total);
-      if (!ret) {
-        error = Error::Canceled;
-        output_error_log(error, &req);
-      }
+      if (!ret) { error = Error::Canceled; }
       return ret;
     };
 
@@ -16995,7 +16987,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
         auto len = res.get_header_value_u64("Content-Length");
         if (len > res.body.max_size()) {
           error = Error::Read;
-          output_error_log(error, &req);
           return false;
         }
         // Content-Length is only the server's claim, so reserve no more than
@@ -17035,7 +17026,6 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
           default: error = Error::Read; break;
           }
         }
-        output_error_log(error, &req);
         return false;
       }
     }
@@ -19077,7 +19067,6 @@ inline bool SSLClient::connect_with_proxy(
         // Create a new socket for the authenticated CONNECT request
         if (!ensure_socket_connection(socket, error)) {
           success = false;
-          output_error_log(error, nullptr);
           return false;
         }
 
@@ -19117,7 +19106,6 @@ inline bool SSLClient::connect_with_proxy(
   // status would read as the answer of the origin, which it never reached.
   if (proxy_res.status != StatusCode::OK_200) {
     error = Error::ProxyConnection;
-    output_error_log(error, nullptr);
     if (proxy_res.status == StatusCode::ProxyAuthenticationRequired_407) {
       res = std::move(proxy_res);
     } else {
@@ -19265,7 +19253,6 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   if (server_certificate_verification_) {
     if (!load_certs()) {
       error = Error::SSLLoadingCerts;
-      output_error_log(error, nullptr);
       return false;
     }
   }
@@ -19304,7 +19291,6 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
     error = tls_error.error;
     last_ssl_error_ = tls_error.ssl_error;
     last_backend_error_ = tls_error.backend_error;
-    output_error_log(error, nullptr);
     return false;
   }
 

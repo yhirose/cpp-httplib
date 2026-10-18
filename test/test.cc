@@ -23504,6 +23504,163 @@ TEST(ProxyConnectTest, OnlyAProxyAuthChallengeIsPassedOn) {
 }
 #endif
 
+// Records the client's error logger calls as "error METHOD path", or
+// "error null" for a call without a request
+static ErrorLogger record_errors(std::vector<std::string> &log) {
+  return [&log](const Error &err, const Request *req) {
+    log.push_back(to_string(err) + " " +
+                  (req ? req->method + " " + req->path : "null"));
+  };
+}
+
+// A failed request is reported once, with the request the caller made
+TEST(ClientErrorLoggerTest, CancelIsLoggedOnce) {
+  Server svr;
+  svr.Get("/big", [](const Request &, Response &res) {
+    res.set_content(std::string(100000, 'b'), "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  std::vector<std::string> log;
+  cli.set_error_logger(record_errors(log));
+  std::vector<std::string> expected{to_string(Error::Canceled) + " GET /big"};
+
+  cli.Get("/big", [](const char *, size_t) { return false; });
+  EXPECT_EQ(expected, log);
+
+  log.clear();
+  cli.Get("/big", [](size_t, size_t) { return false; });
+  EXPECT_EQ(expected, log);
+}
+
+TEST(ClientErrorLoggerTest, RedirectFailureIsLoggedWithTheCallersRequest) {
+  // Fails while the body is read
+  auto broken = [](const Request &, Response &res) {
+    res.set_content_provider(10, "text/plain",
+                             [](size_t, size_t, DataSink &) { return false; });
+  };
+  Server other;
+  other.Get("/broken", broken);
+  auto other_port = other.bind_to_any_port(HOST);
+  std::thread other_t([&]() { other.listen_after_bind(); });
+  auto other_se = detail::scope_exit([&] {
+    other.stop();
+    other_t.join();
+  });
+  other.wait_until_ready();
+
+  Server svr;
+  svr.Get("/broken", broken);
+  svr.Get("/same-origin",
+          [](const Request &, Response &res) { res.set_redirect("/broken"); });
+  svr.Get("/cross-origin", [&](const Request &, Response &res) {
+    res.set_redirect("http://" + std::string(HOST) + ":" +
+                     std::to_string(other_port) + "/broken");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_follow_location(true);
+  std::vector<std::string> log;
+  cli.set_error_logger(record_errors(log));
+
+  for (auto path : {"/same-origin", "/cross-origin"}) {
+    log.clear();
+    auto res = cli.Get(path);
+    ASSERT_FALSE(res);
+    EXPECT_EQ(std::vector<std::string>{to_string(res.error()) + " GET " + path},
+              log);
+  }
+}
+
+TEST(ClientErrorLoggerTest, StreamOpenFailureIsLoggedOnce) {
+  with_single_response("garbage\r\n\r\n", [](Client &cli) {
+    std::vector<std::string> log;
+    cli.set_error_logger(record_errors(log));
+    auto handle = cli.open_stream("GET", "/x");
+    EXPECT_FALSE(handle.is_valid());
+    EXPECT_EQ(std::vector<std::string>{to_string(handle.error) + " GET /x"},
+              log);
+  });
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(ClientErrorLoggerTest, TlsSetupFailureIsLoggedOnce) {
+  // Not a TLS server, so the handshake fails. It waits for a request line in
+  // the handshake bytes, so a short read timeout lets it close quickly.
+  Server svr;
+  svr.set_read_timeout(0, 100000);
+  svr.Get("/x", [](const Request &, Response &res) {
+    res.set_content("x", "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  std::vector<std::string> log;
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_error_logger(record_errors(log));
+  auto res = cli.Get("/x");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(std::vector<std::string>{to_string(res.error()) + " GET /x"}, log);
+
+  log.clear();
+  auto handle = cli.open_stream("GET", "/x");
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(std::vector<std::string>{to_string(handle.error) + " GET /x"}, log);
+
+  log.clear();
+  SSLClient no_ca(HOST, port);
+  no_ca.set_ca_cert_path("./no-such-ca.pem");
+  no_ca.set_error_logger(record_errors(log));
+  res = no_ca.Get("/x");
+  EXPECT_EQ(Error::SSLLoadingCerts, res.error());
+  EXPECT_EQ(std::vector<std::string>{to_string(res.error()) + " GET /x"}, log);
+}
+
+TEST(ClientErrorLoggerTest, ProxyConnectFailureIsLoggedOnce) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+  // Refused, answered with a challenge, or closed without an answer
+  for (auto response : {"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n",
+                        "HTTP/1.1 407 Proxy Authentication Required\r\n"
+                        "Content-Length: 0\r\n\r\n",
+                        ""}) {
+    std::promise<int> port_promise;
+    auto server_thread = serve_single_response(port_promise, response);
+    SSLClient cli("example.com", 443);
+    cli.set_proxy("127.0.0.1", port_promise.get_future().get());
+    std::vector<std::string> log;
+    cli.set_error_logger(record_errors(log));
+    auto res = cli.Get("/");
+    server_thread.join();
+
+    EXPECT_EQ(std::vector<std::string>{to_string(res.error()) + " GET /"}, log)
+        << response;
+  }
+}
+#endif
+
 // RFC 9112 §6.3: a response that pairs a non-zero Content-Length with
 // Transfer-Encoding is framed ambiguously. Both read paths delimit its body by
 // the chunked coding and drop Content-Length, so a front-end that trusts

@@ -1131,6 +1131,8 @@ cli.set_error_logger([](const httplib::Error& err, const httplib::Request* req) 
 });
 ```
 
+Each failed request is reported once, with the request you made, also when it failed on a redirect or was a stream that failed to open (`open_stream()`, `stream::Get()`).
+
 ### GET with HTTP headers
 
 ```c++

@@ -35,7 +35,7 @@ cli.set_error_logger([](const httplib::Error &err, const httplib::Request *req) 
 });
 ```
 
-The second argument `req` can be null — it happens when the error comes from setting up the connection, such as the TLS handshake, loading CA certificates, or opening a tunnel through a proxy. Always null-check before dereferencing.
+Each failed request is reported once, with the request you made, also when it failed on a redirect. A stream that fails to open with `open_stream()` or `stream::Get()` is reported the same way; errors while reading its body come back through `read_error()` instead. `req` is null only in a server's error logger, for errors that belong to no request.
 
 ## Use both together
 

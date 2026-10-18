@@ -79,7 +79,7 @@ sse.set_max_reconnect_attempts(10);
 sse.set_headers({{"Authorization", "Bearer new_token"}});
 ```
 
-The client reconnects when it cannot connect or the stream ends. A status other than `200` calls `on_error(Error::Connection)`; a `204`, `403` or `404` then stops the client, and any other status, `401` included, reconnects, so an `on_error` handler can refresh credentials with `set_headers()`. `set_max_reconnect_attempts()` counts reconnect attempts in a row: the count starts over after each successful connection.
+The client reconnects when it cannot connect or the stream ends. A status other than `200` calls `on_error(Error::Connection)`; a `204`, `403` or `404` then stops the client, and any other status, `401` included, reconnects, so an `on_error` handler can refresh credentials with `set_headers()`. `set_max_reconnect_attempts()` counts reconnect attempts in a row: the count starts over after each successful connection. Each attempt that fails to connect is also reported to the `Client`'s error logger.
 
 An event, or a line still waiting for its end, longer than `CPPHTTPLIB_SSE_MAX_EVENT_LENGTH` (16MB by default, `0` for no limit) ends the connection with `Error::ExceedMaxPayloadSize`, and the client stops rather than reconnect to the same event. The client's `set_payload_max_length()` does not apply to the stream as a whole, which has no end.
 
