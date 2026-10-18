@@ -4,7 +4,7 @@ order: 32
 status: "draft"
 ---
 
-To customize the response for 4xx or 5xx errors, use `set_error_handler()`. You can replace the plain default error page with your own HTML or JSON.
+To customize the response for 4xx or 5xx errors, use `set_error_handler()`. By default, an error response has an empty body; an error handler lets you fill it with your own HTML or JSON.
 
 ## Basic usage
 

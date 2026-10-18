@@ -43,7 +43,7 @@ The default interval is set by the build-time macro `CPPHTTPLIB_WEBSOCKET_PING_I
 
 ## What about Pong?
 
-The WebSocket protocol requires that Ping frames are answered with Pong frames. cpp-httplib responds to Pings automatically — you don't need to think about it in application code.
+The WebSocket protocol requires that Ping frames are answered with Pong frames. cpp-httplib answers Pings automatically inside `read()` — as long as your code keeps calling `read()`, you don't need to think about it.
 
 ## Picking an interval
 

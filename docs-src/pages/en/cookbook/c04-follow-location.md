@@ -33,6 +33,8 @@ auto res = cli.Get("/");
 
 Many sites redirect HTTP traffic to HTTPS. With `set_follow_location(true)` on, this case is handled transparently — the client follows redirects even when the scheme or host changes.
 
+When a redirect goes to another origin (a different scheme, host, or port), the client drops the `Authorization`, `Cookie`, and `Proxy-Authorization` headers, along with the credentials set with `set_basic_auth()` and the like, and doesn't present the client certificate. Other headers, default ones included, go along, and so do the timeouts, the payload limit, and the TLS verification settings.
+
 > **Warning:** To follow redirects to HTTPS, you need to build cpp-httplib with OpenSSL (or another TLS backend). Without TLS support, redirects to HTTPS will fail.
 
 > **Note:** Following redirects adds to the total request time. See [C12. Set timeouts](../c12-timeouts) for timeout configuration.

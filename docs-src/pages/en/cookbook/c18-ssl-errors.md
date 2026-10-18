@@ -17,14 +17,17 @@ if (!res) {
   std::cerr << "error: " << httplib::to_string(err) << std::endl;
 
   if (err == httplib::Error::SSLConnection ||
-      err == httplib::Error::SSLServerVerification) {
+      err == httplib::Error::SSLServerVerification ||
+      err == httplib::Error::Read || err == httplib::Error::Write) {
     std::cerr << "ssl_error: " << res.ssl_error() << std::endl;
     std::cerr << "ssl_backend_error: " << res.ssl_backend_error() << std::endl;
   }
 }
 ```
 
-`ssl_error()` is a backend-independent TLS error category: an `httplib::tls::ErrorCode` cast to `int`. `ssl_backend_error()` gives you the backend's own error value. With OpenSSL that is `ERR_get_error()` when the handshake failed, and the verify result (`X509_V_ERR_*`) when certificate verification failed.
+`ssl_error()` is a backend-independent TLS error category: an `httplib::tls::ErrorCode` cast to `int`. `ssl_backend_error()` gives you the backend's own error value. With OpenSSL that is `ERR_get_error()` when the handshake or a later read or write failed, and the verify result (`X509_V_ERR_*`) when certificate verification failed.
+
+A request that fails after the handshake reports `Error::Read` or `Error::Write`. Even then, `ssl_error()` and `ssl_backend_error()` carry the TLS error behind it. For example, if the server requires a client certificate you didn't send, OpenSSL's error reads "tlsv13 alert certificate required". Both values are reset for each request and are `0` when no TLS error was involved.
 
 ## Format OpenSSL errors as strings
 

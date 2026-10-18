@@ -12,6 +12,8 @@ The client has three kinds of timeouts, each set independently.
 | Read | `set_read_timeout` | 300s | Time to wait for a single `recv` when receiving the response |
 | Write | `set_write_timeout` | 5s | Time to wait for a single `send` when sending the request |
 
+Over HTTPS, the connection timeout also bounds the whole TLS handshake. A handshake that doesn't finish in time fails with `Error::SSLConnection`.
+
 ## Basic usage
 
 ```cpp

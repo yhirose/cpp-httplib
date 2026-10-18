@@ -4,7 +4,7 @@ A simple, EventSource-like SSE client for C++11.
 
 ## Features
 
-- **Auto-reconnect**: Automatically reconnects on connection loss
+- **Auto-reconnect**: Automatically reconnects on connection loss or an error status (except 204, 403 and 404)
 - **Last-Event-ID**: Sends last received ID on reconnect for resumption
 - **retry field**: Respects server's reconnect interval
 - **Event types**: Supports custom event types via `on_event()`
@@ -52,7 +52,7 @@ SSEClient(Client &client, const std::string &path, const Headers &headers);
 #### Event Handlers
 
 ```cpp
-// Called for all events (or events without a specific handler)
+// Called for events whose type has no on_event() handler
 sse.on_message([](const SSEMessage &msg) { });
 
 // Called for specific event types
@@ -78,6 +78,8 @@ sse.set_max_reconnect_attempts(10);
 // Update headers at any time (thread-safe)
 sse.set_headers({{"Authorization", "Bearer new_token"}});
 ```
+
+The client reconnects when it cannot connect or the stream ends. A status other than `200` calls `on_error(Error::Connection)`; a `204`, `403` or `404` then stops the client, and any other status, `401` included, reconnects, so an `on_error` handler can refresh credentials with `set_headers()`. `set_max_reconnect_attempts()` counts reconnect attempts in a row: the count starts over after each successful connection.
 
 An event, or a line still waiting for its end, longer than `CPPHTTPLIB_SSE_MAX_EVENT_LENGTH` (16MB by default, `0` for no limit) ends the connection with `Error::ExceedMaxPayloadSize`, and the client stops rather than reconnect to the same event. The client's `set_payload_max_length()` does not apply to the stream as a whole, which has no end.
 
@@ -193,7 +195,7 @@ sse.start();
 
 ## SSE Protocol
 
-The client parses SSE format according to the [W3C specification](https://html.spec.whatwg.org/multipage/server-sent-events.html):
+The client parses SSE format according to the [WHATWG HTML Living Standard](https://html.spec.whatwg.org/multipage/server-sent-events.html):
 
 ```
 event: custom-type

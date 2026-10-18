@@ -4,7 +4,7 @@ order: 17
 status: "draft"
 ---
 
-`cli.Get()`, `cli.Post()`, and friends return a `Result`. When the request fails — can't reach the server, times out, etc. — the result is "falsy". To get the specific reason, use `Result::error()`.
+`cli.Get()`, `cli.Post()`, and friends return a `Result`. When the request fails — can't reach the server, times out, etc. — the result is "falsy", with one exception noted in the table below. To get the specific reason, use `Result::error()`.
 
 ## Basic check
 
@@ -27,14 +27,15 @@ Use `if (res)` to check success. On failure, `res.error()` returns a `httplib::E
 
 | Value | Meaning |
 | --- | --- |
-| `Error::Connection` | Couldn't connect to the server |
+| `Error::Connection` | Couldn't connect to the server, or the `Client` was built from a URL it can't use (userinfo or a backslash in the authority, a bad port). In the latter case `cli.is_valid()` is `false` |
 | `Error::ConnectionTimeout` | Connection timeout (`set_connection_timeout`) |
 | `Error::Read` / `Error::Write` | Error during send or receive. A timeout from `set_read_timeout` or `set_max_timeout` is also reported as `Error::Read` |
 | `Error::Timeout` | A body read timed out in `stream::Get()` or `SSEClient` |
 | `Error::ExceedRedirectCount` | Too many redirects |
 | `Error::SSLConnection` | TLS handshake failed |
 | `Error::SSLServerVerification` | Server certificate verification failed |
-| `Error::Canceled` | A progress callback returned `false` |
+| `Error::ProxyConnection` | The proxy refused the CONNECT tunnel. A 407 is the exception: `res` is truthy with `res->status == 407`, and `res.error()` is still `Error::ProxyConnection` |
+| `Error::Canceled` | A progress callback, a `ContentReceiver`, a `ResponseHandler`, or an upload content provider returned `false` |
 
 ## Network errors vs. HTTP errors
 

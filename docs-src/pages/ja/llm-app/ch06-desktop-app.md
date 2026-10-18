@@ -675,9 +675,10 @@ int main() {
 5章からの変更点をまとめると:
 
 - `#include <csignal>` → `#include <thread>`, `<cpp-embedlib-httplib.h>`, `"WebAssets.h"`, `"webview/webview.h"`
-- `signal_handler`関数を削除
+- `signal_handler`関数を削除し、`svr`を`main()`の中に移動
 - `svr.set_mount_point("/", "./public")` → `httplib::mount(svr, Web::FS)`
 - `svr.listen("127.0.0.1", 8080)` → `bind_to_any_port` + `listen_after_bind` + WebViewのイベントループ
+- macOS用に`setup_macos_edit_menu()`と`<objc/objc-runtime.h>`のインクルードを追加
 
 ハンドラのコードは1行も変わっていません。5章まで作ってきたREST API・SSEストリーミング・モデル管理がそのまま動きます。
 

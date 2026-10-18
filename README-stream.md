@@ -14,7 +14,7 @@ The streaming API allows you to process HTTP response bodies chunk by chunk usin
 
 - **LLM/AI streaming responses** (e.g., ChatGPT, Claude, Ollama)
 - **Server-Sent Events (SSE)**
-- **Large file downloads** with progress tracking
+- **Large file downloads** with progress tracking (mind the [payload size limit](#payload-size-limit))
 - **Reverse proxy implementations**
 
 ## Quick Start
@@ -62,7 +62,7 @@ cpp-httplib provides multiple API layers for different use cases:
 | Use Case | Recommended API |
 |----------|----------------|
 | SSE with auto-reconnect | `SSEClient` (see [README-sse.md](README-sse.md)) |
-| LLM streaming (JSON Lines) | `stream::Get()` |
+| LLM streaming (JSON Lines) | `stream::Post()` or `stream::Get()` |
 | Large file download | `stream::Get()` or `open_stream()` |
 | Reverse proxy | `open_stream()` |
 | Small responses with Keep-Alive | `Client::Get()` |
@@ -106,6 +106,8 @@ if (handle.is_valid()) {
 | `get_read_error()` | `Error` | Get the last read error |
 | `has_read_error()` | `bool` | Check if a read error occurred |
 
+For a chunked response, the trailers are in `response->trailers` once `read()` has reached the end of the body.
+
 ### High-Level API: `stream::Get()` and `stream::Result`
 
 The `httplib.h` header provides a more ergonomic iterator-style API.
@@ -135,6 +137,30 @@ auto result2 = httplib::stream::Get(cli, "/path");
 if (result2) {
     std::string body = result2.read_all();
 }
+```
+
+#### Helpers
+
+There is a helper for each HTTP method. The arguments in brackets can be left out, and every helper takes a trailing `size_t chunk_size = 8192`, the most bytes one `next()` returns.
+
+| Helper | Arguments |
+|--------|-----------|
+| `stream::Get()` | `(cli, path, [params], [headers], [chunk_size])` |
+| `stream::Head()` | `(cli, path, [params], [headers], [chunk_size])` |
+| `stream::Options()` | `(cli, path, [params], [headers], [chunk_size])` |
+| `stream::Post()` | `(cli, path, [params], [headers], body, content_type, [chunk_size])` |
+| `stream::Put()` | `(cli, path, [params], [headers], body, content_type, [chunk_size])` |
+| `stream::Patch()` | `(cli, path, [params], [headers], body, content_type, [chunk_size])` |
+| `stream::Delete()` | `(cli, path, [params], [headers], [chunk_size])` |
+| `stream::Delete()` | `(cli, path, [params], [headers], body, content_type, [chunk_size])` |
+
+`params` is a `Params`, `headers` a `Headers`, and `body` and `content_type` are `std::string`s.
+
+```cpp
+// POST a JSON body and stream the response in 4KB chunks
+auto result3 = httplib::stream::Post(cli, "/api/generate", headers,
+                                     R"({"prompt": "hello"})",
+                                     "application/json", 4096);
 ```
 
 #### stream::Result Members
@@ -216,6 +242,7 @@ int main() {
 
 int main() {
     httplib::Client cli("http://example.com");
+    cli.set_payload_max_length(0);  // No limit (the default is 100MB)
     auto result = httplib::stream::Get(cli, "/large-file.zip");
     
     if (!result || result.status() != 200) {
@@ -232,6 +259,12 @@ int main() {
         std::cout << "\rDownloaded: " << (total / 1024) << " KB" << std::flush;
     }
     
+    if (result.has_read_error()) {
+        std::cerr << "\nDownload failed: "
+                  << httplib::to_string(result.read_error()) << "\n";
+        return 1;
+    }
+
     std::cout << "\nComplete!\n";
     return 0;
 }
@@ -315,6 +348,10 @@ while (result.next()) { /* ... */ }
 // Use for Keep-Alive connections
 auto res = cli.Get("/api/data");  // Connection can be reused
 ```
+
+### Payload Size Limit
+
+`open_stream()` and the `stream::` helpers apply the client's `set_payload_max_length()` (100MB by default, `CPPHTTPLIB_PAYLOAD_MAX_LENGTH`) to the body, both as received and after decompression. Past the limit, `read()` and `next()` stop, and the read error is `Error::ExceedMaxPayloadSize`. To download something larger, raise the limit, or call `cli.set_payload_max_length(0)` for no limit.
 
 ## Related
 

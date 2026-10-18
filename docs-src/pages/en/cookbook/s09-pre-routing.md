@@ -16,7 +16,7 @@ svr.set_pre_routing_handler(
   });
 ```
 
-The pre-routing handler runs **before routing**. It catches every request — including ones that don't match any handler.
+The pre-routing handler runs **before routing**. It catches every request — including ones that don't match any handler. The exception is a request rejected while its request line and headers are parsed (400 for a malformed request, 414 for an overlong URI, 416 for a malformed `Range`); the server answers those before this handler runs.
 
 The `HandlerResponse` return value is key:
 

@@ -48,21 +48,29 @@ svr.Post("/upload",
      const httplib::ContentReader &content_reader) {
     std::ofstream ofs;
 
-    content_reader(
+    auto ok = content_reader(
       [&](const httplib::FormData &file) {
-        if (!file.filename.empty()) {
-          ofs.open("uploads/" + file.filename, std::ios::binary);
-        }
-        return static_cast<bool>(ofs);
+        if (ofs.is_open()) { ofs.close(); }         // 前のファイルを閉じる
+        if (file.filename.empty()) { return true; } // 普通のフィールドは読み飛ばす
+
+        auto name = httplib::sanitize_filename(file.filename);
+        if (name.empty()) { return false; }         // 安全でない名前は拒否
+
+        ofs.open("uploads/" + name, std::ios::binary);
+        return ofs.is_open();
       },
       [&](const char *data, size_t len) {
+        if (!ofs.is_open()) { return true; }        // ファイルのパートではない
         ofs.write(data, len);
         return static_cast<bool>(ofs);
       });
 
+    if (!ok) { return; } // ステータスは設定済み
     res.set_content("uploaded", "text/plain");
   });
 ```
+
+ヘッダーのコールバックはパートごとに呼ばれるので、次のファイルを開く前に前のファイルを閉じています。`file.filename`はクライアントが送ってきた値そのままなので、必ず`httplib::sanitize_filename()`を通してください。空文字列が返ったら、安全でない名前です。
 
 メモリには常に小さなチャンクしか載らないので、ギガバイト級のファイルでも扱えます。
 

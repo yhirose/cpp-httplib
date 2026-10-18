@@ -10,11 +10,18 @@ HTML、CSS、画像などの静的ファイルを配信したいときは、`set
 
 ```cpp
 httplib::Server svr;
-svr.set_mount_point("/", "./public");
+if (!svr.set_mount_point("/", "./public")) {
+  // ./publicが存在しない
+  return 1;
+}
 svr.listen("0.0.0.0", 8080);
 ```
 
+`set_mount_point()`はディレクトリが存在しないと`false`を返すので、戻り値を確認しておきましょう。
+
 `./public/index.html`には`http://localhost:8080/index.html`で、`./public/css/style.css`には`http://localhost:8080/css/style.css`でアクセスできます。ディレクトリ構造がそのままURLに反映されます。
+
+ディレクトリへのリクエストには、その中の`index.html`を返します。末尾のスラッシュがないリクエスト（`/docs`）は、`/docs/`へリダイレクト（301）されます。マウントしたディレクトリの外を指すシンボリックリンクには403を返します。
 
 ## 複数のマウントポイント
 

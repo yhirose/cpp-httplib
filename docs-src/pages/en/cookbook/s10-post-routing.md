@@ -38,6 +38,8 @@ svr.Options("/.*", [](const auto &req, auto &res) {
 });
 ```
 
+`/.*` is a regex route, so it isn't applied to paths longer than `CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH` (256 by default). If your paths can be longer, handle `OPTIONS` in the pre-routing handler instead.
+
 ## Bundle your security headers
 
 Manage browser security headers in one spot.

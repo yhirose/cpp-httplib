@@ -21,7 +21,12 @@ int main() {
       if (result == httplib::ws::ReadResult::Fail) {
         break;
       }
-      ws.send(msg); // echo back what we received
+      // echo back what we received, in the same frame type
+      if (result == httplib::ws::ReadResult::Binary) {
+        ws.send(msg.data(), msg.size());
+      } else {
+        ws.send(msg);
+      }
     }
   });
 
@@ -29,7 +34,7 @@ int main() {
 }
 ```
 
-Register a WebSocket handler with `svr.WebSocket()`. By the time the handler runs, the WebSocket handshake is already complete. Inside the loop, just `ws.read()` and `ws.send()` to get a working echo.
+Register a WebSocket handler with `svr.WebSocket()`. By the time the handler runs, the WebSocket handshake is already complete. Inside the loop, just `ws.read()` and `ws.send()` to get a working echo. A binary message goes back through the `data()` + `size()` overload so it stays binary (more on that below).
 
 The `read()` return value is a `ReadResult` enum:
 
@@ -76,7 +81,7 @@ The `std::string` overload sends as **text**; the `const char*` + size overload 
 
 ## Thread pool implications
 
-A WebSocket handler holds its worker thread for the entire life of the connection — one connection per thread. For many concurrent clients, configure a dynamic thread pool.
+A WebSocket handler holds its worker thread for the entire life of the connection — one connection per thread. The default pool already grows under load, up to 4× its base thread count. For many concurrent clients, raise that maximum.
 
 ```cpp
 svr.new_task_queue = [] {

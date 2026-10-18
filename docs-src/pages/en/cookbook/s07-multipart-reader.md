@@ -48,21 +48,29 @@ svr.Post("/upload",
      const httplib::ContentReader &content_reader) {
     std::ofstream ofs;
 
-    content_reader(
+    auto ok = content_reader(
       [&](const httplib::FormData &file) {
-        if (!file.filename.empty()) {
-          ofs.open("uploads/" + file.filename, std::ios::binary);
-        }
-        return static_cast<bool>(ofs);
+        if (ofs.is_open()) { ofs.close(); }         // done with the previous file
+        if (file.filename.empty()) { return true; } // a plain field, skip it
+
+        auto name = httplib::sanitize_filename(file.filename);
+        if (name.empty()) { return false; }         // reject an unsafe name
+
+        ofs.open("uploads/" + name, std::ios::binary);
+        return ofs.is_open();
       },
       [&](const char *data, size_t len) {
+        if (!ofs.is_open()) { return true; }        // not part of a file
         ofs.write(data, len);
         return static_cast<bool>(ofs);
       });
 
+    if (!ok) { return; } // the status is already set
     res.set_content("uploaded", "text/plain");
   });
 ```
+
+The header callback runs at the start of every part, so it closes the previous file before opening the next one. `file.filename` is whatever the client sent, so always pass it through `httplib::sanitize_filename()`. An empty result means the name is unsafe.
 
 Only a small chunk sits in memory at any moment, so gigabyte-scale files are no problem.
 

@@ -26,6 +26,8 @@ if (ws.connect()) {
 
 To disable certificate verification entirely, use `enable_server_certificate_verification(false)`. For details on that behavior, see [T02. Control SSL Certificate Verification](../t02-cert-verification).
 
+`WebSocketClient` also has `set_server_certificate_verifier()` and `set_session_verifier()` for custom checks, plus the proxy setters (`set_proxy()`, `set_proxy_basic_auth()`, `set_proxy_bearer_token_auth()`, `set_proxy_digest_auth()`, `set_no_proxy()`). CA certificates are loaded on the first `connect()`, so set them before that.
+
 ## Presenting a client certificate (mTLS)
 
 `ws::WebSocketClient` has a constructor overload that takes a `PemMemory` struct, letting `wss://` connections present a client certificate.

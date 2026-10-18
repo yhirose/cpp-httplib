@@ -875,6 +875,7 @@ The only server-side change is the single `set_mount_point` line. Add it before 
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 
 using json = nlohmann::json;
 
@@ -934,11 +935,11 @@ std::filesystem::path get_models_dir() {
 // Model download
 // -------------------------------------------------------------------------
 
-// Abort the download if progress_cb returns false
+// If progress_cb returns false, the download is aborted
 bool download_model(const ModelInfo &model,
                     std::function<bool(int)> progress_cb) {
   httplib::Client cli("https://huggingface.co");
-  cli.set_follow_location(true);  // Hugging Face redirects to CDN
+  cli.set_follow_location(true);  // Hugging Face redirects to a CDN
 
   auto url = "/" + model.repo + "/resolve/main/" + model.filename;
   auto path = get_models_dir() / model.filename;
@@ -948,12 +949,12 @@ bool download_model(const ModelInfo &model,
   if (!ofs) { return false; }
 
   auto res = cli.Get(url,
-    // content_receiver: receive chunks and write to file
+    // content_receiver: receive data chunk by chunk and write to file
     [&](const char *data, size_t len) {
       ofs.write(data, len);
       return ofs.good();
     },
-    // progress: report download progress (return false to abort)
+    // progress: report download progress (returning false aborts)
     [&, last_pct = -1](size_t current, size_t total) mutable {
       int pct = total ? (int)(current * 100 / total) : 0;
       if (pct == last_pct) return true; // Skip if same value
@@ -987,11 +988,11 @@ void signal_handler(int sig) {
 }
 
 int main() {
-  // Create model storage directory
+  // Create the model storage directory
   auto models_dir = get_models_dir();
   std::filesystem::create_directories(models_dir);
 
-  // Auto-download default model if not present
+  // Automatically download the default model if not yet present
   std::string selected_model = MODELS[0].filename;
   auto path = models_dir / selected_model;
   if (!std::filesystem::exists(path)) {
@@ -1006,6 +1007,7 @@ int main() {
     std::cout << std::endl;
   }
   auto llm = llamalib::Llama{path};
+  std::mutex llm_mutex; // Protect access during model switching
 
   svr.set_logger([](const auto &req, const auto &res) {
     std::cout << req.method << " " << req.path << " -> " << res.status
@@ -1020,6 +1022,7 @@ int main() {
 
   svr.Post("/translate",
            [&](const httplib::Request &req, httplib::Response &res) {
+    // JSON parsing and validation (see Chapter 2 for details)
     auto input = json::parse(req.body, nullptr, false);
     if (input.is_discarded()) {
       res.status = 400;
@@ -1043,6 +1046,7 @@ int main() {
                   ". Output only the translation, nothing else.\n\n" + text;
 
     try {
+      std::lock_guard<std::mutex> lock(llm_mutex);
       auto translation = llm.chat(prompt);
       res.set_content(json{{"translation", translation}}.dump(),
                       "application/json");
@@ -1052,7 +1056,7 @@ int main() {
     }
   });
 
-  // --- SSE streaming translation (Chapter 3) --------------------------------
+  // --- SSE streaming translation (Chapter 3) -------------------------------
 
   svr.Post("/translate/stream",
            [&](const httplib::Request &req, httplib::Response &res) {
@@ -1081,6 +1085,7 @@ int main() {
     res.set_chunked_content_provider(
         "text/event-stream",
         [&, prompt](size_t, httplib::DataSink &sink) {
+          std::lock_guard<std::mutex> lock(llm_mutex);
           try {
             llm.chat(prompt, [&](std::string_view token) {
               sink.os << "data: "
@@ -1098,7 +1103,7 @@ int main() {
         });
   });
 
-  // --- Model list (Chapter 4) -----------------------------------------------
+  // --- Model list (Chapter 4) ----------------------------------------------
 
   svr.Get("/models",
           [&](const httplib::Request &, httplib::Response &res) {
@@ -1117,7 +1122,7 @@ int main() {
     res.set_content(json{{"models", arr}}.dump(), "application/json");
   });
 
-  // --- Model selection (Chapter 4) ------------------------------------------
+  // --- Model selection (Chapter 4) -----------------------------------------
 
   svr.Post("/models/select",
            [&](const httplib::Request &req, httplib::Response &res) {
@@ -1143,16 +1148,16 @@ int main() {
 
     const auto &model = *it;
 
-    // Always respond with SSE (same format whether downloaded or not)
+    // Always respond with SSE (same format whether already downloaded or not)
     res.set_chunked_content_provider(
         "text/event-stream",
         [&, model](size_t, httplib::DataSink &sink) {
-          // SSE event send helper
+          // SSE event sending helper
           auto send = [&](const json &event) {
             sink.os << "data: " << event.dump() << "\n\n";
           };
 
-          // Download if not yet downloaded (report progress via SSE)
+          // Download if not yet present (report progress via SSE)
           auto path = get_models_dir() / model.filename;
           if (!std::filesystem::exists(path)) {
             bool ok = download_model(model, [&](int pct) {
@@ -1168,8 +1173,11 @@ int main() {
 
           // Load and switch to the model
           send({{"status", "loading"}});
-          llm = llamalib::Llama{path};
-          selected_model = model.filename;
+          {
+            std::lock_guard<std::mutex> lock(llm_mutex);
+            llm = llamalib::Llama{path};
+            selected_model = model.filename;
+          }
 
           send({{"status", "ready"}});
           sink.done();
@@ -1177,11 +1185,11 @@ int main() {
         });
   });
 
-  // --- Static file serving (Chapter 5) --------------------------------------
+  // --- Static file serving (Chapter 5) -------------------------------------
 
   svr.set_mount_point("/", "./public");
 
-  // Allow graceful shutdown via `Ctrl+C` (`SIGINT`) or `kill` (`SIGTERM`)
+  // Allow the server to be stopped with `Ctrl+C` (`SIGINT`) or `kill` (`SIGTERM`)
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 

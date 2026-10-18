@@ -21,7 +21,9 @@ if (result) {
 }
 ```
 
-You can also pass a `content_receiver` callback to `Get()`. This approach works with Keep-Alive.
+Note that `stream::Get()` reads no more of the body than the client's `set_payload_max_length()` allows, which is 100MB by default. For larger downloads, raise it, or set it to 0 for no limit.
+
+You can also pass a `content_receiver` callback to `Get()`. This approach works with Keep-Alive, and it has no size limit unless you set one with `set_payload_max_length()`.
 
 ```cpp
 httplib::Client cli("http://localhost:8080");

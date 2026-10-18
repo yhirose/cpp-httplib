@@ -26,6 +26,8 @@ if (ws.connect()) {
 
 証明書検証そのものを無効にしたい場合は`enable_server_certificate_verification(false)`が使えます。挙動の詳細は[T02. SSL証明書の検証を制御する](../t02-cert-verification)を参照してください。
 
+`WebSocketClient`には、独自の検証に使う`set_server_certificate_verifier()`と`set_session_verifier()`や、プロキシ用のセッター（`set_proxy()`、`set_proxy_basic_auth()`、`set_proxy_bearer_token_auth()`、`set_proxy_digest_auth()`、`set_no_proxy()`）もあります。CA証明書は最初の`connect()`で読み込まれるので、それより前に設定してください。
+
 ## クライアント証明書を使う（mTLS）
 
 `ws::WebSocketClient`には`PemMemory`構造体を受け取るコンストラクタがあり、`wss://`接続でクライアント証明書を提示できます。

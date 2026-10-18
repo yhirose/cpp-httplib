@@ -76,7 +76,7 @@ Defining `CPPHTTPLIB_OPENSSL_SUPPORT` enables `httplib::Client("https://...")` t
 
 ## 4.2 Defining the Model List
 
-Let's define the list of models that the app can handle. Here are four models we've verified for translation tasks.
+Let's define the list of models that the app can handle. Here are three models we've verified for translation tasks.
 
 ```cpp
 struct ModelInfo {

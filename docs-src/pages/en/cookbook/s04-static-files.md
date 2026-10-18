@@ -10,11 +10,18 @@ To serve static files like HTML, CSS, and images, use `set_mount_point()`. Just 
 
 ```cpp
 httplib::Server svr;
-svr.set_mount_point("/", "./public");
+if (!svr.set_mount_point("/", "./public")) {
+  // ./public doesn't exist
+  return 1;
+}
 svr.listen("0.0.0.0", 8080);
 ```
 
+`set_mount_point()` returns `false` when the directory doesn't exist, so check the return value.
+
 `./public/index.html` is now reachable at `http://localhost:8080/index.html`, and `./public/css/style.css` at `http://localhost:8080/css/style.css`. The directory layout maps directly to URLs.
+
+A request for a directory serves its `index.html`, and one without the trailing slash (`/docs`) is redirected (301) to `/docs/`. A symlink that resolves outside the mounted directory gets a 403.
 
 ## Multiple mount points
 

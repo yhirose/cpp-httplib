@@ -46,4 +46,4 @@ Certificate verification control, standing up an SSLServer, reading the peer cer
 - [T03. Start an SSL/TLS server](../t03-ssl-server)
 - [T05. Access the peer certificate on the server](../t05-peer-cert)
 
-> **Note:** On macOS with an OpenSSL-family backend, cpp-httplib automatically loads root certificates from the system keychain (via `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`, on by default). To disable this, define `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`.
+> **Note:** On macOS, with any of the three backends, cpp-httplib automatically loads root certificates from the system keychain (via `CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`, on by default). To disable this, define `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`.

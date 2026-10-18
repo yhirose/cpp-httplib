@@ -4,8 +4,9 @@ set -euo pipefail
 # =============================================================================
 # test_book.sh — LLM App Tutorial (Ch1–Ch5) E2E Test
 #
-# Code is extracted from the doc markdown files (<!-- test:full-code --> and
-# <!-- test:cmake --> markers), so tests always stay in sync with the docs.
+# Code is extracted from the ja doc markdown files (the code block after each
+# <summary data-file="..."> line; see extract_code.sh), so tests always stay
+# in sync with the docs.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

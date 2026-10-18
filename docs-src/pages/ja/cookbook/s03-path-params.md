@@ -44,6 +44,8 @@ svr.Get(R"(/users/(\d+))", [](const httplib::Request &req, httplib::Response &re
 
 パターンに括弧を使うと、マッチした部分が`req.matches`に入ります。`req.matches[0]`はパス全体、`req.matches[1]`以降がキャプチャです。
 
+正規表現のルートは、`CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH`（デフォルトは256）より長いパスには適用されず、マッチしなかったものとして扱われます。長い入力で`std::regex`がスタックを使い果たさないための制限です。もっと長いパスを扱いたい場合は、このマクロに大きな値を定義してください。
+
 ## どちらを使うか
 
 - 単純なIDやスラッグなら`:name`でじゅうぶん。読みやすく、型が自明です

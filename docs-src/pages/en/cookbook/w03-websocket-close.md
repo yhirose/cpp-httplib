@@ -67,7 +67,7 @@ To notify in-flight clients that the server is going down, use `GoingAway`.
 ws.close(httplib::ws::CloseStatus::GoingAway, "server restarting");
 ```
 
-The client can inspect that status and decide whether to reconnect.
+On the client, `read()` just returns `Fail`; the status and reason it received aren't exposed. If the client needs to tell a restart from other closures, send it a message first (say, `ws.send("restarting")`), then call `close()`.
 
 ## Example: a tiny chat with quit
 

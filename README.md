@@ -71,7 +71,7 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 | wolfSSL | `CPPHTTPLIB_WOLFSSL_SUPPORT` | `libwolfssl` | 5.x supported; must build with `--enable-opensslall` |
 
 > [!NOTE]
-> **wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable.
+> **wolfSSL limitation:** `get_ca_certs()` and `get_ca_names()` only reflect CA certificates loaded via `load_ca_cert_store()` or `set_ca_cert_store()`. Certificates loaded through `set_ca_cert_path()` or system certificates (`load_system_certs`) are not enumerable.
 >
 > A wolfSSL server that verifies client certificates does not resume TLS sessions: wolfSSL shares its session cache between contexts, so a resumed session could carry a certificate checked against another server's client CA.
 
@@ -108,8 +108,10 @@ cli.enable_server_hostname_verification(false);
 
 When SSL operations fail, cpp-httplib provides detailed error information through `ssl_error()` and `ssl_backend_error()`:
 
-- `ssl_error()` - Returns the TLS-level error as a backend-independent `httplib::tls::ErrorCode` value (e.g., `Fatal`, `CertVerifyFailed`), cast to `int`
-- `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL/wolfSSL, return value for Mbed TLS). With OpenSSL, a certificate verification failure reports the verify result (`X509_V_ERR_*`) here instead
+- `ssl_error()` - Returns the TLS-level error as a backend-independent `httplib::tls::ErrorCode` value (e.g., `Fatal`, `CertVerifyFailed`), cast to `int`. `CertVerifyFailed` comes from Mbed TLS and wolfSSL. OpenSSL checks the chain and the host name after the handshake, so a failure there leaves this `0`
+- `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL/wolfSSL, return value for Mbed TLS). With OpenSSL, a certificate verification failure reports the verify result (`X509_V_ERR_*`) here instead. On Windows, when CryptoAPI verifies the chain, a failure there reports the CryptoAPI error code here
+
+A request that fails after the handshake with `Error::Read` or `Error::Write` also carries the TLS error behind it in both values, such as a TLS 1.3 "certificate required" alert from the server. Both values are reset for each request.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT  // or CPPHTTPLIB_MBEDTLS_SUPPORT or CPPHTTPLIB_WOLFSSL_SUPPORT
@@ -168,10 +170,12 @@ cli.set_server_certificate_verifier(
         std::cout << "SAN: " << san.value << std::endl;
       }
 
-      // Return true to accept, false to reject
+      // Return false to reject
       return ctx.preverify_ok;
     });
 ```
+
+Returning `false`, or throwing, rejects the certificate. The callback runs alongside the built-in verification, so to accept a certificate that verification rejects, such as a self-signed one, also call `enable_server_certificate_verification(false)`; the callback is then the only check.
 
 ### Mutual TLS (mTLS)
 
@@ -237,14 +241,18 @@ cpp-httplib automatically integrates with the OS certificate store on macOS and 
 | macOS | Loads system certs from Keychain (link `CoreFoundation` and `Security` with `-framework`). Requires Apple Clang; GCC is not supported for this feature. | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
 | Windows | Verifies the certificate chain with CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`) instead of the TLS backend. Revocation checking is best-effort: a revoked server certificate is rejected, while one whose revocation status cannot be determined is accepted. Windows fetches missing roots and intermediates on demand. With a custom CA, the TLS backend verifies the chain instead; with `set_server_certificate_verifier()`, both do. | `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` |
 
-On Windows, verification can also be disabled at runtime:
+On Windows, the CryptoAPI check can also be turned off at runtime. The TLS backend then verifies the chain instead, as on other platforms:
 
 ```c++
 cli.enable_windows_certificate_verification(false);
 ```
 
+`WebSocketClient` does not use CryptoAPI; the TLS backend always verifies its chain.
+
 > [!NOTE]
 > When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.
+>
+> On systems other than Windows, the `Server` constructor does this already: it calls `signal(SIGPIPE, SIG_IGN)`, which affects the whole process. A program that only uses clients has to do it itself.
 
 ## Server
 
@@ -340,12 +348,12 @@ Patterns work exactly as they do for `Get` and the other methods, so regular exp
 Note the following:
 
 * The method name must be a valid HTTP method token (RFC 9110) and must be registered before `listen()` is called.
-* `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `CONNECT`, `OPTIONS`, `TRACE`, `PATCH` and `PRI` cannot be registered this way. Use the dedicated methods above instead.
+* `GET`, `HEAD`, `POST`, `PUT`, `DELETE`, `CONNECT`, `OPTIONS`, `TRACE`, `PATCH` and `PRI` cannot be registered this way. Use `Get` (which also serves `HEAD`), `Post`, `Put`, `Delete`, `Options` or `Patch` instead. There are no handlers for `CONNECT`, `TRACE` and `PRI`; such requests get `400 Bad Request`.
 * A rejected registration makes `is_valid()` return `false`, and `listen()` then fails rather than starting a server with a route that would never fire.
 * Static file serving remains `GET`/`HEAD` only, and WebSocket upgrades `GET` only.
 * `Allow` and the WebDAV `DAV:` header are not generated automatically. Register an `Options` handler if clients need them.
 
-The request line itself is read strictly, as RFC 9112 asks: a single space between its three parts, no fragment (`#...`) in the target, and a `Host` header in every HTTP/1.1 request. Anything else gets `400 Bad Request`.
+The request line and the `Host` header are read strictly, as RFC 9112 asks: a single space between the three parts of the request line, `HTTP/1.0` or `HTTP/1.1` as the version, no fragment (`#...`) in the target, and exactly one valid `Host` header (an HTTP/1.0 request may have none). Anything else gets `400 Bad Request`.
 
 ### Bind a socket to multiple interfaces and any available port
 
@@ -403,6 +411,8 @@ svr.set_file_extension_and_mimetype_mapping("cpp", "text/x-c");
 svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
 ```
 
+Extensions match regardless of case, so `photo.JPG` is served as `image/jpeg`. A user mapping is looked up by the exact extension first, then by the extension in lowercase.
+
 The following are built-in mappings:
 
 | Extension  |          MIME Type          | Extension  |          MIME Type          |
@@ -453,7 +463,7 @@ cpp-httplib provides separate logging capabilities for access logs and error log
 
 #### Access Logging
 
-Access loggers capture successful HTTP requests and responses:
+Access loggers capture each request and the response written for it, including the error responses the library writes itself, such as `400`, `404`, `413` or `500`:
 
 ```cpp
 svr.set_logger([](const httplib::Request& req, const httplib::Response& res) {
@@ -476,7 +486,7 @@ svr.set_pre_compression_logger([](const httplib::Request& req, const httplib::Re
 });
 ```
 
-The pre-compression logger is only called when compression would be applied. For responses without compression, only the access logger is called.
+The pre-compression logger is only called when the server compresses `res.body` or a static file. It is not called for a response without compression, nor for a chunked content provider, whose body is compressed as it is written; for those, only the access logger is called.
 
 For a static file response (see [Static file compression](#static-file-compression)), `res.body` is empty when the logger runs. The bytes are still on disk at that point, not in memory.
 
@@ -508,7 +518,7 @@ svr.set_error_handler([](const auto& req, auto& res) {
 ```
 
 ### Exception handler
-The exception handler gets called if a user routing handler throws an error.
+The exception handler gets called if a user routing handler throws an error. This covers the pre-routing handler, the file request handler, the pre-request handler, route handlers and content readers. An exception from the post-routing handler, the error handler, the `Expect: 100-continue` handler, a content provider, a logger or a WebSocket handler does not reach it: the connection is dropped, and the error logger receives `Error::UserCallbackException`.
 
 ```cpp
 svr.set_exception_handler([](const auto& req, auto& res, std::exception_ptr ep) {
@@ -584,6 +594,7 @@ Request received
   │     └─ returns Handled → go straight to post_routing_handler
   │
   ├─ file_request_handler         when a static file is served (GET only)
+  │     └─ a mount point answered → go straight to post_routing_handler
   │
   ├─ route matching → req.matched_route is set
   │
@@ -598,7 +609,7 @@ Request received
   On an error status (4xx/5xx) → error_handler
 ```
 
-Use `pre_routing_handler` to reject a request as early as possible, before the route is known. Use `pre_request_handler` for route-specific checks, since `req.matched_route` is available and the body has not been read yet.
+Use `pre_routing_handler` to reject a request as early as possible, before the route is known. Use `pre_request_handler` for route-specific checks, since `req.matched_route` is available and the body has not been read yet. A request that a mount point answers never reaches route matching or `pre_request_handler`, so reject such a request in `pre_routing_handler`.
 
 For a request with `Expect: 100-continue`, the `100 Continue` response is not sent until the body is about to be read. A request rejected before that point (by `pre_routing_handler`, `pre_request_handler`, or because no route matched) gets its final response without `100 Continue`, so the client never sends the body.
 
@@ -724,7 +735,7 @@ svr.Post("/multipart", [&](const Request& req, Response& res) {
 auto safe = httplib::sanitize_filename(file.filename);
 ```
 
-This function strips path separators (`/`, `\`), null bytes, leading/trailing whitespace, and rejects `.` and `..`. Returns an empty string if the filename is unsafe.
+This function keeps only the part after the last `/` or `\`, removes null bytes, and trims leading and trailing spaces and tabs. It returns an empty string if what is left is empty, `.` or `..`.
 
 > [!NOTE]
 > `name` and `filename` are read as quoted-strings (RFC 9110 §5.6.4), where `\"` and `\\` stand for `"` and `\`. Browsers send a backslash as it is, so from a browser, a value with `\\` in it arrives with a single `\`, and one that ends in `\` is not read correctly.
@@ -769,6 +780,11 @@ svr.Post("/content_receiver",
   });
 ```
 
+`content_reader` reads the body once per request; a second call returns `false`.
+When a callback returns `false`, reading stops, `content_reader` returns `false`,
+and `res.status` is set to `400` unless the handler sets another status. The
+rest of the body is left unread, so the connection is closed after the response.
+
 `CPPHTTPLIB_MULTIPART_FORM_DATA_FILE_MAX_COUNT` (default 1024, `0` for no limit)
 caps the number of form-data parts only on the buffered path, where every part
 is accumulated into `req.form`. The content receiver keeps nothing, so the cap
@@ -796,7 +812,7 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 });
 ```
 
-Write at most `length` bytes per call. Anything past it is not sent, and the response fails.
+Write at most `length` bytes per call. Anything past it is not sent, and the response fails. The response also fails if a call returns `true` without writing anything, or if `sink.done()` is called before the whole content length is written.
 
 Without content length:
 
@@ -816,6 +832,8 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
     });
 });
 ```
+
+Such a body ends where the connection does, so the server sends `Connection: close` and closes the connection after the response. Use `set_chunked_content_provider()` to keep the connection open.
 
 ### Chunked transfer encoding
 
@@ -914,8 +932,10 @@ The read timeout bounds the request line and headers as a whole, and each read o
 svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 ```
 
+The default is `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` (100MB), and `0` means no limit. A request with a larger body gets `413 Payload Too Large`.
+
 > [!NOTE]
-> When the request body content type is 'www-form-urlencoded', the actual payload length shouldn't exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH` (`0` for no limit).
+> When the request body content type is `application/x-www-form-urlencoded`, the body must not exceed `CPPHTTPLIB_FORM_URL_ENCODED_PAYLOAD_MAX_LENGTH` (8192 bytes by default, `0` for no limit). A larger one gets `413 Payload Too Large`.
 
 ### Server-Sent Events
 
@@ -925,7 +945,7 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 
 `ThreadPool` is used as the **default** task queue, with dynamic scaling support. By default, it maintains a base thread count of 8 or `std::thread::hardware_concurrency() - 1` (whichever is greater), and can scale up to 4x that count under load. You can change these with `CPPHTTPLIB_THREAD_POOL_COUNT` and `CPPHTTPLIB_THREAD_POOL_MAX_COUNT`.
 
-When all threads are busy and a new task arrives, a temporary thread is spawned (up to the maximum). A dynamic thread exits automatically once it has waited for the idle timeout without receiving a task. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
+When a new task arrives and the queued tasks outnumber the idle threads, a temporary thread is spawned (up to the maximum). A dynamic thread exits automatically once it has waited for the idle timeout without receiving a task. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
 
 A connection holds its thread while it is served: between requests up to the keep-alive timeout, through a request body sent slowly but within the read timeout, and for the whole life of a WebSocket. Enough of them leave no thread for anyone else, so in front of untrusted clients, put a reverse proxy that limits connections per client, and reject unwanted WebSocket upgrades in the pre-request handler.
 
@@ -998,7 +1018,7 @@ int main(void)
   httplib::Client cli("localhost", 1234);
 
   if (auto res = cli.Get("/hi")) {
-    if (res->status == StatusCode::OK_200) {
+    if (res->status == httplib::StatusCode::OK_200) {
       std::cout << res->body << std::endl;
     }
   } else {
@@ -1135,7 +1155,7 @@ cli.set_default_headers({
 auto res = cli.Get("/hi");
 ```
 
-A `Content-Length` or `Transfer-Encoding` among these headers is sent in place of the one the library would send, so it has to describe the body as written. Leave both out when passing on the headers of another message, as a proxy does.
+A `Content-Length` among these headers is sent in place of the one the library would send, so it has to match the body as written. A `Transfer-Encoding` is sent in addition to the library's own framing, so leave it out. Leave both out when passing on the headers of another message, as a proxy does.
 
 ### POST
 
@@ -1230,7 +1250,7 @@ cli.set_connection_timeout(0, 300000); // 300 milliseconds
 cli.set_read_timeout(5, 0); // 5 seconds
 cli.set_write_timeout(5, 0); // 5 seconds
 
-// This method works the same as curl's `--max-time` option
+// A deadline for the whole request (see below)
 cli.set_max_timeout(5000); // 5 seconds
 
 // std::chrono is also supported
@@ -1239,6 +1259,8 @@ cli.set_read_timeout(std::chrono::seconds(5));
 cli.set_write_timeout(std::chrono::seconds(5));
 cli.set_max_timeout(std::chrono::seconds(5));
 ```
+
+`set_max_timeout()` is similar to curl's `--max-time` option, but the deadline only shortens the waits for reading the response. Connecting and writing are bounded by the connection and write timeouts.
 
 ### Set maximum payload length for reading a response body
 
@@ -1264,8 +1286,8 @@ std::string body;
 auto res = cli.Get(
   "/stream", Headers(),
   [&](const Response &response) {
-    EXPECT_EQ(StatusCode::OK_200, response.status);
-    return true; // return 'false' if you want to cancel the request.
+    // return 'false' if you want to cancel the request.
+    return response.status == StatusCode::OK_200;
   },
   [&](const char *data, size_t data_length) {
     body.append(data, data_length);
@@ -1286,6 +1308,8 @@ auto res = cli.Post(
   },
   "text/plain");
 ```
+
+As on the server, write at most `length` bytes per call. The request fails with `Error::Write` if a call writes more, returns `true` without writing anything, or calls `sink.done()` before the whole content length is written.
 
 ### Chunked transfer encoding
 
@@ -1366,6 +1390,10 @@ Hostname matching is case-insensitive with a dot-boundary rule. See the
 [NO_PROXY cookbook](https://yhirose.github.io/cpp-httplib/en/cookbook/c16-proxy)
 for details and for reading the variable from the environment.
 
+`set_proxy()`, `set_proxy_basic_auth()`, `set_proxy_bearer_token_auth()`,
+`set_proxy_digest_auth()` and `set_no_proxy()` are also available on
+`httplib::ws::WebSocketClient`.
+
 ### Range
 
 ```cpp
@@ -1411,14 +1439,16 @@ res = cli.Get("/");
 res->status; // 200
 ```
 
-A URL with userinfo (`http://user:pass@host/`) is not supported, neither for a `Client` nor in a `Location`; use `set_basic_auth()` for the credentials.
+A URL with userinfo (`http://user:pass@host/`) is not supported, neither for a `Client` nor in a `Location`; use `set_basic_auth()` for the credentials. A `Client` constructed from a URL it cannot use, such as one with userinfo, a backslash in the authority or an invalid port, is not valid: `is_valid()` returns `false`, and every request fails with `Error::Connection`.
 
-On a redirect to another host, `Authorization`, `Cookie` and `Proxy-Authorization` are dropped along with the credentials set with `set_basic_auth()`, `set_bearer_token_auth()` and `set_digest_auth()`, and the client certificate is not presented. Other headers, the default ones included, go along (RFC 9110 §15.4), and so do the timeouts, the payload limit and the TLS verification settings.
+On a redirect to another origin (a different scheme, host or port), `Authorization`, `Cookie` and `Proxy-Authorization` are dropped along with the credentials set with `set_basic_auth()`, `set_bearer_token_auth()` and `set_digest_auth()`, and the client certificate is not presented. Other headers, the default ones included, go along (RFC 9110 §15.4), and so do the timeouts, the payload limit and the TLS verification settings. A `303` that turns a request into a `GET` drops its headers and body; only on the same origin are the default headers sent again.
+
+Up to `CPPHTTPLIB_REDIRECT_MAX_COUNT` (20 by default) redirects are followed for a request; one more fails it with `Error::ExceedRedirectCount`. Interim `1xx` responses before the final response are skipped, up to `CPPHTTPLIB_INTERIM_RESPONSE_MAX_COUNT` (100 by default); one more fails the request with `Error::Read`.
 
 ### Use a specific network interface
 
 > [!NOTE]
-> This feature is not available on Windows, yet.
+> This feature is not available on Windows, Android, AIX and z/OS. The setting is ignored there.
 
 ```cpp
 cli.set_interface("eth0"); // Interface name, IP address or host name
@@ -1467,12 +1497,14 @@ auto res = cli.Get("/path with spaces/file.txt"); // Automatically encodes space
 
 // Disable automatic path encoding
 cli.set_path_encode(false);
-auto res = cli.Get("/already%20encoded/path"); // Use pre-encoded paths
+res = cli.Get("/already%20encoded/path"); // Use pre-encoded paths
 ```
 
 - `set_path_encode(bool on)` - Controls automatic encoding of special characters in URL paths
   - `true` (default): Automatically encodes spaces, plus signs, newlines, and other special characters
   - `false`: Sends paths as-is without encoding (useful for pre-encoded URLs)
+
+A fragment (`#...`) in the path is never sent, whatever the setting.
 
 ### Performance Note for Local Connections
 
@@ -1518,7 +1550,7 @@ auto second = req.get_header_value("Accept-Encoding", "", 1); // "br"
 
 ## Payload Limit
 
-The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely. On the client, a request made with a content receiver is not limited unless you call `set_payload_max_length()` yourself, so that a large download can be streamed without raising the limit first.
+The maximum payload body size is limited to 100MB by default for both server and client. You can change it with `set_payload_max_length()` or by defining `CPPHTTPLIB_PAYLOAD_MAX_LENGTH` at compile time. Setting it to `0` disables the limit entirely. On the client, a request made with a content receiver is not limited unless you call `set_payload_max_length()` yourself, so that a large download can be streamed without raising the limit first. The [Stream API](#stream-api) is limited either way.
 
 ## Compression
 
@@ -1592,14 +1624,14 @@ Please see https://github.com/facebook/zstd for more detail.
 
 ### Default `Accept-Encoding` value
 
-The default `Accept-Encoding` value contains all possible compression types. So, the following two examples are same.
+The default `Accept-Encoding` value lists the compression types the library is built with. It is not added to a request made with a content receiver. So, with Brotli, zlib and Zstd support all enabled, the following two examples are the same.
 
 ```c++
 res = cli.Get("/resource/foo");
 res = cli.Get("/resource/foo", httplib::Headers{{"Accept-Encoding", "br, gzip, deflate, zstd"}});
 ```
 
-If we don't want a response without compression, we have to set `Accept-Encoding` to an empty string. This behavior is similar to curl.
+If we want a response without compression, we have to set `Accept-Encoding` to an empty string. This behavior is similar to curl.
 
 ```c++
 res = cli.Get("/resource/foo", httplib::Headers{{"Accept-Encoding", ""}});
@@ -1612,7 +1644,7 @@ cli.set_compress(true);
 res = cli.Post("/resource/foo", "...", "text/plain");
 ```
 
-### Compress response body on client
+### Keep response body compressed on client
 
 ```c++
 cli.set_decompress(false);
@@ -1637,7 +1669,7 @@ cli.set_address_family(AF_UNIX);
 
 "my-socket.sock" can be a relative path or an absolute path. Your application must have the appropriate permissions for the path. You can also use an abstract socket address on Linux. To use an abstract socket address, prepend a null byte ('\x00') to the path.
 
-This library automatically sets the Host header to "localhost" for Unix socket connections, similar to curl's behavior:
+This library automatically sets the Host header to "localhost" for Unix socket connections, similar to curl's behavior.
 
 
 URI Encoding/Decoding Utilities
@@ -1660,8 +1692,8 @@ std::string decoded_component = httplib::decode_uri_component(encoded_component)
 ### Functions
 
 - `encode_uri(const std::string &value)` - Encodes a full URI, preserving reserved characters like `://`, `?`, `&`, `=`
-- `decode_uri(const std::string &value)` - Decodes a URI-encoded string
-- `encode_uri_component(const std::string &value)` - Encodes a URI component (query parameter, path segment), encoding all reserved characters
+- `decode_uri(const std::string &value)` - Decodes a URI-encoded string, but leaves escapes of the reserved characters that `encode_uri()` preserves (e.g. `%2F`, `%3F`) as they are, like JavaScript's `decodeURI()`
+- `encode_uri_component(const std::string &value)` - Encodes a URI component (query parameter, path segment), encoding all reserved characters except `!`, `*`, `'`, `(` and `)`, like JavaScript's `encodeURIComponent()`
 - `decode_uri_component(const std::string &value)` - Decodes a URI component
 
 Use `encode_uri()` for full URLs and `encode_uri_component()` for individual query parameters or path segments.
@@ -1689,6 +1721,8 @@ if (result2) {
 ```
 
 All HTTP methods are supported: `stream::Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`.
+
+Unlike a content receiver, the Stream API is bounded by the client's `set_payload_max_length()` (100MB by default). Reading past it stops with `read_error() == Error::ExceedMaxPayloadSize`.
 
 See [README-stream.md](README-stream.md) for more details.
 

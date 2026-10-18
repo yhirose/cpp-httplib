@@ -35,7 +35,7 @@ cli.set_error_logger([](const httplib::Error &err, const httplib::Request *req) 
 });
 ```
 
-The second argument `req` can be null — it happens when the failure occurred before the request was built. Always null-check before dereferencing.
+The second argument `req` can be null — it happens when the error comes from setting up the connection, such as the TLS handshake, loading CA certificates, or opening a tunnel through a proxy. Always null-check before dereferencing.
 
 ## Use both together
 

@@ -50,6 +50,6 @@ httplib::Headers headers = {
 auto res = cli.Get("/users", headers);
 ```
 
-Per-request headers are **added** on top of the defaults. Both are sent to the server.
+Per-request headers are **added** on top of the defaults, and both are sent to the server. If a per-request header has the same name as a default one, only the per-request one is sent.
 
 > For details on Bearer token auth, see [C06. Call an API with a Bearer token](../c06-bearer-token).

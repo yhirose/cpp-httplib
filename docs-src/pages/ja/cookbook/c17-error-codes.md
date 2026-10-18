@@ -4,7 +4,7 @@ order: 17
 status: "draft"
 ---
 
-`cli.Get()`や`cli.Post()`は`Result`型を返します。リクエストが失敗したとき（サーバーに到達できなかった、タイムアウトしたなど）、返り値は「falsy」になります。詳しい原因を知りたい場合は`Result::error()`を使います。
+`cli.Get()`や`cli.Post()`は`Result`型を返します。リクエストが失敗したとき（サーバーに到達できなかった、タイムアウトしたなど）、返り値は「falsy」になります（例外が1つあり、下の表で説明します）。詳しい原因を知りたい場合は`Result::error()`を使います。
 
 ## 基本の判定
 
@@ -27,14 +27,15 @@ if (res) {
 
 | 値 | 意味 |
 | --- | --- |
-| `Error::Connection` | サーバーに接続できなかった |
+| `Error::Connection` | サーバーに接続できなかった。または、使えないURL（authorityにuserinfoやバックスラッシュがある、ポートが不正など）から`Client`を作った。後者の場合は`cli.is_valid()`が`false`になる |
 | `Error::ConnectionTimeout` | 接続タイムアウト（`set_connection_timeout`） |
 | `Error::Read` / `Error::Write` | 送受信中のエラー。`set_read_timeout`や`set_max_timeout`によるタイムアウトも`Error::Read`になる |
 | `Error::Timeout` | `stream::Get()`や`SSEClient`で、ボディの読み取りがタイムアウトした |
 | `Error::ExceedRedirectCount` | リダイレクト回数が上限を超えた |
 | `Error::SSLConnection` | TLSハンドシェイクに失敗 |
 | `Error::SSLServerVerification` | サーバー証明書の検証に失敗 |
-| `Error::Canceled` | 進捗コールバックから`false`が返された |
+| `Error::ProxyConnection` | プロキシがCONNECTのトンネルを拒否した。ただし407は例外で、`res`はtruthyかつ`res->status == 407`になり、`res.error()`は`Error::ProxyConnection`のまま |
+| `Error::Canceled` | 進捗コールバック、`ContentReceiver`、`ResponseHandler`、アップロード用のコンテンツプロバイダのいずれかから`false`が返された |
 
 ## ステータスコードとの使い分け
 

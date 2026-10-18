@@ -66,4 +66,4 @@ svr.new_task_queue = [] { return new MyTaskQueue(12); };
 #include <httplib.h>
 ```
 
-> **Note:** WebSocket接続はその生存期間中ずっと1スレッドを占有します。大量の同時WebSocket接続を扱うなら、動的スケーリングを有効にしておきましょう（`ThreadPool(8, 64)`のように）。
+> **Note:** WebSocket接続はその生存期間中ずっと1スレッドを占有します。大量の同時WebSocket接続を扱うなら、最大スレッド数を引き上げておきましょう（`ThreadPool(8, 64)`のように）。

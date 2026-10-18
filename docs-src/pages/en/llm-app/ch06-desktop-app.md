@@ -675,9 +675,10 @@ int main() {
 To summarize the changes from Chapter 5:
 
 - `#include <csignal>` replaced with `#include <thread>`, `<cpp-embedlib-httplib.h>`, `"WebAssets.h"`, `"webview/webview.h"`
-- Removed the `signal_handler` function
+- Removed the `signal_handler` function and moved `svr` into `main()`
 - `svr.set_mount_point("/", "./public")` replaced with `httplib::mount(svr, Web::FS)`
 - `svr.listen("127.0.0.1", 8080)` replaced with `bind_to_any_port` + `listen_after_bind` + WebView event loop
+- Added `setup_macos_edit_menu()` and its `<objc/objc-runtime.h>` include (macOS only)
 
 Not a single line of handler code has changed. The REST API, SSE streaming, and model management built through Chapter 5 all work as-is.
 

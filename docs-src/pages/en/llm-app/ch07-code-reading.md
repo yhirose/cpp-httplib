@@ -59,7 +59,7 @@ Compatibility with existing tools and libraries is a big design decision. We des
 
 ## 7.3 Concurrent Request Handling
 
-Our server processes requests one at a time. If another request arrives while a translation is in progress, it waits until the previous inference finishes. This is fine for a desktop app used by one person, but it becomes a problem for a server shared by multiple users.
+Our server runs inference one request at a time. If another request arrives while a translation is in progress, it waits until the previous inference finishes. This is fine for a desktop app used by one person, but it becomes a problem for a server shared by multiple users.
 
 `llama-server` handles concurrent requests through a mechanism called **slots**.
 
@@ -67,7 +67,7 @@ Our server processes requests one at a time. If another request arrives while a 
 
 The key point is that tokens from each slot are not inferred **one by one in sequence**, but rather **all at once in a single batch**. GPUs excel at parallel processing, so processing two users simultaneously takes almost the same time as processing one. This is called "continuous batching."
 
-In our server, cpp-httplib's thread pool assigns one thread per request, but the inference itself runs single-threaded inside `llm.chat()`. `llama-server` consolidates this inference step into a shared batch processing loop.
+In our server, cpp-httplib's thread pool serves each connection on its own worker thread, so requests on different connections are handled concurrently. Inference, however, is serialized by `llm_mutex`, so only one `llm.chat()` runs at a time. `llama-server` consolidates this inference step into a shared batch processing loop.
 
 ## 7.4 Differences in SSE Format
 

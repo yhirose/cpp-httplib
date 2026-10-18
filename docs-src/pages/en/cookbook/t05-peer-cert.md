@@ -44,7 +44,7 @@ for (const auto &san : sans) {
 }
 ```
 
-There's also a helper to check if a hostname is covered by the SAN list:
+There's also a helper that checks whether the certificate covers a hostname. It follows the rules of TLS hostname verification: an IP address is matched against the IP address SANs, a name against the DNS SANs, and the CN is used only when there's no DNS SAN.
 
 ```cpp
 if (cert.check_hostname("alice.corp.example.com")) {
@@ -81,7 +81,7 @@ Combined with a pre-request handler, you can keep all authorization logic in one
 
 ## SNI (Server Name Indication)
 
-cpp-httplib handles SNI automatically. If one server hosts multiple domains, SNI is used under the hood — but normally handlers don't need to care.
+Clients send SNI automatically. On the server, `req.sni()` returns the name the client asked for. `SSLServer` presents the same certificate whatever that name is, though, so to host several domains on one server, use a certificate that covers all of them. To choose a certificate per name, hook into the TLS backend yourself — with OpenSSL, for example, set a servername callback through the `SSLServer` constructor that takes a context setup callback.
 
 > **Warning:** `req.peer_cert()` only returns a meaningful value when mTLS is enabled and the client actually presented a certificate. For plain TLS, you get an empty `PeerCert`. Always do the `bool` check before using it.
 

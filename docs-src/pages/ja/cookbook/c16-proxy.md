@@ -17,6 +17,8 @@ auto res = cli.Get("/users");
 
 プロキシ経由でリクエストが送られます。HTTPSの場合はCONNECTメソッドでトンネルが張られるので、cpp-httplib側で特別な設定は要りません。
 
+プロキシがトンネルを拒否すると、リクエストは`Error::ProxyConnection`で失敗します。ただし407だけは例外で、レスポンスとして返ってきます。`res`はtruthyで`res->status`は407ですが、`res.error()`は`Error::ProxyConnection`のままです。
+
 ## プロキシに認証を設定する
 
 プロキシ自体が認証を要求する場合は、`set_proxy_basic_auth()`や`set_proxy_bearer_token_auth()`を使います。

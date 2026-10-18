@@ -6,7 +6,7 @@ A simple, blocking WebSocket implementation for C++11.
 > This is a blocking I/O WebSocket implementation using a thread-per-connection model (plus one heartbeat thread per connection). It is intended for small- to mid-scale workloads; handling large numbers of simultaneous WebSocket connections is outside the design target of this library. If you need high-concurrency WebSocket support with non-blocking/async I/O (e.g., thousands of simultaneous connections), this is not the one that you want.
 
 > [!NOTE]
-> WebSocket extensions (`permessage-deflate` and others defined by RFC 6455) are **not supported**. If a client proposes an extension via `Sec-WebSocket-Extensions`, the server silently declines it — the negotiated connection always runs without extensions.
+> WebSocket extensions (such as `permessage-deflate`, RFC 7692) are **not supported**. If a client proposes an extension via `Sec-WebSocket-Extensions`, the server silently declines it — the negotiated connection always runs without extensions.
 
 ## Features
 
@@ -126,7 +126,7 @@ The `SubProtocolSelector` receives the list of subprotocols proposed by the clie
 Passed to the handler registered with `Server::WebSocket()`. The handler runs in a dedicated thread per connection.
 
 ```cpp
-// Read next message (blocks until received, returns Fail/Text/Binary)
+// Read next message (blocks until received, returns Fail/Text/Binary/Timeout)
 ReadResult read(std::string &msg);
 
 // Send messages
@@ -142,12 +142,20 @@ const Request &request() const;
 
 // Check if the connection is still open
 bool is_open() const;
+
+// Bound how long read() waits before returning Timeout (0 waits forever).
+// Safe to call while another thread is in read().
+void set_read_timeout(time_t sec, time_t usec = 0);
+template <class Rep, class Period>
+void set_read_timeout(const std::chrono::duration<Rep, Period> &duration);
 ```
 
 ### WebSocketClient
 
 ```cpp
-// Constructor - accepts ws:// or wss:// URL
+// Constructor - accepts ws:// or wss:// URL. Any other scheme, or wss:// in a
+// build without SSL, throws std::invalid_argument (with
+// CPPHTTPLIB_NO_EXCEPTIONS, is_valid() returns false instead).
 explicit WebSocketClient(const std::string &scheme_host_port_path,
                          const Headers &headers = {});
 
@@ -163,7 +171,8 @@ struct PemMemory {
 explicit WebSocketClient(const std::string &scheme_host_port_path,
                          const PemMemory &pem, const Headers &headers = {});
 
-// Check if the URL was parsed successfully
+// Check if the URL was parsed successfully. For wss://, also false when the
+// TLS context or the client certificate cannot be loaded.
 bool is_valid() const;
 
 // Connect (performs HTTP upgrade handshake). The returned Result is truthy
@@ -174,6 +183,8 @@ bool is_valid() const;
 //                           or of the proxy's CONNECT reply when error() is
 //                           Error::ProxyConnection
 //   res.headers()           headers of that same response
+//   res.get_header_value(key, def), res.has_header(key)
+//                           look up one of those headers
 //   res.ssl_error()         TLS error detail (wss://, SSL builds only)
 //   res.ssl_backend_error() backend-specific TLS error code (SSL builds only)
 Result connect();
@@ -212,12 +223,26 @@ void set_write_timeout(const std::chrono::duration<Rep, Period> &duration);
 template <class Rep, class Period>
 void set_connection_timeout(const std::chrono::duration<Rep, Period> &duration);
 
+// Heartbeat (see Runtime Ping Interval and Unresponsive-Peer Detection below)
+void set_websocket_ping_interval(time_t sec);
+void set_websocket_max_missed_pongs(int count);
+
+// Socket - the same setters Client has
+void set_tcp_nodelay(bool on);
+void set_address_family(int family);
+void set_ipv6_v6only(bool on);
+void set_socket_options(SocketOptions socket_options);
+void set_interface(const std::string &intf);
+void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
+
 // SSL configuration (wss:// only, SSL builds only)
 void set_ca_cert_path(const std::string &ca_cert_file_path,
                       const std::string &ca_cert_dir_path = std::string());
 void set_ca_cert_store(tls::ca_store_t store);
+void load_ca_cert_store(const char *ca_cert, std::size_t size);
 void enable_server_certificate_verification(bool enabled);
 void enable_server_hostname_verification(bool enabled);
+void enable_system_ca(bool enabled);
 // The same verifiers as SSLClient's, e.g. to pin the server's certificate
 void set_server_certificate_verifier(tls::VerifyCallback verifier);
 void set_session_verifier(
@@ -266,17 +291,21 @@ if (ws.connect()) {
 
 `connect()` returns a `Result` that tells you why a connection attempt failed.
 `error()` distinguishes network problems (`Connection`, `ConnectionTimeout`),
-TLS problems (`SSLConnection`, `SSLServerVerification`,
-`SSLServerHostnameVerification`), and upgrade rejections
-(`WebSocketHandshake`). When the server answered with something other than
-`101 Switching Protocols`, `status()` and `headers()` carry that response:
+proxy problems (`ProxyConnection`), TLS problems (`SSLConnection`,
+`SSLServerVerification`, `SSLServerHostnameVerification`), and upgrade
+rejections (`WebSocketHandshake`). `WebSocketHandshake` covers a status other
+than `101 Switching Protocols` as well as a `101` that fails validation (for
+example a wrong `Sec-WebSocket-Accept`); either way `status()` and `headers()`
+carry the server's response. When a proxy refuses the `CONNECT` request, the
+error is `ProxyConnection` and they carry the proxy's reply instead (e.g. 407):
 
 ```cpp
 auto res = ws.connect();
 if (!res) {
     std::cerr << "connect failed: " << httplib::to_string(res.error()) << std::endl;
     if (res.status() != -1) {
-        // The server responded but refused the upgrade (e.g. 401, 404)
+        // The server refused the upgrade (e.g. 401, 404, or an invalid 101),
+        // or, with ProxyConnection, the proxy refused CONNECT (e.g. 407)
         std::cerr << "HTTP status: " << res.status() << std::endl;
     }
 }

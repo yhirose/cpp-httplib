@@ -875,6 +875,7 @@ modelSelect.addEventListener("change", async () => {
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 
 using json = nlohmann::json;
 
@@ -1006,6 +1007,7 @@ int main() {
     std::cout << std::endl;
   }
   auto llm = llamalib::Llama{path};
+  std::mutex llm_mutex; // モデル切り替え中のアクセスを保護する
 
   svr.set_logger([](const auto &req, const auto &res) {
     std::cout << req.method << " " << req.path << " -> " << res.status
@@ -1020,6 +1022,7 @@ int main() {
 
   svr.Post("/translate",
            [&](const httplib::Request &req, httplib::Response &res) {
+    // JSONパース・バリデーション（詳細は2章を参照）
     auto input = json::parse(req.body, nullptr, false);
     if (input.is_discarded()) {
       res.status = 400;
@@ -1043,6 +1046,7 @@ int main() {
                   ". Output only the translation, nothing else.\n\n" + text;
 
     try {
+      std::lock_guard<std::mutex> lock(llm_mutex);
       auto translation = llm.chat(prompt);
       res.set_content(json{{"translation", translation}}.dump(),
                       "application/json");
@@ -1081,6 +1085,7 @@ int main() {
     res.set_chunked_content_provider(
         "text/event-stream",
         [&, prompt](size_t, httplib::DataSink &sink) {
+          std::lock_guard<std::mutex> lock(llm_mutex);
           try {
             llm.chat(prompt, [&](std::string_view token) {
               sink.os << "data: "
@@ -1168,8 +1173,11 @@ int main() {
 
           // モデルをロードして切り替え
           send({{"status", "loading"}});
-          llm = llamalib::Llama{path};
-          selected_model = model.filename;
+          {
+            std::lock_guard<std::mutex> lock(llm_mutex);
+            llm = llamalib::Llama{path};
+            selected_model = model.filename;
+          }
 
           send({{"status", "ready"}});
           sink.done();

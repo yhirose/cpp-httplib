@@ -46,4 +46,4 @@ wolfSSLには商用ライセンスとサポートがあります。製品に組�
 - [T03. SSL/TLSサーバーを立ち上げる](../t03-ssl-server)
 - [T05. サーバー側でピア証明書を参照する](../t05-peer-cert)
 
-> **Note:** macOSでは、OpenSSL系のバックエンドを使う場合、システムのキーチェーンからルート証明書を自動で読む設定（`CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`）がデフォルトで有効です。無効にしたい場合は`CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`を定義してください。
+> **Note:** macOSでは、3つのどのバックエンドを使う場合でも、システムのキーチェーンからルート証明書を自動で読む設定（`CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN`）がデフォルトで有効です。無効にしたい場合は`CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES`を定義してください。

@@ -43,7 +43,7 @@ cli.connect();
 
 ## Pingへの応答（Pong）
 
-WebSocketプロトコルでは、PingフレームにはPongフレームで応答することが決まっています。cpp-httplibは受信したPingに自動でPongを返すので、アプリケーションコード側で気にする必要はありません。
+WebSocketプロトコルでは、PingフレームにはPongフレームで応答することが決まっています。cpp-httplibは受信したPingに`read()`の中で自動でPongを返すので、`read()`を呼び続けている限り、アプリケーションコード側で気にする必要はありません。
 
 ## Pingの間隔をどう決めるか
 

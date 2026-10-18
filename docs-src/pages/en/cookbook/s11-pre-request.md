@@ -17,6 +17,8 @@ In a pre-request handler, `req.matched_route` holds the **pattern string** that 
 
 Because the body has not been read when the pre-request handler runs, you can reject a request — for example on a failed auth check — without consuming a (potentially large) request body. Note that this also means `req.body` and form fields parsed from the body are not available here; inspect headers, the path, query parameters, or `req.matched_route` instead.
 
+The pre-request handler runs only for requests that match a route. Files served by `set_mount_point()` are answered before route matching, so guard static files in the pre-routing handler.
+
 ## Switch auth per route
 
 ```cpp
@@ -38,6 +40,8 @@ svr.set_pre_request_handler(
 `matched_route` is the pattern **before** path parameters are expanded (e.g. `/admin/users/:id`). You compare against the route definition, not the actual request path, so IDs or names don't throw you off.
 
 The pre-request handler also runs for routes registered with `svr.WebSocket()`. It is called before the `101 Switching Protocols` response, so returning `Handled` sends your HTTP response (such as a 403) and the connection is never upgraded.
+
+The server accepts a handshake from any `Origin`. A browser sends its cookies even with a handshake that another site starts, so if cookies authenticate the connection, also check `req.get_header_value("Origin")` against your own origins here.
 
 ## Return values
 

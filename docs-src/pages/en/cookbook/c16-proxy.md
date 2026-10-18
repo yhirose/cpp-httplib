@@ -17,6 +17,8 @@ auto res = cli.Get("/users");
 
 The request goes through the proxy. For HTTPS, the client uses the CONNECT method to tunnel through — no extra setup required.
 
+If the proxy refuses the tunnel, the request fails with `Error::ProxyConnection`. The exception is a 407: it comes back as the response, so `res` is truthy and `res->status` is 407, while `res.error()` still returns `Error::ProxyConnection`.
+
 ## Proxy authentication
 
 If the proxy itself requires authentication, use `set_proxy_basic_auth()` or `set_proxy_bearer_token_auth()`.

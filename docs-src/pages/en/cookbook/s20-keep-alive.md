@@ -52,6 +52,6 @@ Set `set_keep_alive_max_count(1)` and every request gets its own connection. Mos
 
 ## Relationship with the thread pool
 
-A Keep-Alive connection holds a worker thread for its entire lifetime. If `connections × concurrent requests` exceeds the thread pool size, new requests wait. For thread counts, see [S21. Configure the thread pool](../s21-thread-pool).
+A Keep-Alive connection holds a worker thread for its entire lifetime. The pool adds threads under load, up to its maximum thread count (4× the base count by default). If open connections outnumber that maximum, new connections wait in the queue until one closes. For thread counts, see [S21. Configure the thread pool](../s21-thread-pool).
 
 > **Note:** For the client side, see [C14. Understand connection reuse and Keep-Alive behavior](../c14-keep-alive). Even when the server closes the connection on timeout, the client reconnects automatically.

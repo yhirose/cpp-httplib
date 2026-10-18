@@ -44,6 +44,8 @@ svr.Get(R"(/users/(\d+))", [](const httplib::Request &req, httplib::Response &re
 
 Parentheses in the pattern become captures in `req.matches`. `req.matches[0]` is the full match; `req.matches[1]` onward are the captures.
 
+A regex route isn't applied to a path longer than `CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH` (256 by default); such a path is treated as no match. This keeps `std::regex` from overflowing the stack on long input. If your routes need longer paths, define the macro with a larger value.
+
 ## Which to use
 
 - For plain IDs or slugs, `:name` is enough — readable, and the shape is obvious

@@ -66,4 +66,4 @@ You can set the defaults with macros if you want compile-time configuration.
 #include <httplib.h>
 ```
 
-> **Note:** A WebSocket connection holds a worker thread for its entire lifetime. For lots of simultaneous WebSocket connections, enable dynamic scaling (e.g. `ThreadPool(8, 64)`).
+> **Note:** A WebSocket connection holds a worker thread for its entire lifetime. For lots of simultaneous WebSocket connections, raise the maximum thread count (e.g. `ThreadPool(8, 64)`).

@@ -38,6 +38,8 @@ svr.Options("/.*", [](const auto &req, auto &res) {
 });
 ```
 
+`/.*`は正規表現のルートなので、`CPPHTTPLIB_REGEX_ROUTE_PATH_MAX_LENGTH`（デフォルトは256）より長いパスには適用されません。パスがそれより長くなりうるなら、pre-routingハンドラで`OPTIONS`を処理してください。
+
 ## セキュリティヘッダーをまとめて付ける
 
 ブラウザ向けのセキュリティヘッダーを一箇所で管理できます。

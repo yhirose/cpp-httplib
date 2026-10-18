@@ -55,7 +55,9 @@ sse.on_error([](httplib::Error err) {
 });
 ```
 
-Hook into connection open and error events. Even when the error handler fires, `SSEClient` keeps trying to reconnect in the background. The exceptions are a 204, 403, or 404 response, after which it stops.
+Hook into connection open and error events. Even when the error handler fires, `SSEClient` keeps trying to reconnect in the background. It stops after a 204, 403, or 404 response, or once the attempts set with `set_max_reconnect_attempts()` run out.
+
+It also stops when an event, or a line still waiting for its end, grows past `CPPHTTPLIB_SSE_MAX_EVENT_LENGTH` (16MB by default, 0 for no limit). The error handler then gets `Error::ExceedMaxPayloadSize`. The client's `set_payload_max_length()` doesn't apply to the stream as a whole, since an event stream has no end.
 
 ## Run asynchronously
 
@@ -87,6 +89,8 @@ If the server sends a `retry:` field, that takes precedence.
 ## Automatic Last-Event-ID
 
 `SSEClient` tracks the `id` of each received event internally and sends it back as `Last-Event-ID` on reconnect. As long as the server sends events with `id:`, this all works automatically.
+
+An empty `id:` clears the stored id. An `id:` that can't be sent as a header value (one with NUL or other control characters, or with leading or trailing whitespace) is ignored, and the previous id stays.
 
 ```cpp
 std::cout << "last id: " << sse.last_event_id() << std::endl;

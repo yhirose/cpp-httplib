@@ -29,7 +29,7 @@ std::string big_payload = build_payload();
 auto res = cli.Post("/api/data", big_payload, "application/json");
 ```
 
-With `set_compress(true)`, the body of POST or PUT requests is compressed before sending. The encoding is the first one enabled in your build, in the order Brotli, gzip, Zstd. The server needs to handle compressed bodies too.
+With `set_compress(true)`, the body of POST, PUT, or PATCH requests is compressed before sending. The encoding is the first one enabled in your build, in the order Brotli, gzip, Zstd. The server needs to handle compressed bodies too.
 
 ## Decompress the response
 

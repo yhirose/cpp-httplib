@@ -21,7 +21,9 @@ if (result) {
 }
 ```
 
-`Get()`に`content_receiver`コールバックを渡す方法もあります。こちらはKeep-Aliveと併用できます。
+なお、`stream::Get()`で読めるボディの大きさは、クライアントの`set_payload_max_length()`の上限（デフォルトは100MB）までです。もっと大きなファイルをダウンロードするなら、上限を引き上げるか、0を指定して無制限にしてください。
+
+`Get()`に`content_receiver`コールバックを渡す方法もあります。こちらはKeep-Aliveと併用でき、`set_payload_max_length()`で上限を設定しない限りサイズの制限もありません。
 
 ```cpp
 httplib::Client cli("http://localhost:8080");

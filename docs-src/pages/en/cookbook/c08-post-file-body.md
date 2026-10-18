@@ -12,7 +12,7 @@ Sometimes you want to send a file's contents as the request body directly — no
 httplib::Client cli("https://storage.example.com");
 
 auto [size, provider] = httplib::make_file_body("backup.tar.gz");
-if (size == 0) {
+if (!provider) {
   std::cerr << "Failed to open file" << std::endl;
   return 1;
 }
@@ -27,7 +27,7 @@ The `ContentProvider` reads the file in chunks, so even huge files never sit ful
 
 ## When the file can't be opened
 
-If the file can't be opened, `make_file_body()` returns `size` as `0` and `provider` as an empty function object. Sending that would produce garbage — always check `size` first.
+If the file can't be opened, `make_file_body()` returns `size` as `0` and `provider` as an empty function object. Sending that would upload an empty body — always check `provider` first. Checking `size` won't do: an empty file also gives `0`, with a working `provider`.
 
 > **Warning:** `make_file_body()` needs to fix the Content-Length up front, so it reads the file size ahead of time. If the file size might change mid-upload, this API isn't the right fit.
 

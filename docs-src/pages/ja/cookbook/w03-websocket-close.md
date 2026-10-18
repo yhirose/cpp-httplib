@@ -67,7 +67,7 @@ cli.close(httplib::ws::CloseStatus::Normal);
 ws.close(httplib::ws::CloseStatus::GoingAway, "server restarting");
 ```
 
-クライアント側はこのステータスを見て、再接続を試みるかどうかを判断できます。
+クライアント側の`read()`は`Fail`を返すだけで、受け取ったステータスや理由は取り出せません。再起動による切断をほかの切断と見分けたい場合は、先にメッセージ（`ws.send("restarting")`など）を送ってから`close()`を呼びましょう。
 
 ## サンプル: 簡単なチャット終了
 

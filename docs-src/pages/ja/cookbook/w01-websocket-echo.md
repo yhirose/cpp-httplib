@@ -21,7 +21,12 @@ int main() {
       if (result == httplib::ws::ReadResult::Fail) {
         break;
       }
-      ws.send(msg); // 受け取った内容をそのまま返す
+      // 受け取った内容を同じフレームタイプでそのまま返す
+      if (result == httplib::ws::ReadResult::Binary) {
+        ws.send(msg.data(), msg.size());
+      } else {
+        ws.send(msg);
+      }
     }
   });
 
@@ -29,7 +34,7 @@ int main() {
 }
 ```
 
-`svr.WebSocket()`でWebSocket用のハンドラを登録します。ハンドラが呼ばれた時点で、すでにWebSocketのハンドシェイクは完了しています。ループの中で`ws.read()`して`ws.send()`するだけで、エコー動作が完成します。
+`svr.WebSocket()`でWebSocket用のハンドラを登録します。ハンドラが呼ばれた時点で、すでにWebSocketのハンドシェイクは完了しています。ループの中で`ws.read()`して`ws.send()`するだけで、エコー動作が完成します。バイナリメッセージは`data()`と`size()`を渡すオーバーロードで返すので、バイナリのまま届きます（詳しくは後述）。
 
 `read()`の返り値は`ReadResult`列挙値で、次の4種類です。
 
@@ -76,7 +81,7 @@ ws.send(binary_data, binary_data_size);  // バイナリフレーム
 
 ## スレッドとの関係
 
-WebSocket接続はハンドラが終わるまで生き続けるので、1接続につきワーカースレッドを1つ占有します。同時接続数が多い場合は、スレッドプールを動的スケーリングに設定しましょう。
+WebSocket接続はハンドラが終わるまで生き続けるので、1接続につきワーカースレッドを1つ占有します。デフォルトのスレッドプールも負荷に応じてベースの4倍まで増えますが、同時接続数が多い場合は、その最大スレッド数を引き上げましょう。
 
 ```cpp
 svr.new_task_queue = [] {

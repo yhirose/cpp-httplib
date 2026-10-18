@@ -12,7 +12,7 @@ status: "draft"
 httplib::Client cli("https://storage.example.com");
 
 auto [size, provider] = httplib::make_file_body("backup.tar.gz");
-if (size == 0) {
+if (!provider) {
   std::cerr << "Failed to open file" << std::endl;
   return 1;
 }
@@ -27,7 +27,7 @@ auto res = cli.Put("/bucket/backup.tar.gz", size,
 
 ## ファイルが開けなかったとき
 
-`make_file_body()`は開けなかった場合、`size`を`0`、`provider`を空の関数オブジェクトとして返します。そのまま送信するとおかしな結果になるので、必ず`size`をチェックしてください。
+`make_file_body()`は開けなかった場合、`size`を`0`、`provider`を空の関数オブジェクトとして返します。そのまま送信すると空のボディが送られてしまうので、必ず`provider`をチェックしてください。`size`では判定できません。空のファイルでも`size`は`0`になり、そのときの`provider`は正しく使えるからです。
 
 > **Warning:** `make_file_body()`はContent-Lengthを最初に確定させる必要があるため、ファイルサイズをあらかじめ取得します。送信中にファイルサイズが変わる可能性がある場合は、このAPIには向きません。
 

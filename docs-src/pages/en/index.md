@@ -9,7 +9,7 @@ When you need a quick HTTP server or client in C++, you want something that just
 
 The API uses a lambda-based design that feels natural. It runs anywhere you have a C++11 or later compiler. Windows, macOS, Linux — use whatever environment you already have.
 
-HTTPS works too. Just link OpenSSL or mbedTLS, and both server and client gain TLS support. Content-Encoding (gzip, Brotli, etc.), file uploads, and other features you actually need in real-world development are all included. WebSocket is also supported.
+HTTPS works too. Just link OpenSSL, Mbed TLS, or wolfSSL, and both server and client gain TLS support. Content-Encoding (gzip, Brotli, etc.), file uploads, and other features you actually need in real-world development are all included. WebSocket is also supported.
 
 Under the hood, it uses blocking I/O with a thread pool. It's not built for handling massive numbers of simultaneous connections. But for API servers, embedded HTTP in tools, mock servers for testing, and many other use cases, it delivers solid performance.
 
