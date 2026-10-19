@@ -3130,6 +3130,8 @@ private:
 
   void transfer_socket_ownership_to_handle(StreamHandle &handle);
   StreamHandle open_stream_(Request &req);
+  void add_credential_headers(Request &req);
+  std::string proxy_target_prefix() const;
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 public:
@@ -15889,12 +15891,16 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
 
   auto &strm = *handle.stream_;
 
+  // After connecting, as for a buffered request
+  add_credential_headers(req);
+
   // Build the request line and headers in memory first, like write_request()
   // does, so that a rejected header leaves nothing on the wire.
   {
     detail::BufferStream bstrm;
 
-    if (detail::write_request_line(bstrm, req.method, req.path) < 0) {
+    if (detail::write_request_line(bstrm, req.method,
+                                   proxy_target_prefix() + req.path) < 0) {
       handle.error = Error::Write;
       handle.response.reset();
       return handle;
@@ -16165,6 +16171,12 @@ ClientImpl::transfer_socket_ownership_to_handle(StreamHandle &handle) {
   socket_.sock = INVALID_SOCKET;
 }
 
+// A plain HTTP proxy reads the target in absolute-form (RFC 9112 3.2.2)
+inline std::string ClientImpl::proxy_target_prefix() const {
+  if (is_ssl() || !is_proxy_enabled_for_host(host_)) { return std::string(); }
+  return "http://" + detail::make_host_and_port_string(host_, port_, false);
+}
+
 inline bool ClientImpl::handle_request(Stream &strm, Request &req,
                                        Response &res, bool close_connection,
                                        Error &error) {
@@ -16177,11 +16189,10 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   bool ret;
 
-  if (!is_ssl() && is_proxy_enabled_for_host(host_)) {
+  auto prefix = proxy_target_prefix();
+  if (!prefix.empty()) {
     auto req2 = req;
-    req2.path = "http://" +
-                detail::make_host_and_port_string(host_, port_, false) +
-                req.path;
+    req2.path = prefix + req.path;
     ret = process_request(strm, req2, res, close_connection, error);
     req = std::move(req2);
     req.path = req_save.path;
@@ -16495,6 +16506,27 @@ inline std::string ClientImpl::make_request_target(const Request &req) const {
   return target;
 }
 
+inline void ClientImpl::add_credential_headers(Request &req) {
+  // A CONNECT request is read by the proxy; everything sent through the tunnel
+  // it opens is read by the origin. Each credential goes only to its own hop.
+  auto is_connect = req.method == "CONNECT";
+
+  if (!is_connect) {
+    detail::add_authorization_header(req, basic_auth_username_,
+                                     basic_auth_password_,
+                                     bearer_token_auth_token_, false);
+  }
+
+  // Proxy-Authorization is only sent when the proxy reads this message —
+  // otherwise NO_PROXY-matched requests, and requests inside a TLS tunnel,
+  // would leak proxy credentials to the destination server.
+  if (is_proxy_enabled_for_host(host_) && (!is_ssl() || is_connect)) {
+    detail::add_authorization_header(req, proxy_basic_auth_username_,
+                                     proxy_basic_auth_password_,
+                                     proxy_bearer_token_auth_token_, true);
+  }
+}
+
 inline bool ClientImpl::write_request(Stream &strm, Request &req,
                                       bool close_connection, Error &error,
                                       bool skip_body, bool &rejected_locally) {
@@ -16529,24 +16561,7 @@ inline bool ClientImpl::write_request(Stream &strm, Request &req,
     }
   }
 
-  // A CONNECT request is read by the proxy; everything sent through the tunnel
-  // it opens is read by the origin. Each credential goes only to its own hop.
-  auto is_connect = req.method == "CONNECT";
-
-  if (!is_connect) {
-    detail::add_authorization_header(req, basic_auth_username_,
-                                     basic_auth_password_,
-                                     bearer_token_auth_token_, false);
-  }
-
-  // Proxy-Authorization is only sent when the proxy reads this message —
-  // otherwise NO_PROXY-matched requests, and requests inside a TLS tunnel,
-  // would leak proxy credentials to the destination server.
-  if (is_proxy_enabled_for_host(host_) && (!is_ssl() || is_connect)) {
-    detail::add_authorization_header(req, proxy_basic_auth_username_,
-                                     proxy_basic_auth_password_,
-                                     proxy_bearer_token_auth_token_, true);
-  }
+  add_credential_headers(req);
 
   // Request line and headers
   {

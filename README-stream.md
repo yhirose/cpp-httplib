@@ -353,6 +353,10 @@ auto res = cli.Get("/api/data");  // Connection can be reused
 
 `open_stream()` and the `stream::` helpers apply the client's `set_payload_max_length()` (100MB by default, `CPPHTTPLIB_PAYLOAD_MAX_LENGTH`) to the body, both as received and after decompression. Past the limit, `read()` and `next()` stop, and the read error is `Error::ExceedMaxPayloadSize`. To download something larger, raise the limit, or call `cli.set_payload_max_length(0)` for no limit.
 
+### Authentication and Proxies
+
+A stream request carries the same credentials as `client.Get()`: `set_basic_auth()` and `set_bearer_token_auth()` for the origin, and the proxy's own through `set_proxy()`, over HTTP or through a CONNECT tunnel. It does not answer a Digest challenge or follow a redirect: the `401` or `3xx` response is handed to you.
+
 ## Related
 
 - [Issue #2269](https://github.com/yhirose/cpp-httplib/issues/2269) - Original feature request

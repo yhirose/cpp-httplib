@@ -161,6 +161,8 @@ httplib::sse::SSEClient sse(cli, "/events", headers);
 sse.start();
 ```
 
+The `Client`'s `set_basic_auth()` and `set_bearer_token_auth()` apply too; an `Authorization` header passed like this takes precedence.
+
 ### Refreshing Auth Token on Reconnect
 
 ```cpp

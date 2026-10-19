@@ -29808,6 +29808,53 @@ inline std::unique_ptr<Client> make_client(const std::string &host,
 using no_proxy_test::make_client;
 using no_proxy_test::ProxyAndTargetServers;
 
+// A stream request carries the credentials a buffered request does
+TEST(StreamRequestHeadTest, SendsTheClientsCredentials) {
+  no_proxy_test::ScopedServer origin;
+  origin.svr().Get("/x", [](const Request &req, Response &res) {
+    res.set_content(req.get_header_value("Authorization"), "text/plain");
+  });
+  origin.listen();
+
+  Client cli("127.0.0.1", origin.port());
+  cli.set_basic_auth("user", "pass");
+  auto handle = cli.open_stream("GET", "/x");
+  ASSERT_TRUE(handle.is_valid());
+  EXPECT_EQ("Basic dXNlcjpwYXNz", read_all(handle));
+
+  Client bearer("127.0.0.1", origin.port());
+  bearer.set_bearer_token_auth("tok");
+  auto handle2 = bearer.open_stream("GET", "/x");
+  ASSERT_TRUE(handle2.is_valid());
+  EXPECT_EQ("Bearer tok", read_all(handle2));
+}
+
+// A plain HTTP proxy reads the target in absolute-form (RFC 9112 3.2.2) and
+// takes its own credentials, as for a buffered request
+TEST(StreamRequestHeadTest, GoesThroughAPlainHttpProxy) {
+  std::string target, authz, proxy_authz;
+  no_proxy_test::ScopedServer proxy;
+  proxy.svr().Get(".*", [&](const Request &req, Response &res) {
+    target = req.target;
+    authz = req.get_header_value("Authorization");
+    proxy_authz = req.get_header_value("Proxy-Authorization");
+    res.set_content("ok", "text/plain");
+  });
+  proxy.listen();
+
+  Client cli("origin.example", 8080);
+  cli.set_proxy("127.0.0.1", proxy.port());
+  cli.set_proxy_basic_auth("puser", "ppass");
+  cli.set_basic_auth("user", "pass");
+  auto handle = cli.open_stream("GET", "/x");
+  ASSERT_TRUE(handle.is_valid());
+  EXPECT_EQ("ok", read_all(handle));
+
+  EXPECT_EQ("http://origin.example:8080/x", target);
+  EXPECT_EQ("Basic dXNlcjpwYXNz", authz);
+  EXPECT_EQ("Basic cHVzZXI6cHBhc3M=", proxy_authz);
+}
+
 TEST(NoProxyTest, ExactHostnameBypasses) {
   ProxyAndTargetServers s;
   auto cli = make_client("example.com", s);
@@ -30529,7 +30576,8 @@ private:
 void CredentialsStayWithTheirHop(
     const std::function<void(SSLClient &)> &set_credentials,
     const std::string &scheme,
-    const std::vector<std::string> &origin_headers = {"Authorization"}) {
+    const std::vector<std::string> &origin_headers = {"Authorization"},
+    bool stream = false) {
   std::atomic<int> origin_hits{0};
   std::atomic<bool> origin_saw_proxy_authz{false};
   std::atomic<bool> origin_saw_headers{false};
@@ -30554,9 +30602,15 @@ void CredentialsStayWithTheirHop(
   cli.set_proxy("127.0.0.1", proxy.port());
   set_credentials(cli);
 
-  auto res = cli.Get("/x");
-  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
+  if (stream) {
+    auto handle = cli.open_stream("GET", "/x");
+    ASSERT_TRUE(handle.is_valid()) << "Error: " << to_string(handle.error);
+    EXPECT_EQ(StatusCode::OK_200, handle.response->status);
+  } else {
+    auto res = cli.Get("/x");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status);
+  }
   EXPECT_EQ(1, origin_hits.load());
   EXPECT_EQ(1, proxy.connect_hits());
 
@@ -30582,6 +30636,15 @@ TEST(ProxyTunnelTest, BasicCredentialsStayWithTheirHop) {
         cli.set_basic_auth("origin-user", "origin-pass");
       },
       "Basic");
+}
+
+TEST(ProxyTunnelTest, StreamCredentialsStayWithTheirHop) {
+  proxy_tunnel_test::CredentialsStayWithTheirHop(
+      [](SSLClient &cli) {
+        cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+        cli.set_basic_auth("origin-user", "origin-pass");
+      },
+      "Basic", {"Authorization"}, true);
 }
 
 TEST(ProxyTunnelTest, BearerCredentialsStayWithTheirHop) {

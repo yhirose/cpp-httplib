@@ -361,6 +361,19 @@ TEST(KeepAliveTest, SSLWithDigest) {
 
 // ----------------------------------------------------------------------------
 
+// The proxy needs the absolute-form target and its credentials, the origin
+// its own
+TEST(ProxyTest, NoSSLOpenStream) {
+  Client cli("httpbin");
+  cli.set_proxy("localhost", 3128);
+  cli.set_proxy_basic_auth("hello", "world");
+  cli.set_basic_auth("hello", "world");
+
+  auto handle = cli.open_stream("GET", "/basic-auth/hello/world");
+  ASSERT_TRUE(handle.response);
+  EXPECT_EQ(StatusCode::OK_200, handle.response->status);
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ProxyTest, SSLOpenStream) {
   SSLClient cli("httpbin");
