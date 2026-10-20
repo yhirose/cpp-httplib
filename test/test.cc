@@ -23742,6 +23742,43 @@ TEST(ClientResponseSmugglingTest, BodylessResponseNotRejected) {
   }
 }
 
+// RFC 9112 6.3: a response to HEAD, and a 204 or 304 response, ends with its
+// header section, so a stream opened on one has nothing to read, whatever
+// framing or coding headers it carries.
+TEST(ClientResponseSmugglingTest, BodylessResponseStreamEndsAtOnce) {
+  struct Case {
+    const char *method;
+    const char *status;
+  };
+  // A reader of the declared body reports an early close when nothing
+  // follows, and hands back what does.
+  struct Framing {
+    const char *headers;
+    const char *after;
+  };
+  for (const auto &c : {Case{"HEAD", "200 OK"}, Case{"GET", "204 No Content"},
+                        Case{"GET", "304 Not Modified"}}) {
+    for (const auto &f :
+         {Framing{"Content-Length: 5\r\n", ""},
+          Framing{"Content-Length: 5\r\n", "hello"},
+          Framing{"Transfer-Encoding: chunked\r\n", ""},
+          Framing{"Transfer-Encoding: chunked\r\n", "5\r\nhello\r\n0\r\n\r\n"},
+          // Not decoded, so a build without Brotli opens it too
+          Framing{"Content-Encoding: br\r\n", ""}}) {
+      auto response = std::string("HTTP/1.1 ") + c.status + "\r\n" + f.headers +
+                      "Connection: close\r\n"
+                      "\r\n" +
+                      f.after;
+      with_single_response(response, [&](Client &cli) {
+        auto handle = cli.open_stream(c.method, "/");
+        ASSERT_TRUE(handle.is_valid()) << c.method << ' ' << response;
+        EXPECT_EQ("", read_all(handle)) << c.method << ' ' << response;
+        EXPECT_FALSE(handle.has_read_error()) << c.method << ' ' << response;
+      });
+    }
+  }
+}
+
 // RFC 9112 6.1: Transfer-Encoding next to a Content-Length, or in an HTTP/1.0
 // response, is faulty framing, so the connection is not reused after it.
 TEST(ClientResponseSmugglingTest, FaultyTransferEncodingClosesConnection) {

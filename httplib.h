@@ -15939,19 +15939,24 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
     return handle;
   }
 
-  // Same framing check as ClientImpl::process_request(). A HEAD or bodyless
-  // (204/304) response legitimately carries framing headers with no body.
-  if (req.method != "HEAD" &&
-      handle.response->status != StatusCode::NoContent_204 &&
-      handle.response->status != StatusCode::NotModified_304 &&
-      detail::has_conflicting_content_length(handle.response->headers)) {
+  handle.body_reader_.stream = handle.stream_;
+  handle.body_reader_.payload_max_length = payload_max_length_;
+
+  // RFC 9112 6.3: a response to HEAD, and a 204 or 304 response, ends with its
+  // header section, so none of its framing or coding headers apply.
+  if (req.method == "HEAD" ||
+      handle.response->status == StatusCode::NoContent_204 ||
+      handle.response->status == StatusCode::NotModified_304) {
+    handle.body_reader_.eof = true;
+    return handle;
+  }
+
+  // Same framing check as ClientImpl::process_request()
+  if (detail::has_conflicting_content_length(handle.response->headers)) {
     handle.error = Error::Read;
     handle.response.reset();
     return handle;
   }
-
-  handle.body_reader_.stream = handle.stream_;
-  handle.body_reader_.payload_max_length = payload_max_length_;
 
   if (handle.response->has_header("Content-Length")) {
     bool is_invalid = false;
