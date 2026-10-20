@@ -15208,10 +15208,15 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // An upgrade request has been through pre-routing before it reaches routing()
   auto is_upgrade = detail::is_websocket_upgrade(req);
   if (is_upgrade) {
+    // A response given here leaves the body unread, and it would be parsed as
+    // the next request.
+    auto close_if_answered =
+        close_after_response || detail::has_framed_body(req);
+
     if (pre_routing_handler_ &&
         pre_routing_handler_(req, res) == HandlerResponse::Handled) {
       if (res.status == -1) { res.status = StatusCode::OK_200; }
-      return write_response_with_content(strm, close_after_response, req, res);
+      return write_response_with_content(strm, close_if_answered, req, res);
     }
     // Find matching WebSocket handler
     for (const auto &entry : websocket_handlers_) {
@@ -15220,8 +15225,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
         if (pre_request_handler_ &&
             pre_request_handler_(req, res) == HandlerResponse::Handled) {
           if (res.status == -1) { res.status = StatusCode::OK_200; }
-          return write_response_with_content(strm, close_after_response, req,
-                                             res);
+          return write_response_with_content(strm, close_if_answered, req, res);
         }
 
         // Compute accept key

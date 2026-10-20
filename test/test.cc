@@ -27701,6 +27701,62 @@ TEST(WebSocketPreRoutingTest, RunsOnceForUnmatchedUpgrade) {
   EXPECT_EQ(1, pre_request_calls);
 }
 
+// An upgrade request answered by a hook leaves its body unread, so that body
+// must not be served as the next request on the connection.
+TEST(WebSocketPreRoutingTest, AnsweredUpgradeBodyIsNotNextRequest) {
+  Server svr;
+
+  svr.set_pre_routing_handler([](const Request &req, Response &res) {
+    if (req.path == "/pre-routing") {
+      res.set_content("pre-routing", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+  svr.set_pre_request_handler([](const Request &req, Response &res) {
+    if (req.matched_route == "/pre-request") {
+      res.set_content("pre-request", "text/plain");
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  svr.Get("/smuggled", [](const Request &, Response &res) {
+    res.set_content("smuggled", "text/plain");
+  });
+  svr.WebSocket("/pre-request",
+                [](const Request &, ws::WebSocket &ws) { ws.send("ws"); });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  const std::string body = "GET /smuggled HTTP/1.1\r\nHost: localhost\r\n\r\n";
+
+  for (auto path : {"/pre-routing", "/pre-request"}) {
+    std::string req = std::string("GET ") + path +
+                      " HTTP/1.1\r\n"
+                      "Host: localhost\r\n"
+                      "Upgrade: websocket\r\n"
+                      "Connection: Upgrade\r\n"
+                      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                      "Sec-WebSocket-Version: 13\r\n"
+                      "Content-Length: " +
+                      std::to_string(body.size()) + "\r\n\r\n" + body;
+
+    std::string res;
+    ASSERT_TRUE(send_request(5, req, &res, port));
+    EXPECT_EQ(0u, res.find("HTTP/1.1 200 OK\r\n")) << path;
+    EXPECT_NE(std::string::npos, res.find("Connection: close\r\n")) << path;
+    // Only one response, and the body was not served as a request
+    EXPECT_EQ(std::string::npos, res.find("HTTP/1.1", 1)) << path;
+  }
+}
+
 TEST(WebSocketPreRequestTest, RejectWithoutAuth) {
   Server svr;
 
