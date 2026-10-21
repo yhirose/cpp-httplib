@@ -21467,6 +21467,9 @@ inline TlsError connect(session_t session) {
 }
 
 inline TlsError accept(session_t session) {
+  // A failed handshake leaves its SNI behind, so start without it
+  impl::mbedpending_sni().clear();
+
   // Same as connect for Mbed TLS - handshake works for both client and server
   auto result = connect(session);
 
@@ -21474,7 +21477,6 @@ inline TlsError accept(session_t session) {
   if (result.code == ErrorCode::Success && session) {
     auto msession = static_cast<impl::MbedTlsSession *>(session);
     msession->sni_hostname = std::move(impl::mbedpending_sni());
-    impl::mbedpending_sni().clear();
   }
 
   return result;
@@ -21519,6 +21521,9 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
 inline bool accept_nonblocking(session_t session, socket_t sock,
                                time_t timeout_sec, time_t timeout_usec,
                                TlsError *err) {
+  // A failed handshake leaves its SNI behind, so start without it
+  impl::mbedpending_sni().clear();
+
   // Same implementation as connect for Mbed TLS
   bool result =
       connect_nonblocking(session, sock, timeout_sec, timeout_usec, err);
@@ -21527,7 +21532,6 @@ inline bool accept_nonblocking(session_t session, socket_t sock,
   if (result && session) {
     auto msession = static_cast<impl::MbedTlsSession *>(session);
     msession->sni_hostname = std::move(impl::mbedpending_sni());
-    impl::mbedpending_sni().clear();
   }
 
   return result;

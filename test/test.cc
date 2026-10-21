@@ -12977,6 +12977,44 @@ TEST(SNI_AutoDetectionTest, SNI_Logic) {
     }
   }
 }
+
+// The SNI of a failed handshake does not reach the next connection that the
+// same worker thread serves
+TEST(SNI_AutoDetectionTest, FailedHandshakeLeavesNoSNI) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.new_task_queue = [] { return new ThreadPool(1); };
+  svr.Get("/sni", [](const Request &req, Response &res) {
+    res.set_content(req.sni(), "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  ASSERT_LT(0, port);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  {
+    // Sends SNI, then rejects the server certificate, which the CA did not sign
+    SSLClient cli("localhost", port);
+    cli.set_hostname_addr_map({{"localhost", "127.0.0.1"}});
+    cli.set_ca_cert_path(CLIENT_CA_CERT_FILE);
+    auto res = cli.Get("/sni");
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::SSLServerVerification, res.error());
+  }
+
+  // An IP host sends no SNI (RFC 6066)
+  SSLClient cli("127.0.0.1", port);
+  cli.enable_server_certificate_verification(false);
+  auto res = cli.Get("/sni");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("", res->body);
+}
 #endif
 
 TEST(ClientProblemDetectionTest, ContentProvider) {
