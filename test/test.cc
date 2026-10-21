@@ -70,6 +70,7 @@ namespace tls {
 // live below the split border; the definitions are linked from httplib.cc.
 ca_store_t create_ca_store(const char *pem, size_t len);
 bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
+std::vector<std::string> get_ca_names(ctx_t ctx);
 } // namespace tls
 } // namespace httplib
 #endif
@@ -18156,6 +18157,37 @@ TEST(SSLClientTest, IpHostUntrustedChainFails) {
   auto res = cli.Get("/test");
   ASSERT_FALSE(res);
 }
+
+#ifndef CPPHTTPLIB_WOLFSSL_SUPPORT
+// A custom CA that brings no certificate still keeps the system CAs out, so a
+// CA that failed to come through fails verification instead of trusting them.
+// (wolfSSL does not list the system CAs it loaded.)
+TEST(SSLClientTest, EmptyCustomCaKeepsSystemCasOut) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  ASSERT_LT(0, port);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  // The CAs a client trusts once its first request has loaded them
+  auto loaded_cas = [&](const std::function<void(Client &)> &setup) {
+    Client cli("https://127.0.0.1:" + std::to_string(port));
+    setup(cli);
+    cli.Get("/");
+    return tls::get_ca_names(cli.tls_context()).size();
+  };
+
+  EXPECT_EQ(0u, loaded_cas([](Client &cli) { cli.load_ca_cert_store("", 0); }));
+  EXPECT_EQ(0u,
+            loaded_cas([](Client &cli) { cli.set_ca_cert_store(nullptr); }));
+}
+#endif
 
 // enable_system_ca(false) prevents system CA loading entirely
 TEST(SSLClientTest, DisableSystemCa_Online) {

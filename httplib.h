@@ -3527,8 +3527,12 @@ private:
 
   // Tracks whether a custom CA store was applied via set_ca_cert_store(),
   // since the store handle itself is owned by ctx_ and leaves no other trace.
-  // Used to keep custom CA configuration exclusive with system CA loading.
   bool ca_cert_store_set_ = false;
+
+  // Set by set_ca_cert_store() and load_ca_cert_store() even when they bring
+  // no certificate, so that a CA that failed to come through fails
+  // verification instead of letting the system CAs in.
+  bool custom_ca_loaded_ = false;
 
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
 
@@ -4793,6 +4797,9 @@ private:
   tls::session_t tls_session_ = nullptr;
   std::string ca_cert_file_path_;
   std::string ca_cert_dir_path_;
+  // Set by set_ca_cert_store() and load_ca_cert_store() even when they bring
+  // no certificate, so that a CA that failed to come through fails
+  // verification instead of letting the system CAs in.
   bool custom_ca_loaded_ = false;
   bool certs_loaded_ = false;
   SystemCAMode system_ca_mode_ = SystemCAMode::Auto;
@@ -16357,7 +16364,7 @@ inline bool ClientImpl::create_redirect_client(
         }
         redirect_client.load_ca_cert_store(pem.data(), pem.size());
         redirect_client.ca_cert_store_set_ = true;
-      } else {
+      } else if (self.custom_ca_loaded_) {
         redirect_client.load_ca_cert_store(ca_cert_pem_.c_str(),
                                            ca_cert_pem_.size());
       }
@@ -19202,6 +19209,7 @@ inline void SSLClient::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
   } else if (ca_cert_store) {
     tls::free_ca_store(ca_cert_store);
   }
+  custom_ca_loaded_ = true;
 }
 
 inline void
@@ -19234,6 +19242,7 @@ inline void SSLClient::load_ca_cert_store(const char *ca_cert,
     ca_cert_pem_.append(ca_cert, size);
     tls::load_ca_pem(ctx_, ca_cert, size);
   }
+  custom_ca_loaded_ = true;
 }
 
 inline bool SSLClient::load_certs() {
@@ -19244,10 +19253,9 @@ inline bool SSLClient::load_certs() {
   std::call_once(initialize_cert_, [&]() {
     std::lock_guard<std::mutex> guard(ctx_mutex_);
 
-    ret = detail::load_client_ca_config(
-        ctx_, ca_cert_file_path_, ca_cert_dir_path_,
-        !ca_cert_pem_.empty() || ca_cert_store_set_, system_ca_mode_,
-        last_backend_error_);
+    ret = detail::load_client_ca_config(ctx_, ca_cert_file_path_,
+                                        ca_cert_dir_path_, custom_ca_loaded_,
+                                        system_ca_mode_, last_backend_error_);
   });
 
   return ret;
@@ -19273,7 +19281,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   options.windows_cert_verification =
       enable_windows_cert_verification_ &&
       system_ca_mode_ != SystemCAMode::Disabled && ca_cert_file_path_.empty() &&
-      ca_cert_dir_path_.empty() && ca_cert_pem_.empty() && !ca_cert_store_set_;
+      ca_cert_dir_path_.empty() && !custom_ca_loaded_;
   // Only a verifier set through set_server_certificate_verifier() is seen
   // here, not one installed with tls::set_verify_callback() directly.
   options.server_certificate_verifier_set =
@@ -23960,18 +23968,18 @@ inline void WebSocketClient::set_ca_cert_store(tls::ca_store_t store) {
   if (store && tls_ctx_) {
     // set_ca_store takes ownership of store
     tls::set_ca_store(tls_ctx_, store);
-    custom_ca_loaded_ = true;
   } else if (store) {
     tls::free_ca_store(store);
   }
+  custom_ca_loaded_ = true;
 }
 
 inline void WebSocketClient::load_ca_cert_store(const char *ca_cert,
                                                 std::size_t size) {
   if (tls_ctx_ && ca_cert && size > 0) {
     tls::load_ca_pem(tls_ctx_, ca_cert, size);
-    custom_ca_loaded_ = true;
   }
+  custom_ca_loaded_ = true;
 }
 
 inline void
