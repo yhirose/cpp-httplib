@@ -15940,8 +15940,11 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   {
     detail::BufferStream bstrm;
 
-    if (detail::write_request_line(bstrm, req.method,
-                                   proxy_target_prefix() + req.path) < 0) {
+    // The path follows the authority in absolute-form, so one that does not
+    // begin with '/' (e.g. "@evil.example/x") would name another host.
+    auto prefix = proxy_target_prefix();
+    if ((!prefix.empty() && req.path[0] != '/') ||
+        detail::write_request_line(bstrm, req.method, prefix + req.path) < 0) {
       handle.error = Error::Write;
       handle.response.reset();
       return handle;
@@ -16246,6 +16249,13 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   auto prefix = proxy_target_prefix();
   if (!prefix.empty()) {
+    // The path follows the authority in absolute-form, so one that does not
+    // begin with '/' (e.g. "@evil.example/x") would name another host.
+    if (req.path[0] != '/') {
+      error = Error::Write;
+      return false;
+    }
+
     auto req2 = req;
     req2.path = prefix + req.path;
     ret = process_request(strm, req2, res, close_connection, error);
