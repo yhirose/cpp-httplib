@@ -406,6 +406,8 @@ ret = svr.remove_mount_point("/");
 ret = svr.remove_mount_point("/public");
 ```
 
+A mount point serves a path only when it has no `.`, `..` or empty segment other than a trailing `/`, so a check on `req.path` in `set_pre_routing_handler()` sees the path of the file that is served. A path ending in `/`, and the mount point itself such as `/public`, serve the `index.html` in that directory. The file system can still give a file other names: another case on a case-insensitive file system, such as the default ones on macOS and Windows, and on Windows a name with a trailing `.` or space, or an 8.3 short name such as `PRIVAT~1`. Compare paths without regard to case on such a file system, and on Windows keep files that need a guard out of mounted directories.
+
 ```cpp
 // User defined file extension and MIME type mappings
 svr.set_file_extension_and_mimetype_mapping("cc", "text/x-c");

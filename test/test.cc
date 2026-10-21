@@ -7417,9 +7417,7 @@ TEST_F(ServerTest, GetMethodDirTest) {
 TEST_F(ServerTest, GetMethodDirTestWithDoubleDots) {
   auto res = cli_.Get("/dir/../dir/test.html");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
-  EXPECT_EQ("test.html", res->body);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodInvalidPath) {
@@ -7451,9 +7449,7 @@ TEST_F(ServerTest, GetMethodDirMountTest) {
 TEST_F(ServerTest, GetMethodDirMountTestWithDoubleDots) {
   auto res = cli_.Get("/mount/dir/../dir/test.html");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
-  EXPECT_EQ("test.html", res->body);
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodInvalidMountPath) {
@@ -7496,8 +7492,8 @@ TEST_F(ServerTest, GetMethodDirMountWithoutTrailingSlash) {
 TEST_F(ServerTest, GetMethodDirWithLeadingDoubleSlash) {
   auto res = cli_.Get("//dir");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
-  EXPECT_EQ(StatusCode::MovedPermanently_301, res->status);
-  EXPECT_EQ("./dir/", res->get_header_value("Location"));
+  EXPECT_EQ(StatusCode::NotFound_404, res->status);
+  EXPECT_FALSE(res->has_header("Location"));
 }
 
 TEST_F(ServerTest, PostMethod303) {
@@ -12484,6 +12480,40 @@ TEST(MountTest, MultibytesPathName) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(U8("日本語コンテンツ"), res->body);
+}
+
+// A mount point serves no path with an empty, "." or ".." segment, so a guard
+// in the pre-routing handler sees the path of every file that is served
+TEST(MountTest, AliasedPathDoesNotPassPreRoutingGuard) {
+  Server svr;
+  ASSERT_TRUE(svr.set_mount_point("/", "./www"));
+  svr.set_pre_routing_handler([](const Request &req, Response &res) {
+    if (req.path == "/dir/test.html") {
+      res.status = StatusCode::Unauthorized_401;
+      return Server::HandlerResponse::Handled;
+    }
+    return Server::HandlerResponse::Unhandled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  for (auto path :
+       {"/./dir/test.html", "/dir/./test.html", "//dir/test.html",
+        "/dir//test.html", "/dir/../dir/test.html", "/%2e/dir/test.html"}) {
+    SCOPED_TRACE(path);
+    auto res = cli.Get(path);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ(StatusCode::NotFound_404, res->status);
+  }
 }
 
 #ifdef _WIN32

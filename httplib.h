@@ -5955,45 +5955,25 @@ inline bool is_valid_close_payload(const std::string &payload) {
 
 namespace detail {
 
+// A path a mount point serves: absolute, with no ".", ".." or empty segment
+// except a trailing '/', so the file served is the one that req.path names to
+// the handlers that ran before it.
 inline bool is_valid_path(const std::string &path) {
-  size_t level = 0;
-  size_t i = 0;
+  if (path.empty() || path[0] != '/') { return false; }
 
-  // Skip slash
-  while (i < path.size() && path[i] == '/') {
-    i++;
-  }
-
-  while (i < path.size()) {
-    // Read component
-    auto beg = i;
-    while (i < path.size() && path[i] != '/') {
-      if (path[i] == '\0') {
-        return false;
-      } else if (path[i] == '\\') {
-        return false;
-      }
-      i++;
+  auto beg = size_t{1};
+  for (auto i = beg; i <= path.size(); i++) {
+    if (i < path.size() && path[i] != '/') {
+      if (path[i] == '\0' || path[i] == '\\') { return false; }
+      continue;
     }
-
     auto len = i - beg;
-    assert(len > 0);
-
-    if (!path.compare(beg, len, ".")) {
-      ;
-    } else if (!path.compare(beg, len, "..")) {
-      if (level == 0) { return false; }
-      level--;
-    } else {
-      level++;
+    if ((len == 0 && i < path.size()) || (len == 1 && path[beg] == '.') ||
+        (len == 2 && path[beg] == '.' && path[beg + 1] == '.')) {
+      return false;
     }
-
-    // Skip slash
-    while (i < path.size() && path[i] == '/') {
-      i++;
-    }
+    beg = i + 1;
   }
-
   return true;
 }
 
@@ -14330,6 +14310,8 @@ inline bool Server::read_content_core(
 }
 
 inline bool Server::handle_file_request(Request &req, Response &res) {
+  if (!detail::is_valid_path(req.path)) { return false; }
+
   for (const auto &entry : base_dirs_) {
     // Prefix match, on a path segment boundary. A mount point of "/mount"
     // covers "/mount" and "/mount/...", but must not swallow "/mountdir/...".
@@ -14340,85 +14322,80 @@ inline bool Server::handle_file_request(Request &req, Response &res) {
          req.path.size() == entry.mount_point.size() ||
          req.path[entry.mount_point.size()] == '/')) {
       std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
-      if (detail::is_valid_path(sub_path)) {
-        auto path = entry.base_dir + sub_path;
-        if (path.back() == '/') { path += "index.html"; }
+      auto path = entry.base_dir + sub_path;
+      if (path.back() == '/') { path += "index.html"; }
 
-        // Defense-in-depth: is_valid_path blocks ".." traversal in the URL,
-        // but symlinks/junctions can still escape the base directory. A path
-        // that cannot be resolved, which includes one that does not exist, is
-        // not served from here.
-        std::string resolved_path;
-        if (!detail::canonicalize_path(path.c_str(), resolved_path)) {
-          continue;
+      // Defense-in-depth: is_valid_path blocks ".." traversal in the URL,
+      // but symlinks/junctions can still escape the base directory. A path
+      // that cannot be resolved, which includes one that does not exist, is
+      // not served from here.
+      std::string resolved_path;
+      if (!detail::canonicalize_path(path.c_str(), resolved_path)) { continue; }
+      if (!detail::is_path_within_base(resolved_path,
+                                       entry.resolved_base_dir)) {
+        res.status = StatusCode::Forbidden_403;
+        return true;
+      }
+
+      detail::FileStat stat(path);
+
+      if (stat.is_dir()) {
+        // Relative, so "//dir" cannot name another host; "./" keeps a ':'
+        // in the name from reading as a scheme.
+        auto name = req.path.substr(req.path.rfind('/') + 1);
+        res.set_redirect("./" + encode_path_component(name) + "/",
+                         StatusCode::MovedPermanently_301);
+        return true;
+      }
+
+      if (stat.is_file()) {
+        for (const auto &kv : entry.headers) {
+          res.set_header(kv.first, kv.second);
         }
-        if (!detail::is_path_within_base(resolved_path,
-                                         entry.resolved_base_dir)) {
-          res.status = StatusCode::Forbidden_403;
-          return true;
+
+        auto content_type = detail::find_content_type(
+            path, file_extension_and_mimetype_map_, default_file_mimetype_);
+        auto encoding = detail::EncodingType::None;
+        if (static_file_compression_) {
+          encoding = static_file_encoding(req, res, content_type, stat.size());
         }
 
-        detail::FileStat stat(path);
+        // The ETag names the representation actually sent, so a client that
+        // cached the compressed form revalidates against the compressed ETag
+        // and still gets a 304, while one that took identity keeps the plain
+        // ETag.
+        auto etag = detail::compute_etag(
+            stat, encoding == detail::EncodingType::None
+                      ? std::string()
+                      : std::string("-") + detail::encoding_name(encoding));
+        if (!etag.empty()) { res.set_header("ETag", etag); }
 
-        if (stat.is_dir()) {
-          // Relative, so "//dir" cannot name another host; "./" keeps a ':'
-          // in the name from reading as a scheme.
-          auto name = req.path.substr(req.path.rfind('/') + 1);
-          res.set_redirect("./" + encode_path_component(name) + "/",
-                           StatusCode::MovedPermanently_301);
-          return true;
+        auto mtime = stat.mtime();
+
+        auto last_modified = detail::file_mtime_to_http_date(mtime);
+        if (!last_modified.empty()) {
+          res.set_header("Last-Modified", last_modified);
         }
 
-        if (stat.is_file()) {
-          for (const auto &kv : entry.headers) {
-            res.set_header(kv.first, kv.second);
-          }
+        if (check_if_not_modified(req, res, etag, mtime)) { return true; }
 
-          auto content_type = detail::find_content_type(
-              path, file_extension_and_mimetype_map_, default_file_mimetype_);
-          auto encoding = detail::EncodingType::None;
-          if (static_file_compression_) {
-            encoding =
-                static_file_encoding(req, res, content_type, stat.size());
-          }
+        check_if_range(req, etag, mtime);
 
-          // The ETag names the representation actually sent, so a client that
-          // cached the compressed form revalidates against the compressed ETag
-          // and still gets a 304, while one that took identity keeps the plain
-          // ETag.
-          auto etag = detail::compute_etag(
-              stat, encoding == detail::EncodingType::None
-                        ? std::string()
-                        : std::string("-") + detail::encoding_name(encoding));
-          if (!etag.empty()) { res.set_header("ETag", etag); }
-
-          auto mtime = stat.mtime();
-
-          auto last_modified = detail::file_mtime_to_http_date(mtime);
-          if (!last_modified.empty()) {
-            res.set_header("Last-Modified", last_modified);
-          }
-
-          if (check_if_not_modified(req, res, etag, mtime)) { return true; }
-
-          check_if_range(req, etag, mtime);
-
-          auto mm = std::make_shared<detail::mmap>(path.c_str());
-          if (!mm->is_open()) {
-            output_error_log(Error::OpenFile, &req);
-            return false;
-          }
-
-          detail::set_file_content_provider(res, mm, content_type, encoding);
-
-          if (req.method != "HEAD" && file_request_handler_) {
-            file_request_handler_(req, res);
-          }
-
-          return true;
-        } else {
+        auto mm = std::make_shared<detail::mmap>(path.c_str());
+        if (!mm->is_open()) {
           output_error_log(Error::OpenFile, &req);
+          return false;
         }
+
+        detail::set_file_content_provider(res, mm, content_type, encoding);
+
+        if (req.method != "HEAD" && file_request_handler_) {
+          file_request_handler_(req, res);
+        }
+
+        return true;
+      } else {
+        output_error_log(Error::OpenFile, &req);
       }
     }
   }
