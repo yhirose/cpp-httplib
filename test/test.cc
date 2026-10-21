@@ -16221,15 +16221,24 @@ TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
   });
 }
 
+void UpdateCertsPemWithClientCA(SSLServer &svr) {
+  std::string cert_pem, key_pem, ca_pem;
+  read_file(SERVER_CERT_FILE, cert_pem);
+  read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
+  read_file(CLIENT_CA_CERT_FILE, ca_pem);
+  ASSERT_TRUE(
+      svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(), ca_pem.c_str()));
+}
+
+TEST(SSLClientServerTest, UpdateCertsPemWithClientCARequiresClientCert) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  UpdateCertsPemWithClientCA(svr);
+  RejectsClientWithoutCert(svr);
+}
+
 TEST(SSLClientServerTest, ClientCertStillRequiredAfterUpdateCertsPem) {
-  ClientCertStillRequired([](SSLServer &svr) {
-    std::string cert_pem, key_pem, ca_pem;
-    read_file(SERVER_CERT_FILE, cert_pem);
-    read_file(SERVER_PRIVATE_KEY_FILE, key_pem);
-    read_file(CLIENT_CA_CERT_FILE, ca_pem);
-    ASSERT_TRUE(svr.update_certs_pem(cert_pem.c_str(), key_pem.c_str(),
-                                     ca_pem.c_str()));
-  });
+  ClientCertStillRequired(UpdateCertsPemWithClientCA);
 }
 
 // A TLS error from one request must not show up in a later request's Result

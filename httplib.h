@@ -18955,7 +18955,9 @@ inline bool SSLServer::update_certs_pem(const char *cert_pem,
     return false;
   }
   if (client_ca_pem) {
-    return tls::update_server_client_ca(ctx_, client_ca_pem);
+    if (!tls::update_server_client_ca(ctx_, client_ca_pem)) { return false; }
+    // As in the constructors, a client CA makes client certificates required
+    tls::set_verify_client(ctx_, true);
   }
   return true;
 }
