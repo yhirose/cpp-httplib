@@ -16309,7 +16309,8 @@ TEST(SSLClientServerTest, PemMemoryClientEncryptedCertPresent) {
                              CLIENT_ENCRYPTED_PRIVATE_KEY_PASS);
 }
 
-// A server built from PEM memory with a client CA requires client certificates
+// A server built from PEM memory with a client CA requires client certificates,
+// also when the CA is a NUL-terminated string passed with a length of 0
 TEST(SSLClientServerTest, PemMemoryClientCertMissing) {
   std::string server_cert_pem, server_key_pem, client_ca_pem;
   read_file(SERVER_CERT_FILE, server_cert_pem);
@@ -16325,9 +16326,18 @@ TEST(SSLClientServerTest, PemMemoryClientCertMissing) {
       client_ca_pem.size(),
       nullptr // no password for server key
   };
-  SSLServer svr(server_pem);
-  ASSERT_TRUE(svr.is_valid());
-  RejectsClientWithoutCert(svr);
+  for (auto client_ca_pem_len : {client_ca_pem.size(), size_t{0}}) {
+    SCOPED_TRACE(client_ca_pem_len);
+    server_pem.client_ca_pem_len = client_ca_pem_len;
+    SSLServer svr(server_pem);
+    ASSERT_TRUE(svr.is_valid());
+    RejectsClientWithoutCert(svr);
+  }
+
+  // An empty CA fails to load instead of turning the check off
+  server_pem.client_ca_pem = "";
+  server_pem.client_ca_pem_len = 0;
+  EXPECT_FALSE(SSLServer(server_pem).is_valid());
 }
 
 // The PemMemory lengths are honoured, so the PEM needs no NUL terminator

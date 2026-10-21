@@ -18824,8 +18824,10 @@ inline SSLServer::SSLServer(const PemMemory &pem) {
       last_ssl_error_ = static_cast<int>(get_error());
       free_context(ctx_);
       ctx_ = nullptr;
-    } else if (pem.client_ca_pem && pem.client_ca_pem_len > 0) {
-      if (!load_ca_pem(ctx_, pem.client_ca_pem, pem.client_ca_pem_len)) {
+    } else if (pem.client_ca_pem) {
+      auto ca_len = pem.client_ca_pem_len ? pem.client_ca_pem_len
+                                          : strlen(pem.client_ca_pem);
+      if (!load_ca_pem(ctx_, pem.client_ca_pem, ca_len)) {
         last_ssl_error_ = static_cast<int>(get_error());
         free_context(ctx_);
         ctx_ = nullptr;

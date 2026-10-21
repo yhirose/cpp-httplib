@@ -210,6 +210,8 @@ client_pem.key_pem_len = client_key.size();
 httplib::SSLClient cli("api.example.com", 443, client_pem);
 ```
 
+A length of 0 means the field is a NUL-terminated string.
+
 `httplib::ws::WebSocketClient` has the same `PemMemory` constructor for `wss://` connections. See [README-websocket.md](README-websocket.md) for details.
 
 ### Peer Certificate Inspection
