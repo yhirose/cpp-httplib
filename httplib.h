@@ -21924,6 +21924,11 @@ inline std::string error_string(uint64_t code) {
 }
 
 inline ca_store_t create_ca_store(const char *pem, size_t len) {
+#ifdef CPPHTTPLIB_MBEDTLS_V4
+  // Parsing certificates needs PSA Crypto, and no context may exist yet
+  if (!detail::ensure_mbedtls_psa_crypto()) { return nullptr; }
+#endif
+
   auto *ca_chain = new (std::nothrow) mbedtls_x509_crt;
   if (!ca_chain) { return nullptr; }
 
