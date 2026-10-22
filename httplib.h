@@ -2357,6 +2357,8 @@ public:
 
   Server &set_payload_max_length(size_t length);
 
+  Server &set_compress(bool on);
+
   Server &set_static_file_compression(bool on);
   Server &set_static_file_compression_min_length(size_t length);
   Server &set_static_file_compression_max_length(size_t length);
@@ -2431,6 +2433,7 @@ protected:
   time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+  bool compress_ = true;
   bool static_file_compression_ = false;
   size_t static_file_compression_min_length_ =
       CPPHTTPLIB_STATIC_FILE_COMPRESSION_MIN_LENGTH;
@@ -13854,6 +13857,11 @@ inline Server &Server::set_payload_max_length(size_t length) {
   return *this;
 }
 
+inline Server &Server::set_compress(bool on) {
+  compress_ = on;
+  return *this;
+}
+
 inline Server &Server::set_static_file_compression(bool on) {
   static_file_compression_ = on;
   return *this;
@@ -14882,7 +14890,8 @@ inline void Server::apply_ranges(const Request &req, Response &res,
                    "multipart/byteranges; boundary=" + boundary);
   }
 
-  auto type = detail::encoding_type(req, res);
+  auto type =
+      compress_ ? detail::encoding_type(req, res) : detail::EncodingType::None;
 
   if (res.body.empty()) {
     if (res.content_length_ > 0 && req.ranges.size() == 1 &&

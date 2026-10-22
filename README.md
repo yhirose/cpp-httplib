@@ -1590,6 +1590,8 @@ This holds for every kind of response, including the file-backed ones below.
 
 `Vary: Accept-Encoding` is added only to responses the server encoded itself. A handler that chooses between an encoded and an identity representation by reading `Accept-Encoding` should set the field itself, so that shared caches keep the two apart.
 
+Turn this compression off with `svr.set_compress(false)`. Over HTTPS, the length of a compressed response can give away a secret in it, such as a CSRF token, when the same response also carries text an attacker can choose (the BREACH attack). A server whose responses mix the two should turn compression off, or keep such secrets out of those responses. Static file compression, below, is set separately.
+
 ### Static file compression
 
 Responses served from a file, whether through `set_mount_point()` or `Response::set_file_content()`, are sent as is by default. Turn compression on for them with:

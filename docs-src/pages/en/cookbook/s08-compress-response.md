@@ -48,6 +48,14 @@ svr.Get("/events", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
+## Turning it off
+
+```cpp
+svr.set_compress(false);
+```
+
+Handler responses, buffered or streamed, are then sent as they are. Over HTTPS, the length of a compressed response can give away a secret in it, such as a CSRF token, when the same response also carries text an attacker can choose (the BREACH attack). Static file compression is set separately.
+
 ## Static files need to be opted in
 
 Files served as they are, through `set_mount_point()` or `Response::set_file_content()`, are not compressed by default. Turn it on with:

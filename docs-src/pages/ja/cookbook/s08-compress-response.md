@@ -48,6 +48,14 @@ svr.Get("/events", [](const httplib::Request &req, httplib::Response &res) {
 });
 ```
 
+## 圧縮を止める
+
+```cpp
+svr.set_compress(false);
+```
+
+ハンドラのレスポンスは、通常のボディもストリーミングも、そのまま送られます。HTTPSでは、攻撃者が選べる文字列とCSRFトークンなどの秘密が同じレスポンスに載ると、圧縮後の長さから秘密が漏れることがあります（BREACH攻撃）。静的ファイルの圧縮は別に設定します。
+
 ## 静的ファイルは明示的に有効にする
 
 `set_mount_point()`や`Response::set_file_content()`でファイルをそのまま返す場合、デフォルトでは圧縮されません。有効にするには次を呼びます。

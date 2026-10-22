@@ -14908,6 +14908,45 @@ TEST(ContentEncodingTest, PreEncodedResponseIsNotCompressedAgain) {
   EXPECT_EQ("Hello World!", res->body);
 }
 
+// set_compress(false) sends every handler response as it is, buffered or
+// streamed
+TEST(ContentEncodingTest, SetCompressFalseSendsIdentity) {
+  const std::string text(1000, 'a');
+
+  Server svr;
+  svr.set_compress(false);
+  svr.Get("/buffered", [&](const Request &, Response &res) {
+    res.set_content(text, "text/plain");
+  });
+  svr.Get("/streamed", [&](const Request &, Response &res) {
+    res.set_chunked_content_provider("text/plain", [&](size_t, DataSink &sink) {
+      sink.write(text.data(), text.size());
+      sink.done();
+      return true;
+    });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_decompress(false);
+  for (auto path : {"/buffered", "/streamed"}) {
+    SCOPED_TRACE(path);
+    auto res = cli.Get(path, Headers{{"Accept-Encoding", "gzip"}});
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_FALSE(res->has_header("Content-Encoding"));
+    EXPECT_EQ(text, res->body);
+  }
+}
+
 // A chunked provider settles its coding where the headers are written and
 // reuses it at write time. Both ends of that have to hold: a handler's own
 // Content-Encoding suppresses the coding, and a response without one is still
