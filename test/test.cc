@@ -11231,48 +11231,66 @@ TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
 }
 
 TEST(ServerResponseSplittingTest, ResponseHeaderCRLFInjection) {
-  Server svr;
-  svr.Get("/injected-header", [&](const Request & /*req*/, Response &res) {
-    // res.headers is a public field an application can populate directly,
-    // bypassing set_header()'s validation (e.g. reflecting a request value).
-    // A valid header that must survive.
-    res.headers.emplace("X-Safe", "safe");
-    // Attacker-controlled value carrying CR/LF (response splitting).
-    res.headers.emplace("X-Reflected",
-                        "legit\r\nInjected-Header: pwned\r\nX-Evil: also");
-    // Attacker-controlled name carrying CR/LF.
-    res.headers.emplace("X-Bad\r\nSet-Cookie: a=1", "x");
-    res.set_content("body", "text/plain");
-  });
+  // A custom header writer gets only the fields the default one writes
+  auto verbatim_writer = [](Stream &strm, Headers &hdrs) -> ssize_t {
+    std::string s;
+    for (const auto &h : hdrs) {
+      s += h.first + ": " + h.second + "\r\n";
+    }
+    s += "\r\n";
+    return strm.write(s.data(), s.size());
+  };
 
-  thread t = thread([&] { svr.listen(HOST, PORT); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-    ASSERT_FALSE(svr.is_running());
-  });
+  for (auto custom_writer : {false, true}) {
+    SCOPED_TRACE(custom_writer ? "custom header writer" : "default writer");
+    Server svr;
+    if (custom_writer) { svr.set_header_writer(verbatim_writer); }
+    svr.set_post_routing_handler([](const Request &, Response &res) {
+      res.headers.emplace("X-Late", "late\r\nInjected-Late: pwned");
+    });
+    svr.Get("/injected-header", [&](const Request & /*req*/, Response &res) {
+      // res.headers is a public field an application can populate directly,
+      // bypassing set_header()'s validation (e.g. reflecting a request value).
+      // A valid header that must survive.
+      res.headers.emplace("X-Safe", "safe");
+      // Attacker-controlled value carrying CR/LF (response splitting).
+      res.headers.emplace("X-Reflected",
+                          "legit\r\nInjected-Header: pwned\r\nX-Evil: also");
+      // Attacker-controlled name carrying CR/LF.
+      res.headers.emplace("X-Bad\r\nSet-Cookie: a=1", "x");
+      res.set_content("body", "text/plain");
+    });
 
-  svr.wait_until_ready();
+    thread t = thread([&] { svr.listen(HOST, PORT); });
+    auto se = detail::scope_exit([&] {
+      svr.stop();
+      t.join();
+      ASSERT_FALSE(svr.is_running());
+    });
 
-  const std::string req = std::string("GET /injected-header HTTP/1.1\r\n") +
-                          "Host: " + HOST +
-                          "\r\n"
-                          "Connection: close\r\n"
-                          "\r\n";
+    svr.wait_until_ready();
 
-  std::string res;
-  ASSERT_TRUE(send_request(5, req, &res));
+    const std::string req = std::string("GET /injected-header HTTP/1.1\r\n") +
+                            "Host: " + HOST +
+                            "\r\n"
+                            "Connection: close\r\n"
+                            "\r\n";
 
-  // The injected fields must not appear anywhere in the raw response.
-  EXPECT_EQ(std::string::npos, res.find("Injected-Header"));
-  EXPECT_EQ(std::string::npos, res.find("X-Evil"));
-  EXPECT_EQ(std::string::npos, res.find("Set-Cookie"));
+    std::string res;
+    ASSERT_TRUE(send_request(5, req, &res));
 
-  // Invalid headers are dropped entirely, matching set_header().
-  EXPECT_EQ(std::string::npos, res.find("X-Reflected:"));
+    // The injected fields must not appear anywhere in the raw response.
+    EXPECT_EQ(std::string::npos, res.find("Injected-Header"));
+    EXPECT_EQ(std::string::npos, res.find("X-Evil"));
+    EXPECT_EQ(std::string::npos, res.find("Set-Cookie"));
+    EXPECT_EQ(std::string::npos, res.find("Injected-Late"));
 
-  // The valid header still passes through.
-  EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
+    // Invalid headers are dropped entirely, matching set_header().
+    EXPECT_EQ(std::string::npos, res.find("X-Reflected:"));
+
+    // The valid header still passes through.
+    EXPECT_NE(std::string::npos, res.find("X-Safe: safe"));
+  }
 }
 
 // Forward declaration: in split builds split.py strips `inline` and moves the

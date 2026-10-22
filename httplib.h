@@ -8419,6 +8419,18 @@ inline void set_header(Headers &headers, const std::string &key,
   if (fields::is_field_valid(key, val)) { headers.emplace(key, val); }
 }
 
+// Drops the fields set_header() would refuse, from headers an application can
+// fill directly: CR/LF in one would split the message.
+inline void erase_invalid_fields(Headers &headers) {
+  for (auto it = headers.begin(); it != headers.end();) {
+    if (fields::is_field_valid(it->first, it->second)) {
+      ++it;
+    } else {
+      it = headers.erase(it);
+    }
+  }
+}
+
 inline bool read_headers(Stream &strm, Headers &headers) {
   const auto bufsiz = 2048;
   char buf[bufsiz];
@@ -8896,13 +8908,6 @@ inline ssize_t write_response_line(Stream &strm, int status) {
 inline ssize_t write_headers(Stream &strm, const Headers &headers) {
   ssize_t write_len = 0;
   for (const auto &x : headers) {
-    // Skip fields with invalid names or values to prevent response splitting
-    // via CR/LF injection, matching set_header(). The client validates request
-    // headers up front in check_and_write_headers, but the server passes
-    // res.headers straight to this writer, and res.headers is a public field
-    // an application can populate directly with request-derived values.
-    if (!fields::is_field_valid(x.first, x.second)) { continue; }
-
     std::string s;
     s = x.first;
     s += ": ";
@@ -14004,6 +14009,10 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
     need_apply_ranges = true;
   }
 
+  // Before anything below reads res.headers, which the handlers may have
+  // filled directly
+  detail::erase_invalid_fields(res.headers);
+
   if (!detail::body_allowed_for_status(res.status)) {
     detail::clear_content(res);
   }
@@ -14047,6 +14056,7 @@ inline bool Server::write_response_core(Stream &strm, bool close_connection,
 
   if (post_routing_handler_) {
     post_routing_handler_(req, res);
+    detail::erase_invalid_fields(res.headers);
     // Again, for a body or framing headers the handler changed.
     detail::set_framing_headers(req, res, boundary, content_type);
   }
