@@ -209,7 +209,11 @@ jobs:
           git clone https://boringssl.googlesource.com/boringssl boringssl
           cd boringssl
           git checkout "${{ steps.boringssl-rev.outputs.sha }}"
+          # GCC 15 reports a false -Wstringop-overflow in BoringSSL's Keccak
+          # code, which its -Werror makes fatal. Clang is its primary compiler.
           cmake -S . -B build \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=OFF \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
