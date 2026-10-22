@@ -5988,9 +5988,10 @@ inline bool is_valid_close_payload(const std::string &payload) {
 
 namespace detail {
 
-// A path a mount point serves: absolute, with no ".", ".." or empty segment
-// except a trailing '/', so the file served is the one that req.path names to
-// the handlers that ran before it.
+// A path a mount point serves: absolute, with no empty segment except a
+// trailing '/' and no segment ending in '.' or a space (which covers "." and
+// ".." and names Windows trims into another file's name), so the file served
+// is the one that req.path names to the handlers that ran before it.
 inline bool is_valid_path(const std::string &path) {
   if (path.empty() || path[0] != '/') { return false; }
 
@@ -6001,8 +6002,8 @@ inline bool is_valid_path(const std::string &path) {
       continue;
     }
     auto len = i - beg;
-    if ((len == 0 && i < path.size()) || (len == 1 && path[beg] == '.') ||
-        (len == 2 && path[beg] == '.' && path[beg + 1] == '.')) {
+    if ((len == 0 && i < path.size()) ||
+        (len > 0 && (path[i - 1] == '.' || path[i - 1] == ' '))) {
       return false;
     }
     beg = i + 1;

@@ -566,6 +566,7 @@ find_content_type(const std::string &path,
                   const std::string &default_content_type);
 bool can_compress_content_type(const std::string &content_type);
 bool is_prohibited_header_name(const std::string &name);
+bool is_valid_path(const std::string &path);
 #ifdef CPPHTTPLIB_SSL_ENABLED
 bool match_hostname(const std::string &pattern, const std::string &hostname);
 #endif
@@ -691,6 +692,12 @@ TEST(FindContentTypeTest, ComparesWholeExtensions) {
   EXPECT_EQ("", detail::find_content_type("/a.qo2yh", {}, ""));
   EXPECT_EQ("", detail::find_content_type("/a.q4g", {}, ""));
   EXPECT_EQ("", detail::find_content_type("/a.l5", {}, ""));
+}
+
+TEST(IsValidPathTest, RejectsSegmentsEndingInDotOrSpace) {
+  for (auto path : {"/a.", "/a ", "/dir./a", "/dir /a", "/..."}) {
+    EXPECT_FALSE(detail::is_valid_path(path)) << path;
+  }
 }
 
 TEST(CanCompressContentTypeTest, ComparesWholeTypes) {
@@ -12607,8 +12614,9 @@ TEST(MountTest, MultibytesPathName) {
   EXPECT_EQ(U8("日本語コンテンツ"), res->body);
 }
 
-// A mount point serves no path with an empty, "." or ".." segment, so a guard
-// in the pre-routing handler sees the path of every file that is served
+// A mount point serves no path with an empty segment or one ending in '.' or
+// a space, so a guard in the pre-routing handler sees the path of every file
+// that is served
 TEST(MountTest, AliasedPathDoesNotPassPreRoutingGuard) {
   Server svr;
   ASSERT_TRUE(svr.set_mount_point("/", "./www"));
@@ -12633,7 +12641,8 @@ TEST(MountTest, AliasedPathDoesNotPassPreRoutingGuard) {
   Client cli(HOST, port);
   for (auto path :
        {"/./dir/test.html", "/dir/./test.html", "//dir/test.html",
-        "/dir//test.html", "/dir/../dir/test.html", "/%2e/dir/test.html"}) {
+        "/dir//test.html", "/dir/../dir/test.html", "/%2e/dir/test.html",
+        "/dir/test.html.", "/dir/test.html%20"}) {
     SCOPED_TRACE(path);
     auto res = cli.Get(path);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
