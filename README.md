@@ -916,6 +916,14 @@ svr.set_keep_alive_max_count(2); // Default is 100, 0 for no limit
 svr.set_keep_alive_timeout(10);  // Default is 5
 ```
 
+### Client address behind a reverse proxy
+
+```cpp
+svr.set_trusted_proxies({"10.0.0.2"});
+```
+
+A request that comes straight from one of these addresses gets `req.remote_addr` from `X-Forwarded-For`: the rightmost address in it that is not a trusted proxy. A request from anywhere else keeps the address of its connection, whatever `X-Forwarded-For` says. Addresses match as IP addresses, so an IPv4 peer that a server listening on both IPv4 and IPv6 sees as `::ffff:10.0.0.2` matches `10.0.0.2`. Host names and CIDR ranges are not supported.
+
 ### Timeout
 
 ```c++

@@ -10670,6 +10670,32 @@ inline bool is_ip_address(const std::string &host) {
          inet_pton(AF_INET6, host.c_str(), &addr6) == 1;
 }
 
+// One spelling for an IPv6 address, and the IPv4 one for an IPv4-mapped IPv6
+// address, which is how a dual-stack socket reports an IPv4 peer. Anything
+// else, including an address with a zone ID, is returned as it is.
+inline std::string canonical_ip(const std::string &addr) {
+  struct in6_addr addr6;
+  if (addr.find('%') != std::string::npos ||
+      inet_pton(AF_INET6, addr.c_str(), &addr6) != 1) {
+    return addr;
+  }
+
+  char buf[INET6_ADDRSTRLEN];
+  if (IN6_IS_ADDR_V4MAPPED(&addr6)) {
+    return inet_ntop(AF_INET, &addr6.s6_addr[12], buf, sizeof(buf)) ? buf
+                                                                    : addr;
+  }
+  return inet_ntop(AF_INET6, &addr6, buf, sizeof(buf)) ? buf : addr;
+}
+
+// `trusted_proxies` holds canonical_ip() spellings.
+inline bool is_trusted_proxy(const std::string &addr,
+                             const std::vector<std::string> &trusted_proxies) {
+  if (trusted_proxies.empty()) { return false; }
+  return std::find(trusted_proxies.begin(), trusted_proxies.end(),
+                   canonical_ip(addr)) != trusted_proxies.end();
+}
+
 // Resolve where a client should connect for `host`, honoring a user-supplied
 // hostname-to-address map. `host` itself is never rewritten, so it keeps
 // supplying the Host header and SNI; only the connection target changes.
@@ -13823,7 +13849,11 @@ inline Server &Server::set_header_writer(
 
 inline Server &
 Server::set_trusted_proxies(const std::vector<std::string> &proxies) {
-  trusted_proxies_ = proxies;
+  trusted_proxies_.clear();
+  trusted_proxies_.reserve(proxies.size());
+  for (const auto &proxy : proxies) {
+    trusted_proxies_.push_back(detail::canonical_ip(proxy));
+  }
   return *this;
 }
 
@@ -15010,12 +15040,7 @@ get_client_ip(const std::string &x_forwarded_for,
   // returned as the client.
   for (size_t i = ip_list.size(); i-- > 0;) {
     const auto &ip = ip_list[i];
-
-    auto is_trusted_proxy =
-        std::any_of(trusted_proxies.begin(), trusted_proxies.end(),
-                    [&](const std::string &proxy) { return ip == proxy; });
-
-    if (!is_trusted_proxy) { return ip; }
+    if (!detail::is_trusted_proxy(ip, trusted_proxies)) { return ip; }
   }
 
   // Every hop was a trusted proxy; fall back to the first entry.
@@ -15147,11 +15172,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // Only honor X-Forwarded-For if the peer on the actual TCP connection is
   // itself a trusted proxy. Otherwise any direct client could spoof
   // remote_addr simply by sending an arbitrary X-Forwarded-For header.
-  auto is_trusted_peer = std::any_of(
-      trusted_proxies_.begin(), trusted_proxies_.end(),
-      [&](const std::string &proxy) { return proxy == remote_addr; });
-
-  if (is_trusted_peer && req.has_header("X-Forwarded-For")) {
+  if (detail::is_trusted_proxy(remote_addr, trusted_proxies_) &&
+      req.has_header("X-Forwarded-For")) {
     // Some proxies append the address they observed as a separate
     // X-Forwarded-For field line instead of extending the one the client sent
     // (e.g. HAProxy's "option forwardfor"), so the whole combined value has to

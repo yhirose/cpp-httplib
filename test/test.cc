@@ -22562,6 +22562,55 @@ TEST(ForwardedHeadersTest, NoForwardedHeaders) {
               observed_remote_addr == "127.0.0.1");
 }
 
+// A server listening on both IPv4 and IPv6 sees an IPv4 peer as an
+// IPv4-mapped IPv6 address, which still matches the proxy's IPv4 address
+TEST(ForwardedHeadersTest, IPv4MappedPeerMatchesIPv4Proxy) {
+  Server svr;
+  svr.set_trusted_proxies({"127.0.0.1"});
+  svr.Get("/ip", [](const Request &req, Response &res) {
+    res.set_content(req.remote_addr, "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port("::");
+  if (port <= 0) { GTEST_SKIP() << "no IPv6 on this host"; }
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli("127.0.0.1", port);
+  auto res = cli.Get("/ip", Headers{{"X-Forwarded-For", "198.51.100.23"}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("198.51.100.23", res->body);
+}
+
+TEST(ForwardedHeadersTest, IPv4MappedHopMatchesIPv4Proxy) {
+  Server svr;
+  svr.set_trusted_proxies({"192.0.2.45", "::1", "127.0.0.1"});
+  svr.Get("/ip", [](const Request &req, Response &res) {
+    res.set_content(req.remote_addr, "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Get(
+      "/ip", Headers{{"X-Forwarded-For", "198.51.100.23, ::ffff:192.0.2.45"}});
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("198.51.100.23", res->body);
+}
+
 TEST(ForwardedHeadersTest, SingleTrustedProxy_UsesIPBeforeTrusted) {
   Server svr;
 
