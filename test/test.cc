@@ -14322,79 +14322,6 @@ TEST_F(PayloadMaxLengthTest, RawSocketChunkedTest) {
   }
 }
 
-TEST_F(PayloadMaxLengthTest, NoContentLengthPayloadLimit) {
-  // Test request without Content-Length header exceeding payload limit
-  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
-                                               "Host: " +
-                                               std::string(HOST) + ":" +
-                                               std::to_string(PORT) +
-                                               "\r\n"
-                                               "Connection: close\r\n"
-                                               "\r\n";
-
-  // Add payload exceeding the 8-byte limit
-  std::string large_payload(16, 'X'); // 16 bytes, exceeds 8-byte limit
-  request_without_content_length += large_payload;
-
-  std::string response;
-  bool result = send_request(1, request_without_content_length, &response);
-
-  if (!result) {
-    // If send_request fails, server likely closed connection due to payload
-    // limit
-    SUCCEED() << "Server rejected oversized request without Content-Length "
-                 "(connection closed)";
-  } else {
-    // Check if server responded with error or closed connection early
-    if (response.length() <= 10) {
-      SUCCEED() << "Server closed connection for oversized request without "
-                   "Content-Length";
-    } else {
-      // Check for error status codes
-      EXPECT_TRUE(response.find("413") != std::string::npos ||
-                  response.find("Payload Too Large") != std::string::npos ||
-                  response.find("400") != std::string::npos);
-    }
-  }
-}
-
-TEST_F(PayloadMaxLengthTest, NoContentLengthWithinLimit) {
-  // Test request without Content-Length header within payload limit
-  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
-                                               "Host: " +
-                                               std::string(HOST) + ":" +
-                                               std::to_string(PORT) +
-                                               "\r\n"
-                                               "Connection: close\r\n"
-                                               "\r\n";
-
-  // Add payload within the 8-byte limit
-  std::string small_payload(4, 'Y'); // 4 bytes, within 8-byte limit
-  request_without_content_length += small_payload;
-
-  std::string response;
-  bool result = send_request(1, request_without_content_length, &response);
-
-  // For requests without Content-Length, the server may have different behavior
-  // The key is that it should not reject due to payload limit for small
-  // payloads
-  if (result) {
-    // Check for any HTTP response (success or error, but not connection closed)
-    if (response.length() > 10) {
-      SUCCEED()
-          << "Server processed request without Content-Length within limit";
-    } else {
-      // Short response might indicate connection closed, which is acceptable
-      SUCCEED() << "Server closed connection for request without "
-                   "Content-Length (acceptable behavior)";
-    }
-  } else {
-    // Connection failure might be due to protocol requirements
-    SUCCEED() << "Connection issue with request without Content-Length "
-                 "(environment-specific)";
-  }
-}
-
 class LargePayloadMaxLengthTest : public ::testing::Test {
 protected:
   LargePayloadMaxLengthTest()
@@ -14458,71 +14385,6 @@ TEST_F(LargePayloadMaxLengthTest, ChunkedEncodingExceeds10MB) {
     EXPECT_EQ(StatusCode::PayloadTooLarge_413, res->status);
   } else {
     SUCCEED() << "Server closed connection for payload exceeding 10MB limit";
-  }
-}
-
-TEST_F(LargePayloadMaxLengthTest, NoContentLengthWithin10MB) {
-  // Test request without Content-Length header within 10MB limit
-  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
-                                               "Host: " +
-                                               std::string(HOST) + ":" +
-                                               std::to_string(PORT) +
-                                               "\r\n"
-                                               "Connection: close\r\n"
-                                               "\r\n";
-
-  // Add 1MB payload (within 10MB limit)
-  std::string medium_payload(1024 * 1024, 'C'); // 1MB payload
-  request_without_content_length += medium_payload;
-
-  std::string response;
-  bool result = send_request(5, request_without_content_length, &response);
-
-  if (result) {
-    // Should get a proper HTTP response for payloads within limit
-    if (response.length() > 10) {
-      SUCCEED() << "Server processed 1MB request without Content-Length within "
-                   "10MB limit";
-    } else {
-      SUCCEED() << "Server closed connection (acceptable behavior for no "
-                   "Content-Length)";
-    }
-  } else {
-    SUCCEED() << "Connection issue with 1MB payload (environment-specific)";
-  }
-}
-
-TEST_F(LargePayloadMaxLengthTest, NoContentLengthExceeds10MB) {
-  // Test request without Content-Length header exceeding 10MB limit
-  std::string request_without_content_length = "POST /test HTTP/1.1\r\n"
-                                               "Host: " +
-                                               std::string(HOST) + ":" +
-                                               std::to_string(PORT) +
-                                               "\r\n"
-                                               "Connection: close\r\n"
-                                               "\r\n";
-
-  // Add 12MB payload (exceeds 10MB limit)
-  std::string large_payload(12 * 1024 * 1024, 'D'); // 12MB payload
-  request_without_content_length += large_payload;
-
-  std::string response;
-  bool result = send_request(10, request_without_content_length, &response);
-
-  if (!result) {
-    // Server should close connection due to payload limit
-    SUCCEED() << "Server rejected 12MB request without Content-Length "
-                 "(connection closed)";
-  } else {
-    // Check for error response
-    if (response.length() <= 10) {
-      SUCCEED()
-          << "Server closed connection for 12MB request exceeding 10MB limit";
-    } else {
-      EXPECT_TRUE(response.find("413") != std::string::npos ||
-                  response.find("Payload Too Large") != std::string::npos ||
-                  response.find("400") != std::string::npos);
-    }
   }
 }
 
@@ -14645,70 +14507,6 @@ TEST(PayloadLimitBypassTest, StreamingGzipDecompression) {
   EXPECT_LE(total, LIMIT);
 }
 
-#ifndef CPPHTTPLIB_SSL_ENABLED
-// For a request with neither Content-Length nor Transfer-Encoding, the
-// non-SSL raw-socket fallback in read_content_core() used to hand the
-// compressed wire bytes straight to the ContentReader without ever routing
-// them through the decompressor, so payload_max_length_ only bounded the
-// compressed size on the wire, not the decompressed size.
-TEST(PayloadLimitBypassTest, UnframedGzipDecompression) {
-  Server svr;
-  const size_t LIMIT = 64 * 1024; // 64KB
-  svr.set_payload_max_length(LIMIT);
-
-  size_t total = 0;
-  svr.Post("/stream", [&](const Request & /*req*/, Response &res,
-                          const ContentReader &content_reader) {
-    content_reader([&](const char * /*data*/, size_t len) {
-      total += len;
-      return true;
-    });
-    res.status = 200;
-    res.set_content("stream_ok", "text/plain");
-  });
-
-  auto port = svr.bind_to_any_port(HOST);
-  auto thread = std::thread([&]() { svr.listen_after_bind(); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    thread.join();
-    ASSERT_FALSE(svr.is_running());
-  });
-  svr.wait_until_ready();
-
-  // Prepare 256KB raw data and gzip-compress it, same payload as the
-  // StreamingGzipDecompression test above.
-  std::string raw(256 * 1024, 'A');
-  std::string gz;
-  {
-    httplib::detail::gzip_compressor compressor;
-    bool result = compressor.compress(raw.data(), raw.size(), /*last=*/true,
-                                      [&](const char *chunk, size_t len) {
-                                        gz.append(chunk, len);
-                                        return true;
-                                      });
-    ASSERT_TRUE(result);
-  }
-
-  // Send the gzip body over raw TCP with neither Content-Length nor
-  // Transfer-Encoding, and Connection: close so the server's stray-body scan
-  // kicks in.
-  std::string req = "POST /stream HTTP/1.1\r\n"
-                    "Host: " +
-                    std::string(HOST) + ":" + std::to_string(port) +
-                    "\r\n"
-                    "Content-Encoding: gzip\r\n"
-                    "Connection: close\r\n"
-                    "\r\n" +
-                    gz;
-
-  std::string response;
-  ASSERT_TRUE(send_request(5, req, &response, port));
-
-  // Decompressed bytes delivered to the handler must not exceed LIMIT.
-  EXPECT_LE(total, LIMIT);
-}
-#endif
 #endif
 
 // Some servers misuse Content-Encoding to advertise a character set, e.g.
@@ -23223,6 +23021,36 @@ TEST(RepeatedFieldLinesTest, AcceptEncodingCombinesEveryFieldLine) {
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
 }
 #endif
+
+// RFC 9112 6.3: whatever follows a request with neither Content-Length nor
+// Transfer-Encoding is not its body.
+TEST(ServerRequestParsingTest, BytesAfterUnframedRequestAreNotItsBody) {
+  Server svr;
+  svr.set_payload_max_length(8);
+  svr.Post("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  std::string resp;
+  ASSERT_TRUE(send_request(1,
+                           "POST /test HTTP/1.1\r\n"
+                           "Host: localhost\r\n"
+                           "Connection: close\r\n"
+                           "\r\n" +
+                               std::string(16, 'X'),
+                           &resp, port));
+  EXPECT_EQ("HTTP/1.1 200 OK", resp.substr(0, resp.find("\r\n")));
+}
 
 #ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {

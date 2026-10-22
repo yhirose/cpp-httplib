@@ -10398,15 +10398,6 @@ inline bool has_framed_body(const Request &req) {
          req.get_header_value_u64("Content-Length") > 0;
 }
 
-inline bool is_connection_persistent(const Request &req) {
-  if (has_header_token(req.headers, "Connection", "close")) { return false; }
-  if (req.version == "HTTP/1.0" &&
-      !has_header_token(req.headers, "Connection", "keep-alive")) {
-    return false;
-  }
-  return true;
-}
-
 inline bool expect_content(const Request &req) {
   if (req.method == "POST" || req.method == "PUT" || req.method == "PATCH" ||
       req.method == "DELETE") {
@@ -14319,38 +14310,10 @@ inline bool Server::read_content_core(
   }
 
   // RFC 9112 §6: no Transfer-Encoding and no Content-Length means no body.
-  // For non-SSL builds we still scan non-persistent connections for stray
-  // body bytes so the payload limit is enforced (413). On keep-alive,
-  // pending bytes may be the next request (issue #2450), so skip.
-#if !defined(CPPHTTPLIB_SSL_ENABLED)
-  if (!req.has_header("Content-Length") &&
-      !detail::is_chunked_transfer_encoding(req.headers)) {
-    if (!detail::is_connection_persistent(req) && payload_max_length_ > 0 &&
-        payload_max_length_ < (std::numeric_limits<size_t>::max)()) {
-      auto has_data = strm.is_readable();
-      if (!has_data) {
-        auto s = strm.socket();
-        if (s != INVALID_SOCKET) {
-          has_data = detail::select_read(s, 0, 0) > 0;
-        }
-      }
-      if (has_data) {
-        // Route through the same decompressing reader used by the
-        // length-framed and chunked paths below, so payload_max_length_ is
-        // enforced on the decompressed size here too instead of only on the
-        // compressed wire bytes.
-        return detail::read_content(strm, req, payload_max_length_, res.status,
-                                    nullptr, out, true);
-      }
-    }
-    return true;
-  }
-#else
   if (!req.has_header("Content-Length") &&
       !detail::is_chunked_transfer_encoding(req.headers)) {
     return true;
   }
-#endif
 
   // A second read would start where the first one stopped, or in the next
   // request.
