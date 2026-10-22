@@ -4019,6 +4019,7 @@ struct ChunkedDecoder {
   char line_buf[64];
   size_t last_chunk_total = 0;
   size_t last_chunk_offset = 0;
+  size_t overhead = 0;
 
   explicit ChunkedDecoder(Stream &s);
 
@@ -16112,6 +16113,15 @@ inline ssize_t ChunkedDecoder::read_payload(char *buf, size_t len,
     for (; p < eol; ++p) {
       if (!is_space_or_tab(*p) && !fields::is_field_vchar(*p)) { return -1; }
     }
+
+    // The bytes around the data are no payload, so they are counted on their
+    // own, as Go does: each chunk may spend 16 bytes and twice its data on
+    // them, which lets a stream send a byte at a time, and what goes past that
+    // in padding, leading zeros and extensions builds up to one header field.
+    overhead += lr.size() + 2;
+    overhead = overhead > 16 ? overhead - 16 : 0;
+    overhead = chunk_len > overhead / 2 ? 0 : overhead - 2 * chunk_len;
+    if (overhead > CPPHTTPLIB_HEADER_MAX_LENGTH) { return -1; }
 
     if (chunk_len == 0) {
       chunk_remaining = 0;

@@ -8073,6 +8073,23 @@ TEST_F(ServerTest, RejectsControlCharacterInChunkExtension) {
             "b\r\ndech\r\nf\r\nunked post body\r\n0\r\n\r\n");
 }
 
+// The bytes around chunk data are no payload, so they cannot ride on the
+// payload limit
+TEST_F(ServerTest, RejectsChunkOverheadPastItsLimit) {
+  auto pad = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 2, 'x');
+  auto zeros = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 2, '0');
+  auto spaces = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 2, ' ');
+  for (const auto &size_line : {"1;" + pad, zeros + "1", "1" + spaces}) {
+    SCOPED_TRACE(size_line.substr(0, 2));
+    std::string body;
+    for (auto c : std::string("dechunked post body")) {
+      body += size_line + "\r\n" + c + "\r\n";
+    }
+    body += "0\r\n\r\n";
+    expect_chunked_body_rejected(cli_, body.c_str());
+  }
+}
+
 TEST_F(ServerTest, AcceptsChunkExtension) {
   expect_chunked_body_status(cli_,
                              "4;name=value\r\ndech\r\n"
@@ -11123,6 +11140,37 @@ TEST(HeadersOrderTest, SentFieldsKeepTheirOrder) {
   EXPECT_EQ(2U, res->get_header_value_count("Set-Cookie"));
   EXPECT_EQ("first=1", res->get_header_value("Set-Cookie", "", 0));
   EXPECT_EQ("second=2", res->get_header_value("Set-Cookie", "", 1));
+}
+
+// A stream may send a byte at a time with a small extension on each chunk,
+// however long it runs
+TEST(ChunkOverheadTest, AcceptsSmallOverheadOnEveryChunk) {
+  Server svr;
+  svr.Post("/count", [](const Request &req, Response &res) {
+    res.set_content(std::to_string(req.body.size()), "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_LT(0, port);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  std::string req = std::string("POST /count HTTP/1.1\r\nHost: ") + HOST +
+                    "\r\nTransfer-Encoding: chunked\r\n"
+                    "Connection: close\r\n\r\n";
+  for (auto i = 0; i < 4096; i++) {
+    req += "1;a=b\r\nx\r\n";
+  }
+  req += "0\r\n\r\n";
+
+  std::string res;
+  ASSERT_TRUE(send_request(5, req, &res, port));
+  EXPECT_EQ(0u, res.find("HTTP/1.1 200 OK\r\n"));
+  EXPECT_EQ("4096", res.substr(res.size() - 4));
 }
 
 TEST(ServerResponseSplittingTest, ChunkedTrailerCRLFInjection) {
