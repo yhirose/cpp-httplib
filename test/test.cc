@@ -8076,9 +8076,11 @@ TEST_F(ServerTest, RejectsControlCharacterInChunkExtension) {
 // The bytes around chunk data are no payload, so they cannot ride on the
 // payload limit
 TEST_F(ServerTest, RejectsChunkOverheadPastItsLimit) {
-  auto pad = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 2, 'x');
-  auto zeros = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 2, '0');
-  auto spaces = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 2, ' ');
+  // Small enough that the whole request is sent before the server turns it
+  // down, yet past the limit by the last chunks
+  auto pad = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 16, 'x');
+  auto zeros = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 16, '0');
+  auto spaces = std::string(CPPHTTPLIB_HEADER_MAX_LENGTH / 16, ' ');
   for (const auto &size_line : {"1;" + pad, zeros + "1", "1" + spaces}) {
     SCOPED_TRACE(size_line.substr(0, 2));
     std::string body;
