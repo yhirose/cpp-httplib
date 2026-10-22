@@ -23052,7 +23052,6 @@ TEST(ServerRequestParsingTest, BytesAfterUnframedRequestAreNotItsBody) {
   EXPECT_EQ("HTTP/1.1 200 OK", resp.substr(0, resp.find("\r\n")));
 }
 
-#ifndef _WIN32
 TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
   Server svr;
 
@@ -23122,7 +23121,6 @@ TEST(ServerRequestParsingTest, RequestWithoutContentLengthOrTransferEncoding) {
                            &resp));
   EXPECT_TRUE(resp.find("HTTP/1.1 200 OK") == 0);
 }
-#endif
 
 //==============================================================================
 // open_stream() Tests
