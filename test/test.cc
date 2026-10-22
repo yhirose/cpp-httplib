@@ -15808,9 +15808,9 @@ TEST(SSLClientTest, ServerCertificateVerificationError_Online) {
   // OpenSSL: X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT (18)
   // Mbed TLS: MBEDTLS_X509_BADCERT_NOT_TRUSTED or similar flags
   EXPECT_NE(0UL, res.ssl_backend_error());
+  EXPECT_EQ(static_cast<int>(tls::ErrorCode::CertVerifyFailed),
+            res.ssl_error());
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  // For OpenSSL, ssl_error is 0 for verification errors
-  EXPECT_EQ(0, res.ssl_error());
 #if !defined(_WIN32) ||                                                        \
     defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
   // On non-Windows or when Windows Schannel is disabled, the error comes
@@ -15834,9 +15834,9 @@ TEST(SSLClientTest, ServerHostnameVerificationError_Online) {
 
   // Verify backend error is captured for hostname verification failure
   EXPECT_NE(0UL, res.ssl_backend_error());
+  EXPECT_EQ(static_cast<int>(tls::ErrorCode::HostnameMismatch),
+            res.ssl_error());
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  // For OpenSSL, ssl_error is 0 for verification errors
-  EXPECT_EQ(0, res.ssl_error());
 #if !defined(_WIN32) ||                                                        \
     defined(CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE)
   // On non-Windows or when Windows Schannel is disabled, the error comes
@@ -16250,6 +16250,55 @@ TEST(SSLClientServerTest, ClientCertStillRequiredAfterVerifyCallbackCleared) {
         svr.tls_context(), [](const tls::VerifyContext &) { return true; }));
     ASSERT_TRUE(tls::set_verify_callback(svr.tls_context(), nullptr));
   });
+}
+
+// The client verifies the server certificate during the handshake, so a
+// server that fails the check never gets the client certificate, even when a
+// verifier of the client's own accepts it
+TEST(SSLClientServerTest, ClientCertNotSentToUnverifiedServer) {
+  struct Case {
+    const char *trusted_ca;
+    const char *host;
+    Error error;
+  };
+  // cert2.pem names localhost: the first client does not trust it, and the
+  // second trusts it but asks for another name
+  for (const auto &c :
+       {Case{CLIENT_CA_CERT_FILE, "localhost", Error::SSLServerVerification},
+        Case{SERVER_CERT2_FILE, "example.com",
+             Error::SSLServerHostnameVerification}}) {
+    for (auto with_verifier : {false, true}) {
+      SCOPED_TRACE(std::string(c.host) + (with_verifier ? " +verifier" : ""));
+      SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE,
+                    CLIENT_CA_CERT_FILE);
+      ASSERT_TRUE(svr.is_valid());
+      std::atomic<bool> got_client_cert{false};
+      ASSERT_TRUE(tls::set_verify_callback(svr.tls_context(),
+                                           [&](const tls::VerifyContext &) {
+                                             got_client_cert = true;
+                                             return true;
+                                           }));
+      auto port = svr.bind_to_any_port("127.0.0.1");
+      ASSERT_LT(0, port);
+      thread t = thread([&] { svr.listen_after_bind(); });
+      svr.wait_until_ready();
+
+      SSLClient cli(c.host, port, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+      cli.set_hostname_addr_map({{c.host, "127.0.0.1"}});
+      cli.set_ca_cert_path(c.trusted_ca);
+      if (with_verifier) {
+        cli.set_server_certificate_verifier(
+            [](const tls::VerifyContext &) { return true; });
+      }
+      auto res = cli.Get("/");
+      EXPECT_FALSE(res);
+      EXPECT_EQ(c.error, res.error());
+
+      svr.stop();
+      t.join();
+      EXPECT_FALSE(got_client_cert);
+    }
+  }
 }
 
 void UpdateCertsPemWithClientCA(SSLServer &svr) {

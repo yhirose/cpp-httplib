@@ -11330,6 +11330,17 @@ inline bool setup_client_tls_session(
     return false;
   };
 
+  // A TLS failure, whose verification codes name the Error too
+  auto fail_tls = [&](ErrorCode code, uint64_t backend_error) {
+    auto error = Error::SSLConnection;
+    if (code == ErrorCode::CertVerifyFailed) {
+      error = Error::SSLServerVerification;
+    } else if (code == ErrorCode::HostnameMismatch) {
+      error = Error::SSLServerHostnameVerification;
+    }
+    return fail(error, static_cast<int>(code), backend_error);
+  };
+
   if (!ctx) {
     session = nullptr;
     return fail(Error::SSLConnection, 0, 0);
@@ -11345,31 +11356,34 @@ inline bool setup_client_tls_session(
                            !options.server_certificate_verifier_set;
 #endif
 
+  // The chain, and a host name, are verified during the handshake, so that a
+  // server failing them never gets to see a client certificate. Unless
+  // Schannel verifies the chain instead, this holds for IP hosts too, whose
+  // identity is checked after the handshake by verify_hostname().
+  auto verify_in_handshake =
+      server_certificate_verification && !windows_verifies_chain;
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  // A session verifier may accept a certificate the built-in check rejects,
+  // and runs only after the handshake
+  verify_in_handshake = verify_in_handshake && !options.session_verifier;
+#endif
+
   {
     std::unique_lock<std::mutex> guard;
     if (options.ctx_mutex) {
       guard = std::unique_lock<std::mutex>(*options.ctx_mutex);
     }
-#if defined(CPPHTTPLIB_MBEDTLS_SUPPORT) || defined(CPPHTTPLIB_WOLFSSL_SUPPORT)
-    // Mbed TLS and wolfSSL need the verification mode set explicitly, on the
-    // context, so under the same lock; OpenSSL uses SSL_VERIFY_NONE and does
-    // all verification post-handshake. Unless Schannel verifies the chain
-    // instead, chain verification happens during the handshake even for IP
-    // hosts; the certificate identity is verified post-handshake via
-    // verify_hostname().
-    set_verify_client(ctx, server_certificate_verification &&
-                               !windows_verifies_chain);
-#endif
+    // The mode is set on the context, so under the same lock
+    set_verify_client(ctx, verify_in_handshake);
     session = create_session(ctx, sock);
   }
   if (!session) { return fail(Error::SSLConnection, 0, get_error()); }
 
   // RFC 6066: SNI must not be set for IP addresses; skip it for IP hosts, so
-  // their identity is checked post-handshake below instead. On Mbed TLS and
-  // wolfSSL, set_sni also drives handshake-time hostname verification, so
-  // options.server_hostname_verification is threaded through here.
+  // their identity is checked post-handshake below instead.
   if (!is_ip_address(host)) {
-    if (!set_sni(session, host.c_str(), options.server_hostname_verification)) {
+    if (!set_sni(session, host.c_str(),
+                 verify_in_handshake && options.server_hostname_verification)) {
       return fail(Error::SSLConnection, 0, get_error());
     }
   }
@@ -11377,13 +11391,7 @@ inline bool setup_client_tls_session(
   TlsError tls_err;
   if (!connect_nonblocking(session, sock, timeout_sec, timeout_usec,
                            &tls_err)) {
-    auto error = Error::SSLConnection;
-    if (tls_err.code == ErrorCode::CertVerifyFailed) {
-      error = Error::SSLServerVerification;
-    } else if (tls_err.code == ErrorCode::HostnameMismatch) {
-      error = Error::SSLServerHostnameVerification;
-    }
-    return fail(error, static_cast<int>(tls_err.code), tls_err.backend_code);
+    return fail_tls(tls_err.code, tls_err.backend_code);
   }
 
   auto verification_status = SSLVerifierResponse::NoDecisionMade;
@@ -11400,14 +11408,14 @@ inline bool setup_client_tls_session(
     if (!windows_verifies_chain) {
       auto verify_result = get_verify_result(session);
       if (verify_result != 0) {
-        return fail(Error::SSLServerVerification, 0,
-                    static_cast<uint64_t>(verify_result));
+        return fail_tls(ErrorCode::CertVerifyFailed,
+                        static_cast<uint64_t>(verify_result));
       }
     }
 
     auto server_cert = get_peer_cert(session);
     if (!server_cert) {
-      return fail(Error::SSLServerVerification, 0, get_error());
+      return fail_tls(ErrorCode::CertVerifyFailed, get_error());
     }
     auto cert_guard = detail::scope_exit([&] { free_cert(server_cert); });
 
@@ -11416,8 +11424,7 @@ inline bool setup_client_tls_session(
     // hostname is bound during the handshake.
     if (options.server_hostname_verification) {
       if (!verify_hostname(server_cert, host.c_str())) {
-        return fail(Error::SSLServerHostnameVerification, 0,
-                    hostname_mismatch_code());
+        return fail_tls(ErrorCode::HostnameMismatch, hostname_mismatch_code());
       }
     }
 
@@ -11432,7 +11439,7 @@ inline bool setup_client_tls_session(
           !verify_cert_with_windows_schannel(
               der, host, options.server_hostname_verification, wincrypt_error,
               session)) {
-        return fail(Error::SSLServerVerification, 0, wincrypt_error);
+        return fail_tls(ErrorCode::CertVerifyFailed, wincrypt_error);
       }
     }
 #endif
@@ -19715,6 +19722,30 @@ inline ErrorCode map_ssl_error(int ssl_error, int &out_errno) {
   }
 }
 
+// Fills in a failed SSL_connect(). One that the server certificate's
+// verification stopped reports the verify result, as the other backends and
+// a check after the handshake do.
+inline void fill_connect_error(SSL *ssl, int ret, TlsError &err) {
+  auto ssl_err = SSL_get_error(ssl, ret);
+  auto error = ERR_get_error();
+  err.code = map_ssl_error(ssl_err, err.sys_errno);
+  err.backend_code = error;
+  if (ssl_err != SSL_ERROR_SSL || ERR_GET_LIB(error) != ERR_LIB_SSL ||
+      ERR_GET_REASON(error) != SSL_R_CERTIFICATE_VERIFY_FAILED) {
+    return;
+  }
+  // A certificate only a verify callback turned down carries no verdict of
+  // its own, and fails as any other handshake does
+  auto verify_result = SSL_get_verify_result(ssl);
+  if (verify_result == X509_V_OK || verify_result == X509_V_ERR_UNSPECIFIED) {
+    return;
+  }
+  err.code = verify_result == X509_V_ERR_HOSTNAME_MISMATCH
+                 ? ErrorCode::HostnameMismatch
+                 : ErrorCode::CertVerifyFailed;
+  err.backend_code = static_cast<uint64_t>(verify_result);
+}
+
 // Helper: Create client CA list from PEM string
 // Returns a new STACK_OF(X509_NAME)* or nullptr on failure
 // Caller takes ownership of returned list
@@ -19790,7 +19821,14 @@ inline int openssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   verify_ctx.error_string =
       (error != X509_V_OK) ? X509_verify_cert_error_string(error) : nullptr;
 
-  return run_verify_callback(*callback, verify_ctx) ? 1 : 0;
+  auto accepted = run_verify_callback(*callback, verify_ctx);
+  // A client verifying the server during the handshake, which is what
+  // set_verify_client(ctx, true) asks for there, keeps the built-in verdict
+  if (!SSL_is_server(ssl) &&
+      (SSL_get_verify_mode(ssl) & SSL_VERIFY_FAIL_IF_NO_PEER_CERT)) {
+    accepted = accepted && preverify_ok;
+  }
+  return accepted ? 1 : 0;
 }
 
 // Sets the verify mode from whether the peer's certificate is required and
@@ -20066,14 +20104,18 @@ inline void free_session(session_t session) {
 }
 
 inline bool set_sni(session_t session, const char *hostname,
-                    bool /*verify_hostname*/) {
+                    bool verify_hostname) {
   if (!session || !hostname) return false;
 
   auto ssl = static_cast<SSL *>(session);
 
-  // Set SNI (Server Name Indication) only - does not enable verification.
-  // OpenSSL never binds identity checking to SNI (that happens post-
-  // handshake in setup_client_tls_session()), so verify_hostname is unused.
+  // The handshake's chain verification then checks the name as well
+  if (verify_hostname &&
+      X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), hostname,
+                                  strlen(hostname)) != 1) {
+    return false;
+  }
+
 #if defined(OPENSSL_IS_BORINGSSL)
   return SSL_set_tlsext_host_name(ssl, hostname) == 1;
 #else
@@ -20093,9 +20135,7 @@ inline TlsError connect(session_t session) {
   if (ret == 1) {
     err.code = ErrorCode::Success;
   } else {
-    auto ssl_err = SSL_get_error(ssl, ret);
-    err.code = impl::map_ssl_error(ssl_err, err.sys_errno);
-    err.backend_code = ERR_get_error();
+    impl::fill_connect_error(ssl, ret, err);
   }
   return err;
 }
@@ -20151,10 +20191,7 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
       break;
     default: break;
     }
-    if (err) {
-      err->code = impl::map_ssl_error(ssl_err, err->sys_errno);
-      err->backend_code = ERR_get_error();
-    }
+    if (err) { impl::fill_connect_error(ssl, res, *err); }
     return false;
   }
   if (err) { err->code = ErrorCode::Success; }
@@ -22296,7 +22333,13 @@ inline int wolfssl_verify_callback(int preverify_ok,
     verify_ctx.error_string = nullptr;
   }
 
-  bool accepted = run_verify_callback(*callback, verify_ctx);
+  auto accepted = run_verify_callback(*callback, verify_ctx);
+  // A client verifying the server during the handshake, which is what
+  // set_verify_client(ctx, true) asks for there, keeps the built-in verdict
+  if (!wolfSSL_is_server(ssl) &&
+      (wolfSSL_get_verify_mode(ssl) & WOLFSSL_VERIFY_FAIL_IF_NO_PEER_CERT)) {
+    accepted = accepted && preverify_ok;
+  }
   return accepted ? 1 : 0;
 }
 

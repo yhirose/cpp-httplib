@@ -108,7 +108,7 @@ cli.enable_server_hostname_verification(false);
 
 When SSL operations fail, cpp-httplib provides detailed error information through `ssl_error()` and `ssl_backend_error()`:
 
-- `ssl_error()` - Returns the TLS-level error as a backend-independent `httplib::tls::ErrorCode` value (e.g., `Fatal`, `CertVerifyFailed`), cast to `int`. `CertVerifyFailed` comes from Mbed TLS and wolfSSL. OpenSSL checks the chain and the host name after the handshake, so a failure there leaves this `0`
+- `ssl_error()` - Returns the TLS-level error as a backend-independent `httplib::tls::ErrorCode` value (e.g., `Fatal`, `CertVerifyFailed`), cast to `int`. A server certificate that the built-in verification rejects reports `CertVerifyFailed`, or `HostnameMismatch` when only its name does not match
 - `ssl_backend_error()` - Returns the backend-specific error code (e.g., `ERR_get_error()` for OpenSSL/wolfSSL, return value for Mbed TLS). With OpenSSL, a certificate verification failure reports the verify result (`X509_V_ERR_*`) here instead. On Windows, when CryptoAPI verifies the chain, a failure there reports the CryptoAPI error code here
 
 A request that fails after the handshake with `Error::Read` or `Error::Write` also carries the TLS error behind it in both values, such as a TLS 1.3 "certificate required" alert from the server. Both values are reset for each request.
