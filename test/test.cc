@@ -12641,6 +12641,32 @@ TEST(MountTest, AliasedPathDoesNotPassPreRoutingGuard) {
   }
 }
 
+TEST(UserDefinedMIMETypeMappingTest, IgnoresCaseAndLeadingDot) {
+  Server svr;
+  svr.set_mount_point("/", "./www");
+  svr.set_file_extension_and_mimetype_mapping(".abcde", "text/abcde");
+  svr.set_file_extension_and_mimetype_mapping("HTML", "text/x-html");
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/dir/test.abcde");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
+
+  res = cli.Get("/dir/test.html");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("text/x-html", res->get_header_value("Content-Type"));
+}
+
 #ifdef _WIN32
 // Issue #2435: mmap::open() must succeed even when another handle holds
 // the file open for writing (e.g. an active log file).

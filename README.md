@@ -415,7 +415,7 @@ svr.set_file_extension_and_mimetype_mapping("cpp", "text/x-c");
 svr.set_file_extension_and_mimetype_mapping("hh", "text/x-h");
 ```
 
-Extensions match regardless of case, so `photo.JPG` is served as `image/jpeg`. A user mapping is looked up by the exact extension first, then by the extension in lowercase.
+Extensions match regardless of case, so `photo.JPG` is served as `image/jpeg`. The extension of a user mapping can be given in any case, with or without a leading `.`.
 
 The following are built-in mappings:
 

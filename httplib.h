@@ -7748,13 +7748,10 @@ inline std::string
 find_content_type(const std::string &path,
                   const std::map<std::string, std::string> &user_data,
                   const std::string &default_content_type) {
-  auto ext = file_extension(path);
+  // Extensions are matched regardless of case, as web servers do
+  auto ext = case_ignore::to_lower(file_extension(path));
 
-  // Extensions are matched regardless of case, as web servers do, with an
-  // exact match to a user mapping first
-  auto lower_ext = case_ignore::to_lower(ext);
   auto it = user_data.find(ext);
-  if (it == user_data.end()) { it = user_data.find(lower_ext); }
   if (it != user_data.end()) { return it->second; }
 
   static const struct {
@@ -7813,7 +7810,7 @@ find_content_type(const std::string &path,
   };
 
   for (const auto &t : types) {
-    if (lower_ext == t.ext) { return t.type; }
+    if (ext == t.ext) { return t.type; }
   }
   return default_content_type;
 }
@@ -13736,7 +13733,10 @@ inline bool Server::remove_mount_point(const std::string &mount_point) {
 inline Server &
 Server::set_file_extension_and_mimetype_mapping(const std::string &ext,
                                                 const std::string &mime) {
-  file_extension_and_mimetype_map_[ext] = mime;
+  // Keyed as find_content_type() looks it up
+  auto key = detail::case_ignore::to_lower(ext);
+  if (!key.empty() && key[0] == '.') { key.erase(0, 1); }
+  file_extension_and_mimetype_map_[key] = mime;
   return *this;
 }
 
