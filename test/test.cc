@@ -700,6 +700,12 @@ TEST(IsValidPathTest, RejectsSegmentsEndingInDotOrSpace) {
   }
 }
 
+TEST(IsValidPathTest, RejectsStreamNames) {
+  for (auto path : {"/a.txt::$DATA", "/a.txt:Zone.Identifier", "/dir:x/a"}) {
+    EXPECT_FALSE(detail::is_valid_path(path)) << path;
+  }
+}
+
 TEST(CanCompressContentTypeTest, ComparesWholeTypes) {
   EXPECT_TRUE(detail::can_compress_content_type("application/json"));
   EXPECT_TRUE(detail::can_compress_content_type("text/plain; charset=utf-8"));
@@ -12642,7 +12648,8 @@ TEST(MountTest, AliasedPathDoesNotPassPreRoutingGuard) {
   for (auto path :
        {"/./dir/test.html", "/dir/./test.html", "//dir/test.html",
         "/dir//test.html", "/dir/../dir/test.html", "/%2e/dir/test.html",
-        "/dir/test.html.", "/dir/test.html%20"}) {
+        "/dir/test.html.", "/dir/test.html%20", "/dir/test.html::$DATA",
+        "/dir/test.html%3A%3A$DATA"}) {
     SCOPED_TRACE(path);
     auto res = cli.Get(path);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
