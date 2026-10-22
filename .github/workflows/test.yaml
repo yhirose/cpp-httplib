@@ -319,10 +319,9 @@ jobs:
        github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.test_linux == 'true')
     name: issue-2431 repro (Linux + ASAN)
-    # Bound the whole job in case anything in the test harness hangs
-    # unexpectedly. With the fixture in place a normal run is well under
-    # a minute either way (ASAN abort on broken HEAD, clean pass on fix).
-    timeout-minutes: 5
+    # Loose, because apt on the runner mirror can crawl for minutes; the test
+    # step has its own tight limit.
+    timeout-minutes: 15
     env:
       DNS_FIXTURE_PORT: "15353"
       DNS_FIXTURE_DELAY: "3"
@@ -370,6 +369,8 @@ jobs:
       - name: build test binary
         run: cd test && make test
       - name: run GetAddrInfoAsyncCancelTest
+        # A normal run takes about 80s.
+        timeout-minutes: 3
         run: |
           cd test
           ARCH=$(uname -m)
