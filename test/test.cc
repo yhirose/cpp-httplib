@@ -18343,6 +18343,83 @@ TEST(SSLClientTest, EmptyCustomCaKeepsSystemCasOut) {
 }
 #endif
 
+// A TLS setting changed between requests applies to the next one, not just to
+// the next connection
+TEST(SSLClientTest, TlsSettingChangeClosesKeptAliveConnection) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.Get("/", [](const Request &req, Response &res) {
+    res.set_content(std::to_string(req.remote_port), "text/plain");
+  });
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  ASSERT_LT(0, port);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli("127.0.0.1", port);
+  cli.set_keep_alive(true);
+  cli.set_ca_cert_path(CLIENT_CA_CERT_FILE); // does not trust cert2.pem
+  cli.enable_server_certificate_verification(false);
+
+  // The port the request went out from, so a new one means a new connection
+  auto client_port = [&] {
+    auto res = cli.Get("/");
+    return res ? res->body : std::string();
+  };
+  auto last = client_port();
+  ASSERT_FALSE(last.empty());
+
+  // Setting a value it already has keeps the connection
+  cli.enable_server_certificate_verification(false);
+  cli.enable_server_hostname_verification(true);
+  EXPECT_EQ(last, client_port());
+
+  cli.enable_server_certificate_verification(true);
+  auto res = cli.Get("/");
+  EXPECT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
+
+  std::string ca;
+  read_file(SERVER_CERT2_FILE, ca);
+  cli.load_ca_cert_store(ca.c_str(), ca.size());
+  last = client_port();
+  ASSERT_FALSE(last.empty());
+
+  std::vector<std::function<void()>> setters = {
+      [&] { cli.enable_server_hostname_verification(false); },
+      [&] { cli.load_ca_cert_store(ca.c_str(), ca.size()); },
+      [&] {
+        cli.set_ca_cert_store(tls::create_ca_store(ca.c_str(), ca.size()));
+      },
+      [&] {
+        cli.set_server_certificate_verifier(
+            [](const tls::VerifyContext &) { return true; });
+      },
+      [&] {
+        cli.set_session_verifier(
+            [](tls::session_t) { return SSLVerifierResponse::NoDecisionMade; });
+      },
+  };
+  for (const auto &setter : setters) {
+    setter();
+    auto next = client_port();
+    ASSERT_FALSE(next.empty());
+    EXPECT_NE(last, next);
+    last = next;
+  }
+
+  cli.set_session_verifier(
+      [](tls::session_t) { return SSLVerifierResponse::CertificateRejected; });
+  auto handle = cli.open_stream("GET", "/");
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(Error::SSLServerVerification, handle.error);
+}
+
 // A PEM given to create_ca_store() needs no NUL after it
 TEST(SSLClientTest, CreateCaStoreFromPemWithoutNul) {
   std::string pem;

@@ -102,7 +102,7 @@ cli.enable_server_hostname_verification(false);
 ```
 
 > [!NOTE]
-> The CA certificates are loaded when the client makes its first connection. Changing `set_ca_cert_path()` or `enable_system_ca()` after that has no effect, so make the settings before the first request, or use a new client. `set_ca_cert_store()` and `load_ca_cert_store()` take effect at once. `WebSocketClient` works the same way.
+> The CA certificates are loaded when the client makes its first connection. Changing `set_ca_cert_path()` or `enable_system_ca()` after that has no effect, so make the settings before the first request, or use a new client. `set_ca_cert_store()` and `load_ca_cert_store()` take effect at once. `WebSocketClient` works the same way. On `Client` and `SSLClient`, a setter that changes a TLS setting also closes a connection kept alive under the old one, so the next request connects again.
 
 ### SSL Error Handling
 

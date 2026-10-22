@@ -3000,6 +3000,15 @@ protected:
   void close_socket(Socket &socket);
   void disconnect(bool gracefully);
 
+  // Under socket_mutex_: whether the connection kept alive can take another
+  // request. One the peer has closed, or one set up under TLS settings changed
+  // since, is closed instead.
+  bool socket_reusable();
+
+  // TLS settings apply as a connection is set up, so a change makes the
+  // connection kept alive unfit for the next request.
+  void tls_settings_changed() { tls_settings_version_++; }
+
   std::string make_request_target(const Request &req) const;
   bool process_request(Stream &strm, Request &req, Response &res,
                        bool close_connection, Error &error);
@@ -3026,6 +3035,9 @@ protected:
   size_t socket_requests_in_flight_ = 0;
   std::thread::id socket_requests_are_from_thread_ = std::thread::id();
   bool socket_should_be_closed_when_request_is_done_ = false;
+  size_t socket_tls_settings_version_ = 0;
+
+  std::atomic<size_t> tls_settings_version_{0};
 
   // Hostname to connection target map. The value is an IP literal or another
   // hostname; only the connection target changes, never the identity.
@@ -15546,6 +15558,7 @@ inline bool ClientImpl::create_and_connect_socket(Socket &socket,
 }
 
 inline bool ClientImpl::ensure_socket_connection(Socket &socket, Error &error) {
+  socket_tls_settings_version_ = tls_settings_version_;
   return create_and_connect_socket(socket, error);
 }
 
@@ -15593,6 +15606,28 @@ inline void ClientImpl::disconnect(bool gracefully) {
   shutdown_ssl(socket_, gracefully);
   shutdown_socket(socket_);
   close_socket(socket_);
+}
+
+inline bool ClientImpl::socket_reusable() {
+  if (!socket_.is_open()) { return false; }
+
+  auto is_alive = detail::is_socket_alive(socket_.sock);
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  if (is_alive && is_ssl() && tls::is_peer_closed(socket_.ssl, socket_.sock)) {
+    is_alive = false;
+  }
+#endif
+  if (!is_alive) {
+    // Peer seems gone — non-graceful shutdown to avoid SIGPIPE.
+    disconnect(/*gracefully=*/false);
+    return false;
+  }
+
+  if (is_ssl() && socket_tls_settings_version_ != tls_settings_version_) {
+    disconnect(/*gracefully=*/true);
+    return false;
+  }
+  return true;
 }
 
 inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
@@ -15672,25 +15707,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     // socket.
     socket_should_be_closed_when_request_is_done_ = false;
 
-    auto is_alive = false;
-    if (socket_.is_open()) {
-      is_alive = detail::is_socket_alive(socket_.sock);
-
-#ifdef CPPHTTPLIB_SSL_ENABLED
-      if (is_alive && is_ssl()) {
-        if (tls::is_peer_closed(socket_.ssl, socket_.sock)) {
-          is_alive = false;
-        }
-      }
-#endif
-
-      if (!is_alive) {
-        // Peer seems gone — non-graceful shutdown to avoid SIGPIPE.
-        disconnect(/*gracefully=*/false);
-      }
-    }
-
-    if (!is_alive) {
+    if (!socket_reusable()) {
       if (!ensure_socket_connection(socket_, error)) { return false; }
 
       {
@@ -15853,20 +15870,7 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   {
     std::lock_guard<std::mutex> guard(socket_mutex_);
 
-    auto is_alive = false;
-    if (socket_.is_open()) {
-      is_alive = detail::is_socket_alive(socket_.sock);
-#ifdef CPPHTTPLIB_SSL_ENABLED
-      if (is_alive && is_ssl()) {
-        if (tls::is_peer_closed(socket_.ssl, socket_.sock)) {
-          is_alive = false;
-        }
-      }
-#endif
-      if (!is_alive) { disconnect(/*gracefully=*/false); }
-    }
-
-    if (!is_alive) {
+    if (!socket_reusable()) {
       if (!ensure_socket_connection(socket_, handle.error)) {
         handle.response.reset();
         return handle;
@@ -18083,11 +18087,15 @@ inline void ClientImpl::set_proxy_digest_auth(const std::string &username,
 }
 
 inline void ClientImpl::enable_server_certificate_verification(bool enabled) {
+  if (server_certificate_verification_ == enabled) { return; }
   server_certificate_verification_ = enabled;
+  tls_settings_changed();
 }
 
 inline void ClientImpl::enable_server_hostname_verification(bool enabled) {
+  if (server_hostname_verification_ == enabled) { return; }
   server_hostname_verification_ = enabled;
+  tls_settings_changed();
 }
 
 inline void ClientImpl::enable_system_ca(bool enabled) {
@@ -19246,25 +19254,32 @@ inline void SSLClient::set_ca_cert_store(tls::ca_store_t ca_cert_store) {
     tls::free_ca_store(ca_cert_store);
   }
   custom_ca_loaded_ = true;
+  tls_settings_changed();
 }
 
 inline void
 SSLClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
   if (!ctx_) { return; }
   server_certificate_verifier_ = verifier;
-  // Under the lock that creating a session from ctx_ takes
-  std::lock_guard<std::mutex> guard(ctx_mutex_);
-  tls::set_verify_callback(ctx_, std::move(verifier));
+  {
+    // Under the lock that creating a session from ctx_ takes
+    std::lock_guard<std::mutex> guard(ctx_mutex_);
+    tls::set_verify_callback(ctx_, std::move(verifier));
+  }
+  tls_settings_changed();
 }
 
 inline void SSLClient::set_session_verifier(
     std::function<SSLVerifierResponse(tls::session_t)> verifier) {
   session_verifier_ = std::move(verifier);
+  tls_settings_changed();
 }
 
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
 inline void SSLClient::enable_windows_certificate_verification(bool enabled) {
+  if (enable_windows_cert_verification_ == enabled) { return; }
   enable_windows_cert_verification_ = enabled;
+  tls_settings_changed();
 }
 #endif
 
@@ -19279,6 +19294,7 @@ inline void SSLClient::load_ca_cert_store(const char *ca_cert,
     tls::load_ca_pem(ctx_, ca_cert, size);
   }
   custom_ca_loaded_ = true;
+  tls_settings_changed();
 }
 
 inline bool SSLClient::load_certs() {
