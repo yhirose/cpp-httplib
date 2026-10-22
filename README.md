@@ -936,7 +936,7 @@ svr.set_read_timeout(std::chrono::seconds(5));
 svr.set_keep_alive_timeout(std::chrono::seconds(10));
 ```
 
-The read timeout bounds the request line and headers as a whole, and each read of a request body.
+The read timeout bounds the request line and headers as a whole, and each read of a request body. An error response closes the connection. Any other response to a request whose body was left unread, such as a redirect from a pre-routing handler, keeps the connection only when the rest of the body is at most `CPPHTTPLIB_UNREAD_PAYLOAD_MAX_LENGTH` (256KB, `0` for no limit) and arrives within the read timeout, since the server has to read past it first.
 
 ### Set maximum payload length for reading a request body
 

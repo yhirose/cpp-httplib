@@ -142,6 +142,12 @@
 #define CPPHTTPLIB_PAYLOAD_MAX_LENGTH (100 * 1024 * 1024) // 100MB
 #endif
 
+// How much of an unread request body the server skips to reuse the connection,
+// 0 for no limit
+#ifndef CPPHTTPLIB_UNREAD_PAYLOAD_MAX_LENGTH
+#define CPPHTTPLIB_UNREAD_PAYLOAD_MAX_LENGTH (256 * 1024) // 256KB
+#endif
+
 #ifndef CPPHTTPLIB_SSE_MAX_EVENT_LENGTH
 #define CPPHTTPLIB_SSE_MAX_EVENT_LENGTH (16 * 1024 * 1024) // 16MB
 #endif
@@ -15038,7 +15044,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
   // The read timeout bounds the request line and headers as a whole, so a
   // client sending them a byte at a time cannot hold the worker any longer.
-  strm.set_max_timeout(read_timeout_sec_ * 1000 + read_timeout_usec_ / 1000);
+  auto read_timeout_msec = read_timeout_sec_ * 1000 + read_timeout_usec_ / 1000;
+  strm.set_max_timeout(read_timeout_msec);
 
   // Connection has been closed on client
   if (!line_reader.getline()) { return false; }
@@ -15422,14 +15429,18 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   // keep-alive. Without framing there is no body to drain — reading would
   // consume the next request (issue #2450). If the response has committed the
   // connection to close, there is no next request to protect. A body read in
-  // part cannot be drained from where it stopped, so the connection closes.
+  // part cannot be drained from where it stopped, so the connection closes,
+  // as it does when the body is longer than the drain limit or does not
+  // arrive within the read timeout.
   if (!req.body_consumed_ && detail::has_framed_body(req) &&
       !detail::has_header_token(res.headers, "Connection", "close")) {
+    strm.set_max_timeout(read_timeout_msec);
     int dummy_status;
     if (req.body_read_started_ ||
         !detail::read_content(
-            strm, req, payload_max_length_, dummy_status, nullptr,
-            [](const char *, size_t, size_t, size_t) { return true; }, false)) {
+            strm, req, CPPHTTPLIB_UNREAD_PAYLOAD_MAX_LENGTH, dummy_status,
+            nullptr, [](const char *, size_t, size_t, size_t) { return true; },
+            false)) {
       connection_closed = true;
     }
   }

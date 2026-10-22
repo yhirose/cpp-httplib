@@ -29977,6 +29977,56 @@ TEST(RequestSmugglingTest, AbortedContentReaderClosesConnection) {
   }
 }
 
+// An error response closes the connection anyway, so the body is left unread
+// with a redirect, such as one to a login page.
+static void serve_redirects(Server &svr,
+                            const std::function<void(int)> &client) {
+  svr.set_pre_routing_handler([](const Request &, Response &res) {
+    res.set_redirect("/login");
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  client(port);
+}
+
+TEST(UnreadBodyDrainTest, LongerThanTheLimitClosesTheConnection) {
+  Server svr;
+  serve_redirects(svr, [](int port) {
+    auto body = std::string(CPPHTTPLIB_UNREAD_PAYLOAD_MAX_LENGTH + 1, 'x');
+    auto req = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
+               std::to_string(body.size()) + "\r\n\r\n" + body +
+               "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+
+    std::string resp;
+    ASSERT_TRUE(send_request(1, req, &resp, port));
+    ASSERT_EQ(0u, resp.find("HTTP/1.1 302"));
+    EXPECT_EQ(std::string::npos, resp.find("HTTP/1.1", 1));
+  });
+}
+
+TEST(UnreadBodyDrainTest, SlowerThanTheReadTimeoutClosesTheConnection) {
+  Server svr;
+  svr.set_read_timeout(0, 200000);
+  serve_redirects(svr, [](int port) {
+    // A byte every 100 ms keeps each read within the read timeout, but not the
+    // body as a whole, so the server closes and the bytes sent after that fail.
+    std::vector<std::string> parts{"POST / HTTP/1.1\r\nHost: localhost\r\n"
+                                   "Content-Length: 10\r\n\r\n"};
+    parts.resize(11, "x");
+    EXPECT_FALSE(send_request_in_parts(1, parts, nullptr, port));
+  });
+}
+
 TEST(RequestSmugglingTest, ContentLengthAndTransferEncodingRejected) {
   // RFC 9112 §6.3: A request with both Content-Length and Transfer-Encoding
   // must be rejected with 400 Bad Request.
