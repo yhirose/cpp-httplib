@@ -30415,6 +30415,36 @@ TEST(StreamRequestHeadTest, GoesThroughAPlainHttpProxy) {
   EXPECT_EQ("Basic cHVzZXI6cHBhc3M=", proxy_authz);
 }
 
+// In absolute-form the path follows the authority, so a path that does not
+// begin with '/' would make the proxy connect to another host
+TEST(ProxyAbsoluteFormTest, PathMustNotExtendTheAuthority) {
+  std::vector<std::string> targets;
+  no_proxy_test::ScopedServer proxy;
+  proxy.svr().Get(".*", [&](const Request &req, Response &res) {
+    targets.push_back(req.target);
+    res.set_content("ok", "text/plain");
+  });
+  proxy.listen();
+
+  Client cli("origin.example", 8080);
+  cli.set_proxy("127.0.0.1", proxy.port());
+  cli.set_basic_auth("user", "pass");
+
+  for (const auto &path : {"@evil.example/x", ".evil.example/x", ":81/x"}) {
+    auto res = cli.Get(path);
+    EXPECT_FALSE(res) << path;
+
+    auto handle = cli.open_stream("GET", path);
+    EXPECT_FALSE(handle.is_valid()) << path;
+  }
+  EXPECT_TRUE(targets.empty());
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res);
+  ASSERT_EQ(1u, targets.size());
+  EXPECT_EQ("http://origin.example:8080/x", targets[0]);
+}
+
 TEST(NoProxyTest, ExactHostnameBypasses) {
   ProxyAndTargetServers s;
   auto cli = make_client("example.com", s);
