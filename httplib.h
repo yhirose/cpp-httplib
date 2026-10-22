@@ -15202,7 +15202,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     }
   }
 
-  if (req.has_header("Range")) {
+  // RFC 9110 14.2: range handling is defined only for GET (and so for HEAD)
+  if ((req.method == "GET" || req.method == "HEAD") &&
+      req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
     if (!detail::parse_range_header(range_header_value, req.ranges)) {
       connection_closed = true;
