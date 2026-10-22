@@ -21986,24 +21986,23 @@ inline ca_store_t create_ca_store(const char *pem, size_t len) {
   if (!detail::ensure_mbedtls_psa_crypto()) { return nullptr; }
 #endif
 
+  if (!pem) { return nullptr; }
+
+  // mbedtls_x509_crt_parse expects null-terminated PEM
+  std::string pem_str(pem, len);
+
   auto *ca_chain = new (std::nothrow) mbedtls_x509_crt;
   if (!ca_chain) { return nullptr; }
 
   mbedtls_x509_crt_init(ca_chain);
 
-  // mbedtls_x509_crt_parse expects null-terminated PEM
-  int ret = mbedtls_x509_crt_parse(ca_chain,
-                                   reinterpret_cast<const unsigned char *>(pem),
-                                   len + 1); // +1 for null terminator
+  auto ret = mbedtls_x509_crt_parse(
+      ca_chain, reinterpret_cast<const unsigned char *>(pem_str.c_str()),
+      pem_str.size() + 1);
   if (ret != 0) {
-    // Try without +1 in case PEM is already null-terminated
-    ret = mbedtls_x509_crt_parse(
-        ca_chain, reinterpret_cast<const unsigned char *>(pem), len);
-    if (ret != 0) {
-      mbedtls_x509_crt_free(ca_chain);
-      delete ca_chain;
-      return nullptr;
-    }
+    mbedtls_x509_crt_free(ca_chain);
+    delete ca_chain;
+    return nullptr;
   }
 
   return static_cast<ca_store_t>(ca_chain);

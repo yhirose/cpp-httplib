@@ -18304,6 +18304,17 @@ TEST(SSLClientTest, EmptyCustomCaKeepsSystemCasOut) {
 }
 #endif
 
+// A PEM given to create_ca_store() needs no NUL after it
+TEST(SSLClientTest, CreateCaStoreFromPemWithoutNul) {
+  std::string pem;
+  read_file(SERVER_CERT2_FILE, pem);
+  auto buf = pem + "X";
+  auto store = tls::create_ca_store(buf.data(), pem.size());
+  EXPECT_TRUE(store != nullptr);
+  SSLClient cli("localhost");
+  cli.set_ca_cert_store(store);
+}
+
 // enable_system_ca(false) prevents system CA loading entirely
 TEST(SSLClientTest, DisableSystemCa_Online) {
   SSLClient cli("google.com");
