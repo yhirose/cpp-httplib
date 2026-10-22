@@ -28,10 +28,13 @@ jobs:
   test-arm32:
     name: ARM 32-bit (cross-compile)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Loose, because apt on the runner mirror can crawl for minutes; the build
+    # step has its own tight limit.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install cross compiler
         run: sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf
       - name: Build (ARM 32-bit)
+        timeout-minutes: 2
         run: arm-linux-gnueabihf-g++ -std=c++11 -Wall -Wextra -Wno-psabi -Werror -c -o /dev/null test/test_32bit_build.cpp
