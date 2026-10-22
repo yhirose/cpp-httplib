@@ -2394,10 +2394,11 @@ protected:
   // Runs the per-connection serving loop and stops an exception thrown by a
   // user callback from escaping the worker thread.
   //
-  // process_request() wraps only routing() in a try/catch. Content providers,
-  // the post-routing, error, logging and expect-100 handlers and WebSocket
-  // handlers all run outside it, and the task queue calls the job without a
-  // catch, so an exception from any of those would terminate the process.
+  // process_request() wraps only routing() and the hooks before a WebSocket
+  // upgrade in a try/catch. Content providers, the post-routing, error,
+  // logging and expect-100 handlers and WebSocket handlers all run outside
+  // it, and the task queue calls the job without a catch, so an exception
+  // from any of those would terminate the process.
   //
   // No 500 is possible here: by the time a content provider runs, the status
   // line and headers are already on the wire. Report it through the error
@@ -2484,6 +2485,9 @@ private:
 
   bool routing(Request &req, Response &res, Stream &strm,
                bool skip_pre_routing);
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+  bool handle_exception(Request &req, Response &res);
+#endif
   bool handle_file_request(Request &req, Response &res);
   bool check_if_not_modified(const Request &req, Response &res,
                              const std::string &etag, time_t mtime) const;
@@ -14660,6 +14664,17 @@ inline bool Server::listen_internal() {
   return ret;
 }
 
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+// Call from a catch block. The response is a 500 unless the exception handler
+// sets another status. Returns whether the exception handler ran.
+inline bool Server::handle_exception(Request &req, Response &res) {
+  res.status = StatusCode::InternalServerError_500;
+  if (!exception_handler_) { return false; }
+  exception_handler_(req, res, std::current_exception());
+  return true;
+}
+#endif
+
 inline bool Server::routing(Request &req, Response &res, Stream &strm,
                             bool skip_pre_routing) {
   if (!skip_pre_routing && pre_routing_handler_ &&
@@ -15233,27 +15248,22 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     auto close_if_answered =
         close_after_response || detail::has_framed_body(req);
 
-    if (pre_routing_handler_ &&
-        pre_routing_handler_(req, res) == HandlerResponse::Handled) {
-      if (res.status == -1) { res.status = StatusCode::OK_200; }
-      return write_response_with_content(strm, close_if_answered, req, res);
-    }
-    // Find matching WebSocket handler
-    for (const auto &entry : websocket_handlers_) {
-      if (entry.matcher->match(req)) {
+    const WebSocketHandlerEntry *ws_route = nullptr;
+    std::string selected_subprotocol;
+    auto answer_before_upgrade = [&]() -> bool {
+      if (pre_routing_handler_ &&
+          pre_routing_handler_(req, res) == HandlerResponse::Handled) {
+        return true;
+      }
+      for (const auto &entry : websocket_handlers_) {
+        if (!entry.matcher->match(req)) { continue; }
         req.matched_route = entry.matcher->pattern();
         if (pre_request_handler_ &&
             pre_request_handler_(req, res) == HandlerResponse::Handled) {
-          if (res.status == -1) { res.status = StatusCode::OK_200; }
-          return write_response_with_content(strm, close_if_answered, req, res);
+          return true;
         }
+        ws_route = &entry;
 
-        // Compute accept key
-        auto client_key = req.get_header_value("Sec-WebSocket-Key");
-        auto accept_key = detail::websocket_accept_key(client_key);
-
-        // Negotiate subprotocol
-        std::string selected_subprotocol;
         if (entry.sub_protocol_selector) {
           auto protocol_header = detail::get_combined_header_value(
               req.headers, "Sec-WebSocket-Protocol");
@@ -15273,57 +15283,78 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
             }
           }
         }
+        return false;
+      }
+      return false;
+    };
 
-        // Send 101 Switching Protocols
-        std::string handshake_response = "HTTP/1.1 101 Switching Protocols\r\n"
-                                         "Upgrade: websocket\r\n"
-                                         "Connection: Upgrade\r\n"
-                                         "Sec-WebSocket-Accept: " +
-                                         accept_key + "\r\n";
-        if (!selected_subprotocol.empty()) {
-          if (!detail::fields::is_field_value(selected_subprotocol)) {
-            return false;
-          }
-          handshake_response +=
-              "Sec-WebSocket-Protocol: " + selected_subprotocol + "\r\n";
-        }
-        handshake_response += "\r\n";
-        if (strm.write(handshake_response.data(), handshake_response.size()) <
-            0) {
+    auto answered = false;
+#ifdef CPPHTTPLIB_NO_EXCEPTIONS
+    answered = answer_before_upgrade();
+#else
+    try {
+      answered = answer_before_upgrade();
+    } catch (...) {
+      if (!handle_exception(req, res)) {
+        return write_response(strm, close_if_answered, req, res);
+      }
+      answered = true;
+    }
+#endif
+    if (answered) {
+      if (res.status == -1) { res.status = StatusCode::OK_200; }
+      return write_response_with_content(strm, close_if_answered, req, res);
+    }
+
+    if (ws_route) {
+      auto client_key = req.get_header_value("Sec-WebSocket-Key");
+      auto accept_key = detail::websocket_accept_key(client_key);
+
+      // Send 101 Switching Protocols
+      std::string handshake_response = "HTTP/1.1 101 Switching Protocols\r\n"
+                                       "Upgrade: websocket\r\n"
+                                       "Connection: Upgrade\r\n"
+                                       "Sec-WebSocket-Accept: " +
+                                       accept_key + "\r\n";
+      if (!selected_subprotocol.empty()) {
+        if (!detail::fields::is_field_value(selected_subprotocol)) {
           return false;
         }
+        handshake_response +=
+            "Sec-WebSocket-Protocol: " + selected_subprotocol + "\r\n";
+      }
+      handshake_response += "\r\n";
+      if (strm.write(handshake_response.data(), handshake_response.size()) <
+          0) {
+        return false;
+      }
 
-        connection_closed = true;
-        if (websocket_upgraded) { *websocket_upgraded = true; }
+      connection_closed = true;
+      if (websocket_upgraded) { *websocket_upgraded = true; }
 
-        {
 #ifdef CPPHTTPLIB_SSL_ENABLED
-          if (req.ssl) {
-            // wss: the heartbeat ping thread and the read path enter the same
-            // TLS session from different threads. Hand the WebSocket a stream
-            // that serializes every TLS call, so the shared SSLSocketStream on
-            // the plain HTTP/HTTPS paths stays untouched.
-            auto ws_strm =
-                std::unique_ptr<Stream>(new detail::WebSocketSSLStream(
-                    strm.socket(), const_cast<tls::session_t>(req.ssl),
-                    CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND, 0,
-                    write_timeout_sec_, write_timeout_usec_));
-            ws::WebSocket ws(std::move(ws_strm), req, true,
-                             websocket_ping_interval_sec_,
-                             websocket_max_missed_pongs_);
-            entry.handler(req, ws);
-            return true;
-          }
-#endif
-          // Use WebSocket-specific read timeout instead of HTTP timeout
-          strm.set_read_timeout(CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND,
-                                0);
-          ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_,
-                           websocket_max_missed_pongs_);
-          entry.handler(req, ws);
-        }
+      if (req.ssl) {
+        // wss: the heartbeat ping thread and the read path enter the same
+        // TLS session from different threads. Hand the WebSocket a stream
+        // that serializes every TLS call, so the shared SSLSocketStream on
+        // the plain HTTP/HTTPS paths stays untouched.
+        auto ws_strm = std::unique_ptr<Stream>(new detail::WebSocketSSLStream(
+            strm.socket(), const_cast<tls::session_t>(req.ssl),
+            CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND, 0,
+            write_timeout_sec_, write_timeout_usec_));
+        ws::WebSocket ws(std::move(ws_strm), req, true,
+                         websocket_ping_interval_sec_,
+                         websocket_max_missed_pongs_);
+        ws_route->handler(req, ws);
         return true;
       }
+#endif
+      // Use WebSocket-specific read timeout instead of HTTP timeout
+      strm.set_read_timeout(CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND, 0);
+      ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_,
+                       websocket_max_missed_pongs_);
+      ws_route->handler(req, ws);
+      return true;
     }
     // No WebSocket route: route it as a plain HTTP request
   }
@@ -15335,23 +15366,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 #else
   try {
     routed = routing(req, res, strm, is_upgrade);
-  } catch (std::exception &) {
-    if (exception_handler_) {
-      auto ep = std::current_exception();
-      exception_handler_(req, res, ep);
-      routed = true;
-    } else {
-      res.status = StatusCode::InternalServerError_500;
-    }
-  } catch (...) {
-    if (exception_handler_) {
-      auto ep = std::current_exception();
-      exception_handler_(req, res, ep);
-      routed = true;
-    } else {
-      res.status = StatusCode::InternalServerError_500;
-    }
-  }
+  } catch (...) { routed = handle_exception(req, res); }
 #endif
   auto ret = false;
   if (routed) {

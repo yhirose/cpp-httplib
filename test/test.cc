@@ -5342,6 +5342,38 @@ TEST(ExceptionTest, WithExceptionHandler) {
   }
 }
 
+TEST(ExceptionTest, StatusIs500UnlessExceptionHandlerSetsIt) {
+  Server svr;
+  svr.set_exception_handler(
+      [](const Request &, Response &res, std::exception_ptr) {
+        res.set_content("oops", "text/plain");
+      });
+  svr.Get("/throw", [](const Request &, Response &) {
+    throw std::runtime_error("throw");
+  });
+  svr.Get("/created-then-throw", [](const Request &, Response &res) {
+    res.status = StatusCode::Created_201;
+    throw std::runtime_error("created-then-throw");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  for (auto path : {"/throw", "/created-then-throw"}) {
+    auto res = cli.Get(path);
+    ASSERT_TRUE(res) << path << ": " << to_string(res.error());
+    EXPECT_EQ(StatusCode::InternalServerError_500, res->status) << path;
+  }
+}
+
 TEST(ExceptionTest, AndErrorHandler) {
   Server svr;
 
@@ -5404,13 +5436,12 @@ TEST(ExceptionTest, AndErrorHandler) {
 #endif
 
 #ifndef CPPHTTPLIB_NO_EXCEPTIONS
-// process_request() wraps only routing() in a try/catch, so an exception from
-// any other user callback used to unwind into the task queue - which does not
-// catch - and terminate the process. Each test below runs the server on a
-// single worker thread: a guard that catches the exception but still loses the
-// thread would otherwise be hidden by a spare worker serving the follow-up
-// request. Note that a regression here aborts the whole test binary rather
-// than failing one test.
+// An exception from a user callback outside process_request()'s try/catch
+// used to unwind into the task queue - which does not catch - and terminate
+// the process. Each test below runs the server on a single worker thread: a
+// guard that catches the exception but still loses the thread would otherwise
+// be hidden by a spare worker serving the follow-up request. Note that a
+// regression here aborts the whole test binary rather than failing one test.
 TEST(ServerExceptionTest, ThrowingContentProviderDoesNotKillTheServer) {
   Server svr;
   svr.new_task_queue = [] { return new ThreadPool(1); };
@@ -28120,6 +28151,87 @@ TEST(WebSocketPreRequestTest, RejectWithoutAuth) {
   svr.stop();
   t.join();
 }
+
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+static Headers websocket_upgrade_headers() {
+  return {{"Upgrade", "websocket"},
+          {"Connection", "Upgrade"},
+          {"Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="},
+          {"Sec-WebSocket-Version", "13"},
+          {"Sec-WebSocket-Protocol", "chat"}};
+}
+
+TEST(WebSocketExceptionTest, HooksBeforeUpgradeReachExceptionHandler) {
+  Server svr;
+  svr.set_pre_routing_handler([](const Request &req, Response &) {
+    if (req.path == "/pre-routing") { throw std::runtime_error(req.path); }
+    return Server::HandlerResponse::Unhandled;
+  });
+  svr.set_pre_request_handler([](const Request &req, Response &) {
+    if (req.path == "/pre-request") { throw std::runtime_error(req.path); }
+    return Server::HandlerResponse::Unhandled;
+  });
+  svr.set_exception_handler(
+      [](const Request &, Response &res, std::exception_ptr ep) {
+        try {
+          std::rethrow_exception(ep);
+        } catch (std::exception &e) { res.set_content(e.what(), "text/plain"); }
+      });
+
+  auto handler = [](const Request &, ws::WebSocket &) {};
+  svr.WebSocket("/pre-routing", handler);
+  svr.WebSocket("/pre-request", handler);
+  svr.WebSocket("/sub-protocol", handler,
+                [](const std::vector<std::string> &) -> std::string {
+                  throw std::runtime_error("/sub-protocol");
+                });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  for (auto path : {"/pre-routing", "/pre-request", "/sub-protocol"}) {
+    auto res = cli.Get(path, websocket_upgrade_headers());
+    if (!res) {
+      ADD_FAILURE() << path << ": " << to_string(res.error());
+      continue;
+    }
+    EXPECT_EQ(StatusCode::InternalServerError_500, res->status) << path;
+    EXPECT_EQ(path, res->body);
+  }
+}
+
+TEST(WebSocketExceptionTest, HookBeforeUpgradeWithoutExceptionHandler) {
+  Server svr;
+  svr.set_pre_routing_handler(
+      [](const Request &, Response &) -> Server::HandlerResponse {
+        throw std::runtime_error("pre-routing");
+      });
+  svr.WebSocket("/ws", [](const Request &, ws::WebSocket &) {});
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  auto res = cli.Get("/ws", websocket_upgrade_headers());
+  ASSERT_TRUE(res) << to_string(res.error());
+  EXPECT_EQ(StatusCode::InternalServerError_500, res->status);
+}
+#endif
 
 TEST(WebSocketServerTimeoutTest, HandlerSendsWhileNothingArrives) {
   Server svr;

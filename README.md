@@ -522,7 +522,7 @@ svr.set_error_handler([](const auto& req, auto& res) {
 ```
 
 ### Exception handler
-The exception handler gets called if a user routing handler throws an error. This covers the pre-routing handler, the file request handler, the pre-request handler, route handlers and content readers. An exception from the post-routing handler, the error handler, the `Expect: 100-continue` handler, a content provider, a logger or a WebSocket handler does not reach it: the connection is dropped, and the error logger receives `Error::UserCallbackException`.
+The exception handler gets called if a user routing handler throws an error. This covers the pre-routing handler, the file request handler, the pre-request handler, route handlers, content readers and, on a WebSocket upgrade, the sub-protocol selector. The response is a 500 unless the exception handler sets another status. An exception from the post-routing handler, the error handler, the `Expect: 100-continue` handler, a content provider, a logger or a WebSocket handler does not reach it: the connection is dropped, and the error logger receives `Error::UserCallbackException`.
 
 ```cpp
 svr.set_exception_handler([](const auto& req, auto& res, std::exception_ptr ep) {
