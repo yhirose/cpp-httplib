@@ -4496,7 +4496,7 @@ public:
 
   // State accessors
   bool is_connected() const;
-  const std::string &last_event_id() const;
+  std::string last_event_id() const;
 
   // Blocking start - runs event loop with auto-reconnect
   void start();
@@ -4534,7 +4534,9 @@ private:
   // State
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
+  // Written by the event loop, which start_async() runs on its own thread
   std::string last_event_id_;
+  mutable std::mutex last_event_id_mutex_;
 
   // Async support
   std::thread async_thread_;
@@ -5032,7 +5034,8 @@ inline SSEClient &SSEClient::set_headers(const Headers &headers) {
 
 inline bool SSEClient::is_connected() const { return connected_.load(); }
 
-inline const std::string &SSEClient::last_event_id() const {
+inline std::string SSEClient::last_event_id() const {
+  std::lock_guard<std::mutex> lock(last_event_id_mutex_);
   return last_event_id_;
 }
 
@@ -5207,7 +5210,10 @@ inline void SSEClient::run_event_loop() {
         if (event_complete) {
           // Update last_event_id for reconnection, even for an event that
           // has no data. An empty id clears it.
-          if (has_id) { last_event_id_ = current_msg.id; }
+          if (has_id) {
+            std::lock_guard<std::mutex> lock(last_event_id_mutex_);
+            last_event_id_ = current_msg.id;
+          }
 
           // An event without a data field is not dispatched
           if (has_data) { dispatch_event(current_msg); }

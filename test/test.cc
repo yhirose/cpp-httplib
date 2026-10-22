@@ -26147,6 +26147,47 @@ TEST_F(SSEIntegrationTest, LastEventIdHeader) {
   EXPECT_EQ(sse.last_event_id(), "evt-123");
 }
 
+// Test: last_event_id() read from another thread while start_async() runs
+TEST_F(SSEIntegrationTest, LastEventIdWhileRunning) {
+  // Ids of every length up to 200, so the stored id keeps changing size
+  server_->Get("/many-ids", [](const Request &, Response &res) {
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string events;
+            for (size_t i = 0; i < 2000; i++) {
+              events += "id: " + std::string(1 + i % 200, 'a') + "\n";
+              events += "data: x\n\n";
+            }
+            events += "id: end\ndata: x\n\n";
+            sink.write(events.data(), events.size());
+          }
+          return false;
+        });
+  });
+
+  Client client("localhost", get_port());
+  sse::SSEClient sse(client, "/many-ids");
+  // Wait out the rest of the test rather than replay the stream
+  sse.set_reconnect_interval(10000);
+  sse.set_max_reconnect_attempts(1);
+  sse.start_async();
+
+  auto well_formed = true;
+  std::string id;
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (id != "end" && std::chrono::steady_clock::now() < deadline) {
+    id = sse.last_event_id();
+    if (id != "end" && id.find_first_not_of('a') != std::string::npos) {
+      well_formed = false;
+    }
+  }
+  sse.stop();
+
+  EXPECT_TRUE(well_formed);
+  EXPECT_EQ(sse.last_event_id(), "end");
+}
+
 // Test: Manual stop
 TEST_F(SSEIntegrationTest, ManualStop) {
   // Endpoint that sends one event and stays open briefly. The server outlives
