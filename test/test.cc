@@ -30108,32 +30108,39 @@ TEST(RequestSmugglingTest, NonFinalChunkedTransferEncodingRejected) {
     EXPECT_EQ("HTTP/1.1 400 Bad Request",
               response.substr(0, response.find("\r\n")));
   }
+}
 
-  // A sequence ending in chunked stays valid.
-  auto req = "POST /test HTTP/1.1\r\n"
-             "Host: localhost\r\n"
-             "Transfer-Encoding: gzip, chunked\r\n"
-             "Connection: close\r\n"
-             "\r\n"
-             "0\r\n\r\n";
+TEST(RequestSmugglingTest, TransferEncodingOtherThanChunkedNotImplemented) {
+  Server svr;
+  svr.Post("/test", [&](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
 
-  std::string response;
-  ASSERT_TRUE(send_request(1, req, &response));
-  EXPECT_EQ("HTTP/1.1 200 OK", response.substr(0, response.find("\r\n")));
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
 
-  // ...including when it is spread over several lines.
-  auto split_req = "POST /test HTTP/1.1\r\n"
-                   "Host: localhost\r\n"
-                   "Transfer-Encoding: gzip\r\n"
-                   "Transfer-Encoding: chunked\r\n"
-                   "Connection: close\r\n"
-                   "\r\n"
-                   "0\r\n\r\n";
+  for (auto transfer_encoding :
+       {"Transfer-Encoding: gzip, chunked\r\n",
+        "Transfer-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n",
+        "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n"}) {
+    auto req = std::string("POST /test HTTP/1.1\r\nHost: localhost\r\n") +
+               transfer_encoding + "\r\n0\r\n\r\n";
 
-  std::string split_response;
-  ASSERT_TRUE(send_request(1, split_req, &split_response));
-  EXPECT_EQ("HTTP/1.1 200 OK",
-            split_response.substr(0, split_response.find("\r\n")));
+    std::string response;
+    ASSERT_TRUE(send_request(1, req, &response, port)) << transfer_encoding;
+    EXPECT_EQ("HTTP/1.1 501 Not Implemented",
+              response.substr(0, response.find("\r\n")))
+        << transfer_encoding;
+    EXPECT_NE(std::string::npos, response.find("Connection: close"))
+        << transfer_encoding;
+  }
 }
 
 // Regression for issue #2450: a DELETE without Content-Length on a

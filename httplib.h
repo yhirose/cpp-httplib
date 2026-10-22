@@ -15135,6 +15135,16 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
     return write_response(strm, close_connection, req, res);
   }
 
+  // RFC 9112 6.1: a lone "chunked" is the only transfer coding implemented
+  if (req.has_header("Transfer-Encoding") &&
+      (req.get_header_value_count("Transfer-Encoding") != 1 ||
+       !detail::case_ignore::equal(req.get_header_value("Transfer-Encoding"),
+                                   "chunked"))) {
+    connection_closed = true;
+    res.status = StatusCode::NotImplemented_501;
+    return write_response(strm, close_connection, req, res);
+  }
+
   // RFC 9112 §6.1: a Transfer-Encoding alongside a Content-Length, or in an
   // HTTP/1.0 request, is honoured, but the connection closes after the
   // response.
