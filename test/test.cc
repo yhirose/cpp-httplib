@@ -71,6 +71,12 @@ namespace tls {
 ca_store_t create_ca_store(const char *pem, size_t len);
 bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
 std::vector<std::string> get_ca_names(ctx_t ctx);
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+namespace impl {
+SecTrustSettingsResult
+macos_ssl_trust_settings_result(CFArrayRef trust_settings);
+} // namespace impl
+#endif
 } // namespace tls
 } // namespace httplib
 #endif
@@ -18168,6 +18174,98 @@ TEST(SSLClientTest, EnableSystemCaCustomCaVerifiesLocalServer) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
+
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+// A usage-constraints dictionary of a Keychain Trust Settings array, with
+// the keys SecTrustSettingsCopyTrustSettings() returns.
+static CFDictionaryRef
+make_usage_constraint(SecPolicyRef policy, const char *policy_string,
+                      const SecTrustSettingsResult *result) {
+  auto constraint =
+      CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+                                &kCFTypeDictionaryValueCallBacks);
+  if (policy) {
+    CFDictionarySetValue(constraint, kSecTrustSettingsPolicy, policy);
+  }
+  if (policy_string) {
+    auto str = CFStringCreateWithCString(nullptr, policy_string,
+                                         kCFStringEncodingUTF8);
+    CFDictionarySetValue(constraint, kSecTrustSettingsPolicyString, str);
+    CFRelease(str);
+  }
+  if (result) {
+    auto number_value = static_cast<SInt32>(*result);
+    auto number = CFNumberCreate(nullptr, kCFNumberSInt32Type, &number_value);
+    CFDictionarySetValue(constraint, kSecTrustSettingsResult, number);
+    CFRelease(number);
+  }
+  return constraint;
+}
+
+static SecTrustSettingsResult
+ssl_trust_settings_result(std::vector<CFDictionaryRef> constraints) {
+  auto trust_settings =
+      CFArrayCreateMutable(nullptr, 0, &kCFTypeArrayCallBacks);
+  for (auto constraint : constraints) {
+    CFArrayAppendValue(trust_settings, constraint);
+    CFRelease(constraint);
+  }
+  auto result = tls::impl::macos_ssl_trust_settings_result(trust_settings);
+  CFRelease(trust_settings);
+  return result;
+}
+
+// The system CA loader takes a Keychain certificate as a trusted root only
+// when its Trust Settings say so for SSL, not merely because it has some.
+TEST(SSLClientTest, MacOSKeychainTrustSettingsForSSL) {
+  const auto trust_root = kSecTrustSettingsResultTrustRoot;
+  const auto trust_as_root = kSecTrustSettingsResultTrustAsRoot;
+  const auto deny = kSecTrustSettingsResultDeny;
+  const auto unspecified = kSecTrustSettingsResultUnspecified;
+  auto ssl_policy = SecPolicyCreateSSL(true, nullptr);
+  auto x509_policy = SecPolicyCreateBasicX509();
+
+  // "Always Trust", which stores no constraint at all
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot, ssl_trust_settings_result({}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, nullptr)}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustAsRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &trust_as_root)}));
+
+  // "Never Trust", for everything or for SSL
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, &deny)}));
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &deny)}));
+
+  // Trusted for another policy, for one host, or not at all
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result(
+                {make_usage_constraint(x509_policy, nullptr, &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result({make_usage_constraint(
+                ssl_policy, "www.example.com", &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, &unspecified)}));
+
+  // The first constraint that applies to SSL decides
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(x509_policy, nullptr, &trust_root),
+                 make_usage_constraint(nullptr, nullptr, &deny)}));
+
+  CFRelease(x509_policy);
+  CFRelease(ssl_policy);
+}
+#endif
 
 // Regression test: for IP hosts the Mbed TLS and wolfSSL backends used to
 // skip chain verification entirely (only the certificate identity was
