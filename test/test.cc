@@ -23627,6 +23627,55 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   server_thread.join();
 }
 
+#ifndef _WIN32
+// As above for the body of a streamed request: a send() cut short by the write
+// timeout must not leave the rest of the body unsent.
+TEST(OpenStreamPartialWriteTest, BodyIsWrittenWhole) {
+  signal(SIGPIPE, SIG_IGN);
+
+  Server svr;
+  svr.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  svr.Post("/size", [](const Request &, Response &res,
+                       const ContentReader &content_reader) {
+    // Outlast the client's write timeout before reading the body.
+    std::this_thread::sleep_for(std::chrono::milliseconds(750));
+    size_t received = 0;
+    content_reader([&](const char *, size_t len) {
+      received += len;
+      return true;
+    });
+    res.set_content(std::to_string(received), "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_write_timeout(0, 500000);
+  cli.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+
+  const std::string body(4 * 1024 * 1024, 'A');
+  auto handle = cli.open_stream("POST", "/size", {}, {}, body,
+                                "application/octet-stream");
+  ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+  EXPECT_EQ(StatusCode::OK_200, handle.response->status);
+  EXPECT_EQ(std::to_string(body.size()), read_all(handle));
+}
+#endif
+
 // Serves `response` to the single request `fn` makes with a fresh client.
 template <typename Fn>
 static void with_single_response(const std::string &response, Fn fn) {
@@ -27931,6 +27980,64 @@ TEST_F(WebSocketIntegrationTest, ChronoTimeoutSetters) {
   EXPECT_GE(elapsed, 1400);
   EXPECT_LT(elapsed, 30000);
 }
+
+#ifndef _WIN32
+// A send() that times out after part of the data went out returns the count
+// written so far. Every byte of the frame must still be sent, or the peer reads
+// the next frame's header and payload as the rest of this one.
+TEST(WebSocketPartialWriteTest, FrameIsWrittenWhole) {
+  signal(SIGPIPE, SIG_IGN);
+
+  const std::string large(4 * 1024 * 1024, 'A');
+  std::atomic<bool> large_sent{false};
+  std::atomic<bool> small_sent{false};
+
+  Server svr;
+  svr.set_write_timeout(0, 500000);
+  svr.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    large_sent = ws.send(large.data(), large.size());
+    small_sent = ws.send("after");
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://" + std::string(HOST) + ":" +
+                             std::to_string(port) + "/ws");
+  client.set_read_timeout(5);
+  client.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  ASSERT_TRUE(client.connect());
+
+  // Outlast the server's write timeout, then drain.
+  std::this_thread::sleep_for(std::chrono::milliseconds(750));
+
+  std::string msg;
+  EXPECT_EQ(ws::ReadResult::Binary, client.read(msg));
+  EXPECT_TRUE(msg == large);
+  EXPECT_EQ(ws::ReadResult::Text, client.read(msg));
+  EXPECT_EQ("after", msg);
+  EXPECT_TRUE(large_sent);
+  EXPECT_TRUE(small_sent);
+
+  client.close();
+}
+#endif
 
 TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   Server svr;

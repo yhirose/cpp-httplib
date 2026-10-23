@@ -3797,6 +3797,8 @@ template <typename T>
 bool check_and_write_headers(Stream &strm, Headers &headers, T header_writer,
                              Error &error);
 
+bool write_data(Stream &strm, const char *d, size_t l);
+
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -5813,32 +5815,40 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
   if (len < 126) {
     header[1] = static_cast<uint8_t>(len);
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
   } else if (len <= 0xFFFF) {
     header[1] = 126;
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
     uint8_t ext[2];
     ext[0] = static_cast<uint8_t>((len >> 8) & 0xFF);
     ext[1] = static_cast<uint8_t>(len & 0xFF);
-    if (strm.write(reinterpret_cast<char *>(ext), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(ext), 2)) { return false; }
   } else {
     header[1] = 127;
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
     uint8_t ext[8];
     for (int i = 7; i >= 0; i--) {
       ext[7 - i] =
           static_cast<uint8_t>((static_cast<uint64_t>(len) >> (i * 8)) & 0xFF);
     }
-    if (strm.write(reinterpret_cast<char *>(ext), 8) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(ext), 8)) { return false; }
   }
 
   if (mask) {
     // Generate random mask key
     uint8_t mask_key[4];
     fill_random_bytes(mask_key, sizeof(mask_key));
-    if (strm.write(reinterpret_cast<char *>(mask_key), 4) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(mask_key), 4)) {
+      return false;
+    }
 
     // Write masked payload in chunks
     const size_t chunk_size = 4096;
@@ -5849,11 +5859,11 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
         buf[i] =
             data[offset + i] ^ static_cast<char>(mask_key[(offset + i) % 4]);
       }
-      if (strm.write(buf.data(), n) < 0) { return false; }
+      if (!write_data(strm, buf.data(), n)) { return false; }
     }
   } else {
     if (len > 0) {
-      if (strm.write(data, len) < 0) { return false; }
+      if (!write_data(strm, data, len)) { return false; }
     }
   }
 
@@ -15967,7 +15977,7 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   }
 
   if (!req.body.empty()) {
-    if (strm.write(req.body.data(), req.body.size()) < 0) {
+    if (!detail::write_data(strm, req.body.data(), req.body.size())) {
       handle.error = Error::Write;
       handle.response.reset();
       return handle;
