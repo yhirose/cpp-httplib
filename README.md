@@ -1498,6 +1498,12 @@ cli.set_hostname_addr_map({{"example.com", "internal.example.lan"}});
 An empty value is ignored, leaving the original hostname as the connection
 target.
 
+When the connection is tunnelled through a proxy with `CONNECT` (HTTPS and
+WebSocket), the socket connects to the proxy instead, and the mapped address
+becomes the `CONNECT` target, so the proxy reaches the same address a direct
+connection would. Inside the tunnel the hostname still supplies the `Host`
+header and the SNI.
+
 The same method is available on `httplib::ws::WebSocketClient`.
 
 ### Automatic Path Encoding
