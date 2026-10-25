@@ -13013,6 +13013,20 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
+// Request target of a CONNECT for `host`. Through a proxy it is the proxy, not
+// this client, that opens the connection to the origin, so the addr_map
+// override has to be carried in the request target. The tunnelled request
+// keeps `host` for its Host header and SNI, as a direct connection does.
+inline std::string
+make_connect_request_target(const std::map<std::string, std::string> &addr_map,
+                            const std::string &host, int port) {
+  std::string connect_host;
+  std::string ip;
+  apply_addr_map(addr_map, host, connect_host, ip);
+  return make_host_and_port_string_always_port(ip.empty() ? connect_host : ip,
+                                               port);
+}
+
 // Value for the Host header a client sends when the caller supplied none.
 // Only the value: callers decide where in their header list it goes.
 inline std::string make_default_host_header_value(const std::string &host,
@@ -19128,7 +19142,7 @@ inline bool SSLClient::connect_with_proxy(
             Request req2;
             req2.method = "CONNECT";
             req2.path =
-                detail::make_host_and_port_string_always_port(host_, port_);
+                detail::make_connect_request_target(addr_map_, host_, port_);
             if (max_timeout_msec_ > 0) {
               req2.start_time_ = std::chrono::steady_clock::now();
             }
@@ -19167,8 +19181,8 @@ inline bool SSLClient::connect_with_proxy(
                 start_time, [&](Stream &strm) {
                   Request req3;
                   req3.method = "CONNECT";
-                  req3.path = detail::make_host_and_port_string_always_port(
-                      host_, port_);
+                  req3.path = detail::make_connect_request_target(addr_map_,
+                                                                  host_, port_);
                   req3.headers.insert(detail::make_digest_authentication_header(
                       req3, make_request_target(req3), auth, 1,
                       detail::random_string(10), proxy_digest_auth_username_,
@@ -24016,7 +24030,7 @@ inline bool WebSocketClient::connect_with_proxy(Response &proxy_res,
                                                 Error &error) {
   Request req;
   req.method = "CONNECT";
-  req.path = detail::make_host_and_port_string_always_port(host_, port_);
+  req.path = detail::make_connect_request_target(addr_map_, host_, port_);
   req.headers.emplace("Host", req.path);
   detail::add_default_user_agent_header(req);
   detail::add_authorization_header(req, proxy_basic_auth_username_,
