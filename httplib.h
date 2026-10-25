@@ -17033,8 +17033,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    auto redirect = follow_location_ && detail::is_redirect(res) &&
-                    res.status != StatusCode::NotModified_304;
+    auto redirect = follow_location_ && detail::is_redirect(res);
 
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {
