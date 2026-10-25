@@ -41,6 +41,7 @@ inline std::string u8_to_string(const char8_t *s) {
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
 #define SERVER_CERT_IP_CN_FILE "./cert_ip_cn.pem"
+#define SERVER_CERT_DNS_CN_FILE "./cert_dns_cn.pem"
 #define SERVER_CERT_IPV6_FILE "./cert_ipv6.pem"
 #define SERVER_CERT_SAN_TYPES_FILE "./cert_san_types.pem"
 #define SERVER_CERT_WILDCARD_SAN_FILE "./cert_wildcard_san.pem"
@@ -16689,8 +16690,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtxGeneric) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
-// Test verify_hostname for both OpenSSL and MbedTLS backends
-// Verifies that wildcard matching and exact matching work consistently
+// Test verify_hostname on every backend: a host is named by a SAN only
 TEST(SSLClientServerTest, TlsVerifyHostname) {
   using namespace httplib::tls;
 
@@ -16724,7 +16724,7 @@ TEST(SSLClientServerTest, TlsVerifyHostname) {
 
     if (!ctx.cert) return false;
 
-    // Test 1: "Common Name" should match (our test server cert CN)
+    // Test 1: "Common Name" is the CN of our test server cert, which has no SAN
     verify_result_cn = ctx.check_hostname("Common Name");
 
     // Test 2: wrong hostname should not match
@@ -16740,25 +16740,48 @@ TEST(SSLClientServerTest, TlsVerifyHostname) {
   ASSERT_TRUE(verify_callback_called)
       << "Verify callback should have been called";
 
-  // CN="Common Name" should match our test certificate
-  //
-  // BoringSSL intentionally drops CN-based hostname matching per RFC 6125
-  // §6.4.4 — only SubjectAltName is consulted. Other backends (OpenSSL,
-  // MbedTLS, wolfSSL) still honor the CN fallback, so flip the expectation
-  // for BoringSSL builds. OPENSSL_IS_BORINGSSL is defined by BoringSSL's
-  // <openssl/base.h>, which is included transitively when
-  // CPPHTTPLIB_OPENSSL_SUPPORT is set against a BoringSSL install.
-#if defined(OPENSSL_IS_BORINGSSL)
   EXPECT_FALSE(verify_result_cn)
-      << "BoringSSL should reject CN-based hostname matching (SAN-only)";
-#else
-  EXPECT_TRUE(verify_result_cn)
-      << "verify_hostname should match 'Common Name' (certificate CN)";
-#endif
+      << "verify_hostname must not match the certificate CN (no SAN)";
 
   // Wrong hostname should not match
   EXPECT_FALSE(verify_result_wrong)
       << "verify_hostname should not match 'wronghost.example.com'";
+}
+
+// A DNS name in the CN must not authenticate a host (RFC 9525), whichever
+// backend verifies it.
+TEST(SSLClientServerTest, TlsVerifyHostnameDnsNotMatchedByCommonName) {
+  // Certificate CN is "localhost" and it carries no SAN.
+  SSLServer svr(SERVER_CERT_DNS_CN_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli("localhost", port);
+  cli.set_ca_cert_path(SERVER_CERT_DNS_CN_FILE);
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(5);
+
+  auto res = cli.Get("/test");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerHostnameVerification, res.error());
+
+  // The same certificate is accepted once host name verification is off, so the
+  // failure above is the host name and not the chain.
+  cli.enable_server_hostname_verification(false);
+  res = cli.Get("/test");
+  ASSERT_TRUE(res) << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 // An IP-literal host must only be authenticated via an iPAddress SAN, never via

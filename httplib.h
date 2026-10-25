@@ -5344,6 +5344,8 @@ cert_t get_peer_cert(const_session_t session);
 // do not use them after free_session(), as with get_peer_cert().
 size_t get_peer_certs(const_session_t session, std::vector<cert_t> &certs);
 void free_cert(cert_t cert);
+// Matches the host against the subjectAltName entries only, never the Common
+// Name (RFC 9525).
 bool verify_hostname(cert_t cert, const char *hostname);
 uint64_t hostname_mismatch_code();
 long get_verify_result(const_session_t session);
@@ -20197,10 +20199,12 @@ inline bool set_sni(session_t session, const char *hostname,
   auto ssl = static_cast<SSL *>(session);
 
   // The handshake's chain verification then checks the name as well
-  if (verify_hostname &&
-      X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), hostname,
-                                  strlen(hostname)) != 1) {
-    return false;
+  if (verify_hostname) {
+    auto param = SSL_get0_param(ssl);
+    X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NEVER_CHECK_SUBJECT);
+    if (X509_VERIFY_PARAM_set1_host(param, hostname, strlen(hostname)) != 1) {
+      return false;
+    }
   }
 
 #if defined(OPENSSL_IS_BORINGSSL)
@@ -20449,7 +20453,8 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   if (detail::is_ip_address(hostname)) {
     return X509_check_ip_asc(x509, hostname, 0) == 1;
   }
-  return X509_check_host(x509, hostname, strlen(hostname), 0, nullptr) == 1;
+  return X509_check_host(x509, hostname, strlen(hostname),
+                         X509_CHECK_FLAG_NEVER_CHECK_SUBJECT, nullptr) == 1;
 }
 
 inline uint64_t hostname_mismatch_code() {
@@ -21835,7 +21840,6 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 
   // Check Subject Alternative Names (SAN). Mbed TLS keeps the GeneralName type
   // in buf.tag and the raw value in buf.p / buf.len.
-  auto has_dns_san = false;
   for (auto san = &mcert->subject_alt_names; san; san = san->next) {
     if (!san->buf.p || san->buf.len == 0) { continue; }
     const unsigned char *p = san->buf.p;
@@ -21850,21 +21854,8 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
         return true;
       }
     } else if (san_type == MBEDTLS_X509_SAN_DNS_NAME) {
-      has_dns_san = true;
       std::string san_name(reinterpret_cast<const char *>(p), len);
       if (detail::match_hostname(san_name, host_str)) { return true; }
-    }
-  }
-
-  // Fallback: the Common Names (CN) in the subject, as X509_check_host does it:
-  // never for an IP host, which only an iPAddress SAN names, and never next to
-  // a DNS SAN (RFC 6125 6.4.4).
-  if (is_ip || has_dns_san) { return false; }
-  for (auto name = &mcert->subject; name; name = name->next) {
-    if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_CN, &name->oid) == 0) {
-      std::string cn(reinterpret_cast<const char *>(name->val.p),
-                     name->val.len);
-      if (detail::match_hostname(cn, host_str)) { return true; }
     }
   }
 
@@ -23015,7 +23006,6 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   auto is_ip = ip_len > 0;
 
   // Check Subject Alternative Names
-  auto has_dns_san = false;
   auto *san_names = static_cast<WOLF_STACK_OF(WOLFSSL_GENERAL_NAME) *>(
       wolfSSL_X509_get_ext_d2i(x509, NID_subject_alt_name, nullptr, nullptr));
 
@@ -23028,7 +23018,6 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 
       if (!is_ip && names->type == WOLFSSL_GEN_DNS) {
         // DNS name
-        has_dns_san = true;
         unsigned char *dns_name = nullptr;
         int dns_len = wolfSSL_ASN1_STRING_to_UTF8(&dns_name, names->d.dNSName);
         if (dns_name && dns_len > 0) {
@@ -23055,12 +23044,7 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
     wolfSSL_sk_free(san_names);
   }
 
-  // Fallback: the Common Name (CN) in the subject, as X509_check_host does it:
-  // never for an IP host, which only an iPAddress SAN names, and never next to
-  // a DNS SAN (RFC 6125 6.4.4).
-  if (is_ip || has_dns_san) { return false; }
-  auto cn = get_cert_subject_cn(cert);
-  return !cn.empty() && detail::match_hostname(cn, host_str);
+  return false;
 }
 
 inline uint64_t hostname_mismatch_code() {
