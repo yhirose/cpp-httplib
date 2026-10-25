@@ -4306,6 +4306,75 @@ TEST(RedirectFromPageWithContent, Redirect) {
   }
 }
 
+// A server can close the connection after a request with "Connection: close"
+// without repeating the option in its response (RFC 9112 Section 9.6), so the
+// redirected request must go out on a new connection.
+TEST(RedirectTest, NewConnectionAfterConnectionClose) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 2));
+
+  auto send_text = [](socket_t sock, const std::string &text) {
+    ::send(sock,
+#ifdef _WIN32
+           static_cast<const char *>(text.c_str()),
+           static_cast<int>(text.size()),
+#else
+           text.c_str(), text.size(),
+#endif
+           0);
+  };
+
+  auto reused = false;
+  auto server_thread = std::thread([&] {
+    char buf[4096];
+    auto first = ::accept(srv, nullptr, nullptr);
+    if (first == INVALID_SOCKET) { return; }
+    detail::set_socket_opt_time(first, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    ::recv(first, buf, sizeof(buf), 0);
+    send_text(
+        first,
+        "HTTP/1.1 302 Found\r\nLocation: /2\r\nContent-Length: 0\r\n\r\n");
+
+    auto next = first;
+    if (::recv(first, buf, sizeof(buf), 0) > 0) {
+      reused = true;
+    } else {
+      detail::close_socket(first);
+      next = ::accept(srv, nullptr, nullptr);
+      if (next == INVALID_SOCKET) { return; }
+      detail::set_socket_opt_time(next, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+      ::recv(next, buf, sizeof(buf), 0);
+    }
+    send_text(next, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+                    "Connection: close\r\n\r\nok");
+    detail::close_socket(next);
+  });
+
+  Client cli("127.0.0.1", PORT + 2);
+  cli.set_follow_location(true);
+  cli.set_read_timeout(5, 0);
+  auto res = cli.Get("/1");
+
+  server_thread.join();
+  detail::close_socket(srv);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("ok", res->body);
+  EXPECT_FALSE(reused);
+}
+
 TEST(RedirectFromPageWithContentIP6, Redirect) {
   Server svr;
 
