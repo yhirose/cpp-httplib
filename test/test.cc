@@ -21215,6 +21215,36 @@ TEST(MakeHostAndPortStringTest, VariousPatterns) {
             detail::make_host_and_port_string("example.com", 65536, false));
 }
 
+namespace httplib {
+namespace detail {
+std::string
+make_connect_request_target(const std::map<std::string, std::string> &addr_map,
+                            const std::string &host, int port);
+} // namespace detail
+} // namespace httplib
+
+TEST(MakeConnectRequestTargetTest, FollowsHostnameAddrMap) {
+  std::map<std::string, std::string> addr_map = {
+      {"ipv4.example", "192.0.2.10"},
+      {"ipv6.example", "2001:db8::1"},
+      {"name.example", "internal.example.lan"},
+      {"empty.example", ""}};
+
+  EXPECT_EQ("192.0.2.10:443",
+            detail::make_connect_request_target(addr_map, "ipv4.example", 443));
+  EXPECT_EQ("[2001:db8::1]:443",
+            detail::make_connect_request_target(addr_map, "ipv6.example", 443));
+  EXPECT_EQ("internal.example.lan:8443", detail::make_connect_request_target(
+                                             addr_map, "name.example", 8443));
+
+  // An empty or absent mapping keeps the hostname as the target
+  EXPECT_EQ("empty.example:443", detail::make_connect_request_target(
+                                     addr_map, "empty.example", 443));
+  EXPECT_EQ("other.example:443", detail::make_connect_request_target(
+                                     addr_map, "other.example", 443));
+  EXPECT_EQ("[::1]:443", detail::make_connect_request_target({}, "::1", 443));
+}
+
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(SSLClientHostHeaderTest, Issue2301_Online) {
   httplib::SSLClient cli("roblox.com", 443);
@@ -31295,6 +31325,79 @@ TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
   EXPECT_FALSE(origin_saw_proxy_authz.load());
   EXPECT_EQ(1, proxy.connect_hits());
 }
+
+TEST(ProxyTunnelTest, ConnectTargetFollowsHostnameAddrMap) {
+  // The proxy, not the client, connects to the origin, so the mapped address
+  // must be the CONNECT target. Inside the tunnel the hostname keeps supplying
+  // SNI and Host, as it does on a direct connection.
+  std::string origin_sni;
+  std::string origin_host;
+
+  proxy_tunnel_test::ScopedSSLServer origin;
+  origin.svr().Get(".*", [&](const Request &req, Response &res) {
+    origin_sni = req.sni();
+    origin_host = req.get_header_value("Host");
+    res.set_content("ok", "text/plain");
+  });
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  SSLClient cli("origin.example", origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_hostname_addr_map({{"origin.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", proxy.port());
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  auto port = std::to_string(origin.port());
+  EXPECT_EQ(1, proxy.connect_hits());
+  EXPECT_EQ(0u, proxy.connect_request().find("CONNECT 127.0.0.1:" + port +
+                                             " HTTP/1.1\r\n"));
+  EXPECT_EQ("origin.example", origin_sni);
+  EXPECT_EQ("origin.example:" + port, origin_host);
+}
+
+TEST(ProxyTunnelTest, DigestRetryConnectTargetFollowsHostnameAddrMap) {
+  proxy_tunnel_test::ScopedSSLServer origin;
+  origin.svr().Get(".*", [&](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(
+      origin.port(), [](const std::string &head) -> std::string {
+        if (head.find(
+                "\r\nProxy-Authorization: Digest username=\"proxy-user\"") !=
+            std::string::npos) {
+          return proxy_tunnel_test::kTunnelEstablished;
+        }
+        return "HTTP/1.1 407 Proxy Authentication Required\r\n"
+               "Proxy-Authenticate: Digest realm=\"proxy\", qop=\"auth\", "
+               "nonce=\"abc\", algorithm=MD5\r\n"
+               "Content-Length: 0\r\n\r\n";
+      });
+  ASSERT_NE(0, proxy.port());
+
+  SSLClient cli("origin.example", origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_hostname_addr_map({{"origin.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", proxy.port());
+  cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // The retried CONNECT is the one the proxy saw last.
+  EXPECT_EQ(2, proxy.connect_hits());
+  EXPECT_EQ(0u, proxy.connect_request().find(
+                    "CONNECT 127.0.0.1:" + std::to_string(origin.port()) +
+                    " HTTP/1.1\r\n"));
+}
 #endif
 
 namespace proxy_tunnel_test {
@@ -31484,6 +31587,30 @@ TEST(WebSocketProxyTest, ProxySettingAppliesOnReconnect) {
   client.close();
 
   EXPECT_EQ(2, proxy.connect_hits());
+}
+
+TEST(WebSocketProxyTest, ConnectTargetFollowsHostnameAddrMap) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  auto port = std::to_string(origin.port());
+  ws::WebSocketClient client("ws://origin.example:" + port + "/ws");
+  client.set_hostname_addr_map({{"origin.example", "127.0.0.1"}});
+  client.set_proxy("127.0.0.1", proxy.port());
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  client.close();
+
+  EXPECT_EQ(1, proxy.connect_hits());
+  auto target = "127.0.0.1:" + port;
+  auto connect_req = proxy.connect_request();
+  EXPECT_EQ(0u, connect_req.find("CONNECT " + target + " HTTP/1.1\r\n"));
+  EXPECT_NE(std::string::npos,
+            connect_req.find("\r\nHost: " + target + "\r\n"));
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
