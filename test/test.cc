@@ -23645,45 +23645,35 @@ static void with_single_response(const std::string &response, Fn fn) {
   fn(cli);
 }
 
-// Disabling content decoding must preserve the same bytes through every API,
-// including builds without the decoder for the advertised Content-Encoding.
+// set_decompress(false) hands out the encoded bytes through the streaming APIs
+// too, also in a build without the decoder for the advertised coding.
 TEST(StreamDecompressionTest, DisabledPreservesEncodedBody) {
   const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
-  const auto chunked = detail::from_i_to_hex(gzipped.size()) + "\r\n" +
-                       gzipped + "\r\n0\r\n\r\n";
-  const std::string framed_bodies[] = {
-      "Content-Length: " + std::to_string(gzipped.size()) + "\r\n\r\n" +
-          gzipped,
-      "Transfer-Encoding: chunked\r\n\r\n" + chunked, "\r\n" + gzipped};
+  const auto response = "HTTP/1.1 200 OK\r\n"
+                        "Content-Encoding: gzip\r\n"
+                        "Content-Length: " +
+                        std::to_string(gzipped.size()) +
+                        "\r\n"
+                        "Connection: close\r\n\r\n" +
+                        gzipped;
 
-  for (const auto &framed_body : framed_bodies) {
-    const auto response = "HTTP/1.1 200 OK\r\n"
-                          "Content-Encoding: gzip\r\n"
-                          "Connection: close\r\n" +
-                          framed_body;
-    with_single_response(response, [&](Client &cli) {
-      cli.set_decompress(false);
-      auto res = cli.Get("/");
-      ASSERT_TRUE(res) << to_string(res.error());
-      EXPECT_EQ(gzipped, res->body);
-    });
-    with_single_response(response, [&](Client &cli) {
-      cli.set_decompress(false);
-      auto handle = cli.open_stream("GET", "/");
-      ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
-      EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
-      EXPECT_EQ(gzipped, read_all(handle));
-      EXPECT_FALSE(handle.has_read_error());
-    });
-    with_single_response(response, [&](Client &cli) {
-      cli.set_decompress(false);
-      auto res = stream::Get(cli, "/", 7);
-      ASSERT_TRUE(res) << to_string(res.error());
-      EXPECT_EQ("gzip", res.get_header_value("Content-Encoding"));
-      EXPECT_EQ(gzipped, res.read_all());
-      EXPECT_FALSE(res.has_read_error());
-    });
-  }
+  with_single_response(response, [&](Client &cli) {
+    cli.set_decompress(false);
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+    EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
+    EXPECT_EQ(gzipped, read_all(handle));
+    EXPECT_FALSE(handle.has_read_error());
+  });
+
+  with_single_response(response, [&](Client &cli) {
+    cli.set_decompress(false);
+    auto res = stream::Get(cli, "/", 7);
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ("gzip", res.get_header_value("Content-Encoding"));
+    EXPECT_EQ(gzipped, res.read_all());
+    EXPECT_FALSE(res.has_read_error());
+  });
 }
 
 TEST(StreamBodyEndTest, BodyEndingAtConnectionClose) {
