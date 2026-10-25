@@ -4255,6 +4255,48 @@ TEST(RedirectToDifferentPort, TrailingCharactersInPort) {
   EXPECT_FALSE(res);
 }
 
+TEST(RedirectTest, OtherStatusesWithLocationAreNotFollowed) {
+  Server svr;
+  std::atomic<bool> followed{false};
+
+  svr.Get("/304", [](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::NotModified_304;
+    res.set_header("Location", "/target");
+  });
+
+  svr.Get("/305", [](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::UseProxy_305;
+    res.set_header("Location", "/target");
+  });
+
+  svr.Get("/target", [&](const Request & /*req*/, Response &res) {
+    followed = true;
+    res.set_content("target", "text/plain");
+  });
+
+  auto th = std::thread([&]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    th.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/304");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::NotModified_304, res->status);
+
+  res = cli.Get("/305");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::UseProxy_305, res->status);
+
+  EXPECT_FALSE(followed);
+}
+
 TEST(RedirectFromPageWithContent, Redirect) {
   Server svr;
 
