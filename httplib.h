@@ -16278,9 +16278,10 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     // to call it from a different thread since it's a thread-safety issue
     // to do these things to the socket if another thread is using the socket.
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    // Also when the request asked for it (e.g. a body that was never sent),
-    // so that a redirect or an auth retry below does not reuse the socket.
-    if (socket_should_be_closed_when_request_is_done_ ||
+    // Also when the request asked for it (e.g. a body that was never sent,
+    // or "Connection: close"), so that a redirect or an auth retry below does
+    // not reuse the socket.
+    if (socket_should_be_closed_when_request_is_done_ || close_connection ||
         detail::has_header_token(res.headers, "Connection", "close") ||
         (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
       disconnect(/*gracefully=*/true);
