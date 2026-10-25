@@ -16213,10 +16213,18 @@ inline bool ChunkedDecoder::parse_trailers_into(Headers &dest,
   return parse_trailers(lr, dest, src_headers);
 }
 
-// A 3xx without a Location, such as a 304, is a final response
+// Only 301, 302, 303, 307 and 308 redirect. Any other 3xx, such as a 304, or
+// a redirect without a Location, is a final response.
 inline bool is_redirect(const Response &res) {
-  return 300 < res.status && res.status < 400 &&
-         !res.get_header_value("Location").empty();
+  switch (res.status) {
+  case StatusCode::MovedPermanently_301:
+  case StatusCode::Found_302:
+  case StatusCode::SeeOther_303:
+  case StatusCode::TemporaryRedirect_307:
+  case StatusCode::PermanentRedirect_308:
+    return !res.get_header_value("Location").empty();
+  default: return false;
+  }
 }
 
 } // namespace detail
@@ -17026,8 +17034,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    auto redirect = follow_location_ && detail::is_redirect(res) &&
-                    res.status != StatusCode::NotModified_304;
+    auto redirect = follow_location_ && detail::is_redirect(res);
 
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {
