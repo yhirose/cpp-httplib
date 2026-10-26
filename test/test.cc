@@ -20593,6 +20593,51 @@ TEST(RedirectTest, ResolveRelativeLocation) {
   }
 }
 
+TEST(RedirectTest, RemoveDotSegments) {
+  // RFC 3986 section 5.2.4
+  EXPECT_EQ("/a/g", detail::remove_dot_segments("/a/b/c/./../../g"));
+  EXPECT_EQ("/mid/6", detail::remove_dot_segments("/mid/content=5/../6"));
+  EXPECT_EQ("/g", detail::remove_dot_segments("/./g"));
+  EXPECT_EQ("/g", detail::remove_dot_segments("/../g"));
+  EXPECT_EQ("/", detail::remove_dot_segments("/.."));
+  EXPECT_EQ("/a/", detail::remove_dot_segments("/a/b/.."));
+  EXPECT_EQ("/a/b", detail::remove_dot_segments("/a/b"));
+}
+
+TEST(RedirectTest, AbsoluteLocationIsNormalized) {
+  Server svr;
+
+  svr.Get("/absolute-path", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("/dir/../target?x=1");
+  });
+  svr.Get("/absolute-uri", [](const Request & /*req*/, Response &res) {
+    res.set_redirect("http://localhost:" + std::to_string(PORT) +
+                     "/dir/./../target");
+  });
+  svr.Get("/target", [](const Request &req, Response &res) {
+    res.set_content(req.path, "text/plain");
+  });
+
+  auto th = std::thread([&]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    th.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_follow_location(true);
+
+  for (auto path : {"/absolute-path", "/absolute-uri"}) {
+    auto res = cli.Get(path);
+    ASSERT_TRUE(res) << path << ": " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << path;
+    EXPECT_EQ("/target", res->body) << path;
+  }
+}
+
 TEST(RedirectTest, RelativeLocationWithoutLeadingSlash) {
   Server svr;
 
