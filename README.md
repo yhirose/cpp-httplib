@@ -76,7 +76,10 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 > A wolfSSL server that verifies client certificates does not resume TLS sessions: wolfSSL shares its session cache between contexts, so a resumed session could carry a certificate checked against another server's client CA.
 
 > [!NOTE]
-> **BoringSSL (best-effort):** BoringSSL builds under `CPPHTTPLIB_OPENSSL_SUPPORT` and is exercised by CI against current upstream. Because BoringSSL does not guarantee API stability, support is best-effort — breakage may occasionally land. Two known behavioral differences vs OpenSSL: (1) BoringSSL's public headers require C++14 or later, so consumers must compile accordingly; (2) hostname verification is SAN-only per RFC 6125 §6.4.4 (no CN fallback).
+> **BoringSSL (best-effort):** BoringSSL builds under `CPPHTTPLIB_OPENSSL_SUPPORT` and is exercised by CI against current upstream. Because BoringSSL does not guarantee API stability, support is best-effort — breakage may occasionally land. One known difference vs OpenSSL: BoringSSL's public headers require C++14 or later, so consumers must compile accordingly.
+
+> [!NOTE]
+> **Hostname verification is SAN-only on every backend** (RFC 9525). A host is matched against the certificate's subjectAltName entries, never its Common Name, so a certificate that names its host only in the CN is rejected. Reissue it with a subjectAltName.
 
 ```c++
 // Use either OpenSSL, Mbed TLS, or wolfSSL
@@ -240,7 +243,7 @@ cpp-httplib automatically integrates with the OS certificate store on macOS and 
 
 | Platform | Behavior | Disable (compile time) |
 | :------- | :------- | :--------------------- |
-| macOS | Loads system certs from Keychain (link `CoreFoundation` and `Security` with `-framework`). Requires Apple Clang; GCC is not supported for this feature. | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
+| macOS | Loads system certs from Keychain, honouring their Trust Settings: a certificate set to "Never Trust", or trusted only for another policy such as S/MIME, is not loaded (link `CoreFoundation` and `Security` with `-framework`). Requires Apple Clang; GCC is not supported for this feature. | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
 | Windows | Verifies the certificate chain with CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`) instead of the TLS backend. Revocation checking is best-effort: a revoked server certificate is rejected, while one whose revocation status cannot be determined is accepted. Windows fetches missing roots and intermediates on demand. With a custom CA, the TLS backend verifies the chain instead; with `set_server_certificate_verifier()`, both do. | `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` |
 
 On Windows, the CryptoAPI check can also be turned off at runtime. The TLS backend then verifies the chain instead, as on other platforms:
