@@ -41,6 +41,7 @@ inline std::string u8_to_string(const char8_t *s) {
 #define SERVER_CERT_FILE "./cert.pem"
 #define SERVER_CERT2_FILE "./cert2.pem"
 #define SERVER_CERT_IP_CN_FILE "./cert_ip_cn.pem"
+#define SERVER_CERT_DNS_CN_FILE "./cert_dns_cn.pem"
 #define SERVER_CERT_IPV6_FILE "./cert_ipv6.pem"
 #define SERVER_CERT_SAN_TYPES_FILE "./cert_san_types.pem"
 #define SERVER_CERT_WILDCARD_SAN_FILE "./cert_wildcard_san.pem"
@@ -71,6 +72,12 @@ namespace tls {
 ca_store_t create_ca_store(const char *pem, size_t len);
 bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
 std::vector<std::string> get_ca_names(ctx_t ctx);
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+namespace impl {
+SecTrustSettingsResult
+macos_ssl_trust_settings_result(CFArrayRef trust_settings);
+} // namespace impl
+#endif
 } // namespace tls
 } // namespace httplib
 #endif
@@ -4255,6 +4262,48 @@ TEST(RedirectToDifferentPort, TrailingCharactersInPort) {
   EXPECT_FALSE(res);
 }
 
+TEST(RedirectTest, OtherStatusesWithLocationAreNotFollowed) {
+  Server svr;
+  std::atomic<bool> followed{false};
+
+  svr.Get("/304", [](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::NotModified_304;
+    res.set_header("Location", "/target");
+  });
+
+  svr.Get("/305", [](const Request & /*req*/, Response &res) {
+    res.status = StatusCode::UseProxy_305;
+    res.set_header("Location", "/target");
+  });
+
+  svr.Get("/target", [&](const Request & /*req*/, Response &res) {
+    followed = true;
+    res.set_content("target", "text/plain");
+  });
+
+  auto th = std::thread([&]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    th.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/304");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::NotModified_304, res->status);
+
+  res = cli.Get("/305");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::UseProxy_305, res->status);
+
+  EXPECT_FALSE(followed);
+}
+
 TEST(RedirectFromPageWithContent, Redirect) {
   Server svr;
 
@@ -4304,6 +4353,75 @@ TEST(RedirectFromPageWithContent, Redirect) {
     EXPECT_EQ(StatusCode::Found_302, res->status);
     EXPECT_EQ("___", body);
   }
+}
+
+// A server can close the connection after a request with "Connection: close"
+// without repeating the option in its response (RFC 9112 Section 9.6), so the
+// redirected request must go out on a new connection.
+TEST(RedirectTest, NewConnectionAfterConnectionClose) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(PORT + 2));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 2));
+
+  auto send_text = [](socket_t sock, const std::string &text) {
+    ::send(sock,
+#ifdef _WIN32
+           static_cast<const char *>(text.c_str()),
+           static_cast<int>(text.size()),
+#else
+           text.c_str(), text.size(),
+#endif
+           0);
+  };
+
+  auto reused = false;
+  auto server_thread = std::thread([&] {
+    char buf[4096];
+    auto first = ::accept(srv, nullptr, nullptr);
+    if (first == INVALID_SOCKET) { return; }
+    detail::set_socket_opt_time(first, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    ::recv(first, buf, sizeof(buf), 0);
+    send_text(
+        first,
+        "HTTP/1.1 302 Found\r\nLocation: /2\r\nContent-Length: 0\r\n\r\n");
+
+    auto next = first;
+    if (::recv(first, buf, sizeof(buf), 0) > 0) {
+      reused = true;
+    } else {
+      detail::close_socket(first);
+      next = ::accept(srv, nullptr, nullptr);
+      if (next == INVALID_SOCKET) { return; }
+      detail::set_socket_opt_time(next, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+      ::recv(next, buf, sizeof(buf), 0);
+    }
+    send_text(next, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+                    "Connection: close\r\n\r\nok");
+    detail::close_socket(next);
+  });
+
+  Client cli("127.0.0.1", PORT + 2);
+  cli.set_follow_location(true);
+  cli.set_read_timeout(5, 0);
+  auto res = cli.Get("/1");
+
+  server_thread.join();
+  detail::close_socket(srv);
+
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("ok", res->body);
+  EXPECT_FALSE(reused);
 }
 
 TEST(RedirectFromPageWithContentIP6, Redirect) {
@@ -16578,8 +16696,7 @@ TEST(SSLClientServerTest, CustomizeServerSSLCtxGeneric) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
-// Test verify_hostname for both OpenSSL and MbedTLS backends
-// Verifies that wildcard matching and exact matching work consistently
+// Test verify_hostname on every backend: a host is named by a SAN only
 TEST(SSLClientServerTest, TlsVerifyHostname) {
   using namespace httplib::tls;
 
@@ -16613,7 +16730,7 @@ TEST(SSLClientServerTest, TlsVerifyHostname) {
 
     if (!ctx.cert) return false;
 
-    // Test 1: "Common Name" should match (our test server cert CN)
+    // Test 1: "Common Name" is the CN of our test server cert, which has no SAN
     verify_result_cn = ctx.check_hostname("Common Name");
 
     // Test 2: wrong hostname should not match
@@ -16629,25 +16746,48 @@ TEST(SSLClientServerTest, TlsVerifyHostname) {
   ASSERT_TRUE(verify_callback_called)
       << "Verify callback should have been called";
 
-  // CN="Common Name" should match our test certificate
-  //
-  // BoringSSL intentionally drops CN-based hostname matching per RFC 6125
-  // §6.4.4 — only SubjectAltName is consulted. Other backends (OpenSSL,
-  // MbedTLS, wolfSSL) still honor the CN fallback, so flip the expectation
-  // for BoringSSL builds. OPENSSL_IS_BORINGSSL is defined by BoringSSL's
-  // <openssl/base.h>, which is included transitively when
-  // CPPHTTPLIB_OPENSSL_SUPPORT is set against a BoringSSL install.
-#if defined(OPENSSL_IS_BORINGSSL)
   EXPECT_FALSE(verify_result_cn)
-      << "BoringSSL should reject CN-based hostname matching (SAN-only)";
-#else
-  EXPECT_TRUE(verify_result_cn)
-      << "verify_hostname should match 'Common Name' (certificate CN)";
-#endif
+      << "verify_hostname must not match the certificate CN (no SAN)";
 
   // Wrong hostname should not match
   EXPECT_FALSE(verify_result_wrong)
       << "verify_hostname should not match 'wronghost.example.com'";
+}
+
+// A DNS name in the CN must not authenticate a host (RFC 9525), whichever
+// backend verifies it.
+TEST(SSLClientServerTest, TlsVerifyHostnameDnsNotMatchedByCommonName) {
+  // Certificate CN is "localhost" and it carries no SAN.
+  SSLServer svr(SERVER_CERT_DNS_CN_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/test", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli("localhost", port);
+  cli.set_ca_cert_path(SERVER_CERT_DNS_CN_FILE);
+  cli.enable_server_certificate_verification(true);
+  cli.set_connection_timeout(5);
+
+  auto res = cli.Get("/test");
+  ASSERT_FALSE(res);
+  EXPECT_EQ(Error::SSLServerHostnameVerification, res.error());
+
+  // The same certificate is accepted once host name verification is off, so the
+  // failure above is the host name and not the chain.
+  cli.enable_server_hostname_verification(false);
+  res = cli.Get("/test");
+  ASSERT_TRUE(res) << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
 }
 
 // An IP-literal host must only be authenticated via an iPAddress SAN, never via
@@ -18168,6 +18308,98 @@ TEST(SSLClientTest, EnableSystemCaCustomCaVerifiesLocalServer) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
+
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+// A usage-constraints dictionary of a Keychain Trust Settings array, with
+// the keys SecTrustSettingsCopyTrustSettings() returns.
+static CFDictionaryRef
+make_usage_constraint(SecPolicyRef policy, const char *policy_string,
+                      const SecTrustSettingsResult *result) {
+  auto constraint =
+      CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+                                &kCFTypeDictionaryValueCallBacks);
+  if (policy) {
+    CFDictionarySetValue(constraint, kSecTrustSettingsPolicy, policy);
+  }
+  if (policy_string) {
+    auto str = CFStringCreateWithCString(nullptr, policy_string,
+                                         kCFStringEncodingUTF8);
+    CFDictionarySetValue(constraint, kSecTrustSettingsPolicyString, str);
+    CFRelease(str);
+  }
+  if (result) {
+    auto number_value = static_cast<SInt32>(*result);
+    auto number = CFNumberCreate(nullptr, kCFNumberSInt32Type, &number_value);
+    CFDictionarySetValue(constraint, kSecTrustSettingsResult, number);
+    CFRelease(number);
+  }
+  return constraint;
+}
+
+static SecTrustSettingsResult
+ssl_trust_settings_result(std::vector<CFDictionaryRef> constraints) {
+  auto trust_settings =
+      CFArrayCreateMutable(nullptr, 0, &kCFTypeArrayCallBacks);
+  for (auto constraint : constraints) {
+    CFArrayAppendValue(trust_settings, constraint);
+    CFRelease(constraint);
+  }
+  auto result = tls::impl::macos_ssl_trust_settings_result(trust_settings);
+  CFRelease(trust_settings);
+  return result;
+}
+
+// The system CA loader takes a Keychain certificate as a trusted root only
+// when its Trust Settings say so for SSL, not merely because it has some.
+TEST(SSLClientTest, MacOSKeychainTrustSettingsForSSL) {
+  const auto trust_root = kSecTrustSettingsResultTrustRoot;
+  const auto trust_as_root = kSecTrustSettingsResultTrustAsRoot;
+  const auto deny = kSecTrustSettingsResultDeny;
+  const auto unspecified = kSecTrustSettingsResultUnspecified;
+  auto ssl_policy = SecPolicyCreateSSL(true, nullptr);
+  auto x509_policy = SecPolicyCreateBasicX509();
+
+  // "Always Trust", which stores no constraint at all
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot, ssl_trust_settings_result({}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, nullptr)}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustAsRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &trust_as_root)}));
+
+  // "Never Trust", for everything or for SSL
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, &deny)}));
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &deny)}));
+
+  // Trusted for another policy, for one host, or not at all
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result(
+                {make_usage_constraint(x509_policy, nullptr, &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result({make_usage_constraint(
+                ssl_policy, "www.example.com", &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, &unspecified)}));
+
+  // The first constraint that applies to SSL decides
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(x509_policy, nullptr, &trust_root),
+                 make_usage_constraint(nullptr, nullptr, &deny)}));
+
+  CFRelease(x509_policy);
+  CFRelease(ssl_policy);
+}
+#endif
 
 // Regression test: for IP hosts the Mbed TLS and wolfSSL backends used to
 // skip chain verification entirely (only the certificate identity was
@@ -23692,6 +23924,37 @@ static void with_single_response(const std::string &response, Fn fn) {
   ASSERT_GT(port, 0);
   Client cli("127.0.0.1", port);
   fn(cli);
+}
+
+// set_decompress(false) hands out the encoded bytes through the streaming APIs
+// too, also in a build without the decoder for the advertised coding.
+TEST(StreamDecompressionTest, DisabledPreservesEncodedBody) {
+  const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
+  const auto response = "HTTP/1.1 200 OK\r\n"
+                        "Content-Encoding: gzip\r\n"
+                        "Content-Length: " +
+                        std::to_string(gzipped.size()) +
+                        "\r\n"
+                        "Connection: close\r\n\r\n" +
+                        gzipped;
+
+  with_single_response(response, [&](Client &cli) {
+    cli.set_decompress(false);
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+    EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
+    EXPECT_EQ(gzipped, read_all(handle));
+    EXPECT_FALSE(handle.has_read_error());
+  });
+
+  with_single_response(response, [&](Client &cli) {
+    cli.set_decompress(false);
+    auto res = stream::Get(cli, "/", 7);
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ("gzip", res.get_header_value("Content-Encoding"));
+    EXPECT_EQ(gzipped, res.read_all());
+    EXPECT_FALSE(res.has_read_error());
+  });
 }
 
 TEST(StreamBodyEndTest, BodyEndingAtConnectionClose) {
