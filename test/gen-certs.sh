@@ -38,6 +38,11 @@ openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=::1" -addext
 #                 DNS:a.zz is 97.46.122.122, IP:42.46.122.122 is "*.zz".
 openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=san-types" -addext "subjectAltName=DNS:a.zz,IP:42.46.122.122" -out cert_san_types.pem
 
+# cert_dns_cn.pem: CN is the DNS name the tests connect to, with NO
+#                 subjectAltName. A host is named by a SAN only (RFC 9525), so
+#                 verifying it against this cert must fail.
+openssl req -x509 -key key.pem -sha256 -days 3650 -nodes -subj "/CN=localhost" -out cert_dns_cn.pem
+
 # cert_wildcard_san.pem: a leftmost wildcard next to one that is not leftmost.
 #                 "*.leftmost.example.test" matches a single label; the
 #                 wildcard in "www.*.example.test" must not be honoured.

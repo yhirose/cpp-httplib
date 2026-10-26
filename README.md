@@ -76,7 +76,10 @@ cpp-httplib supports multiple TLS backends through an abstraction layer:
 > A wolfSSL server that verifies client certificates does not resume TLS sessions: wolfSSL shares its session cache between contexts, so a resumed session could carry a certificate checked against another server's client CA.
 
 > [!NOTE]
-> **BoringSSL (best-effort):** BoringSSL builds under `CPPHTTPLIB_OPENSSL_SUPPORT` and is exercised by CI against current upstream. Because BoringSSL does not guarantee API stability, support is best-effort — breakage may occasionally land. Two known behavioral differences vs OpenSSL: (1) BoringSSL's public headers require C++14 or later, so consumers must compile accordingly; (2) hostname verification is SAN-only per RFC 6125 §6.4.4 (no CN fallback).
+> **BoringSSL (best-effort):** BoringSSL builds under `CPPHTTPLIB_OPENSSL_SUPPORT` and is exercised by CI against current upstream. Because BoringSSL does not guarantee API stability, support is best-effort — breakage may occasionally land. One known difference vs OpenSSL: BoringSSL's public headers require C++14 or later, so consumers must compile accordingly.
+
+> [!NOTE]
+> **Hostname verification is SAN-only on every backend** (RFC 9525). A host is matched against the certificate's subjectAltName entries, never its Common Name, so a certificate that names its host only in the CN is rejected. Reissue it with a subjectAltName.
 
 ```c++
 // Use either OpenSSL, Mbed TLS, or wolfSSL
