@@ -3803,6 +3803,8 @@ template <typename T>
 bool check_and_write_headers(Stream &strm, Headers &headers, T header_writer,
                              Error &error);
 
+bool write_data(Stream &strm, const char *d, size_t l);
+
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -4502,7 +4504,7 @@ public:
 
   // State accessors
   bool is_connected() const;
-  const std::string &last_event_id() const;
+  std::string last_event_id() const;
 
   // Blocking start - runs event loop with auto-reconnect
   void start();
@@ -4540,7 +4542,9 @@ private:
   // State
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
+  // Written by the event loop, which start_async() runs on its own thread
   std::string last_event_id_;
+  mutable std::mutex last_event_id_mutex_;
 
   // Async support
   std::thread async_thread_;
@@ -5038,7 +5042,8 @@ inline SSEClient &SSEClient::set_headers(const Headers &headers) {
 
 inline bool SSEClient::is_connected() const { return connected_.load(); }
 
-inline const std::string &SSEClient::last_event_id() const {
+inline std::string SSEClient::last_event_id() const {
+  std::lock_guard<std::mutex> lock(last_event_id_mutex_);
   return last_event_id_;
 }
 
@@ -5213,7 +5218,10 @@ inline void SSEClient::run_event_loop() {
         if (event_complete) {
           // Update last_event_id for reconnection, even for an event that
           // has no data. An empty id clears it.
-          if (has_id) { last_event_id_ = current_msg.id; }
+          if (has_id) {
+            std::lock_guard<std::mutex> lock(last_event_id_mutex_);
+            last_event_id_ = current_msg.id;
+          }
 
           // An event without a data field is not dispatched
           if (has_data) { dispatch_event(current_msg); }
@@ -5821,32 +5829,40 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
   if (len < 126) {
     header[1] = static_cast<uint8_t>(len);
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
   } else if (len <= 0xFFFF) {
     header[1] = 126;
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
     uint8_t ext[2];
     ext[0] = static_cast<uint8_t>((len >> 8) & 0xFF);
     ext[1] = static_cast<uint8_t>(len & 0xFF);
-    if (strm.write(reinterpret_cast<char *>(ext), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(ext), 2)) { return false; }
   } else {
     header[1] = 127;
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
     uint8_t ext[8];
     for (int i = 7; i >= 0; i--) {
       ext[7 - i] =
           static_cast<uint8_t>((static_cast<uint64_t>(len) >> (i * 8)) & 0xFF);
     }
-    if (strm.write(reinterpret_cast<char *>(ext), 8) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(ext), 8)) { return false; }
   }
 
   if (mask) {
     // Generate random mask key
     uint8_t mask_key[4];
     fill_random_bytes(mask_key, sizeof(mask_key));
-    if (strm.write(reinterpret_cast<char *>(mask_key), 4) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(mask_key), 4)) {
+      return false;
+    }
 
     // Write masked payload in chunks
     const size_t chunk_size = 4096;
@@ -5857,11 +5873,11 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
         buf[i] =
             data[offset + i] ^ static_cast<char>(mask_key[(offset + i) % 4]);
       }
-      if (strm.write(buf.data(), n) < 0) { return false; }
+      if (!write_data(strm, buf.data(), n)) { return false; }
     }
   } else {
     if (len > 0) {
-      if (strm.write(data, len) < 0) { return false; }
+      if (!write_data(strm, data, len)) { return false; }
     }
   }
 
@@ -5997,9 +6013,10 @@ inline bool is_valid_close_payload(const std::string &payload) {
 namespace detail {
 
 // A path a mount point serves: absolute, with no empty segment except a
-// trailing '/' and no segment ending in '.' or a space (which covers "." and
-// ".." and names Windows trims into another file's name), so the file served
-// is the one that req.path names to the handlers that ran before it.
+// trailing '/', no segment ending in '.' or a space (which covers "." and
+// ".." and names Windows trims into another file's name) and, on Windows, no
+// ':' (which names an NTFS stream, so "a.txt::$DATA" is a.txt), so the file
+// served is the one that req.path names to the handlers that ran before it.
 inline bool is_valid_path(const std::string &path) {
   if (path.empty() || path[0] != '/') { return false; }
 
@@ -6007,6 +6024,9 @@ inline bool is_valid_path(const std::string &path) {
   for (auto i = beg; i <= path.size(); i++) {
     if (i < path.size() && path[i] != '/') {
       if (path[i] == '\0' || path[i] == '\\') { return false; }
+#ifdef _WIN32
+      if (path[i] == ':') { return false; }
+#endif
       continue;
     }
     auto len = i - beg;
@@ -15975,7 +15995,7 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   }
 
   if (!req.body.empty()) {
-    if (strm.write(req.body.data(), req.body.size()) < 0) {
+    if (!detail::write_data(strm, req.body.data(), req.body.size())) {
       handle.error = Error::Write;
       handle.response.reset();
       return handle;
@@ -19602,15 +19622,75 @@ inline bool enumerate_windows_system_certs(Callback cb) {
 #endif
 
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-// Enumerate macOS Keychain certificates and call callback with DER data
+// The trust a certificate's Trust Settings give it for SSL server
+// verification (SecTrustSettings.h). An empty array trusts it as a root.
+// Otherwise the first usage-constraints dictionary that applies decides: one
+// naming a policy other than SSL, a host name or an application does not
+// apply, and a result left out means TrustRoot. Keychain Access writes "Never
+// Trust" as kSecTrustSettingsResultDeny.
+inline SecTrustSettingsResult
+macos_ssl_trust_settings_result(CFArrayRef trust_settings) {
+  auto count = CFArrayGetCount(trust_settings);
+  if (count == 0) { return kSecTrustSettingsResultTrustRoot; }
+
+  for (CFIndex i = 0; i < count; i++) {
+    auto value = CFArrayGetValueAtIndex(trust_settings, i);
+    if (!value || CFGetTypeID(value) != CFDictionaryGetTypeID()) { continue; }
+    auto constraint = static_cast<CFDictionaryRef>(value);
+
+    auto policy_value =
+        CFDictionaryGetValue(constraint, kSecTrustSettingsPolicy);
+    if (policy_value) {
+      auto policy = static_cast<SecPolicyRef>(const_cast<void *>(policy_value));
+      auto is_ssl = false;
+      if (auto properties = SecPolicyCopyProperties(policy)) {
+        auto oid = CFDictionaryGetValue(properties, kSecPolicyOid);
+        is_ssl = oid && CFEqual(oid, kSecPolicyAppleSSL);
+        CFRelease(properties);
+      }
+      if (!is_ssl) { continue; }
+    }
+
+    if (CFDictionaryContainsKey(constraint, kSecTrustSettingsPolicyString) ||
+        CFDictionaryContainsKey(constraint, kSecTrustSettingsApplication)) {
+      continue;
+    }
+
+    auto result = kSecTrustSettingsResultTrustRoot;
+    auto number = static_cast<CFNumberRef>(
+        CFDictionaryGetValue(constraint, kSecTrustSettingsResult));
+    if (number) {
+      SInt32 number_value = 0;
+      if (!CFNumberGetValue(number, kCFNumberSInt32Type, &number_value)) {
+        continue;
+      }
+      result = static_cast<SecTrustSettingsResult>(number_value);
+    }
+    if (result == kSecTrustSettingsResultTrustRoot ||
+        result == kSecTrustSettingsResultTrustAsRoot ||
+        result == kSecTrustSettingsResultDeny) {
+      return result;
+    }
+  }
+
+  return kSecTrustSettingsResultUnspecified;
+}
+
+// Enumerate the macOS Keychain certificates trusted for SSL and call callback
+// with DER data. A certificate with Trust Settings is not trusted just by
+// having them: the settings say whether it is, and a per-user setting
+// overrides the admin domain's, which overrides the system domain's (whose
+// roots are all trusted). So a system root the user set to "Never Trust" is
+// left out, as is one trusted only for S/MIME or code signing.
 template <typename Callback>
 inline bool enumerate_macos_keychain_certs(Callback cb) {
-  bool loaded = false;
   const SecTrustSettingsDomain domains[] = {
-      kSecTrustSettingsDomainSystem,
-      kSecTrustSettingsDomainAdmin,
       kSecTrustSettingsDomainUser,
+      kSecTrustSettingsDomainAdmin,
+      kSecTrustSettingsDomainSystem,
   };
+  std::set<std::string> decided;
+  std::vector<std::string> trusted;
   for (auto domain : domains) {
     CFArrayRef certs = nullptr;
     OSStatus status = SecTrustSettingsCopyCertificates(domain, &certs);
@@ -19623,15 +19703,42 @@ inline bool enumerate_macos_keychain_certs(Callback cb) {
       SecCertificateRef cert =
           (SecCertificateRef)CFArrayGetValueAtIndex(certs, i);
       CFDataRef data = SecCertificateCopyData(cert);
-      if (data) {
-        if (cb(CFDataGetBytePtr(data),
-               static_cast<size_t>(CFDataGetLength(data)))) {
-          loaded = true;
+      if (!data) { continue; }
+      std::string der(reinterpret_cast<const char *>(CFDataGetBytePtr(data)),
+                      static_cast<size_t>(CFDataGetLength(data)));
+      CFRelease(data);
+
+      // Decided by a domain that overrides this one
+      if (decided.find(der) != decided.end()) { continue; }
+
+      auto result = kSecTrustSettingsResultTrustRoot;
+      if (domain != kSecTrustSettingsDomainSystem) {
+        result = kSecTrustSettingsResultUnspecified;
+        CFArrayRef trust_settings = nullptr;
+        if (SecTrustSettingsCopyTrustSettings(cert, domain, &trust_settings) ==
+                errSecSuccess &&
+            trust_settings) {
+          result = macos_ssl_trust_settings_result(trust_settings);
         }
-        CFRelease(data);
+        if (trust_settings) CFRelease(trust_settings);
+      }
+      // Neither trusted nor distrusted here; a domain below may decide
+      if (result == kSecTrustSettingsResultUnspecified) { continue; }
+
+      decided.insert(der);
+      if (result == kSecTrustSettingsResultTrustRoot ||
+          result == kSecTrustSettingsResultTrustAsRoot) {
+        trusted.push_back(std::move(der));
       }
     }
     CFRelease(certs);
+  }
+
+  bool loaded = false;
+  for (const auto &der : trusted) {
+    if (cb(reinterpret_cast<const unsigned char *>(der.data()), der.size())) {
+      loaded = true;
+    }
   }
   return loaded;
 }
@@ -20066,36 +20173,14 @@ inline bool load_system_certs(ctx_t ctx) {
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) return false;
 
-  bool loaded_any = false;
-  const SecTrustSettingsDomain domains[] = {
-      kSecTrustSettingsDomainSystem,
-      kSecTrustSettingsDomainAdmin,
-      kSecTrustSettingsDomainUser,
-  };
-  for (auto domain : domains) {
-    CFArrayRef certs = nullptr;
-    if (SecTrustSettingsCopyCertificates(domain, &certs) != errSecSuccess ||
-        !certs) {
-      if (certs) CFRelease(certs);
-      continue;
-    }
-    auto count = CFArrayGetCount(certs);
-    for (CFIndex i = 0; i < count; i++) {
-      auto cert = reinterpret_cast<SecCertificateRef>(
-          const_cast<void *>(CFArrayGetValueAtIndex(certs, i)));
-      CFDataRef der = SecCertificateCopyData(cert);
-      if (der) {
-        const unsigned char *data = CFDataGetBytePtr(der);
-        auto x509 = d2i_X509(nullptr, &data, CFDataGetLength(der));
-        if (x509) {
-          if (X509_STORE_add_cert(store, x509) == 1) { loaded_any = true; }
-          X509_free(x509);
-        }
-        CFRelease(der);
-      }
-    }
-    CFRelease(certs);
-  }
+  auto loaded_any = impl::enumerate_macos_keychain_certs(
+      [&](const unsigned char *data, size_t len) {
+        auto x509 = d2i_X509(nullptr, &data, static_cast<long>(len));
+        if (!x509) { return false; }
+        auto added = X509_STORE_add_cert(store, x509) == 1;
+        X509_free(x509);
+        return added;
+      });
   return loaded_any || SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
 #else
   return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;

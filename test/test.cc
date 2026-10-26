@@ -72,6 +72,12 @@ namespace tls {
 ca_store_t create_ca_store(const char *pem, size_t len);
 bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
 std::vector<std::string> get_ca_names(ctx_t ctx);
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+namespace impl {
+SecTrustSettingsResult
+macos_ssl_trust_settings_result(CFArrayRef trust_settings);
+} // namespace impl
+#endif
 } // namespace tls
 } // namespace httplib
 #endif
@@ -698,6 +704,18 @@ TEST(FindContentTypeTest, ComparesWholeExtensions) {
 TEST(IsValidPathTest, RejectsSegmentsEndingInDotOrSpace) {
   for (auto path : {"/a.", "/a ", "/dir./a", "/dir /a", "/..."}) {
     EXPECT_FALSE(detail::is_valid_path(path)) << path;
+  }
+}
+
+// ':' names an NTFS stream on Windows and is an ordinary character in a file
+// name anywhere else.
+TEST(IsValidPathTest, ColonIsRejectedOnlyOnWindows) {
+  for (auto path : {"/a.txt::$DATA", "/a.txt:Zone.Identifier", "/dir:x/a"}) {
+#ifdef _WIN32
+    EXPECT_FALSE(detail::is_valid_path(path)) << path;
+#else
+    EXPECT_TRUE(detail::is_valid_path(path)) << path;
+#endif
   }
 }
 
@@ -12754,7 +12772,8 @@ TEST(MountTest, AliasedPathDoesNotPassPreRoutingGuard) {
   for (auto path :
        {"/./dir/test.html", "/dir/./test.html", "//dir/test.html",
         "/dir//test.html", "/dir/../dir/test.html", "/%2e/dir/test.html",
-        "/dir/test.html.", "/dir/test.html%20"}) {
+        "/dir/test.html.", "/dir/test.html%20", "/dir/test.html::$DATA",
+        "/dir/test.html%3A%3A$DATA"}) {
     SCOPED_TRACE(path);
     auto res = cli.Get(path);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -18303,6 +18322,98 @@ TEST(SSLClientTest, EnableSystemCaCustomCaVerifiesLocalServer) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+#ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
+// A usage-constraints dictionary of a Keychain Trust Settings array, with
+// the keys SecTrustSettingsCopyTrustSettings() returns.
+static CFDictionaryRef
+make_usage_constraint(SecPolicyRef policy, const char *policy_string,
+                      const SecTrustSettingsResult *result) {
+  auto constraint =
+      CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+                                &kCFTypeDictionaryValueCallBacks);
+  if (policy) {
+    CFDictionarySetValue(constraint, kSecTrustSettingsPolicy, policy);
+  }
+  if (policy_string) {
+    auto str = CFStringCreateWithCString(nullptr, policy_string,
+                                         kCFStringEncodingUTF8);
+    CFDictionarySetValue(constraint, kSecTrustSettingsPolicyString, str);
+    CFRelease(str);
+  }
+  if (result) {
+    auto number_value = static_cast<SInt32>(*result);
+    auto number = CFNumberCreate(nullptr, kCFNumberSInt32Type, &number_value);
+    CFDictionarySetValue(constraint, kSecTrustSettingsResult, number);
+    CFRelease(number);
+  }
+  return constraint;
+}
+
+static SecTrustSettingsResult
+ssl_trust_settings_result(std::vector<CFDictionaryRef> constraints) {
+  auto trust_settings =
+      CFArrayCreateMutable(nullptr, 0, &kCFTypeArrayCallBacks);
+  for (auto constraint : constraints) {
+    CFArrayAppendValue(trust_settings, constraint);
+    CFRelease(constraint);
+  }
+  auto result = tls::impl::macos_ssl_trust_settings_result(trust_settings);
+  CFRelease(trust_settings);
+  return result;
+}
+
+// The system CA loader takes a Keychain certificate as a trusted root only
+// when its Trust Settings say so for SSL, not merely because it has some.
+TEST(SSLClientTest, MacOSKeychainTrustSettingsForSSL) {
+  const auto trust_root = kSecTrustSettingsResultTrustRoot;
+  const auto trust_as_root = kSecTrustSettingsResultTrustAsRoot;
+  const auto deny = kSecTrustSettingsResultDeny;
+  const auto unspecified = kSecTrustSettingsResultUnspecified;
+  auto ssl_policy = SecPolicyCreateSSL(true, nullptr);
+  auto x509_policy = SecPolicyCreateBasicX509();
+
+  // "Always Trust", which stores no constraint at all
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot, ssl_trust_settings_result({}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, nullptr)}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultTrustAsRoot,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &trust_as_root)}));
+
+  // "Never Trust", for everything or for SSL
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, &deny)}));
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(ssl_policy, nullptr, &deny)}));
+
+  // Trusted for another policy, for one host, or not at all
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result(
+                {make_usage_constraint(x509_policy, nullptr, &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result({make_usage_constraint(
+                ssl_policy, "www.example.com", &trust_root)}));
+  EXPECT_EQ(kSecTrustSettingsResultUnspecified,
+            ssl_trust_settings_result(
+                {make_usage_constraint(nullptr, nullptr, &unspecified)}));
+
+  // The first constraint that applies to SSL decides
+  EXPECT_EQ(kSecTrustSettingsResultDeny,
+            ssl_trust_settings_result(
+                {make_usage_constraint(x509_policy, nullptr, &trust_root),
+                 make_usage_constraint(nullptr, nullptr, &deny)}));
+
+  CFRelease(x509_policy);
+  CFRelease(ssl_policy);
+}
+#endif
+
 // Regression test: for IP hosts the Mbed TLS and wolfSSL backends used to
 // skip chain verification entirely (only the certificate identity was
 // checked), so a server presenting an untrusted certificate with a matching
@@ -23806,6 +23917,55 @@ TEST(OpenStreamMalformedContentLength, OutOfRange) {
   server_thread.join();
 }
 
+#ifndef _WIN32
+// As above for the body of a streamed request: a send() cut short by the write
+// timeout must not leave the rest of the body unsent.
+TEST(OpenStreamPartialWriteTest, BodyIsWrittenWhole) {
+  signal(SIGPIPE, SIG_IGN);
+
+  Server svr;
+  svr.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  svr.Post("/size", [](const Request &, Response &res,
+                       const ContentReader &content_reader) {
+    // Outlast the client's write timeout before reading the body.
+    std::this_thread::sleep_for(std::chrono::milliseconds(750));
+    size_t received = 0;
+    content_reader([&](const char *, size_t len) {
+      received += len;
+      return true;
+    });
+    res.set_content(std::to_string(received), "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_write_timeout(0, 500000);
+  cli.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+
+  const std::string body(4 * 1024 * 1024, 'A');
+  auto handle = cli.open_stream("POST", "/size", {}, {}, body,
+                                "application/octet-stream");
+  ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+  EXPECT_EQ(StatusCode::OK_200, handle.response->status);
+  EXPECT_EQ(std::to_string(body.size()), read_all(handle));
+}
+#endif
+
 // Serves `response` to the single request `fn` makes with a fresh client.
 template <typename Fn>
 static void with_single_response(const std::string &response, Fn fn) {
@@ -26357,6 +26517,47 @@ TEST_F(SSEIntegrationTest, LastEventIdHeader) {
   EXPECT_EQ(sse.last_event_id(), "evt-123");
 }
 
+// Test: last_event_id() read from another thread while start_async() runs
+TEST_F(SSEIntegrationTest, LastEventIdWhileRunning) {
+  // Ids of every length up to 200, so the stored id keeps changing size
+  server_->Get("/many-ids", [](const Request &, Response &res) {
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t offset, DataSink &sink) {
+          if (offset == 0) {
+            std::string events;
+            for (size_t i = 0; i < 2000; i++) {
+              events += "id: " + std::string(1 + i % 200, 'a') + "\n";
+              events += "data: x\n\n";
+            }
+            events += "id: end\ndata: x\n\n";
+            sink.write(events.data(), events.size());
+          }
+          return false;
+        });
+  });
+
+  Client client("localhost", get_port());
+  sse::SSEClient sse(client, "/many-ids");
+  // Wait out the rest of the test rather than replay the stream
+  sse.set_reconnect_interval(10000);
+  sse.set_max_reconnect_attempts(1);
+  sse.start_async();
+
+  auto well_formed = true;
+  std::string id;
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (id != "end" && std::chrono::steady_clock::now() < deadline) {
+    id = sse.last_event_id();
+    if (id != "end" && id.find_first_not_of('a') != std::string::npos) {
+      well_formed = false;
+    }
+  }
+  sse.stop();
+
+  EXPECT_TRUE(well_formed);
+  EXPECT_EQ(sse.last_event_id(), "end");
+}
+
 // Test: Manual stop
 TEST_F(SSEIntegrationTest, ManualStop) {
   // Endpoint that sends one event and stays open briefly. The server outlives
@@ -28141,6 +28342,64 @@ TEST_F(WebSocketIntegrationTest, ChronoTimeoutSetters) {
   EXPECT_GE(elapsed, 1400);
   EXPECT_LT(elapsed, 30000);
 }
+
+#ifndef _WIN32
+// A send() that times out after part of the data went out returns the count
+// written so far. Every byte of the frame must still be sent, or the peer reads
+// the next frame's header and payload as the rest of this one.
+TEST(WebSocketPartialWriteTest, FrameIsWrittenWhole) {
+  signal(SIGPIPE, SIG_IGN);
+
+  const std::string large(4 * 1024 * 1024, 'A');
+  std::atomic<bool> large_sent{false};
+  std::atomic<bool> small_sent{false};
+
+  Server svr;
+  svr.set_write_timeout(0, 500000);
+  svr.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    large_sent = ws.send(large.data(), large.size());
+    small_sent = ws.send("after");
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://" + std::string(HOST) + ":" +
+                             std::to_string(port) + "/ws");
+  client.set_read_timeout(5);
+  client.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  ASSERT_TRUE(client.connect());
+
+  // Outlast the server's write timeout, then drain.
+  std::this_thread::sleep_for(std::chrono::milliseconds(750));
+
+  std::string msg;
+  EXPECT_EQ(ws::ReadResult::Binary, client.read(msg));
+  EXPECT_TRUE(msg == large);
+  EXPECT_EQ(ws::ReadResult::Text, client.read(msg));
+  EXPECT_EQ("after", msg);
+  EXPECT_TRUE(large_sent);
+  EXPECT_TRUE(small_sent);
+
+  client.close();
+}
+#endif
 
 TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {
   Server svr;

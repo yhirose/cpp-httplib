@@ -243,7 +243,7 @@ cpp-httplib automatically integrates with the OS certificate store on macOS and 
 
 | Platform | Behavior | Disable (compile time) |
 | :------- | :------- | :--------------------- |
-| macOS | Loads system certs from Keychain (link `CoreFoundation` and `Security` with `-framework`). Requires Apple Clang; GCC is not supported for this feature. | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
+| macOS | Loads system certs from Keychain, honouring their Trust Settings: a certificate set to "Never Trust", or trusted only for another policy such as S/MIME, is not loaded (link `CoreFoundation` and `Security` with `-framework`). Requires Apple Clang; GCC is not supported for this feature. | `CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES` |
 | Windows | Verifies the certificate chain with CryptoAPI (`CertGetCertificateChain` / `CertVerifyCertificateChainPolicy`) instead of the TLS backend. Revocation checking is best-effort: a revoked server certificate is rejected, while one whose revocation status cannot be determined is accepted. Windows fetches missing roots and intermediates on demand. With a custom CA, the TLS backend verifies the chain instead; with `set_server_certificate_verifier()`, both do. | `CPPHTTPLIB_DISABLE_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE` |
 
 On Windows, the CryptoAPI check can also be turned off at runtime. The TLS backend then verifies the chain instead, as on other platforms:
@@ -409,7 +409,7 @@ ret = svr.remove_mount_point("/");
 ret = svr.remove_mount_point("/public");
 ```
 
-A mount point serves a path only when it has no `.`, `..` or empty segment other than a trailing `/`, and no segment ending in `.` or a space, so a check on `req.path` in `set_pre_routing_handler()` sees the path of the file that is served. A path ending in `/`, and the mount point itself such as `/public`, serve the `index.html` in that directory. The file system can still give a file other names: another case on a case-insensitive file system, such as the default ones on macOS and Windows, and on Windows an 8.3 short name such as `PRIVAT~1`. Compare paths without regard to case on such a file system, and on Windows keep files that need a guard out of mounted directories.
+A mount point serves a path only when it has no `.`, `..` or empty segment other than a trailing `/`, no segment ending in `.` or a space and, on Windows, no `:` (it names an NTFS stream), so a check on `req.path` in `set_pre_routing_handler()` sees the path of the file that is served. A path ending in `/`, and the mount point itself such as `/public`, serve the `index.html` in that directory. The file system can still give a file other names: another case on a case-insensitive file system, such as the default ones on macOS and Windows, and on Windows an 8.3 short name such as `PRIVAT~1`. Compare paths without regard to case on such a file system, and on Windows keep files that need a guard out of mounted directories.
 
 ```cpp
 // User defined file extension and MIME type mappings
