@@ -19184,6 +19184,12 @@ inline bool SSLClient::connect_with_proxy(
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     Response &res, bool &success, Error &error) {
   success = true;
+  // A connect-to entry retargets the CONNECT, and its Host must then name the
+  // same authority. Without one the request stays exactly as it was.
+  auto connect_target =
+      detail::make_connect_request_target(connect_to_map_, host_, port_);
+  auto retargeted = connect_target !=
+                    detail::make_host_and_port_string_always_port(host_, port_);
   Response proxy_res;
   if (!detail::process_client_socket(
           socket.sock, read_timeout_sec_, read_timeout_usec_,
@@ -19191,8 +19197,8 @@ inline bool SSLClient::connect_with_proxy(
           start_time, [&](Stream &strm) {
             Request req2;
             req2.method = "CONNECT";
-            req2.path = detail::make_connect_request_target(connect_to_map_,
-                                                            host_, port_);
+            req2.path = connect_target;
+            if (retargeted) { req2.set_header("Host", connect_target); }
             if (max_timeout_msec_ > 0) {
               req2.start_time_ = std::chrono::steady_clock::now();
             }
@@ -19231,8 +19237,8 @@ inline bool SSLClient::connect_with_proxy(
                 start_time, [&](Stream &strm) {
                   Request req3;
                   req3.method = "CONNECT";
-                  req3.path = detail::make_connect_request_target(
-                      connect_to_map_, host_, port_);
+                  req3.path = connect_target;
+                  if (retargeted) { req3.set_header("Host", connect_target); }
                   req3.headers.insert(detail::make_digest_authentication_header(
                       req3, make_request_target(req3), auth, 1,
                       detail::random_string(10), proxy_digest_auth_username_,
