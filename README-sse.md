@@ -100,7 +100,7 @@ sse.stop();
 
 ```cpp
 bool connected = sse.is_connected();
-const std::string &id = sse.last_event_id();
+std::string id = sse.last_event_id();
 ```
 
 ## Examples

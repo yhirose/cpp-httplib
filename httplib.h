@@ -3797,6 +3797,8 @@ template <typename T>
 bool check_and_write_headers(Stream &strm, Headers &headers, T header_writer,
                              Error &error);
 
+bool write_data(Stream &strm, const char *d, size_t l);
+
 std::string trim_copy(const std::string &s);
 
 void divide(
@@ -4496,7 +4498,7 @@ public:
 
   // State accessors
   bool is_connected() const;
-  const std::string &last_event_id() const;
+  std::string last_event_id() const;
 
   // Blocking start - runs event loop with auto-reconnect
   void start();
@@ -4534,7 +4536,9 @@ private:
   // State
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
+  // Written by the event loop, which start_async() runs on its own thread
   std::string last_event_id_;
+  mutable std::mutex last_event_id_mutex_;
 
   // Async support
   std::thread async_thread_;
@@ -5032,7 +5036,8 @@ inline SSEClient &SSEClient::set_headers(const Headers &headers) {
 
 inline bool SSEClient::is_connected() const { return connected_.load(); }
 
-inline const std::string &SSEClient::last_event_id() const {
+inline std::string SSEClient::last_event_id() const {
+  std::lock_guard<std::mutex> lock(last_event_id_mutex_);
   return last_event_id_;
 }
 
@@ -5207,7 +5212,10 @@ inline void SSEClient::run_event_loop() {
         if (event_complete) {
           // Update last_event_id for reconnection, even for an event that
           // has no data. An empty id clears it.
-          if (has_id) { last_event_id_ = current_msg.id; }
+          if (has_id) {
+            std::lock_guard<std::mutex> lock(last_event_id_mutex_);
+            last_event_id_ = current_msg.id;
+          }
 
           // An event without a data field is not dispatched
           if (has_data) { dispatch_event(current_msg); }
@@ -5344,6 +5352,8 @@ cert_t get_peer_cert(const_session_t session);
 // do not use them after free_session(), as with get_peer_cert().
 size_t get_peer_certs(const_session_t session, std::vector<cert_t> &certs);
 void free_cert(cert_t cert);
+// Matches the host against the subjectAltName entries only, never the Common
+// Name (RFC 9525).
 bool verify_hostname(cert_t cert, const char *hostname);
 uint64_t hostname_mismatch_code();
 long get_verify_result(const_session_t session);
@@ -5813,32 +5823,40 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
   if (len < 126) {
     header[1] = static_cast<uint8_t>(len);
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
   } else if (len <= 0xFFFF) {
     header[1] = 126;
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
     uint8_t ext[2];
     ext[0] = static_cast<uint8_t>((len >> 8) & 0xFF);
     ext[1] = static_cast<uint8_t>(len & 0xFF);
-    if (strm.write(reinterpret_cast<char *>(ext), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(ext), 2)) { return false; }
   } else {
     header[1] = 127;
     if (mask) { header[1] |= 0x80; }
-    if (strm.write(reinterpret_cast<char *>(header), 2) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
+      return false;
+    }
     uint8_t ext[8];
     for (int i = 7; i >= 0; i--) {
       ext[7 - i] =
           static_cast<uint8_t>((static_cast<uint64_t>(len) >> (i * 8)) & 0xFF);
     }
-    if (strm.write(reinterpret_cast<char *>(ext), 8) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(ext), 8)) { return false; }
   }
 
   if (mask) {
     // Generate random mask key
     uint8_t mask_key[4];
     fill_random_bytes(mask_key, sizeof(mask_key));
-    if (strm.write(reinterpret_cast<char *>(mask_key), 4) < 0) { return false; }
+    if (!write_data(strm, reinterpret_cast<char *>(mask_key), 4)) {
+      return false;
+    }
 
     // Write masked payload in chunks
     const size_t chunk_size = 4096;
@@ -5849,11 +5867,11 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
         buf[i] =
             data[offset + i] ^ static_cast<char>(mask_key[(offset + i) % 4]);
       }
-      if (strm.write(buf.data(), n) < 0) { return false; }
+      if (!write_data(strm, buf.data(), n)) { return false; }
     }
   } else {
     if (len > 0) {
-      if (strm.write(data, len) < 0) { return false; }
+      if (!write_data(strm, data, len)) { return false; }
     }
   }
 
@@ -15970,7 +15988,7 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   }
 
   if (!req.body.empty()) {
-    if (strm.write(req.body.data(), req.body.size()) < 0) {
+    if (!detail::write_data(strm, req.body.data(), req.body.size())) {
       handle.error = Error::Write;
       handle.response.reset();
       return handle;
@@ -16021,7 +16039,7 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
 
   auto content_encoding = detail::get_combined_header_value(
       handle.response->headers, "Content-Encoding");
-  if (!content_encoding.empty()) {
+  if (decompress_ && !content_encoding.empty()) {
     // Same policy as prepare_content_receiver(): reject a coding we know about
     // but were not built with, pass an unrecognized one through as-is.
     handle.decompressor_ = detail::create_decompressor(content_encoding);
@@ -16216,10 +16234,18 @@ inline bool ChunkedDecoder::parse_trailers_into(Headers &dest,
   return parse_trailers(lr, dest, src_headers);
 }
 
-// A 3xx without a Location, such as a 304, is a final response
+// Only 301, 302, 303, 307 and 308 redirect. Any other 3xx, such as a 304, or
+// a redirect without a Location, is a final response.
 inline bool is_redirect(const Response &res) {
-  return 300 < res.status && res.status < 400 &&
-         !res.get_header_value("Location").empty();
+  switch (res.status) {
+  case StatusCode::MovedPermanently_301:
+  case StatusCode::Found_302:
+  case StatusCode::SeeOther_303:
+  case StatusCode::TemporaryRedirect_307:
+  case StatusCode::PermanentRedirect_308:
+    return !res.get_header_value("Location").empty();
+  default: return false;
+  }
 }
 
 } // namespace detail
@@ -16281,9 +16307,10 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
     // to call it from a different thread since it's a thread-safety issue
     // to do these things to the socket if another thread is using the socket.
     std::lock_guard<std::mutex> guard(socket_mutex_);
-    // Also when the request asked for it (e.g. a body that was never sent),
-    // so that a redirect or an auth retry below does not reuse the socket.
-    if (socket_should_be_closed_when_request_is_done_ ||
+    // Also when the request asked for it (e.g. a body that was never sent,
+    // or "Connection: close"), so that a redirect or an auth retry below does
+    // not reuse the socket.
+    if (socket_should_be_closed_when_request_is_done_ || close_connection ||
         detail::has_header_token(res.headers, "Connection", "close") ||
         (res.version == "HTTP/1.0" && res.reason != "Connection established")) {
       disconnect(/*gracefully=*/true);
@@ -17028,8 +17055,7 @@ inline bool ClientImpl::process_request(Stream &strm, Request &req,
       }
     }
 
-    auto redirect = follow_location_ && detail::is_redirect(res) &&
-                    res.status != StatusCode::NotModified_304;
+    auto redirect = follow_location_ && detail::is_redirect(res);
 
     if (req.response_handler && !redirect) {
       if (!req.response_handler(res)) {
@@ -19585,15 +19611,75 @@ inline bool enumerate_windows_system_certs(Callback cb) {
 #endif
 
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
-// Enumerate macOS Keychain certificates and call callback with DER data
+// The trust a certificate's Trust Settings give it for SSL server
+// verification (SecTrustSettings.h). An empty array trusts it as a root.
+// Otherwise the first usage-constraints dictionary that applies decides: one
+// naming a policy other than SSL, a host name or an application does not
+// apply, and a result left out means TrustRoot. Keychain Access writes "Never
+// Trust" as kSecTrustSettingsResultDeny.
+inline SecTrustSettingsResult
+macos_ssl_trust_settings_result(CFArrayRef trust_settings) {
+  auto count = CFArrayGetCount(trust_settings);
+  if (count == 0) { return kSecTrustSettingsResultTrustRoot; }
+
+  for (CFIndex i = 0; i < count; i++) {
+    auto value = CFArrayGetValueAtIndex(trust_settings, i);
+    if (!value || CFGetTypeID(value) != CFDictionaryGetTypeID()) { continue; }
+    auto constraint = static_cast<CFDictionaryRef>(value);
+
+    auto policy_value =
+        CFDictionaryGetValue(constraint, kSecTrustSettingsPolicy);
+    if (policy_value) {
+      auto policy = static_cast<SecPolicyRef>(const_cast<void *>(policy_value));
+      auto is_ssl = false;
+      if (auto properties = SecPolicyCopyProperties(policy)) {
+        auto oid = CFDictionaryGetValue(properties, kSecPolicyOid);
+        is_ssl = oid && CFEqual(oid, kSecPolicyAppleSSL);
+        CFRelease(properties);
+      }
+      if (!is_ssl) { continue; }
+    }
+
+    if (CFDictionaryContainsKey(constraint, kSecTrustSettingsPolicyString) ||
+        CFDictionaryContainsKey(constraint, kSecTrustSettingsApplication)) {
+      continue;
+    }
+
+    auto result = kSecTrustSettingsResultTrustRoot;
+    auto number = static_cast<CFNumberRef>(
+        CFDictionaryGetValue(constraint, kSecTrustSettingsResult));
+    if (number) {
+      SInt32 number_value = 0;
+      if (!CFNumberGetValue(number, kCFNumberSInt32Type, &number_value)) {
+        continue;
+      }
+      result = static_cast<SecTrustSettingsResult>(number_value);
+    }
+    if (result == kSecTrustSettingsResultTrustRoot ||
+        result == kSecTrustSettingsResultTrustAsRoot ||
+        result == kSecTrustSettingsResultDeny) {
+      return result;
+    }
+  }
+
+  return kSecTrustSettingsResultUnspecified;
+}
+
+// Enumerate the macOS Keychain certificates trusted for SSL and call callback
+// with DER data. A certificate with Trust Settings is not trusted just by
+// having them: the settings say whether it is, and a per-user setting
+// overrides the admin domain's, which overrides the system domain's (whose
+// roots are all trusted). So a system root the user set to "Never Trust" is
+// left out, as is one trusted only for S/MIME or code signing.
 template <typename Callback>
 inline bool enumerate_macos_keychain_certs(Callback cb) {
-  bool loaded = false;
   const SecTrustSettingsDomain domains[] = {
-      kSecTrustSettingsDomainSystem,
-      kSecTrustSettingsDomainAdmin,
       kSecTrustSettingsDomainUser,
+      kSecTrustSettingsDomainAdmin,
+      kSecTrustSettingsDomainSystem,
   };
+  std::set<std::string> decided;
+  std::vector<std::string> trusted;
   for (auto domain : domains) {
     CFArrayRef certs = nullptr;
     OSStatus status = SecTrustSettingsCopyCertificates(domain, &certs);
@@ -19606,15 +19692,42 @@ inline bool enumerate_macos_keychain_certs(Callback cb) {
       SecCertificateRef cert =
           (SecCertificateRef)CFArrayGetValueAtIndex(certs, i);
       CFDataRef data = SecCertificateCopyData(cert);
-      if (data) {
-        if (cb(CFDataGetBytePtr(data),
-               static_cast<size_t>(CFDataGetLength(data)))) {
-          loaded = true;
+      if (!data) { continue; }
+      std::string der(reinterpret_cast<const char *>(CFDataGetBytePtr(data)),
+                      static_cast<size_t>(CFDataGetLength(data)));
+      CFRelease(data);
+
+      // Decided by a domain that overrides this one
+      if (decided.find(der) != decided.end()) { continue; }
+
+      auto result = kSecTrustSettingsResultTrustRoot;
+      if (domain != kSecTrustSettingsDomainSystem) {
+        result = kSecTrustSettingsResultUnspecified;
+        CFArrayRef trust_settings = nullptr;
+        if (SecTrustSettingsCopyTrustSettings(cert, domain, &trust_settings) ==
+                errSecSuccess &&
+            trust_settings) {
+          result = macos_ssl_trust_settings_result(trust_settings);
         }
-        CFRelease(data);
+        if (trust_settings) CFRelease(trust_settings);
+      }
+      // Neither trusted nor distrusted here; a domain below may decide
+      if (result == kSecTrustSettingsResultUnspecified) { continue; }
+
+      decided.insert(der);
+      if (result == kSecTrustSettingsResultTrustRoot ||
+          result == kSecTrustSettingsResultTrustAsRoot) {
+        trusted.push_back(std::move(der));
       }
     }
     CFRelease(certs);
+  }
+
+  bool loaded = false;
+  for (const auto &der : trusted) {
+    if (cb(reinterpret_cast<const unsigned char *>(der.data()), der.size())) {
+      loaded = true;
+    }
   }
   return loaded;
 }
@@ -20049,36 +20162,14 @@ inline bool load_system_certs(ctx_t ctx) {
   auto store = SSL_CTX_get_cert_store(ssl_ctx);
   if (!store) return false;
 
-  bool loaded_any = false;
-  const SecTrustSettingsDomain domains[] = {
-      kSecTrustSettingsDomainSystem,
-      kSecTrustSettingsDomainAdmin,
-      kSecTrustSettingsDomainUser,
-  };
-  for (auto domain : domains) {
-    CFArrayRef certs = nullptr;
-    if (SecTrustSettingsCopyCertificates(domain, &certs) != errSecSuccess ||
-        !certs) {
-      if (certs) CFRelease(certs);
-      continue;
-    }
-    auto count = CFArrayGetCount(certs);
-    for (CFIndex i = 0; i < count; i++) {
-      auto cert = reinterpret_cast<SecCertificateRef>(
-          const_cast<void *>(CFArrayGetValueAtIndex(certs, i)));
-      CFDataRef der = SecCertificateCopyData(cert);
-      if (der) {
-        const unsigned char *data = CFDataGetBytePtr(der);
-        auto x509 = d2i_X509(nullptr, &data, CFDataGetLength(der));
-        if (x509) {
-          if (X509_STORE_add_cert(store, x509) == 1) { loaded_any = true; }
-          X509_free(x509);
-        }
-        CFRelease(der);
-      }
-    }
-    CFRelease(certs);
-  }
+  auto loaded_any = impl::enumerate_macos_keychain_certs(
+      [&](const unsigned char *data, size_t len) {
+        auto x509 = d2i_X509(nullptr, &data, static_cast<long>(len));
+        if (!x509) { return false; }
+        auto added = X509_STORE_add_cert(store, x509) == 1;
+        X509_free(x509);
+        return added;
+      });
   return loaded_any || SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
 #else
   return SSL_CTX_set_default_verify_paths(ssl_ctx) == 1;
@@ -20192,10 +20283,12 @@ inline bool set_sni(session_t session, const char *hostname,
   auto ssl = static_cast<SSL *>(session);
 
   // The handshake's chain verification then checks the name as well
-  if (verify_hostname &&
-      X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), hostname,
-                                  strlen(hostname)) != 1) {
-    return false;
+  if (verify_hostname) {
+    auto param = SSL_get0_param(ssl);
+    X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NEVER_CHECK_SUBJECT);
+    if (X509_VERIFY_PARAM_set1_host(param, hostname, strlen(hostname)) != 1) {
+      return false;
+    }
   }
 
 #if defined(OPENSSL_IS_BORINGSSL)
@@ -20444,7 +20537,8 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   if (detail::is_ip_address(hostname)) {
     return X509_check_ip_asc(x509, hostname, 0) == 1;
   }
-  return X509_check_host(x509, hostname, strlen(hostname), 0, nullptr) == 1;
+  return X509_check_host(x509, hostname, strlen(hostname),
+                         X509_CHECK_FLAG_NEVER_CHECK_SUBJECT, nullptr) == 1;
 }
 
 inline uint64_t hostname_mismatch_code() {
@@ -21830,7 +21924,6 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 
   // Check Subject Alternative Names (SAN). Mbed TLS keeps the GeneralName type
   // in buf.tag and the raw value in buf.p / buf.len.
-  auto has_dns_san = false;
   for (auto san = &mcert->subject_alt_names; san; san = san->next) {
     if (!san->buf.p || san->buf.len == 0) { continue; }
     const unsigned char *p = san->buf.p;
@@ -21845,21 +21938,8 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
         return true;
       }
     } else if (san_type == MBEDTLS_X509_SAN_DNS_NAME) {
-      has_dns_san = true;
       std::string san_name(reinterpret_cast<const char *>(p), len);
       if (detail::match_hostname(san_name, host_str)) { return true; }
-    }
-  }
-
-  // Fallback: the Common Names (CN) in the subject, as X509_check_host does it:
-  // never for an IP host, which only an iPAddress SAN names, and never next to
-  // a DNS SAN (RFC 6125 6.4.4).
-  if (is_ip || has_dns_san) { return false; }
-  for (auto name = &mcert->subject; name; name = name->next) {
-    if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_CN, &name->oid) == 0) {
-      std::string cn(reinterpret_cast<const char *>(name->val.p),
-                     name->val.len);
-      if (detail::match_hostname(cn, host_str)) { return true; }
     }
   }
 
@@ -23010,7 +23090,6 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
   auto is_ip = ip_len > 0;
 
   // Check Subject Alternative Names
-  auto has_dns_san = false;
   auto *san_names = static_cast<WOLF_STACK_OF(WOLFSSL_GENERAL_NAME) *>(
       wolfSSL_X509_get_ext_d2i(x509, NID_subject_alt_name, nullptr, nullptr));
 
@@ -23023,7 +23102,6 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
 
       if (!is_ip && names->type == WOLFSSL_GEN_DNS) {
         // DNS name
-        has_dns_san = true;
         unsigned char *dns_name = nullptr;
         int dns_len = wolfSSL_ASN1_STRING_to_UTF8(&dns_name, names->d.dNSName);
         if (dns_name && dns_len > 0) {
@@ -23050,12 +23128,7 @@ inline bool verify_hostname(cert_t cert, const char *hostname) {
     wolfSSL_sk_free(san_names);
   }
 
-  // Fallback: the Common Name (CN) in the subject, as X509_check_host does it:
-  // never for an IP host, which only an iPAddress SAN names, and never next to
-  // a DNS SAN (RFC 6125 6.4.4).
-  if (is_ip || has_dns_san) { return false; }
-  auto cn = get_cert_subject_cn(cert);
-  return !cn.empty() && detail::match_hostname(cn, host_str);
+  return false;
 }
 
 inline uint64_t hostname_mismatch_code() {
