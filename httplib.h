@@ -11975,8 +11975,13 @@ inline std::string decode_query_component(const std::string &component,
 }
 
 inline std::string sanitize_filename(const std::string &filename) {
-  // Extract basename: find the last path separator (/ or \)
+  // Extract basename: find the last path separator (/ or \) and, on Windows,
+  // ':', which ends a drive prefix ("C:..") or names an NTFS stream ("a:b")
+#ifdef _WIN32
+  auto pos = filename.find_last_of("/\\:");
+#else
   auto pos = filename.find_last_of("/\\");
+#endif
   auto result =
       (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
 
