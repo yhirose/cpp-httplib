@@ -234,6 +234,8 @@ void set_ipv6_v6only(bool on);
 void set_socket_options(SocketOptions socket_options);
 void set_interface(const std::string &intf);
 void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
+void set_resolve_map(std::map<std::string, std::string> addr_map);
+void set_connect_to_map(std::map<std::string, std::string> connect_to_map);
 
 // SSL configuration (wss:// only, SSL builds only)
 void set_ca_cert_path(const std::string &ca_cert_file_path,

@@ -1498,13 +1498,31 @@ cli.set_hostname_addr_map({{"example.com", "internal.example.lan"}});
 An empty value is ignored, leaving the original hostname as the connection
 target.
 
-When the connection is tunnelled through a proxy with `CONNECT` (HTTPS and
-WebSocket), the socket connects to the proxy instead, and the mapped address
-becomes the `CONNECT` target, so the proxy reaches the same address a direct
-connection would. Inside the tunnel the hostname still supplies the `Host`
-header and the SNI.
+`set_resolve_map` is the same setting under a name that matches curl's
+`--resolve`. Like `--resolve`, it is not used through a proxy: the socket
+connects to the proxy, and the proxy resolves the original hostname of the
+`CONNECT` target itself.
 
-The same method is available on `httplib::ws::WebSocketClient`.
+To change where the connection goes whether or not a proxy is used, use
+`set_connect_to_map`, which works like curl's `--connect-to`. On a direct
+connection it changes the connection target, and through a proxy it becomes
+the `CONNECT` target (HTTPS and WebSocket). The hostname still supplies the
+`Host` header, the SNI and the certificate check inside the tunnel:
+
+```cpp
+httplib::Client cli("https://sni.example");
+
+// curl -x http://proxy.example:3128 \
+//   --connect-to sni.example:443:server.example:443 https://sni.example/
+cli.set_connect_to_map({{"sni.example", "server.example"}});
+cli.set_proxy("proxy.example", 3128);
+// CONNECT server.example:443, SNI sni.example
+```
+
+As with curl, the connect-to map applies first on a direct connection, and
+the resolve map then applies to the resulting name.
+
+These methods are also available on `httplib::ws::WebSocketClient`.
 
 ### Automatic Path Encoding
 
