@@ -707,9 +707,15 @@ TEST(IsValidPathTest, RejectsSegmentsEndingInDotOrSpace) {
   }
 }
 
-TEST(IsValidPathTest, RejectsStreamNames) {
+// ':' names an NTFS stream on Windows and is an ordinary character in a file
+// name anywhere else.
+TEST(IsValidPathTest, ColonIsRejectedOnlyOnWindows) {
   for (auto path : {"/a.txt::$DATA", "/a.txt:Zone.Identifier", "/dir:x/a"}) {
+#ifdef _WIN32
     EXPECT_FALSE(detail::is_valid_path(path)) << path;
+#else
+    EXPECT_TRUE(detail::is_valid_path(path)) << path;
+#endif
   }
 }
 

@@ -6008,18 +6008,19 @@ namespace detail {
 
 // A path a mount point serves: absolute, with no empty segment except a
 // trailing '/', no segment ending in '.' or a space (which covers "." and
-// ".." and names Windows trims into another file's name) and no ':' (which
-// names an NTFS stream, so "a.txt::$DATA" is a.txt), so the file served is the
-// one that req.path names to the handlers that ran before it.
+// ".." and names Windows trims into another file's name) and, on Windows, no
+// ':' (which names an NTFS stream, so "a.txt::$DATA" is a.txt), so the file
+// served is the one that req.path names to the handlers that ran before it.
 inline bool is_valid_path(const std::string &path) {
   if (path.empty() || path[0] != '/') { return false; }
 
   auto beg = size_t{1};
   for (auto i = beg; i <= path.size(); i++) {
     if (i < path.size() && path[i] != '/') {
-      if (path[i] == '\0' || path[i] == '\\' || path[i] == ':') {
-        return false;
-      }
+      if (path[i] == '\0' || path[i] == '\\') { return false; }
+#ifdef _WIN32
+      if (path[i] == ':') { return false; }
+#endif
       continue;
     }
     auto len = i - beg;
