@@ -23779,6 +23779,37 @@ static void with_single_response(const std::string &response, Fn fn) {
   fn(cli);
 }
 
+// set_decompress(false) hands out the encoded bytes through the streaming APIs
+// too, also in a build without the decoder for the advertised coding.
+TEST(StreamDecompressionTest, DisabledPreservesEncodedBody) {
+  const std::string gzipped(GZIPPED_HELLO_WORLD, sizeof(GZIPPED_HELLO_WORLD));
+  const auto response = "HTTP/1.1 200 OK\r\n"
+                        "Content-Encoding: gzip\r\n"
+                        "Content-Length: " +
+                        std::to_string(gzipped.size()) +
+                        "\r\n"
+                        "Connection: close\r\n\r\n" +
+                        gzipped;
+
+  with_single_response(response, [&](Client &cli) {
+    cli.set_decompress(false);
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+    EXPECT_EQ("gzip", handle.response->get_header_value("Content-Encoding"));
+    EXPECT_EQ(gzipped, read_all(handle));
+    EXPECT_FALSE(handle.has_read_error());
+  });
+
+  with_single_response(response, [&](Client &cli) {
+    cli.set_decompress(false);
+    auto res = stream::Get(cli, "/", 7);
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ("gzip", res.get_header_value("Content-Encoding"));
+    EXPECT_EQ(gzipped, res.read_all());
+    EXPECT_FALSE(res.has_read_error());
+  });
+}
+
 TEST(StreamBodyEndTest, BodyEndingAtConnectionClose) {
   // Neither Content-Length nor chunked: the body ends at the close
   const char *close_delimited = "HTTP/1.1 200 OK\r\n"
