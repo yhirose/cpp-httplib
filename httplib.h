@@ -995,6 +995,30 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
   return true;
 }
 
+// Removes "." and ".." segments from a path that starts with '/' (RFC 3986
+// section 5.2.4).
+inline std::string remove_dot_segments(const std::string &path) {
+  std::string out;
+  size_t i = 0;
+  while (i < path.size()) {
+    auto next = (std::min)(path.find('/', i + 1), path.size());
+    auto segment = path.substr(i + 1, next - i - 1);
+    auto is_last = next == path.size();
+    if (segment == "." || segment == "..") {
+      if (segment == "..") {
+        out.erase((std::min)(out.rfind('/'), out.size()));
+      }
+      if (is_last) { out += '/'; }
+    } else {
+      out += '/';
+      out += segment;
+    }
+    i = next;
+  }
+  if (out.empty()) { out = "/"; }
+  return out;
+}
+
 // Resolves a relative-path or query-only Location value against the path of
 // the request being redirected (RFC 3986 section 5.2). Absolute URIs and
 // references starting with '/' are returned unchanged.
@@ -1015,26 +1039,8 @@ inline std::string resolve_relative_location(const std::string &location,
 
   // Remove "." and ".." segments from the merged path.
   auto path_end = (std::min)(merged.find_first_of("?#"), merged.size());
-  std::string path;
-  size_t i = 0;
-  while (i < path_end) {
-    auto next = (std::min)(merged.find('/', i + 1), path_end);
-    auto segment = merged.substr(i + 1, next - i - 1);
-    auto is_last = next == path_end;
-    if (segment == "." || segment == "..") {
-      if (segment == "..") {
-        path.erase((std::min)(path.rfind('/'), path.size()));
-      }
-      if (is_last) { path += '/'; }
-    } else {
-      path += '/';
-      path += segment;
-    }
-    i = next;
-  }
-  if (path.empty()) { path = "/"; }
-
-  return path + merged.substr(path_end);
+  return remove_dot_segments(merged.substr(0, path_end)) +
+         merged.substr(path_end);
 }
 
 } // namespace detail
@@ -16385,6 +16391,10 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   if (next_scheme.empty()) { next_scheme = scheme; }
   if (next_host.empty()) { next_host = host_; }
   if (next_path.empty()) { next_path = "/"; }
+  // An absolute or absolute-path location can have dot segments too.
+  if (next_path[0] == '/') {
+    next_path = detail::remove_dot_segments(next_path);
+  }
 
   auto path = std::move(next_path) + next_query;
 
