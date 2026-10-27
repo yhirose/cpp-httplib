@@ -1515,6 +1515,10 @@ cli.set_proxy("proxy.example", 3128);
 The two maps are independent; to use the same target on both paths, set both.
 They correspond to curl's `--resolve` and `--connect-to`.
 
+Neither map applies to the proxy's own address ("direct" means not through a
+proxy, as in a PAC file's `DIRECT`). To connect to the proxy at a fixed
+address, pass an IP literal to `set_proxy()`.
+
 `set_hostname_addr_map` is deprecated and works the same as
 `set_direct_hostname_addr_map`.
 
