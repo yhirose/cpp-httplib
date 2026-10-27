@@ -21041,8 +21041,7 @@ inline ErrorCode map_mbedtls_error(int ret, int &out_errno,
     return ErrorCode::SyscallError;
   }
   if (ret == MBEDTLS_ERR_SSL_CONN_EOF) {
-    // The transport ended without a close_notify, as OpenSSL reports with
-    // SSL_ERROR_SYSCALL and wolfSSL with SOCKET_PEER_CLOSED_E
+    // EOF without close_notify
     out_errno = 0;
     return ErrorCode::SyscallError;
   }
@@ -21133,10 +21132,7 @@ inline int mbedtls_net_recv_cb(void *ctx, unsigned char *buf, size_t len) {
     return MBEDTLS_ERR_NET_RECV_FAILED;
   }
 #endif
-  // 0 is the transport's EOF, which Mbed TLS reports as
-  // MBEDTLS_ERR_SSL_CONN_EOF. Only a close_notify record, which the peer sends
-  // before it closes, is a clean end: an EOF in its place is a connection cut
-  // short, by the peer or by whoever sits on the path.
+  // EOF is MBEDTLS_ERR_SSL_CONN_EOF; only a close_notify is a clean end
   return static_cast<int>(ret);
 }
 
@@ -21792,9 +21788,7 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
     return static_cast<ssize_t>(ret);
   }
 
-  // mbedtls_ssl_read() returns 0 for MBEDTLS_ERR_SSL_CONN_EOF: the transport
-  // ended without a close_notify, so the data may have been cut short. That is
-  // an error, as on OpenSSL; only a close_notify is a clean end.
+  // 0 means EOF without close_notify, which is an error as on OpenSSL
   if (ret == 0) { ret = MBEDTLS_ERR_SSL_CONN_EOF; }
 
   err.code = impl::map_mbedtls_error(ret, err.sys_errno, 0);
@@ -22402,7 +22396,7 @@ inline ErrorCode map_wolfssl_error(WOLFSSL *ssl, int ssl_error,
   case SSL_ERROR_WANT_WRITE: return ErrorCode::WantWrite;
   case SSL_ERROR_ZERO_RETURN: return ErrorCode::PeerClosed;
   case SSL_ERROR_SYSCALL: out_errno = errno; return ErrorCode::SyscallError;
-  // Without OPENSSL_EXTRA this is not folded into SSL_ERROR_SYSCALL
+  // EOF without close_notify
   case SOCKET_PEER_CLOSED_E: out_errno = 0; return ErrorCode::SyscallError;
   default:
     if (ssl) {
@@ -22974,10 +22968,7 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
     return static_cast<ssize_t>(ret);
   }
 
-  // wolfSSL_read() returns 0 both for a close_notify and for a transport that
-  // ended without one (SOCKET_PEER_CLOSED_E, where the data may have been cut
-  // short); wolfSSL_get_error() tells them apart. Only the former is a clean
-  // end, as on OpenSSL.
+  // 0 is also returned for EOF without close_notify; get_error tells them apart
   int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
   err.code = impl::map_wolfssl_error(wsession->ssl, ssl_error, err.sys_errno);
   if (err.code == ErrorCode::PeerClosed) { return 0; }

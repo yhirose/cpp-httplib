@@ -24065,10 +24065,7 @@ TEST(StreamBodyEndTest, BodyEndingAtConnectionClose) {
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
-// Serves `response` over TLS to the single request `fn` makes with a fresh
-// SSLClient. The connection then ends with a close_notify, or, when
-// `close_notify` is false, by closing the socket alone, as a peer that skips
-// the alert or whoever cuts the connection on the path does.
+// Serves `response` to one request, then closes with or without a close_notify
 template <typename Fn>
 static void with_single_tls_response(const std::string &response,
                                      bool close_notify, Fn fn) {
@@ -24137,10 +24134,7 @@ static void with_single_tls_response(const std::string &response,
   fn(cli);
 }
 
-// RFC 8446 6.1: a connection that ends without a close_notify may have been
-// cut short, by the peer or by anyone on the path, so a body delimited by the
-// close alone is complete only after the alert. Mbed TLS and wolfSSL read the
-// bare EOF as a clean end, unlike OpenSSL, and handed back the cut body.
+// RFC 8446 6.1: a close-delimited body is complete only after a close_notify
 TEST(SSLClientTest, UnframedBodyEndsOnlyAtCloseNotify) {
   const std::string close_delimited = "HTTP/1.1 200 OK\r\n"
                                       "Connection: close\r\n"
