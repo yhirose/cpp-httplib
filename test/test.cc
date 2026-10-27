@@ -3704,7 +3704,7 @@ TEST(SpecifyServerIPAddressTest, AnotherHostname_Online) {
   Client cli(host);
 #endif
 
-  cli.set_hostname_addr_map({{another_host, wrong_ip}});
+  cli.set_direct_hostname_addr_map({{another_host, wrong_ip}});
   auto res = cli.Get("/");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   ASSERT_EQ(StatusCode::MovedPermanently_301, res->status);
@@ -3720,7 +3720,7 @@ TEST(SpecifyServerIPAddressTest, RealHostname_Online) {
   Client cli(host);
 #endif
 
-  cli.set_hostname_addr_map({{host, wrong_ip}});
+  cli.set_direct_hostname_addr_map({{host, wrong_ip}});
   auto res = cli.Get("/");
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Connection, res.error());
@@ -3751,7 +3751,7 @@ TEST(SpecifyServerIPAddressTest, HostnameAsAddrMapValue) {
   svr.wait_until_ready();
 
   Client cli(host, port);
-  cli.set_hostname_addr_map({{host, HOST}});
+  cli.set_direct_hostname_addr_map({{host, HOST}});
 
   auto res = cli.Get("/hi");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -3781,7 +3781,7 @@ TEST(SpecifyServerIPAddressTest, IPAddressAsAddrMapValue) {
   svr.wait_until_ready();
 
   Client cli(host, port);
-  cli.set_hostname_addr_map({{host, "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{host, "127.0.0.1"}});
 
   auto res = cli.Get("/hi");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -3814,16 +3814,16 @@ TEST(SpecifyServerIPAddressTest, EmptyAddrMapValueIsIgnored) {
   svr.wait_until_ready();
 
   Client cli(blackhole, port);
-  cli.set_hostname_addr_map({{blackhole, ""}});
+  cli.set_direct_hostname_addr_map({{blackhole, ""}});
   cli.set_connection_timeout(1);
 
   auto res = cli.Get("/hi");
   EXPECT_FALSE(res) << "empty mapping must not redirect to loopback";
 }
 
-TEST(ConnectToMapTest, RetargetsDirectConnection) {
-  // Like curl's --connect-to, the map changes where the client connects, and
-  // the identity stays host_. "target.invalid" (RFC 6761) is never resolved.
+TEST(SpecifyServerIPAddressTest, DeprecatedSetHostnameAddrMapStillWorks) {
+  // set_hostname_addr_map() is a deprecated alias of
+  // set_direct_hostname_addr_map() and must keep redirecting the connection.
   auto host = "target.invalid";
 
   Server svr;
@@ -3845,7 +3845,10 @@ TEST(ConnectToMapTest, RetargetsDirectConnection) {
   svr.wait_until_ready();
 
   Client cli(host, port);
-  cli.set_connect_to_map({{host, "127.0.0.1"}});
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  cli.set_hostname_addr_map({{host, "127.0.0.1"}});
+#pragma GCC diagnostic pop
 
   auto res = cli.Get("/hi");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -3853,15 +3856,12 @@ TEST(ConnectToMapTest, RetargetsDirectConnection) {
   EXPECT_EQ(std::string(host) + ":" + std::to_string(port), received_host);
 }
 
-TEST(ConnectToMapTest, AppliesBeforeResolveMap) {
-  // As curl applies --connect-to before --resolve, the resolve map applies to
-  // the rewritten name. Neither ".invalid" name is ever resolved.
-  auto host = "target.invalid";
-
+TEST(TunnelHostnameAddrMapTest, IgnoredOnDirectConnection) {
+  // The tunnel map only rewrites the CONNECT target through a proxy. On a
+  // direct connection it must not move the socket: the mapped address is
+  // TEST-NET-1, so applying it would fail to connect.
   Server svr;
-  std::string received_host;
-  svr.Get("/hi", [&](const Request &req, Response &res) {
-    received_host = req.get_header_value("Host");
+  svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!", "text/plain");
   });
 
@@ -3876,14 +3876,13 @@ TEST(ConnectToMapTest, AppliesBeforeResolveMap) {
 
   svr.wait_until_ready();
 
-  Client cli(host, port);
-  cli.set_connect_to_map({{host, "mid.invalid"}});
-  cli.set_resolve_map({{"mid.invalid", "127.0.0.1"}});
+  Client cli("127.0.0.1", port);
+  cli.set_tunnel_hostname_addr_map({{"127.0.0.1", "192.0.2.1"}});
+  cli.set_connection_timeout(1);
 
   auto res = cli.Get("/hi");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(std::string(host) + ":" + std::to_string(port), received_host);
 }
 
 TEST(AbsoluteRedirectTest, Redirect_Online) {
@@ -13256,7 +13255,7 @@ TEST(SNI_AutoDetectionTest, FailedHandshakeLeavesNoSNI) {
   {
     // Sends SNI, then rejects the server certificate, which the CA did not sign
     SSLClient cli("localhost", port);
-    cli.set_hostname_addr_map({{"localhost", "127.0.0.1"}});
+    cli.set_direct_hostname_addr_map({{"localhost", "127.0.0.1"}});
     cli.set_ca_cert_path(CLIENT_CA_CERT_FILE);
     auto res = cli.Get("/sni");
     ASSERT_FALSE(res);
@@ -16345,7 +16344,7 @@ TEST(SSLClientServerTest, ClientCertNotSentToUnverifiedServer) {
       svr.wait_until_ready();
 
       SSLClient cli(c.host, port, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
-      cli.set_hostname_addr_map({{c.host, "127.0.0.1"}});
+      cli.set_direct_hostname_addr_map({{c.host, "127.0.0.1"}});
       cli.set_ca_cert_path(c.trusted_ca);
       if (with_verifier) {
         cli.set_server_certificate_verifier(
@@ -27458,7 +27457,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_AnotherHostname) {
   auto wrong_ip = "192.0.2.1";
 
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
-  client.set_hostname_addr_map({{another_host, wrong_ip}});
+  client.set_direct_hostname_addr_map({{another_host, wrong_ip}});
 
   ASSERT_TRUE(client.connect());
   EXPECT_TRUE(client.is_open());
@@ -27482,7 +27481,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_RealHostname) {
   auto wrong_ip = "192.0.2.1";
 
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
-  client.set_hostname_addr_map({{"localhost", wrong_ip}});
+  client.set_direct_hostname_addr_map({{"localhost", wrong_ip}});
   client.set_connection_timeout(1);
   client.set_read_timeout(1);
   client.set_write_timeout(1);
@@ -27522,7 +27521,7 @@ TEST(WebSocketTest, SpecifyServerIPAddress_HostnameAsAddrMapValue) {
 
   ws::WebSocketClient client("ws://" + std::string(host) + ":" +
                              std::to_string(port) + "/ws");
-  client.set_hostname_addr_map({{host, HOST}});
+  client.set_direct_hostname_addr_map({{host, HOST}});
 
   ASSERT_TRUE(client.connect());
   EXPECT_TRUE(client.is_open());
@@ -30453,7 +30452,7 @@ private:
 inline std::unique_ptr<Client> make_client(const std::string &host,
                                            ProxyAndTargetServers &s) {
   auto cli = detail::make_unique<Client>(host, s.target_port());
-  cli->set_hostname_addr_map({{host, "127.0.0.1"}});
+  cli->set_direct_hostname_addr_map({{host, "127.0.0.1"}});
   cli->set_proxy("127.0.0.1", s.proxy_port());
   return cli;
 }
@@ -30662,7 +30661,7 @@ TEST(NoProxyTest, IPv4LiteralExactMatch) {
 TEST(NoProxyTest, IPv6LiteralExactMatchAcrossEquivalentForms) {
   ProxyAndTargetServers s;
   Client cli("0:0:0:0:0:0:0:1", s.target_port());
-  cli.set_hostname_addr_map({{"0:0:0:0:0:0:0:1", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"0:0:0:0:0:0:0:1", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", s.proxy_port());
   cli.set_no_proxy({"::1"});
 
@@ -30679,7 +30678,7 @@ TEST(NoProxyTest, BareIPv6LiteralMatchesIPv6Cidr) {
   // host as a hostname and miss the match.
   ProxyAndTargetServers s;
   Client cli("fe80::1", s.target_port());
-  cli.set_hostname_addr_map({{"fe80::1", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"fe80::1", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", s.proxy_port());
   cli.set_no_proxy({"fe80::/10"});
 
@@ -30692,7 +30691,7 @@ TEST(NoProxyTest, BareIPv6LiteralMatchesIPv6Cidr) {
 TEST(NoProxyTest, BracketedIPv6EntryAccepted) {
   ProxyAndTargetServers s;
   Client cli("::1", s.target_port());
-  cli.set_hostname_addr_map({{"::1", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"::1", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", s.proxy_port());
   cli.set_no_proxy({"[::1]"});
 
@@ -30705,7 +30704,7 @@ TEST(NoProxyTest, BracketedIPv6EntryAccepted) {
 TEST(NoProxyTest, BracketedIPv6CidrEntryAccepted) {
   ProxyAndTargetServers s;
   Client cli("fe80::1", s.target_port());
-  cli.set_hostname_addr_map({{"fe80::1", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"fe80::1", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", s.proxy_port());
   cli.set_no_proxy({"[fe80::]/10"});
 
@@ -30721,7 +30720,7 @@ TEST(NoProxyTest, IPv4MappedIPv6IsNotCrossMatchedAgainstIPv4Entry) {
   // tricks via address-family conversion.
   ProxyAndTargetServers s;
   Client cli("::ffff:127.0.0.1", s.target_port());
-  cli.set_hostname_addr_map({{"::ffff:127.0.0.1", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"::ffff:127.0.0.1", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", s.proxy_port());
   cli.set_no_proxy({"127.0.0.1"});
 
@@ -30937,7 +30936,7 @@ TEST(NoProxyTest, RedirectToBypassedHostStripsProxyAndProxyAuth) {
   target.listen();
 
   Client cli("public.example", target.port());
-  cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"public.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy_mock.port());
   cli.set_proxy_basic_auth("u", "p");
   cli.set_no_proxy({"127.0.0.1"});
@@ -30973,7 +30972,7 @@ TEST(NoProxyTest, BypassedTargetReturning407DoesNotLeakProxyDigestCredentials) {
   // if it doesn't, the test still routes "via proxy" to the same server and
   // the Proxy-Authorization assertion below catches the leak.
   Client cli("evil.example", target.port());
-  cli.set_hostname_addr_map({{"evil.example", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"evil.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", target.port());
   cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
   cli.set_no_proxy({"evil.example"});
@@ -31024,7 +31023,7 @@ TEST(NoProxyTest, MultiHopRedirectThroughBypassedHostKeepsProxy) {
   bypass_server.listen();
 
   Client cli("public.example", public_port);
-  cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"public.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy_mock.port());
   cli.set_no_proxy({"127.0.0.1"});
   cli.set_follow_location(true);
@@ -31058,7 +31057,7 @@ TEST(NoProxyTest, KeepAliveSocketInvalidatedOnSetNoProxy) {
   target.listen();
 
   Client cli("public.example", target.port());
-  cli.set_hostname_addr_map({{"public.example", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"public.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy_mock.port());
   cli.set_keep_alive(true);
 
@@ -31391,7 +31390,7 @@ TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
   EXPECT_EQ(1, proxy.connect_hits());
 }
 
-TEST(ProxyTunnelTest, ConnectTargetFollowsConnectToMap) {
+TEST(ProxyTunnelTest, ConnectTargetFollowsTunnelHostnameAddrMap) {
   // Like curl's --connect-to, the mapped address is the CONNECT target and its
   // Host. Inside the tunnel the hostname keeps supplying SNI and Host, as it
   // does on a direct connection.
@@ -31411,7 +31410,7 @@ TEST(ProxyTunnelTest, ConnectTargetFollowsConnectToMap) {
 
   SSLClient cli("origin.example", origin.port());
   cli.enable_server_certificate_verification(false);
-  cli.set_connect_to_map({{"origin.example", "127.0.0.1"}});
+  cli.set_tunnel_hostname_addr_map({{"origin.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy.port());
 
   auto res = cli.Get("/x");
@@ -31429,7 +31428,7 @@ TEST(ProxyTunnelTest, ConnectTargetFollowsConnectToMap) {
   EXPECT_EQ("origin.example:" + port, origin_host);
 }
 
-TEST(ProxyTunnelTest, DigestRetryConnectTargetFollowsConnectToMap) {
+TEST(ProxyTunnelTest, DigestRetryConnectTargetFollowsTunnelHostnameAddrMap) {
   proxy_tunnel_test::ScopedSSLServer origin;
   origin.svr().Get(".*", [&](const Request &, Response &res) {
     res.set_content("ok", "text/plain");
@@ -31452,7 +31451,7 @@ TEST(ProxyTunnelTest, DigestRetryConnectTargetFollowsConnectToMap) {
 
   SSLClient cli("origin.example", origin.port());
   cli.enable_server_certificate_verification(false);
-  cli.set_connect_to_map({{"origin.example", "127.0.0.1"}});
+  cli.set_tunnel_hostname_addr_map({{"origin.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy.port());
   cli.set_proxy_digest_auth("proxy-user", "proxy-pass");
 
@@ -31469,9 +31468,9 @@ TEST(ProxyTunnelTest, DigestRetryConnectTargetFollowsConnectToMap) {
             connect_req.find("\r\nHost: " + target + "\r\n"));
 }
 
-TEST(ProxyTunnelTest, HostnameAddrMapLeavesConnectTarget) {
-  // set_hostname_addr_map() works like curl's --resolve: through a proxy it is
-  // not used, and the proxy resolves the original hostname itself.
+TEST(ProxyTunnelTest, DirectHostnameAddrMapLeavesConnectTarget) {
+  // set_direct_hostname_addr_map() works like curl's --resolve: through a proxy
+  // it is not used, and the proxy resolves the original hostname itself.
   proxy_tunnel_test::ScopedSSLServer origin;
   origin.svr().Get(".*", [&](const Request &, Response &res) {
     res.set_content("ok", "text/plain");
@@ -31483,7 +31482,7 @@ TEST(ProxyTunnelTest, HostnameAddrMapLeavesConnectTarget) {
 
   SSLClient cli("origin.example", origin.port());
   cli.enable_server_certificate_verification(false);
-  cli.set_hostname_addr_map({{"origin.example", "127.0.0.1"}});
+  cli.set_direct_hostname_addr_map({{"origin.example", "127.0.0.1"}});
   cli.set_proxy("127.0.0.1", proxy.port());
 
   auto res = cli.Get("/x");
@@ -31687,14 +31686,14 @@ TEST(WebSocketProxyTest, ProxySettingAppliesOnReconnect) {
   EXPECT_EQ(2, proxy.connect_hits());
 }
 
-TEST(WebSocketProxyTest, ConnectTargetFollowsConnectToMap) {
+TEST(WebSocketProxyTest, ConnectTargetFollowsTunnelHostnameAddrMap) {
   proxy_tunnel_test::ScopedWebSocketOrigin origin;
   proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
   ASSERT_NE(0, proxy.port());
 
   auto port = std::to_string(origin.port());
   ws::WebSocketClient client("ws://origin.example:" + port + "/ws");
-  client.set_connect_to_map({{"origin.example", "127.0.0.1"}});
+  client.set_tunnel_hostname_addr_map({{"origin.example", "127.0.0.1"}});
   client.set_proxy("127.0.0.1", proxy.port());
   auto res = client.connect();
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
@@ -31711,14 +31710,14 @@ TEST(WebSocketProxyTest, ConnectTargetFollowsConnectToMap) {
             connect_req.find("\r\nHost: " + target + "\r\n"));
 }
 
-TEST(WebSocketProxyTest, HostnameAddrMapLeavesConnectTarget) {
+TEST(WebSocketProxyTest, DirectHostnameAddrMapLeavesConnectTarget) {
   proxy_tunnel_test::ScopedWebSocketOrigin origin;
   proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
   ASSERT_NE(0, proxy.port());
 
   auto port = std::to_string(origin.port());
   ws::WebSocketClient client("ws://origin.example:" + port + "/ws");
-  client.set_hostname_addr_map({{"origin.example", "127.0.0.1"}});
+  client.set_direct_hostname_addr_map({{"origin.example", "127.0.0.1"}});
   client.set_proxy("127.0.0.1", proxy.port());
   auto res = client.connect();
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());

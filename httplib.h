@@ -2921,9 +2921,12 @@ public:
   size_t is_socket_open() const;
   socket_t socket() const;
 
+  [[deprecated("Use set_direct_hostname_addr_map() instead.")]]
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
-  void set_resolve_map(std::map<std::string, std::string> addr_map);
-  void set_connect_to_map(std::map<std::string, std::string> connect_to_map);
+  void
+  set_direct_hostname_addr_map(std::map<std::string, std::string> addr_map);
+  void
+  set_tunnel_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
   void set_default_headers(Headers headers);
 
@@ -3055,9 +3058,9 @@ protected:
   // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
-  // Like curl's --connect-to: retargets both a direct connection (before
-  // addr_map_ applies) and the CONNECT through a proxy. The identity stays.
-  std::map<std::string, std::string> connect_to_map_;
+  // Hostname to CONNECT target map, used only through a proxy. Independent of
+  // addr_map_; the identity (Host, SNI, certificate check) stays the same.
+  std::map<std::string, std::string> tunnel_addr_map_;
 
   // Default headers
   Headers default_headers_;
@@ -3348,9 +3351,12 @@ public:
   size_t is_socket_open() const;
   socket_t socket() const;
 
+  [[deprecated("Use set_direct_hostname_addr_map() instead.")]]
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
-  void set_resolve_map(std::map<std::string, std::string> addr_map);
-  void set_connect_to_map(std::map<std::string, std::string> connect_to_map);
+  void
+  set_direct_hostname_addr_map(std::map<std::string, std::string> addr_map);
+  void
+  set_tunnel_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
   void set_default_headers(Headers headers);
 
@@ -4746,9 +4752,12 @@ public:
   set_connection_timeout(const std::chrono::duration<Rep, Period> &duration);
 
   void set_interface(const std::string &intf);
+  [[deprecated("Use set_direct_hostname_addr_map() instead.")]]
   void set_hostname_addr_map(std::map<std::string, std::string> addr_map);
-  void set_resolve_map(std::map<std::string, std::string> addr_map);
-  void set_connect_to_map(std::map<std::string, std::string> connect_to_map);
+  void
+  set_direct_hostname_addr_map(std::map<std::string, std::string> addr_map);
+  void
+  set_tunnel_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
   void set_proxy(const std::string &host, int port);
   void set_proxy_basic_auth(const std::string &username,
@@ -4820,9 +4829,9 @@ private:
   // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
-  // Like curl's --connect-to: retargets both a direct connection (before
-  // addr_map_ applies) and the CONNECT through a proxy. The identity stays.
-  std::map<std::string, std::string> connect_to_map_;
+  // Hostname to CONNECT target map, used only through a proxy. Independent of
+  // addr_map_; the identity (Host, SNI, certificate check) stays the same.
+  std::map<std::string, std::string> tunnel_addr_map_;
 
   std::string proxy_host_;
   int proxy_port_ = -1;
@@ -10735,20 +10744,6 @@ inline void apply_addr_map(const std::map<std::string, std::string> &addr_map,
   }
 }
 
-// Direct connection target for `host`, as curl applies --connect-to before
-// --resolve: the connect-to map rewrites the name first, then the addr map
-// applies to the result. Without a connect-to entry this is apply_addr_map().
-inline void apply_connect_to_and_addr_map(
-    const std::map<std::string, std::string> &connect_to_map,
-    const std::map<std::string, std::string> &addr_map, const std::string &host,
-    std::string &connect_host, std::string &ip) {
-  apply_addr_map(connect_to_map, host, connect_host, ip);
-  if (!ip.empty()) { return; }
-
-  auto target = connect_host;
-  apply_addr_map(addr_map, target, connect_host, ip);
-}
-
 } // namespace detail
 
 /*
@@ -13042,7 +13037,7 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
 }
 
 // Request target of a CONNECT for `host`. Through a proxy it is the proxy, not
-// this client, that opens the connection to the origin, so a connect-to
+// this client, that opens the connection to the origin, so a tunnel map
 // override has to be carried in the request target. The tunnelled request
 // keeps `host` for its Host header and SNI, as a direct connection does.
 inline std::string
@@ -15606,8 +15601,7 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
   // Check is custom IP or hostname specified for host_
   std::string connect_host;
   std::string ip;
-  detail::apply_connect_to_and_addr_map(connect_to_map_, addr_map_, host_,
-                                        connect_host, ip);
+  detail::apply_addr_map(addr_map_, host_, connect_host, ip);
 
   return detail::create_client_socket(
       connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
@@ -16571,7 +16565,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
 
   // Copy network and socket settings
   client.addr_map_ = addr_map_;
-  client.connect_to_map_ = connect_to_map_;
+  client.tunnel_addr_map_ = tunnel_addr_map_;
   client.set_address_family(address_family_);
   client.set_tcp_nodelay(tcp_nodelay_);
   client.set_ipv6_v6only(ipv6_v6only_);
@@ -18085,17 +18079,17 @@ inline void ClientImpl::set_path_encode(bool on) { path_encode_ = on; }
 
 inline void
 ClientImpl::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
+  set_direct_hostname_addr_map(std::move(addr_map));
+}
+
+inline void ClientImpl::set_direct_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
   addr_map_ = std::move(addr_map);
 }
 
-inline void
-ClientImpl::set_resolve_map(std::map<std::string, std::string> addr_map) {
-  set_hostname_addr_map(std::move(addr_map));
-}
-
-inline void ClientImpl::set_connect_to_map(
-    std::map<std::string, std::string> connect_to_map) {
-  connect_to_map_ = std::move(connect_to_map);
+inline void ClientImpl::set_tunnel_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
+  tunnel_addr_map_ = std::move(addr_map);
 }
 
 inline void ClientImpl::set_default_headers(Headers headers) {
@@ -18806,17 +18800,17 @@ inline socket_t Client::socket() const { return cli_->socket(); }
 
 inline void
 Client::set_hostname_addr_map(std::map<std::string, std::string> addr_map) {
-  cli_->set_hostname_addr_map(std::move(addr_map));
+  cli_->set_direct_hostname_addr_map(std::move(addr_map));
 }
 
-inline void
-Client::set_resolve_map(std::map<std::string, std::string> addr_map) {
-  cli_->set_resolve_map(std::move(addr_map));
+inline void Client::set_direct_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
+  cli_->set_direct_hostname_addr_map(std::move(addr_map));
 }
 
-inline void
-Client::set_connect_to_map(std::map<std::string, std::string> connect_to_map) {
-  cli_->set_connect_to_map(std::move(connect_to_map));
+inline void Client::set_tunnel_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
+  cli_->set_tunnel_hostname_addr_map(std::move(addr_map));
 }
 
 inline void Client::set_default_headers(Headers headers) {
@@ -19184,10 +19178,10 @@ inline bool SSLClient::connect_with_proxy(
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     Response &res, bool &success, Error &error) {
   success = true;
-  // A connect-to entry retargets the CONNECT, and its Host must then name the
+  // A tunnel map entry retargets the CONNECT, and its Host must then name the
   // same authority. Without one the request stays exactly as it was.
   auto connect_target =
-      detail::make_connect_request_target(connect_to_map_, host_, port_);
+      detail::make_connect_request_target(tunnel_addr_map_, host_, port_);
   auto retargeted = connect_target !=
                     detail::make_host_and_port_string_always_port(host_, port_);
   Response proxy_res;
@@ -24034,17 +24028,17 @@ inline void WebSocketClient::set_interface(const std::string &intf) {
 
 inline void WebSocketClient::set_hostname_addr_map(
     std::map<std::string, std::string> addr_map) {
+  set_direct_hostname_addr_map(std::move(addr_map));
+}
+
+inline void WebSocketClient::set_direct_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
   addr_map_ = std::move(addr_map);
 }
 
-inline void
-WebSocketClient::set_resolve_map(std::map<std::string, std::string> addr_map) {
-  set_hostname_addr_map(std::move(addr_map));
-}
-
-inline void WebSocketClient::set_connect_to_map(
-    std::map<std::string, std::string> connect_to_map) {
-  connect_to_map_ = std::move(connect_to_map);
+inline void WebSocketClient::set_tunnel_hostname_addr_map(
+    std::map<std::string, std::string> addr_map) {
+  tunnel_addr_map_ = std::move(addr_map);
 }
 
 inline bool WebSocketClient::is_proxy_enabled() const {
@@ -24062,8 +24056,7 @@ inline bool WebSocketClient::create_and_connect_socket(Error &error) {
     connect_host = proxy_host_;
     port = proxy_port_;
   } else {
-    detail::apply_connect_to_and_addr_map(connect_to_map_, addr_map_, host_,
-                                          connect_host, ip);
+    detail::apply_addr_map(addr_map_, host_, connect_host, ip);
   }
 
   sock_ = detail::create_client_socket(
@@ -24097,7 +24090,8 @@ inline bool WebSocketClient::connect_with_proxy(Response &proxy_res,
                                                 Error &error) {
   Request req;
   req.method = "CONNECT";
-  req.path = detail::make_connect_request_target(connect_to_map_, host_, port_);
+  req.path =
+      detail::make_connect_request_target(tunnel_addr_map_, host_, port_);
   req.headers.emplace("Host", req.path);
   detail::add_default_user_agent_header(req);
   detail::add_authorization_header(req, proxy_basic_auth_username_,
