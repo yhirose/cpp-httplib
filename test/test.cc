@@ -72,6 +72,17 @@ namespace tls {
 ca_store_t create_ca_store(const char *pem, size_t len);
 bool set_verify_callback(ctx_t ctx, VerifyCallback callback);
 std::vector<std::string> get_ca_names(ctx_t ctx);
+ctx_t create_server_context();
+void free_context(ctx_t ctx);
+bool set_server_cert_file(ctx_t ctx, const char *cert_path,
+                          const char *key_path, const char *password);
+session_t create_session(ctx_t ctx, socket_t sock);
+void free_session(session_t session);
+bool accept_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
+                        time_t timeout_usec, TlsError *err);
+ssize_t read(session_t session, void *buf, size_t len, TlsError &err);
+ssize_t write(session_t session, const void *buf, size_t len, TlsError &err);
+void shutdown(session_t session, bool graceful);
 #ifdef CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN
 namespace impl {
 SecTrustSettingsResult
@@ -24052,6 +24063,121 @@ TEST(StreamBodyEndTest, BodyEndingAtConnectionClose) {
     EXPECT_TRUE(handle.has_read_error());
   });
 }
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+// Serves `response` over TLS to the single request `fn` makes with a fresh
+// SSLClient. The connection then ends with a close_notify, or, when
+// `close_notify` is false, by closing the socket alone, as a peer that skips
+// the alert or whoever cuts the connection on the path does.
+template <typename Fn>
+static void with_single_tls_response(const std::string &response,
+                                     bool close_notify, Fn fn) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  std::promise<int> port_promise;
+  auto port_future = port_promise.get_future();
+  auto server_thread = std::thread([&port_promise, response, close_notify] {
+    auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+    default_socket_options(srv);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(0);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    if (::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0 ||
+        ::listen(srv, 1) != 0) {
+      port_promise.set_value(-1);
+      detail::close_socket(srv);
+      return;
+    }
+    socklen_t addr_len = sizeof(addr);
+    ::getsockname(srv, reinterpret_cast<sockaddr *>(&addr), &addr_len);
+    port_promise.set_value(static_cast<int>(ntohs(addr.sin_port)));
+
+    auto cli = ::accept(srv, nullptr, nullptr);
+    if (cli != INVALID_SOCKET) {
+      auto ctx = tls::create_server_context();
+      tls::set_server_cert_file(ctx, SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
+                                nullptr);
+      auto session = tls::create_session(ctx, cli);
+      tls::TlsError err;
+      if (tls::accept_nonblocking(session, cli, 5, 0, &err)) {
+        // The request head first, so that closing the socket sends a FIN
+        // rather than an RST for the unread bytes.
+        std::string req;
+        char buf[256];
+        while (req.find("\r\n\r\n") == std::string::npos) {
+          auto n = tls::read(session, buf, sizeof(buf), err);
+          if (n <= 0) { break; }
+          req.append(buf, static_cast<size_t>(n));
+        }
+        size_t sent = 0;
+        while (sent < response.size()) {
+          auto n = tls::write(session, response.data() + sent,
+                              response.size() - sent, err);
+          if (n <= 0) { break; }
+          sent += static_cast<size_t>(n);
+        }
+        if (close_notify) { tls::shutdown(session, true); }
+      }
+      tls::free_session(session);
+      detail::close_socket(cli);
+      tls::free_context(ctx);
+    }
+    detail::close_socket(srv);
+  });
+  auto se = detail::scope_exit([&] { server_thread.join(); });
+
+  auto port = port_future.get();
+  ASSERT_GT(port, 0);
+  SSLClient cli("127.0.0.1", port);
+  cli.enable_server_certificate_verification(false);
+  fn(cli);
+}
+
+// RFC 8446 6.1: a connection that ends without a close_notify may have been
+// cut short, by the peer or by anyone on the path, so a body delimited by the
+// close alone is complete only after the alert. Mbed TLS and wolfSSL read the
+// bare EOF as a clean end, unlike OpenSSL, and handed back the cut body.
+TEST(SSLClientTest, UnframedBodyEndsOnlyAtCloseNotify) {
+  const std::string close_delimited = "HTTP/1.1 200 OK\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n"
+                                      "hello";
+  with_single_tls_response(close_delimited, true, [](SSLClient &cli) {
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ("hello", res->body);
+  });
+
+  with_single_tls_response(close_delimited, false, [](SSLClient &cli) {
+    auto res = cli.Get("/");
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::Read, res.error());
+  });
+
+  with_single_tls_response(close_delimited, false, [](SSLClient &cli) {
+    auto handle = cli.open_stream("GET", "/");
+    ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+    read_all(handle);
+    EXPECT_TRUE(handle.has_read_error());
+  });
+
+  // A framed body ends where its framing says, with or without the alert
+  const std::string framed = "HTTP/1.1 200 OK\r\n"
+                             "Content-Length: 5\r\n"
+                             "Connection: close\r\n"
+                             "\r\n"
+                             "hello";
+  with_single_tls_response(framed, false, [](SSLClient &cli) {
+    auto res = cli.Get("/");
+    ASSERT_TRUE(res) << to_string(res.error());
+    EXPECT_EQ("hello", res->body);
+  });
+}
+#endif
 
 TEST(InterimResponseTest, SkippedWithTheirHeaderFields) {
   const char *responses[] = {
