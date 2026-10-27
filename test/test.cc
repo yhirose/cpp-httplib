@@ -508,6 +508,20 @@ TEST(SanitizeFilenameTest, VariousPatterns) {
   EXPECT_EQ("", httplib::sanitize_filename("   "));
 }
 
+// On Windows a ':' ends a drive prefix or names an NTFS stream, so what comes
+// before it is dropped; anywhere else it is an ordinary file name character.
+TEST(SanitizeFilenameTest, ColonEndsPrefixOnlyOnWindows) {
+#ifdef _WIN32
+  EXPECT_EQ("", httplib::sanitize_filename("C:.."));
+  EXPECT_EQ("evil.dll", httplib::sanitize_filename("C:evil.dll"));
+  EXPECT_EQ("stream", httplib::sanitize_filename("a.txt:stream"));
+#else
+  EXPECT_EQ("C:..", httplib::sanitize_filename("C:.."));
+  EXPECT_EQ("C:evil.dll", httplib::sanitize_filename("C:evil.dll"));
+  EXPECT_EQ("a.txt:stream", httplib::sanitize_filename("a.txt:stream"));
+#endif
+}
+
 // Forward declaration (see the base64_encode note below): split builds move the
 // definition into httplib.cc, so re-declaring it here lets the test link.
 namespace httplib {
