@@ -21045,6 +21045,11 @@ inline ErrorCode map_mbedtls_error(int ret, int &out_errno,
     out_errno = errno;
     return ErrorCode::SyscallError;
   }
+  if (ret == MBEDTLS_ERR_SSL_CONN_EOF) {
+    // EOF without close_notify
+    out_errno = 0;
+    return ErrorCode::SyscallError;
+  }
   if (ret == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED) {
     // Unlike OpenSSL/wolfSSL, Mbed TLS folds the CN/SAN identity check into
     // the handshake's chain verification (see set_sni()); a mismatch there
@@ -21132,7 +21137,7 @@ inline int mbedtls_net_recv_cb(void *ctx, unsigned char *buf, size_t len) {
     return MBEDTLS_ERR_NET_RECV_FAILED;
   }
 #endif
-  if (ret == 0) { return MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY; }
+  // EOF is MBEDTLS_ERR_SSL_CONN_EOF; only a close_notify is a clean end
   return static_cast<int>(ret);
 }
 
@@ -21788,10 +21793,8 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
     return static_cast<ssize_t>(ret);
   }
 
-  if (ret == 0) {
-    err.code = ErrorCode::PeerClosed;
-    return 0;
-  }
+  // 0 means EOF without close_notify, which is an error as on OpenSSL
+  if (ret == 0) { ret = MBEDTLS_ERR_SSL_CONN_EOF; }
 
   err.code = impl::map_mbedtls_error(ret, err.sys_errno, 0);
   err.backend_code = static_cast<uint64_t>(-ret);
@@ -22398,6 +22401,8 @@ inline ErrorCode map_wolfssl_error(WOLFSSL *ssl, int ssl_error,
   case SSL_ERROR_WANT_WRITE: return ErrorCode::WantWrite;
   case SSL_ERROR_ZERO_RETURN: return ErrorCode::PeerClosed;
   case SSL_ERROR_SYSCALL: out_errno = errno; return ErrorCode::SyscallError;
+  // EOF without close_notify
+  case SOCKET_PEER_CLOSED_E: out_errno = 0; return ErrorCode::SyscallError;
   default:
     if (ssl) {
       // wolfSSL stores the low-level error code as a negative value.
@@ -22968,13 +22973,10 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
     return static_cast<ssize_t>(ret);
   }
 
-  if (ret == 0) {
-    err.code = ErrorCode::PeerClosed;
-    return 0;
-  }
-
+  // 0 is also returned for EOF without close_notify; get_error tells them apart
   int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
   err.code = impl::map_wolfssl_error(wsession->ssl, ssl_error, err.sys_errno);
+  if (err.code == ErrorCode::PeerClosed) { return 0; }
   err.backend_code = static_cast<uint64_t>(ssl_error);
   impl::wolfssl_last_error() = err.backend_code;
   return -1;
