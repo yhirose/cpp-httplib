@@ -16601,9 +16601,17 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   auto location = res.get_header_value("location");
   if (location.empty()) { return false; }
 
+  auto next_url = detail::resolve_relative_location(location, req.path);
+
   detail::UrlComponents uc;
-  if (!detail::parse_url(detail::resolve_relative_location(location, req.path),
-                         uc)) {
+  if (!detail::parse_url(next_url, uc)) { return false; }
+
+  // In a Location an authority only follows "//" (RFC 3986 3.2). parse_url()
+  // also takes a bare "host:port" for one, so that Client("localhost:8080")
+  // works, but "localhost:8080" here names the scheme "localhost", and
+  // "127.0.0.1:8080" is no URI reference at all. Neither names another host.
+  if (uc.scheme.empty() && !uc.host.empty() &&
+      next_url.compare(0, 2, "//") != 0) {
     return false;
   }
 
