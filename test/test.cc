@@ -3822,8 +3822,6 @@ TEST(SpecifyServerIPAddressTest, EmptyAddrMapValueIsIgnored) {
 }
 
 TEST(SpecifyServerIPAddressTest, DeprecatedSetHostnameAddrMapStillWorks) {
-  // set_hostname_addr_map() is a deprecated alias of
-  // set_direct_hostname_addr_map() and must keep redirecting the connection.
   auto host = "target.invalid";
 
   Server svr;
@@ -3857,9 +3855,7 @@ TEST(SpecifyServerIPAddressTest, DeprecatedSetHostnameAddrMapStillWorks) {
 }
 
 TEST(TunnelHostnameAddrMapTest, IgnoredOnDirectConnection) {
-  // The tunnel map only rewrites the CONNECT target through a proxy. On a
-  // direct connection it must not move the socket: the mapped address is
-  // TEST-NET-1, so applying it would fail to connect.
+  // 192.0.2.1 is TEST-NET-1: applying the map would fail to connect.
   Server svr;
   svr.Get("/hi", [](const Request & /*req*/, Response &res) {
     res.set_content("Hello World!", "text/plain");
@@ -31391,9 +31387,6 @@ TEST(ProxyTunnelTest, OriginReturning407InsideTunnelDoesNotLeakProxyDigest) {
 }
 
 TEST(ProxyTunnelTest, ConnectTargetFollowsTunnelHostnameAddrMap) {
-  // Like curl's --connect-to, the mapped address is the CONNECT target and its
-  // Host. Inside the tunnel the hostname keeps supplying SNI and Host, as it
-  // does on a direct connection.
   std::string origin_sni;
   std::string origin_host;
 
@@ -31469,8 +31462,6 @@ TEST(ProxyTunnelTest, DigestRetryConnectTargetFollowsTunnelHostnameAddrMap) {
 }
 
 TEST(ProxyTunnelTest, DirectHostnameAddrMapLeavesConnectTarget) {
-  // set_direct_hostname_addr_map() works like curl's --resolve: through a proxy
-  // it is not used, and the proxy resolves the original hostname itself.
   proxy_tunnel_test::ScopedSSLServer origin;
   origin.svr().Get(".*", [&](const Request &, Response &res) {
     res.set_content("ok", "text/plain");
@@ -31490,6 +31481,40 @@ TEST(ProxyTunnelTest, DirectHostnameAddrMapLeavesConnectTarget) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
 
   auto target = "origin.example:" + std::to_string(origin.port());
+  auto connect_req = proxy.connect_request();
+  EXPECT_EQ(0u, connect_req.find("CONNECT " + target + " HTTP/1.1\r\n"));
+  EXPECT_NE(std::string::npos,
+            connect_req.find("\r\nHost: " + target + "\r\n"));
+}
+
+TEST(ProxyTunnelTest, RedirectKeepsTunnelHostnameAddrMap) {
+  proxy_tunnel_test::ScopedSSLServer origin;
+  auto port = std::to_string(origin.port());
+  origin.svr().Get("/x", [&](const Request &, Response &res) {
+    res.set_redirect("https://next.example:" + port + "/y");
+  });
+  origin.svr().Get("/y", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  SSLClient cli("origin.example", origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_tunnel_hostname_addr_map(
+      {{"origin.example", "127.0.0.1"}, {"next.example", "127.0.0.1"}});
+  cli.set_proxy("127.0.0.1", proxy.port());
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("ok", res->body);
+
+  // The last CONNECT is the redirect client's.
+  ASSERT_EQ(2, proxy.connect_hits());
+  auto target = "127.0.0.1:" + port;
   auto connect_req = proxy.connect_request();
   EXPECT_EQ(0u, connect_req.find("CONNECT " + target + " HTTP/1.1\r\n"));
   EXPECT_NE(std::string::npos,

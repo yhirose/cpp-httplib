@@ -3058,8 +3058,7 @@ protected:
   // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
-  // Hostname to CONNECT target map, used only through a proxy. Independent of
-  // addr_map_; the identity (Host, SNI, certificate check) stays the same.
+  // Hostname to CONNECT target map, used only through a proxy.
   std::map<std::string, std::string> tunnel_addr_map_;
 
   // Default headers
@@ -4829,8 +4828,7 @@ private:
   // hostname; only the connection target changes, never the identity.
   std::map<std::string, std::string> addr_map_;
 
-  // Hostname to CONNECT target map, used only through a proxy. Independent of
-  // addr_map_; the identity (Host, SNI, certificate check) stays the same.
+  // Hostname to CONNECT target map, used only through a proxy.
   std::map<std::string, std::string> tunnel_addr_map_;
 
   std::string proxy_host_;
@@ -13036,10 +13034,7 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
-// Request target of a CONNECT for `host`. Through a proxy it is the proxy, not
-// this client, that opens the connection to the origin, so a tunnel map
-// override has to be carried in the request target. The tunnelled request
-// keeps `host` for its Host header and SNI, as a direct connection does.
+// Request target of a CONNECT for `host`, with `addr_map` applied.
 inline std::string
 make_connect_request_target(const std::map<std::string, std::string> &addr_map,
                             const std::string &host, int port) {
@@ -19178,8 +19173,6 @@ inline bool SSLClient::connect_with_proxy(
     std::chrono::time_point<std::chrono::steady_clock> start_time,
     Response &res, bool &success, Error &error) {
   success = true;
-  // A tunnel map entry retargets the CONNECT, and its Host must then name the
-  // same authority. Without one the request stays exactly as it was.
   auto connect_target =
       detail::make_connect_request_target(tunnel_addr_map_, host_, port_);
   auto retargeted = connect_target !=
