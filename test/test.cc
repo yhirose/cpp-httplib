@@ -32199,7 +32199,105 @@ void WebSocketCredentialsStayWithTheirHop(
       << "origin credentials must not be sent to the proxy";
 }
 
+// Like WebSocketCredentialsStayWithTheirHop(), but with the setters.
+void WebSocketSetterCredentialsStayWithTheirHop(
+    const std::function<void(ws::WebSocketClient &)> &set_credentials,
+    const std::string &proxy_authz, const std::string &origin_authz) {
+  ScopedWebSocketOrigin origin;
+  ScopedConnectProxy proxy(
+      origin.port(), require_proxy_auth(proxy_authz, "Basic realm=\"proxy\""));
+  ASSERT_NE(0, proxy.port());
+
+  ws::WebSocketClient client(origin.url());
+  client.set_proxy("127.0.0.1", proxy.port());
+  set_credentials(client);
+  auto res = client.connect();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+
+  std::string msg;
+  ASSERT_TRUE(client.read(msg));
+  EXPECT_EQ("authorization:" + origin_authz + "|proxy-authorization:", msg);
+  client.close();
+
+  EXPECT_EQ(1, proxy.connect_hits());
+  EXPECT_EQ(std::string::npos,
+            proxy.connect_request().find("\r\nAuthorization: "))
+      << "origin credentials must not be sent to the proxy";
+}
+
 } // namespace proxy_tunnel_test
+
+namespace {
+
+// Connects `client` and returns the Authorization header its upgrade
+// request carried, or "<failed>" when the connection could not be opened.
+std::string websocket_authorization(ws::WebSocketClient &client) {
+  if (!client.connect()) { return "<failed>"; }
+  std::string msg;
+  if (!client.read(msg)) { return "<failed>"; }
+  client.close();
+  auto prefix = std::string("authorization:");
+  auto end = msg.find("|proxy-authorization:");
+  return msg.substr(prefix.size(), end - prefix.size());
+}
+
+} // namespace
+
+TEST(WebSocketClientAuthTest, BasicAuth) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  ws::WebSocketClient client(origin.url());
+  client.set_basic_auth("user", "pass");
+  EXPECT_EQ("Basic " + detail::base64_encode("user:pass"),
+            websocket_authorization(client));
+}
+
+TEST(WebSocketClientAuthTest, BasicAuthWithEmptyPasswordIsSent) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  ws::WebSocketClient client(origin.url());
+  client.set_basic_auth("user", "");
+  EXPECT_EQ("Basic " + detail::base64_encode("user:"),
+            websocket_authorization(client));
+}
+
+TEST(WebSocketClientAuthTest, BearerTokenAuth) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  ws::WebSocketClient client(origin.url());
+  client.set_bearer_token_auth("token123");
+  EXPECT_EQ("Bearer token123", websocket_authorization(client));
+}
+
+TEST(WebSocketClientAuthTest, BasicAuthWinsOverBearerToken) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  ws::WebSocketClient client(origin.url());
+  client.set_bearer_token_auth("token123");
+  client.set_basic_auth("user", "pass");
+  EXPECT_EQ("Basic " + detail::base64_encode("user:pass"),
+            websocket_authorization(client));
+}
+
+TEST(WebSocketClientAuthTest, ConstructorHeaderWinsOverSetter) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  ws::WebSocketClient client(origin.url(),
+                             {{"Authorization", "Bearer from-header"}});
+  client.set_bearer_token_auth("from-setter");
+  client.set_basic_auth("user", "pass");
+  EXPECT_EQ("Bearer from-header", websocket_authorization(client));
+}
+
+TEST(WebSocketClientAuthTest, CredentialsApplyOnReconnect) {
+  proxy_tunnel_test::ScopedWebSocketOrigin origin;
+  ws::WebSocketClient client(origin.url());
+  EXPECT_EQ("", websocket_authorization(client));
+
+  client.set_bearer_token_auth("first");
+  EXPECT_EQ("Bearer first", websocket_authorization(client));
+
+  client.set_bearer_token_auth("second");
+  EXPECT_EQ("Bearer second", websocket_authorization(client));
+
+  client.set_bearer_token_auth("");
+  EXPECT_EQ("", websocket_authorization(client));
+}
 
 TEST(WebSocketProxyTest, TunnelsThroughConnect) {
   proxy_tunnel_test::ScopedWebSocketOrigin origin;
@@ -32239,6 +32337,25 @@ TEST(WebSocketProxyTest, BearerCredentialsStayWithTheirHop) {
   proxy_tunnel_test::WebSocketCredentialsStayWithTheirHop(
       [](ws::WebSocketClient &cli) {
         cli.set_proxy_bearer_token_auth("proxy-token");
+      },
+      "Bearer proxy-token", "Bearer origin-token");
+}
+
+TEST(WebSocketProxyTest, BasicAuthSetterStaysWithItsHop) {
+  proxy_tunnel_test::WebSocketSetterCredentialsStayWithTheirHop(
+      [](ws::WebSocketClient &cli) {
+        cli.set_proxy_basic_auth("proxy-user", "proxy-pass");
+        cli.set_basic_auth("origin-user", "origin-pass");
+      },
+      "Basic " + detail::base64_encode("proxy-user:proxy-pass"),
+      "Basic " + detail::base64_encode("origin-user:origin-pass"));
+}
+
+TEST(WebSocketProxyTest, BearerTokenAuthSetterStaysWithItsHop) {
+  proxy_tunnel_test::WebSocketSetterCredentialsStayWithTheirHop(
+      [](ws::WebSocketClient &cli) {
+        cli.set_proxy_bearer_token_auth("proxy-token");
+        cli.set_bearer_token_auth("origin-token");
       },
       "Bearer proxy-token", "Bearer origin-token");
 }

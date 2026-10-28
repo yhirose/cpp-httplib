@@ -200,6 +200,10 @@ void close(CloseStatus status = CloseStatus::Normal,
            const std::string &reason = "");
 bool is_open() const;
 
+// Authentication - the same setters Client has (Basic wins over Bearer).
+void set_basic_auth(const std::string &username, const std::string &password);
+void set_bearer_token_auth(const std::string &token);
+
 // Proxy - the same setters Client has. connect() opens a CONNECT tunnel
 // through the proxy for ws:// as well as wss:// (RFC 6455 4.1); the proxy
 // credentials are sent only on the CONNECT request, never through the tunnel.
@@ -403,6 +407,22 @@ svr.set_pre_request_handler([](const httplib::Request &req, httplib::Response &r
 ```
 
 The server accepts a handshake from any `Origin`. A browser sends its cookies with a handshake another site starts, so if cookies authenticate the connection, also check `req.get_header_value("Origin")` against your own origins in one of these handlers (cross-site WebSocket hijacking).
+
+### Authentication
+
+```cpp
+httplib::ws::WebSocketClient ws("wss://example.com/ws");
+ws.set_bearer_token_auth("token123");      // Authorization: Bearer token123
+// or
+ws.set_basic_auth("user", "pass");         // Authorization: Basic dXNlcjpwYXNz
+
+if (ws.connect()) { /* ... */ }
+```
+
+The credentials are read on every `connect()`, so a new token takes effect on
+the next reconnect. An `Authorization` header passed to the constructor wins
+over them. Through a proxy they are sent only inside the tunnel, never on
+`CONNECT`.
 
 ### Custom Headers and Timeouts
 
