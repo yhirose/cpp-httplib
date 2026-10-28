@@ -4768,6 +4768,9 @@ public:
   void
   set_tunnel_hostname_addr_map(std::map<std::string, std::string> addr_map);
 
+  void set_basic_auth(const std::string &username, const std::string &password);
+  void set_bearer_token_auth(const std::string &token);
+
   void set_proxy(const std::string &host, int port);
   void set_proxy_basic_auth(const std::string &username,
                             const std::string &password);
@@ -4840,6 +4843,10 @@ private:
 
   // Hostname to CONNECT target map, used only through a proxy.
   std::map<std::string, std::string> tunnel_addr_map_;
+
+  std::string basic_auth_username_;
+  std::string basic_auth_password_;
+  std::string bearer_token_auth_token_;
 
   std::string proxy_host_;
   int proxy_port_ = -1;
@@ -23990,6 +23997,9 @@ inline void WebSocketClient::prepare_default_headers(Request &req) {
   }
 
   detail::add_default_user_agent_header(req);
+  detail::add_authorization_header(req, basic_auth_username_,
+                                   basic_auth_password_,
+                                   bearer_token_auth_token_, false);
 }
 
 inline Result WebSocketClient::connect() {
@@ -24210,6 +24220,16 @@ inline bool WebSocketClient::connect_with_proxy(Response &proxy_res,
     return false;
   }
   return true;
+}
+
+inline void WebSocketClient::set_basic_auth(const std::string &username,
+                                            const std::string &password) {
+  basic_auth_username_ = username;
+  basic_auth_password_ = password;
+}
+
+inline void WebSocketClient::set_bearer_token_auth(const std::string &token) {
+  bearer_token_auth_token_ = token;
 }
 
 inline void WebSocketClient::set_proxy(const std::string &host, int port) {
