@@ -1477,17 +1477,17 @@ The same method is available on `httplib::ws::WebSocketClient`.
 
 ### Override the connection target for a hostname
 
-`set_hostname_addr_map` redirects where the socket connects, without changing
-the identity of the request. The hostname the client was constructed with keeps
-supplying the `Host` header, the SNI, and the name that the server certificate
-is verified against, so this is a connection-level override only, not a way to
-talk to a different origin.
+`set_direct_hostname_addr_map` redirects where the socket connects, without
+changing the identity of the request. The hostname the client was constructed
+with keeps supplying the `Host` header, the SNI, and the name that the server
+certificate is verified against, so this is a connection-level override only,
+not a way to talk to a different origin.
 
 ```cpp
 httplib::Client cli("https://example.com");
 
 // Connect to this IP address instead of resolving "example.com"
-cli.set_hostname_addr_map({{"example.com", "192.168.1.10"}});
+cli.set_direct_hostname_addr_map({{"example.com", "192.168.1.10"}});
 ```
 
 A mapped value may be an IP literal or another hostname. An IP literal is used
@@ -1495,13 +1495,37 @@ as-is; anything else is resolved as a name, so a host that is only reachable
 under a different name works too:
 
 ```cpp
-cli.set_hostname_addr_map({{"example.com", "internal.example.lan"}});
+cli.set_direct_hostname_addr_map({{"example.com", "internal.example.lan"}});
 ```
 
 An empty value is ignored, leaving the original hostname as the connection
 target.
 
-The same method is available on `httplib::ws::WebSocketClient`.
+The direct map applies only when the client connects to the origin itself.
+Through a proxy, use `set_tunnel_hostname_addr_map`: its value becomes the
+`CONNECT` target (and that request's `Host`) that the proxy is asked to connect
+to (HTTPS and WebSocket). The `Host` header, the SNI and the certificate check
+inside the tunnel keep the original hostname:
+
+```cpp
+httplib::Client cli("https://sni.example");
+
+cli.set_tunnel_hostname_addr_map({{"sni.example", "server.example"}});
+cli.set_proxy("proxy.example", 3128);
+// CONNECT server.example:443, SNI sni.example
+```
+
+The two maps are independent; to use the same target on both paths, set both.
+They correspond to curl's `--resolve` and `--connect-to`.
+
+Neither map applies to the proxy's own address ("direct" means not through a
+proxy, as in a PAC file's `DIRECT`). To connect to the proxy at a fixed
+address, pass an IP literal to `set_proxy()`.
+
+`set_hostname_addr_map` is deprecated and works the same as
+`set_direct_hostname_addr_map`.
+
+These methods are also available on `httplib::ws::WebSocketClient`.
 
 ### Automatic Path Encoding
 

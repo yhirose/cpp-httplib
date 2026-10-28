@@ -214,7 +214,7 @@ svr.listen("/tmp/httplib.sock", 80);  // The port is unused, but must not be 0
 // Client
 httplib::Client cli("http://localhost");
 cli.set_address_family(AF_UNIX);
-cli.set_hostname_addr_map({{"localhost", "/tmp/httplib.sock"}});
+cli.set_direct_hostname_addr_map({{"localhost", "/tmp/httplib.sock"}});
 
 auto res = cli.Get("/");
 ```

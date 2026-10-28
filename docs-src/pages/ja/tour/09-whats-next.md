@@ -214,7 +214,7 @@ svr.listen("/tmp/httplib.sock", 80);  // ポート番号は使われない（0�
 // クライアント
 httplib::Client cli("http://localhost");
 cli.set_address_family(AF_UNIX);
-cli.set_hostname_addr_map({{"localhost", "/tmp/httplib.sock"}});
+cli.set_direct_hostname_addr_map({{"localhost", "/tmp/httplib.sock"}});
 
 auto res = cli.Get("/");
 ```
