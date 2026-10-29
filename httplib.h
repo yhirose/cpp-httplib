@@ -24838,7 +24838,13 @@ inline bool WebSocket::send_frame(Opcode op, const char *data, size_t len,
                                   bool fin) {
   std::lock_guard<std::mutex> lock(write_mutex_);
   if (closed_) { return false; }
-  return detail::write_websocket_frame(strm_, op, data, len, fin, !is_server_);
+  // A failed write may have sent part of the frame, whose header announces the
+  // whole length, so the peer would read the next frames as the rest of it.
+  if (!detail::write_websocket_frame(strm_, op, data, len, fin, !is_server_)) {
+    closed_ = true;
+    return false;
+  }
+  return true;
 }
 
 inline ReadResult WebSocket::read(std::string &msg) {
@@ -24846,12 +24852,8 @@ inline ReadResult WebSocket::read(std::string &msg) {
   // Returns false when the connection is done.
   auto handle_control = [&](Opcode op, const std::string &payload) -> bool {
     switch (op) {
-    case Opcode::Ping: {
-      std::lock_guard<std::mutex> lock(write_mutex_);
-      detail::write_websocket_frame(strm_, Opcode::Pong, payload.data(),
-                                    payload.size(), true, !is_server_);
-      return true;
-    }
+    case Opcode::Ping:
+      return send_frame(Opcode::Pong, payload.data(), payload.size());
     case Opcode::Pong: {
       std::lock_guard<std::mutex> lock(ping_mutex_);
       unacked_pings_ = 0;
