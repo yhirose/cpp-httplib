@@ -29546,6 +29546,62 @@ TEST(WebSocketPartialWriteTest, FrameIsWrittenWhole) {
 
   client.close();
 }
+
+// A send() that fails partway leaves a frame on the wire whose header announces
+// more than was sent. Nothing may follow it, or the peer reads the next frames
+// as the rest of it and a later payload's bytes as a frame of their own.
+TEST(WebSocketPartialWriteTest, FailedWriteClosesConnection) {
+  signal(SIGPIPE, SIG_IGN);
+
+  const std::string large(4 * 1024 * 1024, 'A');
+  std::atomic<bool> large_sent{true};
+  std::atomic<bool> open_after_failure{true};
+  std::atomic<bool> small_sent{true};
+  std::atomic<bool> handler_done{false};
+
+  Server svr;
+  svr.set_write_timeout(0, 200000);
+  svr.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    large_sent = ws.send(large.data(), large.size());
+    open_after_failure = ws.is_open();
+    small_sent = ws.send("after");
+    handler_done = true;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://" + std::string(HOST) + ":" +
+                             std::to_string(port) + "/ws");
+  client.set_socket_options([](socket_t sock) {
+    int size = 8192;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+               reinterpret_cast<const char *>(&size), sizeof(size));
+  });
+  ASSERT_TRUE(client.connect());
+
+  // Read nothing, so the server's write times out partway through the frame.
+  for (int i = 0; i < 100 && !handler_done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  ASSERT_TRUE(handler_done);
+
+  EXPECT_FALSE(large_sent);
+  EXPECT_FALSE(open_after_failure);
+  EXPECT_FALSE(small_sent);
+
+  client.close();
+}
 #endif
 
 TEST(WebSocketPreRoutingTest, RejectWithoutAuth) {

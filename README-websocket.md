@@ -129,7 +129,8 @@ Passed to the handler registered with `Server::WebSocket()`. The handler runs in
 // Read next message (blocks until received, returns Fail/Text/Binary/Timeout)
 ReadResult read(std::string &msg);
 
-// Send messages
+// Send messages. A send that fails (e.g. the write timeout elapsed) closes the
+// connection, since part of the frame may already have gone out.
 bool send(const std::string &data);              // Text
 bool send(const char *data, size_t len);          // Binary
 
