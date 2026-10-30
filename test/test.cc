@@ -3445,6 +3445,55 @@ TEST(CancelTest, WithCancelLargePayloadDelete) {
   EXPECT_EQ(Error::Canceled, res.error());
 }
 
+// One stop() from another thread ends a request that waits for the response
+TEST(ClientStopTest, StopEndsWaitForResponse) {
+  Server svr;
+  std::atomic<bool> received{false};
+  std::atomic<bool> done{false};
+
+  svr.Get("/wait", [&](const Request & /*req*/, Response &res) {
+    received.store(true);
+    while (!done.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    res.set_content("Hello World!", "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+
+  Client cli(HOST, port);
+  cli.set_read_timeout(std::chrono::seconds(30));
+  std::future<Result> request;
+
+  auto se = detail::scope_exit([&] {
+    done.store(true);
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  request = std::async(std::launch::async, [&]() { return cli.Get("/wait"); });
+
+  for (int i = 0; i < 500 && !received.load(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(received.load());
+  // Let the client block in the wait for the response
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  auto start = std::chrono::steady_clock::now();
+  cli.stop();
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
+
+  auto res = request.get();
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Read, res.error());
+}
+
 static std::string remove_whitespace(const std::string &input) {
   std::string output;
   output.reserve(input.size());

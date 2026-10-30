@@ -3058,6 +3058,10 @@ protected:
   bool socket_should_be_closed_when_request_is_done_ = false;
   size_t socket_tls_settings_version_ = 0;
 
+  // Set by stop() while a request is in flight. The request's reads poll it,
+  // because shutting the socket down does not wake a read on Windows.
+  std::atomic<bool> stop_requested_{false};
+
   std::atomic<size_t> tls_settings_version_{0};
 
   // Hostname to connection target map. The value is an IP literal or another
@@ -6840,10 +6844,14 @@ select_read_interruptible(socket_t sock, time_t sec, time_t usec,
   while (!interrupted()) {
     auto left = std::chrono::duration_cast<std::chrono::microseconds>(
         deadline - std::chrono::steady_clock::now());
-    auto wait =
-        (std::max)((std::min)(left, slice), std::chrono::microseconds(0));
-    auto ret = select_impl(sock, POLLIN, 0, static_cast<time_t>(wait.count()));
-    if (ret != 0 || wait < slice) { return ret; }
+    auto last = left < slice;
+    // poll() takes whole milliseconds, so round the last wait up to keep it
+    // from ending before the deadline.
+    auto wait_usec = last ? (std::max)((left.count() + 999) / 1000 * 1000,
+                                       static_cast<decltype(left.count())>(0))
+                          : slice.count();
+    auto ret = select_impl(sock, POLLIN, 0, static_cast<time_t>(wait_usec));
+    if (ret != 0 || last) { return ret; }
   }
   return 0;
 }
@@ -15803,6 +15811,9 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     // socket.
     socket_should_be_closed_when_request_is_done_ = false;
 
+    // A redirect or a retry sent inside a request keeps its stop()
+    if (socket_requests_in_flight_ == 0) { stop_requested_ = false; }
+
     if (!socket_reusable()) {
       if (!ensure_socket_connection(socket_, error)) { return false; }
 
@@ -15850,6 +15861,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   });
 
   ret = process_socket(socket_, req.start_time_, [&](Stream &strm) {
+    strm.set_read_interrupt([this] { return stop_requested_.load(); });
     return handle_request(strm, req, res, close_connection, error);
   });
 
@@ -18068,6 +18080,9 @@ inline void ClientImpl::stop() {
   // are not thread-safe.
   if (socket_requests_in_flight_ > 0) {
     shutdown_socket(socket_);
+    // shutdown() does not wake a read waiting in WSAPoll on Windows, so the
+    // request's reads also give up once they see this flag.
+    stop_requested_ = true;
 
     // Aside from that, we set a flag for the socket to be closed when we're
     // done.
