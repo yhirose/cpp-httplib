@@ -20725,6 +20725,13 @@ TEST(RedirectTest, ResolveRelativeLocation) {
               detail::resolve_relative_location(c.first, "/b/c/d;p?q"))
         << c.first;
   }
+
+  // A result starting with "//" is still a path, not a network-path reference
+  EXPECT_EQ("/.//g",
+            detail::resolve_relative_location("../../..//g", "/b/c/d;p?q"));
+  EXPECT_EQ("/.//g/x", detail::resolve_relative_location("x", "//g/h"));
+  EXPECT_EQ("/.//g/h?y", detail::resolve_relative_location("?y", "//g/h"));
+  EXPECT_EQ("/.//g/h#s", detail::resolve_relative_location("#s", "//g/h"));
 }
 
 TEST(RedirectTest, RemoveDotSegments) {
@@ -20810,6 +20817,54 @@ TEST(RedirectTest, RelativeLocationWithoutLeadingSlash) {
     EXPECT_EQ(StatusCode::OK_200, res->status) << c.first;
     EXPECT_EQ(c.second, res->body) << c.first;
   }
+}
+
+// "..//host:port/x" resolves to the path "//host:port/x" on the same host
+// (RFC 3986 5.2), as curl and the URL Standard have it, not to another host.
+TEST(RedirectTest, RelativeLocationStaysOnHost) {
+  Server other;
+  std::atomic<int> other_hits{0};
+  other.Get(".*", [&](const Request & /*req*/, Response &res) {
+    other_hits++;
+    res.set_content("other", "text/plain");
+  });
+  auto other_port = other.bind_to_any_port("127.0.0.1");
+  auto other_thread = std::thread([&]() { other.listen_after_bind(); });
+
+  Server svr;
+  svr.Get("/dir/page", [](const Request &req, Response &res) {
+    res.set_redirect(req.get_param_value("to"));
+  });
+  svr.Get(".*", [](const Request &req, Response &res) {
+    res.set_content(req.path, "text/plain");
+  });
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    other.stop();
+    other_thread.join();
+    ASSERT_FALSE(svr.is_running());
+    ASSERT_FALSE(other.is_running());
+  });
+
+  svr.wait_until_ready();
+  other.wait_until_ready();
+
+  auto authority = "127.0.0.1:" + std::to_string(other_port);
+  for (const auto &to :
+       {"..//" + authority + "/x", "../..//" + authority + "/x"}) {
+    Client cli(HOST, port);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/dir/page?to=" + encode_query_component(to));
+    ASSERT_TRUE(res) << to << ": " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << to;
+    EXPECT_EQ("//" + authority + "/x", res->body) << to;
+  }
+  EXPECT_EQ(0, other_hits.load());
 }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED

@@ -1029,18 +1029,30 @@ inline std::string resolve_relative_location(const std::string &location,
   // A ':' in the first segment means the value has a scheme.
   if (location.find(':') < location.find_first_of("/?#")) { return location; }
 
-  if (location[0] == '#') { return base.substr(0, base.find('#')) + location; }
+  // What is returned from here on is a path on the current host, but one that
+  // starts with "//" (from "..//evil.example/x", say) would be read back by
+  // parse_url as a network-path reference naming another host. Like the URL
+  // Standard's serializer, put "/." in front, which removing dot segments
+  // takes off again.
+  auto on_this_host = [](std::string path) -> std::string {
+    if (path.compare(0, 2, "//") == 0) { path.insert(0, "/."); }
+    return path;
+  };
+
+  if (location[0] == '#') {
+    return on_this_host(base.substr(0, base.find('#')) + location);
+  }
 
   auto base_path = base.substr(0, base.find_first_of("?#"));
-  if (location[0] == '?') { return base_path + location; }
+  if (location[0] == '?') { return on_this_host(base_path + location); }
 
   if (base_path.empty() || base_path[0] != '/') { base_path = "/"; }
   auto merged = base_path.substr(0, base_path.rfind('/') + 1) + location;
 
   // Remove "." and ".." segments from the merged path.
   auto path_end = (std::min)(merged.find_first_of("?#"), merged.size());
-  return remove_dot_segments(merged.substr(0, path_end)) +
-         merged.substr(path_end);
+  return on_this_host(remove_dot_segments(merged.substr(0, path_end)) +
+                      merged.substr(path_end));
 }
 
 } // namespace detail
