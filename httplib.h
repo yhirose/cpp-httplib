@@ -1029,11 +1029,8 @@ inline std::string resolve_relative_location(const std::string &location,
   // A ':' in the first segment means the value has a scheme.
   if (location.find(':') < location.find_first_of("/?#")) { return location; }
 
-  // What is returned from here on is a path on the current host, but one that
-  // starts with "//" (from "..//evil.example/x", say) would be read back by
-  // parse_url as a network-path reference naming another host. Like the URL
-  // Standard's serializer, put "/." in front, which removing dot segments
-  // takes off again.
+  // A path starting with "//" would be re-parsed as an authority. Prefix "/."
+  // (as the URL Standard does); remove_dot_segments strips it later.
   auto on_this_host = [](std::string path) -> std::string {
     if (path.compare(0, 2, "//") == 0) { path.insert(0, "/."); }
     return path;
