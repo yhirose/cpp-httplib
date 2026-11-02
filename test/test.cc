@@ -4856,6 +4856,44 @@ TEST(PathUrlEncodeTest, ControlCharsInPathAreEncoded) {
   }
 }
 
+TEST(PathUrlEncodeTest, NulInPathIsEncoded) {
+  // A NUL is encoded like the other control characters. Stopping at it would
+  // send "/users/42" for "/users/42\0/sessions", a different resource.
+  Server svr;
+
+  std::string target;
+  svr.set_pre_routing_handler([&](const Request &req, Response &res) {
+    target = req.target;
+    res.status = StatusCode::OK_200;
+    return Server::HandlerResponse::Handled;
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto thread = std::thread([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  const std::string path("/users/42\0/sessions?x=1", 23);
+
+  {
+    Client cli(HOST, port);
+
+    auto res = cli.Delete(path);
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("/users/42%00/sessions?x=1", target);
+
+    target.clear();
+    auto handle = cli.open_stream("GET", path);
+    EXPECT_TRUE(handle.is_valid()) << to_string(handle.error);
+    EXPECT_EQ("/users/42%00/sessions?x=1", target);
+  }
+}
+
 TEST(PathUrlEncodeTest, StreamingCRLFRejectedWhenPathEncodeDisabled) {
   // Nothing may reach the wire: a raw CR/LF target would split the request
   // line and inject headers.

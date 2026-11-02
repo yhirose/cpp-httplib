@@ -6137,7 +6137,9 @@ inline std::string encode_path(const std::string &s) {
   std::string result;
   result.reserve(s.size());
 
-  for (size_t i = 0; s[i]; i++) {
+  // Bounded by size(), not by a NUL: a NUL is a control character like any
+  // other and is encoded below, rather than cutting off the rest of the path.
+  for (size_t i = 0; i < s.size(); i++) {
     switch (s[i]) {
     case ' ': result += "%20"; break;
     case '+': result += "%2B"; break;
