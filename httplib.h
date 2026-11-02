@@ -1029,18 +1029,27 @@ inline std::string resolve_relative_location(const std::string &location,
   // A ':' in the first segment means the value has a scheme.
   if (location.find(':') < location.find_first_of("/?#")) { return location; }
 
-  if (location[0] == '#') { return base.substr(0, base.find('#')) + location; }
+  // A path starting with "//" would be re-parsed as an authority. Prefix "/."
+  // (as the URL Standard does); remove_dot_segments strips it later.
+  auto on_this_host = [](std::string path) -> std::string {
+    if (path.compare(0, 2, "//") == 0) { path.insert(0, "/."); }
+    return path;
+  };
+
+  if (location[0] == '#') {
+    return on_this_host(base.substr(0, base.find('#')) + location);
+  }
 
   auto base_path = base.substr(0, base.find_first_of("?#"));
-  if (location[0] == '?') { return base_path + location; }
+  if (location[0] == '?') { return on_this_host(base_path + location); }
 
   if (base_path.empty() || base_path[0] != '/') { base_path = "/"; }
   auto merged = base_path.substr(0, base_path.rfind('/') + 1) + location;
 
   // Remove "." and ".." segments from the merged path.
   auto path_end = (std::min)(merged.find_first_of("?#"), merged.size());
-  return remove_dot_segments(merged.substr(0, path_end)) +
-         merged.substr(path_end);
+  return on_this_host(remove_dot_segments(merged.substr(0, path_end)) +
+                      merged.substr(path_end));
 }
 
 } // namespace detail
