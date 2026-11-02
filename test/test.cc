@@ -24347,6 +24347,47 @@ TEST(OpenStreamPartialWriteTest, BodyIsWrittenWhole) {
 }
 #endif
 
+// A stream opened on a client whose request on another thread is still
+// waiting for its response must not take that request's connection over.
+TEST(OpenStreamConcurrencyTest, RequestInFlightKeepsItsConnection) {
+  std::promise<void> slow_started;
+  auto slow_started_future = slow_started.get_future();
+
+  Server svr;
+  svr.Get("/slow", [&](const Request &, Response &res) {
+    slow_started.set_value();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    res.set_content("slow", "text/plain");
+  });
+  svr.Get("/fast", [](const Request &, Response &res) {
+    res.set_content("fast", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+
+  std::string slow_body;
+  std::thread slow_thread([&] {
+    auto res = cli.Get("/slow");
+    if (res) { slow_body = res->body; }
+  });
+  slow_started_future.wait();
+
+  auto result = stream::Get(cli, "/fast");
+  auto fast_body = result.is_valid() ? result.read_all() : std::string();
+  slow_thread.join();
+
+  EXPECT_EQ("slow", slow_body);
+  EXPECT_EQ("fast", fast_body);
+}
+
 // Serves `response` to the single request `fn` makes with a fresh client.
 template <typename Fn>
 static void with_single_response(const std::string &response, Fn fn) {
