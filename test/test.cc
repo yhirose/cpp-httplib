@@ -30013,6 +30013,120 @@ static std::string masked_frame(uint8_t first_byte,
   return f + payload;
 }
 
+// Waits up to 5 seconds for flag, so a regression fails a test instead of
+// hanging the suite.
+static void wait_for_flag(const std::atomic<bool> &flag) {
+  for (int i = 0; i < 500 && !flag; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+}
+
+// Whether flag is set within CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND and a
+// margin of 2 seconds.
+static bool set_within_close_timeout(const std::atomic<bool> &flag) {
+  auto start = std::chrono::steady_clock::now();
+  auto bound =
+      std::chrono::seconds(CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND + 2);
+  while (!flag && std::chrono::steady_clock::now() - start < bound) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return flag;
+}
+
+// A close() made while another thread waits in read() for a peer that never
+// answers: that read() waits for the Close reply no longer than close() itself
+// would, CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND, instead of the read
+// timeout of the server. The peer pings first, and the Pong it gets back
+// proves the reader is inside read() when close() runs.
+TEST(WebSocketTest, CloseBoundsTheWaitOfConcurrentRead) {
+  std::atomic<bool> pong_seen{false};
+  std::atomic<bool> handler_done{false};
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::thread reader([&]() {
+      std::string msg;
+      while (ws.read(msg)) {}
+    });
+    wait_for_flag(pong_seen);
+    ws.close();
+    reader.join();
+    handler_done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  // Closed before the server stops, a failed assertion included, so the
+  // reader never waits on a socket left open
+  auto close_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  auto ping = masked_frame(0x89, "");
+  ASSERT_EQ(static_cast<ssize_t>(ping.size()),
+            detail::send_socket(sock, ping.data(), ping.size(), 0));
+  // An unmasked Pong with no payload, read until both of its bytes came
+  std::string pong;
+  char c;
+  while (pong.size() < 2 && ::recv(sock, &c, 1, 0) == 1) {
+    pong += c;
+  }
+  ASSERT_EQ(std::string("\x8A\x00", 2), pong);
+  pong_seen = true;
+
+  // The peer stays silent: it never answers the Close
+  EXPECT_TRUE(set_within_close_timeout(handler_done));
+}
+
+// A close() that reads the peer's reply itself waits for it no longer than
+// CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND, though the peer keeps sending
+// other frames and never answers the Close.
+TEST(WebSocketTest, CloseBoundsItsWaitForAPeerThatKeepsSending) {
+  std::atomic<bool> peer_sending{false};
+  std::atomic<bool> handler_done{false};
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    wait_for_flag(peer_sending);
+    ws.close();
+    handler_done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  // Closed before the server stops, so the wait of close() never outlives it
+  auto close_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  std::atomic<bool> sending{true};
+  std::thread peer([&]() {
+    auto ping = masked_frame(0x89, "");
+    while (sending &&
+           detail::send_socket(sock, ping.data(), ping.size(), 0) > 0) {
+      peer_sending = true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  });
+
+  const bool done_in_time = set_within_close_timeout(handler_done);
+  sending = false;
+  peer.join();
+  EXPECT_TRUE(done_in_time);
+}
+
 TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
   std::atomic<bool> done{false};
   std::string received;

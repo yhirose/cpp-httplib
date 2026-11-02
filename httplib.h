@@ -4751,6 +4751,11 @@ private:
   std::atomic<bool> closed_{false};
   // Set when the peer stopped answering pings, to end a read() waiting on it
   std::atomic<bool> pong_timed_out_{false};
+  // Set by close(): the steady clock time past which no read, its own or
+  // another thread's, waits any longer for the peer's Close reply. 0 until
+  // then.
+  std::atomic<std::chrono::steady_clock::rep> close_deadline_{0};
+  bool close_expired() const;
   // Set once the caller has bounded read() through set_read_timeout(). Until
   // then the timeout in effect is the compile-time default, and elapsing it
   // is a failure that closes the connection, not a Timeout.
@@ -13585,6 +13590,13 @@ inline bool WebSocketSSLStream::wait_writable() const {
 }
 
 inline ssize_t WebSocketSSLStream::read(char *ptr, size_t size) {
+  // A read decrypts what the session and the socket already hold before it
+  // ever waits, so a peer that keeps the socket full never lets it reach the
+  // wait: the interrupt is looked at first
+  if (read_interrupted_ && read_interrupted_()) {
+    error_ = Error::Timeout;
+    return -1;
+  }
   tls::TlsError err;
   auto n = 1000;
   while (--n >= 0) {
@@ -23838,6 +23850,14 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
   // thread positioned to see the peer's reply, and reading here would take
   // bytes out of the message it is assembling. Bailing out also leaves the
   // stream, including its read timeout, entirely to that thread.
+  //
+  // Either way the wait ends CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND from
+  // now, however long the peer keeps sending other frames.
+  close_deadline_ =
+      (std::chrono::steady_clock::now() +
+       std::chrono::seconds(CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND))
+          .time_since_epoch()
+          .count();
   std::unique_lock<std::mutex> read_lock(read_mutex_, std::try_to_lock);
   if (!read_lock.owns_lock()) { return; }
 
@@ -23864,12 +23884,19 @@ inline WebSocket::~WebSocket() {
   strm_.set_read_interrupt(nullptr);
 }
 
+inline bool WebSocket::close_expired() const {
+  auto deadline = close_deadline_.load();
+  return deadline != 0 &&
+         std::chrono::steady_clock::now().time_since_epoch().count() >=
+             deadline;
+}
+
 inline void WebSocket::start_heartbeat() {
+  // A pong timeout, or the end of the wait for the reply to a close(), ends a
+  // read() blocked on the silent peer
+  strm_.set_read_interrupt(
+      [this] { return pong_timed_out_.load() || close_expired(); });
   if (ping_interval_sec_ <= 0) { return; }
-  // A pong timeout ends a read() blocked on the silent peer
-  if (max_missed_pongs_ > 0) {
-    strm_.set_read_interrupt([this] { return pong_timed_out_.load(); });
-  }
   ping_thread_ = std::thread([this]() {
     std::unique_lock<std::mutex> lock(ping_mutex_);
     // The predicate keeps a spurious wakeup from sending a ping early
