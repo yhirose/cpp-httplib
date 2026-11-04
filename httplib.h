@@ -12876,7 +12876,8 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!wait_writable()) { return -1; }
 
-#if defined(_WIN32) && !defined(_WIN64)
+  // Winsock's send() takes an int length, even on 64-bit Windows
+#ifdef _WIN32
   size =
       (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
 #endif
@@ -23054,6 +23055,9 @@ inline ssize_t read(session_t session, void *buf, size_t len, TlsError &err) {
   }
 
   auto wsession = static_cast<impl::WolfSSLSession *>(session);
+  constexpr auto max_len =
+      static_cast<size_t>((std::numeric_limits<int>::max)());
+  if (len > max_len) { len = max_len; }
   int ret = wolfSSL_read(wsession->ssl, buf, static_cast<int>(len));
 
   if (ret > 0) {

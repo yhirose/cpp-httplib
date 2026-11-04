@@ -25056,6 +25056,49 @@ TEST(SSLTest, ResponseBodyTerminatedByConnectionClose) {
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(expected_body, res->body);
 }
+
+// Without Content-Length, the full buffer size reaches tls::read().
+TEST(SSLTest, ReadIntoBufferOverIntMax) {
+  if (sizeof(size_t) <= sizeof(int)) {
+    GTEST_SKIP() << "size_t cannot exceed INT_MAX here";
+  }
+
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  svr.Get("/no-content-length", [&](const Request & /*req*/, Response &res) {
+    res.set_content_provider("text/plain",
+                             [&](size_t offset, DataSink &sink) -> bool {
+                               if (offset == 0) { sink.write("Hello", 5); }
+                               sink.done();
+                               return true;
+                             });
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto listen_thread = std::thread([&svr] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(false);
+
+  auto handle = cli.open_stream("GET", "/no-content-length");
+  ASSERT_TRUE(handle.is_valid()) << to_string(handle.error);
+
+  const auto len = static_cast<size_t>((std::numeric_limits<int>::max)()) + 1;
+  std::unique_ptr<char[]> buf(new char[len]);
+  std::string body;
+  ssize_t n;
+  while ((n = handle.read(buf.get(), len)) > 0) {
+    body.append(buf.get(), static_cast<size_t>(n));
+  }
+  EXPECT_EQ(0, n);
+  EXPECT_EQ("Hello", body);
+}
 #endif // CPPHTTPLIB_SSL_ENABLED
 
 //==============================================================================
