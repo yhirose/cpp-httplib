@@ -15291,7 +15291,11 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
   if ((req.method == "GET" || req.method == "HEAD") &&
       req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
-    if (!detail::parse_range_header(range_header_value, req.ranges)) {
+    // RFC 9110 14.2: a Range header with a range unit other than bytes is
+    // ignored rather than rejected.
+    auto unit = range_header_value.substr(0, range_header_value.find('='));
+    if (detail::case_ignore::equal(unit, "bytes") &&
+        !detail::parse_range_header(range_header_value, req.ranges)) {
       connection_closed = true;
       res.status = StatusCode::RangeNotSatisfiable_416;
       output_error_log(Error::InvalidRangeHeader, &req);
