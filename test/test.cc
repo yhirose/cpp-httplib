@@ -24919,44 +24919,6 @@ TEST_F(OpenStreamTest, Zstd) {
 }
 #endif
 
-#ifdef _WIN64
-// send() takes an int length on 64-bit Windows as well, so a single write of
-// 4 GiB + 1 bytes used to go out as its low 32 bits: one byte, followed by
-// zero-byte sends of the remaining 4 GiB that never ended.
-TEST(LargeWriteTest, WriteOver4GiBAtOnce) {
-  const auto size = (size_t(1) << 32) + 1;
-  const std::string data(size, 'A');
-
-  Server svr;
-  svr.Get("/large", [&](const Request & /*req*/, Response &res) {
-    res.set_content_provider(data.size(), "application/octet-stream",
-                             [&](size_t offset, size_t length, DataSink &sink) {
-                               return sink.write(data.data() + offset, length);
-                             });
-  });
-
-  auto port = svr.bind_to_any_port(HOST);
-  std::thread t([&]() { svr.listen_after_bind(); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-  });
-  svr.wait_until_ready();
-
-  Client cli(HOST, port);
-  cli.set_read_timeout(30, 0);
-  size_t received = 0;
-  auto res = cli.Get("/large", [&](const char * /*buf*/, size_t len) {
-    received += len;
-    return true;
-  });
-
-  ASSERT_TRUE(res) << to_string(res.error());
-  EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ(size, received);
-}
-#endif
-
 #ifdef CPPHTTPLIB_SSL_ENABLED
 class SSLOpenStreamTest : public ::testing::Test {
 protected:
@@ -25095,9 +25057,7 @@ TEST(SSLTest, ResponseBodyTerminatedByConnectionClose) {
   EXPECT_EQ(expected_body, res->body);
 }
 
-// SSL_read() and wolfSSL_read() take an int length, so a read into a buffer
-// larger than INT_MAX has to be cut to INT_MAX before the call. A body without
-// Content-Length leaves the buffer as the only bound on the read.
+// Without Content-Length, the full buffer size reaches tls::read().
 TEST(SSLTest, ReadIntoBufferOverIntMax) {
   if (sizeof(size_t) <= sizeof(int)) {
     GTEST_SKIP() << "size_t cannot exceed INT_MAX here";

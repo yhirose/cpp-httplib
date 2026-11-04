@@ -12876,8 +12876,7 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
 inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   if (!wait_writable()) { return -1; }
 
-  // send() takes an int length on 64-bit Windows too, so a longer write is cut
-  // here rather than truncated to its low 32 bits; write_data() sends the rest.
+  // Winsock's send() takes an int length, even on 64-bit Windows
 #ifdef _WIN32
   size =
       (std::min)(size, static_cast<size_t>((std::numeric_limits<int>::max)()));
