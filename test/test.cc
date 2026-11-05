@@ -2818,6 +2818,35 @@ TEST(RangeTest, IgnoredForPost) {
   }
 }
 
+TEST(RangeTest, IgnoredForUnknownUnit) {
+  Server svr;
+  svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("abcdefg", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  ASSERT_GT(port, 0);
+  thread t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  for (auto range : {"items=1-2", "none=x"}) {
+    auto res = cli.Get("/", Headers{{"Range", range}});
+    ASSERT_TRUE(res) << range << ": " << to_string(res.error());
+    EXPECT_EQ(StatusCode::OK_200, res->status) << range;
+    EXPECT_EQ("abcdefg", res->body) << range;
+  }
+
+  auto res = cli.Get("/", Headers{{"Range", "bytes=x"}});
+  ASSERT_TRUE(res) << to_string(res.error());
+  EXPECT_EQ(StatusCode::RangeNotSatisfiable_416, res->status);
+}
+
 TEST(GetAddrInfoDanglingRefTest, LongTimeout) {
   auto host = "unresolvableaddress.local";
   auto path = std::string{"/"};
