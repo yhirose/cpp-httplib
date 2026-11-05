@@ -4326,6 +4326,62 @@ TEST(RedirectToSamePort, ForwardCookie) {
   EXPECT_EQ("session_id=SECRET", captured_cookie);
 }
 
+TEST(RedirectTest, DoNotCarryRequestParamsToLocation) {
+  // The Location alone names the next target, on any origin.
+  Server target_svr;
+  std::string cross_target;
+  target_svr.Get("/landing", [&](const Request &req, Response &res) {
+    cross_target = req.target;
+    res.set_content("OK", "text/plain");
+  });
+
+  auto target_port = target_svr.bind_to_any_port(HOST);
+  auto target_thread = std::thread([&]() { target_svr.listen_after_bind(); });
+
+  Server origin_svr;
+  std::string same_target;
+  origin_svr.Get("/cross", [&](const Request &, Response &res) {
+    res.set_redirect(
+        "http://localhost:" + std::to_string(target_port) + "/landing", 302);
+  });
+  origin_svr.Get("/same", [&](const Request &, Response &res) {
+    res.set_redirect("/landing", 302);
+  });
+  origin_svr.Get("/landing", [&](const Request &req, Response &res) {
+    same_target = req.target;
+    res.set_content("OK", "text/plain");
+  });
+
+  auto origin_port = origin_svr.bind_to_any_port(HOST);
+  auto origin_thread = std::thread([&]() { origin_svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    origin_svr.stop();
+    origin_thread.join();
+    target_svr.stop();
+    target_thread.join();
+  });
+
+  target_svr.wait_until_ready();
+  origin_svr.wait_until_ready();
+
+  Client cli("localhost", origin_port);
+  cli.set_follow_location(true);
+
+  Request req;
+  req.method = "GET";
+  req.params = {{"api_key", "SECRET"}};
+
+  req.path = "/cross";
+  auto res = cli.send(req);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("/landing", cross_target);
+
+  req.path = "/same";
+  res = cli.send(req);
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("/landing", same_target);
+}
+
 TEST(RedirectToDifferentPort, ForwardDefaultHeadersButNotCredentials) {
   std::string authorization;
   std::string trace_id;

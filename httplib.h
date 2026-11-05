@@ -9352,6 +9352,7 @@ inline bool redirect(T &cli, Request &req, Response &res,
                      Error &error) {
   Request new_req = req;
   new_req.path = path;
+  new_req.params.clear();
   new_req.redirect_count_ -= 1;
 
   if (res.status == StatusCode::SeeOther_303 &&
