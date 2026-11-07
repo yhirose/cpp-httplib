@@ -291,6 +291,67 @@ TEST_F(UnixSocketTest, HostHeaderAutoSet) {
   EXPECT_EQ(received_host_header, "localhost");
 }
 
+TEST_F(UnixSocketTest, RedirectStaysOnSocket) {
+  // Another socket in the working directory, which a Location can name as
+  // its host
+  const auto other_path = "other-" + pathname_.substr(2);
+
+  httplib::Server svr;
+  svr.Get("/redirect", [&](const httplib::Request &, httplib::Response &res) {
+    // An absolute Location naming the Host this client sends
+    res.set_redirect("http://localhost" + pattern_);
+  });
+  svr.Post("/redirect", [&](const httplib::Request &, httplib::Response &res) {
+    res.set_redirect("http://" + other_path + pattern_,
+                     StatusCode::TemporaryRedirect_307);
+  });
+  svr.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
+    res.set_content(content_, "text/plain");
+  });
+  svr.Post(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
+    res.set_content(req.body, "text/plain");
+  });
+
+  std::atomic<bool> other_reached{false};
+  httplib::Server other;
+  other.Post(pattern_, [&](const httplib::Request &, httplib::Response &res) {
+    other_reached = true;
+    res.set_content("other", "text/plain");
+  });
+
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
+  }};
+  std::thread t2{[&] {
+    ASSERT_TRUE(other.set_address_family(AF_UNIX).listen(other_path, 80));
+  }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    other.stop();
+    t.join();
+    t2.join();
+    std::remove(other_path.c_str());
+  });
+
+  svr.wait_until_ready();
+  other.wait_until_ready();
+
+  httplib::Client cli{pathname_};
+  cli.set_address_family(AF_UNIX);
+  cli.set_follow_location(true);
+
+  auto res = cli.Post("/redirect", "payload", "text/plain");
+  ASSERT_TRUE(res) << "error: " << res.error();
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("payload", res->body);
+  EXPECT_FALSE(other_reached);
+
+  res = cli.Get("/redirect");
+  ASSERT_TRUE(res) << "error: " << res.error();
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(content_, res->body);
+}
+
 #ifndef _WIN32
 TEST(SocketStream, wait_writable_UNIX) {
   int fds[2];

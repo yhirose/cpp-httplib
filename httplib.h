@@ -16480,6 +16480,14 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
   if (next_scheme.empty()) { next_scheme = scheme; }
   if (next_host.empty()) { next_host = host_; }
+  // A Unix domain socket client connects only to its socket, and the host of a
+  // Location (it sends "localhost" as Host) is not a socket path. Every hop
+  // stays on the socket, as with curl's --unix-socket, rather than going to a
+  // socket named after the Location's host.
+  if (address_family_ == AF_UNIX) {
+    next_host = host_;
+    next_port = port_;
+  }
   if (next_path.empty()) { next_path = "/"; }
   // An absolute or absolute-path location can have dot segments too.
   if (next_path[0] == '/') {
