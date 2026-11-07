@@ -291,6 +291,76 @@ TEST_F(UnixSocketTest, HostHeaderAutoSet) {
   EXPECT_EQ(received_host_header, "localhost");
 }
 
+TEST_F(UnixSocketTest, RedirectStaysOnSocket) {
+  // Another socket in the working directory, which a Location can name as
+  // its host
+  const auto other_path = "other-" + pathname_.substr(2);
+
+  httplib::Server svr;
+  svr.Get("/redirect", [&](const httplib::Request &, httplib::Response &res) {
+    // An absolute Location naming the Host this client sends
+    res.set_redirect("http://localhost" + pattern_);
+  });
+  svr.Get("/cross", [&](const httplib::Request &, httplib::Response &res) {
+    res.set_redirect("http://" + other_path + pattern_);
+  });
+  svr.Get("/mapped", [&](const httplib::Request &, httplib::Response &res) {
+    res.set_redirect("http://mapped.test" + pattern_);
+  });
+  svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
+    res.set_header("X-Auth", req.get_header_value("Authorization"));
+    res.set_content(content_, "text/plain");
+  });
+
+  httplib::Server other;
+  other.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
+    res.set_content("other", "text/plain");
+  });
+
+  std::thread t{[&] {
+    ASSERT_TRUE(svr.set_address_family(AF_UNIX).listen(pathname_, 80));
+  }};
+  std::thread t2{[&] {
+    ASSERT_TRUE(other.set_address_family(AF_UNIX).listen(other_path, 80));
+  }};
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    other.stop();
+    t.join();
+    t2.join();
+    std::remove(other_path.c_str());
+  });
+
+  svr.wait_until_ready();
+  other.wait_until_ready();
+
+  httplib::Client cli{pathname_};
+  cli.set_address_family(AF_UNIX);
+  cli.set_follow_location(true);
+  cli.set_bearer_token_auth("token");
+
+  // Another host: the same socket, without the credentials
+  auto res = cli.Get("/cross");
+  ASSERT_TRUE(res) << "error: " << res.error();
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(content_, res->body);
+  EXPECT_EQ("", res->get_header_value("X-Auth"));
+
+  // localhost is this client's own host
+  res = cli.Get("/redirect");
+  ASSERT_TRUE(res) << "error: " << res.error();
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(content_, res->body);
+  EXPECT_EQ("Bearer token", res->get_header_value("X-Auth"));
+
+  // A host the caller mapped to a socket goes there
+  cli.set_direct_hostname_addr_map({{"mapped.test", other_path}});
+  res = cli.Get("/mapped");
+  ASSERT_TRUE(res) << "error: " << res.error();
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("other", res->body);
+}
+
 #ifndef _WIN32
 TEST(SocketStream, wait_writable_UNIX) {
   int fds[2];
