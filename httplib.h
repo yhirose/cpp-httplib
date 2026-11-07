@@ -13093,14 +13093,22 @@ make_host_and_port_string_always_port(const std::string &host, int port) {
   return prepare_host_string(host) + ":" + std::to_string(port);
 }
 
+// Where a client connects for `host`, as one string: the mapped address or
+// name, or `host` itself.
+inline std::string
+addr_map_target(const std::map<std::string, std::string> &addr_map,
+                const std::string &host) {
+  std::string connect_host;
+  std::string ip;
+  apply_addr_map(addr_map, host, connect_host, ip);
+  return ip.empty() ? connect_host : ip;
+}
+
 // Request target of a CONNECT for `host`, with `addr_map` applied.
 inline std::string
 make_connect_request_target(const std::map<std::string, std::string> &addr_map,
                             const std::string &host, int port) {
-  std::string connect_host;
-  std::string ip;
-  apply_addr_map(addr_map, host, connect_host, ip);
-  return make_host_and_port_string_always_port(ip.empty() ? connect_host : ip,
+  return make_host_and_port_string_always_port(addr_map_target(addr_map, host),
                                                port);
 }
 
@@ -16480,14 +16488,6 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
   if (next_scheme.empty()) { next_scheme = scheme; }
   if (next_host.empty()) { next_host = host_; }
-  // A Unix domain socket client connects only to its socket, and the host of a
-  // Location (it sends "localhost" as Host) is not a socket path. Every hop
-  // stays on the socket, as with curl's --unix-socket, rather than going to a
-  // socket named after the Location's host.
-  if (address_family_ == AF_UNIX) {
-    next_host = host_;
-    next_port = port_;
-  }
   if (next_path.empty()) { next_path = "/"; }
   // An absolute or absolute-path location can have dot segments too.
   if (next_path[0] == '/') {
@@ -16496,8 +16496,13 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
   auto path = std::move(next_path) + next_query;
 
+  // A Unix socket client sends "Host: localhost", so a Location naming
+  // localhost names this client too.
+  auto is_same_host = next_host == host_ ||
+                      (address_family_ == AF_UNIX && next_host == "localhost");
+
   // Same host redirect - use current client
-  if (next_scheme == scheme && next_host == host_ && next_port == port_) {
+  if (next_scheme == scheme && is_same_host && next_port == port_) {
     return detail::redirect(*this, req, res, path, location, error);
   }
 
@@ -16648,6 +16653,14 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   // Copy network and socket settings
   client.addr_map_ = addr_map_;
   client.tunnel_addr_map_ = tunnel_addr_map_;
+
+  // A Unix socket client reaches every host through its own socket, as curl's
+  // --unix-socket does, unless the caller mapped that host elsewhere. The
+  // Location's host is never taken as a socket path.
+  if (address_family_ == AF_UNIX) {
+    auto &target = client.addr_map_[client.host()];
+    if (target.empty()) { target = detail::addr_map_target(addr_map_, host_); }
+  }
   client.set_address_family(address_family_);
   client.set_tcp_nodelay(tcp_nodelay_);
   client.set_ipv6_v6only(ipv6_v6only_);

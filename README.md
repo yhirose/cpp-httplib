@@ -1716,7 +1716,7 @@ cli.set_address_family(AF_UNIX);
 
 This library automatically sets the Host header to "localhost" for Unix socket connections, similar to curl's behavior.
 
-With `set_follow_location(true)`, a redirect is followed over the same socket, whatever host the `Location` names, as curl's `--unix-socket` does.
+With `set_follow_location(true)`, a redirect is followed over the same socket, whatever host the `Location` names, as curl's `--unix-socket` does. A host mapped with `set_direct_hostname_addr_map` goes to its mapped socket instead. Only a `Location` naming `localhost` counts as the same host; any other host is treated as cross-host, so `Authorization` and `Cookie` are not sent to it.
 
 
 URI Encoding/Decoding Utilities

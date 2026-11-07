@@ -301,21 +301,19 @@ TEST_F(UnixSocketTest, RedirectStaysOnSocket) {
     // An absolute Location naming the Host this client sends
     res.set_redirect("http://localhost" + pattern_);
   });
-  svr.Post("/redirect", [&](const httplib::Request &, httplib::Response &res) {
-    res.set_redirect("http://" + other_path + pattern_,
-                     StatusCode::TemporaryRedirect_307);
+  svr.Get("/cross", [&](const httplib::Request &, httplib::Response &res) {
+    res.set_redirect("http://" + other_path + pattern_);
   });
-  svr.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
+  svr.Get("/mapped", [&](const httplib::Request &, httplib::Response &res) {
+    res.set_redirect("http://mapped.test" + pattern_);
+  });
+  svr.Get(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
+    res.set_header("X-Auth", req.get_header_value("Authorization"));
     res.set_content(content_, "text/plain");
   });
-  svr.Post(pattern_, [&](const httplib::Request &req, httplib::Response &res) {
-    res.set_content(req.body, "text/plain");
-  });
 
-  std::atomic<bool> other_reached{false};
   httplib::Server other;
-  other.Post(pattern_, [&](const httplib::Request &, httplib::Response &res) {
-    other_reached = true;
+  other.Get(pattern_, [&](const httplib::Request &, httplib::Response &res) {
     res.set_content("other", "text/plain");
   });
 
@@ -339,17 +337,28 @@ TEST_F(UnixSocketTest, RedirectStaysOnSocket) {
   httplib::Client cli{pathname_};
   cli.set_address_family(AF_UNIX);
   cli.set_follow_location(true);
+  cli.set_bearer_token_auth("token");
 
-  auto res = cli.Post("/redirect", "payload", "text/plain");
+  // Another host: the same socket, without the credentials
+  auto res = cli.Get("/cross");
   ASSERT_TRUE(res) << "error: " << res.error();
   EXPECT_EQ(StatusCode::OK_200, res->status);
-  EXPECT_EQ("payload", res->body);
-  EXPECT_FALSE(other_reached);
+  EXPECT_EQ(content_, res->body);
+  EXPECT_EQ("", res->get_header_value("X-Auth"));
 
+  // localhost is this client's own host
   res = cli.Get("/redirect");
   ASSERT_TRUE(res) << "error: " << res.error();
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ(content_, res->body);
+  EXPECT_EQ("Bearer token", res->get_header_value("X-Auth"));
+
+  // A host the caller mapped to a socket goes there
+  cli.set_direct_hostname_addr_map({{"mapped.test", other_path}});
+  res = cli.Get("/mapped");
+  ASSERT_TRUE(res) << "error: " << res.error();
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("other", res->body);
 }
 
 #ifndef _WIN32
