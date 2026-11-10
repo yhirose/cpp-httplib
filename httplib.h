@@ -12638,7 +12638,16 @@ inline bool ThreadPool::enqueue(std::function<void()> fn) {
     if (jobs_.size() > idle_thread_count_ &&
         threads_.size() + dynamic_threads_.size() < max_thread_count_) {
       cleanup_finished_threads();
-      dynamic_threads_.emplace_back(std::thread([this]() { worker(true); }));
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+      try {
+#endif
+        dynamic_threads_.emplace_back(std::thread([this]() { worker(true); }));
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+      } catch (const std::system_error &) {
+        // No thread budget left: keep the job queued for an existing worker
+        // instead of letting the exception escape the accept loop.
+      }
+#endif
     }
   }
 
