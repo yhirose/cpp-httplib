@@ -1344,7 +1344,7 @@ public:
   size_type erase(const std::string &key) {
     auto before = entries_.size();
     entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
-                                  [&](const value_type &entry) {
+                                  [key](const value_type &entry) {
                                     return keys_equal(entry.first, key);
                                   }),
                    entries_.end());

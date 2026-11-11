@@ -2392,6 +2392,13 @@ TEST(HeadersOrderTest, ErasingByNameKeepsTheRemainingOrder) {
   EXPECT_EQ("B=2 C=4 ", entries_to_string(headers));
 }
 
+TEST(HeadersOrderTest, ErasingAnAliasedNameKeepsTheRemainingOrder) {
+  Headers headers = {{"A", "1"}, {"B", "2"}, {"a", "3"}, {"B", "4"}};
+
+  EXPECT_EQ(2U, headers.erase(headers.begin()->first));
+  EXPECT_EQ("B=2 B=4 ", entries_to_string(headers));
+}
+
 TEST(HeadersOrderTest, EmplaceFrontPrepends) {
   Headers headers = {{"Accept", "*/*"}, {"User-Agent", "test"}};
   headers.emplace_front("Host", "example.com");
