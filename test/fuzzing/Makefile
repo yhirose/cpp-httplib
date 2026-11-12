@@ -13,7 +13,7 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 BROTLI_DIR = /usr/local/opt/brotli
 # BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
-FUZZERS = server_fuzzer url_parser_fuzzer header_parser_fuzzer client_fuzzer multipart_parser_fuzzer
+FUZZERS = server_fuzzer url_parser_fuzzer header_parser_fuzzer client_fuzzer multipart_parser_fuzzer client_flow_fuzzer
 
 # Runs all the tests and also fuzz tests against seed corpus.
 all : $(FUZZERS)
@@ -37,6 +37,18 @@ url_parser_fuzzer : url_parser_fuzzer.cc ../../httplib.h
 
 multipart_parser_fuzzer : multipart_parser_fuzzer.cc ../../httplib.h
 	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
+
+# This target alone compiles the Brotli/Zstd feature set: the extra request/
+# response decompression paths it fuzzes only exist when those libraries are
+# enabled, and they are statically linked so the binary stays portable to the
+# runner image. OpenSSL is NOT enabled here: the OSS-Fuzz base image ships
+# OpenSSL 1.1, which httplib refuses (requires >= 3.0), so the digest-auth
+# feature stays compiled out (see the run report).
+CODEC_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -DCPPHTTPLIB_ZSTD_SUPPORT
+CODEC_LIBS = -Wl,-Bstatic -lbrotlienc -lbrotlidec -lbrotlicommon -lzstd -Wl,-Bdynamic
+
+client_flow_fuzzer : client_flow_fuzzer.cc ../../httplib.h
+	$(CXX) $(CXXFLAGS) -o $@  $<  $(CODEC_SUPPORT)  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl $(CODEC_LIBS)
 
 clean:
 	rm -f server_fuzzer pem *.0 *.o *.1 *.srl *.zip
