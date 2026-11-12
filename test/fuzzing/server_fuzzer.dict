@@ -222,3 +222,11 @@
 "Unsupported Media Type"
 "xhtml"
 "xml"
+# static mount fixtures (cpp-httplib-server-mount-static)
+"/mnt/"
+"/mnt/index.html"
+"/mnt/a.txt"
+"/mnt/sub/"
+"Range: bytes=0-"
+"If-None-Match: W/"
+"If-Modified-Since: "

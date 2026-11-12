@@ -1,0 +1,3 @@
+GET /mnt/../../../../etc/passwd HTTP/1.1
+Host: x
+

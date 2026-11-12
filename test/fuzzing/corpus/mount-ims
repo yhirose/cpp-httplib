@@ -1,0 +1,4 @@
+GET /mnt/a.txt HTTP/1.1
+Host: x
+If-Modified-Since: Mon, 01 Jan 2024 00:00:00 GMT
+
