@@ -4542,8 +4542,6 @@ public:
   void stop();
 
 private:
-  bool parse_sse_line(const std::string &line, SSEMessage &msg, int &retry_ms,
-                      bool &has_data, bool &has_id);
   void run_event_loop();
   void dispatch_event(const SSEMessage &msg);
   bool should_reconnect(int count) const;
@@ -4577,6 +4575,40 @@ private:
 };
 
 } // namespace sse
+
+namespace detail {
+
+// Interprets an event stream fed in chunks of any size
+class SSEParser {
+public:
+  using EventHandler = std::function<void(const sse::SSEMessage &msg)>;
+  using IdHandler = std::function<void(const std::string &id)>;
+  using RetryHandler = std::function<void(int retry_ms)>;
+
+  SSEParser(EventHandler on_event, IdHandler on_id, RetryHandler on_retry,
+            size_t max_event_length = CPPHTTPLIB_SSE_MAX_EVENT_LENGTH);
+
+  // Returns false once the line and the event still waiting for their end
+  // exceed max_event_length. 0 means no limit.
+  bool parse(const char *buf, size_t n);
+
+private:
+  void parse_line(const std::string &line);
+
+  EventHandler on_event_;
+  IdHandler on_id_;
+  RetryHandler on_retry_;
+  size_t max_event_length_;
+
+  std::string buffer_;
+  sse::SSEMessage msg_;
+  bool has_data_ = false;
+  bool has_id_ = false;
+  bool first_line_ = true;
+  bool after_cr_ = false;
+};
+
+} // namespace detail
 
 namespace ws {
 
@@ -5023,6 +5055,110 @@ inline std::string Result::read_all() {
 
 } // namespace stream
 
+namespace detail {
+
+inline SSEParser::SSEParser(EventHandler on_event, IdHandler on_id,
+                            RetryHandler on_retry, size_t max_event_length)
+    : on_event_(std::move(on_event)), on_id_(std::move(on_id)),
+      on_retry_(std::move(on_retry)), max_event_length_(max_event_length) {}
+
+inline bool SSEParser::parse(const char *buf, size_t n) {
+  // What is left in the buffer has no line ending
+  auto search_pos = buffer_.size();
+  buffer_.append(buf, n);
+
+  // A line ends with \r\n, \n or \r per the SSE spec
+  size_t line_start = 0;
+  size_t eol_pos;
+
+  while ((eol_pos = buffer_.find_first_of("\r\n", search_pos)) !=
+         std::string::npos) {
+    auto line = buffer_.substr(line_start, eol_pos - line_start);
+    line_start = eol_pos + 1;
+    search_pos = line_start;
+
+    // The \n of a \r\n may arrive in a later chunk than its \r
+    auto is_lf_of_crlf = after_cr_ && line.empty() && buffer_[eol_pos] == '\n';
+    after_cr_ = buffer_[eol_pos] == '\r';
+    if (is_lf_of_crlf) { continue; }
+
+    // A UTF-8 BOM at the start of the stream is ignored per the SSE spec
+    if (first_line_) {
+      first_line_ = false;
+      if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) { line.erase(0, 3); }
+    }
+
+    parse_line(line);
+  }
+
+  // Keep unprocessed data in buffer
+  buffer_.erase(0, line_start);
+
+  return max_event_length_ == 0 ||
+         buffer_.size() + msg_.data.size() <= max_event_length_;
+}
+
+inline void SSEParser::parse_line(const std::string &line) {
+  // Blank line signals end of event
+  if (line.empty()) {
+    // The id counts for Last-Event-ID even for an event that has no data. An
+    // empty id clears it.
+    if (has_id_ && on_id_) { on_id_(msg_.id); }
+
+    // An event without a data field is not dispatched
+    if (has_data_ && on_event_) { on_event_(msg_); }
+
+    msg_.clear();
+    has_data_ = false;
+    has_id_ = false;
+    return;
+  }
+
+  // Lines starting with ':' are comments (ignored)
+  if (line[0] == ':') { return; }
+
+  // Find the colon separator
+  auto colon_pos = line.find(':');
+  auto field = line.substr(0, colon_pos);
+  std::string value;
+
+  // Value starts after colon, skip optional single space
+  if (colon_pos != std::string::npos && colon_pos + 1 < line.size()) {
+    auto value_start = colon_pos + 1;
+    if (line[value_start] == ' ') { value_start++; }
+    value = line.substr(value_start);
+  }
+
+  // Handle known fields
+  if (field == "event") {
+    // An empty event type is dispatched as "message" per the SSE spec
+    msg_.event = value.empty() ? std::string("message") : std::move(value);
+  } else if (field == "data") {
+    // Multiple data lines are concatenated with newlines
+    if (has_data_) { msg_.data += "\n"; }
+    msg_.data += value;
+    has_data_ = true;
+  } else if (field == "id") {
+    // An id that cannot be sent back as Last-Event-ID is ignored. Empty id is
+    // valid (clears the last event ID)
+    if (fields::is_field_value(value)) {
+      msg_.id = value;
+      has_id_ = true;
+    }
+  } else if (field == "retry") {
+    // Parse retry interval in milliseconds
+    // Per the SSE spec, a value that is not all ASCII digits is ignored.
+    if (is_numeric(value)) {
+      int v = 0;
+      auto res = from_chars(value.data(), value.data() + value.size(), v);
+      if (res.ec == std::errc{} && on_retry_) { on_retry_(v); }
+    }
+  }
+  // Unknown fields are ignored per SSE spec
+}
+
+} // namespace detail
+
 namespace sse {
 
 // SSEMessage implementations
@@ -5104,58 +5240,6 @@ inline void SSEClient::stop() {
   if (async_thread_.joinable()) { async_thread_.join(); }
 }
 
-inline bool SSEClient::parse_sse_line(const std::string &line, SSEMessage &msg,
-                                      int &retry_ms, bool &has_data,
-                                      bool &has_id) {
-  // Blank line signals end of event
-  if (line.empty()) { return true; }
-
-  // Lines starting with ':' are comments (ignored)
-  if (line[0] == ':') { return false; }
-
-  // Find the colon separator
-  auto colon_pos = line.find(':');
-  auto field = line.substr(0, colon_pos);
-  std::string value;
-
-  // Value starts after colon, skip optional single space
-  if (colon_pos != std::string::npos && colon_pos + 1 < line.size()) {
-    auto value_start = colon_pos + 1;
-    if (line[value_start] == ' ') { value_start++; }
-    value = line.substr(value_start);
-  }
-
-  // Handle known fields
-  if (field == "event") {
-    // An empty event type is dispatched as "message" per the SSE spec
-    msg.event = value.empty() ? std::string("message") : std::move(value);
-  } else if (field == "data") {
-    // Multiple data lines are concatenated with newlines
-    if (has_data) { msg.data += "\n"; }
-    msg.data += value;
-    has_data = true;
-  } else if (field == "id") {
-    // An id that cannot be sent back as Last-Event-ID is ignored. Empty id is
-    // valid (clears the last event ID)
-    if (detail::fields::is_field_value(value)) {
-      msg.id = value;
-      has_id = true;
-    }
-  } else if (field == "retry") {
-    // Parse retry interval in milliseconds
-    // Per the SSE spec, a value that is not all ASCII digits is ignored.
-    if (detail::is_numeric(value)) {
-      int v = 0;
-      auto res =
-          detail::from_chars(value.data(), value.data() + value.size(), v);
-      if (res.ec == std::errc{}) { retry_ms = v; }
-    }
-  }
-  // Unknown fields are ignored per SSE spec
-
-  return false;
-}
-
 inline void SSEClient::run_event_loop() {
   auto reconnect_count = 0;
 
@@ -5216,72 +5300,17 @@ inline void SSEClient::run_event_loop() {
     if (on_open_) { on_open_(); }
 
     // Event receiving loop
-    std::string buffer;
-    SSEMessage current_msg;
-    auto has_data = false;
-    auto has_id = false;
-    auto first_line = true;
-    auto after_cr = false;
+    detail::SSEParser parser(
+        [this](const SSEMessage &msg) { dispatch_event(msg); },
+        [this](const std::string &id) {
+          std::lock_guard<std::mutex> lock(last_event_id_mutex_);
+          last_event_id_ = id;
+        },
+        [this](int retry_ms) { reconnect_interval_ms_ = retry_ms; });
     auto event_too_long = false;
 
     while (running_.load() && result.next()) {
-      // What is left in the buffer has no line ending
-      auto search_pos = buffer.size();
-      buffer.append(result.data(), result.size());
-
-      // Process complete lines in the buffer. A line ends with \r\n, \n or \r
-      // per the SSE spec
-      size_t line_start = 0;
-      size_t eol_pos;
-
-      while ((eol_pos = buffer.find_first_of("\r\n", search_pos)) !=
-             std::string::npos) {
-        auto line = buffer.substr(line_start, eol_pos - line_start);
-        line_start = eol_pos + 1;
-        search_pos = line_start;
-
-        // The \n of a \r\n may arrive in a later chunk than its \r
-        auto is_lf_of_crlf =
-            after_cr && line.empty() && buffer[eol_pos] == '\n';
-        after_cr = buffer[eol_pos] == '\r';
-        if (is_lf_of_crlf) { continue; }
-
-        // A UTF-8 BOM at the start of the stream is ignored per the SSE spec
-        if (first_line) {
-          first_line = false;
-          if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) { line.erase(0, 3); }
-        }
-
-        // Parse the line and check if event is complete
-        auto event_complete = parse_sse_line(
-            line, current_msg, reconnect_interval_ms_, has_data, has_id);
-
-        if (event_complete) {
-          // Update last_event_id for reconnection, even for an event that
-          // has no data. An empty id clears it.
-          if (has_id) {
-            std::lock_guard<std::mutex> lock(last_event_id_mutex_);
-            last_event_id_ = current_msg.id;
-          }
-
-          // An event without a data field is not dispatched
-          if (has_data) { dispatch_event(current_msg); }
-
-          // Reset the message for the next event either way
-          current_msg.clear();
-          has_data = false;
-          has_id = false;
-        }
-      }
-
-      // Keep unprocessed data in buffer
-      buffer.erase(0, line_start);
-
-      // Neither an event nor a line still waiting for its end may grow
-      // without bound. 0 means no limit.
-      if (CPPHTTPLIB_SSE_MAX_EVENT_LENGTH > 0 &&
-          buffer.size() + current_msg.data.size() >
-              CPPHTTPLIB_SSE_MAX_EVENT_LENGTH) {
+      if (!parser.parse(result.data(), result.size())) {
         if (on_error_) { on_error_(Error::ExceedMaxPayloadSize); }
         event_too_long = true;
         break;
