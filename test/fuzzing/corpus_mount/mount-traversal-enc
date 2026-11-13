@@ -1,0 +1,3 @@
+GET /mnt/%2e%2e/secret.txt HTTP/1.1
+Host: x
+
