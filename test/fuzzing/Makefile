@@ -13,14 +13,15 @@ ZLIB_SUPPORT = -DCPPHTTPLIB_ZLIB_SUPPORT -lz
 BROTLI_DIR = /usr/local/opt/brotli
 # BROTLI_SUPPORT = -DCPPHTTPLIB_BROTLI_SUPPORT -I$(BROTLI_DIR)/include -L$(BROTLI_DIR)/lib -lbrotlicommon -lbrotlienc -lbrotlidec
 
-FUZZERS = server_fuzzer url_parser_fuzzer header_parser_fuzzer client_fuzzer multipart_parser_fuzzer websocket_fuzzer sse_parser_fuzzer
+FUZZERS = server_fuzzer url_parser_fuzzer header_parser_fuzzer client_fuzzer multipart_parser_fuzzer websocket_fuzzer sse_parser_fuzzer server_mount_fuzzer
 
 # Runs all the tests and also fuzz tests against seed corpus.
 all : $(FUZZERS)
 	./server_fuzzer corpus/*
+	./server_mount_fuzzer corpus_mount/*
 
 # Fuzz target, so that you can choose which $(LIB_FUZZING_ENGINE) to use.
-server_fuzzer : server_fuzzer.cc ../../httplib.h
+server_fuzzer : server_fuzzer.cc fuzzed_stream.h ../../httplib.h
 # 	$(CXX) $(CXXFLAGS) -o $@  $<  -Wl,-Bstatic $(OPENSSL_SUPPORT)  -Wl,-Bdynamic -ldl  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread
 	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
 	zip -q -r server_fuzzer_seed_corpus.zip corpus
@@ -43,6 +44,10 @@ websocket_fuzzer : websocket_fuzzer.cc ../../httplib.h
 
 sse_parser_fuzzer : sse_parser_fuzzer.cc ../../httplib.h
 	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
+
+server_mount_fuzzer : server_mount_fuzzer.cc fuzzed_stream.h ../../httplib.h
+	$(CXX) $(CXXFLAGS) -o $@  $<  $(ZLIB_SUPPORT)  $(LIB_FUZZING_ENGINE) -pthread -lanl
+	zip -q -r server_mount_fuzzer_seed_corpus.zip corpus_mount
 
 clean:
 	rm -f server_fuzzer pem *.0 *.o *.1 *.srl *.zip

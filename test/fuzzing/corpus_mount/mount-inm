@@ -1,0 +1,4 @@
+GET /mnt/index.html HTTP/1.1
+Host: x
+If-None-Match: W/"bogusetag"
+

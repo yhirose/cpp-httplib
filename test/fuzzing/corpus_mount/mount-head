@@ -1,0 +1,3 @@
+HEAD /mnt/a.txt HTTP/1.1
+Host: x
+
