@@ -26544,264 +26544,264 @@ protected:
 };
 
 //==============================================================================
-// SSE Parsing Tests
+// SSE Parser Tests
 //==============================================================================
 
-class SSEParsingTest : public SSEIntegrationTest {
-protected:
-  // Feeds a raw event stream to SSEClient and returns the dispatched messages.
-  // A trailing sentinel event tells when the whole stream has been parsed.
-  std::vector<sse::SSEMessage> parse(const std::string &stream) {
-    auto body = stream + "event: end\ndata: end\n\n";
-    server_->Get("/parse", [body](const Request &, Response &res) {
-      res.set_content(body, "text/event-stream");
-    });
-    return collect("/parse");
-  }
-
-  // Runs SSEClient against path until an "end" event arrives and returns the
-  // messages dispatched before it
-  std::vector<sse::SSEMessage> collect(const std::string &path) {
-    Client client(HOST, get_port());
-    sse::SSEClient sse(client, path);
-    std::mutex mutex;
-    std::condition_variable cv;
-    std::vector<sse::SSEMessage> messages;
-    auto done = false;
-
-    sse.on_message([&](const sse::SSEMessage &msg) {
-      std::lock_guard<std::mutex> lock(mutex);
-      // Ignore a replay from a reconnect that races with stop()
-      if (!done) { messages.push_back(msg); }
-    });
-    sse.on_event("end", [&](const sse::SSEMessage &) {
-      std::lock_guard<std::mutex> lock(mutex);
-      done = true;
-      cv.notify_all();
-    });
-    sse.set_reconnect_interval(100);
-    sse.start_async();
-
-    {
-      std::unique_lock<std::mutex> lock(mutex);
-      cv.wait_for(lock, std::chrono::seconds(5), [&] { return done; });
-    }
-    sse.stop();
-
-    EXPECT_TRUE(done);
-    return messages;
-  }
+struct SSEParseResult {
+  std::vector<sse::SSEMessage> events;
+  std::vector<std::string> ids;
+  std::vector<int> retries;
+  bool ok = true;
+  std::string trace; // Every handler call in order
 };
 
-TEST_F(SSEParsingTest, SingleLineData) {
-  auto msgs = parse("data: hello\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "hello");
-  EXPECT_EQ(msgs[0].event, "message");
+static SSEParseResult
+sse_parse(const std::vector<std::string> &chunks,
+          size_t max_event_length = CPPHTTPLIB_SSE_MAX_EVENT_LENGTH) {
+  SSEParseResult r;
+  detail::SSEParser parser(
+      [&](const sse::SSEMessage &msg) {
+        r.events.push_back(msg);
+        r.trace += "event[" + msg.event + "|" + msg.data + "|" + msg.id + "]";
+      },
+      [&](const std::string &id) {
+        r.ids.push_back(id);
+        r.trace += "id[" + id + "]";
+      },
+      [&](int retry_ms) {
+        r.retries.push_back(retry_ms);
+        r.trace += "retry[" + std::to_string(retry_ms) + "]";
+      },
+      max_event_length);
+  for (const auto &chunk : chunks) {
+    if (!parser.parse(chunk.data(), chunk.size())) {
+      r.ok = false;
+      break;
+    }
+  }
+  return r;
 }
 
-TEST_F(SSEParsingTest, MultiLineData) {
-  auto msgs = parse("data: line1\ndata: line2\ndata: line3\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "line1\nline2\nline3");
+static SSEParseResult sse_parse(const std::string &stream) {
+  return sse_parse(std::vector<std::string>{stream});
 }
 
-TEST_F(SSEParsingTest, CustomEventType) {
-  auto msgs = parse("event: update\ndata: payload\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].event, "update");
-  EXPECT_EQ(msgs[0].data, "payload");
+TEST(SSEParserTest, SingleLineData) {
+  auto r = sse_parse("data: hello\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "hello");
+  EXPECT_EQ(r.events[0].event, "message");
 }
 
-TEST_F(SSEParsingTest, EventIdHandling) {
-  auto msgs = parse("id: 12345\ndata: test\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].id, "12345");
+TEST(SSEParserTest, MultiLineData) {
+  auto r = sse_parse("data: line1\ndata: line2\ndata: line3\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "line1\nline2\nline3");
 }
 
-TEST_F(SSEParsingTest, EmptyEventId) {
-  auto msgs = parse("id:\ndata: test\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].id, "");
+TEST(SSEParserTest, CustomEventType) {
+  auto r = sse_parse("event: update\ndata: payload\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].event, "update");
+  EXPECT_EQ(r.events[0].data, "payload");
 }
 
-TEST_F(SSEParsingTest, CommentsIgnored) {
-  auto msgs = parse(": this is a comment\ndata: hello\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "hello");
-  EXPECT_EQ(msgs[0].event, "message");
+TEST(SSEParserTest, EventIdHandling) {
+  auto r = sse_parse("id: 12345\ndata: test\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].id, "12345");
+  EXPECT_EQ(r.ids, std::vector<std::string>{"12345"});
 }
 
-TEST_F(SSEParsingTest, ColonInValue) {
-  auto msgs = parse("data: hello:world:test\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "hello:world:test");
+TEST(SSEParserTest, EmptyEventId) {
+  auto r = sse_parse("id:\ndata: test\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].id, "");
+  EXPECT_EQ(r.ids, std::vector<std::string>{""});
 }
 
-TEST_F(SSEParsingTest, FieldNameOnly) {
+TEST(SSEParserTest, CommentsIgnored) {
+  auto r = sse_parse(": this is a comment\ndata: hello\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "hello");
+  EXPECT_EQ(r.events[0].event, "message");
+}
+
+TEST(SSEParserTest, ColonInValue) {
+  auto r = sse_parse("data: hello:world:test\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "hello:world:test");
+}
+
+TEST(SSEParserTest, FieldNameOnly) {
   // A line without a colon is a field name with an empty value
-  auto msgs = parse("data\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "");
+  auto r = sse_parse("data\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "");
 }
 
-TEST_F(SSEParsingTest, TrailingCarriageReturn) {
-  auto msgs = parse("event: update\r\ndata: hello\r\n\r\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].event, "update");
-  EXPECT_EQ(msgs[0].data, "hello");
+TEST(SSEParserTest, TrailingCarriageReturn) {
+  auto r = sse_parse("event: update\r\ndata: hello\r\n\r\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].event, "update");
+  EXPECT_EQ(r.events[0].data, "hello");
 }
 
-TEST_F(SSEParsingTest, FieldNameOnlyWithCarriageReturn) {
-  auto msgs = parse("data\r\n\r\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "");
+TEST(SSEParserTest, FieldNameOnlyWithCarriageReturn) {
+  auto r = sse_parse("data\r\n\r\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "");
 }
 
-TEST_F(SSEParsingTest, CarriageReturnLineEnding) {
-  auto msgs = parse("event: update\rdata: hello\r\r");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].event, "update");
-  EXPECT_EQ(msgs[0].data, "hello");
+TEST(SSEParserTest, CarriageReturnLineEnding) {
+  auto r = sse_parse("event: update\rdata: hello\r\r");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].event, "update");
+  EXPECT_EQ(r.events[0].data, "hello");
 }
 
-TEST_F(SSEParsingTest, LineEndingSplitAcrossChunks) {
+TEST(SSEParserTest, LineEndingSplitAcrossChunks) {
   // Chunk boundaries fall inside every \r\n and right before the first one
-  std::vector<std::string> chunks = {"event: update", "\r", "\ndata: hello\r",
-                                     "\n\r", "\nevent: end\ndata: end\n\n"};
-  server_->Get("/split", [chunks](const Request &, Response &res) {
-    auto i = std::make_shared<size_t>(0);
-    res.set_chunked_content_provider(
-        "text/event-stream", [chunks, i](size_t /*offset*/, DataSink &sink) {
-          if (*i == chunks.size()) {
-            sink.done();
-          } else {
-            sink.write(chunks[*i].data(), chunks[*i].size());
-            (*i)++;
-          }
-          return true;
-        });
-  });
-
-  auto msgs = collect("/split");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].event, "update");
-  EXPECT_EQ(msgs[0].data, "hello");
+  auto r = sse_parse(std::vector<std::string>{"event: update", "\r",
+                                              "\ndata: hello\r", "\n\r", "\n"});
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].event, "update");
+  EXPECT_EQ(r.events[0].data, "hello");
 }
 
-TEST_F(SSEParsingTest, LeadingByteOrderMarkIgnored) {
+TEST(SSEParserTest, LeadingByteOrderMarkIgnored) {
   // Only a BOM at the start of the stream is ignored
-  auto msgs = parse("\xEF\xBB\xBF"
-                    "data: first\n\n"
-                    "\xEF\xBB\xBF"
-                    "data: second\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "first");
+  auto r = sse_parse("\xEF\xBB\xBF"
+                     "data: first\n\n"
+                     "\xEF\xBB\xBF"
+                     "data: second\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "first");
 }
 
-TEST_F(SSEParsingTest, UnknownFieldsIgnored) {
-  auto msgs = parse("unknown: value\ndata: hello\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "hello");
-  EXPECT_EQ(msgs[0].event, "message");
+TEST(SSEParserTest, UnknownFieldsIgnored) {
+  auto r = sse_parse("unknown: value\ndata: hello\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "hello");
+  EXPECT_EQ(r.events[0].event, "message");
 }
 
-TEST_F(SSEParsingTest, SpaceAfterColonOptional) {
-  auto msgs = parse("data: hello\n\ndata:hello\n\n");
-  ASSERT_EQ(msgs.size(), 2u);
-  EXPECT_EQ(msgs[0].data, "hello");
-  EXPECT_EQ(msgs[1].data, "hello");
+TEST(SSEParserTest, SpaceAfterColonOptional) {
+  auto r = sse_parse("data: hello\n\ndata:hello\n\n");
+  ASSERT_EQ(r.events.size(), 2u);
+  EXPECT_EQ(r.events[0].data, "hello");
+  EXPECT_EQ(r.events[1].data, "hello");
 }
 
-TEST_F(SSEParsingTest, EventWithoutDataResetsEventType) {
+TEST(SSEParserTest, EventWithoutDataResetsEventType) {
   // An event without data is not dispatched, and its type must not leak
   // into the next event
-  auto msgs = parse("event: update\n\ndata: hello\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].event, "message");
-  EXPECT_EQ(msgs[0].data, "hello");
+  auto r = sse_parse("event: update\n\ndata: hello\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].event, "message");
+  EXPECT_EQ(r.events[0].data, "hello");
 }
 
-TEST_F(SSEParsingTest, EmptyEventTypeIsMessage) {
+TEST(SSEParserTest, EmptyEventTypeIsMessage) {
   // Also when the empty field replaces an earlier type
-  auto msgs = parse("event:\ndata: a\n\nevent: update\nevent:\ndata: b\n\n");
-  ASSERT_EQ(msgs.size(), 2u);
-  EXPECT_EQ(msgs[0].event, "message");
-  EXPECT_EQ(msgs[1].event, "message");
+  auto r = sse_parse("event:\ndata: a\n\nevent: update\nevent:\ndata: b\n\n");
+  ASSERT_EQ(r.events.size(), 2u);
+  EXPECT_EQ(r.events[0].event, "message");
+  EXPECT_EQ(r.events[1].event, "message");
 }
 
-TEST_F(SSEParsingTest, EventWithoutDataUpdatesLastEventId) {
-  // The first connection sends only an id; the second echoes back the
-  // Last-Event-ID it was reconnected with
-  std::atomic<int> connection_count{0};
-  server_->Get("/id-only", [&](const Request &req, Response &res) {
-    if (connection_count++ == 0) {
-      res.set_content("id: 42\n\n", "text/event-stream");
-    } else {
-      res.set_content("data: " + req.get_header_value("Last-Event-ID") +
-                          "\n\nevent: end\ndata: end\n\n",
-                      "text/event-stream");
+TEST(SSEParserTest, EventWithoutDataReportsId) {
+  auto r = sse_parse("id: 42\n\n");
+  EXPECT_TRUE(r.events.empty());
+  EXPECT_EQ(r.ids, std::vector<std::string>{"42"});
+}
+
+TEST(SSEParserTest, EmptyEventIdClearsId) {
+  auto r = sse_parse("id: 1\ndata: first\n\nid:\ndata: second\n\n");
+  ASSERT_EQ(r.events.size(), 2u);
+  EXPECT_EQ(r.events[0].id, "1");
+  EXPECT_EQ(r.events[1].id, "");
+  EXPECT_EQ(r.ids, (std::vector<std::string>{"1", ""}));
+}
+
+TEST(SSEParserTest, UnsendableEventIdIgnored) {
+  // Ids that cannot be carried in a Last-Event-ID header
+  auto r = sse_parse(std::string("id: 42\n\nid: a") + '\0' +
+                     "b\n\nid: \x01\n\nid:  7\n\nid: 7 \n\n");
+  EXPECT_EQ(r.ids, std::vector<std::string>{"42"});
+}
+
+TEST(SSEParserTest, RetryDigitsOnly) {
+  auto r = sse_parse("retry: 1000\n");
+  EXPECT_EQ(r.retries, std::vector<int>{1000});
+
+  // A value that is not all ASCII digits, or does not fit, is ignored
+  r = sse_parse("retry: -1\nretry: 1.5\nretry:\nretry: 99999999999\n");
+  EXPECT_TRUE(r.retries.empty());
+}
+
+TEST(SSEParserTest, CompleteEventParsing) {
+  auto r = sse_parse("event: notification\nid: evt-42\n"
+                     "data: {\"type\":\"alert\"}\nretry: 1000\n\n");
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].event, "notification");
+  EXPECT_EQ(r.events[0].id, "evt-42");
+  EXPECT_EQ(r.events[0].data, "{\"type\":\"alert\"}");
+  EXPECT_EQ(r.retries, std::vector<int>{1000});
+}
+
+TEST(SSEParserTest, IncompleteEventNotReported) {
+  // An event still waiting for its blank line when the stream ends is
+  // discarded per the SSE spec
+  auto r = sse_parse("id: 1\ndata: x\n");
+  EXPECT_TRUE(r.events.empty());
+  EXPECT_TRUE(r.ids.empty());
+}
+
+TEST(SSEParserTest, SameResultAtEveryChunkBoundary) {
+  const std::vector<std::string> streams = {
+      "\xEF\xBB\xBF"
+      "data: bom\r\n\r\n",
+      "event: a\r\ndata: 1\r\nid: x\r\n\r\ndata: 2\rretry: 7\r\r",
+      ": comment\ndata\nid:\n\nid: y\n\ndata: tail\r\n\r\n",
+  };
+  for (const auto &stream : streams) {
+    auto expected = sse_parse(stream).trace;
+    ASSERT_FALSE(expected.empty());
+
+    for (size_t i = 0; i <= stream.size(); i++) {
+      auto r = sse_parse(
+          std::vector<std::string>{stream.substr(0, i), stream.substr(i)});
+      EXPECT_EQ(r.trace, expected) << "split at " << i;
     }
-  });
 
-  auto msgs = collect("/id-only");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "42");
-}
-
-TEST_F(SSEParsingTest, EmptyEventIdClearsLastEventId) {
-  // The first connection sets an id and then clears it with an empty one; the
-  // second reports whether it was reconnected with a Last-Event-ID
-  std::atomic<int> connection_count{0};
-  server_->Get("/id-clear", [&](const Request &req, Response &res) {
-    if (connection_count++ == 0) {
-      res.set_content("id: 1\ndata: first\n\nid:\ndata: second\n\n",
-                      "text/event-stream");
-    } else {
-      res.set_content(
-          std::string("data: ") +
-              (req.has_header("Last-Event-ID") ? "sent" : "not sent") +
-              "\n\nevent: end\ndata: end\n\n",
-          "text/event-stream");
+    std::vector<std::string> bytes;
+    for (auto c : stream) {
+      bytes.emplace_back(1, c);
     }
-  });
-
-  auto msgs = collect("/id-clear");
-  ASSERT_EQ(msgs.size(), 3u);
-  EXPECT_EQ(msgs[0].id, "1");
-  EXPECT_EQ(msgs[1].id, "");
-  EXPECT_EQ(msgs[2].data, "not sent");
+    EXPECT_EQ(sse_parse(bytes).trace, expected) << "byte by byte";
+  }
 }
 
-TEST_F(SSEParsingTest, UnsendableEventIdKeepsLastEventId) {
-  // The first connection sets an id and then sends ids that cannot be carried
-  // in a header; the second echoes back the Last-Event-ID it was reconnected
-  // with
-  std::atomic<int> connection_count{0};
-  server_->Get("/id-unsendable", [&](const Request &req, Response &res) {
-    if (connection_count++ == 0) {
-      res.set_content(std::string("id: 42\n\nid: a") + '\0' +
-                          "b\n\nid: \x01\n\nid:  7\n\nid: 7 \n\n",
-                      "text/event-stream");
-    } else {
-      res.set_content("data: " + req.get_header_value("Last-Event-ID") +
-                          "\n\nevent: end\ndata: end\n\n",
-                      "text/event-stream");
-    }
-  });
+TEST(SSEParserTest, MaxEventLength) {
+  // A line still waiting for its end
+  EXPECT_TRUE(sse_parse(std::vector<std::string>{"data: 12"}, 8).ok);
+  EXPECT_FALSE(sse_parse(std::vector<std::string>{"data: 123"}, 8).ok);
 
-  auto msgs = collect("/id-unsendable");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].data, "42");
-}
+  // Data accumulated over the lines of one event
+  EXPECT_TRUE(
+      sse_parse(std::vector<std::string>{"data: 1234\ndata: 567\n"}, 8).ok);
+  EXPECT_FALSE(
+      sse_parse(std::vector<std::string>{"data: 1234\ndata: 5678\n"}, 8).ok);
 
-TEST_F(SSEParsingTest, CompleteEventParsing) {
-  auto msgs = parse("event: notification\nid: evt-42\n"
-                    "data: {\"type\":\"alert\"}\nretry: 1000\n\n");
-  ASSERT_EQ(msgs.size(), 1u);
-  EXPECT_EQ(msgs[0].event, "notification");
-  EXPECT_EQ(msgs[0].id, "evt-42");
-  EXPECT_EQ(msgs[0].data, "{\"type\":\"alert\"}");
+  // 0 means no limit
+  EXPECT_TRUE(sse_parse(std::vector<std::string>{"data: 123"}, 0).ok);
+
+  // Events completed in the same chunk are still reported
+  auto r = sse_parse(std::vector<std::string>{"data: a\n\ndata: 123456789"}, 8);
+  EXPECT_FALSE(r.ok);
+  ASSERT_EQ(r.events.size(), 1u);
+  EXPECT_EQ(r.events[0].data, "a");
 }
 
 TEST(SSEMessageTest, Clear) {
@@ -27424,35 +27424,6 @@ TEST_F(SSEIntegrationTest, StreamEndingAtConnectionCloseIsNotAnError) {
   // Reconnects as after any end of the stream, but reports no error
   EXPECT_GE(connection_count.load(), 2);
   EXPECT_EQ(0, error_count.load());
-}
-
-// Test: A retry field that is not all ASCII digits is ignored
-TEST_F(SSEIntegrationTest, NonDigitRetryFieldIgnored) {
-  std::atomic<int> connection_count{0};
-
-  server_->Get("/bad-retry",
-               [&connection_count](const Request &, Response &res) {
-                 connection_count.fetch_add(1);
-                 res.set_chunked_content_provider(
-                     "text/event-stream", [](size_t offset, DataSink &sink) {
-                       if (offset == 0) {
-                         std::string event = "retry: -1\ndata: hello\n\n";
-                         sink.write(event.data(), event.size());
-                       }
-                       return false;
-                     });
-               });
-
-  Client client("localhost", get_port());
-  sse::SSEClient sse(client, "/bad-retry");
-
-  sse.set_reconnect_interval(10000);
-  sse.start_async();
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  sse.stop();
-
-  EXPECT_EQ(connection_count.load(), 1);
 }
 
 // Test: A retry field of all ASCII digits sets the reconnection time
