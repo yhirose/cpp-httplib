@@ -47,53 +47,44 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     break;
   }
   case 6: {
-    // parse_url: full URL parsing (scheme, host, port, path, query); the
-    // request-target and Location values an attacker supplies are its input.
+    // parse_url
     httplib::detail::UrlComponents uc;
     httplib::detail::parse_url(input, uc);
     break;
   }
   case 7: {
-    // remove_dot_segments: RFC 3986 path normalization used on request and
-    // redirect paths (traversal surface).
+    // remove_dot_segments
     httplib::detail::remove_dot_segments(input);
     break;
   }
   case 8: {
-    // resolve_relative_location: resolves a hostile Location value against
-    // the current request path during redirects. Split the fuzz input at the
-    // first '\n' into location and base; default base when absent.
-    std::string location = input;
-    std::string base = "/index.html";
+    // resolve_relative_location, with the input as "<location>\n<base>"
     auto nl = input.find('\n');
-    if (nl != std::string::npos) {
-      location = input.substr(0, nl);
-      base = input.substr(nl + 1);
-    }
+    auto location = input.substr(0, nl);
+    auto base = nl == std::string::npos ? std::string("/index.html")
+                                        : input.substr(nl + 1);
     httplib::detail::resolve_relative_location(location, base);
     break;
   }
   case 9: {
-    // encode_path: percent-encoding applied to request/redirect path parts.
+    // encode_path
     httplib::detail::encode_path(input);
     break;
   }
   case 10: {
-    // Public URI encoders (also applied to attacker-derived strings, e.g.
-    // when a client echoes back path or query parts).
+    // encode_uri_component, encode_uri
     httplib::encode_uri_component(input);
     httplib::encode_uri(input);
     break;
   }
   case 11: {
-    // Public URI decoders.
+    // decode_uri_component, decode_uri
     httplib::decode_uri_component(input);
     httplib::decode_uri(input);
     break;
   }
   case 12: {
-    // Filename sanitizer (public utility applied to user-supplied filenames,
-    // e.g. when composing Content-Disposition values).
+    // sanitize_filename
     httplib::sanitize_filename(input);
     break;
   }
