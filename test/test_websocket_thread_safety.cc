@@ -175,4 +175,129 @@ TEST_F(WebSocketTlsThreadSafetyTest, HeartbeatPingWhileReaderIsIdle) {
   reader.join();
 }
 
+// A wss:// read decrypts whatever the socket already holds before it waits,
+// so a peer that sends fragments faster than they are read never lets it
+// wait. A close() made meanwhile still ends that read once the wait for the
+// Close reply is over. The peer is a raw TLS client that floods continuation
+// frames of a message it never ends, and never answers the Close.
+TEST_F(WebSocketTlsThreadSafetyTest, CloseEndsAReadOfEndlessFragments) {
+  svr_.set_websocket_ping_interval(0);
+  // Shared with the handler, which may outlive a failed test until the server
+  // stops
+  struct Flags {
+    std::atomic<bool> flooding{false};
+    std::atomic<bool> handler_done{false};
+  };
+  auto flags = std::make_shared<Flags>();
+  ASSERT_TRUE(start([flags](const Request &, ws::WebSocket &sock) {
+    std::thread reader([&]() {
+      std::string msg;
+      while (sock.read(msg) != ws::ReadResult::Fail) {}
+    });
+    for (int i = 0; i < 500 && !flags->flooding; i++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    sock.close();
+    reader.join();
+    flags->handler_done = true;
+  }));
+
+  addrinfo hints{};
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  addrinfo *found = nullptr;
+  ASSERT_EQ(0, getaddrinfo("localhost", std::to_string(port_).c_str(), &hints,
+                           &found));
+  auto sock = INVALID_SOCKET;
+  for (auto ai = found; ai && sock == INVALID_SOCKET; ai = ai->ai_next) {
+    sock = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (sock != INVALID_SOCKET &&
+        ::connect(sock, ai->ai_addr, static_cast<socklen_t>(ai->ai_addrlen))) {
+      detail::close_socket(sock);
+      sock = INVALID_SOCKET;
+    }
+  }
+  freeaddrinfo(found);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto ctx = tls::create_client_context();
+  auto session = tls::create_session(ctx, sock);
+  // Closed before the server stops, a failed assertion included, so the
+  // server never waits on a connection left open
+  auto se = detail::scope_exit([&] {
+    tls::free_session(session);
+    tls::free_context(ctx);
+    detail::close_socket(sock);
+  });
+  ASSERT_EQ(tls::ErrorCode::Success, tls::connect(session).code);
+
+  auto send_all = [&](const std::string &data) {
+    size_t off = 0;
+    while (off < data.size()) {
+      tls::TlsError err;
+      auto n = tls::write(session, data.data() + off, data.size() - off, err);
+      if (n <= 0) { return false; }
+      off += static_cast<size_t>(n);
+    }
+    return true;
+  };
+  ASSERT_TRUE(send_all("GET /ws HTTP/1.1\r\n"
+                       "Host: localhost\r\n"
+                       "Upgrade: websocket\r\n"
+                       "Connection: Upgrade\r\n"
+                       "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n"
+                       "Sec-WebSocket-Version: 13\r\n"
+                       "\r\n"));
+  // A TLS 1.3 session ticket arrives first, which a read without auto-retry
+  // reports as a want to read again
+  std::string response;
+  for (int tries = 0;
+       tries < 1000 && response.find("\r\n\r\n") == std::string::npos;
+       tries++) {
+    char c;
+    tls::TlsError err;
+    auto n = tls::read(session, &c, 1, err);
+    if (n == 1) {
+      response += c;
+    } else if (n == 0 || err.code != tls::ErrorCode::WantRead) {
+      break;
+    }
+  }
+  ASSERT_NE(std::string::npos, response.find(" 101 "));
+
+  // Client frames with an all-zero mask key: a text frame that does not end,
+  // then empty continuations, so the message never grows to its limit, in
+  // batches large enough to keep the socket full
+  auto frame = [](char first, const std::string &payload) {
+    std::string f;
+    f += first;
+    f += static_cast<char>(0x80 | payload.size());
+    f.append(4, '\0');
+    return f + payload;
+  };
+  ASSERT_TRUE(send_all(frame('\x01', "a")));
+  std::string batch;
+  while (batch.size() < 65536) {
+    batch += frame('\x00', "");
+  }
+  std::atomic<bool> sending(true);
+  std::thread peer([&]() {
+    while (sending && send_all(batch)) {
+      flags->flooding = true;
+    }
+  });
+
+  auto start_wait = std::chrono::steady_clock::now();
+  auto bound =
+      std::chrono::seconds(CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND + 2);
+  while (!flags->handler_done &&
+         std::chrono::steady_clock::now() - start_wait < bound) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  const bool done_in_time = flags->handler_done;
+  sending = false;
+  ::shutdown(sock, 2);
+  peer.join();
+  EXPECT_TRUE(done_in_time);
+}
+
 #endif // CPPHTTPLIB_SSL_ENABLED
