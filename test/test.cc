@@ -3600,6 +3600,490 @@ TEST(ClientStopTest, StopEndsWaitForResponse) {
   EXPECT_EQ(Error::Read, res.error());
 }
 
+// A client whose connection, once open, is stopped from another thread before
+// the connection phase ends: the stop() lands at the last moment it can. The
+// phase waits for the stop() at most a second, so a stop() that waits for the
+// phase to end fails the test instead of holding it forever.
+class StoppedAsConnectedClient : public ClientImpl {
+public:
+  using ClientImpl::ClientImpl;
+
+protected:
+  bool ensure_socket_connection(Socket &socket, Error &error) override {
+    if (!ClientImpl::ensure_socket_connection(socket, error)) { return false; }
+    stopper_ = std::async(std::launch::async, [this] { stop(); });
+    stopper_.wait_for(std::chrono::seconds(1));
+    return true;
+  }
+
+private:
+  std::future<void> stopper_;
+};
+
+// A listener whose backlog completes the connection of the client, and whose
+// peer then tells whether any byte of the request went out
+struct SilentListener {
+  socket_t sock = INVALID_SOCKET;
+  int port = 0;
+
+  SilentListener() {
+    sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    ::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    ::listen(sock, 1);
+    socklen_t len = sizeof(addr);
+    ::getsockname(sock, reinterpret_cast<sockaddr *>(&addr), &len);
+    port = ntohs(addr.sin_port);
+  }
+  ~SilentListener() { detail::close_socket(sock); }
+
+  // What the peer reads first: 0 once the client closed the connection
+  // without sending anything
+  ssize_t first_read() const {
+    auto peer = ::accept(sock, nullptr, nullptr);
+    if (peer == INVALID_SOCKET) { return -1; }
+    detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    char c = 0;
+    auto n = static_cast<ssize_t>(::recv(peer, &c, 1, 0));
+    detail::close_socket(peer);
+    return n;
+  }
+};
+
+// A stop() the connection phase of a request takes ends the request before
+// it sends anything
+TEST(ClientStopTest, StopAsTheConnectionOpensEndsTheRequest) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  StoppedAsConnectedClient cli("127.0.0.1", listener.port);
+  cli.set_read_timeout(std::chrono::seconds(30));
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+
+  auto res = request.get();
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+  EXPECT_EQ(0, listener.first_read());
+}
+
+// A stop() the connection phase of a stream takes ends the stream before the
+// stream holds the socket, out of the reach of stop()
+TEST(ClientStopTest, StopAsTheConnectionOpensEndsTheStream) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  StoppedAsConnectedClient cli("127.0.0.1", listener.port);
+  cli.set_read_timeout(std::chrono::seconds(30));
+  auto stream = std::async(std::launch::async,
+                           [&]() { return cli.open_stream("GET", "/"); });
+  ASSERT_EQ(std::future_status::ready,
+            stream.wait_for(std::chrono::seconds(5)));
+
+  auto handle = stream.get();
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(Error::Canceled, handle.error);
+  EXPECT_EQ(0, listener.first_read());
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+// One stop() from another thread ends a request whose TLS handshake waits on
+// a server that never answers it, though the connection being opened holds
+// the lock stop() used to wait for until the connection timeout
+TEST(ClientStopTest, StopEndsATlsHandshake) {
+  // The kernel completes the TCP connection on a listening socket, and nothing
+  // ever answers the ClientHello
+  auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, listener);
+  auto close_listener =
+      detail::scope_exit([&] { detail::close_socket(listener); });
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(
+      0, ::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(listener, 1));
+  socklen_t len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
+
+  SSLClient cli("127.0.0.1", ntohs(addr.sin_port));
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(std::chrono::seconds(30));
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+
+  // The first byte of the ClientHello proves the client is in the handshake
+  auto peer = ::accept(listener, nullptr, nullptr);
+  ASSERT_NE(INVALID_SOCKET, peer);
+  auto close_peer = detail::scope_exit([&] { detail::close_socket(peer); });
+  detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+  char hello = 0;
+  ASSERT_EQ(1, ::recv(peer, &hello, 1, 0));
+
+  auto start = std::chrono::steady_clock::now();
+  cli.stop();
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
+
+  auto res = request.get();
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+
+// One stop() from another thread ends a stream being opened whose TLS
+// handshake waits on a server that never answers it
+TEST(ClientStopTest, StopEndsTheTlsHandshakeOfAStream) {
+  auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, listener);
+  auto close_listener =
+      detail::scope_exit([&] { detail::close_socket(listener); });
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(
+      0, ::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(listener, 1));
+  socklen_t len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
+
+  SSLClient cli("127.0.0.1", ntohs(addr.sin_port));
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(std::chrono::seconds(30));
+  auto stream = std::async(std::launch::async,
+                           [&]() { return cli.open_stream("GET", "/"); });
+
+  // The first byte of the ClientHello proves the client is in the handshake
+  auto peer = ::accept(listener, nullptr, nullptr);
+  ASSERT_NE(INVALID_SOCKET, peer);
+  auto close_peer = detail::scope_exit([&] { detail::close_socket(peer); });
+  detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+  char hello = 0;
+  ASSERT_EQ(1, ::recv(peer, &hello, 1, 0));
+
+  auto start = std::chrono::steady_clock::now();
+  cli.stop();
+  ASSERT_EQ(std::future_status::ready,
+            stream.wait_for(std::chrono::seconds(5)));
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
+
+  auto handle = stream.get();
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(Error::Canceled, handle.error);
+}
+
+// One stop() from another thread ends a request whose tunnel waits on an HTTP
+// proxy that takes the CONNECT and never answers it
+TEST(ClientStopTest, StopEndsAProxyTunnel) {
+  auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, listener);
+  auto close_listener =
+      detail::scope_exit([&] { detail::close_socket(listener); });
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(
+      0, ::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(listener, 1));
+  socklen_t len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
+
+  SSLClient cli("example.com", 443);
+  cli.set_proxy("127.0.0.1", ntohs(addr.sin_port));
+  cli.set_read_timeout(std::chrono::seconds(30));
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+
+  // The first byte of the CONNECT proves the client waits for the proxy
+  auto peer = ::accept(listener, nullptr, nullptr);
+  ASSERT_NE(INVALID_SOCKET, peer);
+  auto close_peer = detail::scope_exit([&] { detail::close_socket(peer); });
+  detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+  char connect = 0;
+  ASSERT_EQ(1, ::recv(peer, &connect, 1, 0));
+
+  auto start = std::chrono::steady_clock::now();
+  cli.stop();
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
+
+  auto res = request.get();
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+#endif
+
+// A request whose interrupt already holds never opens a connection
+TEST(ClientInterruptTest, InterruptHeldBeforeASendEndsIt) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  Client cli("127.0.0.1", listener.port);
+  cli.set_interrupt([] { return true; });
+  auto res = cli.Get("/");
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+
+  auto handle = cli.open_stream("GET", "/");
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(Error::Canceled, handle.error);
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// One stop() from another thread ends a request whose TLS read waits inside
+// a record: the server sends the first bytes of the record of its answer and
+// nothing more, so the client is in the TLS read itself, not in a wait for
+// the socket
+TEST(ClientStopTest, StopEndsATlsReadInsideARecord) {
+  auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, listener);
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(
+      0, ::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(listener, 1));
+  socklen_t len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
+
+  SSLClient cli("127.0.0.1", ntohs(addr.sin_port));
+  cli.enable_server_certificate_verification(false);
+  cli.set_read_timeout(std::chrono::seconds(30));
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+
+  auto peer = ::accept(listener, nullptr, nullptr);
+  ASSERT_NE(INVALID_SOCKET, peer);
+  // Closed before the request is waited for, so a request stop() misses
+  // fails on the closed connection instead of waiting out its timeout
+  auto se = detail::scope_exit([&] {
+    detail::close_socket(peer);
+    detail::close_socket(listener);
+  });
+  detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+
+  // The server speaks through memory: what it writes reaches the socket only
+  // as the test hands it over
+  auto ctx = SSL_CTX_new(TLS_server_method());
+  ASSERT_NE(nullptr, ctx);
+  auto free_ctx = detail::scope_exit([&] { SSL_CTX_free(ctx); });
+  ASSERT_EQ(1, SSL_CTX_use_certificate_chain_file(ctx, SERVER_CERT_FILE));
+  ASSERT_EQ(1, SSL_CTX_use_PrivateKey_file(ctx, SERVER_PRIVATE_KEY_FILE,
+                                           SSL_FILETYPE_PEM));
+  auto ssl = SSL_new(ctx);
+  auto free_ssl = detail::scope_exit([&] { SSL_free(ssl); });
+  auto in = BIO_new(BIO_s_mem());
+  auto out = BIO_new(BIO_s_mem());
+  SSL_set_bio(ssl, in, out);
+  SSL_set_accept_state(ssl);
+
+  auto flush = [&](size_t limit) {
+    char buf[16384];
+    int n;
+    while (limit > 0 &&
+           (n = BIO_read(out, buf,
+                         static_cast<int>((std::min)(sizeof(buf), limit)))) >
+               0) {
+      ::send(peer, buf, static_cast<size_t>(n), 0);
+      limit -= static_cast<size_t>(n);
+    }
+  };
+  auto feed = [&]() {
+    char buf[16384];
+    auto n = ::recv(peer, buf, sizeof(buf), 0);
+    if (n <= 0) { return false; }
+    BIO_write(in, buf, static_cast<int>(n));
+    return true;
+  };
+
+  int handshake;
+  while ((handshake = SSL_do_handshake(ssl)) != 1) {
+    ASSERT_EQ(SSL_ERROR_WANT_READ, SSL_get_error(ssl, handshake));
+    flush((std::numeric_limits<size_t>::max)());
+    ASSERT_TRUE(feed());
+  }
+  flush((std::numeric_limits<size_t>::max)());
+
+  std::string head;
+  while (head.find("\r\n\r\n") == std::string::npos) {
+    char buf[4096];
+    auto n = SSL_read(ssl, buf, sizeof(buf));
+    if (n > 0) {
+      head.append(buf, static_cast<size_t>(n));
+      continue;
+    }
+    ASSERT_EQ(SSL_ERROR_WANT_READ, SSL_get_error(ssl, n));
+    flush((std::numeric_limits<size_t>::max)());
+    ASSERT_TRUE(feed());
+  }
+
+  const std::string answer = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+  ASSERT_EQ(static_cast<int>(answer.size()),
+            SSL_write(ssl, answer.data(), static_cast<int>(answer.size())));
+  flush(6);
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  auto start = std::chrono::steady_clock::now();
+  cli.stop();
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
+  EXPECT_FALSE(request.get());
+}
+#endif
+
+// The interrupt ends a stream whose answer never comes, before it hands over
+// a handle
+TEST(ClientInterruptTest, InterruptEndsTheWaitForTheHeadOfAStream) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  std::atomic<bool> interrupted(false);
+  Client cli("127.0.0.1", listener.port);
+  cli.set_read_timeout(std::chrono::seconds(30));
+  cli.set_interrupt([&] { return interrupted.load(); });
+  auto stream = std::async(std::launch::async,
+                           [&]() { return cli.open_stream("GET", "/"); });
+
+  EXPECT_EQ(std::future_status::timeout,
+            stream.wait_for(std::chrono::milliseconds(300)));
+  interrupted = true;
+  ASSERT_EQ(std::future_status::ready,
+            stream.wait_for(std::chrono::seconds(2)));
+  EXPECT_FALSE(stream.get().is_valid());
+}
+
+// A timeout past what the clock reaches waits until the interrupt
+TEST(ClientInterruptTest, TimeoutPastTheClockWaitsForTheInterrupt) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  std::atomic<bool> interrupted(false);
+  Client cli("127.0.0.1", listener.port);
+  cli.set_read_timeout((std::numeric_limits<time_t>::max)() / 2, 0);
+  cli.set_interrupt([&] { return interrupted.load(); });
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+  // Closed before the request is waited for, so a request the interrupt
+  // misses fails on the reset connection instead of waiting forever
+  auto se = detail::scope_exit([&] {
+    detail::close_socket(listener.sock);
+    listener.sock = INVALID_SOCKET;
+  });
+
+  EXPECT_EQ(std::future_status::timeout,
+            request.wait_for(std::chrono::milliseconds(300)));
+  interrupted = true;
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(2)));
+  EXPECT_FALSE(request.get());
+}
+
+#ifdef __linux__
+// The interrupt ends a connect that a listener with a full backlog never
+// completes, and a negative connection timeout waits for it without end
+TEST(ClientInterruptTest, InterruptEndsAConnectWithoutTimeout) {
+  auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, listener);
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(
+      0, ::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(listener, 0));
+  socklen_t len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
+  std::vector<socket_t> backlog;
+  for (int i = 0; i < 8; i++) {
+    auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    detail::set_nonblocking(sock, true);
+    ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    backlog.push_back(sock);
+  }
+
+  std::atomic<bool> interrupted(false);
+  Client cli("127.0.0.1", ntohs(addr.sin_port));
+  cli.set_connection_timeout(-1);
+  cli.set_interrupt([&] { return interrupted.load(); });
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+  // Closed before the request is waited for, so a request the interrupt
+  // misses fails on the closed listener instead of waiting forever
+  auto se = detail::scope_exit([&] {
+    for (auto sock : backlog) {
+      detail::close_socket(sock);
+    }
+    detail::close_socket(listener);
+  });
+
+  EXPECT_EQ(std::future_status::timeout,
+            request.wait_for(std::chrono::milliseconds(500)));
+  interrupted = true;
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+
+  auto res = request.get();
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+#endif
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+// The interrupt ends a TLS handshake that a server never answers
+TEST(ClientInterruptTest, InterruptEndsATlsHandshake) {
+  auto listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, listener);
+  auto close_listener =
+      detail::scope_exit([&] { detail::close_socket(listener); });
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(
+      0, ::bind(listener, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(listener, 1));
+  socklen_t len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
+
+  std::atomic<bool> interrupted(false);
+  SSLClient cli("127.0.0.1", ntohs(addr.sin_port));
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(std::chrono::seconds(30));
+  cli.set_interrupt([&] { return interrupted.load(); });
+  auto request = std::async(std::launch::async, [&]() { return cli.Get("/"); });
+
+  // The first byte of the ClientHello proves the client is in the handshake
+  auto peer = ::accept(listener, nullptr, nullptr);
+  ASSERT_NE(INVALID_SOCKET, peer);
+  auto close_peer = detail::scope_exit([&] { detail::close_socket(peer); });
+  detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+  char hello = 0;
+  ASSERT_EQ(1, ::recv(peer, &hello, 1, 0));
+
+  auto start = std::chrono::steady_clock::now();
+  interrupted = true;
+  ASSERT_EQ(std::future_status::ready,
+            request.wait_for(std::chrono::seconds(5)));
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(2));
+
+  auto res = request.get();
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
+}
+#endif
+
 static std::string remove_whitespace(const std::string &input) {
   std::string output;
   output.reserve(input.size());
