@@ -2929,6 +2929,12 @@ public:
   Result send(const Request &req);
 
   void stop();
+  // `interrupted` is polled from the thread of each request, in the waits of
+  // its connection, its TLS handshake and its reads, and before it sends;
+  // it is set before the requests it ends and is safe to call from any
+  // thread. A call already blocked in the system, a send() of a large body
+  // or a TLS read inside a record, ends through stop() alone.
+  void set_interrupt(std::function<bool()> interrupted);
 
   std::string host() const;
   int port() const;
@@ -3075,6 +3081,9 @@ protected:
   // socket_mutex_ until it is, and shutting the socket down does not wake a
   // read on Windows.
   std::atomic<bool> stop_requested_{false};
+  // Set by set_interrupt(), polled wherever stop_requested_ is
+  std::function<bool()> interrupt_;
+  bool interrupted() const;
   // Phase of the connection send_() or open_stream_() opens holding
   // socket_mutex_: stop() cancels it from Connecting alone, and the end of
   // the phase takes the state back to Idle in the same operation that reads
@@ -3373,6 +3382,12 @@ public:
   Result send(const Request &req);
 
   void stop();
+  // `interrupted` is polled from the thread of each request, in the waits of
+  // its connection, its TLS handshake and its reads, and before it sends;
+  // it is set before the requests it ends and is safe to call from any
+  // thread. A call already blocked in the system, a send() of a large body
+  // or a TLS read inside a record, ends through stop() alone.
+  void set_interrupt(std::function<bool()> interrupted);
 
   std::string host() const;
   int port() const;
@@ -6860,11 +6875,18 @@ inline ssize_t select_write(socket_t sock, time_t sec, time_t usec) {
 
 // The point sec and usec from now, for select_until(). A negative sec never
 // comes, as a negative timeout waits forever in select_impl().
+// A sec past what the clock can reach waits forever too.
 inline std::chrono::steady_clock::time_point deadline_after(time_t sec,
                                                             time_t usec) {
-  if (sec < 0) { return (std::chrono::steady_clock::time_point::max)(); }
-  return std::chrono::steady_clock::now() + std::chrono::seconds(sec) +
-         std::chrono::microseconds(usec);
+  auto now = std::chrono::steady_clock::now();
+  auto never = (std::chrono::steady_clock::time_point::max)();
+  if (sec < 0 ||
+      sec >= std::chrono::duration_cast<std::chrono::seconds>(never - now)
+                     .count() -
+                 1) {
+    return never;
+  }
+  return now + std::chrono::seconds(sec) + std::chrono::microseconds(usec);
 }
 
 // Waits only for the time left until deadline, so that all the waits of one
@@ -15748,7 +15770,7 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
         ipv6_v6only_, socket_options_, connection_timeout_sec_,
         connection_timeout_usec_, read_timeout_sec_, read_timeout_usec_,
         write_timeout_sec_, write_timeout_usec_, interface_, error,
-        [this] { return stop_requested_.load(); });
+        [this] { return interrupted(); });
   }
 
   // Check is custom IP or hostname specified for host_
@@ -15760,8 +15782,7 @@ inline socket_t ClientImpl::create_client_socket(Error &error) const {
       connect_host, ip, port_, address_family_, tcp_nodelay_, ipv6_v6only_,
       socket_options_, connection_timeout_sec_, connection_timeout_usec_,
       read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-      write_timeout_usec_, interface_, error,
-      [this] { return stop_requested_.load(); });
+      write_timeout_usec_, interface_, error, [this] { return interrupted(); });
 }
 
 inline bool ClientImpl::create_and_connect_socket(Socket &socket,
@@ -15824,7 +15845,9 @@ inline void ClientImpl::disconnect(bool gracefully) {
 }
 
 inline bool ClientImpl::end_connecting() {
-  return connect_state_.exchange(ConnectState::Idle) == ConnectState::Canceled;
+  return connect_state_.exchange(ConnectState::Idle) ==
+             ConnectState::Canceled ||
+         interrupted();
 }
 
 inline bool ClientImpl::socket_reusable() {
@@ -15929,6 +15952,11 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
     // A redirect or a retry sent inside a request keeps its stop()
     if (socket_requests_in_flight_ == 0) { stop_requested_ = false; }
 
+    if (interrupted()) {
+      error = Error::Canceled;
+      return false;
+    }
+
     if (!socket_reusable()) {
       connect_state_ = ConnectState::Connecting;
 
@@ -15988,7 +16016,7 @@ inline bool ClientImpl::send_(Request &req, Response &res, Error &error) {
   });
 
   ret = process_socket(socket_, req.start_time_, [&](Stream &strm) {
-    strm.set_read_interrupt([this] { return stop_requested_.load(); });
+    strm.set_read_interrupt([this] { return interrupted(); });
     return handle_request(strm, req, res, close_connection, error);
   });
 
@@ -16108,6 +16136,12 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
     // A stream opened after stop() clears it, as a request sent after it does
     if (socket_requests_in_flight_ == 0) { stop_requested_ = false; }
 
+    if (interrupted()) {
+      handle.error = Error::Canceled;
+      handle.response.reset();
+      return handle;
+    }
+
     if (!socket_reusable()) {
       connect_state_ = ConnectState::Connecting;
 
@@ -16160,6 +16194,12 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   handle.stream_ = handle.socket_stream_.get();
 
   auto &strm = *handle.stream_;
+
+  // The request and the head of its answer end on an interrupt; the body the
+  // handle reads afterwards outlives this client's reach
+  strm.set_read_interrupt([this] { return interrupted(); });
+  auto release_interrupt =
+      detail::scope_exit([&] { strm.set_read_interrupt(nullptr); });
 
   // After connecting, as for a buffered request
   add_credential_headers(req);
@@ -16741,6 +16781,7 @@ inline void ClientImpl::setup_redirect_client(ClientType &client) {
   client.set_path_encode(path_encode_);
   client.set_compress(compress_);
   client.set_decompress(decompress_);
+  client.set_interrupt(interrupt_);
 
   // NOTE: Authentication credentials (basic auth, bearer token, digest auth)
   // are intentionally NOT copied to the redirect client. Per RFC 9110 Section
@@ -18264,6 +18305,14 @@ inline void ClientImpl::stop() {
   disconnect(/*gracefully=*/true);
 }
 
+inline void ClientImpl::set_interrupt(std::function<bool()> interrupted) {
+  interrupt_ = std::move(interrupted);
+}
+
+inline bool ClientImpl::interrupted() const {
+  return stop_requested_ || (interrupt_ && interrupt_());
+}
+
 inline std::string ClientImpl::host() const { return host_; }
 
 inline int ClientImpl::port() const { return port_; }
@@ -19023,6 +19072,10 @@ inline Result Client::send(const Request &req) { return cli_->send(req); }
 
 inline void Client::stop() { cli_->stop(); }
 
+inline void Client::set_interrupt(std::function<bool()> interrupted) {
+  cli_->set_interrupt(std::move(interrupted));
+}
+
 inline std::string Client::host() const { return cli_->host(); }
 
 inline int Client::port() const { return cli_->port(); }
@@ -19421,7 +19474,7 @@ inline bool SSLClient::connect_with_proxy(
           write_timeout_sec_, write_timeout_usec_, max_timeout_msec_,
           start_time, [&](Stream &strm) {
             // A stop() while the tunnel opens ends the wait for the proxy
-            strm.set_read_interrupt([this] { return stop_requested_.load(); });
+            strm.set_read_interrupt([this] { return interrupted(); });
             Request req2;
             req2.method = "CONNECT";
             req2.path = connect_target;
@@ -19462,8 +19515,7 @@ inline bool SSLClient::connect_with_proxy(
                 socket.sock, read_timeout_sec_, read_timeout_usec_,
                 write_timeout_sec_, write_timeout_usec_, max_timeout_msec_,
                 start_time, [&](Stream &strm) {
-                  strm.set_read_interrupt(
-                      [this] { return stop_requested_.load(); });
+                  strm.set_read_interrupt([this] { return interrupted(); });
                   Request req3;
                   req3.method = "CONNECT";
                   req3.path = connect_target;
@@ -19658,7 +19710,7 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   detail::ClientTlsSessionOptions options;
   options.server_hostname_verification = server_hostname_verification_;
   options.session_verifier = session_verifier_;
-  options.interrupted = [this] { return stop_requested_.load(); };
+  options.interrupted = [this] { return interrupted(); };
   options.ctx_mutex = &ctx_mutex_;
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
   // Skip Schannel when a custom CA cert is specified, as the Windows
