@@ -13415,6 +13415,105 @@ TEST(KeepAliveTest, MaxCountZeroSetsNoLimit) {
   EXPECT_EQ(1u, remote_ports.size());
 }
 
+// With no request outstanding, bytes that arrive on an idle connection are not
+// a response to the next request. Here the server sends an unsolicited 408
+// before closing the connection (RFC 9110 15.5.9); the client must reconnect
+// rather than read it as the reply to a request the server never saw.
+TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, srv);
+  auto srv_se = detail::scope_exit([&] { detail::close_socket(srv); });
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = 0;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 2));
+  socklen_t addr_len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(srv, reinterpret_cast<sockaddr *>(&addr), &addr_len));
+  auto port = ntohs(addr.sin_port);
+
+  // Accepts with a timeout, so that a client that never reconnects fails the
+  // test instead of hanging it.
+  auto accept_one = [&]() -> socket_t {
+    if (detail::select_read(srv, 5, 0) <= 0) { return INVALID_SOCKET; }
+    auto sock = ::accept(srv, nullptr, nullptr);
+    if (sock != INVALID_SOCKET) {
+      detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    }
+    return sock;
+  };
+  auto read_request_head = [](socket_t sock) {
+    std::string head;
+    char buf[1024];
+    while (head.find("\r\n\r\n") == std::string::npos) {
+      auto n = detail::read_socket(sock, buf, sizeof(buf), 0);
+      if (n <= 0) { break; }
+      head.append(buf, static_cast<size_t>(n));
+    }
+    return head;
+  };
+  auto send_text = [](socket_t sock, const std::string &text) {
+    detail::send_socket(sock, text.data(), text.size(), 0);
+  };
+
+  // The 408 is held back until the client has read the first response.
+  // Otherwise it can arrive along with that response and be read into the
+  // client's buffer with it, leaving only the close, which says nothing about
+  // unread data.
+  std::promise<void> first_response_read;
+  auto first_response_read_future = first_response_read.get_future();
+  std::atomic<int> connections(0);
+  auto server_thread = std::thread([&] {
+    auto first = accept_one();
+    if (first == INVALID_SOCKET) { return; }
+    connections++;
+    read_request_head(first);
+    send_text(first, "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nfirst");
+    first_response_read_future.wait_for(std::chrono::seconds(5));
+    send_text(first, "HTTP/1.1 408 Request Timeout\r\nConnection: close\r\n"
+                     "Content-Length: 0\r\n\r\n");
+    detail::close_socket(first);
+
+    auto second = accept_one();
+    if (second == INVALID_SOCKET) { return; }
+    connections++;
+    read_request_head(second);
+    send_text(second, "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n"
+                      "Connection: close\r\n\r\nsecond");
+    detail::close_socket(second);
+  });
+  auto server_se = detail::scope_exit([&] {
+    if (server_thread.joinable()) { server_thread.join(); }
+  });
+
+  Client cli("127.0.0.1", port);
+  cli.set_keep_alive(true);
+  cli.set_read_timeout(5, 0);
+
+  auto res = cli.Get("/1");
+  first_response_read.set_value();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("first", res->body);
+
+  // Wait for the unsolicited 408 to reach the client's idle connection
+  ASSERT_GT(detail::select_read(cli.socket(), 5, 0), 0);
+
+  res = cli.Get("/2");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("second", res->body);
+  server_thread.join();
+  EXPECT_EQ(2, connections);
+}
+
 TEST(KeepAliveTest, Issue1959) {
   Server svr;
   svr.set_keep_alive_timeout(5);
