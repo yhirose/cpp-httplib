@@ -30712,6 +30712,49 @@ TEST(SymlinkTest, SymlinkEscapeFromBaseDirectory) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::Forbidden_403, res->status);
 }
+#else
+TEST(SymlinkTest, JunctionEscapeFromBaseDirectory) {
+  auto secret_dir = std::string("junction_test_secret");
+  auto served_dir = std::string("junction_test_served");
+  auto secret_file = secret_dir + "\\secret.txt";
+  auto junction_path = served_dir + "\\escape";
+
+  ::CreateDirectoryA(secret_dir.c_str(), nullptr);
+  ::CreateDirectoryA(served_dir.c_str(), nullptr);
+
+  {
+    std::ofstream ofs(secret_file);
+    ofs << "SECRET_DATA";
+  }
+
+  // A junction needs no privilege to create, unlike a symlink
+  auto cmd = "mklink /J " + junction_path + " " + secret_dir + " >nul";
+  ASSERT_EQ(0, std::system(cmd.c_str()));
+
+  auto se = detail::scope_exit([&] {
+    ::RemoveDirectoryA(junction_path.c_str());
+    std::remove(secret_file.c_str());
+    ::RemoveDirectoryA(served_dir.c_str());
+    ::RemoveDirectoryA(secret_dir.c_str());
+  });
+
+  Server svr;
+  svr.set_mount_point("/", served_dir);
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se2 = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+
+  // Junction pointing outside base dir should be blocked
+  auto res = cli.Get("/escape/secret.txt");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::Forbidden_403, res->status);
+}
 #endif
 
 // Sends `outer_head` (with every "{len}" replaced by the length of an embedded
