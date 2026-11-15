@@ -2363,6 +2363,7 @@ public:
   template <class Rep, class Period>
   Server &
   set_keep_alive_timeout(const std::chrono::duration<Rep, Period> &duration);
+  Server &set_keep_alive_timeout_408(bool on);
 
   Server &set_read_timeout(time_t sec, time_t usec = 0);
   template <class Rep, class Period>
@@ -2448,6 +2449,7 @@ protected:
 
   size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
   time_t keep_alive_timeout_sec_ = CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND;
+  bool keep_alive_timeout_408_ = false;
   time_t read_timeout_sec_ = CPPHTTPLIB_SERVER_READ_TIMEOUT_SECOND;
   time_t read_timeout_usec_ = CPPHTTPLIB_SERVER_READ_TIMEOUT_USECOND;
   time_t write_timeout_sec_ = CPPHTTPLIB_SERVER_WRITE_TIMEOUT_SECOND;
@@ -7010,8 +7012,12 @@ private:
   static const size_t read_buff_size_ = 1024l * 4;
 };
 
+// Waits for the next request on an idle connection. `timed_out`, when given,
+// is set when the wait ends because the keep-alive timeout ran out, as opposed
+// to the server stopping or a socket error.
 inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
-                       time_t keep_alive_timeout_sec) {
+                       time_t keep_alive_timeout_sec,
+                       bool *timed_out = nullptr) {
   using namespace std::chrono;
 
   const auto interval_usec =
@@ -7033,6 +7039,7 @@ inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
       break; // Ssocket error
     } else if (val == 0) {
       if (steady_clock::now() - start > timeout) {
+        if (timed_out) { *timed_out = true; }
         break; // Timeout
       }
     } else {
@@ -7049,19 +7056,27 @@ inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
 // stream's buffer; that request must be served without waiting for the socket
 // to become readable again, since its bytes are no longer on the socket.
 // `callback` is told whether keep_alive() has just seen the socket go readable.
-template <typename P, typename T>
+// `on_idle_timeout` runs when the connection is closed for staying idle past
+// the keep-alive timeout, and returns whether it wrote a response, which then
+// counts as a completed exchange (over TLS, it is followed by close_notify).
+template <typename P, typename I, typename T>
 inline bool process_server_socket_core(const std::atomic<socket_t> &svr_sock,
                                        socket_t sock,
                                        size_t keep_alive_max_count,
                                        time_t keep_alive_timeout_sec,
-                                       P has_buffered_request, T callback) {
+                                       P has_buffered_request,
+                                       I on_idle_timeout, T callback) {
   auto ret = false;
   // A keep_alive_max_count of 0 sets no limit.
   for (size_t served = 0;
        keep_alive_max_count == 0 || served < keep_alive_max_count; served++) {
     auto socket_readable = false;
     if (!has_buffered_request()) {
-      if (!keep_alive(svr_sock, sock, keep_alive_timeout_sec)) { break; }
+      auto timed_out = false;
+      if (!keep_alive(svr_sock, sock, keep_alive_timeout_sec, &timed_out)) {
+        if (timed_out && on_idle_timeout()) { ret = true; }
+        break;
+      }
       socket_readable = true;
     }
     auto close_connection = served + 1 == keep_alive_max_count;
@@ -7072,11 +7087,23 @@ inline bool process_server_socket_core(const std::atomic<socket_t> &svr_sock,
   return ret;
 }
 
+// Tells the client that an idle connection is being closed before any request
+// on it was read (RFC 9110 15.5.9), so a request that crossed the close in
+// flight is known to be unprocessed and can be retried safely.
+inline bool write_idle_timeout_response(Stream &strm) {
+  static const char response[] = "HTTP/1.1 408 Request Timeout\r\n"
+                                 "Connection: close\r\n"
+                                 "Content-Length: 0\r\n"
+                                 "\r\n";
+  return write_data(strm, response, sizeof(response) - 1);
+}
+
 template <typename T>
 inline bool
 process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
                       size_t keep_alive_max_count,
-                      time_t keep_alive_timeout_sec, time_t read_timeout_sec,
+                      time_t keep_alive_timeout_sec,
+                      bool keep_alive_timeout_408, time_t read_timeout_sec,
                       time_t read_timeout_usec, time_t write_timeout_sec,
                       time_t write_timeout_usec, T callback) {
   // One stream per connection: its read buffer can already hold the start of
@@ -7086,6 +7113,9 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
   return process_server_socket_core(
       svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
       [&]() { return strm.is_readable(); },
+      [&]() {
+        return keep_alive_timeout_408 && write_idle_timeout_response(strm);
+      },
       [&](bool socket_readable, bool close_connection,
           bool &connection_closed) {
         if (socket_readable) { strm.set_readable_hint(); }
@@ -11099,7 +11129,8 @@ template <typename T>
 inline bool process_server_socket_ssl(
     const std::atomic<socket_t> &svr_sock, tls::session_t session,
     socket_t sock, size_t keep_alive_max_count, time_t keep_alive_timeout_sec,
-    time_t read_timeout_sec, time_t read_timeout_usec, time_t write_timeout_sec,
+    bool keep_alive_timeout_408, time_t read_timeout_sec,
+    time_t read_timeout_usec, time_t write_timeout_sec,
     time_t write_timeout_usec, T callback) {
   // See process_server_socket(). The TLS library keeps already decrypted bytes
   // of a pipelined request, which keep_alive() cannot see on the socket.
@@ -11108,6 +11139,9 @@ inline bool process_server_socket_ssl(
   return process_server_socket_core(
       svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
       [&]() { return strm.is_readable(); },
+      [&]() {
+        return keep_alive_timeout_408 && write_idle_timeout_response(strm);
+      },
       [&](bool socket_readable, bool close_connection,
           bool &connection_closed) {
         if (socket_readable) { strm.set_readable_hint(); }
@@ -14060,6 +14094,11 @@ inline Server &Server::set_keep_alive_timeout(
   return *this;
 }
 
+inline Server &Server::set_keep_alive_timeout_408(bool on) {
+  keep_alive_timeout_408_ = on;
+  return *this;
+}
+
 inline Server &Server::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
@@ -15649,8 +15688,8 @@ inline bool Server::process_and_close_socket(socket_t sock) {
   auto ret = serve_guarded([&]() {
     return detail::process_server_socket(
         svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-        write_timeout_usec_,
+        keep_alive_timeout_408_, read_timeout_sec_, read_timeout_usec_,
+        write_timeout_sec_, write_timeout_usec_,
         [&](Stream &strm, bool close_connection, bool &connection_closed) {
           return process_request(strm, remote_addr, remote_port, local_addr,
                                  local_port, close_connection,
@@ -19227,8 +19266,8 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
   ret = serve_guarded([&]() {
     return detail::process_server_socket_ssl(
         svr_sock_, session, sock, keep_alive_max_count_,
-        keep_alive_timeout_sec_, read_timeout_sec_, read_timeout_usec_,
-        write_timeout_sec_, write_timeout_usec_,
+        keep_alive_timeout_sec_, keep_alive_timeout_408_, read_timeout_sec_,
+        read_timeout_usec_, write_timeout_sec_, write_timeout_usec_,
         [&](Stream &strm, bool close_connection, bool &connection_closed) {
           return process_request(
               strm, remote_addr, remote_port, local_addr, local_port,

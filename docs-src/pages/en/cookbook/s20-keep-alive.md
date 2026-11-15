@@ -4,7 +4,7 @@ order: 39
 status: "draft"
 ---
 
-`httplib::Server` enables HTTP/1.1 Keep-Alive automatically. From the client's perspective, connections are reused — so they don't pay the TCP handshake cost on every request. When you need to tune the behavior, there are two setters.
+`httplib::Server` enables HTTP/1.1 Keep-Alive automatically. From the client's perspective, connections are reused — so they don't pay the TCP handshake cost on every request. When you need to tune the behavior, use the setters below.
 
 ## What you can configure
 
@@ -12,6 +12,7 @@ status: "draft"
 | --- | --- | --- |
 | `set_keep_alive_max_count` | 100 | Max requests served over a single connection (0 for no limit) |
 | `set_keep_alive_timeout` | 5s | How long an idle connection is kept before closing |
+| `set_keep_alive_timeout_408` | false | Send `408 Request Timeout` before closing an idle connection |
 
 ## Basic usage
 
@@ -49,6 +50,9 @@ svr.set_keep_alive_max_count(1000);
 
 **Never reuse connections**  
 Set `set_keep_alive_max_count(1)` and every request gets its own connection. Mostly only useful for debugging or compatibility testing.
+
+**Let clients retry requests that crossed an idle close**  
+`set_keep_alive_timeout_408(true)` sends a `408 Request Timeout` before closing an idle connection, so the client knows its request was not processed. Off by default, because a client that doesn't expect it may take it as the response to its next request.
 
 ## Relationship with the thread pool
 

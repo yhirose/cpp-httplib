@@ -13584,6 +13584,384 @@ TEST(KeepAliveTest, SSLClientDoesNotReuseConnectionWithDataPastResponse) {
 }
 #endif
 
+// set_keep_alive_timeout_408(): an idle connection that the server closes on
+// the keep-alive timeout gets a 408 first, so a request that crossed the close
+// in flight is known to be unprocessed (RFC 9110 15.5.9).
+static const char *const kIdleTimeout408 = "HTTP/1.1 408 Request Timeout";
+
+// Sends `req` on a fresh connection to a server whose keep-alive timeout is 0,
+// and returns everything the server writes until it closes the connection.
+//
+// The request is written before the server starts accepting: the connection
+// completes in the listen backlog, so the request is already waiting when the
+// server first looks for it, however slowly the server gets there. Then the
+// only wait left is for the keep-alive timeout itself, on the connection idle
+// after the request (or right away, for an empty one).
+static std::string idle_connection_response(bool keep_alive_timeout_408,
+                                            const std::string &req) {
+  Server svr;
+  svr.set_keep_alive_timeout(0);
+  if (keep_alive_timeout_408) { svr.set_keep_alive_timeout_408(true); }
+  svr.Get("/hi", [](const Request &, Response &res) {
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  EXPECT_LT(0, port);
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0, /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  EXPECT_NE(INVALID_SOCKET, sock);
+  if (sock == INVALID_SOCKET) { return std::string(); }
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  std::string resp;
+  detail::process_client_socket(
+      sock, 5, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
+      [&](Stream &strm) {
+        EXPECT_TRUE(detail::write_data(strm, req.data(), req.size()));
+
+        auto t = thread([&] { svr.listen_after_bind(); });
+        auto se = detail::scope_exit([&] {
+          svr.stop();
+          t.join();
+        });
+
+        char buf[512];
+        ssize_t n;
+        while ((n = strm.read(buf, sizeof(buf))) > 0) {
+          resp.append(buf, static_cast<size_t>(n));
+        }
+        return true;
+      });
+  return resp;
+}
+
+TEST(KeepAliveTimeout408Test, OffByDefault) {
+  auto resp = idle_connection_response(
+      false, "GET /hi HTTP/1.1\r\nHost: localhost\r\n\r\n");
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 200 OK"));
+  EXPECT_EQ(std::string::npos, resp.find(kIdleTimeout408));
+}
+
+TEST(KeepAliveTimeout408Test, SentAfterServedRequest) {
+  auto resp = idle_connection_response(
+      true, "GET /hi HTTP/1.1\r\nHost: localhost\r\n\r\n");
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 200 OK"));
+  auto pos = resp.find(kIdleTimeout408);
+  ASSERT_NE(std::string::npos, pos);
+  // The 408 is the last thing on the connection, and says it closes
+  EXPECT_EQ(kIdleTimeout408 + std::string("\r\n"
+                                          "Connection: close\r\n"
+                                          "Content-Length: 0\r\n"
+                                          "\r\n"),
+            resp.substr(pos));
+}
+
+// A connection that never sends a request is closed the same way
+TEST(KeepAliveTimeout408Test, SentOnConnectionWithoutRequest) {
+  auto resp = idle_connection_response(true, "");
+  EXPECT_EQ(0u, resp.find(kIdleTimeout408));
+}
+
+// A request that crosses the 408 on the wire: the client sends it after the
+// 408 has reached its socket, without having read it. The client must still
+// read the whole 408, and the server must not serve the request. Linux keeps
+// received data readable after a reset, so there the check for a clean close
+// cannot fail; it can on stacks that discard the data, which the server's
+// drain before closing is there to prevent.
+TEST(KeepAliveTimeout408Test, RequestCrossingThe408) {
+  Server svr;
+  svr.set_keep_alive_timeout(0);
+  svr.set_keep_alive_timeout_408(true);
+  std::atomic<bool> handled(false);
+  svr.Post("/hi", [&](const Request &, Response &res) {
+    handled = true;
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0, /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  // The 408 has arrived, and has not been read
+  ASSERT_GT(detail::select_read(sock, 5, 0), 0);
+
+  const std::string req = "POST /hi HTTP/1.1\r\nHost: localhost\r\n"
+                          "Content-Length: 4\r\n\r\nbody";
+  ASSERT_EQ(static_cast<ssize_t>(req.size()),
+            detail::send_socket(sock, req.data(), req.size(), 0));
+
+  std::string resp;
+  char buf[512];
+  ssize_t n;
+  while ((n = detail::read_socket(sock, buf, sizeof(buf), 0)) > 0) {
+    resp.append(buf, static_cast<size_t>(n));
+  }
+  EXPECT_EQ(0, n) << "connection reset"; // See above
+  EXPECT_EQ(0u, resp.find(kIdleTimeout408));
+  EXPECT_EQ(std::string::npos, resp.find("200 OK"));
+  EXPECT_FALSE(handled);
+}
+
+// Stopping the server is not a keep-alive timeout. The server is stopped once
+// the response has been read, while the connection sits idle well within its
+// keep-alive timeout.
+TEST(KeepAliveTimeout408Test, NotSentWhenServerStops) {
+  Server svr;
+  svr.set_keep_alive_timeout(30);
+  svr.set_keep_alive_timeout_408(true);
+  svr.Get("/hi", [](const Request &, Response &res) {
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0, /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  std::string head, rest;
+  detail::process_client_socket(
+      sock, 5, 0, 5, 0, 0, std::chrono::steady_clock::time_point::min(),
+      [&](Stream &strm) {
+        const std::string req = "GET /hi HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        if (!detail::write_data(strm, req.data(), req.size())) { return false; }
+
+        // The whole response, which ends in its two-byte body
+        char buf[512];
+        ssize_t n;
+        const std::string tail = "\r\n\r\nhi";
+        while (head.size() < tail.size() ||
+               head.compare(head.size() - tail.size(), tail.size(), tail) !=
+                   0) {
+          n = strm.read(buf, sizeof(buf));
+          if (n <= 0) { return false; }
+          head.append(buf, static_cast<size_t>(n));
+        }
+
+        svr.stop();
+
+        // Whatever else the server writes before closing
+        while ((n = strm.read(buf, sizeof(buf))) > 0) {
+          rest.append(buf, static_cast<size_t>(n));
+        }
+        return true;
+      });
+
+  EXPECT_EQ(0u, head.find("HTTP/1.1 200 OK"));
+  EXPECT_EQ("hi", head.substr(head.size() - 2));
+  EXPECT_EQ("", rest);
+}
+
+// A client reusing a connection the server has since closed must reconnect,
+// rather than read the 408 sitting in its receive buffer as the response to
+// its next request.
+TEST(KeepAliveTimeout408Test, ClientReconnectsAfterIdleClose) {
+  Server svr;
+  svr.set_keep_alive_timeout(1);
+  svr.set_keep_alive_timeout_408(true);
+  std::set<int> remote_ports;
+  svr.Get("/hi", [&](const Request &req, Response &res) {
+    remote_ports.insert(req.remote_port);
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_keep_alive(true);
+
+  auto res = cli.Get("/hi");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Wait for the server's idle close, 408 first, to reach the client
+  ASSERT_GT(detail::select_read(cli.socket(), 5, 0), 0);
+
+  res = cli.Get("/hi");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("hi", res->body);
+  EXPECT_EQ(2u, remote_ports.size());
+}
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+// The TLS server's idle close is a separate path from the plain one. A
+// connection that never sends a request is closed with nothing written, so
+// this needs no race with the request against a keep-alive timeout of 0.
+TEST(KeepAliveTimeout408Test, SSLOffByDefault) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(0);
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  std::string resp;
+  EXPECT_TRUE(send_ssl_request_in_parts(5, {}, &resp, port));
+  EXPECT_EQ("", resp);
+}
+
+// Over TLS, the 408 goes out in a TLS record
+TEST(KeepAliveTimeout408Test, SSLSentAfterServedRequest) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(1);
+  svr.set_keep_alive_timeout_408(true);
+  svr.Get("/hi", [](const Request &, Response &res) {
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  std::string resp;
+  EXPECT_TRUE(send_ssl_request_in_parts(
+      5, {"GET /hi HTTP/1.1\r\nHost: localhost\r\n\r\n"}, &resp, port));
+  EXPECT_EQ(0u, resp.find("HTTP/1.1 200 OK"));
+  EXPECT_NE(std::string::npos, resp.find(kIdleTimeout408));
+}
+
+// RequestCrossingThe408 over TLS, where the 408 must also end in the server's
+// close_notify. The client waits for the 408 itself, rather than for the
+// socket to become readable, since a TLS 1.3 server sends session tickets
+// after the handshake.
+TEST(KeepAliveTimeout408Test, SSLRequestCrossingThe408) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(0);
+  svr.set_keep_alive_timeout_408(true);
+  std::atomic<bool> handled(false);
+  svr.Post("/hi", [&](const Request &, Response &res) {
+    handled = true;
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", port, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0, /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  auto ctx = SSL_CTX_new(TLS_client_method());
+  auto ssl = SSL_new(ctx);
+  auto ssl_se = detail::scope_exit([&] {
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+  });
+  SSL_set_fd(ssl, static_cast<int>(sock));
+  ASSERT_EQ(1, SSL_connect(ssl));
+
+  // The 408 has arrived, and has not been consumed
+  char peek;
+  ASSERT_EQ(1, SSL_peek(ssl, &peek, 1));
+
+  const std::string req = "POST /hi HTTP/1.1\r\nHost: localhost\r\n"
+                          "Content-Length: 4\r\n\r\nbody";
+  ASSERT_EQ(static_cast<int>(req.size()),
+            SSL_write(ssl, req.data(), static_cast<int>(req.size())));
+
+  std::string resp;
+  char buf[512];
+  int n;
+  while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+    resp.append(buf, static_cast<size_t>(n));
+  }
+  EXPECT_EQ(SSL_ERROR_ZERO_RETURN, SSL_get_error(ssl, n));
+  EXPECT_EQ(0u, resp.find(kIdleTimeout408));
+  EXPECT_EQ(std::string::npos, resp.find("200 OK"));
+  EXPECT_FALSE(handled);
+}
+#endif
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(KeepAliveTimeout408Test, SSLClientReconnectsAfterIdleClose) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  svr.set_keep_alive_timeout(1);
+  svr.set_keep_alive_timeout_408(true);
+  svr.Get("/hi", [](const Request &, Response &res) {
+    res.set_content("hi", "text/plain");
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  auto t = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  SSLClient cli(HOST, port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+
+  auto res = cli.Get("/hi");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+
+  // Wait for the server's idle close, 408 first, to reach the client
+  ASSERT_GT(detail::select_read(cli.socket(), 5, 0), 0);
+
+  res = cli.Get("/hi");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("hi", res->body);
+}
+#endif
+
 TEST(KeepAliveTest, Issue1959) {
   Server svr;
   svr.set_keep_alive_timeout(5);

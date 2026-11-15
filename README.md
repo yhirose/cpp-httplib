@@ -915,9 +915,12 @@ svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
 ### Keep-Alive connection
 
 ```cpp
-svr.set_keep_alive_max_count(2); // Default is 100, 0 for no limit
-svr.set_keep_alive_timeout(10);  // Default is 5
+svr.set_keep_alive_max_count(2);      // Default is 100, 0 for no limit
+svr.set_keep_alive_timeout(10);       // Default is 5
+svr.set_keep_alive_timeout_408(true); // Default is false
 ```
+
+With `set_keep_alive_timeout_408(true)`, the server sends `408 Request Timeout` before closing an idle connection, so a client knows a request that crossed the close was not processed and can resend it (RFC 9110 15.5.9). It is off by default because a client that doesn't check for it may read the 408 as the response to its next request; `httplib::Client` handles this.
 
 ### Client address behind a reverse proxy
 
