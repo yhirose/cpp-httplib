@@ -14114,7 +14114,103 @@ TEST(DataSinkTest, CompressedRequestProviderThatFinishesEarlyFails) {
   ASSERT_FALSE(res);
   EXPECT_EQ(Error::Write, res.error());
 }
+
+// A caller forwarding a request may pass its Content-Length through. When the
+// client then compresses the body, that length no longer describes what goes
+// on the wire, so it must be dropped. Otherwise the server reads only
+// Content-Length bytes of the gzip stream and the rest desyncs the next
+// request on a kept-alive connection.
+TEST(ClientRequestFramingTest, CompressedBodyReplacesCallerContentLength) {
+  Server svr;
+
+  std::string received;
+  size_t content_length_count = 0;
+  bool has_transfer_encoding = true;
+  svr.Post("/echo", [&](const Request &req, Response &res) {
+    received = req.body;
+    content_length_count = req.get_header_value_count("Content-Length");
+    has_transfer_encoding = req.has_header("Transfer-Encoding");
+    res.set_content("ok", "text/plain");
+  });
+  svr.Get("/next", [](const Request &, Response &res) {
+    res.set_content("next", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_keep_alive(true);
+  cli.set_compress(true);
+
+  const std::string body = "hello world";
+  Headers headers = {{"Content-Length", std::to_string(body.size())}};
+  auto res = cli.Post("/echo", headers, body, "text/plain");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(body, received);
+  EXPECT_EQ(1u, content_length_count);
+  EXPECT_FALSE(has_transfer_encoding);
+
+  // The next request on the same connection is parsed as its own request,
+  // not as leftover body bytes.
+  auto res2 = cli.Get("/next");
+  ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
+  EXPECT_EQ(StatusCode::OK_200, res2->status);
+  EXPECT_EQ("next", res2->body);
+}
 #endif
+
+// A chunked content provider frames the body itself, so a Content-Length the
+// caller passed through must be dropped. Sending both is ambiguous framing and
+// the server rejects it.
+TEST(ClientRequestFramingTest, ChunkedProviderDropsCallerContentLength) {
+  Server svr;
+
+  std::string received;
+  size_t content_length_count = 0;
+  bool has_transfer_encoding = false;
+  svr.Post("/echo", [&](const Request &req, Response &res) {
+    received = req.body;
+    content_length_count = req.get_header_value_count("Content-Length");
+    has_transfer_encoding = req.has_header("Transfer-Encoding");
+    res.set_content("ok", "text/plain");
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    listen_thread.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  Client cli("localhost", PORT);
+  cli.set_keep_alive(true);
+
+  const std::string body = "hello world";
+  Headers headers = {{"Content-Length", "5"}};
+  auto res = cli.Post(
+      "/echo", headers,
+      [&](size_t /*offset*/, DataSink &sink) {
+        sink.write(body.data(), body.size());
+        sink.done();
+        return true;
+      },
+      "text/plain");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ(body, received);
+  EXPECT_EQ(0u, content_length_count);
+  EXPECT_TRUE(has_transfer_encoding);
+}
 
 TEST(ErrorHandlerWithContentProviderTest, ErrorHandler) {
   Server svr;
