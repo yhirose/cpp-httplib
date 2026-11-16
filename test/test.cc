@@ -4008,8 +4008,7 @@ TEST(ClientInterruptTest, InterruptEndsAConnectWithoutTimeout) {
             ::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &len));
   std::vector<socket_t> backlog;
   for (int i = 0; i < 8; i++) {
-    auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
-    detail::set_nonblocking(sock, true);
+    auto sock = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
     backlog.push_back(sock);
   }
