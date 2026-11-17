@@ -2378,6 +2378,8 @@ public:
 
   Server &set_payload_max_length(size_t length);
 
+  Server &set_thread_count(size_t thread_count);
+
   Server &set_compress(bool on);
 
   Server &set_static_file_compression(bool on);
@@ -2455,6 +2457,7 @@ protected:
   time_t idle_interval_sec_ = CPPHTTPLIB_IDLE_INTERVAL_SECOND;
   time_t idle_interval_usec_ = CPPHTTPLIB_IDLE_INTERVAL_USECOND;
   size_t payload_max_length_ = CPPHTTPLIB_PAYLOAD_MAX_LENGTH;
+  size_t thread_count_ = CPPHTTPLIB_THREAD_POOL_COUNT;
   bool compress_ = true;
   bool static_file_compression_ = false;
   size_t static_file_compression_min_length_ =
@@ -13733,9 +13736,8 @@ WebSocketSSLStream::set_read_interrupt(std::function<bool()> interrupted) {
 
 // HTTP server implementation
 inline Server::Server()
-    : new_task_queue([] {
-        return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT,
-                              CPPHTTPLIB_THREAD_POOL_MAX_COUNT);
+    : new_task_queue([&n = thread_count_] {
+        return new ThreadPool(n, CPPHTTPLIB_THREAD_POOL_MAX_COUNT);
       }) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
@@ -14081,6 +14083,13 @@ inline Server &Server::set_idle_interval(time_t sec, time_t usec) {
 inline Server &Server::set_payload_max_length(size_t length) {
   payload_max_length_ = length;
   return *this;
+}
+
+inline Server &Server::set_thread_count(size_t thread_count)
+{
+	if (thread_count > 0)
+		thread_count_ = thread_count;
+	return *this;
 }
 
 inline Server &Server::set_compress(bool on) {
