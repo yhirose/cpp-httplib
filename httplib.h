@@ -16062,6 +16062,8 @@ inline ClientImpl::StreamHandle ClientImpl::open_stream_(Request &req) {
   handle.connection_ = detail::make_unique<ClientConnection>();
 
   {
+    // A request in flight uses socket_ without holding socket_mutex_
+    std::lock_guard<std::recursive_mutex> request_mutex_guard(request_mutex_);
     std::lock_guard<std::mutex> guard(socket_mutex_);
 
     if (!socket_reusable()) {
