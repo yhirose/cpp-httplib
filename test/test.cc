@@ -32485,6 +32485,40 @@ TEST(ProxyTunnelTest, RedirectKeepsTunnelHostnameAddrMap) {
   EXPECT_NE(std::string::npos,
             connect_req.find("\r\nHost: " + target + "\r\n"));
 }
+
+// A failed handshake inside the tunnel must not leave the tunnel for reuse
+TEST(ProxyTunnelTest, FailedHandshakeClosesTunnel) {
+  std::atomic<int> origin_hits{0};
+  proxy_tunnel_test::ScopedSSLServer origin;
+  origin.svr().Get(".*", [&](const Request &, Response &res) {
+    origin_hits++;
+    res.set_content("ok", "text/plain");
+  });
+  origin.listen();
+
+  proxy_tunnel_test::ScopedConnectProxy proxy(origin.port());
+  ASSERT_NE(0, proxy.port());
+
+  SSLClient cli("127.0.0.1", origin.port());
+  cli.enable_server_certificate_verification(false);
+  cli.set_proxy("127.0.0.1", proxy.port());
+  cli.set_keep_alive(true);
+  cli.set_session_verifier(
+      [](tls::session_t) { return SSLVerifierResponse::CertificateRejected; });
+
+  auto res = cli.Get("/x");
+  EXPECT_FALSE(res);
+  ASSERT_FALSE(cli.is_socket_open());
+
+  res = cli.Get("/x");
+  EXPECT_FALSE(res);
+  EXPECT_EQ(2, proxy.connect_hits());
+
+  auto handle = cli.open_stream("GET", "/x");
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(3, proxy.connect_hits());
+  EXPECT_EQ(0, origin_hits.load());
+}
 #endif
 
 namespace proxy_tunnel_test {
