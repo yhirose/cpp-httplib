@@ -19327,6 +19327,8 @@ inline bool SSLClient::setup_proxy_connection(
   }
 
   if (!initialize_ssl(socket, error)) {
+    shutdown_socket(socket);
+    close_socket(socket);
     success = false;
     return false;
   }
