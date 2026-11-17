@@ -24347,8 +24347,6 @@ TEST(OpenStreamPartialWriteTest, BodyIsWrittenWhole) {
 }
 #endif
 
-// A stream opened on a client whose request on another thread is still
-// waiting for its response must not take that request's connection over.
 TEST(OpenStreamConcurrencyTest, RequestInFlightKeepsItsConnection) {
   std::promise<void> slow_started;
   auto slow_started_future = slow_started.get_future();
