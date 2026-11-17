@@ -1,10 +1,10 @@
-// Standalone test for WebSocket automatic heartbeat.
-// Compiled with a 1-second ping interval so we can verify heartbeat behavior
-// without waiting 30 seconds.
+// Standalone test for WebSocket heartbeat and close() timing, compiled with
+// short intervals and timeouts so the tests don't wait for the defaults.
 
 #define CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND 1
 #define CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND 3
 #define CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND 3
+#define CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND 1
 #include <httplib.h>
 
 #include "gtest/gtest.h"
@@ -289,3 +289,139 @@ TEST_F(WebSocketHeartbeatTest, MultipleHeartbeatCycles) {
 
   client.close();
 }
+
+// A raw client never answers the server's close() and sends `bytes`, `chunk`
+// bytes at a time `gap` apart; close() must still return at its 1 s timeout.
+static void expect_close_bounded(bool use_tls, const std::string &bytes,
+                                 size_t chunk, std::chrono::milliseconds gap) {
+  std::unique_ptr<Server> svr;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  if (use_tls) { svr.reset(new SSLServer("cert.pem", "key.pem")); }
+#endif
+  if (!svr) { svr.reset(new Server); }
+  svr->set_websocket_ping_interval(0);
+
+  std::atomic<bool> upgraded{false};
+  std::atomic<bool> closed{false};
+  std::chrono::steady_clock::duration close_took{};
+  svr->WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    while (!upgraded) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    auto start = std::chrono::steady_clock::now();
+    ws.close();
+    close_took = std::chrono::steady_clock::now() - start;
+    closed = true;
+  });
+  auto port = svr->bind_to_any_port("127.0.0.1");
+  ASSERT_GT(port, 0);
+  std::thread t([&] { svr->listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    upgraded = true; // Releases the handler when an assertion bails out early
+    svr->stop();
+    t.join();
+  });
+  svr->wait_until_ready();
+
+  auto sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto sock_se = detail::scope_exit([&] { detail::close_socket(sock); });
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(static_cast<uint16_t>(port));
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0,
+            ::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+
+  std::unique_ptr<Stream> strm;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  tls::ctx_t ctx = nullptr;
+  tls::session_t session = nullptr;
+  auto tls_se = detail::scope_exit([&] {
+    if (session) { tls::free_session(session); }
+    if (ctx) { tls::free_context(ctx); }
+  });
+  if (use_tls) {
+    ctx = tls::create_client_context();
+    tls::set_verify_client(ctx, false); // The test certificate is self-signed
+    session = tls::create_session(ctx, sock);
+    ASSERT_TRUE(tls::connect_nonblocking(session, sock, 5, 0, nullptr));
+    strm.reset(new detail::SSLSocketStream(sock, session, 5, 0, 5, 0));
+  }
+#endif
+  if (!strm) { strm.reset(new detail::SocketStream(sock, 5, 0, 5, 0)); }
+
+  const std::string upgrade = "GET /ws HTTP/1.1\r\n"
+                              "Host: 127.0.0.1\r\n"
+                              "Upgrade: websocket\r\n"
+                              "Connection: Upgrade\r\n"
+                              "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n"
+                              "Sec-WebSocket-Version: 13\r\n"
+                              "\r\n";
+  ASSERT_EQ(static_cast<ssize_t>(upgrade.size()),
+            strm->write(upgrade.data(), upgrade.size()));
+  std::string response;
+  char c;
+  while (response.find("\r\n\r\n") == std::string::npos &&
+         strm->read(&c, 1) == 1) {
+    response += c;
+  }
+  ASSERT_NE(std::string::npos, response.find(" 101 "));
+  upgraded = true;
+
+  // Without the bound, close() would wait as long as the client sends
+  auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+  while (!closed && std::chrono::steady_clock::now() < give_up) {
+    for (size_t off = 0; off < bytes.size() && !closed;) {
+      auto n = strm->write(bytes.data() + off,
+                           (std::min)(chunk, bytes.size() - off));
+      if (n <= 0) { break; }
+      off += static_cast<size_t>(n);
+      auto next = std::chrono::steady_clock::now() + gap;
+      while (!closed && std::chrono::steady_clock::now() < next) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    }
+  }
+  while (!closed) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_LT(close_took, std::chrono::milliseconds(2500));
+}
+
+// Empty masked Ping frames, enough to keep the socket full
+static std::string ping_flood() {
+  const std::string ping("\x89\x80\0\0\0\0", 6);
+  std::string bytes;
+  while (bytes.size() < 64 * 1024) {
+    bytes += ping;
+  }
+  return bytes;
+}
+
+// A masked 20-byte Ping; sent a byte at a time, it outlasts the close timeout
+static std::string ping_with_payload() {
+  return std::string("\x89\x8e\0\0\0\0", 6) + std::string(14, 'x');
+}
+
+TEST(WebSocketCloseTest, BoundedAgainstPeerThatKeepsSending) {
+  expect_close_bounded(/*use_tls=*/false, ping_flood(), ping_flood().size(),
+                       std::chrono::milliseconds(0));
+}
+
+TEST(WebSocketCloseTest, BoundedAgainstPeerThatTricklesAFrame) {
+  expect_close_bounded(/*use_tls=*/false, ping_with_payload(), 1,
+                       std::chrono::milliseconds(300));
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(WebSocketCloseTest, SSLBoundedAgainstPeerThatKeepsSending) {
+  expect_close_bounded(/*use_tls=*/true, ping_flood(), ping_flood().size(),
+                       std::chrono::milliseconds(0));
+}
+
+TEST(WebSocketCloseTest, SSLBoundedAgainstPeerThatTricklesAFrame) {
+  expect_close_bounded(/*use_tls=*/true, ping_with_payload(), 1,
+                       std::chrono::milliseconds(300));
+}
+#endif

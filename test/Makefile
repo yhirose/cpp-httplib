@@ -260,7 +260,7 @@ endif
 test_benchmark : test_benchmark.cc ../httplib.h Makefile
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_benchmark.cc gtest/src/gtest-all.cc gtest/src/gtest_main.cc -Igtest -Igtest/include $(BENCHMARK_LIBS)
 
-test_websocket_heartbeat : test_websocket_heartbeat.cc ../httplib.h Makefile
+test_websocket_heartbeat : test_websocket_heartbeat.cc ../httplib.h Makefile cert.pem
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test_websocket_heartbeat.cc $(TEST_ARGS)
 	@file $@
 
