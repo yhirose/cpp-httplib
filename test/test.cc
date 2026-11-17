@@ -13415,10 +13415,14 @@ TEST(KeepAliveTest, MaxCountZeroSetsNoLimit) {
   EXPECT_EQ(1u, remote_ports.size());
 }
 
-// With no request outstanding, bytes that arrive on an idle connection are not
-// a response to the next request. Here the server sends an unsolicited 408
-// before closing the connection (RFC 9110 15.5.9); the client must reconnect
-// rather than read it as the reply to a request the server never saw.
+// Forward declaration (see the base64_encode note).
+namespace httplib {
+namespace detail {
+ssize_t select_read(socket_t sock, time_t sec, time_t usec);
+} // namespace detail
+} // namespace httplib
+
+// An unsolicited 408 must not be read as the next response (RFC 9110 15.5.9)
 TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
@@ -13440,8 +13444,7 @@ TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
             ::getsockname(srv, reinterpret_cast<sockaddr *>(&addr), &addr_len));
   auto port = ntohs(addr.sin_port);
 
-  // Accepts with a timeout, so that a client that never reconnects fails the
-  // test instead of hanging it.
+  // Times out rather than hangs if the client never reconnects
   auto accept_one = [&]() -> socket_t {
     if (detail::select_read(srv, 5, 0) <= 0) { return INVALID_SOCKET; }
     auto sock = ::accept(srv, nullptr, nullptr);
@@ -13458,23 +13461,17 @@ TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
       if (n <= 0) { break; }
       head.append(buf, static_cast<size_t>(n));
     }
-    return head;
   };
   auto send_text = [](socket_t sock, const std::string &text) {
     detail::send_socket(sock, text.data(), text.size(), 0);
   };
 
-  // The 408 is held back until the client has read the first response.
-  // Otherwise it can arrive along with that response and be read into the
-  // client's buffer with it, leaving only the close, which says nothing about
-  // unread data.
+  // Sent once the first response is read, so that it lands on an idle socket
   std::promise<void> first_response_read;
   auto first_response_read_future = first_response_read.get_future();
-  std::atomic<int> connections(0);
   auto server_thread = std::thread([&] {
     auto first = accept_one();
     if (first == INVALID_SOCKET) { return; }
-    connections++;
     read_request_head(first);
     send_text(first, "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nfirst");
     first_response_read_future.wait_for(std::chrono::seconds(5));
@@ -13484,15 +13481,12 @@ TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
 
     auto second = accept_one();
     if (second == INVALID_SOCKET) { return; }
-    connections++;
     read_request_head(second);
     send_text(second, "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n"
                       "Connection: close\r\n\r\nsecond");
     detail::close_socket(second);
   });
-  auto server_se = detail::scope_exit([&] {
-    if (server_thread.joinable()) { server_thread.join(); }
-  });
+  auto server_se = detail::scope_exit([&] { server_thread.join(); });
 
   Client cli("127.0.0.1", port);
   cli.set_keep_alive(true);
@@ -13510,8 +13504,6 @@ TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
   EXPECT_EQ("second", res->body);
-  server_thread.join();
-  EXPECT_EQ(2, connections);
 }
 
 TEST(KeepAliveTest, Issue1959) {

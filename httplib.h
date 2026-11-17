@@ -3031,9 +3031,8 @@ protected:
   void disconnect(bool gracefully);
 
   // Under socket_mutex_: whether the connection kept alive can take another
-  // request. One the peer has closed, one with unread data on it (such as a
-  // 408 sent before an idle close), or one set up under TLS settings changed
-  // since, is closed instead.
+  // request. One the peer has closed, one with unread data on it, or one set
+  // up under TLS settings changed since, is closed instead.
   bool socket_reusable();
 
   // TLS settings apply as a connection is set up, so a change makes the
@@ -3902,8 +3901,6 @@ void parse_disposition_params(const std::string &s, Params &params);
 ssize_t send_socket(socket_t sock, const void *ptr, size_t size, int flags);
 
 ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags);
-
-ssize_t select_read(socket_t sock, time_t sec, time_t usec);
 
 EncodingType encoding_type(const Request &req, const std::string &content_type);
 
@@ -15778,16 +15775,10 @@ inline void ClientImpl::disconnect(bool gracefully) {
 inline bool ClientImpl::socket_reusable() {
   if (!socket_.is_open()) { return false; }
 
-  // A plain connection is reusable only when there is nothing to read.
-  auto idle = false;
-  if (!is_ssl()) {
-    idle = detail::select_read(socket_.sock, 0, 0) == 0;
-  }
+  auto idle = !is_ssl() && detail::select_read(socket_.sock, 0, 0) == 0;
 #ifdef CPPHTTPLIB_SSL_ENABLED
-  else {
-    // Over TLS, raw bytes on the socket may be a post-handshake message such
-    // as a session ticket, and the TLS library may hold decrypted bytes the
-    // socket no longer shows, so only decrypted application data counts.
+  if (is_ssl()) {
+    // Raw bytes may be a TLS session ticket, so count only application data
     idle = detail::is_socket_alive(socket_.sock) &&
            !tls::is_peer_closed(socket_.ssl, socket_.sock) &&
            tls::pending(socket_.ssl) == 0;
