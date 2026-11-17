@@ -13415,6 +13415,175 @@ TEST(KeepAliveTest, MaxCountZeroSetsNoLimit) {
   EXPECT_EQ(1u, remote_ports.size());
 }
 
+// Forward declaration (see the base64_encode note).
+namespace httplib {
+namespace detail {
+ssize_t select_read(socket_t sock, time_t sec, time_t usec);
+} // namespace detail
+} // namespace httplib
+
+// RFC 9112 9.2: an unsolicited 408 must not be read as the next response
+static void expect_no_reuse_with_unread_data(bool use_tls, bool same_write) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  auto srv = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(INVALID_SOCKET, srv);
+  auto srv_se = detail::scope_exit([&] { detail::close_socket(srv); });
+  default_socket_options(srv);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = 0;
+  ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+  ASSERT_EQ(0, ::bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
+  ASSERT_EQ(0, ::listen(srv, 2));
+  socklen_t addr_len = sizeof(addr);
+  ASSERT_EQ(0,
+            ::getsockname(srv, reinterpret_cast<sockaddr *>(&addr), &addr_len));
+  auto port = ntohs(addr.sin_port);
+
+  struct Peer {
+    socket_t sock = INVALID_SOCKET;
+#ifdef CPPHTTPLIB_SSL_ENABLED
+    tls::session_t session = nullptr;
+#endif
+  };
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  tls::ctx_t ctx = nullptr;
+  if (use_tls) {
+    ctx = tls::create_server_context();
+    tls::set_server_cert_file(ctx, SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
+                              nullptr);
+  }
+  auto ctx_se = detail::scope_exit([&] {
+    if (ctx) { tls::free_context(ctx); }
+  });
+#endif
+
+  auto close_peer = [](Peer &peer) {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+    if (peer.session) { tls::free_session(peer.session); }
+#endif
+    if (peer.sock != INVALID_SOCKET) { detail::close_socket(peer.sock); }
+  };
+  auto accept_peer = [&]() {
+    Peer peer;
+    if (detail::select_read(srv, 5, 0) <= 0) { return peer; }
+    peer.sock = ::accept(srv, nullptr, nullptr);
+    if (peer.sock == INVALID_SOCKET) { return peer; }
+    detail::set_socket_opt_time(peer.sock, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+#ifdef CPPHTTPLIB_SSL_ENABLED
+    if (use_tls) {
+      peer.session = tls::create_session(ctx, peer.sock);
+      tls::TlsError err;
+      if (!tls::accept_nonblocking(peer.session, peer.sock, 5, 0, &err)) {
+        close_peer(peer);
+        return Peer();
+      }
+    }
+#endif
+    return peer;
+  };
+  auto read_some = [](const Peer &peer, char *buf, size_t len) -> ssize_t {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+    tls::TlsError err;
+    if (peer.session) { return tls::read(peer.session, buf, len, err); }
+#endif
+    return detail::read_socket(peer.sock, buf, len, 0);
+  };
+  auto read_head = [&](const Peer &peer) {
+    std::string head;
+    char buf[1024];
+    while (head.find("\r\n\r\n") == std::string::npos) {
+      auto n = read_some(peer, buf, sizeof(buf));
+      if (n <= 0) { break; }
+      head.append(buf, static_cast<size_t>(n));
+    }
+  };
+  auto send_text = [](const Peer &peer, const std::string &text) {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+    tls::TlsError err;
+    if (peer.session) {
+      tls::write(peer.session, text.data(), text.size(), err);
+      return;
+    }
+#endif
+    detail::send_socket(peer.sock, text.data(), text.size(), 0);
+  };
+
+  const std::string first = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nfirst";
+  const std::string stray = "HTTP/1.1 408 Request Timeout\r\n"
+                            "Connection: close\r\nContent-Length: 0\r\n\r\n";
+
+  // Sent once the first response is read, so that it lands on an idle socket
+  std::promise<void> first_response_read;
+  auto first_response_read_future = first_response_read.get_future();
+  auto server_thread = std::thread([&] {
+    auto peer1 = accept_peer();
+    if (peer1.sock == INVALID_SOCKET) { return; }
+    read_head(peer1);
+    if (same_write) {
+      send_text(peer1, first + stray);
+    } else {
+      send_text(peer1, first);
+      first_response_read_future.wait_for(std::chrono::seconds(5));
+      send_text(peer1, stray);
+    }
+
+    // peer1 stays open, so only the unread data can tell the client
+    auto peer2 = accept_peer();
+    if (peer2.sock != INVALID_SOCKET) {
+      read_head(peer2);
+      send_text(peer2, "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n"
+                       "Connection: close\r\n\r\nsecond");
+      close_peer(peer2);
+    }
+    close_peer(peer1);
+  });
+  auto server_se = detail::scope_exit([&] { server_thread.join(); });
+
+  Client cli((use_tls ? "https://127.0.0.1:" : "http://127.0.0.1:") +
+             std::to_string(port));
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  cli.enable_server_certificate_verification(false);
+#endif
+  cli.set_keep_alive(true);
+  cli.set_read_timeout(5, 0);
+
+  auto res = cli.Get("/1");
+  first_response_read.set_value();
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ("first", res->body);
+
+  if (!same_write) { ASSERT_GT(detail::select_read(cli.socket(), 5, 0), 0); }
+
+  res = cli.Get("/2");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("second", res->body);
+}
+
+TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithUnreadData) {
+  expect_no_reuse_with_unread_data(/*use_tls=*/false, /*same_write=*/false);
+}
+
+TEST(KeepAliveTest, ClientDoesNotReuseConnectionWithDataPastResponse) {
+  expect_no_reuse_with_unread_data(/*use_tls=*/false, /*same_write=*/true);
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(KeepAliveTest, SSLClientDoesNotReuseConnectionWithUnreadData) {
+  expect_no_reuse_with_unread_data(/*use_tls=*/true, /*same_write=*/false);
+}
+
+TEST(KeepAliveTest, SSLClientDoesNotReuseConnectionWithDataPastResponse) {
+  expect_no_reuse_with_unread_data(/*use_tls=*/true, /*same_write=*/true);
+}
+#endif
+
 TEST(KeepAliveTest, Issue1959) {
   Server svr;
   svr.set_keep_alive_timeout(5);
