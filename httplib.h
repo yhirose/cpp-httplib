@@ -6111,8 +6111,7 @@ inline bool is_valid_path(const std::string &path) {
 
 inline bool canonicalize_path(const char *path, std::string &resolved) {
 #if defined(_WIN32)
-  // Resolved through the file it names, as realpath() does, so that a junction
-  // or symlink is followed. _fullpath() only joins and normalizes the text.
+  // Resolve junctions and symlinks, as realpath() does
   auto wpath = u8string_to_wstring(path);
   if (wpath.empty()) { return false; }
 
