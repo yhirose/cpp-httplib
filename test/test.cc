@@ -30540,6 +30540,59 @@ TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
   EXPECT_EQ(std::string("\x8a\x01p", 3), std::string(pong, 3));
 }
 
+TEST(WebSocketTest, CloseEndsAReadOfEndlessFragments) {
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  std::atomic<bool> read_ended{false};
+  std::atomic<bool> sending{true};
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::thread reader([&]() {
+      std::string msg;
+      while (ws.read(msg)) {}
+      read_ended = true;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    ws.close();
+    reader.join();
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  // A Text message whose empty continuation frames never end
+  std::thread sender([&]() {
+    auto data = masked_frame(0x01, "");
+    while (sending) {
+      data += masked_frame(0x00, "");
+      if (detail::send_socket(sock, data.data(), data.size(), 0) <= 0) {
+        return;
+      }
+      data.clear();
+    }
+  });
+
+  for (int i = 0; i < 300 && !read_ended; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  sending = false;
+  sender.join();
+  EXPECT_TRUE(read_ended);
+}
+
 TEST(WebSocketTest, NegativePingIntervalSendsNoPings) {
   Server svr;
   svr.set_websocket_ping_interval(-1);
