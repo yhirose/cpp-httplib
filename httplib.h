@@ -16981,6 +16981,11 @@ ClientImpl::send_with_content_provider_and_receiver(
 
   if (enc.second) { req.set_header("Content-Encoding", enc.second); }
 
+  // A compressed or chunked body is framed by the library, not the caller
+  if (enc.second || content_provider_without_length) {
+    req.headers.erase("Content-Length");
+  }
+
   if (enc.first && !content_provider_without_length) {
     auto &compressor = enc.first;
 

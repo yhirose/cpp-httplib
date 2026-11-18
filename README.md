@@ -1172,7 +1172,7 @@ cli.set_default_headers({
 auto res = cli.Get("/hi");
 ```
 
-A `Content-Length` among these headers is sent in place of the one the library would send, so it has to match the body as written. A `Transfer-Encoding` is sent in addition to the library's own framing, so leave it out. Leave both out when passing on the headers of another message, as a proxy does.
+A `Content-Length` among these headers is sent in place of the one the library would send, so it has to match the body as written. One passed with the request is dropped when the library compresses the body or sends it chunked. A `Transfer-Encoding` is sent in addition to the library's own framing, so leave it out. Leave both out when passing on the headers of another message, as a proxy does.
 
 ### POST
 
