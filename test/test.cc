@@ -3600,6 +3600,197 @@ TEST(ClientStopTest, StopEndsWaitForResponse) {
   EXPECT_EQ(Error::Read, res.error());
 }
 
+// A listener whose backlog completes the TCP connections of clients, and that
+// never answers them
+struct SilentListener {
+  socket_t sock = INVALID_SOCKET;
+  sockaddr_in addr{};
+  int port = 0;
+
+  explicit SilentListener(int backlog = 1) {
+    sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    addr.sin_family = AF_INET;
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    socklen_t len = sizeof(addr);
+    if (::bind(sock, reinterpret_cast<sockaddr *>(&addr), len) != 0 ||
+        ::listen(sock, backlog) != 0 ||
+        ::getsockname(sock, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+      detail::close_socket(sock);
+      sock = INVALID_SOCKET;
+    }
+    port = ntohs(addr.sin_port);
+  }
+  ~SilentListener() { detail::close_socket(sock); }
+
+  // The next connection, whose reads give up after 5 seconds
+  socket_t accept() const {
+    auto peer = ::accept(sock, nullptr, nullptr);
+    if (peer != INVALID_SOCKET) {
+      detail::set_socket_opt_time(peer, SOL_SOCKET, SO_RCVTIMEO, 5, 0);
+    }
+    return peer;
+  }
+};
+
+static bool receives_a_byte(socket_t peer) {
+  char c = 0;
+  return detail::read_socket(peer, &c, 1, 0) == 1;
+}
+
+// Runs op, stops cli once the listener receives the first byte op sends, and
+// expects op to end with error soon after
+template <typename ClientType, typename Op>
+static void expect_stop_ends(ClientType &cli, const SilentListener &listener,
+                             Op op, Error error = Error::Canceled) {
+  auto ended = std::async(std::launch::async, op);
+  auto peer = listener.accept();
+  auto close_peer = detail::scope_exit([&] { detail::close_socket(peer); });
+  ASSERT_NE(INVALID_SOCKET, peer);
+  ASSERT_TRUE(receives_a_byte(peer));
+
+  cli.stop();
+  EXPECT_EQ(std::future_status::ready, ended.wait_for(std::chrono::seconds(2)));
+  EXPECT_EQ(error, ended.get());
+}
+
+// Stops itself from another thread as the connection opens, the last moment a
+// stop() cancels it. It waits for stop() at most a second, so a stop() that
+// waits for the connection fails the test instead of hanging it.
+class StoppedAsConnectedClient : public ClientImpl {
+public:
+  using ClientImpl::ClientImpl;
+
+protected:
+  bool ensure_socket_connection(Socket &socket, Error &error) override {
+    if (!ClientImpl::ensure_socket_connection(socket, error)) { return false; }
+    stopper_ = std::async(std::launch::async, [this] { stop(); });
+    stopper_.wait_for(std::chrono::seconds(1));
+    return true;
+  }
+
+private:
+  std::future<void> stopper_;
+};
+
+TEST(ClientStopTest, StopAsTheConnectionOpensEndsTheRequest) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  StoppedAsConnectedClient cli("127.0.0.1", listener.port);
+  cli.set_read_timeout(std::chrono::seconds(3));
+  EXPECT_EQ(Error::Canceled, cli.Get("/").error());
+  auto peer = listener.accept();
+  EXPECT_FALSE(receives_a_byte(peer));
+  detail::close_socket(peer);
+
+  auto handle = cli.open_stream("GET", "/");
+  EXPECT_FALSE(handle.is_valid());
+  EXPECT_EQ(Error::Canceled, handle.error);
+  peer = listener.accept();
+  EXPECT_FALSE(receives_a_byte(peer));
+  detail::close_socket(peer);
+}
+
+#ifdef __linux__
+// A connect that a listener with a full backlog never completes
+TEST(ClientStopTest, StopEndsAConnect) {
+  SilentListener listener(0);
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+  std::vector<socket_t> backlog;
+  auto close_backlog = detail::scope_exit([&] {
+    for (auto sock : backlog) {
+      detail::close_socket(sock);
+    }
+  });
+  for (int i = 0; i < 8; i++) {
+    auto sock = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    ::connect(sock, reinterpret_cast<const sockaddr *>(&listener.addr),
+              sizeof(listener.addr));
+    backlog.push_back(sock);
+  }
+
+  Client cli("127.0.0.1", listener.port);
+  cli.set_connection_timeout(std::chrono::seconds(3));
+  auto ended =
+      std::async(std::launch::async, [&] { return cli.Get("/").error(); });
+
+  // A stop() before the request starts does not apply to it, so it repeats
+  auto status = std::future_status::timeout;
+  for (auto i = 0; i < 200 && status != std::future_status::ready; i++) {
+    cli.stop();
+    status = ended.wait_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(std::future_status::ready, status);
+  EXPECT_EQ(Error::Canceled, ended.get());
+}
+#endif
+
+// The stream holds the socket while it waits for the head, out of the reach
+// of shutdown()
+TEST(ClientStopTest, StopEndsTheWaitForTheHeadOfAStream) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  Client cli("127.0.0.1", listener.port);
+  cli.set_read_timeout(std::chrono::seconds(3));
+  expect_stop_ends(
+      cli, listener, [&] { return cli.open_stream("GET", "/").error; },
+      Error::Read);
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+// A server that never answers the ClientHello
+TEST(ClientStopTest, StopEndsATlsHandshake) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  SSLClient cli("127.0.0.1", listener.port);
+  cli.enable_server_certificate_verification(false);
+  cli.set_connection_timeout(std::chrono::seconds(3));
+  expect_stop_ends(cli, listener, [&] { return cli.Get("/").error(); });
+  expect_stop_ends(cli, listener,
+                   [&] { return cli.open_stream("GET", "/").error; });
+}
+
+// A proxy that takes the CONNECT and never answers it
+TEST(ClientStopTest, StopEndsAProxyTunnel) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  SSLClient cli("example.com", 443);
+  cli.set_proxy("127.0.0.1", listener.port);
+  cli.set_read_timeout(std::chrono::seconds(3));
+  expect_stop_ends(cli, listener, [&] { return cli.Get("/").error(); });
+}
+#endif
+
+// A read timeout past what the clock reaches waits for the response
+TEST(ClientReadTimeoutTest, PastTheClockWaitsForTheResponse) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  Client cli("127.0.0.1", listener.port);
+  cli.set_read_timeout(
+      static_cast<time_t>((std::min)(static_cast<long long>(
+                                         (std::numeric_limits<time_t>::max)()),
+                                     10000000000LL)),
+      0);
+  auto res = std::async(std::launch::async, [&] { return cli.Get("/"); });
+
+  auto peer = listener.accept();
+  auto close_peer = detail::scope_exit([&] { detail::close_socket(peer); });
+  ASSERT_NE(INVALID_SOCKET, peer);
+  ASSERT_TRUE(receives_a_byte(peer));
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::string answer = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+                       "Connection: close\r\n\r\nok";
+  detail::send_socket(peer, answer.data(), answer.size(), 0);
+
+  auto result = res.get();
+  ASSERT_TRUE(result);
+  EXPECT_EQ("ok", result->body);
+}
+
 static std::string remove_whitespace(const std::string &input) {
   std::string output;
   output.reserve(input.size());
