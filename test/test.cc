@@ -14115,11 +14115,6 @@ TEST(DataSinkTest, CompressedRequestProviderThatFinishesEarlyFails) {
   EXPECT_EQ(Error::Write, res.error());
 }
 
-// A caller forwarding a request may pass its Content-Length through. When the
-// client then compresses the body, that length no longer describes what goes
-// on the wire, so it must be dropped. Otherwise the server reads only
-// Content-Length bytes of the gzip stream and the rest desyncs the next
-// request on a kept-alive connection.
 TEST(ClientRequestFramingTest, CompressedBodyReplacesCallerContentLength) {
   Server svr;
 
@@ -14136,7 +14131,7 @@ TEST(ClientRequestFramingTest, CompressedBodyReplacesCallerContentLength) {
     res.set_content("next", "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     listen_thread.join();
@@ -14145,7 +14140,7 @@ TEST(ClientRequestFramingTest, CompressedBodyReplacesCallerContentLength) {
 
   svr.wait_until_ready();
 
-  Client cli("localhost", PORT);
+  Client cli(HOST, PORT);
   cli.set_keep_alive(true);
   cli.set_compress(true);
 
@@ -14158,8 +14153,7 @@ TEST(ClientRequestFramingTest, CompressedBodyReplacesCallerContentLength) {
   EXPECT_EQ(1u, content_length_count);
   EXPECT_FALSE(has_transfer_encoding);
 
-  // The next request on the same connection is parsed as its own request,
-  // not as leftover body bytes.
+  // The rest of a truncated body would be read as this request
   auto res2 = cli.Get("/next");
   ASSERT_TRUE(res2) << "Error: " << to_string(res2.error());
   EXPECT_EQ(StatusCode::OK_200, res2->status);
@@ -14167,14 +14161,11 @@ TEST(ClientRequestFramingTest, CompressedBodyReplacesCallerContentLength) {
 }
 #endif
 
-// A chunked content provider frames the body itself, so a Content-Length the
-// caller passed through must be dropped. Sending both is ambiguous framing and
-// the server rejects it.
 TEST(ClientRequestFramingTest, ChunkedProviderDropsCallerContentLength) {
   Server svr;
 
   std::string received;
-  size_t content_length_count = 0;
+  size_t content_length_count = 1;
   bool has_transfer_encoding = false;
   svr.Post("/echo", [&](const Request &req, Response &res) {
     received = req.body;
@@ -14183,7 +14174,7 @@ TEST(ClientRequestFramingTest, ChunkedProviderDropsCallerContentLength) {
     res.set_content("ok", "text/plain");
   });
 
-  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  auto listen_thread = std::thread([&svr]() { svr.listen(HOST, PORT); });
   auto se = detail::scope_exit([&] {
     svr.stop();
     listen_thread.join();
@@ -14192,7 +14183,7 @@ TEST(ClientRequestFramingTest, ChunkedProviderDropsCallerContentLength) {
 
   svr.wait_until_ready();
 
-  Client cli("localhost", PORT);
+  Client cli(HOST, PORT);
   cli.set_keep_alive(true);
 
   const std::string body = "hello world";

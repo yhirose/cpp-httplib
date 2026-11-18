@@ -16962,11 +16962,7 @@ ClientImpl::send_with_content_provider_and_receiver(
 
   if (enc.second) { req.set_header("Content-Encoding", enc.second); }
 
-  // From here the library frames the body itself: it either compresses the
-  // buffered body (changing its length) or streams it chunked. A
-  // Content-Length the caller passed through then describes the original body,
-  // not what goes on the wire, so drop it and let write_request() emit the
-  // framing that matches. A plain, uncompressed body keeps the caller's value.
+  // A compressed or chunked body is framed by the library, not the caller
   if (enc.second || content_provider_without_length) {
     req.headers.erase("Content-Length");
   }
