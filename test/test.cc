@@ -30628,6 +30628,121 @@ TEST(WebSocketTest, PongTimeoutEndsABlockedReadOverTLS) {
 }
 #endif
 
+// listen() returns only after every handler has, so Server::stop() has to end
+// a WebSocket handler's read() waiting on a client that stays connected and
+// quiet, whether or not the handler bounded its reads, and the client's
+// connection ends with it.
+static void check_stop_ends_websocket_read(Server &svr, const char *scheme,
+                                           bool bounded) {
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    if (bounded) { ws.set_read_timeout(0, 50000); }
+    std::string msg;
+    while (ws.read(msg) != ws::Fail) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    if (t.joinable()) {
+      svr.stop();
+      t.join();
+    }
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client(std::string(scheme) +
+                             "://localhost:" + std::to_string(port) + "/ws");
+#ifdef CPPHTTPLIB_SSL_ENABLED
+  client.enable_server_certificate_verification(false);
+#endif
+  client.set_read_timeout(2);
+  ASSERT_TRUE(client.connect());
+
+  auto stopped = std::async(std::launch::async, [&] {
+    svr.stop();
+    t.join();
+  });
+  std::string msg;
+  EXPECT_EQ(ws::Fail, client.read(msg));
+  EXPECT_FALSE(client.is_open());
+  auto in_time =
+      stopped.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  // A handler the stop did not reach ends when the client leaves
+  if (!in_time) { client.close(); }
+  stopped.wait();
+  EXPECT_TRUE(in_time);
+}
+
+TEST(WebSocketTest, StopEndsAWaitingRead) {
+  Server svr;
+  check_stop_ends_websocket_read(svr, "ws", false);
+}
+
+TEST(WebSocketTest, StopEndsAWaitingBoundedRead) {
+  Server svr;
+  check_stop_ends_websocket_read(svr, "ws", true);
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(WebSocketTest, StopEndsAWaitingReadOverTLS) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  check_stop_ends_websocket_read(svr, "wss", false);
+}
+#endif
+
+// The stop reaches the client as a Close with 1001 Going Away, not as a
+// dropped connection, whether the handler waits for a message or for the rest
+// of one: `sent` is what the client sends first.
+static void check_stop_closes_with_going_away(const std::string &sent) {
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  // Closed before the join above, which a handler the stop did not reach
+  // would otherwise hold up.
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  ASSERT_EQ(static_cast<ssize_t>(sent.size()),
+            detail::send_socket(sock, sent.data(), sent.size(), 0));
+  // Let the handler take what was sent and wait for more
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  svr.stop();
+
+  // FIN + Close, its length, then the code: unmasked, from a server
+  std::string head;
+  char c;
+  while (head.size() < 4 && ::recv(sock, &c, 1, 0) == 1) {
+    head += c;
+  }
+  const std::string reason = "server stopping";
+  EXPECT_EQ(std::string("\x88") + static_cast<char>(2 + reason.size()) +
+                "\x03\xe9",
+            head);
+}
+
+TEST(WebSocketTest, StopClosesWithGoingAway) {
+  check_stop_closes_with_going_away("");
+}
+
+TEST(WebSocketTest, StopMidMessageClosesWithGoingAway) {
+  // A Text frame without FIN: the first fragment of a message
+  check_stop_closes_with_going_away(masked_frame(0x01, "half"));
+}
+
 TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
   Server svr;
   svr.set_websocket_ping_interval(0);

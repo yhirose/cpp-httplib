@@ -2443,6 +2443,8 @@ protected:
   }
 
   std::atomic<socket_t> svr_sock_{INVALID_SOCKET};
+  // stop() takes the listening socket away; listen() then waits for handlers
+  bool is_stopping() const { return svr_sock_ == INVALID_SOCKET; }
 
   std::vector<std::string> trusted_proxies_;
 
@@ -4732,23 +4734,33 @@ private:
   WebSocket(
       Stream &strm, const Request &req, bool is_server,
       time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
-      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS)
+      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS,
+      std::function<bool()> server_stopping = nullptr)
       : strm_(strm), req_(req), is_server_(is_server),
         ping_interval_sec_(ping_interval_sec),
-        max_missed_pongs_(max_missed_pongs) {
+        max_missed_pongs_(max_missed_pongs),
+        server_stopping_(std::move(server_stopping)) {
+    interrupt_reads();
     start_heartbeat();
   }
 
   WebSocket(
       std::unique_ptr<Stream> &&owned_strm, const Request &req, bool is_server,
       time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
-      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS)
+      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS,
+      std::function<bool()> server_stopping = nullptr)
       : strm_(*owned_strm), owned_strm_(std::move(owned_strm)), req_(req),
         is_server_(is_server), ping_interval_sec_(ping_interval_sec),
-        max_missed_pongs_(max_missed_pongs) {
+        max_missed_pongs_(max_missed_pongs),
+        server_stopping_(std::move(server_stopping)) {
+    interrupt_reads();
     start_heartbeat();
   }
 
+  void interrupt_reads();
+  bool server_stopping() const {
+    return server_stopping_ && server_stopping_();
+  }
   void start_heartbeat();
   bool send_frame(Opcode op, const char *data, size_t len, bool fin = true);
 
@@ -4762,6 +4774,8 @@ private:
   std::atomic<bool> closed_{false};
   // Set when the peer stopped answering pings, to end a read() waiting on it
   std::atomic<bool> pong_timed_out_{false};
+  // A server connection's view of Server::stop(), which ends its read() too
+  std::function<bool()> server_stopping_;
   // Set once the caller has bounded read() through set_read_timeout(). Until
   // then the timeout in effect is the compile-time default, and elapsing it
   // is a failure that closes the connection, not a Timeout.
@@ -14383,9 +14397,7 @@ inline bool
 Server::write_content_with_provider(Stream &strm, const Request &req,
                                     Response &res, const std::string &boundary,
                                     const std::string &content_type) {
-  auto is_shutting_down = [this]() {
-    return this->svr_sock_ == INVALID_SOCKET;
-  };
+  auto is_shutting_down = [this]() { return is_stopping(); };
 
   if (res.content_length_ > 0) {
     if (!detail::is_partial_content(req, res)) {
@@ -15555,6 +15567,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 
       connection_closed = true;
       if (websocket_upgraded) { *websocket_upgraded = true; }
+      auto stopping = [this] { return is_stopping(); };
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
       if (req.ssl) {
@@ -15568,7 +15581,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
             write_timeout_sec_, write_timeout_usec_));
         ws::WebSocket ws(std::move(ws_strm), req, true,
                          websocket_ping_interval_sec_,
-                         websocket_max_missed_pongs_);
+                         websocket_max_missed_pongs_, stopping);
         ws_route->handler(req, ws);
         return true;
       }
@@ -15576,7 +15589,7 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       // Use WebSocket-specific read timeout instead of HTTP timeout
       strm.set_read_timeout(CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND, 0);
       ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_,
-                       websocket_max_missed_pongs_);
+                       websocket_max_missed_pongs_, stopping);
       ws_route->handler(req, ws);
       return true;
     }
@@ -23832,6 +23845,13 @@ inline ReadResult WebSocket::read(std::string &msg) {
   };
 
   std::unique_lock<std::mutex> read_lock(read_mutex_);
+  // A server going down closes the connection rather than wait on it: its
+  // listen() waits for this handler to return.
+  auto going_away = [&]() -> ReadResult {
+    read_lock.unlock();
+    close(CloseStatus::GoingAway, "server stopping");
+    return Fail;
+  };
   while (!closed_) {
     Opcode opcode;
     std::string payload;
@@ -23840,6 +23860,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
     impl::FrameRead r =
         impl::read_websocket_frame(strm_, opcode, payload, fin, is_server_,
                                    CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH);
+    if (r != impl::FrameRead::Ok && server_stopping()) { return going_away(); }
     // A timeout landed on a frame boundary of an open connection: it is
     // untouched and still usable, so hand control back without closing it.
     // That is only useful to a caller who asked for the timeout; the
@@ -23881,6 +23902,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
           if (impl::read_websocket_frame(strm_, cont_opcode, cont_payload,
                                          cont_fin, is_server_,
                                          max_len) != impl::FrameRead::Ok) {
+            if (server_stopping()) { return going_away(); }
             closed_ = true;
             return Fail;
           }
@@ -23986,12 +24008,17 @@ inline WebSocket::~WebSocket() {
   strm_.set_read_interrupt(nullptr);
 }
 
+// A pong timeout ends a read() blocked on the silent peer, and so does the
+// server stopping: its listen() waits for every handler to return.
+inline void WebSocket::interrupt_reads() {
+  auto watches_pongs = ping_interval_sec_ > 0 && max_missed_pongs_ > 0;
+  if (!watches_pongs && !server_stopping_) { return; }
+  strm_.set_read_interrupt(
+      [this] { return pong_timed_out_.load() || server_stopping(); });
+}
+
 inline void WebSocket::start_heartbeat() {
   if (ping_interval_sec_ <= 0) { return; }
-  // A pong timeout ends a read() blocked on the silent peer
-  if (max_missed_pongs_ > 0) {
-    strm_.set_read_interrupt([this] { return pong_timed_out_.load(); });
-  }
   ping_thread_ = std::thread([this]() {
     std::unique_lock<std::mutex> lock(ping_mutex_);
     // The predicate keeps a spurious wakeup from sending a ping early
