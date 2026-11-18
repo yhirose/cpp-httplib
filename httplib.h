@@ -23884,9 +23884,8 @@ inline ReadResult WebSocket::read(std::string &msg) {
       // Handle fragmentation
       if (!fin) {
         while (true) {
-          // A close() from another thread ends the message being assembled,
-          // as it ends the loop over frames above: a peer that keeps sending
-          // fragments never lets a read reach a wait
+          // As in the loop over frames above, close() ends the read even while
+          // the peer keeps sending fragments
           if (closed_) { return Fail; }
           Opcode cont_opcode;
           std::string cont_payload;
