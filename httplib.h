@@ -16606,17 +16606,8 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   detail::UrlComponents uc;
   if (!detail::parse_url(next_url, uc)) { return false; }
 
-  // In a Location an authority only follows "//" (RFC 3986 3.2). parse_url()
-  // also takes a bare "host:port" for one, so that Client("localhost:8080")
-  // works, but "localhost:8080" here names the scheme "localhost", and
-  // "127.0.0.1:8080" is no URI reference at all. Neither names another host.
-  if (uc.scheme.empty() && !uc.host.empty() &&
-      next_url.compare(0, 2, "//") != 0) {
-    return false;
-  }
-
-  // Only follow http/https redirects
-  if (!uc.scheme.empty() && uc.scheme != "http" && uc.scheme != "https") {
+  // Follow only http/https URLs and references starting with '/'
+  if (next_url[0] != '/' && uc.scheme != "http" && uc.scheme != "https") {
     return false;
   }
 

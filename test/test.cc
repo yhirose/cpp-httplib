@@ -4772,7 +4772,6 @@ TEST(RedirectToDifferentPort, BareHostAndPortIsNotFollowed) {
     res.set_content("target", "text/plain");
   });
 
-  // On 127.0.0.1, which "localhost" reaches as well
   int target_port = 0;
   auto target_thread = std::thread([&]() {
     target_port = target_svr.bind_to_any_port("127.0.0.1");
@@ -4803,9 +4802,8 @@ TEST(RedirectToDifferentPort, BareHostAndPortIsNotFollowed) {
 
   auto port = std::to_string(target_port);
 
-  // "localhost:<port>" names the scheme "localhost" and "127.0.0.1:<port>" is
-  // no URI reference, so neither leads to the host and port it spells
-  for (const auto &to : {"localhost:" + port, "127.0.0.1:" + port}) {
+  for (const auto &to :
+       {"localhost:" + port, "127.0.0.1:" + port, "localhost:" + port + "/"}) {
     Client cli(HOST, origin_port);
     cli.set_follow_location(true);
 
@@ -4814,7 +4812,6 @@ TEST(RedirectToDifferentPort, BareHostAndPortIsNotFollowed) {
   }
   EXPECT_EQ(0, target_hits);
 
-  // A network-path reference names its host after "//"
   Client cli(HOST, origin_port);
   cli.set_follow_location(true);
 
