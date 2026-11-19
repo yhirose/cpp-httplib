@@ -4761,6 +4761,67 @@ TEST(RedirectToDifferentPort, TrailingCharactersInPort) {
   EXPECT_FALSE(res);
 }
 
+TEST(RedirectToDifferentPort, BareHostAndPortIsNotFollowed) {
+  Server target_svr;
+  std::atomic<int> target_hits{0};
+  target_svr.Get("/", [&](const Request & /*req*/, Response &res) {
+    target_hits++;
+    res.set_content("target", "text/plain");
+  });
+  target_svr.Get("/target", [&](const Request & /*req*/, Response &res) {
+    res.set_content("target", "text/plain");
+  });
+
+  int target_port = 0;
+  auto target_thread = std::thread([&]() {
+    target_port = target_svr.bind_to_any_port("127.0.0.1");
+    target_svr.listen_after_bind();
+  });
+
+  Server origin_svr;
+  origin_svr.Get("/redir", [&](const Request &req, Response &res) {
+    res.set_redirect(req.get_param_value("to"));
+  });
+
+  int origin_port = 0;
+  auto origin_thread = std::thread([&]() {
+    origin_port = origin_svr.bind_to_any_port(HOST);
+    origin_svr.listen_after_bind();
+  });
+  auto se = detail::scope_exit([&] {
+    origin_svr.stop();
+    origin_thread.join();
+    target_svr.stop();
+    target_thread.join();
+    ASSERT_FALSE(origin_svr.is_running());
+    ASSERT_FALSE(target_svr.is_running());
+  });
+
+  target_svr.wait_until_ready();
+  origin_svr.wait_until_ready();
+
+  auto port = std::to_string(target_port);
+
+  for (const auto &to :
+       {"localhost:" + port, "127.0.0.1:" + port, "localhost:" + port + "/"}) {
+    Client cli(HOST, origin_port);
+    cli.set_follow_location(true);
+
+    auto res = cli.Get("/redir?to=" + encode_query_component(to));
+    EXPECT_FALSE(res) << to;
+  }
+  EXPECT_EQ(0, target_hits);
+
+  Client cli(HOST, origin_port);
+  cli.set_follow_location(true);
+
+  auto res = cli.Get("/redir?to=" +
+                     encode_query_component("//127.0.0.1:" + port + "/target"));
+  ASSERT_TRUE(res) << to_string(res.error());
+  EXPECT_EQ(StatusCode::OK_200, res->status);
+  EXPECT_EQ("target", res->body);
+}
+
 TEST(RedirectTest, OtherStatusesWithLocationAreNotFollowed) {
   Server svr;
   std::atomic<bool> followed{false};

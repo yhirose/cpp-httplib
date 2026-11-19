@@ -16601,14 +16601,13 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
   auto location = res.get_header_value("location");
   if (location.empty()) { return false; }
 
-  detail::UrlComponents uc;
-  if (!detail::parse_url(detail::resolve_relative_location(location, req.path),
-                         uc)) {
-    return false;
-  }
+  auto next_url = detail::resolve_relative_location(location, req.path);
 
-  // Only follow http/https redirects
-  if (!uc.scheme.empty() && uc.scheme != "http" && uc.scheme != "https") {
+  detail::UrlComponents uc;
+  if (!detail::parse_url(next_url, uc)) { return false; }
+
+  // Follow only http/https URLs and references starting with '/'
+  if (next_url[0] != '/' && uc.scheme != "http" && uc.scheme != "https") {
     return false;
   }
 
