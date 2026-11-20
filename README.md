@@ -252,7 +252,7 @@ On Windows, the CryptoAPI check can also be turned off at runtime. The TLS backe
 cli.enable_windows_certificate_verification(false);
 ```
 
-`WebSocketClient` does not use CryptoAPI; the TLS backend always verifies its chain.
+`WebSocketClient` verifies the same way and has the same `enable_windows_certificate_verification()`.
 
 > [!NOTE]
 > When using SSL, it seems impossible to avoid SIGPIPE in all cases, since on some operating systems, SIGPIPE can only be suppressed on a per-message basis, but there is no way to make the OpenSSL library do so for its internal communications. If your program needs to avoid being terminated on SIGPIPE, the only fully general way might be to set up a signal handler for SIGPIPE to handle or ignore it yourself.

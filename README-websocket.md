@@ -252,6 +252,9 @@ void enable_system_ca(bool enabled);
 void set_server_certificate_verifier(tls::VerifyCallback verifier);
 void set_session_verifier(
     std::function<SSLVerifierResponse(tls::session_t)> verifier);
+// Windows only, as on SSLClient (see "Platform-specific Certificate Handling"
+// in README.md)
+void enable_windows_certificate_verification(bool enabled);
 ```
 
 ## Examples

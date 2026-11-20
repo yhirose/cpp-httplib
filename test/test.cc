@@ -16829,6 +16829,39 @@ TEST(SSLClientTest, WindowsCertificateVerification_RejectsUntrustedRoot) {
   EXPECT_EQ(Error::SSLServerVerification, res.error());
   EXPECT_EQ(static_cast<DWORD>(CERT_E_UNTRUSTEDROOT), res.ssl_backend_error());
 }
+
+TEST(WebSocketSSLVerifyTest, WindowsCertificateVerification) {
+  SSLServer svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen("127.0.0.1", PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+    ASSERT_FALSE(svr.is_running());
+  });
+
+  svr.wait_until_ready();
+
+  auto url = "wss://127.0.0.1:" + std::to_string(PORT) + "/";
+  {
+    ws::WebSocketClient client(url);
+    auto res = client.connect();
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::SSLServerVerification, res.error());
+    EXPECT_EQ(static_cast<DWORD>(CERT_E_UNTRUSTEDROOT),
+              res.ssl_backend_error());
+  }
+  {
+    ws::WebSocketClient client(url);
+    client.enable_windows_certificate_verification(false);
+    auto res = client.connect();
+    ASSERT_FALSE(res);
+    EXPECT_EQ(Error::SSLServerVerification, res.error());
+    EXPECT_NE(static_cast<DWORD>(CERT_E_UNTRUSTEDROOT),
+              res.ssl_backend_error());
+  }
+}
 #endif
 
 TEST(SSLClientTest, ServerCertificateVerification1_Online) {

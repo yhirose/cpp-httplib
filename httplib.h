@@ -4922,6 +4922,9 @@ public:
       std::function<SSLVerifierResponse(tls::session_t)> verifier);
   void set_proxy_digest_auth(const std::string &username,
                              const std::string &password);
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  void enable_windows_certificate_verification(bool enabled);
+#endif
 #endif
 
 private:
@@ -4994,6 +4997,10 @@ private:
   std::function<SSLVerifierResponse(tls::session_t)> session_verifier_;
   std::string proxy_digest_auth_username_;
   std::string proxy_digest_auth_password_;
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  bool enable_windows_cert_verification_ = true;
+  bool server_certificate_verifier_set_ = false;
+#endif
 #endif
 };
 
@@ -11503,6 +11510,21 @@ inline bool load_client_ca_config(tls::ctx_t ctx,
   return ret;
 }
 
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+// Schannel is skipped when a custom CA is specified, as the Windows
+// certificate store would not know about it, and when system CA trust is
+// explicitly disabled.
+inline bool use_windows_cert_verification(bool enabled,
+                                          const std::string &ca_cert_file_path,
+                                          const std::string &ca_cert_dir_path,
+                                          bool has_custom_store,
+                                          SystemCAMode mode) {
+  return enabled && mode != SystemCAMode::Disabled &&
+         ca_cert_file_path.empty() && ca_cert_dir_path.empty() &&
+         !has_custom_store;
+}
+#endif
+
 // Serializes the CA certificates installed in ctx as PEM, so they can be
 // loaded into another context.
 inline std::string ca_certs_to_pem(tls::ctx_t ctx) {
@@ -11548,8 +11570,7 @@ struct ClientTlsSessionOptions {
   // begin with, so it passes nothing.
   std::mutex *ctx_mutex = nullptr;
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-  // The caller decides whether Schannel has anything to say about this
-  // connection; see SSLClient::initialize_ssl().
+  // See use_windows_cert_verification().
   bool windows_cert_verification = false;
   // A server certificate verifier works on the backend's chain verification,
   // so the backend keeps deciding and Schannel only adds its own check.
@@ -19708,13 +19729,9 @@ inline bool SSLClient::initialize_ssl(Socket &socket, Error &error) {
   options.interrupted = stop_interrupt();
   options.ctx_mutex = &ctx_mutex_;
 #ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
-  // Skip Schannel when a custom CA cert is specified, as the Windows
-  // certificate store would not know about user-provided CA certificates.
-  // Also skip when system CA trust is explicitly disabled.
-  options.windows_cert_verification =
-      enable_windows_cert_verification_ &&
-      system_ca_mode_ != SystemCAMode::Disabled && ca_cert_file_path_.empty() &&
-      ca_cert_dir_path_.empty() && !custom_ca_loaded_;
+  options.windows_cert_verification = detail::use_windows_cert_verification(
+      enable_windows_cert_verification_, ca_cert_file_path_, ca_cert_dir_path_,
+      custom_ca_loaded_, system_ca_mode_);
   // Only a verifier set through set_server_certificate_verifier() is seen
   // here, not one installed with tls::set_verify_callback() directly.
   options.server_certificate_verifier_set =
@@ -24215,6 +24232,12 @@ inline bool WebSocketClient::create_stream(std::unique_ptr<Stream> &strm,
     detail::ClientTlsSessionOptions options;
     options.server_hostname_verification = server_hostname_verification_;
     options.session_verifier = session_verifier_;
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+    options.windows_cert_verification = detail::use_windows_cert_verification(
+        enable_windows_cert_verification_, ca_cert_file_path_,
+        ca_cert_dir_path_, custom_ca_loaded_, system_ca_mode_);
+    options.server_certificate_verifier_set = server_certificate_verifier_set_;
+#endif
 
     auto timeout = handshake_timeout();
     detail::ClientTlsSessionError tls_error;
@@ -24524,6 +24547,9 @@ WebSocketClient::set_ca_cert_path(const std::string &ca_cert_file_path,
 
 inline void
 WebSocketClient::set_server_certificate_verifier(tls::VerifyCallback verifier) {
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+  server_certificate_verifier_set_ = static_cast<bool>(verifier);
+#endif
   if (tls_ctx_) { tls::set_verify_callback(tls_ctx_, std::move(verifier)); }
 }
 
@@ -24562,6 +24588,13 @@ inline void WebSocketClient::enable_server_hostname_verification(bool enabled) {
 inline void WebSocketClient::enable_system_ca(bool enabled) {
   system_ca_mode_ = enabled ? SystemCAMode::Enabled : SystemCAMode::Disabled;
 }
+
+#ifdef CPPHTTPLIB_WINDOWS_AUTOMATIC_ROOT_CERTIFICATES_UPDATE
+inline void
+WebSocketClient::enable_windows_certificate_verification(bool enabled) {
+  enable_windows_cert_verification_ = enabled;
+}
+#endif
 
 inline void
 WebSocketClient::set_proxy_digest_auth(const std::string &username,
