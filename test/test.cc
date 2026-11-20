@@ -18838,6 +18838,49 @@ TEST(HttpToHttpsRedirectTest, CertFile) {
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
 
+TEST(UppercaseSchemeTest, UsesTLS) {
+  SSLServer ssl_svr(SERVER_CERT2_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(ssl_svr.is_valid());
+  ssl_svr.Get("/index", [](const Request &, Response &res) {
+    res.set_content("test", "text/plain");
+  });
+  auto ssl_port = ssl_svr.bind_to_any_port("127.0.0.1");
+  auto https_url = "HTTPS://127.0.0.1:" + std::to_string(ssl_port);
+
+  Server svr;
+  svr.Get("/index", [&](const Request &, Response &res) {
+    res.set_redirect(https_url + "/index");
+  });
+  auto port = svr.bind_to_any_port("127.0.0.1");
+
+  auto t = thread([&] { ssl_svr.listen_after_bind(); });
+  auto t2 = thread([&] { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    ssl_svr.stop();
+    t2.join();
+    t.join();
+  });
+  ssl_svr.wait_until_ready();
+  svr.wait_until_ready();
+
+  {
+    Client cli(https_url);
+    cli.set_ca_cert_path(SERVER_CERT2_FILE);
+    auto res = cli.Get("/index");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("test", res->body);
+  }
+  {
+    Client cli("127.0.0.1", port);
+    cli.set_ca_cert_path(SERVER_CERT2_FILE);
+    cli.set_follow_location(true);
+    auto res = cli.Get("/index");
+    ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+    EXPECT_EQ("test", res->body);
+  }
+}
+
 TEST(SSLClientRedirectTest, CertFile) {
   auto ssl_port = PORT + 1;
 
@@ -22143,7 +22186,8 @@ TEST(ParseUrlTest, VariousPatterns) {
   }
   {
     detail::UrlComponents uc;
-    ASSERT_FALSE(detail::parse_url("HTTP://example.com/path", uc));
+    ASSERT_TRUE(detail::parse_url("HTTP://example.com/path", uc));
+    EXPECT_EQ("http", uc.scheme);
   }
   {
     detail::UrlComponents uc;
@@ -22218,6 +22262,11 @@ TEST(ParseUrlTest, SchemeEdgeCases) {
   {
     detail::UrlComponents uc;
     ASSERT_FALSE(detail::parse_url("h.t://evil.com/path", uc));
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("httpS://example.com/path", uc));
+    EXPECT_EQ("https", uc.scheme);
   }
 }
 
@@ -31235,6 +31284,13 @@ TEST_F(WebSocketSSLIntegrationTest, TextEcho) {
   EXPECT_EQ("Hello WSS", msg);
 
   client.close();
+}
+
+TEST_F(WebSocketSSLIntegrationTest, UppercaseScheme) {
+  ws::WebSocketClient client("WSS://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  client.enable_server_certificate_verification(false);
+  EXPECT_TRUE(client.connect());
 }
 
 // Regression test (GHSA-w7p7-f35j-mw7q): shutdown_and_close() used to free the

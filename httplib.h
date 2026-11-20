@@ -914,7 +914,8 @@ inline bool parse_url(const std::string &url, UrlComponents &uc) {
 
   auto sep = url.find("://");
   if (sep != std::string::npos) {
-    uc.scheme = url.substr(0, sep);
+    // Schemes are case-insensitive (RFC 3986 3.1)
+    uc.scheme = case_ignore::to_lower(url.substr(0, sep));
 
     // Scheme must be [a-z]+ only
     if (uc.scheme.empty()) { return false; }
