@@ -291,6 +291,13 @@ static_assert(CPPHTTPLIB_MAX_LINE_LENGTH > 0,
 #define CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS 0
 #endif
 
+// A WebSocket connection carries small messages each way, which Nagle's
+// algorithm would hold back for the peer's delayed ACK (tens of milliseconds
+// on Linux), so it sets TCP_NODELAY unless this is false.
+#ifndef CPPHTTPLIB_WEBSOCKET_TCP_NODELAY
+#define CPPHTTPLIB_WEBSOCKET_TCP_NODELAY true
+#endif
+
 /*
  * Headers
  */
@@ -4701,6 +4708,43 @@ private:
 #endif
 };
 
+namespace impl {
+
+bool is_valid_utf8(const std::string &s);
+
+// Three states: a frame, a failure (the connection cannot be read on), or a
+// timeout with the stream still usable.
+enum class FrameRead { Ok, Fail, Timeout };
+
+// A frame read in as many calls as it takes. A timeout leaves what was read
+// so far in place, and the next read() goes on from there, so the stream is
+// usable after a timeout wherever in a frame it lands.
+class FrameReader {
+public:
+  FrameRead read(Stream &strm, Opcode &opcode, std::string &payload, bool &fin,
+                 bool expect_masked, size_t max_len);
+  // Whether part of a frame has been read and the rest is still to come
+  bool begun() const { return have_ > 0; }
+
+private:
+  void reset();
+
+  uint8_t head_[14] = {0}; // FIN + opcode, MASK + length, its extension, key
+  size_t have_ = 0;        // bytes of the header read so far
+  size_t need_ = 2;        // bytes of the header, once the second is read
+  bool sized_ = false;     // the header is whole and its length checked
+  size_t len_ = 0;         // the payload's length, once sized_
+  std::string payload_;
+};
+
+// A whole frame read in one go: a timeout before any of it came is reported,
+// and one that cuts it short is a failure.
+FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
+                               std::string &payload, bool &fin,
+                               bool expect_masked, size_t max_len);
+
+} // namespace impl
+
 class WebSocket {
 public:
   WebSocket(const WebSocket &) = delete;
@@ -4718,6 +4762,8 @@ public:
   // Bound how long read() waits before returning Timeout. 0 waits forever.
   // A server handler owns its connection's timeout this way; a client sets it
   // through WebSocketClient. Safe to call while another thread is in read().
+  // It lands anywhere, inside a message too: what was read of it is kept,
+  // and the next read() goes on from there.
   //
   // Only a timeout set here is reported as Timeout. The compile-time default
   // (CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND) is a backstop rather
@@ -4782,10 +4828,16 @@ private:
   std::atomic<bool> read_timeout_set_{false};
   std::mutex write_mutex_;
   // Owned by whichever thread is parsing frames off strm_. Only one thread
-  // may do so: read_websocket_frame() reads a payload until it has the whole
-  // declared length, so a second parser stealing bytes silently corrupts the
-  // message the first one is assembling.
+  // may do so: a frame is read until it has the whole declared length,
+  // across several read() calls when a timeout lands inside it (frames_
+  // below), so a second parser stealing bytes silently corrupts the message
+  // the first one is assembling.
   std::mutex read_mutex_;
+  // What read() has of the frame and the message it has not finished, kept
+  // across a timeout. Guarded by read_mutex_.
+  impl::FrameReader frames_;
+  std::string message_;
+  ReadResult message_kind_ = Fail; // Text or Binary while one is assembled
   std::thread ping_thread_;
   std::mutex ping_mutex_;
   std::condition_variable ping_cv_;
@@ -4900,7 +4952,7 @@ private:
       CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
   int websocket_max_missed_pongs_ = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS;
   int address_family_ = AF_UNSPEC;
-  bool tcp_nodelay_ = CPPHTTPLIB_TCP_NODELAY;
+  bool tcp_nodelay_ = CPPHTTPLIB_WEBSOCKET_TCP_NODELAY;
   bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
   SocketOptions socket_options_ = nullptr;
   time_t connection_timeout_sec_ = CPPHTTPLIB_CONNECTION_TIMEOUT_SECOND;
@@ -4974,22 +5026,14 @@ inline void WebSocketClient::set_connection_timeout(
   });
 }
 
-namespace impl {
-
-bool is_valid_utf8(const std::string &s);
-
-// Three states, because a failure that consumed bytes and one that consumed
-// none are not the same thing: the first has left the stream in the middle of
-// a frame and the connection cannot be reused, the second can just be retried.
-enum class FrameRead { Ok, Fail, Timeout };
-
-FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
-                               std::string &payload, bool &fin,
-                               bool expect_masked, size_t max_len);
-
-} // namespace impl
-
 } // namespace ws
+
+namespace detail {
+
+bool write_websocket_frame(Stream &strm, ws::Opcode opcode, const char *data,
+                           size_t len, bool fin, bool mask);
+
+} // namespace detail
 
 // ----------------------------------------------------------------------------
 
@@ -5916,67 +5960,59 @@ inline void fill_random_bytes(unsigned char *out, size_t n) {
 inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
                                   const char *data, size_t len, bool fin,
                                   bool mask) {
-  // First byte: FIN + opcode
-  uint8_t header[2];
-  header[0] = static_cast<uint8_t>((fin ? 0x80 : 0x00) |
-                                   (static_cast<uint8_t>(opcode) & 0x0F));
-
-  // Second byte: MASK + payload length
+  // The header (FIN + opcode, MASK + length, the extended length, the mask
+  // key: 14 bytes at most) goes out in one write with the payload's first
+  // chunk, so that under TCP_NODELAY a small frame is one segment, not three.
+  uint8_t header[14];
+  size_t header_len = 0;
+  header[header_len++] = static_cast<uint8_t>(
+      (fin ? 0x80 : 0x00) | (static_cast<uint8_t>(opcode) & 0x0F));
+  uint8_t mask_bit = mask ? 0x80 : 0x00;
   if (len < 126) {
-    header[1] = static_cast<uint8_t>(len);
-    if (mask) { header[1] |= 0x80; }
-    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
-      return false;
-    }
+    header[header_len++] = static_cast<uint8_t>(len) | mask_bit;
   } else if (len <= 0xFFFF) {
-    header[1] = 126;
-    if (mask) { header[1] |= 0x80; }
-    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
-      return false;
-    }
-    uint8_t ext[2];
-    ext[0] = static_cast<uint8_t>((len >> 8) & 0xFF);
-    ext[1] = static_cast<uint8_t>(len & 0xFF);
-    if (!write_data(strm, reinterpret_cast<char *>(ext), 2)) { return false; }
+    header[header_len++] = 126 | mask_bit;
+    header[header_len++] = static_cast<uint8_t>((len >> 8) & 0xFF);
+    header[header_len++] = static_cast<uint8_t>(len & 0xFF);
   } else {
-    header[1] = 127;
-    if (mask) { header[1] |= 0x80; }
-    if (!write_data(strm, reinterpret_cast<char *>(header), 2)) {
-      return false;
-    }
-    uint8_t ext[8];
+    header[header_len++] = 127 | mask_bit;
     for (int i = 7; i >= 0; i--) {
-      ext[7 - i] =
+      header[header_len++] =
           static_cast<uint8_t>((static_cast<uint64_t>(len) >> (i * 8)) & 0xFF);
     }
-    if (!write_data(strm, reinterpret_cast<char *>(ext), 8)) { return false; }
   }
-
+  uint8_t mask_key[4] = {0};
   if (mask) {
-    // Generate random mask key
-    uint8_t mask_key[4];
     fill_random_bytes(mask_key, sizeof(mask_key));
-    if (!write_data(strm, reinterpret_cast<char *>(mask_key), 4)) {
-      return false;
-    }
-
-    // Write masked payload in chunks
-    const size_t chunk_size = 4096;
-    std::vector<char> buf((std::min)(len, chunk_size));
-    for (size_t offset = 0; offset < len; offset += chunk_size) {
-      size_t n = (std::min)(chunk_size, len - offset);
-      for (size_t i = 0; i < n; i++) {
-        buf[i] =
-            data[offset + i] ^ static_cast<char>(mask_key[(offset + i) % 4]);
-      }
-      if (!write_data(strm, buf.data(), n)) { return false; }
-    }
-  } else {
-    if (len > 0) {
-      if (!write_data(strm, data, len)) { return false; }
-    }
+    std::copy(mask_key, mask_key + 4, header + header_len);
+    header_len += 4;
   }
 
+  // `n` bytes of the payload from `offset`, masked if they are to be, at `out`
+  auto put = [&](char *out, size_t offset, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+      out[i] = mask ? data[offset + i] ^
+                          static_cast<char>(mask_key[(offset + i) % 4])
+                    : data[offset + i];
+    }
+  };
+
+  const size_t chunk_size = 4096;
+  size_t first = (std::min)(len, chunk_size);
+  std::vector<char> buf(header_len + first);
+  std::copy(header, header + header_len, buf.begin());
+  put(buf.data() + header_len, 0, first);
+  if (!write_data(strm, buf.data(), buf.size())) { return false; }
+
+  // The rest, masked a chunk at a time, or else as it is
+  if (!mask) {
+    return first == len || write_data(strm, data + first, len - first);
+  }
+  for (size_t offset = first; offset < len; offset += chunk_size) {
+    size_t n = (std::min)(chunk_size, len - offset);
+    put(buf.data(), offset, n);
+    if (!write_data(strm, buf.data(), n)) { return false; }
+  }
   return true;
 }
 
@@ -5985,109 +6021,106 @@ inline bool write_websocket_frame(Stream &strm, ws::Opcode opcode,
 namespace ws {
 namespace impl {
 
-// Read exactly `size` bytes. Stream::read may return less than asked for -- it
-// hands back whatever its buffer already holds -- so every multi-byte field has
-// to loop. Reading a 2-byte header with a single read() fails whenever the
-// header straddles the read buffer's boundary.
-//
-// Timeout is reported only when nothing at all was consumed. Once a byte has
-// been taken the stream sits mid-field and cannot be resumed, so a timeout
-// there is a failure like any other. (When read() fails it always records why,
+inline void FrameReader::reset() {
+  have_ = 0;
+  need_ = 2;
+  sized_ = false;
+  len_ = 0;
+  payload_.clear();
+}
+
+// Stream::read may return less than asked for -- it hands back whatever its
+// buffer already holds -- so each part of the frame is read in a loop, a byte
+// at a time if that is how it comes. (When read() fails it always records why,
 // so the error belongs to this call and not to an earlier one.)
-inline FrameRead read_exact(Stream &strm, void *buf, size_t size) {
-  auto p = static_cast<char *>(buf);
-  size_t total = 0;
-  while (total < size) {
-    auto n = strm.read(p + total, size - total);
-    if (n <= 0) {
-      auto timed_out = total == 0 && strm.get_error() == Error::Timeout;
-      return timed_out ? FrameRead::Timeout : FrameRead::Fail;
+inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
+                                   std::string &payload, bool &fin,
+                                   bool expect_masked, size_t max_len) {
+  // A timeout keeps what was read; anything else ends the frame
+  auto stopped = [&]() {
+    if (strm.get_error() == Error::Timeout) { return FrameRead::Timeout; }
+    reset();
+    return FrameRead::Fail;
+  };
+  auto fail = [&]() {
+    reset();
+    return FrameRead::Fail;
+  };
+
+  while (have_ < need_) {
+    auto n = strm.read(reinterpret_cast<char *>(head_) + have_, need_ - have_);
+    if (n <= 0) { return stopped(); }
+    have_ += static_cast<size_t>(n);
+    if (have_ < 2 || need_ > 2) { continue; }
+
+    // RSV1, RSV2, RSV3 must be 0 when no extension is negotiated
+    if (head_[0] & 0x70) { return fail(); }
+    // RFC 6455 Section 5.5: control frames MUST NOT be fragmented and
+    // MUST have a payload length of 125 bytes or less
+    auto len7 = head_[1] & 0x7F;
+    if ((head_[0] & 0x08) && (!(head_[0] & 0x80) || len7 > 125)) {
+      return fail();
     }
-    total += static_cast<size_t>(n);
+    auto masked = (head_[1] & 0x80) != 0;
+    if (masked != expect_masked) { return fail(); }
+    // The extended length and the mask key follow
+    need_ = 2 + (len7 == 126 ? 2 : len7 == 127 ? 8 : 0) + (masked ? 4 : 0);
   }
+
+  if (!sized_) {
+    uint64_t len = head_[1] & 0x7F;
+    if (len == 126) {
+      len = (static_cast<uint64_t>(head_[2]) << 8) | head_[3];
+    } else if (len == 127) {
+      // RFC 6455 Section 5.2: the most significant bit MUST be 0
+      if (head_[2] & 0x80) { return fail(); }
+      len = 0;
+      for (size_t i = 2; i < 10; i++) {
+        len = (len << 8) | head_[i];
+      }
+    }
+    // A max_len of 0 means no limit, as payload_max_length does, and a length
+    // size_t cannot hold (32-bit builds) is refused either way.
+    if ((max_len > 0 && len > max_len) || !detail::fits_in_size_t(len)) {
+      return fail();
+    }
+    len_ = static_cast<size_t>(len);
+    sized_ = true;
+  }
+
+  // Grow the payload only as it arrives, since a header alone can announce
+  // max_len bytes that never come.
+  while (payload_.size() < len_) {
+    auto offset = payload_.size();
+    auto n = (std::min)(len_ - offset, CPPHTTPLIB_RECV_BUFSIZ);
+    payload_.resize(offset + n);
+    auto got = strm.read(&payload_[offset], n);
+    if (got <= 0) {
+      payload_.resize(offset);
+      return stopped();
+    }
+    payload_.resize(offset + static_cast<size_t>(got));
+  }
+
+  if (head_[1] & 0x80) {
+    const auto *mask_key = head_ + need_ - 4;
+    for (size_t i = 0; i < payload_.size(); i++) {
+      payload_[i] ^= static_cast<char>(mask_key[i % 4]);
+    }
+  }
+  fin = (head_[0] & 0x80) != 0;
+  opcode = static_cast<Opcode>(head_[0] & 0x0F);
+  payload = std::move(payload_);
+  reset();
   return FrameRead::Ok;
 }
 
 inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
                                       std::string &payload, bool &fin,
                                       bool expect_masked, size_t max_len) {
-  // Read first 2 bytes. This is the only read that may report a timeout: it
-  // sits on a frame boundary, where nothing has been consumed yet.
-  uint8_t header[2];
-  FrameRead first = read_exact(strm, header, 2);
-  if (first != FrameRead::Ok) { return first; }
-
-  fin = (header[0] & 0x80) != 0;
-
-  // RSV1, RSV2, RSV3 must be 0 when no extension is negotiated
-  if (header[0] & 0x70) { return FrameRead::Fail; }
-
-  opcode = static_cast<Opcode>(header[0] & 0x0F);
-  bool masked = (header[1] & 0x80) != 0;
-  uint64_t payload_len = header[1] & 0x7F;
-
-  // RFC 6455 Section 5.5: control frames MUST NOT be fragmented and
-  // MUST have a payload length of 125 bytes or less
-  bool is_control = (static_cast<uint8_t>(opcode) & 0x08) != 0;
-  if (is_control) {
-    if (!fin) { return FrameRead::Fail; }
-    if (payload_len > 125) { return FrameRead::Fail; }
-  }
-
-  if (masked != expect_masked) { return FrameRead::Fail; }
-
-  // Extended payload length
-  if (payload_len == 126) {
-    uint8_t ext[2];
-    if (read_exact(strm, ext, 2) != FrameRead::Ok) { return FrameRead::Fail; }
-    payload_len = (static_cast<uint64_t>(ext[0]) << 8) | ext[1];
-  } else if (payload_len == 127) {
-    uint8_t ext[8];
-    if (read_exact(strm, ext, 8) != FrameRead::Ok) { return FrameRead::Fail; }
-    // RFC 6455 Section 5.2: the most significant bit MUST be 0
-    if (ext[0] & 0x80) { return FrameRead::Fail; }
-    payload_len = 0;
-    for (int i = 0; i < 8; i++) {
-      payload_len = (payload_len << 8) | ext[i];
-    }
-  }
-
-  // A max_len of 0 means no limit, as payload_max_length does, and a length
-  // size_t cannot hold (32-bit builds) is refused either way.
-  if ((max_len > 0 && payload_len > max_len) ||
-      !detail::fits_in_size_t(payload_len)) {
-    return FrameRead::Fail;
-  }
-
-  // Read mask key if present
-  uint8_t mask_key[4] = {0};
-  if (masked) {
-    if (read_exact(strm, mask_key, 4) != FrameRead::Ok) {
-      return FrameRead::Fail;
-    }
-  }
-
-  // Grow the payload only as it arrives, since a header alone can announce
-  // max_len bytes that never come.
-  payload.clear();
-  auto len = static_cast<size_t>(payload_len);
-  while (payload.size() < len) {
-    auto offset = payload.size();
-    auto n = (std::min)(len - offset, CPPHTTPLIB_RECV_BUFSIZ);
-    payload.resize(offset + n);
-    if (read_exact(strm, &payload[offset], n) != FrameRead::Ok) {
-      return FrameRead::Fail;
-    }
-  }
-
-  // Unmask if needed
-  if (masked) {
-    for (size_t i = 0; i < payload.size(); i++) {
-      payload[i] ^= static_cast<char>(mask_key[i % 4]);
-    }
-  }
-
-  return FrameRead::Ok;
+  FrameReader reader;
+  auto r = reader.read(strm, opcode, payload, fin, expect_masked, max_len);
+  return r == FrameRead::Timeout && reader.begun() ? FrameRead::Fail : r;
 }
 
 // RFC 6455 §5.5.1, §7.4: a Close payload is empty, or a status code that may
@@ -15568,6 +15601,9 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       connection_closed = true;
       if (websocket_upgraded) { *websocket_upgraded = true; }
       auto stopping = [this] { return is_stopping(); };
+      if (CPPHTTPLIB_WEBSOCKET_TCP_NODELAY) {
+        set_socket_opt(strm.socket(), IPPROTO_TCP, TCP_NODELAY, 1);
+      }
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
       if (req.ssl) {
@@ -23851,21 +23887,28 @@ inline ReadResult WebSocket::read(std::string &msg) {
     close(CloseStatus::GoingAway, "server stopping");
     return Fail;
   };
+  // close() ends the read, even while the peer keeps sending fragments
   while (!closed_) {
     Opcode opcode;
     std::string payload;
     bool fin;
 
-    impl::FrameRead r =
-        impl::read_websocket_frame(strm_, opcode, payload, fin, is_server_,
-                                   CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH);
+    // While a message is assembled, only what is left of the limit, but room
+    // for a control frame, which may come between its fragments.
+    auto max_len =
+        CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH == 0 || message_kind_ == Fail
+            ? size_t(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH)
+            : (std::max)(size_t(125), CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH -
+                                          message_.size());
+    auto r = frames_.read(strm_, opcode, payload, fin, is_server_, max_len);
     if (r != impl::FrameRead::Ok && server_stopping()) { return going_away(); }
-    // A timeout landed on a frame boundary of an open connection: it is
-    // untouched and still usable, so hand control back without closing it.
-    // That is only useful to a caller who asked for the timeout; the
-    // compile-time default is a backstop against a peer gone quiet, and
-    // elapsing it closes the connection so a plain `while (ws.read(msg))` loop
-    // ends. A wait that a pong timeout cut short finds the connection closed.
+    // A timeout leaves what was read of the frame and of the message for the
+    // next read(), so the connection is still usable wherever it landed: hand
+    // control back without closing it. That is only useful to a caller who
+    // asked for the timeout; the compile-time default is a backstop against a
+    // peer gone quiet, and elapsing it closes the connection so a plain
+    // `while (ws.read(msg))` loop ends. A wait that a pong timeout cut short
+    // finds the connection closed.
     if (r == impl::FrameRead::Timeout && read_timeout_set_ && !closed_) {
       return Timeout;
     }
@@ -23874,69 +23917,43 @@ inline ReadResult WebSocket::read(std::string &msg) {
       return Fail;
     }
 
-    switch (opcode) {
-    case Opcode::Text:
-    case Opcode::Binary: {
-      auto result = opcode == Opcode::Text ? Text : Binary;
-      msg = std::move(payload);
-
-      // Handle fragmentation
-      if (!fin) {
-        while (true) {
-          // As in the loop over frames above, close() ends the read even while
-          // the peer keeps sending fragments
-          if (closed_) { return Fail; }
-          Opcode cont_opcode;
-          std::string cont_payload;
-          bool cont_fin;
-          // Only what is left of the limit, but room for a control frame,
-          // which may come between the fragments.
-          auto max_len =
-              CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH == 0
-                  ? size_t(0)
-                  : (std::max)(size_t(125),
-                               CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH -
-                                   msg.size());
-          // A timeout is not reportable here: half of a fragmented message is
-          // already in `msg` and read() has no way to resume it, so it is a
-          // failure like any other. Timeouts are only ever seen on a message
-          // boundary.
-          if (impl::read_websocket_frame(strm_, cont_opcode, cont_payload,
-                                         cont_fin, is_server_,
-                                         max_len) != impl::FrameRead::Ok) {
-            if (server_stopping()) { return going_away(); }
-            closed_ = true;
-            return Fail;
-          }
-          // RFC 6455 5.4: the fragments are continuation frames, with only
-          // control frames between them.
-          if (cont_opcode != Opcode::Continuation) {
-            if (handle_control(cont_opcode, cont_payload)) { continue; }
-            return Fail;
-          }
-          msg += cont_payload;
-          if (CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH > 0 &&
-              msg.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
-            closed_ = true;
-            return Fail;
-          }
-          if (cont_fin) { break; }
-        }
-      }
-      // RFC 6455 Section 5.6: text frames must contain valid UTF-8
-      if (result == Text && !impl::is_valid_utf8(msg)) {
-        // close() takes the read lock to wait for the peer's Close reply, so
-        // it must not run while this thread still holds it.
-        read_lock.unlock();
-        close(CloseStatus::InvalidPayload, "invalid UTF-8");
-        return Fail;
-      }
-      return result;
-    }
-    default:
+    auto continues = opcode == Opcode::Continuation;
+    if (opcode != Opcode::Text && opcode != Opcode::Binary && !continues) {
       if (handle_control(opcode, payload)) { continue; }
       return Fail;
     }
+    // RFC 6455 5.4: a message is a Text or Binary frame and the continuation
+    // frames after it, with only control frames between them.
+    if (continues == (message_kind_ == Fail)) {
+      closed_ = true;
+      return Fail;
+    }
+    if (continues) {
+      message_ += payload;
+    } else {
+      message_ = std::move(payload);
+      message_kind_ = opcode == Opcode::Text ? Text : Binary;
+    }
+    if (CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH > 0 &&
+        message_.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
+      closed_ = true;
+      return Fail;
+    }
+    if (!fin) { continue; }
+
+    auto result = message_kind_;
+    msg = std::move(message_);
+    message_.clear();
+    message_kind_ = Fail;
+    // RFC 6455 Section 5.6: text frames must contain valid UTF-8
+    if (result == Text && !impl::is_valid_utf8(msg)) {
+      // close() takes the read lock to wait for the peer's Close reply, so
+      // it must not run while this thread still holds it.
+      read_lock.unlock();
+      close(CloseStatus::InvalidPayload, "invalid UTF-8");
+      return Fail;
+    }
+    return result;
   }
   return Fail;
 }
@@ -23989,11 +24006,12 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
   auto deadline =
       detail::deadline_after(CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND, 0);
 
+  // From where the last read() left the stream, inside a frame as it may be
   Opcode op;
   std::string resp;
   bool fin;
   while (std::chrono::steady_clock::now() < deadline &&
-         impl::read_websocket_frame(strm_, op, resp, fin, is_server_, 125) ==
+         frames_.read(strm_, op, resp, fin, is_server_, 125) ==
              impl::FrameRead::Ok) {
     if (op == Opcode::Close) { break; }
   }

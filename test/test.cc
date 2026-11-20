@@ -29894,6 +29894,155 @@ TEST(WebSocketFrameTest, MultiByteFieldsSplitAcrossReads) {
   EXPECT_EQ(payload, body);
 }
 
+// Keeps what is written, counting the writes, and reads it back.
+class WsWriteCountingStream : public Stream {
+public:
+  bool is_readable() const override { return true; }
+  bool wait_readable() const override { return true; }
+  bool wait_writable() const override { return true; }
+  ssize_t read(char *ptr, size_t size) override {
+    auto n = (std::min)(size, data_.size() - pos_);
+    if (n == 0) { return 0; }
+    memcpy(ptr, data_.data() + pos_, n);
+    pos_ += n;
+    return static_cast<ssize_t>(n);
+  }
+  ssize_t write(const char *ptr, size_t size) override {
+    writes++;
+    data_.append(ptr, size);
+    return static_cast<ssize_t>(size);
+  }
+  void get_remote_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  void get_local_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  socket_t socket() const override { return INVALID_SOCKET; }
+  time_t duration() const override { return 0; }
+
+  int writes = 0;
+
+private:
+  std::string data_;
+  size_t pos_ = 0;
+};
+
+TEST(WebSocketFrameTest, AFrameGoesOutWithItsHeaderInOneWrite) {
+  // Under TCP_NODELAY each write is a segment of its own. Each length form,
+  // masked and not, reads back as written; a payload over one chunk follows
+  // its first in more writes.
+  for (auto len : {size_t(5), size_t(200), size_t(70000)}) {
+    for (auto mask : {false, true}) {
+      std::string body(len, '\0');
+      for (size_t i = 0; i < len; i++) {
+        body[i] = static_cast<char>(i % 251);
+      }
+      WsWriteCountingStream strm;
+      ASSERT_TRUE(detail::write_websocket_frame(
+          strm, ws::Opcode::Binary, body.data(), body.size(), true, mask));
+      if (len <= 4096) { EXPECT_EQ(1, strm.writes) << len << " " << mask; }
+
+      ws::Opcode opcode;
+      std::string payload;
+      bool fin = false;
+      ASSERT_EQ(
+          ws::impl::read_websocket_frame(strm, opcode, payload, fin, mask, 0),
+          ws::impl::FrameRead::Ok)
+          << len << " " << mask;
+      EXPECT_TRUE(fin);
+      EXPECT_EQ(ws::Opcode::Binary, opcode);
+      EXPECT_EQ(body, payload) << len << " " << mask;
+    }
+  }
+}
+
+// Hands out its pieces one read at a time, timing out between each two.
+class WsTimeoutBetweenPiecesStream : public Stream {
+public:
+  explicit WsTimeoutBetweenPiecesStream(std::vector<std::string> pieces)
+      : pieces_(std::move(pieces)) {}
+  bool is_readable() const override { return true; }
+  bool wait_readable() const override { return true; }
+  bool wait_writable() const override { return true; }
+  ssize_t read(char *ptr, size_t size) override {
+    if (time_out_) {
+      time_out_ = false;
+      error_ = Error::Timeout;
+      return -1;
+    }
+    if (i_ >= pieces_.size()) {
+      error_ = Error::ConnectionClosed;
+      return 0;
+    }
+    auto &piece = pieces_[i_];
+    auto n = (std::min)(size, piece.size() - at_);
+    memcpy(ptr, piece.data() + at_, n);
+    at_ += n;
+    if (at_ == piece.size()) {
+      i_++;
+      at_ = 0;
+      time_out_ = true;
+    }
+    return static_cast<ssize_t>(n);
+  }
+  ssize_t write(const char *, size_t size) override {
+    return static_cast<ssize_t>(size);
+  }
+  void get_remote_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  void get_local_ip_and_port(std::string &ip, int &port) const override {
+    ip = "127.0.0.1";
+    port = 0;
+  }
+  socket_t socket() const override { return INVALID_SOCKET; }
+  time_t duration() const override { return 0; }
+
+private:
+  std::vector<std::string> pieces_;
+  size_t i_ = 0;
+  size_t at_ = 0;
+  bool time_out_ = false;
+};
+
+TEST(WebSocketFrameTest, ATimeoutInsideAFrameKeepsWhatWasRead) {
+  // FIN + Text, masked with an all-zero key: "Hello" goes out verbatim
+  std::string frame = "\x81\x85";
+  frame.append(4, '\0');
+  frame += "Hello";
+  // The header's first byte, then its second with half the mask key, then
+  // the rest
+  std::vector<std::string> pieces = {frame.substr(0, 1), frame.substr(1, 3),
+                                     frame.substr(4)};
+
+  WsTimeoutBetweenPiecesStream strm(pieces);
+  ws::impl::FrameReader reader;
+  ws::Opcode opcode;
+  std::string payload;
+  bool fin = false;
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(ws::impl::FrameRead::Timeout,
+              reader.read(strm, opcode, payload, fin, true, 0));
+    EXPECT_TRUE(reader.begun());
+  }
+  ASSERT_EQ(ws::impl::FrameRead::Ok,
+            reader.read(strm, opcode, payload, fin, true, 0));
+  EXPECT_FALSE(reader.begun());
+  EXPECT_TRUE(fin);
+  EXPECT_EQ(ws::Opcode::Text, opcode);
+  EXPECT_EQ("Hello", payload);
+
+  // Read in one go, the frame cannot be gone on with after a timeout
+  WsTimeoutBetweenPiecesStream again(pieces);
+  EXPECT_EQ(
+      ws::impl::FrameRead::Fail,
+      ws::impl::read_websocket_frame(again, opcode, payload, fin, true, 0));
+}
+
 TEST(WebSocketFrameTest, ZeroMaxLenMeansNoLimit) {
   std::string body(2000, 'x');
   std::string frame;
@@ -30403,7 +30552,7 @@ TEST(WebSocketTest, CloseDoesNotStealBytesFromConcurrentRead) {
     });
 
     // Wait until the peer stalls mid-payload, so the reader thread is parked
-    // inside read_websocket_frame() when close() runs.
+    // inside a frame when close() runs.
     wait_for(peer_stalled);
     ws.close();
     reader.join();
@@ -30807,13 +30956,16 @@ TEST(WebSocketTest, StopEndsAWaitingReadOverTLS) {
 
 // The stop reaches the client as a Close with 1001 Going Away, not as a
 // dropped connection, whether the handler waits for a message or for the rest
-// of one: `sent` is what the client sends first.
-static void check_stop_closes_with_going_away(const std::string &sent) {
+// of one: `sent` is what the client sends first. A `bounded` handler's reads
+// time out inside the message as well, and the stop ends them too.
+static void check_stop_closes_with_going_away(const std::string &sent,
+                                              bool bounded = false) {
   Server svr;
   svr.set_websocket_ping_interval(0);
   svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    if (bounded) { ws.set_read_timeout(0, 10000); }
     std::string msg;
-    while (ws.read(msg)) {}
+    while (ws.read(msg) != ws::Fail) {}
   });
 
   auto port = svr.bind_to_any_port("127.0.0.1");
@@ -30855,6 +31007,76 @@ TEST(WebSocketTest, StopClosesWithGoingAway) {
 TEST(WebSocketTest, StopMidMessageClosesWithGoingAway) {
   // A Text frame without FIN: the first fragment of a message
   check_stop_closes_with_going_away(masked_frame(0x01, "half"));
+}
+
+TEST(WebSocketTest, StopMidBoundedMessageClosesWithGoingAway) {
+  check_stop_closes_with_going_away(masked_frame(0x01, "half"),
+                                    /*bounded=*/true);
+}
+
+// A handler that bounds its reads gets control back within its timeout even
+// while a message arrives in pieces, and the message whole once the last has
+// come: what was read of it is kept across the timeouts. Each of `pieces` is
+// sent a while after the one before, much longer than the handler's timeout.
+static void check_bounded_read_resumes(const std::vector<std::string> &pieces,
+                                       const std::string &expected) {
+  std::atomic<bool> done{false};
+  std::string received;
+  std::chrono::steady_clock::duration longest{};
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    ws.set_read_timeout(0, 10000);
+    std::string msg;
+    ws::ReadResult r;
+    do {
+      auto began = std::chrono::steady_clock::now();
+      r = ws.read(msg);
+      longest = (std::max)(longest, std::chrono::steady_clock::now() - began);
+    } while (r == ws::Timeout);
+    if (r == ws::Text) { received = msg; }
+    done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  for (const auto &piece : pieces) {
+    ASSERT_EQ(static_cast<ssize_t>(piece.size()),
+              detail::send_socket(sock, piece.data(), piece.size(), 0));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+
+  for (int i = 0; i < 500 && !done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(done);
+  EXPECT_EQ(expected, received);
+  // Far under the 200 ms between the pieces, however loaded the machine
+  EXPECT_LT(longest, std::chrono::milliseconds(150));
+}
+
+TEST(WebSocketTest, BoundedReadResumesAFrameInPieces) {
+  // The header's first byte, then its second with half the mask key, then
+  // the rest: what a frame written in several writes may look like when
+  // Nagle's algorithm holds the later ones back for an ACK.
+  auto frame = masked_frame(0x81, "Hello"); // FIN + Text
+  check_bounded_read_resumes(
+      {frame.substr(0, 1), frame.substr(1, 3), frame.substr(4)}, "Hello");
+}
+
+TEST(WebSocketTest, BoundedReadResumesBetweenFragments) {
+  check_bounded_read_resumes(
+      {masked_frame(0x01, "Hel"), masked_frame(0x80, "lo")}, "Hello");
 }
 
 TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {

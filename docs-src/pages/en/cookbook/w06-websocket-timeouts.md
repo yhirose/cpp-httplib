@@ -42,7 +42,7 @@ ws.set_write_timeout(10s);
 
 ## What the read timeout means
 
-`set_read_timeout()` applies to a single `read()` call. If no message arrives within that time, `read()` returns `ReadResult::Timeout`: **the connection is still open** and nothing was consumed, so you can send on it and read again. That is what separates it from `ReadResult::Fail`, which means the connection is gone.
+`set_read_timeout()` applies to a single `read()` call. If no whole message arrives within that time, `read()` returns `ReadResult::Timeout`: **the connection is still open**, and what was read of a message is kept for the next `read()`, so you can send on it and read again. That is what separates it from `ReadResult::Fail`, which means the connection is gone.
 
 This is what lets one thread own a connection in both directions:
 
@@ -67,7 +67,7 @@ Without a read timeout, `read()` blocks until a message arrives, so the thread h
 Two things to know about `Timeout`:
 
 - It leaves `msg` untouched, and it is non-zero. So `while (ws.read(msg))` is not usable once a read timeout is set — the loop would keep running with the *previous* message still in `msg`.
-- It is only reported on a message boundary. If the timeout elapses partway through a fragmented message, that message cannot be resumed and `read()` returns `Fail`.
+- It can land anywhere, partway through a message too. What was read of the message is kept, and the next `read()` goes on from there, so a message that arrives slowly or in fragments still comes out whole.
 
 For connections where long idle periods are normal — waiting on notifications, for example — either leave the read timeout unset, or treat `Timeout` as the no-op it is and keep looping.
 

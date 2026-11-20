@@ -66,7 +66,7 @@ enum ReadResult : int {
 
 Returned by `read()`. Since `Fail` is `0`, the result works naturally in boolean contexts — `while (ws.read(msg))` continues until the connection closes. When you need to distinguish text from binary, check the return value directly.
 
-`Timeout` is only returned for a read timeout you set yourself with `set_read_timeout()`. It means the timeout elapsed on a message boundary: nothing was consumed and the connection is still open, so you can send on it and read again. The compile-time defaults (`CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`, 300 seconds on the server; a client waits forever) are a backstop against a peer that has gone quiet, not a request for control: when one of them elapses, `read()` returns `Fail` and closes the connection, so code that never calls `set_read_timeout()` can keep using `while (ws.read(msg))`.
+`Timeout` is only returned for a read timeout you set yourself with `set_read_timeout()`. It means the timeout elapsed and the connection is still open, so you can send on it and read again. It can land anywhere, inside a message too: what was read of the message is kept, and the next `read()` goes on from there. The compile-time defaults (`CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND`, 300 seconds on the server; a client waits forever) are a backstop against a peer that has gone quiet, not a request for control: when one of them elapses, `read()` returns `Fail` and closes the connection, so code that never calls `set_read_timeout()` can keep using `while (ws.read(msg))`.
 
 **`msg` is left untouched on `Timeout`.** Because `Timeout` is non-zero, `while (ws.read(msg))` keeps looping — with the *previous* message still in `msg`. Once you set a read timeout, test the result instead:
 
@@ -231,7 +231,7 @@ void set_connection_timeout(const std::chrono::duration<Rep, Period> &duration);
 void set_websocket_ping_interval(time_t sec);
 void set_websocket_max_missed_pongs(int count);
 
-// Socket - the same setters Client has
+// Socket - the same setters Client has (TCP_NODELAY is on by default here)
 void set_tcp_nodelay(bool on);
 void set_address_family(int family);
 void set_ipv6_v6only(bool on);
@@ -511,6 +511,7 @@ if (ws.connect()) {
 | `CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND` | `5`               | Timeout for waiting peer's Close response (seconds)      |
 | `CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND` | `30`              | Automatic Ping interval for heartbeat (seconds)          |
 | `CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS`     | `0` (disabled)    | Close the connection after N consecutive unacked pings   |
+| `CPPHTTPLIB_WEBSOCKET_TCP_NODELAY`          | `true`            | Set TCP_NODELAY on WebSocket connections, so small messages do not wait on Nagle's algorithm |
 
 ### Runtime Ping Interval
 
