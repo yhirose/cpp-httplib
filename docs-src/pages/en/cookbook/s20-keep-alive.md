@@ -34,7 +34,7 @@ svr.set_keep_alive_timeout(10s);
 ## Tuning ideas
 
 **Too many idle connections eating resources**  
-Shorten the timeout so idle connections drop and release their worker threads.
+Shorten the timeout so idle connections drop and release their worker threads. If you want to keep them open, turn on keep-alive parking instead (see below).
 
 ```cpp
 svr.set_keep_alive_timeout(2s);
@@ -52,6 +52,22 @@ Set `set_keep_alive_max_count(1)` and every request gets its own connection. Mos
 
 ## Relationship with the thread pool
 
-A Keep-Alive connection holds a worker thread for its entire lifetime. The pool adds threads under load, up to its maximum thread count (4× the base count by default). If open connections outnumber that maximum, new connections wait in the queue until one closes. For thread counts, see [S21. Configure the thread pool](../s21-thread-pool).
+By default, a Keep-Alive connection holds a worker thread for its entire lifetime. The pool adds threads under load, up to its maximum thread count (4× the base count by default). If open connections outnumber that maximum, new connections wait in the queue until one closes. For thread counts, see [S21. Configure the thread pool](../s21-thread-pool).
+
+## Keep idle connections off the threads
+
+```cpp
+svr.set_keep_alive_parking(true); // call it before listen()
+```
+
+With keep-alive parking, a connection waiting for its next request is handed to an event loop instead of keeping its worker thread, and goes back to a worker when the request arrives. An idle connection then costs a socket and some memory (a few kilobytes, more with TLS) instead of a thread, and connections that outnumber the threads take turns instead of waiting for one to close. `SSLServer` supports it too.
+
+What changes with it:
+
+- Consecutive requests on one connection may run on different threads, so don't keep per-connection state in `thread_local` variables.
+- Handing the connection over to a worker adds roughly 10-20 µs to each request. It only shows with very light handlers and a client as near as loopback.
+- A handler, a content provider and a WebSocket still hold their thread while they run.
+
+The full list is in the [README](https://github.com/yhirose/cpp-httplib/blob/master/README.md#keep-alive-parking).
 
 > **Note:** For the client side, see [C14. Understand connection reuse and Keep-Alive behavior](../c14-keep-alive). Even when the server closes the connection on timeout, the client reconnects automatically.
