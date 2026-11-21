@@ -33939,6 +33939,9 @@ std::vector<PollerBackend> poller_backends() {
 #ifdef __linux__
       {"epoll", &detail::EpollPoller::create},
 #endif
+#ifdef CPPHTTPLIB_KQUEUE_POLLER
+      {"kqueue", &detail::KqueuePoller::create},
+#endif
   };
 }
 

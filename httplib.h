@@ -395,6 +395,11 @@ using socket_t = int;
 #include <TargetConditionals.h>
 #endif
 
+#if defined(__APPLE__) || defined(__FreeBSD__)
+#define CPPHTTPLIB_KQUEUE_POLLER
+#include <sys/event.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -4025,6 +4030,32 @@ private:
   int wake_fd_ = -1; // an eventfd, always armed
   std::atomic<bool> wake_pending_{false};
   std::vector<struct epoll_event> events_;
+};
+#endif
+
+#ifdef CPPHTTPLIB_KQUEUE_POLLER
+// kqueue with EV_ONESHOT. Waits in O(ready) instead of O(armed).
+class KqueuePoller final : public Poller {
+public:
+  // nullptr when the descriptors cannot be created.
+  static std::unique_ptr<Poller> create();
+  ~KqueuePoller() override;
+
+  bool arm(socket_t fd, Token token) override;
+  void disarm(socket_t fd) override;
+  bool wait(int timeout_ms, std::vector<Token> &ready) override;
+  void wake() noexcept override;
+
+private:
+  KqueuePoller() = default;
+  // An address inside this object, which no caller's token can be.
+  Token wake_token() const { return reinterpret_cast<Token>(&wake_read_); }
+
+  int kq_ = -1;
+  socket_t wake_read_ = INVALID_SOCKET; // always armed
+  socket_t wake_write_ = INVALID_SOCKET;
+  std::atomic<bool> wake_pending_{false};
+  std::vector<struct kevent> events_;
 };
 #endif
 
@@ -8122,9 +8153,89 @@ inline void EpollPoller::wake() noexcept {
 }
 #endif
 
+#ifdef CPPHTTPLIB_KQUEUE_POLLER
+inline std::unique_ptr<Poller> KqueuePoller::create() {
+  std::unique_ptr<KqueuePoller> poller(new KqueuePoller());
+  poller->kq_ = kqueue();
+  if (poller->kq_ < 0) { return nullptr; }
+  fcntl(poller->kq_, F_SETFD, FD_CLOEXEC);
+
+  socket_t sv[2];
+  if (!create_socket_pair(sv)) { return nullptr; }
+  poller->wake_read_ = sv[0];
+  poller->wake_write_ = sv[1];
+  set_nonblocking(sv[0], true);
+  set_nonblocking(sv[1], true);
+
+  // Level-triggered: it stays readable until drained.
+  struct kevent ev;
+  EV_SET(&ev, sv[0], EVFILT_READ, EV_ADD, 0, 0,
+         reinterpret_cast<void *>(poller->wake_token()));
+  if (kevent(poller->kq_, &ev, 1, nullptr, 0, nullptr) != 0) { return nullptr; }
+  poller->events_.resize(256);
+  return std::unique_ptr<Poller>(poller.release());
+}
+
+inline KqueuePoller::~KqueuePoller() {
+  if (wake_write_ != INVALID_SOCKET) { close_socket(wake_write_); }
+  if (wake_read_ != INVALID_SOCKET) { close_socket(wake_read_); }
+  if (kq_ >= 0) { close(kq_); }
+}
+
+inline bool KqueuePoller::arm(socket_t fd, Token token) {
+  // EV_ONESHOT deletes the event once it is delivered.
+  struct kevent ev;
+  EV_SET(&ev, fd, EVFILT_READ, EV_ADD | EV_ONESHOT, 0, 0,
+         reinterpret_cast<void *>(token));
+  return kevent(kq_, &ev, 1, nullptr, 0, nullptr) == 0;
+}
+
+inline void KqueuePoller::disarm(socket_t fd) {
+  struct kevent ev;
+  EV_SET(&ev, fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+  kevent(kq_, &ev, 1, nullptr, 0, nullptr);
+}
+
+inline bool KqueuePoller::wait(int timeout_ms, std::vector<Token> &ready) {
+  ready.clear();
+  struct timespec ts;
+  ts.tv_sec = timeout_ms / 1000;
+  ts.tv_nsec = static_cast<long>(timeout_ms % 1000) * 1000000;
+  auto n = handle_EINTR([&]() {
+    return kevent(kq_, nullptr, 0, events_.data(),
+                  static_cast<int>(events_.size()),
+                  timeout_ms < 0 ? nullptr : &ts);
+  });
+
+  auto woken = false;
+  for (auto i = 0; i < n; i++) {
+    auto token = reinterpret_cast<Token>(events_[static_cast<size_t>(i)].udata);
+    if (token == wake_token()) {
+      woken = true;
+      char buf[64];
+      read_socket(wake_read_, buf, sizeof(buf), CPPHTTPLIB_RECV_FLAGS);
+      // After the read, as in PollPoller::wait().
+      wake_pending_ = false;
+    } else {
+      ready.push_back(token);
+    }
+  }
+  return woken;
+}
+
+inline void KqueuePoller::wake() noexcept {
+  if (wake_pending_.exchange(true)) { return; }
+  const char c = 1;
+  send_socket(wake_write_, &c, 1, CPPHTTPLIB_SEND_FLAGS);
+}
+#endif
+
 inline std::unique_ptr<Poller> make_poller() {
-#ifdef __linux__
+#if defined(__linux__)
   auto poller = EpollPoller::create();
+  if (poller) { return poller; }
+#elif defined(CPPHTTPLIB_KQUEUE_POLLER)
+  auto poller = KqueuePoller::create();
   if (poller) { return poller; }
 #endif
   return PollPoller::create();
