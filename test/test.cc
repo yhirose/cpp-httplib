@@ -33934,7 +33934,12 @@ void PrintTo(const PollerBackend &backend, std::ostream *os) {
 
 // Every backend runs the same contract tests. A new one is added here only.
 std::vector<PollerBackend> poller_backends() {
-  return {{"poll", &detail::PollPoller::create}};
+  return {
+      {"poll", &detail::PollPoller::create},
+#ifdef __linux__
+      {"epoll", &detail::EpollPoller::create},
+#endif
+  };
 }
 
 // A descriptor whose readability the test controls.

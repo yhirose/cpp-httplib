@@ -374,6 +374,8 @@ using socklen_t = int;
 #ifdef __linux__
 #include <resolv.h>
 #undef _res // Undefine _res macro to avoid conflicts with user code (#2278)
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
 #endif
 #include <csignal>
 #include <netinet/tcp.h>
@@ -4000,6 +4002,31 @@ private:
   std::vector<Token> tokens_;
   std::unordered_map<socket_t, size_t> index_;
 };
+
+#ifdef __linux__
+// epoll with EPOLLONESHOT. Waits in O(ready) instead of O(armed).
+class EpollPoller final : public Poller {
+public:
+  // nullptr when the descriptors cannot be created.
+  static std::unique_ptr<Poller> create();
+  ~EpollPoller() override;
+
+  bool arm(socket_t fd, Token token) override;
+  void disarm(socket_t fd) override;
+  bool wait(int timeout_ms, std::vector<Token> &ready) override;
+  void wake() noexcept override;
+
+private:
+  EpollPoller() = default;
+  // An address inside this object, which no caller's token can be.
+  Token wake_token() const { return reinterpret_cast<Token>(&wake_fd_); }
+
+  int epfd_ = -1;
+  int wake_fd_ = -1; // an eventfd, always armed
+  std::atomic<bool> wake_pending_{false};
+  std::vector<struct epoll_event> events_;
+};
+#endif
 
 // The best poller for this platform, or nullptr when it cannot be created.
 std::unique_ptr<Poller> make_poller();
@@ -8028,7 +8055,80 @@ inline void PollPoller::wake() noexcept {
   send_socket(wake_write_, &c, 1, CPPHTTPLIB_SEND_FLAGS);
 }
 
-inline std::unique_ptr<Poller> make_poller() { return PollPoller::create(); }
+#ifdef __linux__
+inline std::unique_ptr<Poller> EpollPoller::create() {
+  std::unique_ptr<EpollPoller> poller(new EpollPoller());
+  poller->epfd_ = epoll_create1(EPOLL_CLOEXEC);
+  poller->wake_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (poller->epfd_ < 0 || poller->wake_fd_ < 0) { return nullptr; }
+
+  struct epoll_event ev {};
+  ev.events = EPOLLIN; // level-triggered: it stays readable until drained
+  ev.data.u64 = poller->wake_token();
+  if (epoll_ctl(poller->epfd_, EPOLL_CTL_ADD, poller->wake_fd_, &ev) != 0) {
+    return nullptr;
+  }
+  poller->events_.resize(256);
+  return std::unique_ptr<Poller>(poller.release());
+}
+
+inline EpollPoller::~EpollPoller() {
+  if (wake_fd_ >= 0) { close(wake_fd_); }
+  if (epfd_ >= 0) { close(epfd_); }
+}
+
+inline bool EpollPoller::arm(socket_t fd, Token token) {
+  struct epoll_event ev {};
+  ev.events = EPOLLIN | EPOLLONESHOT;
+  ev.data.u64 = token;
+  // A delivered descriptor stays registered, only disabled, so modify it.
+  // One that was closed in between, or never armed, has to be added.
+  return epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &ev) == 0 ||
+         (errno == ENOENT && epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &ev) == 0);
+}
+
+inline void EpollPoller::disarm(socket_t fd) {
+  epoll_ctl(epfd_, EPOLL_CTL_DEL, fd, nullptr);
+}
+
+inline bool EpollPoller::wait(int timeout_ms, std::vector<Token> &ready) {
+  ready.clear();
+  auto n = handle_EINTR([&]() {
+    return epoll_wait(epfd_, events_.data(), static_cast<int>(events_.size()),
+                      timeout_ms);
+  });
+
+  auto woken = false;
+  for (auto i = 0; i < n; i++) {
+    auto token = static_cast<Token>(events_[static_cast<size_t>(i)].data.u64);
+    if (token == wake_token()) {
+      woken = true;
+      uint64_t count;
+      while (read(wake_fd_, &count, sizeof(count)) > 0) {}
+      // After the read, as in PollPoller::wait().
+      wake_pending_ = false;
+    } else {
+      ready.push_back(token);
+    }
+  }
+  return woken;
+}
+
+inline void EpollPoller::wake() noexcept {
+  if (wake_pending_.exchange(true)) { return; }
+  const uint64_t one = 1;
+  auto r = write(wake_fd_, &one, sizeof(one));
+  (void)r;
+}
+#endif
+
+inline std::unique_ptr<Poller> make_poller() {
+#ifdef __linux__
+  auto poller = EpollPoller::create();
+  if (poller) { return poller; }
+#endif
+  return PollPoller::create();
+}
 
 inline bool bind_ip_address(socket_t sock, const std::string &host) {
   struct addrinfo hints;
