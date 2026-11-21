@@ -7183,20 +7183,20 @@ inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
 // 9.3.2), so reading one request can pull the start of the next one into the
 // stream's buffer; that request must be served without waiting for the socket
 // to become readable again, since its bytes are no longer on the socket.
-// `callback` is told whether keep_alive() has just seen the socket go readable.
-template <typename P, typename T>
-inline bool process_server_socket_core(const std::atomic<socket_t> &svr_sock,
-                                       socket_t sock,
+// Otherwise `wait_for_next_request` waits for the socket, and returning false
+// ends the loop. `callback` is told whether the socket has just been seen
+// readable. `served` counts the requests served on this connection so far.
+template <typename W, typename P, typename T>
+inline bool process_server_socket_core(size_t &served,
                                        size_t keep_alive_max_count,
-                                       time_t keep_alive_timeout_sec,
+                                       W wait_for_next_request,
                                        P has_buffered_request, T callback) {
   auto ret = false;
   // A keep_alive_max_count of 0 sets no limit.
-  for (size_t served = 0;
-       keep_alive_max_count == 0 || served < keep_alive_max_count; served++) {
+  for (; keep_alive_max_count == 0 || served < keep_alive_max_count; served++) {
     auto socket_readable = false;
     if (!has_buffered_request()) {
-      if (!keep_alive(svr_sock, sock, keep_alive_timeout_sec)) { break; }
+      if (!wait_for_next_request()) { break; }
       socket_readable = true;
     }
     auto close_connection = served + 1 == keep_alive_max_count;
@@ -7218,8 +7218,10 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
   // the next, pipelined request.
   SocketStream strm(sock, read_timeout_sec, read_timeout_usec,
                     write_timeout_sec, write_timeout_usec);
+  size_t served = 0;
   return process_server_socket_core(
-      svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
+      served, keep_alive_max_count,
+      [&]() { return keep_alive(svr_sock, sock, keep_alive_timeout_sec); },
       [&]() { return strm.is_readable(); },
       [&](bool socket_readable, bool close_connection,
           bool &connection_closed) {
@@ -11406,8 +11408,10 @@ inline bool process_server_socket_ssl(
   // of a pipelined request, which keep_alive() cannot see on the socket.
   SSLSocketStream strm(sock, session, read_timeout_sec, read_timeout_usec,
                        write_timeout_sec, write_timeout_usec);
+  size_t served = 0;
   return process_server_socket_core(
-      svr_sock, sock, keep_alive_max_count, keep_alive_timeout_sec,
+      served, keep_alive_max_count,
+      [&]() { return keep_alive(svr_sock, sock, keep_alive_timeout_sec); },
       [&]() { return strm.is_readable(); },
       [&](bool socket_readable, bool close_connection,
           bool &connection_closed) {
