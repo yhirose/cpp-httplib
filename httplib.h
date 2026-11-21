@@ -8093,7 +8093,7 @@ inline std::unique_ptr<Poller> EpollPoller::create() {
   poller->wake_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (poller->epfd_ < 0 || poller->wake_fd_ < 0) { return nullptr; }
 
-  struct epoll_event ev {};
+  epoll_event ev{};
   ev.events = EPOLLIN; // level-triggered: it stays readable until drained
   ev.data.u64 = poller->wake_token();
   if (epoll_ctl(poller->epfd_, EPOLL_CTL_ADD, poller->wake_fd_, &ev) != 0) {
@@ -8109,7 +8109,7 @@ inline EpollPoller::~EpollPoller() {
 }
 
 inline bool EpollPoller::arm(socket_t fd, Token token) {
-  struct epoll_event ev {};
+  epoll_event ev{};
   ev.events = EPOLLIN | EPOLLONESHOT;
   ev.data.u64 = token;
   // A delivered descriptor stays registered, only disabled, so modify it.
