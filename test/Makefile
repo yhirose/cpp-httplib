@@ -100,7 +100,7 @@ define run_parallel
 	echo "All shards passed."
 endef
 
-.PHONY: test_openssl_parallel test_mbedtls_parallel test_wolfssl_parallel test_no_tls_parallel
+.PHONY: test_openssl_parallel test_mbedtls_parallel test_wolfssl_parallel test_no_tls_parallel test_parking_parallel
 
 test_openssl_parallel : test
 	$(call run_parallel,test)
@@ -113,6 +113,9 @@ test_wolfssl_parallel : test_wolfssl
 
 test_no_tls_parallel : test_no_tls
 	$(call run_parallel,test_no_tls)
+
+test_parking_parallel : test_parking
+	$(call run_parallel,test_parking)
 
 proxy : test_proxy
 	@echo "Starting proxy server..."
@@ -199,6 +202,11 @@ test_split_wolfssl : test.cc ../httplib.h httplib.cc Makefile cert.pem
 # No TLS
 test_no_tls : test.cc include_httplib.cc ../httplib.h Makefile
 	$(CXX) -o $@ -I.. $(CXXFLAGS) test.cc include_httplib.cc $(TEST_ARGS_NO_TLS)
+	@file $@
+
+# The whole suite with keep-alive parking on by default
+test_parking : test.cc include_httplib.cc ../httplib.h Makefile cert.pem
+	$(CXX) -o $@ -I.. $(CXXFLAGS) -DCPPHTTPLIB_KEEPALIVE_PARKING=true test.cc include_httplib.cc $(TEST_ARGS)
 	@file $@
 
 test_split_no_tls : test.cc ../httplib.h httplib.cc Makefile
@@ -321,5 +329,5 @@ cert.pem:
 	./gen-certs.sh
 
 clean:
-	rm -rf test test_split test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl test_benchmark server_fuzzer client_fuzzer header_parser_fuzzer url_parser_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
+	rm -rf test test_split test_parking test_mbedtls test_split_mbedtls test_wolfssl test_split_wolfssl test_no_tls, test_split_no_tls test_proxy test_proxy_mbedtls test_proxy_wolfssl test_benchmark server_fuzzer client_fuzzer header_parser_fuzzer url_parser_fuzzer *.pem *.0 *.o *.1 *.srl httplib.h httplib.cc _build* *.dSYM *_shard_*.log cpp-httplib
 

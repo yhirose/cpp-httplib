@@ -34,6 +34,11 @@
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND 5
 #endif
 
+// Whether a Server starts with set_keep_alive_parking(true).
+#ifndef CPPHTTPLIB_KEEPALIVE_PARKING
+#define CPPHTTPLIB_KEEPALIVE_PARKING false
+#endif
+
 #ifndef CPPHTTPLIB_KEEPALIVE_TIMEOUT_CHECK_INTERVAL_USECOND
 #define CPPHTTPLIB_KEEPALIVE_TIMEOUT_CHECK_INTERVAL_USECOND 10000
 #endif
@@ -14552,6 +14557,7 @@ inline Server::Server()
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
+  set_keep_alive_parking(CPPHTTPLIB_KEEPALIVE_PARKING);
 }
 
 inline Server::~Server() = default;

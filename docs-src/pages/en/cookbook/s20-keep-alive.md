@@ -56,11 +56,13 @@ By default, a Keep-Alive connection holds a worker thread for its entire lifetim
 
 ## Keep idle connections off the threads
 
+> **Note:** Keep-alive parking is experimental. Its behavior may change in a future release.
+
 ```cpp
 svr.set_keep_alive_parking(true); // call it before listen()
 ```
 
-With keep-alive parking, a connection waiting for its next request is handed to an event loop instead of keeping its worker thread, and goes back to a worker when the request arrives. An idle connection then costs a socket and some memory (a few kilobytes, more with TLS) instead of a thread, and connections that outnumber the threads take turns instead of waiting for one to close. `SSLServer` supports it too.
+With keep-alive parking, a connection waiting for its next request is handed to an event loop instead of keeping its worker thread, and goes back to a worker when the request arrives. An idle connection then costs a socket and some memory (a few kilobytes, more with TLS) instead of a thread, and connections that outnumber the threads take turns instead of waiting for one to close. `SSLServer` supports it too. Defining `CPPHTTPLIB_KEEPALIVE_PARKING` as `true` turns it on for every server.
 
 What changes with it:
 
