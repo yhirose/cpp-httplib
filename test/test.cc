@@ -76,8 +76,13 @@ ctx_t create_server_context();
 void free_context(ctx_t ctx);
 bool set_server_cert_file(ctx_t ctx, const char *cert_path,
                           const char *key_path, const char *password);
+ctx_t create_client_context();
+void set_verify_client(ctx_t ctx, bool require);
 session_t create_session(ctx_t ctx, socket_t sock);
 void free_session(session_t session);
+bool connect_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
+                         time_t timeout_usec, TlsError *err,
+                         const std::function<bool()> &interrupted);
 bool accept_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
                         time_t timeout_usec, TlsError *err);
 ssize_t read(session_t session, void *buf, size_t len, TlsError &err);
@@ -90,6 +95,11 @@ macos_ssl_trust_settings_result(CFArrayRef trust_settings);
 } // namespace impl
 #endif
 } // namespace tls
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+namespace detail {
+bool ssl_free_buffers_is_safe(unsigned long version);
+} // namespace detail
+#endif
 } // namespace httplib
 #endif
 
@@ -34152,3 +34162,456 @@ TEST(PollerFactoryTest, MakePollerWorks) {
   std::vector<detail::Poller::Token> ready;
   EXPECT_TRUE(poller->wait(1000, ready));
 }
+
+// ---------------------------------------------------------------------------
+// Keep-alive parking
+// ---------------------------------------------------------------------------
+
+namespace parking_test {
+
+// Runs `svr` on a free port and stops it when it goes away. `before_listen`
+// runs once the port is bound and listening, before the server accepts.
+struct RunningServer {
+  explicit RunningServer(
+      Server &svr, const std::function<void(int)> &before_listen = nullptr)
+      : svr_(svr) {
+    port = svr_.bind_to_any_port("127.0.0.1");
+    if (before_listen) { before_listen(port); }
+    thread = std::thread([this] { svr_.listen_after_bind(); });
+    svr_.wait_until_ready();
+  }
+  ~RunningServer() {
+    svr_.stop();
+    if (thread.joinable()) { thread.join(); }
+  }
+
+  Server &svr_;
+  int port = 0;
+  std::thread thread;
+};
+
+struct Sockets {
+  std::vector<socket_t> socks;
+  ~Sockets() {
+    for (auto s : socks) {
+      detail::close_socket(s);
+    }
+  }
+  socket_t connect(int port) {
+    auto error = Error::Success;
+    auto s = detail::create_client_socket("127.0.0.1", "", port, AF_UNSPEC,
+                                          false, false, nullptr, 2, 0, 2, 0, 2,
+                                          0, std::string(), error);
+    if (s != INVALID_SOCKET) { socks.push_back(s); }
+    return s;
+  }
+};
+
+std::chrono::steady_clock::time_point in_ms(int ms) {
+  return std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+}
+
+bool readable_by(socket_t sock,
+                 std::chrono::steady_clock::time_point deadline) {
+  auto left = std::chrono::duration_cast<std::chrono::microseconds>(
+                  deadline - std::chrono::steady_clock::now())
+                  .count();
+  return left > 0 && detail::select_read(sock, 0, left) > 0;
+}
+
+bool send_get(socket_t sock, const std::string &path = "/") {
+  auto req = "GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
+  return detail::send_socket(sock, req.data(), req.size(), 0) ==
+         static_cast<ssize_t>(req.size());
+}
+
+// Reads one response whose body is "ok".
+bool receives_ok(socket_t sock, int timeout_ms) {
+  auto deadline = in_ms(timeout_ms);
+  std::string buf;
+  while (readable_by(sock, deadline)) {
+    char tmp[1024];
+    auto n = detail::read_socket(sock, tmp, sizeof(tmp), 0);
+    if (n <= 0) { return false; }
+    buf.append(tmp, static_cast<size_t>(n));
+    auto end = buf.find("\r\n\r\n");
+    if (end != std::string::npos && buf.size() >= end + 4 + 2) {
+      return buf.compare(0, 12, "HTTP/1.1 200") == 0 &&
+             buf.compare(end + 4, 2, "ok") == 0;
+    }
+  }
+  return false;
+}
+
+bool get_ok(socket_t sock, int timeout_ms) {
+  return send_get(sock) && receives_ok(sock, timeout_ms);
+}
+
+// Whether the server closes `sock` by `deadline`.
+bool sees_eof(socket_t sock, std::chrono::steady_clock::time_point deadline) {
+  char c;
+  return readable_by(sock, deadline) &&
+         detail::read_socket(sock, &c, 1, 0) <= 0;
+}
+
+bool wait_until(const std::function<bool()> &cond, int timeout_ms) {
+  auto deadline = in_ms(timeout_ms);
+  while (!cond()) {
+    if (std::chrono::steady_clock::now() > deadline) { return false; }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
+
+void serve_ok(Server &svr, std::function<TaskQueue *(void)> new_task_queue) {
+  svr.new_task_queue = std::move(new_task_queue);
+  svr.set_keep_alive_parking(true);
+  svr.Get("/", [](const Request &, Response &res) {
+    res.set_content("ok", "text/plain");
+  });
+}
+
+std::function<TaskQueue *(void)> threads(size_t n) {
+  return [n] { return new ThreadPool(n); };
+}
+
+// Counts what the event loop managed to queue, so that a test can wait for it.
+class CountingTaskQueue final : public TaskQueue {
+public:
+  CountingTaskQueue(size_t threads, size_t max_queued, std::atomic<int> &ok,
+                    std::atomic<int> &full)
+      : pool_(threads, threads, max_queued), ok_(ok), full_(full) {}
+
+  bool enqueue(std::function<void()> fn) override {
+    auto queued = pool_.enqueue([this, fn]() {
+      fn();
+      // Holds the worker back from taking the next job.
+      std::this_thread::sleep_for(std::chrono::milliseconds(pause_after_ms));
+    });
+    (queued ? ok_ : full_)++;
+    return queued;
+  }
+  void shutdown() override { pool_.shutdown(); }
+
+  std::atomic<int> pause_after_ms{0};
+
+private:
+  ThreadPool pool_;
+  std::atomic<int> &ok_;
+  std::atomic<int> &full_;
+};
+
+// Holds handlers until it opens, or for 3 seconds at most.
+class Gate {
+public:
+  void wait() {
+    std::unique_lock<std::mutex> lock(m_);
+    entered_++;
+    cv_.notify_all();
+    cv_.wait_for(lock, std::chrono::seconds(3), [&] { return open_; });
+  }
+  void open() {
+    std::lock_guard<std::mutex> guard(m_);
+    open_ = true;
+    cv_.notify_all();
+  }
+  int entered() {
+    std::lock_guard<std::mutex> guard(m_);
+    return entered_;
+  }
+
+private:
+  std::mutex m_;
+  std::condition_variable cv_;
+  bool open_ = false;
+  int entered_ = 0;
+};
+
+} // namespace parking_test
+
+TEST(KeepAliveParkingTest, IdleConnectionsDoNotHoldTheWorkers) {
+  using namespace parking_test;
+  Server svr;
+  serve_ok(svr, threads(1));
+  RunningServer running(svr);
+  Sockets socks;
+
+  // One kept-alive connection that has been served, and many that have not
+  // sent anything yet. None of them may keep the only worker.
+  auto served = socks.connect(running.port);
+  ASSERT_TRUE(get_ok(served, 2000));
+  for (int i = 0; i < 49; i++) {
+    ASSERT_NE(INVALID_SOCKET, socks.connect(running.port));
+  }
+
+  EXPECT_TRUE(get_ok(socks.connect(running.port), 1000));
+  EXPECT_TRUE(get_ok(served, 1000));
+}
+
+TEST(KeepAliveParkingTest, IdleConnectionsTimeOutTogether) {
+  using namespace parking_test;
+  Server svr;
+  serve_ok(svr, threads(1));
+  svr.set_keep_alive_timeout(1);
+  RunningServer running(svr);
+  Sockets socks;
+
+  for (int i = 0; i < 3; i++) {
+    ASSERT_NE(INVALID_SOCKET, socks.connect(running.port));
+  }
+  // One worker waiting on each in turn would take about 3 seconds.
+  auto deadline = in_ms(2000);
+  for (auto s : socks.socks) {
+    EXPECT_TRUE(sees_eof(s, deadline));
+  }
+}
+
+TEST(KeepAliveParkingTest, EstablishedConnectionWaitsForAFullQueue) {
+  using namespace parking_test;
+  std::atomic<int> queued{0}, full{0};
+  Server svr;
+  // One worker and room for one queued task.
+  serve_ok(svr, [&] { return new CountingTaskQueue(1, 1, queued, full); });
+
+  Gate gate;
+  svr.Get("/block", [&](const Request &, Response &res) {
+    gate.wait();
+    res.set_content("ok", "text/plain");
+  });
+
+  RunningServer running(svr);
+  // Before the server stops, so that a failed run does not wait for the
+  // handler's timeout.
+  auto open_gate = detail::scope_exit([&] { gate.open(); });
+  Sockets socks;
+
+  auto a = socks.connect(running.port);
+  ASSERT_TRUE(get_ok(a, 2000));
+
+  // B keeps the only worker busy.
+  auto b = socks.connect(running.port);
+  ASSERT_TRUE(send_get(b, "/block"));
+  ASSERT_TRUE(wait_until([&] { return gate.entered() == 1; }, 2000));
+
+  // A new connection C fills the queue.
+  auto c = socks.connect(running.port);
+  ASSERT_TRUE(send_get(c));
+  ASSERT_TRUE(wait_until([&] { return queued == 3; }, 2000));
+
+  // A's next request finds the queue full, but A has been served before, so it
+  // waits instead of being cut off.
+  ASSERT_TRUE(send_get(a));
+  ASSERT_TRUE(wait_until([&] { return full >= 1; }, 2000));
+
+  gate.open();
+  EXPECT_TRUE(receives_ok(b, 2000));
+  EXPECT_TRUE(receives_ok(c, 2000));
+  EXPECT_TRUE(receives_ok(a, 2000));
+}
+
+TEST(KeepAliveParkingTest, BacklogIsRetriedOnceTheQueueHasRoom) {
+  using namespace parking_test;
+  std::atomic<int> queued{0}, full{0};
+  CountingTaskQueue *queue = nullptr;
+  Server svr;
+  // Two workers and room for one queued task.
+  serve_ok(svr,
+           [&] { return queue = new CountingTaskQueue(2, 1, queued, full); });
+  Gate first, second;
+  svr.Get("/first", [&](const Request &, Response &res) {
+    first.wait();
+    res.set_content("ok", "text/plain");
+  });
+  svr.Get("/second", [&](const Request &, Response &res) {
+    second.wait();
+    res.set_content("ok", "text/plain");
+  });
+
+  RunningServer running(svr);
+  auto open_gates = detail::scope_exit([&] {
+    first.open();
+    second.open();
+  });
+  Sockets socks;
+
+  auto a = socks.connect(running.port);
+  ASSERT_TRUE(get_ok(a, 2000));
+
+  // B and D take both workers, and C fills the queue. One at a time: the
+  // queue has room for one job only until a worker takes it.
+  ASSERT_TRUE(send_get(socks.connect(running.port), "/first"));
+  ASSERT_TRUE(wait_until([&] { return first.entered() == 1; }, 2000));
+  ASSERT_TRUE(send_get(socks.connect(running.port), "/second"));
+  ASSERT_TRUE(wait_until([&] { return second.entered() == 1; }, 2000));
+  ASSERT_TRUE(send_get(socks.connect(running.port), "/second"));
+  ASSERT_TRUE(wait_until([&] { return queued == 4; }, 2000));
+
+  // A's next request waits in the backlog.
+  ASSERT_TRUE(send_get(a));
+  ASSERT_TRUE(wait_until([&] { return full >= 1; }, 2000));
+
+  // B's worker finishes, then takes C off the queue only later, which makes
+  // room for A.
+  queue->pause_after_ms = 200;
+  first.open();
+  EXPECT_TRUE(wait_until([&] { return queued == 5; }, 1000));
+  queue->pause_after_ms = 0;
+
+  second.open();
+  EXPECT_TRUE(receives_ok(a, 2000));
+}
+
+TEST(KeepAliveParkingTest, ZeroKeepAliveTimeoutServesTheFirstRequest) {
+  using namespace parking_test;
+  Server svr;
+  serve_ok(svr, threads(1));
+  svr.set_keep_alive_timeout(0);
+
+  // The request is on the socket before the server accepts the connection,
+  // so it does not race the 10 ms floor. Without the floor the connection is
+  // closed unread.
+  Sockets socks;
+  auto sock = INVALID_SOCKET;
+  RunningServer running(svr, [&](int port) {
+    sock = socks.connect(port);
+    send_get(sock);
+  });
+  EXPECT_TRUE(receives_ok(sock, 1000));
+}
+
+TEST(KeepAliveParkingTest, StopClosesParkedConnectionsPromptly) {
+  using namespace parking_test;
+  for (int round = 0; round < 5; round++) {
+    SCOPED_TRACE(round);
+    Server svr;
+    serve_ok(svr, threads(2));
+    RunningServer running(svr);
+    Sockets socks;
+
+    for (int i = 0; i < 20; i++) {
+      ASSERT_TRUE(get_ok(socks.connect(running.port), 1000));
+    }
+
+    auto start = std::chrono::steady_clock::now();
+    svr.stop();
+    running.thread.join();
+    EXPECT_LT(std::chrono::steady_clock::now() - start,
+              std::chrono::milliseconds(500));
+
+    auto deadline = in_ms(1000);
+    for (auto s : socks.socks) {
+      EXPECT_TRUE(sees_eof(s, deadline));
+    }
+  }
+}
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+namespace parking_test {
+
+// Completes a TLS handshake on `sock` and sends nothing more, like a browser
+// that has opened a connection ahead of time. Freeing the session sends no
+// close_notify, so the connection stays quiet.
+bool handshake_only(socket_t sock) {
+  auto ctx = tls::create_client_context();
+  tls::set_verify_client(ctx, false);
+  auto session = tls::create_session(ctx, sock);
+  auto se = detail::scope_exit([&] {
+    tls::free_session(session);
+    tls::free_context(ctx);
+  });
+  tls::TlsError err;
+  return session &&
+         tls::connect_nonblocking(session, sock, 2, 0, &err, nullptr);
+}
+
+Client tls_client(int port) {
+  Client cli("https://127.0.0.1:" + std::to_string(port));
+  cli.enable_server_certificate_verification(false);
+  cli.set_keep_alive(true);
+  cli.set_connection_timeout(1);
+  cli.set_read_timeout(1);
+  return cli;
+}
+
+bool tls_get_ok(Client &cli) {
+  auto res = cli.Get("/");
+  return res && res->body == "ok";
+}
+
+} // namespace parking_test
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+TEST(KeepAliveParkingTest, SslFreeBuffersOnlyWhereTheCveIsFixed) {
+  struct {
+    unsigned long version;
+    bool safe;
+  } cases[] = {
+      {0x30000020UL, false}, {0x300000d0UL, false}, {0x300000e0UL, true},
+      {0x300000f0UL, true},  {0x30100050UL, false}, {0x30100060UL, true},
+      {0x30200010UL, false}, {0x30200020UL, true},  {0x30300000UL, false},
+      {0x30300010UL, true},  {0x30400000UL, true},  {0x40000000UL, true},
+  };
+  for (const auto &c : cases) {
+    EXPECT_EQ(c.safe, detail::ssl_free_buffers_is_safe(c.version))
+        << std::hex << c.version;
+  }
+}
+#endif
+
+TEST(KeepAliveParkingTest, IdleTlsConnectionsDoNotHoldTheWorkers) {
+  using namespace parking_test;
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  serve_ok(svr, threads(1));
+  svr.set_read_timeout(1); // so that a failing run does not take long
+  RunningServer running(svr);
+  Sockets socks;
+
+  // One served connection, some that have not started their handshake, and
+  // one that has finished it and gone quiet. None may keep the only worker.
+  auto served = tls_client(running.port);
+  ASSERT_TRUE(tls_get_ok(served));
+  for (int i = 0; i < 10; i++) {
+    ASSERT_NE(INVALID_SOCKET, socks.connect(running.port));
+  }
+  EXPECT_TRUE(handshake_only(socks.connect(running.port)));
+
+  auto other = tls_client(running.port);
+  EXPECT_TRUE(tls_get_ok(other));
+  EXPECT_TRUE(tls_get_ok(served));
+}
+
+TEST(KeepAliveParkingTest, FailedTlsHandshakeClosesTheConnection) {
+  using namespace parking_test;
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  serve_ok(svr, threads(1));
+  RunningServer running(svr);
+  Sockets socks;
+
+  auto plain = socks.connect(running.port);
+  ASSERT_TRUE(send_get(plain));
+  EXPECT_TRUE(sees_eof(plain, in_ms(1000)));
+  EXPECT_NE(0, svr.ssl_last_error());
+}
+
+TEST(KeepAliveParkingTest, StopClosesParkedTlsConnections) {
+  using namespace parking_test;
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  serve_ok(svr, threads(2));
+  RunningServer running(svr);
+
+  std::vector<Client> clients;
+  for (int i = 0; i < 5; i++) {
+    clients.push_back(tls_client(running.port));
+    ASSERT_TRUE(tls_get_ok(clients.back()));
+  }
+
+  auto start = std::chrono::steady_clock::now();
+  svr.stop();
+  running.thread.join();
+  EXPECT_LT(std::chrono::steady_clock::now() - start,
+            std::chrono::milliseconds(500));
+}
+#endif
