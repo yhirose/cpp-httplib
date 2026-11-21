@@ -921,9 +921,14 @@ svr.set_keep_alive_timeout(10);  // Default is 5
 
 #### Keep-alive parking
 
+> [!NOTE]
+> Keep-alive parking is experimental. Its behavior may change in a future release.
+
 ```cpp
 svr.set_keep_alive_parking(true); // Call it before listen()
 ```
+
+Defining `CPPHTTPLIB_KEEPALIVE_PARKING` as `true` turns it on for every `Server` from the start. If the event loop cannot be set up, the server serves as it does without it.
 
 By default, a kept-alive connection holds a worker thread while it waits for its next request, so connections beyond the thread count wait for one to be closed. With keep-alive parking, a connection waiting for its next request is handed to an event loop instead, and goes back to a worker when the request arrives. An idle connection then costs a socket and a few kilobytes instead of a thread, and connections that outnumber the threads take turns.
 

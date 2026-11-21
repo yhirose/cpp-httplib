@@ -43,6 +43,7 @@ test/test
 test/test_mbedtls
 test/test_wolfssl
 test/test_no_tls
+test/test_parking
 test/server_fuzzer
 test/client_fuzzer
 test/header_parser_fuzzer

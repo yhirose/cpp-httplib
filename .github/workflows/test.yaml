@@ -109,6 +109,11 @@ jobs:
         run: cd test && make test_split && make test_openssl_parallel
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+      - name: build and run tests with keep-alive parking on (OpenSSL)
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make test_parking_parallel
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)
         if: matrix.tls_backend == 'mbedtls'
         run: cd test && make test_split_mbedtls && make test_mbedtls_parallel
@@ -415,6 +420,11 @@ jobs:
       - name: build and run tests (OpenSSL)
         if: matrix.tls_backend == 'openssl'
         run: cd test && make test_split && make test_openssl_parallel
+        env:
+          LSAN_OPTIONS: suppressions=lsan_suppressions.txt
+      - name: build and run tests with keep-alive parking on (OpenSSL)
+        if: matrix.tls_backend == 'openssl'
+        run: cd test && make test_parking_parallel
         env:
           LSAN_OPTIONS: suppressions=lsan_suppressions.txt
       - name: build and run tests (Mbed TLS)

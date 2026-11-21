@@ -5864,6 +5864,8 @@ TEST(SSLClientServerTest, ClientSessionIsNotResumedPastItsCA) {
 TEST(SSLClientServerTest, UpdateCertsPemWaitsForHandshakeInProgress) {
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
+  // Keep-alive parking would wait for the ClientHello without a handshake.
+  svr.set_keep_alive_parking(false);
   svr.Get("/test", [](const Request &, Response &res) {
     res.set_content("ok", "text/plain");
   });
@@ -17495,6 +17497,8 @@ TEST(SSLClientServerTest, SSLConnectTimeout) {
   NoListenSSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE,
                         CLIENT_CA_CERT_FILE);
   ASSERT_TRUE(svr.is_valid());
+  // Keep-alive parking would bypass the override.
+  svr.set_keep_alive_parking(false);
 
   svr.Get("/test", [&](const Request &, Response &res) {
     res.set_content("test", "text/plain");
