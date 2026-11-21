@@ -931,7 +931,7 @@ With it:
 
 - Consecutive requests on a connection may run on different threads.
 - When the [max queued requests](#max-queued-requests) limit is reached, only a connection that has not been served yet (or, with `SSLServer`, has not finished its TLS handshake) is closed. An established one waits for room.
-- Each request pays for handing the connection over, so with no more connections than threads and very light handlers, it can serve fewer requests per second.
+- Handing the connection over to a worker adds roughly 10-20 µs to each request. It only shows when the client is as near as loopback and the handlers are very light: in our measurements, 2 connections on 2 threads served about a third fewer requests per second over loopback, but only a few percent fewer with a 250 µs round trip.
 - A handler, a content provider and a WebSocket still hold their thread while they run.
 - A subclass that overrides the private `process_and_close_socket()` is bypassed.
 - `SSLServer` runs the TLS handshake on a worker when the client starts it. Until then the connection waits in the event loop and is closed at the keep-alive timeout, not the read timeout, and `ssl_last_error()` is not set for it.
