@@ -7140,6 +7140,10 @@ public:
   // question that was answered a moment ago. Consumed by that read.
   void set_readable_hint() { readable_hint_ = true; }
 
+  // Frees the read buffer of an idle stream until its next read. Nothing may
+  // be buffered.
+  void release_buffer();
+
 private:
   bool ensure_readable();
 
@@ -13179,8 +13183,7 @@ inline SocketStream::SocketStream(
       read_timeout_usec_(read_timeout_usec),
       write_timeout_sec_(write_timeout_sec),
       write_timeout_usec_(write_timeout_usec),
-      max_timeout_msec_(max_timeout_msec), start_time_(start_time),
-      read_buff_(read_buff_size_, 0) {}
+      max_timeout_msec_(max_timeout_msec), start_time_(start_time) {}
 
 inline SocketStream::~SocketStream() = default;
 
@@ -13218,6 +13221,11 @@ inline bool SocketStream::ensure_readable() {
 inline const char *SocketStream::buffered_data(size_t &size) const {
   size = read_buff_content_size_ - read_buff_off_;
   return size ? read_buff_.data() + read_buff_off_ : nullptr;
+}
+
+inline void SocketStream::release_buffer() {
+  assert(read_buff_off_ == read_buff_content_size_);
+  std::vector<char>().swap(read_buff_);
 }
 
 inline void SocketStream::consume_buffered(size_t size) {
@@ -13260,6 +13268,8 @@ inline ssize_t SocketStream::read(char *ptr, size_t size) {
   read_buff_content_size_ = 0;
 
   if (size < read_buff_size_) {
+    // Allocated on the first use, which an idle connection may never make.
+    if (read_buff_.empty()) { read_buff_.resize(read_buff_size_); }
     auto n = read_socket(sock_, read_buff_.data(), read_buff_size_,
                          CPPHTTPLIB_RECV_FLAGS);
     if (n <= 0) {
@@ -16323,7 +16333,10 @@ Server::resume_connection(std::shared_ptr<KeepAliveConnection> conn) {
   auto &st = *parking_;
   // A backlog waits for a free worker, and this one is about to be free.
   if (st.backlog_waiting) { st.poller->wake(); }
-  if (park && st.give_back(conn)) { return; }
+  if (park) {
+    c.strm.release_buffer(); // it may stay idle for long
+    if (st.give_back(conn)) { return; }
+  }
   detail::drain_and_close_socket(c.sock);
   c.sock = INVALID_SOCKET;
 }
