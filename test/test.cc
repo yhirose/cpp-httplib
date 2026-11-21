@@ -34107,6 +34107,36 @@ TEST_P(PollerTest, WakesCoalesceAndAreConsumed) {
   EXPECT_TRUE(poller_->wait(0, ready));
 }
 
+TEST_P(PollerTest, ConcurrentWakesAreNeverLost) {
+  // Two threads publish changes and wake() after each, as a reactor's workers
+  // do. Every change must be seen without a wait() timing out. A lost wake()
+  // needs an unlucky interleaving, hence the rounds.
+  for (int round = 0; round < 5; round++) {
+    SCOPED_TRACE(round);
+    const int per_thread = 20000;
+    std::atomic<int> posted{0};
+    auto post = [&] {
+      for (int i = 0; i < per_thread; i++) {
+        posted++;
+        poller_->wake();
+      }
+    };
+    std::thread t1(post), t2(post);
+
+    auto lost = false;
+    Tokens ready;
+    for (auto seen = 0; seen < 2 * per_thread; seen = posted) {
+      if (!poller_->wait(1000, ready)) {
+        lost = true;
+        break;
+      }
+    }
+    t1.join();
+    t2.join();
+    ASSERT_FALSE(lost);
+  }
+}
+
 TEST(PollerFactoryTest, MakePollerWorks) {
   auto poller = detail::make_poller();
   ASSERT_TRUE(poller != nullptr);

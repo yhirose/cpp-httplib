@@ -7961,10 +7961,12 @@ inline bool PollPoller::wait(int timeout_ms, std::vector<Token> &ready) {
   auto woken = fds_[0].revents != 0;
   if (woken) {
     n--;
-    // Clear the flag first: a wake() from here on sends another byte.
-    wake_pending_ = false;
     char buf[64];
     read_socket(wake_read_, buf, sizeof(buf), CPPHTTPLIB_RECV_FLAGS);
+    // Only after the read, which could take the byte of a later wake() too.
+    // A wake() in between finds the flag still set and sends nothing, which
+    // is fine: the caller looks at what it was woken for after this returns.
+    wake_pending_ = false;
   }
 
   // Walk backwards: remove_at() moves the last entry, already seen, into the
