@@ -2384,6 +2384,10 @@ public:
   template <class Rep, class Period>
   Server &set_idle_interval(const std::chrono::duration<Rep, Period> &duration);
 
+  // Keeps idle keep-alive connections in an event loop instead of a worker
+  // thread each. Call it before listen(). See README for what changes.
+  Server &set_keep_alive_parking(bool on);
+
   Server &set_payload_max_length(size_t length);
 
   Server &set_compress(bool on);
@@ -2454,6 +2458,13 @@ protected:
   // stop() takes the listening socket away; listen() then waits for handlers
   bool is_stopping() const { return svr_sock_ == INVALID_SOCKET; }
 
+  // See set_keep_alive_parking(). Defined in the implementation part.
+  struct KeepAliveConnection;
+  struct ParkingState;
+  std::unique_ptr<ParkingState> parking_;
+  bool keep_alive_parking_ = false;
+  bool idle_interval_set_ = false;
+
   std::vector<std::string> trusted_proxies_;
 
   size_t keep_alive_max_count_ = CPPHTTPLIB_KEEPALIVE_MAX_COUNT;
@@ -2513,6 +2524,11 @@ private:
                                 SocketOptions socket_options) const;
   int bind_internal(const std::string &host, int port, int socket_flags);
   bool listen_internal();
+  bool accept_loop(TaskQueue &task_queue);
+  bool parking_loop(TaskQueue &task_queue);
+  void prepare_accepted_socket(socket_t sock) const;
+  void resume_connection(std::shared_ptr<KeepAliveConnection> conn);
+  bool abandon_listen_socket();
 
   bool routing(Request &req, Response &res, Stream &strm,
                bool skip_pre_routing);
@@ -2560,6 +2576,7 @@ private:
                          ContentReceiver multipart_receiver) const;
 
   virtual bool process_and_close_socket(socket_t sock);
+  virtual bool supports_keep_alive_parking() const;
 
   void output_log(const Request &req, const Response &res) const;
   void output_pre_compression_log(const Request &req,
@@ -3520,6 +3537,7 @@ public:
 
 private:
   bool process_and_close_socket(socket_t sock) override;
+  bool supports_keep_alive_parking() const override;
 
   tls::ctx_t ctx_ = nullptr;
   // update_certs_pem() replaces the certificates and CAs that handshakes read
@@ -7178,30 +7196,27 @@ inline bool keep_alive(const std::atomic<socket_t> &svr_sock, socket_t sock,
   return false;
 }
 
-// `has_buffered_request` reports whether the connection's stream already holds
-// bytes of the next request. A client may pipeline its requests (RFC 9112
-// 9.3.2), so reading one request can pull the start of the next one into the
-// stream's buffer; that request must be served without waiting for the socket
-// to become readable again, since its bytes are no longer on the socket.
-// Otherwise `wait_for_next_request` waits for the socket, and returning false
-// ends the loop. `callback` is told whether the socket has just been seen
-// readable. `served` counts the requests served on this connection so far.
-template <typename W, typename P, typename T>
-inline bool process_server_socket_core(size_t &served,
+// Serves the requests of one connection while they come. A client may
+// pipeline its requests (RFC 9112 9.3.2), so reading one request can pull the
+// start of the next one into the stream's buffer; that request must be served
+// without waiting for the socket to become readable again, since its bytes are
+// no longer on the socket. Otherwise `wait_for_next_request` waits for the
+// socket, and returning false ends the loop. `served` counts the requests
+// served on this connection so far.
+template <typename S, typename W, typename T>
+inline bool process_server_socket_core(S &strm, size_t &served,
                                        size_t keep_alive_max_count,
-                                       W wait_for_next_request,
-                                       P has_buffered_request, T callback) {
+                                       W wait_for_next_request, T callback) {
   auto ret = false;
   // A keep_alive_max_count of 0 sets no limit.
   for (; keep_alive_max_count == 0 || served < keep_alive_max_count; served++) {
-    auto socket_readable = false;
-    if (!has_buffered_request()) {
+    if (!strm.is_readable()) {
       if (!wait_for_next_request()) { break; }
-      socket_readable = true;
+      strm.set_readable_hint();
     }
     auto close_connection = served + 1 == keep_alive_max_count;
     auto connection_closed = false;
-    ret = callback(socket_readable, close_connection, connection_closed);
+    ret = callback(strm, close_connection, connection_closed);
     if (!ret || connection_closed) { break; }
   }
   return ret;
@@ -7220,14 +7235,9 @@ process_server_socket(const std::atomic<socket_t> &svr_sock, socket_t sock,
                     write_timeout_sec, write_timeout_usec);
   size_t served = 0;
   return process_server_socket_core(
-      served, keep_alive_max_count,
+      strm, served, keep_alive_max_count,
       [&]() { return keep_alive(svr_sock, sock, keep_alive_timeout_sec); },
-      [&]() { return strm.is_readable(); },
-      [&](bool socket_readable, bool close_connection,
-          bool &connection_closed) {
-        if (socket_readable) { strm.set_readable_hint(); }
-        return callback(strm, close_connection, connection_closed);
-      });
+      callback);
 }
 
 inline bool process_client_socket(
@@ -7254,8 +7264,10 @@ inline int shutdown_socket(socket_t sock) noexcept {
 // the final shutdown+close. Closing with unread data in the receive queue
 // (or bytes arriving after the receive side is closed) makes the stack send
 // an abortive RST instead of a graceful FIN, which can make the peer see the
-// response as a failed read even though it was fully written.
-inline void drain_and_close_socket(socket_t sock) noexcept {
+// response as a failed read even though it was fully written. With a
+// `wait_msec` of 0, only what has already arrived is read.
+inline void drain_and_close_socket(socket_t sock,
+                                   time_t wait_msec = 100) noexcept {
 #ifdef _WIN32
   shutdown(sock, SD_SEND);
 #else
@@ -7265,15 +7277,18 @@ inline void drain_and_close_socket(socket_t sock) noexcept {
   char buf[CPPHTTPLIB_RECV_BUFSIZ];
   size_t total = 0;
   const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(100); // bound #1
+                        std::chrono::milliseconds(wait_msec); // bound #1
 
-  while (total < size_t(1024u * 1024u)) { // bound #2
+  for (auto first = true; total < size_t(1024u * 1024u); // bound #2
+       first = false) {
     const auto remaining =
         std::chrono::duration_cast<std::chrono::microseconds>(
             deadline - std::chrono::steady_clock::now())
             .count();
-    if (remaining <= 0) { break; }
-    if (select_read(sock, 0, static_cast<time_t>(remaining)) <= 0) { break; }
+    if (remaining <= 0 && !first) { break; }
+    const auto wait_usec =
+        (std::max)(remaining, std::chrono::microseconds::rep(0));
+    if (select_read(sock, 0, static_cast<time_t>(wait_usec)) <= 0) { break; }
     const auto n = read_socket(sock, buf, sizeof(buf), CPPHTTPLIB_RECV_FLAGS);
     if (n <= 0) { break; }
     total += static_cast<size_t>(n);
@@ -7825,6 +7840,26 @@ inline bool is_accept_transient_error() {
   auto err = errno;
   return err == EINTR || err == EAGAIN || err == EWOULDBLOCK ||
          err == ECONNABORTED;
+#endif
+}
+
+inline socket_t accept_socket(socket_t svr_sock) {
+#if defined _WIN32
+  // sockets connected via WASAccept inherit flags NO_HANDLE_INHERIT,
+  // OVERLAPPED
+  return WSAAccept(svr_sock, nullptr, nullptr, nullptr, 0);
+#elif defined SOCK_CLOEXEC
+  return accept4(svr_sock, nullptr, nullptr, SOCK_CLOEXEC);
+#else
+  return accept(svr_sock, nullptr, nullptr);
+#endif
+}
+
+inline bool is_would_block_error() {
+#ifdef _WIN32
+  return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+  return errno == EAGAIN || errno == EWOULDBLOCK;
 #endif
 }
 
@@ -11412,14 +11447,9 @@ inline bool process_server_socket_ssl(
                        write_timeout_sec, write_timeout_usec);
   size_t served = 0;
   return process_server_socket_core(
-      served, keep_alive_max_count,
+      strm, served, keep_alive_max_count,
       [&]() { return keep_alive(svr_sock, sock, keep_alive_timeout_sec); },
-      [&]() { return strm.is_readable(); },
-      [&](bool socket_readable, bool close_connection,
-          bool &connection_closed) {
-        if (socket_readable) { strm.set_readable_hint(); }
-        return callback(strm, close_connection, connection_closed);
-      });
+      callback);
 }
 
 template <typename T>
@@ -14054,6 +14084,117 @@ WebSocketSSLStream::set_read_interrupt(std::function<bool()> interrupted) {
  * Group 4: Server implementation
  */
 
+// A kept-alive connection that the event loop of set_keep_alive_parking()
+// owns while it is idle, and a worker owns while it serves a request.
+struct Server::KeepAliveConnection {
+  KeepAliveConnection(socket_t s, const Server &svr)
+      : sock(s), strm(s, svr.read_timeout_sec_, svr.read_timeout_usec_,
+                      svr.write_timeout_sec_, svr.write_timeout_usec_) {}
+  ~KeepAliveConnection() {
+    if (sock != INVALID_SOCKET) { detail::drain_and_close_socket(sock, 0); }
+  }
+
+  socket_t sock;
+  // Kept across requests: it may hold the start of a pipelined request.
+  detail::SocketStream strm;
+  size_t served = 0;
+
+  bool addresses_known = false;
+  std::string remote_addr;
+  int remote_port = 0;
+  std::string local_addr;
+  int local_port = 0;
+
+  // While parked
+  std::list<std::shared_ptr<KeepAliveConnection>>::iterator parked_at;
+  std::chrono::steady_clock::time_point deadline;
+};
+
+struct Server::ParkingState {
+  using Clock = std::chrono::steady_clock;
+  using Token = detail::Poller::Token;
+  using Connection = std::shared_ptr<KeepAliveConnection>;
+
+  // Kept for the Server's life, so that stop() can wake() it without a lock.
+  std::unique_ptr<detail::Poller> poller;
+
+  // The listening socket while parking_loop() watches it. Whichever of stop()
+  // and parking_loop() takes it out of here decides who closes it, so that it
+  // is never closed while the poller still watches it.
+  std::atomic<socket_t> listen_sock{INVALID_SOCKET};
+
+  // From stop(): whether parking_loop() takes over closing `sock`.
+  bool release_listen(socket_t sock) {
+    if (!listen_sock.compare_exchange_strong(sock, INVALID_SOCKET)) {
+      return false;
+    }
+    poller->wake();
+    return true;
+  }
+
+  // From a worker: hands an idle connection back, unless the loop has ended.
+  bool give_back(Connection conn) {
+    {
+      std::lock_guard<std::mutex> guard(mutex);
+      if (closed) { return false; }
+      returned.push_back(std::move(conn));
+    }
+    poller->wake();
+    return true;
+  }
+
+  // The rest belongs to parking_loop(). A parked connection's token is its
+  // address, and `parked` lists them in the order they expire.
+  void park(Connection conn, Clock::time_point deadline) {
+    auto &c = *conn;
+    c.deadline = deadline;
+    c.parked_at = parked.insert(parked.end(), std::move(conn));
+    poller->arm(c.sock, reinterpret_cast<Token>(&c));
+  }
+
+  Connection unpark(Token token) {
+    auto &c = *reinterpret_cast<KeepAliveConnection *>(token);
+    auto conn = std::move(*c.parked_at);
+    parked.erase(c.parked_at);
+    return conn;
+  }
+
+  Clock::time_point next_deadline() const {
+    return parked.empty() ? (Clock::time_point::max)()
+                          : parked.front()->deadline;
+  }
+
+  void expire(Clock::time_point now) {
+    while (!parked.empty() && parked.front()->deadline <= now) {
+      poller->disarm(parked.front()->sock);
+      parked.pop_front(); // closes it
+    }
+  }
+
+  void close_all() {
+    std::vector<Connection> left;
+    {
+      std::lock_guard<std::mutex> guard(mutex);
+      closed = true;
+      left.swap(returned);
+    }
+    for (auto &conn : parked) {
+      poller->disarm(conn->sock);
+    }
+    parked.clear();
+    backlog.clear();
+    backlog_waiting = false;
+  }
+
+  std::mutex mutex;
+  std::vector<Connection> returned;
+  bool closed = false;
+  std::atomic<bool> backlog_waiting{false};
+
+  std::list<Connection> parked;
+  std::list<Connection> backlog;
+};
+
 // HTTP server implementation
 inline Server::Server()
     : new_task_queue([] {
@@ -14398,6 +14539,20 @@ inline Server &Server::set_write_timeout(time_t sec, time_t usec) {
 inline Server &Server::set_idle_interval(time_t sec, time_t usec) {
   idle_interval_sec_ = sec;
   idle_interval_usec_ = usec;
+  idle_interval_set_ = true;
+  return *this;
+}
+
+inline Server &Server::set_keep_alive_parking(bool on) {
+  // Never destroyed once made: stop() may use it from another thread.
+  if (on && !parking_) {
+    auto poller = detail::make_poller();
+    if (poller) {
+      parking_.reset(new ParkingState());
+      parking_->poller = std::move(poller);
+    }
+  }
+  keep_alive_parking_ = on;
   return *this;
 }
 
@@ -14477,7 +14632,7 @@ inline void Server::stop() noexcept {
   // bind_to_port() without listen_after_bind() still owns the descriptor. The
   // exchange is what makes this safe to call concurrently with the accept loop.
   socket_t sock = svr_sock_.exchange(INVALID_SOCKET);
-  if (sock != INVALID_SOCKET) {
+  if (sock != INVALID_SOCKET && !(parking_ && parking_->release_listen(sock))) {
     detail::shutdown_socket(sock);
     detail::close_socket(sock);
   }
@@ -15099,78 +15254,70 @@ inline bool Server::listen_internal() {
   {
     std::unique_ptr<TaskQueue> task_queue(new_task_queue());
 
-    while (svr_sock_ != INVALID_SOCKET) {
-#ifndef _WIN32
-      if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
-#endif
-        auto val = detail::select_read(svr_sock_, idle_interval_sec_,
-                                       idle_interval_usec_);
-        if (val == 0) { // Timeout
-          task_queue->on_idle();
-          continue;
-        }
-#ifndef _WIN32
-      }
-#endif
-
-#if defined _WIN32
-      // sockets connected via WASAccept inherit flags NO_HANDLE_INHERIT,
-      // OVERLAPPED
-      socket_t sock = WSAAccept(svr_sock_, nullptr, nullptr, nullptr, 0);
-#elif defined SOCK_CLOEXEC
-      socket_t sock = accept4(svr_sock_, nullptr, nullptr, SOCK_CLOEXEC);
-#else
-      socket_t sock = accept(svr_sock_, nullptr, nullptr);
-#endif
-
-      if (sock == INVALID_SOCKET) {
-        // NOTE: Winsock reports failures through WSAGetLastError() and never
-        // touches the CRT errno, so the two have to be asked platform by
-        // platform rather than by testing errno here.
-        if (detail::is_accept_resource_error()) {
-          // The per-process descriptor limit or the network stack's buffer
-          // space has been reached. Try to accept new connections after a
-          // short sleep.
-          std::this_thread::sleep_for(std::chrono::microseconds{1});
-          continue;
-        } else if (detail::is_accept_transient_error()) {
-          continue;
-        }
-        // Take the descriptor out of svr_sock_ before closing it: a later
-        // stop() would otherwise shutdown()/close() a value the OS may have
-        // reused, and keep_alive() watches svr_sock_ to notice the server is
-        // gone. The exchange also settles the race with a concurrent stop(),
-        // since whichever side takes the descriptor closes it exactly once.
-        auto listen_sock = svr_sock_.exchange(INVALID_SOCKET);
-        if (listen_sock != INVALID_SOCKET) {
-          detail::close_socket(listen_sock);
-          ret = false;
-          output_error_log(Error::Connection, nullptr);
-        } else {
-          ; // The server socket was closed by user.
-        }
-        break;
-      }
-
-      detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO,
-                                  read_timeout_sec_, read_timeout_usec_);
-      detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
-                                  write_timeout_sec_, write_timeout_usec_);
-
-      if (tcp_nodelay_) { set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1); }
-
-      if (!task_queue->enqueue(
-              [this, sock]() { process_and_close_socket(sock); })) {
-        output_error_log(Error::ResourceExhaustion, nullptr);
-        detail::shutdown_socket(sock);
-        detail::close_socket(sock);
-      }
-    }
+    ret = keep_alive_parking_ && parking_ && supports_keep_alive_parking()
+              ? parking_loop(*task_queue)
+              : accept_loop(*task_queue);
 
     task_queue->shutdown();
   }
 
   is_decommissioned = !ret;
+  return ret;
+}
+
+inline void Server::prepare_accepted_socket(socket_t sock) const {
+  detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, read_timeout_sec_,
+                              read_timeout_usec_);
+  detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO, write_timeout_sec_,
+                              write_timeout_usec_);
+  if (tcp_nodelay_) { set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1); }
+}
+
+// Serves each connection on one worker thread for its whole life.
+inline bool Server::accept_loop(TaskQueue &task_queue) {
+  auto ret = true;
+  while (svr_sock_ != INVALID_SOCKET) {
+#ifndef _WIN32
+    if (idle_interval_sec_ > 0 || idle_interval_usec_ > 0) {
+#endif
+      auto val = detail::select_read(svr_sock_, idle_interval_sec_,
+                                     idle_interval_usec_);
+      if (val == 0) { // Timeout
+        task_queue.on_idle();
+        continue;
+      }
+#ifndef _WIN32
+    }
+#endif
+
+    auto sock = detail::accept_socket(svr_sock_);
+
+    if (sock == INVALID_SOCKET) {
+      // NOTE: Winsock reports failures through WSAGetLastError() and never
+      // touches the CRT errno, so the two have to be asked platform by
+      // platform rather than by testing errno here.
+      if (detail::is_accept_resource_error()) {
+        // The per-process descriptor limit or the network stack's buffer
+        // space has been reached. Try to accept new connections after a
+        // short sleep.
+        std::this_thread::sleep_for(std::chrono::microseconds{1});
+        continue;
+      } else if (detail::is_accept_transient_error()) {
+        continue;
+      }
+      if (abandon_listen_socket()) { ret = false; }
+      break;
+    }
+
+    prepare_accepted_socket(sock);
+
+    if (!task_queue.enqueue(
+            [this, sock]() { process_and_close_socket(sock); })) {
+      output_error_log(Error::ResourceExhaustion, nullptr);
+      detail::shutdown_socket(sock);
+      detail::close_socket(sock);
+    }
+  }
   return ret;
 }
 
@@ -15986,6 +16133,199 @@ inline bool Server::process_and_close_socket(socket_t sock) {
 
   detail::drain_and_close_socket(sock);
   return ret;
+}
+
+// After accept() failed for good. Takes the descriptor out of svr_sock_
+// before closing it: a later stop() would otherwise shutdown()/close() a value
+// the OS may have reused, and keep_alive() watches svr_sock_ to notice the
+// server is gone. The exchange also settles the race with a concurrent stop(),
+// since whichever side takes the descriptor closes it exactly once. Returns
+// false when stop() took it first.
+inline bool Server::abandon_listen_socket() {
+  auto sock = svr_sock_.exchange(INVALID_SOCKET);
+  if (sock == INVALID_SOCKET) { return false; }
+  detail::close_socket(sock);
+  output_error_log(Error::Connection, nullptr);
+  return true;
+}
+
+inline bool Server::supports_keep_alive_parking() const { return true; }
+
+// Like accept_loop(), but a connection waiting for its next request sits in
+// the poller instead of keeping a worker. A worker serves a connection while it
+// has requests to read, then gives it back to this loop.
+inline bool Server::parking_loop(TaskQueue &task_queue) {
+  using Clock = ParkingState::Clock;
+  using Connection = ParkingState::Connection;
+  const ParkingState::Token listen_token = 0;
+  const auto never = (Clock::time_point::max)();
+
+  auto &st = *parking_;
+  auto &poller = *st.poller;
+
+  std::vector<ParkingState::Token> ready;
+  poller.wait(0, ready); // drops a wake() left from an earlier stop()
+  {
+    std::lock_guard<std::mutex> guard(st.mutex);
+    st.closed = false;
+  }
+
+  // Publish the listening socket before checking that stop() has not taken it,
+  // so that a stop() from now on leaves closing it to this loop.
+  auto listen_sock = svr_sock_.load();
+  st.listen_sock = listen_sock;
+  auto listening = listen_sock != INVALID_SOCKET && svr_sock_ == listen_sock;
+  if (listening) { detail::set_nonblocking(listen_sock, true); }
+  auto listen_rearm_at = Clock::now(); // `never` while it is armed
+  auto fatal = false;
+
+  const auto keep_alive = std::chrono::seconds(keep_alive_timeout_sec_);
+  // Only an interval the user asked for: Windows' default exists for the sake
+  // of stop(), which wake() already serves here.
+  const auto idle = std::chrono::microseconds(
+      idle_interval_set_ ? idle_interval_sec_ * 1000000 + idle_interval_usec_
+                         : 0);
+  auto next_idle = idle.count() > 0 ? Clock::now() + idle : never;
+
+  auto dispatch = [&](const Connection &conn) {
+    return task_queue.enqueue([this, conn]() { resume_connection(conn); });
+  };
+
+  std::vector<Connection> returned;
+  while (listening && svr_sock_ == listen_sock) {
+    auto now = Clock::now();
+    if (now >= listen_rearm_at) {
+      poller.arm(listen_sock, listen_token);
+      listen_rearm_at = never;
+    }
+
+    auto until = (std::min)({st.next_deadline(), listen_rearm_at, next_idle,
+                             now + std::chrono::seconds(60)});
+    // Rounded up, so that the wait does not end just short of the deadline.
+    auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+        until - now + std::chrono::microseconds(999));
+    poller.wait(static_cast<int>((std::max)(timeout.count(),
+                                            std::chrono::milliseconds::rep(0))),
+                ready);
+    if (svr_sock_ != listen_sock) { break; }
+    now = Clock::now();
+
+    {
+      std::lock_guard<std::mutex> guard(st.mutex);
+      returned.swap(st.returned);
+    }
+    for (auto &conn : returned) {
+      st.park(std::move(conn), now + keep_alive);
+    }
+    returned.clear();
+
+    // Connections that found the queue full go first, in their order.
+    while (!st.backlog.empty() && dispatch(st.backlog.front())) {
+      st.backlog.pop_front();
+    }
+
+    for (auto token : ready) {
+      if (token == listen_token) {
+        listen_rearm_at = now;
+        for (auto i = 0; i < 64; i++) {
+          auto sock = detail::accept_socket(listen_sock);
+          if (sock == INVALID_SOCKET) {
+            if (detail::is_would_block_error()) { break; }
+            if (detail::is_accept_resource_error()) {
+              // Out of descriptors: let the deadlines free some first.
+              listen_rearm_at = now + std::chrono::milliseconds(10);
+              break;
+            }
+            if (detail::is_accept_transient_error()) { continue; }
+            fatal = true;
+            break;
+          }
+          // Some platforms make it non-blocking like the listening socket.
+          detail::set_nonblocking(sock, false);
+          prepare_accepted_socket(sock);
+          st.park(std::make_shared<KeepAliveConnection>(sock, *this),
+                  now + keep_alive);
+          if (idle.count() > 0) { next_idle = now + idle; }
+        }
+        continue;
+      }
+
+      auto conn = st.unpark(token);
+      if (conn->served == 0) {
+        // A new connection is turned away when the queue is full, as
+        // accept_loop() does. It is closed when `conn` goes away.
+        if (!dispatch(conn)) {
+          output_error_log(Error::ResourceExhaustion, nullptr);
+        }
+      } else if (!st.backlog.empty() || !dispatch(conn)) {
+        // Closing an established connection would lose its request.
+        st.backlog.push_back(std::move(conn));
+      }
+    }
+    st.backlog_waiting = !st.backlog.empty();
+    if (fatal) { break; }
+
+    st.expire(now);
+    if (now >= next_idle) {
+      task_queue.on_idle();
+      next_idle = now + idle;
+    }
+  }
+
+  // A worker still serving a request closes its connection itself.
+  st.close_all();
+  poller.disarm(listen_sock);
+
+  // See ParkingState::listen_sock.
+  if (st.listen_sock.exchange(INVALID_SOCKET) == INVALID_SOCKET) {
+    // stop() handed it over.
+    detail::shutdown_socket(listen_sock);
+    detail::close_socket(listen_sock);
+    return true;
+  }
+  return !(fatal && abandon_listen_socket());
+}
+
+inline void
+Server::resume_connection(std::shared_ptr<KeepAliveConnection> conn) {
+  auto &c = *conn;
+  if (!c.addresses_known) {
+    detail::get_remote_ip_and_port(c.sock, c.remote_addr, c.remote_port);
+    detail::get_local_ip_and_port(c.sock, c.local_addr, c.local_port);
+    c.addresses_known = true;
+  }
+
+  auto woken_by_poller = true;
+  auto park = false;
+  auto websocket_upgraded = false;
+  serve_guarded([&]() {
+    return detail::process_server_socket_core(
+        c.strm, c.served, keep_alive_max_count_,
+        [&]() {
+          // parking_loop() saw the socket readable just before this ran.
+          if (woken_by_poller) {
+            woken_by_poller = false;
+            return true;
+          }
+          if (is_stopping()) { return false; }
+          // Waiting here for a slow client would keep the worker from others.
+          park = detail::select_read(c.sock, 0, 0) <= 0;
+          return !park;
+        },
+        [&](Stream &strm, bool close_connection, bool &connection_closed) {
+          return process_request(strm, c.remote_addr, c.remote_port,
+                                 c.local_addr, c.local_port, close_connection,
+                                 connection_closed, nullptr,
+                                 &websocket_upgraded);
+        });
+  });
+
+  auto &st = *parking_;
+  // A backlog waits for a free worker, and this one is about to be free.
+  if (st.backlog_waiting) { st.poller->wake(); }
+  if (park && st.give_back(conn)) { return; }
+  detail::drain_and_close_socket(c.sock);
+  c.sock = INVALID_SOCKET;
 }
 
 inline void Server::output_log(const Request &req, const Response &res) const {
@@ -19584,6 +19924,9 @@ inline bool SSLServer::process_and_close_socket(socket_t sock) {
 
   return ret;
 }
+
+// Not yet: the TLS session would have to live in the parked connection.
+inline bool SSLServer::supports_keep_alive_parking() const { return false; }
 
 inline bool SSLServer::update_certs_pem(const char *cert_pem,
                                         const char *key_pem,

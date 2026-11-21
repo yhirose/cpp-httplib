@@ -919,6 +919,22 @@ svr.set_keep_alive_max_count(2); // Default is 100, 0 for no limit
 svr.set_keep_alive_timeout(10);  // Default is 5
 ```
 
+#### Keep-alive parking
+
+```cpp
+svr.set_keep_alive_parking(true); // Call it before listen()
+```
+
+By default, a kept-alive connection holds a worker thread while it waits for its next request, so connections beyond the thread count wait for one to be closed. With keep-alive parking, a connection waiting for its next request is handed to an event loop instead, and goes back to a worker when the request arrives. An idle connection then costs a socket and a few kilobytes instead of a thread, and connections that outnumber the threads take turns.
+
+With it:
+
+- Consecutive requests on a connection may run on different threads.
+- When the [max queued requests](#max-queued-requests) limit is reached, only a connection that has not been served yet is closed. An established one waits for room.
+- Each request pays for handing the connection over, so with no more connections than threads and very light handlers, it can serve fewer requests per second.
+- A handler, a content provider and a WebSocket still hold their thread while they run.
+- `SSLServer` ignores it for now, and an override of `process_and_close_socket()` is not called.
+
 ### Client address behind a reverse proxy
 
 ```cpp
@@ -962,7 +978,7 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 
 When a new task arrives and the queued tasks outnumber the idle threads, a temporary thread is spawned (up to the maximum). A dynamic thread exits automatically once it has waited for the idle timeout without receiving a task. The idle timeout defaults to 3 seconds, configurable via `CPPHTTPLIB_THREAD_POOL_IDLE_TIMEOUT`.
 
-A connection holds its thread while it is served: between requests up to the keep-alive timeout, through a request body sent slowly but within the read timeout, and for the whole life of a WebSocket. Enough of them leave no thread for anyone else, so in front of untrusted clients, put a reverse proxy that limits connections per client, and reject unwanted WebSocket upgrades in the pre-request handler.
+A connection holds its thread while it is served: between requests up to the keep-alive timeout (unless [keep-alive parking](#keep-alive-parking) is on), through a request body sent slowly but within the read timeout, and for the whole life of a WebSocket. Enough of them leave no thread for anyone else, so in front of untrusted clients, put a reverse proxy that limits connections per client, and reject unwanted WebSocket upgrades in the pre-request handler.
 
 If you want to set the thread counts at runtime:
 
