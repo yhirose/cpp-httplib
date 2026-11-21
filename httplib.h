@@ -374,6 +374,8 @@ using socklen_t = int;
 #ifdef __linux__
 #include <resolv.h>
 #undef _res // Undefine _res macro to avoid conflicts with user code (#2278)
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
 #endif
 #include <csignal>
 #include <netinet/tcp.h>
@@ -391,6 +393,11 @@ using socket_t = int;
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
+#endif
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
+#define CPPHTTPLIB_KQUEUE_POLLER
+#include <sys/event.h>
 #endif
 
 #include <algorithm>
@@ -3929,6 +3936,126 @@ EncodingType encoding_type(const Request &req, const Response &res,
                            const std::string &content_type);
 
 EncodingType encoding_type(const Request &req, const Response &res);
+
+// Creates a connected pair of stream sockets that child processes do not
+// inherit. Windows has no socketpair(), so it is emulated there.
+bool create_socket_pair(socket_t sv[2]);
+
+// Ends a Poller's wait() from another thread. The poller watches fd() for
+// readability, level-triggered, and calls drain() when it is reported.
+class PollerWaker {
+public:
+  ~PollerWaker();
+
+  // An eventfd on Linux, a socket pair elsewhere.
+  bool open();
+  socket_t fd() const { return fd_; }
+  // An address inside the poller, which no caller's token can be.
+  uintptr_t token() const { return reinterpret_cast<uintptr_t>(this); }
+
+  // From any thread. While one is pending, later calls make no syscall.
+  void wake() noexcept;
+
+  void drain() noexcept;
+
+private:
+  socket_t fd_ = INVALID_SOCKET;
+  socket_t pair_fd_ = INVALID_SOCKET; // the end wake() writes; none on Linux
+  std::atomic<bool> pending_{false};
+};
+
+// One-shot readiness notification for a reactor:
+//  - A delivered event disarms the descriptor; arm() it again to wait again.
+//  - A hang-up or an error counts as readable.
+//  - Only an unarmed descriptor may be armed, and an armed one must be
+//    disarmed before it is closed.
+//  - wake() may be called from any thread; the rest belongs to one thread.
+class Poller {
+public:
+  using Token = uintptr_t;
+
+  virtual ~Poller() = default;
+
+  virtual bool arm(socket_t fd, Token token) = 0;
+  virtual void disarm(socket_t fd) = 0;
+
+  // Fills `ready` in no particular order and returns whether wake() was
+  // called. A negative timeout waits until either happens.
+  virtual bool wait(int timeout_ms, std::vector<Token> &ready) = 0;
+
+  virtual void wake() noexcept = 0;
+};
+
+// poll() on POSIX, WSAPoll() on Windows. Works everywhere.
+class PollPoller final : public Poller {
+public:
+  // nullptr when the descriptors cannot be created.
+  static std::unique_ptr<Poller> create();
+
+  bool arm(socket_t fd, Token token) override;
+  void disarm(socket_t fd) override;
+  bool wait(int timeout_ms, std::vector<Token> &ready) override;
+  void wake() noexcept override { waker_.wake(); }
+
+private:
+  PollPoller() = default;
+  void remove_at(size_t index);
+
+  PollerWaker waker_;
+
+  // fds_[0] is the waker's, which is always armed; tokens_[i] belongs to
+  // fds_[i].
+  std::vector<struct pollfd> fds_;
+  std::vector<Token> tokens_;
+  std::unordered_map<socket_t, size_t> index_;
+};
+
+#ifdef __linux__
+// epoll with EPOLLONESHOT. Waits in O(ready) instead of O(armed).
+class EpollPoller final : public Poller {
+public:
+  // nullptr when the descriptors cannot be created.
+  static std::unique_ptr<Poller> create();
+  ~EpollPoller() override;
+
+  bool arm(socket_t fd, Token token) override;
+  void disarm(socket_t fd) override;
+  bool wait(int timeout_ms, std::vector<Token> &ready) override;
+  void wake() noexcept override { waker_.wake(); }
+
+private:
+  EpollPoller() = default;
+
+  int epfd_ = -1;
+  PollerWaker waker_; // always armed
+  std::vector<struct epoll_event> events_;
+};
+#endif
+
+#ifdef CPPHTTPLIB_KQUEUE_POLLER
+// kqueue with EV_ONESHOT. Waits in O(ready) instead of O(armed).
+class KqueuePoller final : public Poller {
+public:
+  // nullptr when the descriptors cannot be created.
+  static std::unique_ptr<Poller> create();
+  ~KqueuePoller() override;
+
+  bool arm(socket_t fd, Token token) override;
+  void disarm(socket_t fd) override;
+  bool wait(int timeout_ms, std::vector<Token> &ready) override;
+  void wake() noexcept override { waker_.wake(); }
+
+private:
+  KqueuePoller() = default;
+
+  int kq_ = -1;
+  PollerWaker waker_; // always armed
+  std::vector<struct kevent> events_;
+};
+#endif
+
+// The best poller for this platform, or nullptr when it cannot be created.
+std::unique_ptr<Poller> make_poller();
 
 class BufferStream final : public Stream {
 public:
@@ -7768,6 +7895,318 @@ inline bool is_accept_transient_error() {
   return err == EINTR || err == EAGAIN || err == EWOULDBLOCK ||
          err == ECONNABORTED;
 #endif
+}
+
+inline bool create_socket_pair(socket_t sv[2]) {
+#ifdef _WIN32
+  auto listener = create_socket(
+      std::string(), "127.0.0.1", 0, AF_INET, 0, false, false, nullptr,
+      [](socket_t sock, struct addrinfo &ai, bool &) {
+        return ::bind(sock, ai.ai_addr, static_cast<int>(ai.ai_addrlen)) == 0 &&
+               ::listen(sock, 1) == 0;
+      });
+  if (listener == INVALID_SOCKET) { return false; }
+
+  socket_t a = INVALID_SOCKET;
+  socket_t b = INVALID_SOCKET;
+  sockaddr_in addr{};
+  auto addr_len = static_cast<int>(sizeof(addr));
+  if (::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &addr_len) ==
+      0) {
+    a = create_socket(std::string(), "127.0.0.1", ntohs(addr.sin_port), AF_INET,
+                      0, true, false, nullptr,
+                      [](socket_t sock, struct addrinfo &ai, bool &) {
+                        return ::connect(sock, ai.ai_addr,
+                                         static_cast<int>(ai.ai_addrlen)) == 0;
+                      });
+    // Unlike accept(), this keeps the listener's no-inherit flag.
+    if (a != INVALID_SOCKET) {
+      b = WSAAccept(listener, nullptr, nullptr, nullptr, 0);
+    }
+  }
+  close_socket(listener);
+
+  // Any local process could connect while the listener was open, so make sure
+  // that the connection we accepted is the one we made.
+  if (b != INVALID_SOCKET) {
+    sockaddr_in local{}, peer{};
+    auto local_len = static_cast<int>(sizeof(local));
+    auto peer_len = static_cast<int>(sizeof(peer));
+    if (::getsockname(a, reinterpret_cast<sockaddr *>(&local), &local_len) !=
+            0 ||
+        ::getpeername(b, reinterpret_cast<sockaddr *>(&peer), &peer_len) != 0 ||
+        local.sin_port != peer.sin_port ||
+        local.sin_addr.s_addr != peer.sin_addr.s_addr) {
+      close_socket(b);
+      b = INVALID_SOCKET;
+    }
+  }
+
+  if (b == INVALID_SOCKET) {
+    if (a != INVALID_SOCKET) { close_socket(a); }
+    return false;
+  }
+  sv[0] = a;
+  sv[1] = b;
+  return true;
+#else
+#ifdef SOCK_CLOEXEC
+  return ::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) == 0;
+#else
+  if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) { return false; }
+  fcntl(sv[0], F_SETFD, FD_CLOEXEC);
+  fcntl(sv[1], F_SETFD, FD_CLOEXEC);
+  return true;
+#endif
+#endif
+}
+
+inline PollerWaker::~PollerWaker() {
+  if (pair_fd_ != INVALID_SOCKET) { close_socket(pair_fd_); }
+  if (fd_ != INVALID_SOCKET) { close_socket(fd_); }
+}
+
+inline bool PollerWaker::open() {
+  // wake() must not block its caller, and drain() must not block the poller.
+#ifdef __linux__
+  fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  return fd_ != INVALID_SOCKET;
+#else
+  socket_t sv[2];
+  if (!create_socket_pair(sv)) { return false; }
+  fd_ = sv[0];
+  pair_fd_ = sv[1];
+  set_nonblocking(fd_, true);
+  set_nonblocking(pair_fd_, true);
+  return true;
+#endif
+}
+
+inline void PollerWaker::wake() noexcept {
+  if (pending_.exchange(true)) { return; }
+#ifdef __linux__
+  const uint64_t one = 1;
+  auto r = write(fd_, &one, sizeof(one));
+  (void)r;
+#else
+  const char c = 1;
+  send_socket(pair_fd_, &c, 1, CPPHTTPLIB_SEND_FLAGS);
+#endif
+}
+
+inline void PollerWaker::drain() noexcept {
+  // While pending_ is set, at most one wake is unread, and one read takes it.
+#ifdef __linux__
+  uint64_t count;
+  auto r = read(fd_, &count, sizeof(count));
+  (void)r;
+#else
+  char buf[64];
+  read_socket(fd_, buf, sizeof(buf), CPPHTTPLIB_RECV_FLAGS);
+#endif
+  // Only after the read: cleared before it, a wake() in between would be read
+  // here and leave pending_ set with nothing to read. One skipped during the
+  // read is fine, as the caller checks what it was woken for afterwards.
+  pending_ = false;
+}
+
+inline std::unique_ptr<Poller> PollPoller::create() {
+  std::unique_ptr<PollPoller> poller(new PollPoller());
+  if (!poller->waker_.open()) { return nullptr; }
+
+  struct pollfd pfd;
+  pfd.fd = poller->waker_.fd();
+  pfd.events = POLLIN;
+  pfd.revents = 0;
+  poller->fds_.push_back(pfd);
+  poller->tokens_.push_back(0);
+  return std::unique_ptr<Poller>(poller.release());
+}
+
+inline bool PollPoller::arm(socket_t fd, Token token) {
+  assert(index_.find(fd) == index_.end());
+
+  struct pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = POLLIN;
+  pfd.revents = 0;
+  index_[fd] = fds_.size();
+  fds_.push_back(pfd);
+  tokens_.push_back(token);
+  return true;
+}
+
+inline void PollPoller::disarm(socket_t fd) {
+  auto it = index_.find(fd);
+  if (it != index_.end()) { remove_at(it->second); }
+}
+
+// Fills the hole with the last entry, so that arm() and disarm() are O(1).
+inline void PollPoller::remove_at(size_t index) {
+  assert(index > 0 && index < fds_.size());
+  auto last = fds_.size() - 1;
+  index_.erase(fds_[index].fd);
+  if (index != last) {
+    fds_[index] = fds_[last];
+    tokens_[index] = tokens_[last];
+    index_[fds_[index].fd] = index;
+  }
+  fds_.pop_back();
+  tokens_.pop_back();
+}
+
+inline bool PollPoller::wait(int timeout_ms, std::vector<Token> &ready) {
+  ready.clear();
+
+  auto n = handle_EINTR([&]() {
+    return poll_wrapper(fds_.data(), static_cast<nfds_t>(fds_.size()),
+                        timeout_ms);
+  });
+  if (n <= 0) { return false; }
+
+  auto woken = fds_[0].revents != 0;
+  if (woken) {
+    n--;
+    waker_.drain();
+  }
+
+  // Walk backwards: remove_at() moves the last entry, already seen, into the
+  // freed slot.
+  for (auto i = fds_.size(); n > 0 && i-- > 1;) {
+    auto revents = fds_[i].revents;
+    if (revents == 0) { continue; }
+    n--;
+    assert(!(revents & POLLNVAL)); // closed while armed
+    if (!(revents & POLLNVAL)) { ready.push_back(tokens_[i]); }
+    remove_at(i);
+  }
+  return woken;
+}
+
+#ifdef __linux__
+inline std::unique_ptr<Poller> EpollPoller::create() {
+  std::unique_ptr<EpollPoller> poller(new EpollPoller());
+  poller->epfd_ = epoll_create1(EPOLL_CLOEXEC);
+  if (poller->epfd_ < 0 || !poller->waker_.open()) { return nullptr; }
+
+  epoll_event ev{};
+  ev.events = EPOLLIN; // level-triggered: it stays readable until drained
+  ev.data.u64 = poller->waker_.token();
+  if (epoll_ctl(poller->epfd_, EPOLL_CTL_ADD, poller->waker_.fd(), &ev) != 0) {
+    return nullptr;
+  }
+  poller->events_.resize(256);
+  return std::unique_ptr<Poller>(poller.release());
+}
+
+inline EpollPoller::~EpollPoller() {
+  if (epfd_ >= 0) { close(epfd_); }
+}
+
+inline bool EpollPoller::arm(socket_t fd, Token token) {
+  epoll_event ev{};
+  ev.events = EPOLLIN | EPOLLONESHOT;
+  ev.data.u64 = token;
+  // A delivered descriptor stays registered, only disabled, so modify it.
+  // One that was closed in between, or never armed, has to be added.
+  return epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &ev) == 0 ||
+         (errno == ENOENT && epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &ev) == 0);
+}
+
+inline void EpollPoller::disarm(socket_t fd) {
+  epoll_ctl(epfd_, EPOLL_CTL_DEL, fd, nullptr);
+}
+
+inline bool EpollPoller::wait(int timeout_ms, std::vector<Token> &ready) {
+  ready.clear();
+  auto n = handle_EINTR([&]() {
+    return epoll_wait(epfd_, events_.data(), static_cast<int>(events_.size()),
+                      timeout_ms);
+  });
+
+  auto woken = false;
+  for (auto i = 0; i < n; i++) {
+    auto token = static_cast<Token>(events_[static_cast<size_t>(i)].data.u64);
+    if (token == waker_.token()) {
+      woken = true;
+      waker_.drain();
+    } else {
+      ready.push_back(token);
+    }
+  }
+  return woken;
+}
+#endif
+
+#ifdef CPPHTTPLIB_KQUEUE_POLLER
+inline std::unique_ptr<Poller> KqueuePoller::create() {
+  std::unique_ptr<KqueuePoller> poller(new KqueuePoller());
+  poller->kq_ = kqueue();
+  if (poller->kq_ < 0) { return nullptr; }
+  fcntl(poller->kq_, F_SETFD, FD_CLOEXEC);
+  if (!poller->waker_.open()) { return nullptr; }
+
+  // Level-triggered: it stays readable until drained.
+  struct kevent ev;
+  EV_SET(&ev, poller->waker_.fd(), EVFILT_READ, EV_ADD, 0, 0,
+         reinterpret_cast<void *>(poller->waker_.token()));
+  if (kevent(poller->kq_, &ev, 1, nullptr, 0, nullptr) != 0) { return nullptr; }
+  poller->events_.resize(256);
+  return std::unique_ptr<Poller>(poller.release());
+}
+
+inline KqueuePoller::~KqueuePoller() {
+  if (kq_ >= 0) { close(kq_); }
+}
+
+inline bool KqueuePoller::arm(socket_t fd, Token token) {
+  // EV_ONESHOT deletes the event once it is delivered.
+  struct kevent ev;
+  EV_SET(&ev, fd, EVFILT_READ, EV_ADD | EV_ONESHOT, 0, 0,
+         reinterpret_cast<void *>(token));
+  return kevent(kq_, &ev, 1, nullptr, 0, nullptr) == 0;
+}
+
+inline void KqueuePoller::disarm(socket_t fd) {
+  struct kevent ev;
+  EV_SET(&ev, fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+  kevent(kq_, &ev, 1, nullptr, 0, nullptr);
+}
+
+inline bool KqueuePoller::wait(int timeout_ms, std::vector<Token> &ready) {
+  ready.clear();
+  struct timespec ts;
+  ts.tv_sec = timeout_ms / 1000;
+  ts.tv_nsec = static_cast<long>(timeout_ms % 1000) * 1000000;
+  auto n = handle_EINTR([&]() {
+    return kevent(kq_, nullptr, 0, events_.data(),
+                  static_cast<int>(events_.size()),
+                  timeout_ms < 0 ? nullptr : &ts);
+  });
+
+  auto woken = false;
+  for (auto i = 0; i < n; i++) {
+    auto token = reinterpret_cast<Token>(events_[static_cast<size_t>(i)].udata);
+    if (token == waker_.token()) {
+      woken = true;
+      waker_.drain();
+    } else {
+      ready.push_back(token);
+    }
+  }
+  return woken;
+}
+#endif
+
+inline std::unique_ptr<Poller> make_poller() {
+#if defined(__linux__)
+  auto poller = EpollPoller::create();
+  if (poller) { return poller; }
+#elif defined(CPPHTTPLIB_KQUEUE_POLLER)
+  auto poller = KqueuePoller::create();
+  if (poller) { return poller; }
+#endif
+  return PollPoller::create();
 }
 
 inline bool bind_ip_address(socket_t sock, const std::string &host) {

@@ -33916,3 +33916,239 @@ TEST(WebSocketProxyTest, WssTunnelsThroughConnect) {
   EXPECT_EQ(1, proxy.connect_hits());
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// Poller
+// ---------------------------------------------------------------------------
+
+namespace poller_test {
+
+struct PollerBackend {
+  const char *name;
+  std::unique_ptr<detail::Poller> (*create)();
+};
+
+void PrintTo(const PollerBackend &backend, std::ostream *os) {
+  *os << backend.name;
+}
+
+// Every backend runs the same contract tests. A new one is added here only.
+std::vector<PollerBackend> poller_backends() {
+  return {
+      {"poll", &detail::PollPoller::create},
+#ifdef __linux__
+      {"epoll", &detail::EpollPoller::create},
+#endif
+#ifdef CPPHTTPLIB_KQUEUE_POLLER
+      {"kqueue", &detail::KqueuePoller::create},
+#endif
+  };
+}
+
+// A descriptor whose readability the test controls.
+struct TestSocketPair {
+  socket_t fd[2] = {INVALID_SOCKET, INVALID_SOCKET};
+
+  TestSocketPair() { detail::create_socket_pair(fd); }
+  ~TestSocketPair() {
+    for (auto s : fd) {
+      if (s != INVALID_SOCKET) { detail::close_socket(s); }
+    }
+  }
+
+  bool ok() const { return fd[0] != INVALID_SOCKET; }
+  socket_t reader() const { return fd[0]; }
+  void make_readable() {
+    const char c = 1;
+    detail::send_socket(fd[1], &c, 1, 0);
+  }
+  void close_writer() {
+    detail::close_socket(fd[1]);
+    fd[1] = INVALID_SOCKET;
+  }
+};
+
+using Tokens = std::vector<detail::Poller::Token>;
+
+class PollerTest : public ::testing::TestWithParam<PollerBackend> {
+protected:
+  void SetUp() override {
+    poller_ = GetParam().create();
+    ASSERT_TRUE(poller_ != nullptr);
+  }
+
+  Tokens wait_for(int timeout_ms) {
+    Tokens ready;
+    poller_->wait(timeout_ms, ready);
+    std::sort(ready.begin(), ready.end());
+    return ready;
+  }
+
+  std::unique_ptr<detail::Poller> poller_;
+};
+
+} // namespace poller_test
+
+using poller_test::PollerTest;
+using poller_test::TestSocketPair;
+using poller_test::Tokens;
+
+INSTANTIATE_TEST_SUITE_P(
+    Backends, PollerTest, ::testing::ValuesIn(poller_test::poller_backends()),
+    [](const ::testing::TestParamInfo<poller_test::PollerBackend> &p) {
+      return std::string(p.param.name);
+    });
+
+TEST_P(PollerTest, DeliversOnceThenStaysDisarmedUntilRearmed) {
+  TestSocketPair sp;
+  ASSERT_TRUE(sp.ok());
+  ASSERT_TRUE(poller_->arm(sp.reader(), 7));
+  EXPECT_EQ(Tokens{}, wait_for(0));
+
+  sp.make_readable();
+  EXPECT_EQ(Tokens{7}, wait_for(1000));
+  EXPECT_EQ(Tokens{}, wait_for(0)); // still readable, but disarmed
+
+  ASSERT_TRUE(poller_->arm(sp.reader(), 8));
+  EXPECT_EQ(Tokens{8}, wait_for(1000));
+}
+
+TEST_P(PollerTest, DisarmedDescriptorIsNotDelivered) {
+  TestSocketPair sp;
+  ASSERT_TRUE(sp.ok());
+  ASSERT_TRUE(poller_->arm(sp.reader(), 1));
+  poller_->disarm(sp.reader());
+  poller_->disarm(sp.reader()); // disarming twice is harmless
+  sp.make_readable();
+  EXPECT_EQ(Tokens{}, wait_for(0));
+}
+
+TEST_P(PollerTest, WaitHonoursItsTimeout) {
+  TestSocketPair sp;
+  ASSERT_TRUE(sp.ok());
+  ASSERT_TRUE(poller_->arm(sp.reader(), 1));
+
+  auto start = std::chrono::steady_clock::now();
+  EXPECT_EQ(Tokens{}, wait_for(30));
+  auto elapsed = std::chrono::steady_clock::now() - start;
+  EXPECT_GE(elapsed, std::chrono::milliseconds(25));
+  EXPECT_LT(elapsed, std::chrono::seconds(1));
+}
+
+TEST_P(PollerTest, OnlyTheReadyDescriptorsAreDelivered) {
+  std::vector<std::unique_ptr<TestSocketPair>> sps;
+  for (detail::Poller::Token i = 0; i < 8; i++) {
+    sps.emplace_back(new TestSocketPair());
+    ASSERT_TRUE(sps.back()->ok());
+    ASSERT_TRUE(poller_->arm(sps.back()->reader(), i));
+  }
+
+  sps[0]->make_readable();
+  sps[3]->make_readable();
+  sps[7]->make_readable();
+  EXPECT_EQ((Tokens{0, 3, 7}), wait_for(1000));
+
+  // The others are still armed, the delivered ones are not.
+  sps[1]->make_readable();
+  EXPECT_EQ(Tokens{1}, wait_for(1000));
+  EXPECT_EQ(Tokens{}, wait_for(0));
+}
+
+TEST_P(PollerTest, StaysConsistentAfterOtherDescriptorsWereDelivered) {
+  TestSocketPair s0, s1, s2;
+  ASSERT_TRUE(s0.ok() && s1.ok() && s2.ok());
+  ASSERT_TRUE(poller_->arm(s0.reader(), 0));
+  ASSERT_TRUE(poller_->arm(s1.reader(), 1));
+  ASSERT_TRUE(poller_->arm(s2.reader(), 2));
+
+  // A delivery may move another entry inside the poller.
+  s0.make_readable();
+  EXPECT_EQ(Tokens{0}, wait_for(1000));
+
+  // The entries left must still be found by descriptor.
+  poller_->disarm(s2.reader());
+  s1.make_readable();
+  s2.make_readable();
+  EXPECT_EQ(Tokens{1}, wait_for(1000));
+}
+
+TEST_P(PollerTest, PeerHangUpCountsAsReadable) {
+  TestSocketPair sp;
+  ASSERT_TRUE(sp.ok());
+  ASSERT_TRUE(poller_->arm(sp.reader(), 5));
+  sp.close_writer();
+  EXPECT_EQ(Tokens{5}, wait_for(1000));
+
+  char c;
+  EXPECT_EQ(0, detail::read_socket(sp.reader(), &c, 1, 0)); // EOF
+}
+
+TEST_P(PollerTest, WakeEndsABlockedWait) {
+  std::thread waker([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    poller_->wake();
+  });
+
+  Tokens ready;
+  auto start = std::chrono::steady_clock::now();
+  EXPECT_TRUE(poller_->wait(5000, ready)); // only the waker ends this early
+  waker.join();
+  EXPECT_TRUE(ready.empty());
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+}
+
+TEST_P(PollerTest, WakeBeforeWaitIsNotLost) {
+  poller_->wake(); // e.g. stop() running before the reactor reaches wait()
+  Tokens ready;
+  EXPECT_TRUE(poller_->wait(1000, ready));
+}
+
+TEST_P(PollerTest, WakesCoalesceAndAreConsumed) {
+  for (int i = 0; i < 1000; i++) {
+    poller_->wake();
+  }
+  Tokens ready;
+  EXPECT_TRUE(poller_->wait(0, ready));
+  EXPECT_FALSE(poller_->wait(0, ready));
+
+  poller_->wake();
+  EXPECT_TRUE(poller_->wait(0, ready));
+}
+
+TEST_P(PollerTest, ConcurrentWakesAreNeverLost) {
+  // Two threads publish changes and wake() after each, as a reactor's workers
+  // do. Every change must be seen without a wait() timing out. A lost wake()
+  // needs an unlucky interleaving, hence the rounds.
+  for (int round = 0; round < 5; round++) {
+    SCOPED_TRACE(round);
+    const int per_thread = 20000;
+    std::atomic<int> posted{0};
+    auto post = [&] {
+      for (int i = 0; i < per_thread; i++) {
+        posted++;
+        poller_->wake();
+      }
+    };
+    std::thread t1(post), t2(post);
+
+    auto lost = false;
+    Tokens ready;
+    for (auto seen = 0; seen < 2 * per_thread; seen = posted) {
+      if (!poller_->wait(1000, ready)) {
+        lost = true;
+        break;
+      }
+    }
+    t1.join();
+    t2.join();
+    ASSERT_FALSE(lost);
+  }
+}
+
+TEST(PollerFactoryTest, MakePollerWorks) {
+  auto poller = detail::make_poller();
+  ASSERT_TRUE(poller != nullptr);
+  poller->wake();
+  std::vector<detail::Poller::Token> ready;
+  EXPECT_TRUE(poller->wait(1000, ready));
+}
