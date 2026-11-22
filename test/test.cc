@@ -34049,6 +34049,20 @@ TEST_P(PollerTest, WaitHonoursItsTimeout) {
   EXPECT_LT(elapsed, std::chrono::seconds(1));
 }
 
+TEST_P(PollerTest, NegativeTimeoutWaitsUntilReady) {
+  TestSocketPair sp;
+  ASSERT_TRUE(sp.ok());
+  ASSERT_TRUE(poller_->arm(sp.reader(), 3));
+  std::thread writer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    sp.make_readable();
+  });
+
+  auto ready = wait_for(-1);
+  writer.join();
+  EXPECT_EQ(Tokens{3}, ready);
+}
+
 TEST_P(PollerTest, OnlyTheReadyDescriptorsAreDelivered) {
   std::vector<std::unique_ptr<TestSocketPair>> sps;
   for (detail::Poller::Token i = 0; i < 8; i++) {
@@ -34165,6 +34179,20 @@ TEST(PollerFactoryTest, MakePollerWorks) {
   poller->wake();
   std::vector<detail::Poller::Token> ready;
   EXPECT_TRUE(poller->wait(1000, ready));
+}
+
+TEST(PollTimeoutTest, LastsUntilTheDeadline) {
+  using namespace std::chrono;
+  const auto now = steady_clock::now();
+  auto timeout = [&](steady_clock::time_point deadline) {
+    return detail::poll_timeout_until(deadline, now);
+  };
+  EXPECT_EQ(-1, timeout((steady_clock::time_point::max)()));
+  EXPECT_EQ(0, timeout(now - milliseconds(5)));
+  EXPECT_EQ(1, timeout(now + nanoseconds(1)));
+  EXPECT_EQ(1, timeout(now + milliseconds(1)));
+  EXPECT_EQ(2, timeout(now + microseconds(1001)));
+  EXPECT_EQ((std::numeric_limits<int>::max)(), timeout(now + hours(1000)));
 }
 
 // ---------------------------------------------------------------------------

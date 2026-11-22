@@ -4088,6 +4088,11 @@ private:
 // The best poller for this platform, or nullptr when it cannot be created.
 std::unique_ptr<Poller> make_poller();
 
+// The Poller::wait() timeout until `deadline`: -1 for time_point::max(),
+// otherwise whole milliseconds, rounded up and capped at INT_MAX.
+int poll_timeout_until(std::chrono::steady_clock::time_point deadline,
+                       std::chrono::steady_clock::time_point now);
+
 class BufferStream final : public Stream {
 public:
   BufferStream() = default;
@@ -8260,6 +8265,18 @@ inline std::unique_ptr<Poller> make_poller() {
   if (poller) { return poller; }
 #endif
   return PollPoller::create();
+}
+
+inline int poll_timeout_until(std::chrono::steady_clock::time_point deadline,
+                              std::chrono::steady_clock::time_point now) {
+  using namespace std::chrono;
+  if (deadline == (steady_clock::time_point::max)()) { return -1; }
+  if (deadline <= now) { return 0; }
+  const auto left = deadline - now;
+  auto msec = duration_cast<milliseconds>(left);
+  if (msec < left) { msec += milliseconds(1); }
+  const auto cap = milliseconds((std::numeric_limits<int>::max)());
+  return static_cast<int>((std::min)(msec, cap).count());
 }
 
 inline bool bind_ip_address(socket_t sock, const std::string &host) {
@@ -16576,16 +16593,10 @@ inline bool Server::parking_loop(TaskQueue &task_queue) {
           poller.arm(listen_sock, listen_token) ? never : now + check_interval;
     }
 
-    // At most a minute, which keeps the timeout below within an int.
-    auto until = (std::min)({st.next_deadline(), listen_rearm_at, next_idle,
-                             st.backlog.empty() ? never : now + check_interval,
-                             now + std::chrono::seconds(60)});
-    // Rounded up, so that the wait does not end just short of the deadline.
-    auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
-        until - now + std::chrono::microseconds(999));
-    poller.wait(static_cast<int>((std::max)(timeout.count(),
-                                            std::chrono::milliseconds::rep(0))),
-                ready);
+    auto until =
+        (std::min)({st.next_deadline(), listen_rearm_at, next_idle,
+                    st.backlog.empty() ? never : now + check_interval});
+    poller.wait(detail::poll_timeout_until(until, now), ready);
     if (svr_sock_ != listen_sock) { break; }
     now = Clock::now();
 
