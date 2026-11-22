@@ -4034,8 +4034,7 @@ private:
 
   PollerWaker waker_;
 
-  // fds_[0] is the waker's, which is always armed; tokens_[i] belongs to
-  // fds_[i].
+  // fds_[0] is the waker's, always armed; tokens_[i] belongs to fds_[i].
   std::vector<struct pollfd> fds_;
   std::vector<Token> tokens_;
   std::unordered_map<socket_t, size_t> index_;
@@ -7384,7 +7383,7 @@ inline void drain_and_close_socket(socket_t sock,
     const auto n = read_socket(sock, buf, sizeof(buf), CPPHTTPLIB_RECV_FLAGS);
     if (n <= 0) { break; }
     total += static_cast<size_t>(n);
-  } while (usec_left() > 0 && total < size_t(1024u * 1024u)); // bound #2
+  } while (total < size_t(1024u * 1024u) && usec_left() > 0); // bound #2
 
   shutdown_socket(sock);
   close_socket(sock);
