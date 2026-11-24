@@ -156,6 +156,31 @@ static void read_file(const std::string &path, std::string &out) {
   fs.read(&out[0], static_cast<std::streamsize>(size));
 }
 
+// httpbingo.org intermittently answers with gateway errors unrelated to the
+// client under test.
+static bool is_gateway_error(const Result &res) {
+  return res && (res->status == StatusCode::BadGateway_502 ||
+                 res->status == StatusCode::ServiceUnavailable_503 ||
+                 res->status == StatusCode::GatewayTimeout_504);
+}
+
+template <typename F> static Result retry_gateway_errors(F &&send) {
+  auto res = send();
+  for (auto wait : {1, 2}) {
+    if (!is_gateway_error(res)) { break; }
+    std::this_thread::sleep_for(std::chrono::seconds(wait));
+    res = send();
+  }
+  return res;
+}
+
+#define SKIP_ON_GATEWAY_ERROR(res)                                             \
+  do {                                                                         \
+    if (is_gateway_error(res)) {                                               \
+      GTEST_SKIP() << "gateway error " << (res)->status;                       \
+    }                                                                          \
+  } while (0)
+
 class UnixSocketTest : public ::testing::Test {
 protected:
   void TearDown() override { std::remove(pathname_.c_str()); }
@@ -2827,7 +2852,8 @@ TEST(RangeTest, FromHTTPBin_Online) {
   cli.set_connection_timeout(5);
 
   {
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -2835,7 +2861,8 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{1, -1}})};
-    auto res = cli.Get(path, headers);
+    auto res = retry_gateway_errors([&] { return cli.Get(path, headers); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("bcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(StatusCode::PartialContent_206, res->status);
@@ -2843,7 +2870,8 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{1, 10}})};
-    auto res = cli.Get(path, headers);
+    auto res = retry_gateway_errors([&] { return cli.Get(path, headers); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(StatusCode::PartialContent_206, res->status);
@@ -2854,7 +2882,8 @@ TEST(RangeTest, FromHTTPBin_Online) {
   // acceptable per RFC 9110 §15.3.7, so we accept either status code.
   {
     Headers headers = {make_range_header({{0, 31}})};
-    auto res = cli.Get(path, headers);
+    auto res = retry_gateway_errors([&] { return cli.Get(path, headers); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_TRUE(res->status == StatusCode::OK_200 ||
@@ -2863,7 +2892,8 @@ TEST(RangeTest, FromHTTPBin_Online) {
 
   {
     Headers headers = {make_range_header({{0, -1}})};
-    auto res = cli.Get(path, headers);
+    auto res = retry_gateway_errors([&] { return cli.Get(path, headers); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_TRUE(res->status == StatusCode::OK_200 ||
@@ -2875,7 +2905,8 @@ TEST(RangeTest, FromHTTPBin_Online) {
   // in real servers, so we only verify the request succeeds.
   {
     Headers headers = {make_range_header({{0, 32}})};
-    auto res = cli.Get(path, headers);
+    auto res = retry_gateway_errors([&] { return cli.Get(path, headers); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   }
 }
@@ -3190,7 +3221,9 @@ TEST(CancelTest, NoCancel_Online) {
 #endif
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  auto res = cli.Get(path, [](uint64_t, uint64_t) { return true; });
+  auto res = retry_gateway_errors(
+      [&] { return cli.Get(path, [](uint64_t, uint64_t) { return true; }); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -3211,7 +3244,9 @@ TEST(CancelTest, WithCancelSmallPayload_Online) {
   Client cli(host, port);
 #endif
 
-  auto res = cli.Get(path, [](uint64_t, uint64_t) { return false; });
+  auto res = retry_gateway_errors(
+      [&] { return cli.Get(path, [](uint64_t, uint64_t) { return false; }); });
+  SKIP_ON_GATEWAY_ERROR(res);
   cli.set_connection_timeout(std::chrono::seconds(5));
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
@@ -3230,9 +3265,12 @@ TEST(CancelTest, WithCancelLargePayload_Online) {
 #endif
   cli.set_connection_timeout(std::chrono::seconds(5));
 
-  uint32_t count = 0;
-  auto res =
-      cli.Get(path, [&count](uint64_t, uint64_t) { return (count++ == 0); });
+  auto res = retry_gateway_errors([&] {
+    auto count = 0;
+    return cli.Get(path,
+                   [&count](uint64_t, uint64_t) { return (count++ == 0); });
+  });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::Canceled, res.error());
 }
@@ -3822,14 +3860,18 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 #endif
 
   {
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
 
   {
-    auto res = cli.Get(
-        path, Headers{make_basic_authentication_header("hello", "world")});
+    auto res = retry_gateway_errors([&] {
+      return cli.Get(
+          path, Headers{make_basic_authentication_header("hello", "world")});
+    });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     auto body = remove_whitespace(res->body);
     EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
@@ -3839,7 +3881,8 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
   {
     cli.set_basic_auth("hello", "world");
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     auto body = remove_whitespace(res->body);
     EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
@@ -3849,14 +3892,16 @@ TEST(BaseAuthTest, FromHTTPWatch_Online) {
 
   {
     cli.set_basic_auth("hello", "bad");
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
 
   {
     cli.set_basic_auth("bad", "world");
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
@@ -3875,7 +3920,8 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
   SSLClient cli(host, port);
 
   {
-    auto res = cli.Get(unauth_path);
+    auto res = retry_gateway_errors([&] { return cli.Get(unauth_path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
   }
@@ -3884,7 +3930,8 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
 
     cli.set_digest_auth("hello", "world");
     for (const auto &path : paths) {
-      auto res = cli.Get(path.c_str());
+      auto res = retry_gateway_errors([&] { return cli.Get(path.c_str()); });
+      SKIP_ON_GATEWAY_ERROR(res);
       ASSERT_TRUE(res) << "Error: " << to_string(res.error());
       auto body = remove_whitespace(res->body);
       EXPECT_TRUE(body.find("\"authenticated\":true") != std::string::npos);
@@ -3894,7 +3941,8 @@ TEST(DigestAuthTest, FromHTTPWatch_Online) {
 
     cli.set_digest_auth("hello", "bad");
     for (const auto &path : paths) {
-      auto res = cli.Get(path.c_str());
+      auto res = retry_gateway_errors([&] { return cli.Get(path.c_str()); });
+      SKIP_ON_GATEWAY_ERROR(res);
       ASSERT_TRUE(res) << "Error: " << to_string(res.error());
       EXPECT_EQ(StatusCode::Unauthorized_401, res->status);
     }
@@ -4292,7 +4340,8 @@ TEST(AbsoluteRedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get(path);
+  auto res = retry_gateway_errors([&] { return cli.Get(path); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -4308,7 +4357,8 @@ TEST(RedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get(path);
+  auto res = retry_gateway_errors([&] { return cli.Get(path); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -4324,7 +4374,8 @@ TEST(RelativeRedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get(path);
+  auto res = retry_gateway_errors([&] { return cli.Get(path); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -4340,7 +4391,8 @@ TEST(TooManyRedirectTest, Redirect_Online) {
 #endif
 
   cli.set_follow_location(true);
-  auto res = cli.Get(path);
+  auto res = retry_gateway_errors([&] { return cli.Get(path); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(!res);
   EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
@@ -4367,8 +4419,10 @@ TEST(YahooRedirectTest, Redirect_Online) {
 TEST(HttpsToHttpRedirectTest, Redirect_Online) {
   SSLClient cli(REDIR_HOST);
   cli.set_follow_location(true);
-  auto res =
-      cli.Get(REDIR_PATH "?url=http%3A%2F%2Fexample.com&status_code=302");
+  auto res = retry_gateway_errors([&] {
+    return cli.Get(REDIR_PATH "?url=http%3A%2F%2Fexample.com&status_code=302");
+  });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -4381,7 +4435,9 @@ TEST(HttpsToHttpRedirectTest2, Redirect_Online) {
   params.emplace("url", "http://example.com");
   params.emplace("status_code", "302");
 
-  auto res = cli.Get(REDIR_PATH, params, Headers{});
+  auto res = retry_gateway_errors(
+      [&] { return cli.Get(REDIR_PATH, params, Headers{}); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -4393,7 +4449,10 @@ TEST(HttpsToHttpRedirectTest3, Redirect_Online) {
   Params params;
   params.emplace("url", "http://example.com");
 
-  auto res = cli.Get(REDIR_PATH "?status_code=302", params, Headers{});
+  auto res = retry_gateway_errors([&] {
+    return cli.Get(REDIR_PATH "?status_code=302", params, Headers{});
+  });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -15030,14 +15089,16 @@ TEST(ClientDefaultHeadersTest, DefaultHeaders_Online) {
   cli.set_connection_timeout(5);
 
   {
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(StatusCode::PartialContent_206, res->status);
   }
 
   {
-    auto res = cli.Get(path);
+    auto res = retry_gateway_errors([&] { return cli.Get(path); });
+    SKIP_ON_GATEWAY_ERROR(res);
     ASSERT_TRUE(res) << "Error: " << to_string(res.error());
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(StatusCode::PartialContent_206, res->status);
@@ -16732,7 +16793,8 @@ TEST(SSLClientTest, ServerNameIndication_Online) {
   auto path = std::string{"/get"};
 
   SSLClient cli(host, 443);
-  auto res = cli.Get(path);
+  auto res = retry_gateway_errors([&] { return cli.Get(path); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   ASSERT_EQ(StatusCode::OK_200, res->status);
 }
@@ -18779,8 +18841,10 @@ TEST(DecodeWithChunkedEncoding, BrotliEncoding_Online) {
 TEST(HttpsToHttpRedirectTest, SimpleInterface_Online) {
   Client cli(REDIR_HOST);
   cli.set_follow_location(true);
-  auto res =
-      cli.Get(REDIR_PATH "?url=http%3A%2F%2Fexample.com&status_code=302");
+  auto res = retry_gateway_errors([&] {
+    return cli.Get(REDIR_PATH "?url=http%3A%2F%2Fexample.com&status_code=302");
+  });
+  SKIP_ON_GATEWAY_ERROR(res);
 
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
@@ -18794,7 +18858,9 @@ TEST(HttpsToHttpRedirectTest2, SimpleInterface_Online) {
   params.emplace("url", "http://example.com");
   params.emplace("status_code", "302");
 
-  auto res = cli.Get(REDIR_PATH, params, Headers{});
+  auto res = retry_gateway_errors(
+      [&] { return cli.Get(REDIR_PATH, params, Headers{}); });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
@@ -18806,7 +18872,10 @@ TEST(HttpsToHttpRedirectTest3, SimpleInterface_Online) {
   Params params;
   params.emplace("url", "http://example.com");
 
-  auto res = cli.Get(REDIR_PATH "?status_code=302", params, Headers{});
+  auto res = retry_gateway_errors([&] {
+    return cli.Get(REDIR_PATH "?status_code=302", params, Headers{});
+  });
+  SKIP_ON_GATEWAY_ERROR(res);
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
 }
