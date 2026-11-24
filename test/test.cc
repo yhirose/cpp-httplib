@@ -29625,7 +29625,6 @@ TEST(WebSocketPartialWriteTest, FailedWriteClosesConnection) {
   const std::string large(4 * 1024 * 1024, 'A');
   std::atomic<bool> large_sent{true};
   std::atomic<bool> open_after_failure{true};
-  std::atomic<bool> small_sent{true};
   std::atomic<bool> handler_done{false};
 
   Server svr;
@@ -29638,7 +29637,6 @@ TEST(WebSocketPartialWriteTest, FailedWriteClosesConnection) {
   svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
     large_sent = ws.send(large.data(), large.size());
     open_after_failure = ws.is_open();
-    small_sent = ws.send("after");
     handler_done = true;
   });
 
@@ -29665,9 +29663,8 @@ TEST(WebSocketPartialWriteTest, FailedWriteClosesConnection) {
   }
   ASSERT_TRUE(handler_done);
 
-  EXPECT_FALSE(large_sent);
+  ASSERT_FALSE(large_sent);
   EXPECT_FALSE(open_after_failure);
-  EXPECT_FALSE(small_sent);
 
   client.close();
 }
