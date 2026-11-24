@@ -25052,11 +25052,7 @@ inline void WebSocket::start_heartbeat() {
         return;
       }
       lock.unlock();
-      if (!send_frame(Opcode::Ping, nullptr, 0)) {
-        lock.lock();
-        closed_ = true;
-        break;
-      }
+      if (!send_frame(Opcode::Ping, nullptr, 0)) { return; }
       lock.lock();
       unacked_pings_++;
     }
