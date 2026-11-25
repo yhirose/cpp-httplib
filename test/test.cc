@@ -84,7 +84,8 @@ bool connect_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
                          time_t timeout_usec, TlsError *err,
                          const std::function<bool()> &interrupted);
 bool accept_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
-                        time_t timeout_usec, TlsError *err);
+                        time_t timeout_usec, TlsError *err,
+                        const std::function<bool()> &interrupted);
 ssize_t read(session_t session, void *buf, size_t len, TlsError &err);
 ssize_t write(session_t session, const void *buf, size_t len, TlsError &err);
 void shutdown(session_t session, bool graceful);
@@ -5967,6 +5968,40 @@ TEST(SSLClientServerTest, UpdateCertsPemWaitsForHandshakeInProgress) {
   auto res = cli.Get("/test");
   ASSERT_TRUE(res) << "Error: " << to_string(res.error());
   EXPECT_EQ(StatusCode::OK_200, res->status);
+}
+
+TEST(SSLClientServerTest, StopDoesNotWaitForHandshakeInProgress) {
+  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+  ASSERT_TRUE(svr.is_valid());
+  // Keep-alive parking would wait for the ClientHello without a handshake.
+  svr.set_keep_alive_parking(false);
+  svr.set_read_timeout(10, 0);
+
+  thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    if (t.joinable()) { t.join(); }
+  });
+  svr.wait_until_ready();
+
+  // A connection that sends no ClientHello keeps its handshake in progress,
+  // once the server has had a moment to start it.
+  auto error = Error::Success;
+  auto sock = detail::create_client_socket(
+      HOST, "", PORT, AF_UNSPEC, false, false, nullptr,
+      /*connection_timeout_sec=*/5, 0,
+      /*read_timeout_sec=*/5, 0,
+      /*write_timeout_sec=*/5, 0, std::string(), error);
+  ASSERT_NE(INVALID_SOCKET, sock);
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  auto start = std::chrono::steady_clock::now();
+  svr.stop();
+  t.join();
+  auto elapsed = std::chrono::steady_clock::now() - start;
+  detail::close_socket(sock);
+
+  EXPECT_LT(elapsed, std::chrono::seconds(3));
 }
 #endif
 
@@ -13802,7 +13837,8 @@ static void expect_no_reuse_with_unread_data(bool use_tls, bool same_write) {
     if (use_tls) {
       peer.session = tls::create_session(ctx, peer.sock);
       tls::TlsError err;
-      if (!tls::accept_nonblocking(peer.session, peer.sock, 5, 0, &err)) {
+      if (!tls::accept_nonblocking(peer.session, peer.sock, 5, 0, &err,
+                                   nullptr)) {
         close_peer(peer);
         return Peer();
       }
@@ -25182,7 +25218,7 @@ static void with_single_tls_response(const std::string &response,
                                 nullptr);
       auto session = tls::create_session(ctx, cli);
       tls::TlsError err;
-      if (tls::accept_nonblocking(session, cli, 5, 0, &err)) {
+      if (tls::accept_nonblocking(session, cli, 5, 0, &err, nullptr)) {
         // The request head first, so that closing the socket sends a FIN
         // rather than an RST for the unread bytes.
         std::string req;

@@ -5647,7 +5647,8 @@ bool connect_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
                          time_t timeout_usec, TlsError *err,
                          const std::function<bool()> &interrupted = nullptr);
 bool accept_nonblocking(session_t session, socket_t sock, time_t timeout_sec,
-                        time_t timeout_usec, TlsError *err);
+                        time_t timeout_usec, TlsError *err,
+                        const std::function<bool()> &interrupted = nullptr);
 
 // I/O (non-blocking capable)
 ssize_t read(session_t session, void *buf, size_t len, TlsError &err);
@@ -20278,8 +20279,9 @@ inline tls::session_t SSLServer::start_session(socket_t sock) {
       std::lock_guard<std::mutex> guard(ctx_mutex_);
       if (--handshakes_in_progress_ == 0) { ctx_cv_.notify_all(); }
     });
-    accepted = accept_nonblocking(session, sock, read_timeout_sec_,
-                                  read_timeout_usec_, &tls_err);
+    accepted =
+        accept_nonblocking(session, sock, read_timeout_sec_, read_timeout_usec_,
+                           &tls_err, [this]() { return is_stopping(); });
   }
   if (!accepted) {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -21694,7 +21696,8 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
 
 inline bool accept_nonblocking(session_t session, socket_t sock,
                                time_t timeout_sec, time_t timeout_usec,
-                               TlsError *err) {
+                               TlsError *err,
+                               const std::function<bool()> &interrupted) {
   if (!session) {
     if (err) { err->code = ErrorCode::Fatal; }
     return false;
@@ -21719,10 +21722,14 @@ inline bool accept_nonblocking(session_t session, socket_t sock,
     auto ssl_err = SSL_get_error(ssl, res);
     switch (ssl_err) {
     case SSL_ERROR_WANT_READ:
-      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
+      if (detail::select_until(sock, POLLIN, deadline, interrupted) > 0) {
+        continue;
+      }
       break;
     case SSL_ERROR_WANT_WRITE:
-      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
+      if (detail::select_until(sock, POLLOUT, deadline, interrupted) > 0) {
+        continue;
+      }
       break;
     default: break;
     }
@@ -23049,13 +23056,14 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
 
 inline bool accept_nonblocking(session_t session, socket_t sock,
                                time_t timeout_sec, time_t timeout_usec,
-                               TlsError *err) {
+                               TlsError *err,
+                               const std::function<bool()> &interrupted) {
   // A failed handshake leaves its SNI behind, so start without it
   impl::mbedpending_sni().clear();
 
   // Same implementation as connect for Mbed TLS
-  bool result =
-      connect_nonblocking(session, sock, timeout_sec, timeout_usec, err);
+  bool result = connect_nonblocking(session, sock, timeout_sec, timeout_usec,
+                                    err, interrupted);
 
   // After successful handshake, capture SNI from thread-local storage
   if (result && session) {
@@ -24230,7 +24238,8 @@ inline bool connect_nonblocking(session_t session, socket_t sock,
 
 inline bool accept_nonblocking(session_t session, socket_t sock,
                                time_t timeout_sec, time_t timeout_usec,
-                               TlsError *err) {
+                               TlsError *err,
+                               const std::function<bool()> &interrupted) {
   if (!session) {
     if (err) { err->code = ErrorCode::Fatal; }
     return false;
@@ -24248,9 +24257,13 @@ inline bool accept_nonblocking(session_t session, socket_t sock,
   while ((ret = wolfSSL_accept(wsession->ssl)) != SSL_SUCCESS) {
     int ssl_error = wolfSSL_get_error(wsession->ssl, ret);
     if (ssl_error == SSL_ERROR_WANT_READ) {
-      if (detail::select_until(sock, POLLIN, deadline) > 0) { continue; }
+      if (detail::select_until(sock, POLLIN, deadline, interrupted) > 0) {
+        continue;
+      }
     } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
-      if (detail::select_until(sock, POLLOUT, deadline) > 0) { continue; }
+      if (detail::select_until(sock, POLLOUT, deadline, interrupted) > 0) {
+        continue;
+      }
     }
 
     // Error or timeout
