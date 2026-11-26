@@ -4871,9 +4871,10 @@ namespace impl {
 
 bool is_valid_utf8(const std::string &s);
 
-// Three states: a frame, a failure (the connection cannot be read on), or a
-// timeout with the stream still usable.
-enum class FrameRead { Ok, Fail, Timeout };
+// A frame, a failure (the connection cannot be read on), a timeout with the
+// stream still usable, or a frame the peer should not have sent: one that
+// breaks the protocol, or one longer than the limit.
+enum class FrameRead { Ok, Fail, Timeout, ProtocolError, TooBig };
 
 // A frame read in as many calls as it takes. A timeout leaves what was read
 // so far in place, and the next read() goes on from there, so the stream is
@@ -4968,6 +4969,7 @@ private:
   }
   void start_heartbeat();
   bool send_frame(Opcode op, const char *data, size_t len, bool fin = true);
+  bool send_close(const std::string &payload);
 
   Stream &strm_;
   std::unique_ptr<Stream> owned_strm_;
@@ -6209,9 +6211,9 @@ inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
     reset();
     return FrameRead::Fail;
   };
-  auto fail = [&]() {
+  auto reject = [&](FrameRead r) {
     reset();
-    return FrameRead::Fail;
+    return r;
   };
 
   while (have_ < need_) {
@@ -6221,15 +6223,15 @@ inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
     if (have_ < 2 || need_ > 2) { continue; }
 
     // RSV1, RSV2, RSV3 must be 0 when no extension is negotiated
-    if (head_[0] & 0x70) { return fail(); }
+    if (head_[0] & 0x70) { return reject(FrameRead::ProtocolError); }
     // RFC 6455 Section 5.5: control frames MUST NOT be fragmented and
     // MUST have a payload length of 125 bytes or less
     auto len7 = head_[1] & 0x7F;
     if ((head_[0] & 0x08) && (!(head_[0] & 0x80) || len7 > 125)) {
-      return fail();
+      return reject(FrameRead::ProtocolError);
     }
     auto masked = (head_[1] & 0x80) != 0;
-    if (masked != expect_masked) { return fail(); }
+    if (masked != expect_masked) { return reject(FrameRead::ProtocolError); }
     // The extended length and the mask key follow
     need_ = 2 + (len7 == 126 ? 2 : len7 == 127 ? 8 : 0) + (masked ? 4 : 0);
   }
@@ -6240,7 +6242,7 @@ inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
       len = (static_cast<uint64_t>(head_[2]) << 8) | head_[3];
     } else if (len == 127) {
       // RFC 6455 Section 5.2: the most significant bit MUST be 0
-      if (head_[2] & 0x80) { return fail(); }
+      if (head_[2] & 0x80) { return reject(FrameRead::ProtocolError); }
       len = 0;
       for (size_t i = 2; i < 10; i++) {
         len = (len << 8) | head_[i];
@@ -6249,7 +6251,7 @@ inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
     // A max_len of 0 means no limit, as payload_max_length does, and a length
     // size_t cannot hold (32-bit builds) is refused either way.
     if ((max_len > 0 && len > max_len) || !detail::fits_in_size_t(len)) {
-      return fail();
+      return reject(FrameRead::TooBig);
     }
     len_ = static_cast<size_t>(len);
     sized_ = true;
@@ -6301,6 +6303,23 @@ inline bool is_valid_close_payload(const std::string &payload) {
                      (1007 <= code && code <= 1014) ||
                      (3000 <= code && code <= 4999);
   return may_be_sent && is_valid_utf8(payload.substr(2));
+}
+
+// The payload of a Close with this status and reason. The reason is cut to fit
+// a control frame (RFC 6455 Section 5.5), back to a whole UTF-8 character, and
+// a code that may not be sent, such as NoStatus, goes without a payload.
+inline std::string close_payload(CloseStatus status,
+                                 const std::string &reason = std::string()) {
+  auto code = static_cast<uint16_t>(status);
+  std::string payload{static_cast<char>(code >> 8),
+                      static_cast<char>(code & 0xff)};
+  auto short_reason = reason.substr(0, 123);
+  while (!short_reason.empty() && !is_valid_utf8(short_reason)) {
+    short_reason.pop_back();
+  }
+  payload += short_reason;
+  if (!is_valid_close_payload(payload)) { payload.clear(); }
+  return payload;
 }
 
 } // namespace impl
@@ -24860,7 +24879,25 @@ inline bool WebSocket::send_frame(Opcode op, const char *data, size_t len,
   return true;
 }
 
+// Sends this side's one Close frame and marks the connection closed. Returns
+// false when it already was.
+inline bool WebSocket::send_close(const std::string &payload) {
+  if (closed_.exchange(true)) { return false; }
+  ping_cv_.notify_all();
+  std::lock_guard<std::mutex> lock(write_mutex_);
+  detail::write_websocket_frame(strm_, Opcode::Close, payload.data(),
+                                payload.size(), true, !is_server_);
+  return true;
+}
+
 inline ReadResult WebSocket::read(std::string &msg) {
+  // RFC 6455 Section 7.1.7: a connection failed on the peer's error is told
+  // why with a Close frame, and nothing more is read from it.
+  auto fail_with = [&](CloseStatus status) {
+    send_close(impl::close_payload(status));
+    return Fail;
+  };
+
   // Answers a control frame; any other opcode here is a protocol error.
   // Returns false when the connection is done.
   auto handle_control = [&](Opcode op, const std::string &payload) -> bool {
@@ -24872,21 +24909,14 @@ inline ReadResult WebSocket::read(std::string &msg) {
       unacked_pings_ = 0;
       return true;
     }
-    case Opcode::Close: {
+    case Opcode::Close:
       // RFC 6455 §5.5.1: a Close is echoed back, unless its payload is
       // malformed, which is answered with a protocol error instead.
-      if (closed_.exchange(true)) { return false; }
-      auto reply = payload;
-      if (!impl::is_valid_close_payload(payload)) {
-        auto code = static_cast<uint16_t>(CloseStatus::ProtocolError);
-        reply = {static_cast<char>(code >> 8), static_cast<char>(code & 0xff)};
-      }
-      std::lock_guard<std::mutex> lock(write_mutex_);
-      detail::write_websocket_frame(strm_, Opcode::Close, reply.data(),
-                                    reply.size(), true, !is_server_);
+      send_close(impl::is_valid_close_payload(payload)
+                     ? payload
+                     : impl::close_payload(CloseStatus::ProtocolError));
       return false;
-    }
-    default: closed_ = true; return false;
+    default: fail_with(CloseStatus::ProtocolError); return false;
     }
   };
 
@@ -24923,6 +24953,12 @@ inline ReadResult WebSocket::read(std::string &msg) {
     if (r == impl::FrameRead::Timeout && read_timeout_set_ && !closed_) {
       return Timeout;
     }
+    if (r == impl::FrameRead::ProtocolError) {
+      return fail_with(CloseStatus::ProtocolError);
+    }
+    if (r == impl::FrameRead::TooBig) {
+      return fail_with(CloseStatus::MessageTooBig);
+    }
     if (r != impl::FrameRead::Ok) {
       closed_ = true;
       return Fail;
@@ -24936,8 +24972,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
     // RFC 6455 5.4: a message is a Text or Binary frame and the continuation
     // frames after it, with only control frames between them.
     if (continues == (message_kind_ == Fail)) {
-      closed_ = true;
-      return Fail;
+      return fail_with(CloseStatus::ProtocolError);
     }
     if (continues) {
       message_ += payload;
@@ -24947,8 +24982,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
     }
     if (CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH > 0 &&
         message_.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
-      closed_ = true;
-      return Fail;
+      return fail_with(CloseStatus::MessageTooBig);
     }
     if (!fin) { continue; }
 
@@ -24978,27 +25012,7 @@ inline bool WebSocket::send(const char *data, size_t len) {
 }
 
 inline void WebSocket::close(CloseStatus status, const std::string &reason) {
-  if (closed_.exchange(true)) { return; }
-  ping_cv_.notify_all();
-  std::string payload;
-  auto code = static_cast<uint16_t>(status);
-  payload.push_back(static_cast<char>((code >> 8) & 0xFF));
-  payload.push_back(static_cast<char>(code & 0xFF));
-  // RFC 6455 Section 5.5: control frame payload must not exceed 125 bytes
-  // Close frame has 2-byte status code, so reason is limited to 123 bytes,
-  // cut back to a whole UTF-8 character
-  auto short_reason = reason.substr(0, 123);
-  while (!short_reason.empty() && !impl::is_valid_utf8(short_reason)) {
-    short_reason.pop_back();
-  }
-  payload += short_reason;
-  // A code that may not be sent, such as NoStatus, goes without a payload
-  if (!impl::is_valid_close_payload(payload)) { payload.clear(); }
-  {
-    std::lock_guard<std::mutex> lock(write_mutex_);
-    detail::write_websocket_frame(strm_, Opcode::Close, payload.data(),
-                                  payload.size(), true, !is_server_);
-  }
+  if (!send_close(impl::close_payload(status, reason))) { return; }
 
   // RFC 6455 Section 7.1.1: after sending a Close frame, wait for the peer's
   // Close response before closing the TCP connection.
