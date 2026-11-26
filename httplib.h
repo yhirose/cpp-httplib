@@ -4871,9 +4871,10 @@ namespace impl {
 
 bool is_valid_utf8(const std::string &s);
 
-// Three states: a frame, a failure (the connection cannot be read on), or a
-// timeout with the stream still usable.
-enum class FrameRead { Ok, Fail, Timeout };
+// A frame, a failure (the connection cannot be read on), a timeout with the
+// stream still usable, or a frame the peer should not have sent: one that
+// breaks the protocol, or one longer than the limit.
+enum class FrameRead { Ok, Fail, Timeout, ProtocolError, TooBig };
 
 // A frame read in as many calls as it takes. A timeout leaves what was read
 // so far in place, and the next read() goes on from there, so the stream is
@@ -6211,7 +6212,7 @@ inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
   };
   auto fail = [&]() {
     reset();
-    return FrameRead::Fail;
+    return FrameRead::ProtocolError;
   };
 
   while (have_ < need_) {
@@ -6249,7 +6250,8 @@ inline FrameRead FrameReader::read(Stream &strm, Opcode &opcode,
     // A max_len of 0 means no limit, as payload_max_length does, and a length
     // size_t cannot hold (32-bit builds) is refused either way.
     if ((max_len > 0 && len > max_len) || !detail::fits_in_size_t(len)) {
-      return fail();
+      reset();
+      return FrameRead::TooBig;
     }
     len_ = static_cast<size_t>(len);
     sized_ = true;
@@ -24861,6 +24863,19 @@ inline bool WebSocket::send_frame(Opcode op, const char *data, size_t len,
 }
 
 inline ReadResult WebSocket::read(std::string &msg) {
+  // RFC 6455 Section 7.1.7: a connection failed on the peer's error is told
+  // why with a Close frame, and nothing more is read from it.
+  auto fail_with = [&](CloseStatus status) -> ReadResult {
+    if (closed_.exchange(true)) { return Fail; }
+    auto code = static_cast<uint16_t>(status);
+    char payload[2] = {static_cast<char>(code >> 8),
+                       static_cast<char>(code & 0xff)};
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    detail::write_websocket_frame(strm_, Opcode::Close, payload,
+                                  sizeof(payload), true, !is_server_);
+    return Fail;
+  };
+
   // Answers a control frame; any other opcode here is a protocol error.
   // Returns false when the connection is done.
   auto handle_control = [&](Opcode op, const std::string &payload) -> bool {
@@ -24886,7 +24901,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
                                     reply.size(), true, !is_server_);
       return false;
     }
-    default: closed_ = true; return false;
+    default: fail_with(CloseStatus::ProtocolError); return false;
     }
   };
 
@@ -24923,6 +24938,12 @@ inline ReadResult WebSocket::read(std::string &msg) {
     if (r == impl::FrameRead::Timeout && read_timeout_set_ && !closed_) {
       return Timeout;
     }
+    if (r == impl::FrameRead::ProtocolError) {
+      return fail_with(CloseStatus::ProtocolError);
+    }
+    if (r == impl::FrameRead::TooBig) {
+      return fail_with(CloseStatus::MessageTooBig);
+    }
     if (r != impl::FrameRead::Ok) {
       closed_ = true;
       return Fail;
@@ -24936,8 +24957,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
     // RFC 6455 5.4: a message is a Text or Binary frame and the continuation
     // frames after it, with only control frames between them.
     if (continues == (message_kind_ == Fail)) {
-      closed_ = true;
-      return Fail;
+      return fail_with(CloseStatus::ProtocolError);
     }
     if (continues) {
       message_ += payload;
@@ -24947,8 +24967,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
     }
     if (CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH > 0 &&
         message_.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
-      closed_ = true;
-      return Fail;
+      return fail_with(CloseStatus::MessageTooBig);
     }
     if (!fin) { continue; }
 

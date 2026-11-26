@@ -28695,7 +28695,7 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // RSV2 set (0x20)
@@ -28707,7 +28707,7 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // RSV3 set (0x10)
@@ -28719,7 +28719,7 @@ TEST(WebSocketTest, RSVBitsMustBeZero) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // No RSV bits set - should succeed
@@ -28754,7 +28754,7 @@ TEST(WebSocketTest, ControlFrameValidation) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // Close with FIN=0 - must be rejected
@@ -28769,7 +28769,7 @@ TEST(WebSocketTest, ControlFrameValidation) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // Ping with payload_len=126 (extended length) - must be rejected
@@ -28787,7 +28787,7 @@ TEST(WebSocketTest, ControlFrameValidation) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // Ping with FIN=1 and payload_len=125 - should succeed
@@ -28828,7 +28828,7 @@ TEST(WebSocketTest, PayloadLength64BitMSBMustBeZero) {
     bool fin;
     EXPECT_EQ(
         ws::impl::read_websocket_frame(strm, opcode, payload, fin, false, 1024),
-        ws::impl::FrameRead::Fail);
+        ws::impl::FrameRead::ProtocolError);
   }
 
   // MSB clear - should pass length parsing (will be rejected by max_len,
@@ -31378,6 +31378,120 @@ TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
                 reply);
     }
   }
+}
+
+TEST(WebSocketTest, FailsABadFrameWithACloseStatus) {
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  // A header that announces one byte over the limit, and none of its payload
+  std::string too_big = "\x82\xff";
+  uint64_t len = CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1;
+  for (int shift = 56; shift >= 0; shift -= 8) {
+    too_big += static_cast<char>((len >> shift) & 0xff);
+  }
+  too_big.append(4, '\0');
+
+  const std::string protocol_error("\x03\xea"); // 1002
+  const std::string too_big_error("\x03\xf1");  // 1009
+
+  // What the client sends and the status the server closes with
+  std::vector<std::pair<std::string, std::string>> cases = {
+      {masked_frame(0xc1, "a"), protocol_error},       // RSV1
+      {std::string("\x81\x01") + "a", protocol_error}, // not masked
+      {masked_frame(0x09, ""), protocol_error},        // fragmented Ping
+      {masked_frame(0x83, ""), protocol_error},        // reserved opcode
+      {masked_frame(0x8b, ""), protocol_error},  // reserved control opcode
+      {masked_frame(0x80, "a"), protocol_error}, // continuation, no start
+      {masked_frame(0x01, "a") + masked_frame(0x81, "b"),
+       protocol_error}, // a new message inside a fragmented one
+      {std::string("\x81\xff\x80", 3) + std::string(11, '\0'),
+       protocol_error}, // 64-bit length with its top bit set
+      {too_big, too_big_error},
+  };
+  for (const auto &c : cases) {
+    auto sock = connect_raw_websocket(port, "/ws");
+    ASSERT_NE(INVALID_SOCKET, sock);
+    detail::send_socket(sock, c.first.data(), c.first.size(), 0);
+
+    std::string reply;
+    char buf[256];
+    while (reply.size() < 4) {
+      auto n = ::recv(sock, buf, sizeof(buf), 0);
+      if (n <= 0) { break; }
+      reply.append(buf, static_cast<size_t>(n));
+    }
+    detail::close_socket(sock);
+    EXPECT_EQ(std::string("\x88\x02") + c.second, reply);
+  }
+}
+
+TEST(WebSocketTest, ClientFailsAMaskedFrameWithProtocolError) {
+  SilentListener listener;
+  ASSERT_NE(INVALID_SOCKET, listener.sock);
+
+  // A peer that completes the handshake, then sends a masked frame, which a
+  // server must never do, and keeps what the client sends back.
+  std::string reply;
+  std::thread peer([&]() {
+    auto sock = listener.accept();
+    if (sock == INVALID_SOCKET) { return; }
+    std::string req;
+    char c;
+    while (req.find("\r\n\r\n") == std::string::npos &&
+           ::recv(sock, &c, 1, 0) == 1) {
+      req += c;
+    }
+    const std::string field = "Sec-WebSocket-Key: ";
+    auto pos = req.find(field);
+    if (pos != std::string::npos) {
+      pos += field.size();
+      auto key = req.substr(pos, req.find("\r\n", pos) - pos);
+      auto res = "HTTP/1.1 101 Switching Protocols\r\n"
+                 "Upgrade: websocket\r\n"
+                 "Connection: Upgrade\r\n"
+                 "Sec-WebSocket-Accept: " +
+                 detail::websocket_accept_key(key) + "\r\n\r\n" +
+                 masked_frame(0x81, "a");
+      detail::send_socket(sock, res.data(), res.size(), 0);
+      // FIN + Close, masked with a length of 2, the mask key, the code
+      char buf[256];
+      while (reply.size() < 8) {
+        auto n = ::recv(sock, buf, sizeof(buf), 0);
+        if (n <= 0) { break; }
+        reply.append(buf, static_cast<size_t>(n));
+      }
+    }
+    detail::close_socket(sock);
+  });
+
+  ws::WebSocketClient client("ws://127.0.0.1:" + std::to_string(listener.port) +
+                             "/ws");
+  auto connected = static_cast<bool>(client.connect());
+  std::string msg;
+  auto r = connected ? client.read(msg) : ws::Fail;
+  peer.join();
+  ASSERT_TRUE(connected);
+  EXPECT_EQ(ws::Fail, r);
+
+  ASSERT_EQ(8u, reply.size());
+  EXPECT_EQ(std::string("\x88\x82"), reply.substr(0, 2));
+  std::string code;
+  code += static_cast<char>(reply[6] ^ reply[2]);
+  code += static_cast<char>(reply[7] ^ reply[3]);
+  EXPECT_EQ(std::string("\x03\xea"), code);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
