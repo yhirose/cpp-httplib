@@ -34496,19 +34496,27 @@ private:
 // read timeout, whether or not it is parked.
 TEST(KeepAliveParkingTest, FirstRequestWaitsForTheKeepAliveTimeout) {
   using namespace parking_test;
-  for (auto parking : {true, false}) {
-    SCOPED_TRACE(parking ? "parking" : "no parking");
-    Server svr;
-    serve_ok(svr, threads(1), parking);
-    svr.set_read_timeout(10, 0);
-    svr.set_keep_alive_timeout(1);
-    RunningServer running(svr);
-    Sockets socks;
+  // Both modes at once, since each waits a whole second.
+  Server svrs[2];
+  std::unique_ptr<RunningServer> running[2];
+  Sockets socks; // after `running`, so that the sockets close first
+  for (auto i = 0; i < 2; i++) {
+    serve_ok(svrs[i], threads(1), /*parking=*/i == 0);
+    svrs[i].set_read_timeout(10, 0);
+    svrs[i].set_keep_alive_timeout(1);
+    running[i].reset(new RunningServer(svrs[i]));
+    ASSERT_NE(INVALID_SOCKET, socks.connect(running[i]->port));
+  }
 
-    auto sock = socks.connect(running.port);
-    ASSERT_NE(INVALID_SOCKET, sock);
-    EXPECT_FALSE(sees_eof(sock, in_ms(500)));
-    EXPECT_TRUE(sees_eof(sock, in_ms(2500)));
+  auto early = in_ms(500);
+  for (size_t i = 0; i < 2; i++) {
+    SCOPED_TRACE(i == 0 ? "parking" : "no parking");
+    EXPECT_FALSE(sees_eof(socks.socks[i], early));
+  }
+  auto late = in_ms(2500);
+  for (size_t i = 0; i < 2; i++) {
+    SCOPED_TRACE(i == 0 ? "parking" : "no parking");
+    EXPECT_TRUE(sees_eof(socks.socks[i], late));
   }
 }
 

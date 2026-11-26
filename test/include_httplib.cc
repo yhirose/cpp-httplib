@@ -1,10 +1,9 @@
-// The sole purpose of this file is to include httplib.h in a separate
-// compilation unit, thus verifying that inline keywords have not been forgotten
-// when linked together with test.cc.
+// Includes httplib.h in a separate compilation unit, thus verifying that
+// inline keywords have not been forgotten when linked together with test.cc.
 
 #include <httplib.h>
 
-// The library no longer calls these, but subclasses that override
+// Nothing in the library calls these, but subclasses that override
 // process_and_close_socket() do. Instantiating them here, where the split build
 // does not reach, keeps a change to process_server_socket_core() from breaking
 // them unnoticed.

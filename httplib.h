@@ -14374,11 +14374,11 @@ struct Server::KeepAliveConnection {
     sock = INVALID_SOCKET;
   }
 
-  // From the worker that served it.
-  void close_served(bool graceful) {
+  // From the worker that served it, with what resume() returned.
+  void close_served(bool ok) {
     assert(sock != INVALID_SOCKET);
     if (opened) {
-      shut_down(graceful);
+      shut_down(ok && !turn.websocket_upgraded);
       detail::drain_and_close_socket(sock);
     } else {
       // It never got as far as a request, e.g. a failed TLS handshake.
@@ -16471,7 +16471,7 @@ inline bool Server::process_and_close_socket(socket_t sock) {
   auto conn = new_keep_alive_connection(sock);
   conn->wait_in_place = true;
   auto ret = conn->resume();
-  conn->close_served(!conn->turn.websocket_upgraded && ret);
+  conn->close_served(ret);
   return ret;
 }
 
@@ -16656,7 +16656,7 @@ Server::resume_connection(std::shared_ptr<KeepAliveConnection> conn) {
     c.release_buffers(); // it may stay idle for long
     if (st.give_back(conn)) { return; }
   }
-  c.close_served(!c.turn.websocket_upgraded && ret);
+  c.close_served(ret);
 }
 
 inline void Server::output_log(const Request &req, const Response &res) const {
