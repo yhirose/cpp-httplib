@@ -14404,6 +14404,10 @@ struct Server::KeepAliveConnection {
   }
 
   bool wait_for_next_request() {
+    if (wait_in_place) {
+      return detail::keep_alive(svr.svr_sock_, sock,
+                                svr.keep_alive_timeout_sec_);
+    }
     // The event loop saw the socket readable just before this ran.
     if (turn.woken) {
       turn.woken = false;
@@ -14427,6 +14431,8 @@ struct Server::KeepAliveConnection {
   int remote_port = 0;
   int local_port = 0;
   bool opened = false; // by resume(), once open() has succeeded
+  // Waits for the next request on the worker, as without parking.
+  bool wait_in_place = false;
   Turn turn;
   size_t served = 0;
   std::string remote_addr;
@@ -16463,29 +16469,10 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 inline bool Server::is_valid() const { return !has_invalid_registration_; }
 
 inline bool Server::process_and_close_socket(socket_t sock) {
-  std::string remote_addr;
-  int remote_port = 0;
-  detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
-
-  std::string local_addr;
-  int local_port = 0;
-  detail::get_local_ip_and_port(sock, local_addr, local_port);
-
-  bool websocket_upgraded = false;
-  auto ret = serve_guarded([&]() {
-    return detail::process_server_socket(
-        svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-        write_timeout_usec_,
-        [&](Stream &strm, bool close_connection, bool &connection_closed) {
-          return process_request(strm, remote_addr, remote_port, local_addr,
-                                 local_port, close_connection,
-                                 connection_closed, nullptr,
-                                 &websocket_upgraded);
-        });
-  });
-
-  detail::drain_and_close_socket(sock);
+  auto conn = new_keep_alive_connection(sock);
+  conn->wait_in_place = true;
+  auto ret = conn->resume();
+  conn->close_served(!conn->turn.websocket_upgraded && ret);
   return ret;
 }
 
