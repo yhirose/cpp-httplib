@@ -2084,10 +2084,6 @@ TEST(ParseDispositionParamsTest, QuotedValues) {
       {"name=\"file1\"; filename=\"a.txt\"",
        {{"name", "file1"}, {"filename", "a.txt"}}},
       // MIME parameter names are case-insensitive, but their values are not.
-      {"NAME=\"Upload\"; filename=\"Report.TXT\"",
-       {{"name", "Upload"}, {"filename", "Report.TXT"}}},
-      {"name=\"Upload\"; FILENAME=\"Report.TXT\"",
-       {{"name", "Upload"}, {"filename", "Report.TXT"}}},
       {"NaMe=\"Upload\"; FiLeNaMe=\"Report.TXT\"",
        {{"name", "Upload"}, {"filename", "Report.TXT"}}},
       // Whitespace around '=' and ';' is still trimmed

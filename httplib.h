@@ -10161,6 +10161,7 @@ inline void parse_disposition_params(const std::string &s, Params &params) {
         std::string val;
         divide_param_pair(b, e, key, val);
 
+        // Parameter names are case-insensitive (RFC 2045 §5.1)
         if (!key.empty()) {
           params.emplace(case_ignore::to_lower(trim_double_quotes_copy(key)),
                          unquote_param(val));
