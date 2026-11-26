@@ -4924,7 +4924,7 @@ public:
   // code, ProtocolError when it was malformed, and Abnormal when none came.
   // After a close() of our own, the peer's reply is what is reported.
   CloseStatus close_status() const;
-  const std::string &close_reason() const;
+  std::string close_reason() const;
 
   // Bound how long read() waits before returning Timeout. 0 waits forever.
   // A server handler owns its connection's timeout this way; a client sets it
@@ -5035,7 +5035,7 @@ public:
              const std::string &reason = "");
   bool is_open() const;
   CloseStatus close_status() const;
-  const std::string &close_reason() const;
+  std::string close_reason() const;
   const std::string &subprotocol() const;
   void set_read_timeout(time_t sec, time_t usec = 0);
   template <class Rep, class Period>
@@ -25111,9 +25111,8 @@ inline bool WebSocket::is_open() const { return !closed_; }
 
 inline CloseStatus WebSocket::close_status() const { return close_status_; }
 
-inline const std::string &WebSocket::close_reason() const {
-  static const std::string empty;
-  return close_status_ == CloseStatus::Abnormal ? empty : close_reason_;
+inline std::string WebSocket::close_reason() const {
+  return close_status_ == CloseStatus::Abnormal ? std::string() : close_reason_;
 }
 
 // Called with read_mutex_ held. Only the first Close counts.
@@ -25408,9 +25407,8 @@ inline CloseStatus WebSocketClient::close_status() const {
   return ws_ ? ws_->close_status() : CloseStatus::Abnormal;
 }
 
-inline const std::string &WebSocketClient::close_reason() const {
-  static const std::string empty;
-  return ws_ ? ws_->close_reason() : empty;
+inline std::string WebSocketClient::close_reason() const {
+  return ws_ ? ws_->close_reason() : std::string();
 }
 
 inline const std::string &WebSocketClient::subprotocol() const {

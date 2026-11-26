@@ -150,7 +150,7 @@ bool is_open() const;
 // ProtocolError (1002) for a malformed one, and Abnormal (1006) when the
 // connection ended without one. After your own close(), the peer's reply.
 CloseStatus close_status() const;
-const std::string &close_reason() const;
+std::string close_reason() const;
 
 // Bound how long read() waits before returning Timeout (0 waits forever).
 // Safe to call while another thread is in read().
@@ -209,7 +209,7 @@ void close(CloseStatus status = CloseStatus::Normal,
            const std::string &reason = "");
 bool is_open() const;
 CloseStatus close_status() const;
-const std::string &close_reason() const;
+std::string close_reason() const;
 
 // Authentication - the same setters Client has (Basic wins over Bearer).
 void set_basic_auth(const std::string &username, const std::string &password);
