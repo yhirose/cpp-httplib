@@ -6474,38 +6474,27 @@ inline bool parse_header(const char *beg, const char *end, T fn) {
     p++;
   }
 
-  auto name = std::string(beg, p);
-  if (!detail::fields::is_field_name(name)) { return false; }
+  if (p == end || p == beg) { return false; }
 
-  if (p == end) { return false; }
+  auto key = std::string(beg, p);
+  if (!detail::fields::is_field_name(key)) { return false; }
 
-  auto key_end = p;
-
-  if (*p++ != ':') { return false; }
+  p++; // skip ':'
 
   while (p < end && is_space_or_tab(*p)) {
     p++;
   }
 
-  if (p <= end) {
-    auto key_len = key_end - beg;
-    if (!key_len) { return false; }
+  auto val = std::string(p, end);
+  if (!detail::fields::is_field_value(val)) { return false; }
 
-    auto key = std::string(beg, key_end);
-    auto val = std::string(p, end);
+  // RFC 9110 §5.5: header field values are opaque octets and MUST NOT be
+  // percent-decoded by the recipient. Applications that need to interpret a
+  // value as a URI component should call httplib::decode_uri_component()
+  // (or decode_path_component()) explicitly.
+  fn(key, val);
 
-    if (!detail::fields::is_field_value(val)) { return false; }
-
-    // RFC 9110 §5.5: header field values are opaque octets and MUST NOT be
-    // percent-decoded by the recipient. Applications that need to interpret a
-    // value as a URI component should call httplib::decode_uri_component()
-    // (or decode_path_component()) explicitly.
-    fn(key, val);
-
-    return true;
-  }
-
-  return false;
+  return true;
 }
 
 inline bool parse_trailers(stream_line_reader &line_reader, Headers &dest,
@@ -12418,61 +12407,60 @@ inline void hosted_at(const std::string &hostname,
 }
 
 inline std::string encode_uri_component(const std::string &value) {
-  std::ostringstream escaped;
-  escaped.fill('0');
-  escaped << std::hex;
+  static const char hex_digits[] = "0123456789ABCDEF";
+  std::string escaped;
+  escaped.reserve(value.size());
 
-  for (auto c : value) {
-    if (detail::is_ascii_alnum(c) || c == '-' || c == '_' || c == '.' ||
+  for (auto ch : value) {
+    auto c = static_cast<unsigned char>(ch);
+    if (detail::is_ascii_alnum(ch) || c == '-' || c == '_' || c == '.' ||
         c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' || c == ')') {
-      escaped << c;
+      escaped.push_back(ch);
     } else {
-      escaped << std::uppercase;
-      escaped << '%' << std::setw(2)
-              << static_cast<int>(static_cast<unsigned char>(c));
-      escaped << std::nouppercase;
+      char buf[3] = {'%', hex_digits[c >> 4], hex_digits[c & 0x0F]};
+      escaped.append(buf, 3);
     }
   }
 
-  return escaped.str();
+  return escaped;
 }
 
 inline std::string encode_uri(const std::string &value) {
-  std::ostringstream escaped;
-  escaped.fill('0');
-  escaped << std::hex;
+  static const char hex_digits[] = "0123456789ABCDEF";
+  std::string escaped;
+  escaped.reserve(value.size());
 
-  for (auto c : value) {
-    if (detail::is_ascii_alnum(c) || c == '-' || c == '_' || c == '.' ||
+  for (auto ch : value) {
+    auto c = static_cast<unsigned char>(ch);
+    if (detail::is_ascii_alnum(ch) || c == '-' || c == '_' || c == '.' ||
         c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' || c == ')' ||
         c == ';' || c == '/' || c == '?' || c == ':' || c == '@' || c == '&' ||
         c == '=' || c == '+' || c == '$' || c == ',' || c == '#') {
-      escaped << c;
+      escaped.push_back(ch);
     } else {
-      escaped << std::uppercase;
-      escaped << '%' << std::setw(2)
-              << static_cast<int>(static_cast<unsigned char>(c));
-      escaped << std::nouppercase;
+      char buf[3] = {'%', hex_digits[c >> 4], hex_digits[c & 0x0F]};
+      escaped.append(buf, 3);
     }
   }
 
-  return escaped.str();
+  return escaped;
 }
 
 inline std::string decode_uri_component(const std::string &value) {
   std::string result;
+  result.reserve(value.size());
 
   for (size_t i = 0; i < value.size(); i++) {
     if (value[i] == '%' && i + 2 < value.size()) {
       auto val = 0;
       if (detail::from_hex_to_i(value, i + 1, 2, val)) {
-        result += static_cast<char>(val);
+        result.push_back(static_cast<char>(val));
         i += 2;
       } else {
-        result += value[i];
+        result.push_back(value[i]);
       }
     } else {
-      result += value[i];
+      result.push_back(value[i]);
     }
   }
 
@@ -12481,6 +12469,7 @@ inline std::string decode_uri_component(const std::string &value) {
 
 inline std::string decode_uri(const std::string &value) {
   std::string result;
+  result.reserve(value.size());
 
   for (size_t i = 0; i < value.size(); i++) {
     if (value[i] == '%' && i + 2 < value.size()) {
@@ -12493,18 +12482,16 @@ inline std::string decode_uri(const std::string &value) {
         if (c == ';' || c == '/' || c == '?' || c == ':' || c == '@' ||
             c == '&' || c == '=' || c == '+' || c == '$' || c == ',' ||
             c == '#') {
-          result += value[i];
-          result += value[i + 1];
-          result += value[i + 2];
+          result.append(value, i, 3);
         } else {
-          result += c;
+          result.push_back(c);
         }
         i += 2;
       } else {
-        result += value[i];
+        result.push_back(value[i]);
       }
     } else {
-      result += value[i];
+      result.push_back(value[i]);
     }
   }
 
@@ -12512,8 +12499,9 @@ inline std::string decode_uri(const std::string &value) {
 }
 
 inline std::string encode_path_component(const std::string &component) {
+  static const char hex_digits[] = "0123456789ABCDEF";
   std::string result;
-  result.reserve(component.size() * 3);
+  result.reserve(component.size());
 
   for (size_t i = 0; i < component.size(); i++) {
     auto c = static_cast<unsigned char>(component[i]);
@@ -12521,27 +12509,25 @@ inline std::string encode_path_component(const std::string &component) {
     // Unreserved characters per RFC 3986: ALPHA / DIGIT / "-" / "." / "_" / "~"
     if (detail::is_ascii_alnum(static_cast<char>(c)) || c == '-' || c == '.' ||
         c == '_' || c == '~') {
-      result += static_cast<char>(c);
+      result.push_back(static_cast<char>(c));
     }
     // Path-safe sub-delimiters: "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" /
     // "," / ";" / "="
     else if (c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' ||
              c == ')' || c == '*' || c == '+' || c == ',' || c == ';' ||
              c == '=') {
-      result += static_cast<char>(c);
+      result.push_back(static_cast<char>(c));
     }
     // Colon is allowed in path segments except first segment
     else if (c == ':') {
-      result += static_cast<char>(c);
+      result.push_back(static_cast<char>(c));
     }
     // @ is allowed in path
     else if (c == '@') {
-      result += static_cast<char>(c);
+      result.push_back(static_cast<char>(c));
     } else {
-      result += '%';
-      char hex[3];
-      snprintf(hex, sizeof(hex), "%02X", c);
-      result.append(hex, 2);
+      char buf[3] = {'%', hex_digits[c >> 4], hex_digits[c & 0x0F]};
+      result.append(buf, 3);
     }
   }
   return result;
