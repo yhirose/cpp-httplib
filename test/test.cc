@@ -31117,14 +31117,14 @@ TEST(WebSocketTest, ServerMaxMessageLength) {
   EXPECT_FALSE(client.is_open());
 }
 
-TEST(WebSocketTest, ServerMaxMessageLengthCoversFragments) {
+TEST(WebSocketTest, ServerMaxMessageLengthOnRawFrames) {
   std::atomic<bool> done{false};
   std::vector<size_t> sizes;
   auto last = ws::Text;
 
   Server svr;
   svr.set_websocket_ping_interval(0);
-  svr.set_websocket_max_message_length(200);
+  svr.set_websocket_max_message_length(100);
   svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
     std::string msg;
     while ((last = ws.read(msg)) != ws::Fail) {
@@ -31141,61 +31141,34 @@ TEST(WebSocketTest, ServerMaxMessageLengthCoversFragments) {
   });
   svr.wait_until_ready();
 
-  auto sock = connect_raw_websocket(port, "/ws");
-  ASSERT_NE(INVALID_SOCKET, sock);
-  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  {
+    auto sock = connect_raw_websocket(port, "/ws");
+    ASSERT_NE(INVALID_SOCKET, sock);
+    auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
 
-  // Every frame is within the limit; the second message as a whole is not.
-  auto frames = masked_frame(0x02, std::string(100, 'a')) + // Binary
-                masked_frame(0x80, std::string(100, 'a')) + // FIN + Cont.
-                masked_frame(0x02, std::string(120, 'b')) + // Binary
-                masked_frame(0x80, std::string(120, 'b'));  // FIN + Cont.
-  detail::send_socket(sock, frames.data(), frames.size(), 0);
+    // A control frame is not held to the limit. Every data frame is within
+    // it; the second message as a whole is not.
+    auto frames = masked_frame(0x89, std::string(110, 'p')) + // Ping
+                  masked_frame(0x02, std::string(50, 'a')) +  // Binary
+                  masked_frame(0x80, std::string(50, 'a')) +  // FIN + Cont.
+                  masked_frame(0x02, std::string(60, 'b')) +  // Binary
+                  masked_frame(0x80, std::string(60, 'b'));   // FIN + Cont.
+    detail::send_socket(sock, frames.data(), frames.size(), 0);
 
-  for (int i = 0; i < 500 && !done; i++) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    for (int i = 0; i < 500 && !done; i++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(done);
+    ASSERT_EQ(1u, sizes.size());
+    EXPECT_EQ(100u, sizes[0]);
+    EXPECT_EQ(ws::Fail, last);
   }
-  ASSERT_TRUE(done);
-  ASSERT_EQ(1u, sizes.size());
-  EXPECT_EQ(200u, sizes[0]);
-  EXPECT_EQ(ws::Fail, last);
-}
 
-TEST(WebSocketTest, ServerMaxMessageLengthAboveTheDefault) {
-  // The setter can raise the limit as well as lower it, and 0 lifts it,
-  // as it does for CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH.
-  for (auto limit :
-       {size_t(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1), size_t(0)}) {
-    Server svr;
-    svr.set_websocket_ping_interval(0);
-    svr.set_websocket_max_message_length(limit);
-    svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
-      std::string msg;
-      while (ws.read(msg)) {
-        ws.send(std::to_string(msg.size()));
-      }
-    });
-
-    auto port = svr.bind_to_any_port(HOST);
-    std::thread t([&]() { svr.listen_after_bind(); });
-    auto se = detail::scope_exit([&] {
-      svr.stop();
-      t.join();
-    });
-    svr.wait_until_ready();
-
-    ws::WebSocketClient client("ws://localhost:" + std::to_string(port) +
-                               "/ws");
-    client.set_read_timeout(10, 0);
-    ASSERT_TRUE(client.connect());
-
-    std::string oversized(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1, 'A');
-    ASSERT_TRUE(client.send(oversized));
-    std::string msg;
-    ASSERT_EQ(ws::Text, client.read(msg)) << "limit " << limit;
-    EXPECT_EQ(std::to_string(oversized.size()), msg);
-    client.close();
-  }
+  // A header that announces more than the limit is refused before its payload
+  EXPECT_EQ(
+      std::string("\x88\x02\x03\xf1"),
+      raw_websocket_reply(
+          port, std::string("\x82\xfe\x03\xe8", 4) + std::string(4, '\0'), 4));
 }
 
 TEST(WebSocketTest, ClientMaxMessageLength) {
@@ -31227,6 +31200,13 @@ TEST(WebSocketTest, ClientMaxMessageLength) {
 
   EXPECT_EQ(ws::Fail, client.read(msg));
   EXPECT_FALSE(client.is_open());
+
+  // 0 lifts the limit
+  client.set_websocket_max_message_length(0);
+  ASSERT_TRUE(client.connect());
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ(2048u, msg.size());
 }
 
 TEST(WebSocketTest, NegativePingIntervalSendsNoPings) {

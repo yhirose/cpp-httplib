@@ -24954,11 +24954,11 @@ inline ReadResult WebSocket::read(std::string &msg) {
     std::string payload;
     bool fin;
 
-    // While a message is assembled, only what is left of the limit, but room
-    // for a control frame, which may come between its fragments.
+    // What is left of the limit (all of it between messages), but always room
+    // for a control frame, which the limit does not cover.
     auto max_len =
-        max_message_length_ == 0 || message_kind_ == Fail
-            ? max_message_length_
+        max_message_length_ == 0
+            ? size_t(0)
             : (std::max)(size_t(125), max_message_length_ - message_.size());
     auto r = frames_.read(strm_, opcode, payload, fin, is_server_, max_len);
     if (r != impl::FrameRead::Ok && server_stopping()) { return going_away(); }

@@ -556,7 +556,7 @@ With the default ping interval of 30 seconds, `max_missed_pongs = 2` detects a d
 
 ### Maximum Message Length
 
-`read()` refuses a message larger than `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH` (16MB by default): it returns `Fail` and the connection is closed. A frame that announces a larger length is refused before its payload is read, and a fragmented message is refused as soon as its fragments add up to more, so the limit bounds the memory a peer can make `read()` hold. You can set it per server or per client at runtime instead of changing the compile-time macro. `0` means no limit.
+`read()` refuses a message larger than `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH` (16MB by default): it returns `Fail` and closes the connection with `MessageTooBig` (1009). A frame that announces a larger length is refused before its payload is read, and a fragmented message is refused as soon as its fragments add up to more, so the limit bounds the memory a peer can make `read()` hold. You can set it per server or per client at runtime instead of changing the compile-time macro. `0` means no limit.
 
 ```cpp
 // Server side
