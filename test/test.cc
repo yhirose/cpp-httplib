@@ -34425,9 +34425,10 @@ bool wait_until(const std::function<bool()> &cond, int timeout_ms) {
   return true;
 }
 
-void serve_ok(Server &svr, std::function<TaskQueue *(void)> new_task_queue) {
+void serve_ok(Server &svr, std::function<TaskQueue *(void)> new_task_queue,
+              bool parking = true) {
   svr.new_task_queue = std::move(new_task_queue);
-  svr.set_keep_alive_parking(true);
+  svr.set_keep_alive_parking(parking);
   svr.Get("/", [](const Request &, Response &res) {
     res.set_content("ok", "text/plain");
   });
@@ -34490,6 +34491,55 @@ private:
 };
 
 } // namespace parking_test
+
+// A connection that sends nothing is closed at the keep-alive timeout, not the
+// read timeout, whether or not it is parked.
+TEST(KeepAliveParkingTest, FirstRequestWaitsForTheKeepAliveTimeout) {
+  using namespace parking_test;
+  for (auto parking : {true, false}) {
+    SCOPED_TRACE(parking ? "parking" : "no parking");
+    Server svr;
+    serve_ok(svr, threads(1), parking);
+    svr.set_read_timeout(10, 0);
+    svr.set_keep_alive_timeout(1);
+    RunningServer running(svr);
+    Sockets socks;
+
+    auto sock = socks.connect(running.port);
+    ASSERT_NE(INVALID_SOCKET, sock);
+    EXPECT_FALSE(sees_eof(sock, in_ms(500)));
+    EXPECT_TRUE(sees_eof(sock, in_ms(2500)));
+  }
+}
+
+// Without parking, a request that arrived before stop() is still served when
+// its worker gets to it.
+TEST(KeepAliveParkingTest, RequestBeforeStopIsServedWithoutParking) {
+  using namespace parking_test;
+  std::atomic<int> ok{0}, full{0};
+  Server svr;
+  serve_ok(svr, [&] { return new CountingTaskQueue(1, 0, ok, full); }, false);
+  Gate gate;
+  svr.Get("/gate", [&](const Request &, Response &res) {
+    gate.wait();
+    res.set_content("ok", "text/plain");
+  });
+  RunningServer running(svr);
+  Sockets socks;
+
+  // Hold the only worker, and queue a connection whose request has arrived.
+  auto held = socks.connect(running.port);
+  ASSERT_TRUE(send_get(held, "/gate"));
+  ASSERT_TRUE(wait_until([&] { return gate.entered() == 1; }, 2000));
+  auto waiting = socks.connect(running.port);
+  ASSERT_TRUE(send_get(waiting));
+  ASSERT_TRUE(wait_until([&] { return ok == 2; }, 2000));
+
+  svr.stop();
+  gate.open();
+  EXPECT_TRUE(receives_ok(held, 2000));
+  EXPECT_TRUE(receives_ok(waiting, 2000));
+}
 
 TEST(KeepAliveParkingTest, IdleConnectionsDoNotHoldTheWorkers) {
   using namespace parking_test;
@@ -34745,16 +34795,19 @@ TEST(KeepAliveParkingTest, IdleTlsConnectionsDoNotHoldTheWorkers) {
 
 TEST(KeepAliveParkingTest, FailedTlsHandshakeClosesTheConnection) {
   using namespace parking_test;
-  SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-  ASSERT_TRUE(svr.is_valid());
-  serve_ok(svr, threads(1));
-  RunningServer running(svr);
-  Sockets socks;
+  for (auto parking : {true, false}) {
+    SCOPED_TRACE(parking ? "parking" : "no parking");
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+    ASSERT_TRUE(svr.is_valid());
+    serve_ok(svr, threads(1), parking);
+    RunningServer running(svr);
+    Sockets socks;
 
-  auto plain = socks.connect(running.port);
-  ASSERT_TRUE(send_get(plain));
-  EXPECT_TRUE(sees_eof(plain, in_ms(1000)));
-  EXPECT_NE(0, svr.ssl_last_error());
+    auto plain = socks.connect(running.port);
+    ASSERT_TRUE(send_get(plain));
+    EXPECT_TRUE(sees_eof(plain, in_ms(1000)));
+    EXPECT_NE(0, svr.ssl_last_error());
+  }
 }
 
 TEST(KeepAliveParkingTest, StopClosesParkedTlsConnections) {
