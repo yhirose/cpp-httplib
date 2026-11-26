@@ -67,7 +67,15 @@ To notify in-flight clients that the server is going down, use `GoingAway`.
 ws.close(httplib::ws::CloseStatus::GoingAway, "server restarting");
 ```
 
-On the client, `read()` just returns `Fail`; the status and reason it received aren't exposed. If the client needs to tell a restart from other closures, send it a message first (say, `ws.send("restarting")`), then call `close()`.
+Once `read()` has returned `Fail`, `close_status()` and `close_reason()` tell you why: the status and reason of the peer's Close, `NoStatus` (1005) if it sent no status, or `Abnormal` (1006) if the connection ended without a Close. This works the same on the server and the client.
+
+```cpp
+std::string msg;
+while (cli.read(msg)) {}
+if (cli.close_status() == httplib::ws::CloseStatus::GoingAway) {
+  // the server is restarting: reconnect later
+}
+```
 
 ## Example: a tiny chat with quit
 

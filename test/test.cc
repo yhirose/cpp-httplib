@@ -29496,6 +29496,42 @@ TEST_F(WebSocketIntegrationTest, ClientCloseWithStatus) {
   EXPECT_FALSE(client.is_open());
 }
 
+TEST_F(WebSocketIntegrationTest, ClientSeesTheServersCloseStatus) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-close-status");
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("trigger"));
+
+  std::string msg;
+  EXPECT_EQ(ws::Fail, client.read(msg));
+  EXPECT_EQ(ws::CloseStatus::GoingAway, client.close_status());
+  EXPECT_EQ("shutting down", client.close_reason());
+}
+
+TEST_F(WebSocketIntegrationTest, ClientSeesANormalClose) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-close");
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(client.send("trigger"));
+
+  std::string msg;
+  EXPECT_EQ(ws::Fail, client.read(msg));
+  EXPECT_EQ(ws::CloseStatus::Normal, client.close_status());
+  EXPECT_EQ("", client.close_reason());
+}
+
+TEST_F(WebSocketIntegrationTest, ClientCloseStatusIsThePeersReply) {
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
+                             "/ws-echo");
+  EXPECT_EQ(ws::CloseStatus::Abnormal, client.close_status());
+  ASSERT_TRUE(client.connect());
+
+  // The server echoes the code and reason of the Close it receives
+  client.close(static_cast<ws::CloseStatus>(4001), "logout");
+  EXPECT_EQ(4001, static_cast<uint16_t>(client.close_status()));
+  EXPECT_EQ("logout", client.close_reason());
+}
+
 TEST_F(WebSocketIntegrationTest, SubProtocolNegotiation) {
   Headers headers = {{"Sec-WebSocket-Protocol", "mqtt, graphql-ws"}};
   ws::WebSocketClient client(
@@ -31498,6 +31534,106 @@ TEST(WebSocketTest, ClientFailsAMaskedFrameWithProtocolError) {
       ws::impl::read_websocket_frame(strm, opcode, payload, fin, true, 125));
   EXPECT_EQ(ws::Opcode::Close, opcode);
   EXPECT_EQ(std::string("\x03\xea"), payload);
+}
+
+// What a handler sees of the peer's close once read() has failed, when a raw
+// client sends `sent` and then closes its socket.
+static void check_handler_sees_close(const std::string &sent,
+                                     ws::CloseStatus status,
+                                     const std::string &reason) {
+  std::atomic<bool> done{false};
+  ws::CloseStatus seen_status = ws::CloseStatus::Normal;
+  std::string seen_reason = "unset";
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+    seen_status = ws.close_status();
+    seen_reason = ws.close_reason();
+    done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  detail::send_socket(sock, sent.data(), sent.size(), 0);
+  detail::close_socket(sock);
+
+  for (int i = 0; i < 500 && !done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(done);
+  EXPECT_EQ(static_cast<uint16_t>(status), static_cast<uint16_t>(seen_status));
+  EXPECT_EQ(reason, seen_reason);
+}
+
+TEST(WebSocketTest, HandlerSeesThePeersCloseStatus) {
+  check_handler_sees_close(masked_frame(0x88, "\x0f\xa1logout"),
+                           static_cast<ws::CloseStatus>(4001), "logout");
+}
+
+TEST(WebSocketTest, HandlerSeesANormalClose) {
+  check_handler_sees_close(masked_frame(0x88, "\x03\xe8"),
+                           ws::CloseStatus::Normal, "");
+}
+
+TEST(WebSocketTest, HandlerSeesNoStatusForAnEmptyClose) {
+  check_handler_sees_close(masked_frame(0x88, ""), ws::CloseStatus::NoStatus,
+                           "");
+}
+
+TEST(WebSocketTest, HandlerSeesProtocolErrorForAMalformedClose) {
+  check_handler_sees_close(masked_frame(0x88, "\x03"),
+                           ws::CloseStatus::ProtocolError, "");
+}
+
+TEST(WebSocketTest, HandlerSeesAbnormalWithoutAClose) {
+  check_handler_sees_close(masked_frame(0x81, "hi"), ws::CloseStatus::Abnormal,
+                           "");
+}
+
+TEST(WebSocketTest, HandlerSeesTheClientsCloseStatus) {
+  std::atomic<bool> done{false};
+  ws::CloseStatus seen_status = ws::CloseStatus::Normal;
+  std::string seen_reason;
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+    seen_status = ws.close_status();
+    seen_reason = ws.close_reason();
+    done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://127.0.0.1:" + std::to_string(port) + "/ws");
+  ASSERT_TRUE(client.connect());
+  client.close(static_cast<ws::CloseStatus>(4001), "logout");
+
+  for (int i = 0; i < 500 && !done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(done);
+  EXPECT_EQ(4001, static_cast<uint16_t>(seen_status));
+  EXPECT_EQ("logout", seen_reason);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
