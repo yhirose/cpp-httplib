@@ -85,4 +85,4 @@ if (cli.read(buf) == httplib::ws::ReadResult::Binary) {
 
 You can mix text and binary in the same connection. A common pattern: JSON for control messages, binary for the actual data — you get efficient handling of metadata and payload both.
 
-> **Note:** An incoming message can be at most `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH` (16MB by default, 0 for no limit). A larger one makes `read()` return `Fail` and ends the connection. Within that limit, a message is held in memory whole, so for very large data, chunk it in your application code.
+> **Note:** An incoming message can be at most `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH` (16MB by default, 0 for no limit), or what `set_websocket_max_message_length()` on `Server` or `WebSocketClient` sets at runtime. A larger one makes `read()` return `Fail` and ends the connection. Within that limit, a message is held in memory whole, so for very large data, chunk it in your application code.

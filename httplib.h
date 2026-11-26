@@ -2415,6 +2415,8 @@ public:
 
   Server &set_websocket_max_missed_pongs(int count);
 
+  Server &set_websocket_max_message_length(size_t length);
+
   bool bind_to_port(const std::string &host, int port, int socket_flags = 0);
   int bind_to_any_port(const std::string &host, int socket_flags = 0);
   bool listen_after_bind();
@@ -2497,6 +2499,8 @@ protected:
   time_t websocket_ping_interval_sec_ =
       CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
   int websocket_max_missed_pongs_ = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS;
+  size_t websocket_max_message_length_ =
+      CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH;
 
 private:
   using Handlers =
@@ -4941,10 +4945,12 @@ private:
       Stream &strm, const Request &req, bool is_server,
       time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
       int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS,
+      size_t max_message_length = CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH,
       std::function<bool()> server_stopping = nullptr)
       : strm_(strm), req_(req), is_server_(is_server),
         ping_interval_sec_(ping_interval_sec),
         max_missed_pongs_(max_missed_pongs),
+        max_message_length_(max_message_length),
         server_stopping_(std::move(server_stopping)) {
     interrupt_reads();
     start_heartbeat();
@@ -4954,10 +4960,12 @@ private:
       std::unique_ptr<Stream> &&owned_strm, const Request &req, bool is_server,
       time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
       int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS,
+      size_t max_message_length = CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH,
       std::function<bool()> server_stopping = nullptr)
       : strm_(*owned_strm), owned_strm_(std::move(owned_strm)), req_(req),
         is_server_(is_server), ping_interval_sec_(ping_interval_sec),
         max_missed_pongs_(max_missed_pongs),
+        max_message_length_(max_message_length),
         server_stopping_(std::move(server_stopping)) {
     interrupt_reads();
     start_heartbeat();
@@ -4977,6 +4985,8 @@ private:
   bool is_server_;
   time_t ping_interval_sec_;
   int max_missed_pongs_;
+  // The largest frame or message read() accepts; 0 means no limit
+  size_t max_message_length_;
   int unacked_pings_ = 0;
   std::atomic<bool> closed_{false};
   // Set when the peer stopped answering pings, to end a read() waiting on it
@@ -5033,6 +5043,7 @@ public:
 
   void set_websocket_ping_interval(time_t sec);
   void set_websocket_max_missed_pongs(int count);
+  void set_websocket_max_message_length(size_t length);
   void set_tcp_nodelay(bool on);
   void set_address_family(int family);
   void set_ipv6_v6only(bool on);
@@ -5115,6 +5126,8 @@ private:
   time_t websocket_ping_interval_sec_ =
       CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND;
   int websocket_max_missed_pongs_ = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS;
+  size_t websocket_max_message_length_ =
+      CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH;
   int address_family_ = AF_UNSPEC;
   bool tcp_nodelay_ = CPPHTTPLIB_WEBSOCKET_TCP_NODELAY;
   bool ipv6_v6only_ = CPPHTTPLIB_IPV6_V6ONLY;
@@ -14960,6 +14973,11 @@ inline Server &Server::set_websocket_max_missed_pongs(int count) {
   return *this;
 }
 
+inline Server &Server::set_websocket_max_message_length(size_t length) {
+  websocket_max_message_length_ = length;
+  return *this;
+}
+
 inline Server &Server::set_websocket_ping_interval(time_t sec) {
   websocket_ping_interval_sec_ = sec;
   return *this;
@@ -16382,7 +16400,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
             write_timeout_sec_, write_timeout_usec_));
         ws::WebSocket ws(std::move(ws_strm), req, true,
                          websocket_ping_interval_sec_,
-                         websocket_max_missed_pongs_, stopping);
+                         websocket_max_missed_pongs_,
+                         websocket_max_message_length_, stopping);
         ws_route->handler(req, ws);
         return true;
       }
@@ -16390,7 +16409,8 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
       // Use WebSocket-specific read timeout instead of HTTP timeout
       strm.set_read_timeout(CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND, 0);
       ws::WebSocket ws(strm, req, true, websocket_ping_interval_sec_,
-                       websocket_max_missed_pongs_, stopping);
+                       websocket_max_missed_pongs_,
+                       websocket_max_message_length_, stopping);
       ws_route->handler(req, ws);
       return true;
     }
@@ -24937,10 +24957,9 @@ inline ReadResult WebSocket::read(std::string &msg) {
     // While a message is assembled, only what is left of the limit, but room
     // for a control frame, which may come between its fragments.
     auto max_len =
-        CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH == 0 || message_kind_ == Fail
-            ? size_t(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH)
-            : (std::max)(size_t(125), CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH -
-                                          message_.size());
+        max_message_length_ == 0 || message_kind_ == Fail
+            ? max_message_length_
+            : (std::max)(size_t(125), max_message_length_ - message_.size());
     auto r = frames_.read(strm_, opcode, payload, fin, is_server_, max_len);
     if (r != impl::FrameRead::Ok && server_stopping()) { return going_away(); }
     // A timeout leaves what was read of the frame and of the message for the
@@ -24980,8 +24999,7 @@ inline ReadResult WebSocket::read(std::string &msg) {
       message_ = std::move(payload);
       message_kind_ = opcode == Opcode::Text ? Text : Binary;
     }
-    if (CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH > 0 &&
-        message_.size() > CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH) {
+    if (max_message_length_ > 0 && message_.size() > max_message_length_) {
       return fail_with(CloseStatus::MessageTooBig);
     }
     if (!fin) { continue; }
@@ -25332,9 +25350,9 @@ inline Result WebSocketClient::connect() {
   }
   subprotocol_ = std::move(upgrade.selected_subprotocol);
 
-  ws_ = std::unique_ptr<WebSocket>(new WebSocket(std::move(strm), req, false,
-                                                 websocket_ping_interval_sec_,
-                                                 websocket_max_missed_pongs_));
+  ws_ = std::unique_ptr<WebSocket>(new WebSocket(
+      std::move(strm), req, false, websocket_ping_interval_sec_,
+      websocket_max_missed_pongs_, websocket_max_message_length_));
   // The stream was created with the timeout already; tell the WebSocket
   // whether it came from the caller, so read() knows to report it as Timeout.
   ws_->read_timeout_set_ = read_timeout_set_;
@@ -25387,6 +25405,10 @@ inline void WebSocketClient::set_websocket_ping_interval(time_t sec) {
 
 inline void WebSocketClient::set_websocket_max_missed_pongs(int count) {
   websocket_max_missed_pongs_ = count;
+}
+
+inline void WebSocketClient::set_websocket_max_message_length(size_t length) {
+  websocket_max_message_length_ = length;
 }
 
 inline void WebSocketClient::set_tcp_nodelay(bool on) { tcp_nodelay_ = on; }

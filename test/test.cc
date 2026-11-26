@@ -31082,6 +31082,153 @@ TEST(WebSocketTest, CloseEndsAReadOfEndlessFragments) {
   EXPECT_TRUE(read_ended);
 }
 
+TEST(WebSocketTest, ServerMaxMessageLength) {
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.set_websocket_max_message_length(1024);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {
+      ws.send(msg);
+    }
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+  client.set_read_timeout(5, 0);
+  ASSERT_TRUE(client.connect());
+
+  // A message at the limit is read
+  std::string msg;
+  ASSERT_TRUE(client.send(std::string(1024, 'a')));
+  ASSERT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ(1024u, msg.size());
+
+  // One over it fails the server's read(), which closes the connection
+  ASSERT_TRUE(client.send(std::string(2048, 'b')));
+  EXPECT_EQ(ws::Fail, client.read(msg));
+  EXPECT_FALSE(client.is_open());
+}
+
+TEST(WebSocketTest, ServerMaxMessageLengthCoversFragments) {
+  std::atomic<bool> done{false};
+  std::vector<size_t> sizes;
+  auto last = ws::Text;
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.set_websocket_max_message_length(200);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while ((last = ws.read(msg)) != ws::Fail) {
+      sizes.push_back(msg.size());
+    }
+    done = true;
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto sock = connect_raw_websocket(port, "/ws");
+  ASSERT_NE(INVALID_SOCKET, sock);
+  auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+
+  // Every frame is within the limit; the second message as a whole is not.
+  auto frames = masked_frame(0x02, std::string(100, 'a')) + // Binary
+                masked_frame(0x80, std::string(100, 'a')) + // FIN + Cont.
+                masked_frame(0x02, std::string(120, 'b')) + // Binary
+                masked_frame(0x80, std::string(120, 'b'));  // FIN + Cont.
+  detail::send_socket(sock, frames.data(), frames.size(), 0);
+
+  for (int i = 0; i < 500 && !done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(done);
+  ASSERT_EQ(1u, sizes.size());
+  EXPECT_EQ(200u, sizes[0]);
+  EXPECT_EQ(ws::Fail, last);
+}
+
+TEST(WebSocketTest, ServerMaxMessageLengthAboveTheDefault) {
+  // The setter can raise the limit as well as lower it, and 0 lifts it,
+  // as it does for CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH.
+  for (auto limit :
+       {size_t(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1), size_t(0)}) {
+    Server svr;
+    svr.set_websocket_ping_interval(0);
+    svr.set_websocket_max_message_length(limit);
+    svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+      std::string msg;
+      while (ws.read(msg)) {
+        ws.send(std::to_string(msg.size()));
+      }
+    });
+
+    auto port = svr.bind_to_any_port(HOST);
+    std::thread t([&]() { svr.listen_after_bind(); });
+    auto se = detail::scope_exit([&] {
+      svr.stop();
+      t.join();
+    });
+    svr.wait_until_ready();
+
+    ws::WebSocketClient client("ws://localhost:" + std::to_string(port) +
+                               "/ws");
+    client.set_read_timeout(10, 0);
+    ASSERT_TRUE(client.connect());
+
+    std::string oversized(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1, 'A');
+    ASSERT_TRUE(client.send(oversized));
+    std::string msg;
+    ASSERT_EQ(ws::Text, client.read(msg)) << "limit " << limit;
+    EXPECT_EQ(std::to_string(oversized.size()), msg);
+    client.close();
+  }
+}
+
+TEST(WebSocketTest, ClientMaxMessageLength) {
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    ws.send(std::string(1024, 'a'));
+    ws.send(std::string(2048, 'b'));
+    std::string msg;
+    while (ws.read(msg)) {}
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
+  client.set_read_timeout(5, 0);
+  client.set_websocket_max_message_length(1024);
+  ASSERT_TRUE(client.connect());
+
+  std::string msg;
+  ASSERT_EQ(ws::Text, client.read(msg));
+  EXPECT_EQ(1024u, msg.size());
+
+  EXPECT_EQ(ws::Fail, client.read(msg));
+  EXPECT_FALSE(client.is_open());
+}
+
 TEST(WebSocketTest, NegativePingIntervalSendsNoPings) {
   Server svr;
   svr.set_websocket_ping_interval(-1);

@@ -85,4 +85,4 @@ if (cli.read(buf) == httplib::ws::ReadResult::Binary) {
 
 テキストとバイナリを混ぜて送ることもできます。たとえば「制御メッセージはJSON、データ本体はバイナリ」といったプロトコルを組み立てると、メタデータと生データを効率よく扱えます。
 
-> **Note:** 受信できるメッセージの大きさは`CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`（デフォルトは16MB、0なら無制限）までです。これを超えると`read()`は`Fail`を返し、接続は終了します。上限以内でもメッセージはまるごとメモリに載るので、巨大なデータを送るときは、アプリケーション側で分割して送るのが安全です。
+> **Note:** 受信できるメッセージの大きさは`CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`（デフォルトは16MB、0なら無制限）、または`Server`や`WebSocketClient`の`set_websocket_max_message_length()`で設定した値までです。これを超えると`read()`は`Fail`を返し、接続は終了します。上限以内でもメッセージはまるごとメモリに載るので、巨大なデータを送るときは、アプリケーション側で分割して送るのが安全です。
