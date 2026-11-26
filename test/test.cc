@@ -6442,8 +6442,8 @@ TEST(ServerExceptionTest, ThrowingWebSocketHandlerDoesNotKillTheServer) {
 
 #ifdef CPPHTTPLIB_SSL_ENABLED
 TEST(ServerExceptionTest, ThrowingContentProviderDoesNotKillTheSSLServer) {
-  // SSLServer::process_and_close_socket() is a separate overload with its own
-  // guard, so it is exercised on its own.
+  // SSLServer serves through its own connection type, so it is exercised on
+  // its own.
   SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
   ASSERT_TRUE(svr.is_valid());
   svr.new_task_queue = [] { return new ThreadPool(1); };

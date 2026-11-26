@@ -2589,7 +2589,7 @@ private:
                          ContentReceiver multipart_receiver) const;
 
   virtual bool process_and_close_socket(socket_t sock);
-  // The connection that parking_loop() keeps for a socket it has accepted.
+  // The connection that serves an accepted socket, with or without parking.
   virtual std::shared_ptr<KeepAliveConnection>
   new_keep_alive_connection(socket_t sock);
 
@@ -14326,9 +14326,9 @@ WebSocketSSLStream::set_read_interrupt(std::function<bool()> interrupted) {
  * Group 4: Server implementation
  */
 
-// A kept-alive connection that the event loop of set_keep_alive_parking()
-// owns while it is idle, and a worker owns while it serves a request. A
-// derived class adds the transport: the stream, and for TLS the session.
+// A connection served across its requests. With set_keep_alive_parking(), the
+// event loop owns it while it is idle, and a worker while it serves a request.
+// A derived class adds the transport: the stream, and for TLS the session.
 struct Server::KeepAliveConnection {
   KeepAliveConnection(socket_t s, Server &server) : svr(server), sock(s) {}
   // Every owner closes it before letting go, which the transport hooks need;
@@ -14348,8 +14348,8 @@ struct Server::KeepAliveConnection {
   // close_notify.
   virtual void shut_down(bool /*graceful*/) {}
 
-  // On a worker, once the event loop has seen the socket readable. Afterwards
-  // turn.park tells whether it may be parked again.
+  // On a worker, with parking once the event loop has seen the socket
+  // readable. Afterwards turn.park tells whether it may be parked again.
   bool resume() {
     turn = Turn();
     return svr.serve_guarded([this]() {
@@ -20187,9 +20187,9 @@ inline bool ssl_free_buffers_is_safe(unsigned long version) {
 } // namespace detail
 #endif
 
-// A connection that keep-alive parking keeps for SSLServer. The worker that
-// first resumes it runs the handshake, so one that has not sent its
-// ClientHello yet waits in the event loop like an idle connection.
+// The connection of SSLServer. The worker that first resumes it runs the
+// handshake, so with parking one that has not sent its ClientHello yet waits
+// in the event loop like an idle connection.
 struct SSLServer::TlsConnection final : Server::KeepAliveConnection {
   TlsConnection(socket_t s, SSLServer &server)
       : KeepAliveConnection(s, server), ssl_svr(server) {}
