@@ -26,7 +26,11 @@ endif()
 
 find_package(CURL REQUIRED)
 
-add_executable(httplib-test test.cc include_httplib.cc $<$<BOOL:${WIN32}>:include_windows_h.cc>)
+# include_httplib.cc checks the header-only build, as the Makefile's split
+# targets leave it out too.
+add_executable(httplib-test test.cc
+    $<$<NOT:$<BOOL:${HTTPLIB_IS_COMPILED}>>:include_httplib.cc>
+    $<$<BOOL:${WIN32}>:include_windows_h.cc>)
 target_compile_options(httplib-test PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/utf-8;/bigobj>")
 target_link_libraries(httplib-test PRIVATE httplib GTest::gtest_main CURL::libcurl)
 gtest_discover_tests(httplib-test)
