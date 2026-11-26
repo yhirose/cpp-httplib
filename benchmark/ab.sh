@@ -4,7 +4,7 @@
 #
 # Usage: ./ab.sh [--base REF] [--head REF] [--rounds N] [--duration S]
 #                [--connections N] [--threads N] [--path PATH] [--tls]
-#                [--large-mib N] [--timeout S]
+#                [--large-mib N] [--timeout S] [--no-keep-alive]
 #
 # --path selects the workload. The harness serves:
 #   /                  small body via set_content(); the response line, the
@@ -19,6 +19,9 @@
 #
 # --tls runs the same workload over HTTPS, which writes through
 # SSLSocketStream instead of SocketStream.
+#
+# --no-keep-alive opens a new connection for every request, which measures
+# the cost of accepting and setting up a connection.
 #
 # --timeout is bombardier's per-request timeout. Its 2s default aborts large
 # TLS responses, and the run then fails on the non-2xx check.
@@ -43,6 +46,7 @@ REQ_PATH="/"
 TLS=0
 LARGE_MIB=1
 TIMEOUT="30s"
+NO_KEEP_ALIVE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,9 +60,15 @@ while [ $# -gt 0 ]; do
     --large-mib) LARGE_MIB="$2"; shift 2 ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
     --tls) TLS=1; shift ;;
+    --no-keep-alive) NO_KEEP_ALIVE=1; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+# bombardier's default fasthttp client ignores -a, so close each connection
+# with the request header instead.
+CLOSE_HEADER=()
+if [ "$NO_KEEP_ALIVE" -eq 1 ]; then CLOSE_HEADER=(-H "Connection: close"); fi
 
 command -v bombardier >/dev/null || { echo "Error: bombardier not found" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "Error: python3 not found" >&2; exit 1; }
@@ -162,7 +172,7 @@ measure() {
   done
 
   set +e
-  json=$(bombardier -c "$CONNECTIONS" -d "$DURATION" -t "$TIMEOUT" -o json -p r $INSECURE \
+  json=$(bombardier -c "$CONNECTIONS" -d "$DURATION" -t "$TIMEOUT" -o json -p r $INSECURE ${CLOSE_HEADER[@]+"${CLOSE_HEADER[@]}"} \
     "$SCHEME://127.0.0.1:$PORT$REQ_PATH" 2>/dev/null)
   rc=$?
   set -e
