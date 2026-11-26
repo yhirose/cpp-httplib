@@ -3551,7 +3551,6 @@ public:
   int ssl_last_error() const { return last_ssl_error_; }
 
 private:
-  bool process_and_close_socket(socket_t sock) override;
   std::shared_ptr<KeepAliveConnection>
   new_keep_alive_connection(socket_t sock) override;
   struct TlsConnection;
@@ -20286,47 +20285,6 @@ inline tls::session_t SSLServer::start_session(socket_t sock) {
     return nullptr;
   }
   return session;
-}
-
-inline bool SSLServer::process_and_close_socket(socket_t sock) {
-  auto session = start_session(sock);
-  if (!session) {
-    detail::shutdown_socket(sock);
-    detail::close_socket(sock);
-    return false;
-  }
-
-  // Use scope_exit to ensure cleanup on all paths (including exceptions)
-  bool ret = false;
-  bool websocket_upgraded = false;
-  auto cleanup = detail::scope_exit([&] {
-    tls::shutdown(session, !websocket_upgraded && ret);
-    tls::free_session(session);
-    detail::drain_and_close_socket(sock);
-  });
-
-  std::string remote_addr;
-  int remote_port = 0;
-  detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
-
-  std::string local_addr;
-  int local_port = 0;
-  detail::get_local_ip_and_port(sock, local_addr, local_port);
-
-  ret = serve_guarded([&]() {
-    return detail::process_server_socket_ssl(
-        svr_sock_, session, sock, keep_alive_max_count_,
-        keep_alive_timeout_sec_, read_timeout_sec_, read_timeout_usec_,
-        write_timeout_sec_, write_timeout_usec_,
-        [&](Stream &strm, bool close_connection, bool &connection_closed) {
-          return process_request(
-              strm, remote_addr, remote_port, local_addr, local_port,
-              close_connection, connection_closed,
-              [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
-        });
-  });
-
-  return ret;
 }
 
 inline bool SSLServer::update_certs_pem(const char *cert_pem,
