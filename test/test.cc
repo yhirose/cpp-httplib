@@ -30963,6 +30963,24 @@ static std::string masked_frame(uint8_t first_byte,
   return f + payload;
 }
 
+// Sends frames on a new raw connection to /ws and returns the first n bytes the
+// server sends back, or what came before it closed.
+static std::string raw_websocket_reply(int port, const std::string &frames,
+                                       size_t n) {
+  auto sock = connect_raw_websocket(port, "/ws");
+  if (sock == INVALID_SOCKET) { return std::string(); }
+  detail::send_socket(sock, frames.data(), frames.size(), 0);
+  std::string reply;
+  char buf[256];
+  while (reply.size() < n) {
+    auto got = ::recv(sock, buf, sizeof(buf), 0);
+    if (got <= 0) { break; }
+    reply.append(buf, static_cast<size_t>(got));
+  }
+  detail::close_socket(sock);
+  return reply;
+}
+
 TEST(WebSocketTest, AssemblesFragmentsAroundAPing) {
   std::atomic<bool> done{false};
   std::string received;
@@ -31360,22 +31378,10 @@ TEST(WebSocketTest, AnswersAMalformedCloseWithProtocolError) {
   // Also between the fragments of a message.
   for (const auto &prefix : {std::string(), masked_frame(0x02, "a")}) {
     for (const auto &c : cases) {
-      auto sock = connect_raw_websocket(port, "/ws");
-      ASSERT_NE(INVALID_SOCKET, sock);
-      auto frames = prefix + masked_frame(0x88, c.first);
-      detail::send_socket(sock, frames.data(), frames.size(), 0);
-
-      std::string reply;
-      char buf[256];
-      while (reply.size() < 2 + c.second.size()) {
-        auto n = ::recv(sock, buf, sizeof(buf), 0);
-        if (n <= 0) { break; }
-        reply.append(buf, static_cast<size_t>(n));
-      }
-      detail::close_socket(sock);
       EXPECT_EQ(std::string("\x88") + static_cast<char>(c.second.size()) +
                     c.second,
-                reply);
+                raw_websocket_reply(port, prefix + masked_frame(0x88, c.first),
+                                    2 + c.second.size()));
     }
   }
 }
@@ -31422,19 +31428,8 @@ TEST(WebSocketTest, FailsABadFrameWithACloseStatus) {
       {too_big, too_big_error},
   };
   for (const auto &c : cases) {
-    auto sock = connect_raw_websocket(port, "/ws");
-    ASSERT_NE(INVALID_SOCKET, sock);
-    detail::send_socket(sock, c.first.data(), c.first.size(), 0);
-
-    std::string reply;
-    char buf[256];
-    while (reply.size() < 4) {
-      auto n = ::recv(sock, buf, sizeof(buf), 0);
-      if (n <= 0) { break; }
-      reply.append(buf, static_cast<size_t>(n));
-    }
-    detail::close_socket(sock);
-    EXPECT_EQ(std::string("\x88\x02") + c.second, reply);
+    EXPECT_EQ(std::string("\x88\x02") + c.second,
+              raw_websocket_reply(port, c.first, 4));
   }
 }
 
@@ -31486,12 +31481,16 @@ TEST(WebSocketTest, ClientFailsAMaskedFrameWithProtocolError) {
   ASSERT_TRUE(connected);
   EXPECT_EQ(ws::Fail, r);
 
-  ASSERT_EQ(8u, reply.size());
-  EXPECT_EQ(std::string("\x88\x82"), reply.substr(0, 2));
-  std::string code;
-  code += static_cast<char>(reply[6] ^ reply[2]);
-  code += static_cast<char>(reply[7] ^ reply[3]);
-  EXPECT_EQ(std::string("\x03\xea"), code);
+  detail::BufferStream strm;
+  strm.write(reply.data(), reply.size());
+  ws::Opcode opcode;
+  std::string payload;
+  bool fin;
+  ASSERT_EQ(
+      ws::impl::FrameRead::Ok,
+      ws::impl::read_websocket_frame(strm, opcode, payload, fin, true, 125));
+  EXPECT_EQ(ws::Opcode::Close, opcode);
+  EXPECT_EQ(std::string("\x03\xea"), payload);
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
