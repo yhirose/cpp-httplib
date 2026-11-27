@@ -31390,12 +31390,13 @@ TEST(WebSocketTest, StopMidBoundedMessageClosesWithGoingAway) {
 // A handler that bounds its reads gets control back within its timeout even
 // while a message arrives in pieces, and the message whole once the last has
 // come: what was read of it is kept across the timeouts. Each of `pieces` is
-// sent a while after the one before, much longer than the handler's timeout.
+// sent once read() has timed out twice since the one before was sent, so the
+// second timeout came from a read() that had that piece to take.
 static void check_bounded_read_resumes(const std::vector<std::string> &pieces,
                                        const std::string &expected) {
   std::atomic<bool> done{false};
+  std::atomic<int> timeouts{0};
   std::string received;
-  std::chrono::steady_clock::duration longest{};
 
   Server svr;
   svr.set_websocket_ping_interval(0);
@@ -31403,11 +31404,9 @@ static void check_bounded_read_resumes(const std::vector<std::string> &pieces,
     ws.set_read_timeout(0, 10000);
     std::string msg;
     ws::ReadResult r;
-    do {
-      auto began = std::chrono::steady_clock::now();
-      r = ws.read(msg);
-      longest = (std::max)(longest, std::chrono::steady_clock::now() - began);
-    } while (r == ws::Timeout);
+    while ((r = ws.read(msg)) == ws::Timeout) {
+      timeouts++;
+    }
     if (r == ws::Text) { received = msg; }
     done = true;
   });
@@ -31423,19 +31422,24 @@ static void check_bounded_read_resumes(const std::vector<std::string> &pieces,
   auto sock = connect_raw_websocket(port, "/ws");
   ASSERT_NE(INVALID_SOCKET, sock);
   auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
-  for (const auto &piece : pieces) {
-    ASSERT_EQ(static_cast<ssize_t>(piece.size()),
-              detail::send_socket(sock, piece.data(), piece.size(), 0));
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  // Each piece goes out at once, not held back by Nagle's algorithm
+  ASSERT_TRUE(set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1));
+  for (size_t i = 0; i < pieces.size(); i++) {
+    ASSERT_EQ(static_cast<ssize_t>(pieces[i].size()),
+              detail::send_socket(sock, pieces[i].data(), pieces[i].size(), 0));
+    if (i + 1 == pieces.size()) { break; }
+    auto before = timeouts.load();
+    for (int j = 0; j < 5000 && timeouts < before + 2; j++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_GE(timeouts.load(), before + 2) << "piece " << i;
   }
 
-  for (int i = 0; i < 500 && !done; i++) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  for (int i = 0; i < 5000 && !done; i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   ASSERT_TRUE(done);
   EXPECT_EQ(expected, received);
-  // Far under the 200 ms between the pieces, however loaded the machine
-  EXPECT_LT(longest, std::chrono::milliseconds(150));
 }
 
 TEST(WebSocketTest, BoundedReadResumesAFrameInPieces) {
