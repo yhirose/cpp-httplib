@@ -21681,6 +21681,9 @@ TEST(RedirectTest, RelativeLocationWithoutLeadingSlash) {
   const std::vector<std::pair<std::string, std::string>> cases = {
       {"next", "/dir/next"},
       {"./next?x=1", "/dir/next?x=1"},
+      {"next?source=https://example.com/catalog",
+       "/dir/next?source=https://example.com/catalog"},
+      {"/other?next=https://example.com/", "/other?next=https://example.com/"},
       {"../other", "/other"},
   };
   for (const auto &c : cases) {
