@@ -21681,6 +21681,8 @@ TEST(RedirectTest, RelativeLocationWithoutLeadingSlash) {
   const std::vector<std::pair<std::string, std::string>> cases = {
       {"next", "/dir/next"},
       {"./next?x=1", "/dir/next?x=1"},
+      {"next?source=https://example.com/catalog",
+       "/dir/next?source=https://example.com/catalog"},
       {"../other", "/other"},
   };
   for (const auto &c : cases) {
@@ -22396,6 +22398,14 @@ TEST(ParseUrlTest, SchemeEdgeCases) {
     detail::UrlComponents uc;
     ASSERT_TRUE(detail::parse_url("httpS://example.com/path", uc));
     EXPECT_EQ("https", uc.scheme);
+  }
+  {
+    detail::UrlComponents uc;
+    ASSERT_TRUE(detail::parse_url("/path?next=https://example.com/", uc));
+    EXPECT_TRUE(uc.scheme.empty());
+    EXPECT_TRUE(uc.host.empty());
+    EXPECT_EQ("/path", uc.path);
+    EXPECT_EQ("?next=https://example.com/", uc.query);
   }
 }
 
