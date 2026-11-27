@@ -6308,11 +6308,16 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
 
 // RFC 6455 §5.5.1, §7.4: a Close payload is empty, or a status code that may
 // be sent followed by a UTF-8 reason.
+// The status code a Close payload of at least 2 bytes starts with
+inline uint16_t close_code(const std::string &payload) {
+  return static_cast<uint16_t>((static_cast<uint8_t>(payload[0]) << 8) |
+                               static_cast<uint8_t>(payload[1]));
+}
+
 inline bool is_valid_close_payload(const std::string &payload) {
   if (payload.empty()) { return true; }
   if (payload.size() < 2) { return false; }
-  auto code = (static_cast<uint8_t>(payload[0]) << 8) |
-              static_cast<uint8_t>(payload[1]);
+  auto code = close_code(payload);
   auto may_be_sent = (1000 <= code && code <= 1003) ||
                      (1007 <= code && code <= 1014) ||
                      (3000 <= code && code <= 4999);
@@ -25122,9 +25127,7 @@ inline void WebSocket::set_close_status(const std::string &payload) {
     close_status_ = CloseStatus::NoStatus;
   } else if (impl::is_valid_close_payload(payload)) {
     close_reason_ = payload.substr(2);
-    close_status_ =
-        static_cast<CloseStatus>((static_cast<uint8_t>(payload[0]) << 8) |
-                                 static_cast<uint8_t>(payload[1]));
+    close_status_ = static_cast<CloseStatus>(impl::close_code(payload));
   } else {
     close_status_ = CloseStatus::ProtocolError;
   }

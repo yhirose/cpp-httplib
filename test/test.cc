@@ -29262,6 +29262,8 @@ TEST_F(WebSocketIntegrationTest, CloseHandshake) {
   std::string msg;
   EXPECT_FALSE(client.read(msg));
   EXPECT_FALSE(client.is_open());
+  EXPECT_EQ(ws::CloseStatus::Normal, client.close_status());
+  EXPECT_EQ("", client.close_reason());
 }
 
 TEST_F(WebSocketIntegrationTest, LargeMessage) {
@@ -29485,56 +29487,24 @@ TEST_F(WebSocketIntegrationTest, CloseWithStatus) {
   std::string msg;
   EXPECT_FALSE(client.read(msg));
   EXPECT_FALSE(client.is_open());
+  EXPECT_EQ(ws::CloseStatus::GoingAway, client.close_status());
+  EXPECT_EQ("shutting down", client.close_reason());
+  // A copy, so it outlives a reconnect that replaces the connection
+  static_assert(
+      std::is_same<decltype(client.close_reason()), std::string>::value, "");
 }
 
 TEST_F(WebSocketIntegrationTest, ClientCloseWithStatus) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
                              "/ws-echo");
+  EXPECT_EQ(ws::CloseStatus::Abnormal, client.close_status());
   ASSERT_TRUE(client.connect());
 
   client.close(ws::CloseStatus::GoingAway, "client leaving");
   EXPECT_FALSE(client.is_open());
-}
-
-TEST_F(WebSocketIntegrationTest, ClientSeesTheServersCloseStatus) {
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
-                             "/ws-close-status");
-  ASSERT_TRUE(client.connect());
-  ASSERT_TRUE(client.send("trigger"));
-
-  std::string msg;
-  EXPECT_EQ(ws::Fail, client.read(msg));
+  // The server echoes the Close it receives
   EXPECT_EQ(ws::CloseStatus::GoingAway, client.close_status());
-  const auto &reason = client.close_reason();
-  EXPECT_EQ("shutting down", reason);
-
-  // A reconnect replaces the connection the reason came from
-  ASSERT_TRUE(client.connect());
-  EXPECT_EQ("shutting down", reason);
-}
-
-TEST_F(WebSocketIntegrationTest, ClientSeesANormalClose) {
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
-                             "/ws-close");
-  ASSERT_TRUE(client.connect());
-  ASSERT_TRUE(client.send("trigger"));
-
-  std::string msg;
-  EXPECT_EQ(ws::Fail, client.read(msg));
-  EXPECT_EQ(ws::CloseStatus::Normal, client.close_status());
-  EXPECT_EQ("", client.close_reason());
-}
-
-TEST_F(WebSocketIntegrationTest, ClientCloseStatusIsThePeersReply) {
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
-                             "/ws-echo");
-  EXPECT_EQ(ws::CloseStatus::Abnormal, client.close_status());
-  ASSERT_TRUE(client.connect());
-
-  // The server echoes the code and reason of the Close it receives
-  client.close(static_cast<ws::CloseStatus>(4001), "logout");
-  EXPECT_EQ(4001, static_cast<uint16_t>(client.close_status()));
-  EXPECT_EQ("logout", client.close_reason());
+  EXPECT_EQ("client leaving", client.close_reason());
 }
 
 TEST_F(WebSocketIntegrationTest, SubProtocolNegotiation) {
