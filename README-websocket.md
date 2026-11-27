@@ -242,6 +242,9 @@ void set_connection_timeout(const std::chrono::duration<Rep, Period> &duration);
 void set_websocket_ping_interval(time_t sec);
 void set_websocket_max_missed_pongs(int count);
 
+// Largest message read() accepts (see Maximum Message Length below)
+void set_websocket_max_message_length(size_t length);
+
 // Socket - the same setters Client has (TCP_NODELAY is on by default here)
 void set_tcp_nodelay(bool on);
 void set_address_family(int family);
@@ -525,7 +528,7 @@ if (ws.connect()) {
 
 | Macro                                       | Default           | Description                                              |
 |---------------------------------------------|-------------------|----------------------------------------------------------|
-| `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`   | `16777216` (16MB) | Maximum payload size per message (`0` means no limit)    |
+| `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH`   | `16777216` (16MB) | Default maximum message size (`0` means no limit)        |
 | `CPPHTTPLIB_WEBSOCKET_CLIENT_READ_TIMEOUT_SECOND` | `0`         | Client read timeout (seconds); `0` waits forever         |
 | `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` | `300`       | Server read timeout (seconds)                            |
 | `CPPHTTPLIB_WEBSOCKET_CLOSE_TIMEOUT_SECOND` | `5`               | Timeout for waiting peer's Close response (seconds)      |
@@ -566,6 +569,18 @@ The server side has the same `set_websocket_max_missed_pongs()`.
 With the default ping interval of 30 seconds, `max_missed_pongs = 2` detects a dead peer 60 to 90 seconds after it stops answering: the count is checked once per interval, just before the next ping goes out. A `read()` waiting on the peer at that moment returns `Fail`. The counter is reset every time a Pong frame is received, so the mechanism only works when your code is actively calling `read()`, which is exactly the pattern a normal WebSocket client already uses.
 
 **The default is `0`**, which means "never close the connection because of missing pongs." Pings are still sent on the heartbeat interval, but their responses are not checked. On the server side a dead connection still does not linger: while a handler is inside `read()`, `CPPHTTPLIB_WEBSOCKET_SERVER_READ_TIMEOUT_SECOND` (default **300 seconds = 5 minutes**) acts as a backstop. A client has no such backstop — it waits forever unless you set a read timeout — so there `max_missed_pongs` is what notices an unresponsive peer at all. On either side it is also the knob for noticing one *faster* than the 5-minute fallback.
+
+### Maximum Message Length
+
+`read()` refuses a message larger than `CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH` (16MB by default): it returns `Fail` and closes the connection with `MessageTooBig` (1009). A frame that announces a larger length is refused before its payload is read, and a fragmented message is refused as soon as its fragments add up to more, so the limit bounds the memory a peer can make `read()` hold. You can set it per server or per client at runtime instead of changing the compile-time macro. `0` means no limit.
+
+```cpp
+// Server side
+svr.set_websocket_max_message_length(64 * 1024); // 64KB
+
+// Client side, applied by the next connect()
+ws.set_websocket_max_message_length(64 * 1024);
+```
 
 ## Threading Model
 
