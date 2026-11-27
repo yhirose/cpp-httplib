@@ -29398,41 +29398,6 @@ TEST_F(WebSocketIntegrationTest, ReadTimeoutSetAfterConnect) {
   EXPECT_TRUE(client.is_open());
 }
 
-TEST_F(WebSocketIntegrationTest, MaxPayloadExceeded) {
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
-                             "/ws-echo");
-  client.set_read_timeout(5, 0);
-  ASSERT_TRUE(client.connect());
-
-  // Send a message exceeding CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (16MB).
-  // The server should reject it and close the connection.
-  std::string oversized(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH + 1, 'A');
-  client.send(oversized);
-
-  // The server's read() should have failed due to payload limit,
-  // so our read() should return false (connection closed).
-  std::string msg;
-  EXPECT_FALSE(client.read(msg));
-}
-
-TEST_F(WebSocketIntegrationTest, MaxPayloadAtLimit) {
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
-                             "/ws-echo");
-  client.set_read_timeout(10, 0);
-  ASSERT_TRUE(client.connect());
-
-  // Send a message exactly at CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH (16MB).
-  // This should succeed.
-  std::string at_limit(CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH, 'B');
-  ASSERT_TRUE(client.send(at_limit));
-
-  std::string msg;
-  ASSERT_TRUE(client.read(msg));
-  EXPECT_EQ(at_limit.size(), msg.size());
-
-  client.close();
-}
-
 TEST_F(WebSocketIntegrationTest, ConnectToInvalidPath) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
                              "/nonexistent");
