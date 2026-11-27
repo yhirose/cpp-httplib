@@ -29265,6 +29265,8 @@ TEST_F(WebSocketIntegrationTest, CloseHandshake) {
   std::string msg;
   EXPECT_FALSE(client.read(msg));
   EXPECT_FALSE(client.is_open());
+  EXPECT_EQ(ws::CloseStatus::Normal, client.close_status());
+  EXPECT_EQ("", client.close_reason());
 }
 
 TEST_F(WebSocketIntegrationTest, LargeMessage) {
@@ -29488,15 +29490,24 @@ TEST_F(WebSocketIntegrationTest, CloseWithStatus) {
   std::string msg;
   EXPECT_FALSE(client.read(msg));
   EXPECT_FALSE(client.is_open());
+  EXPECT_EQ(ws::CloseStatus::GoingAway, client.close_status());
+  EXPECT_EQ("shutting down", client.close_reason());
+  // A copy, so it outlives a reconnect that replaces the connection
+  static_assert(
+      std::is_same<decltype(client.close_reason()), std::string>::value, "");
 }
 
 TEST_F(WebSocketIntegrationTest, ClientCloseWithStatus) {
   ws::WebSocketClient client("ws://localhost:" + std::to_string(port_) +
                              "/ws-echo");
+  EXPECT_EQ(ws::CloseStatus::Abnormal, client.close_status());
   ASSERT_TRUE(client.connect());
 
   client.close(ws::CloseStatus::GoingAway, "client leaving");
   EXPECT_FALSE(client.is_open());
+  // The server echoes the Close it receives
+  EXPECT_EQ(ws::CloseStatus::GoingAway, client.close_status());
+  EXPECT_EQ("client leaving", client.close_reason());
 }
 
 TEST_F(WebSocketIntegrationTest, SubProtocolNegotiation) {
@@ -31501,6 +31512,73 @@ TEST(WebSocketTest, ClientFailsAMaskedFrameWithProtocolError) {
       ws::impl::read_websocket_frame(strm, opcode, payload, fin, true, 125));
   EXPECT_EQ(ws::Opcode::Close, opcode);
   EXPECT_EQ(std::string("\x03\xea"), payload);
+}
+
+// What a handler sees of the peer's close once read() has failed
+TEST(WebSocketTest, HandlerSeesThePeersClose) {
+  std::mutex m;
+  std::condition_variable cv;
+  size_t handled = 0;
+  uint16_t seen_status = 0;
+  std::string seen_reason;
+
+  Server svr;
+  svr.set_websocket_ping_interval(0);
+  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
+    std::string msg;
+    while (ws.read(msg)) {}
+    std::lock_guard<std::mutex> lock(m);
+    seen_status = static_cast<uint16_t>(ws.close_status());
+    seen_reason = ws.close_reason();
+    handled++;
+    cv.notify_one();
+  });
+
+  auto port = svr.bind_to_any_port("127.0.0.1");
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  auto expect_seen = [&](size_t n, uint16_t status, const std::string &reason,
+                         const char *label) {
+    std::unique_lock<std::mutex> lock(m);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] {
+      return handled == n;
+    })) << label;
+    EXPECT_EQ(status, seen_status) << label;
+    EXPECT_EQ(reason, seen_reason) << label;
+  };
+
+  // What a raw client sends before it drops the connection
+  struct Case {
+    const char *label;
+    std::string sent;
+    uint16_t status;
+    std::string reason;
+  };
+  std::vector<Case> cases = {
+      {"application code", masked_frame(0x88, "\x0f\xa1logout"), 4001,
+       "logout"},
+      {"normal", masked_frame(0x88, "\x03\xe8"), 1000, ""},
+      {"no status", masked_frame(0x88, ""), 1005, ""},
+      {"malformed", masked_frame(0x88, "\x03"), 1002, ""},
+      {"no Close", masked_frame(0x81, "hi"), 1006, ""},
+  };
+  for (size_t i = 0; i < cases.size(); i++) {
+    auto sock = connect_raw_websocket(port, "/ws");
+    ASSERT_NE(INVALID_SOCKET, sock);
+    detail::send_socket(sock, cases[i].sent.data(), cases[i].sent.size(), 0);
+    detail::close_socket(sock);
+    expect_seen(i + 1, cases[i].status, cases[i].reason, cases[i].label);
+  }
+
+  ws::WebSocketClient client("ws://127.0.0.1:" + std::to_string(port) + "/ws");
+  ASSERT_TRUE(client.connect());
+  client.close(static_cast<ws::CloseStatus>(4001), "logout");
+  expect_seen(cases.size() + 1, 4001, "logout", "WebSocketClient");
 }
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT

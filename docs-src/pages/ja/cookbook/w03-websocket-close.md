@@ -67,7 +67,15 @@ cli.close(httplib::ws::CloseStatus::Normal);
 ws.close(httplib::ws::CloseStatus::GoingAway, "server restarting");
 ```
 
-クライアント側の`read()`は`Fail`を返すだけで、受け取ったステータスや理由は取り出せません。再起動による切断をほかの切断と見分けたい場合は、先にメッセージ（`ws.send("restarting")`など）を送ってから`close()`を呼びましょう。
+`read()`が`Fail`を返したあとは、`close_status()`と`close_reason()`で切断の理由を取り出せます。相手のCloseフレームのステータスと理由、ステータスがなければ`NoStatus` (1005)、Closeフレームなしで切れた場合は`Abnormal` (1006)です。サーバー側でもクライアント側でも同じです。
+
+```cpp
+std::string msg;
+while (cli.read(msg)) {}
+if (cli.close_status() == httplib::ws::CloseStatus::GoingAway) {
+  // サーバーが再起動中: あとで再接続する
+}
+```
 
 ## サンプル: 簡単なチャット終了
 

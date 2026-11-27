@@ -4919,6 +4919,13 @@ public:
   const Request &request() const;
   bool is_open() const;
 
+  // Why the connection ended, once read() has returned Fail (RFC 6455 7.1.5,
+  // 7.1.6): the code and reason of the peer's Close, NoStatus when it had no
+  // code, ProtocolError when it was malformed, and Abnormal when none came.
+  // After a close() of our own, the peer's reply is what is reported.
+  CloseStatus close_status() const;
+  std::string close_reason() const;
+
   // Bound how long read() waits before returning Timeout. 0 waits forever.
   // A server handler owns its connection's timeout this way; a client sets it
   // through WebSocketClient. Safe to call while another thread is in read().
@@ -4970,6 +4977,7 @@ private:
   void start_heartbeat();
   bool send_frame(Opcode op, const char *data, size_t len, bool fin = true);
   bool send_close(const std::string &payload);
+  void set_close_status(const std::string &payload);
 
   Stream &strm_;
   std::unique_ptr<Stream> owned_strm_;
@@ -4999,6 +5007,10 @@ private:
   impl::FrameReader frames_;
   std::string message_;
   ReadResult message_kind_ = Fail; // Text or Binary while one is assembled
+  // The peer's Close, set once under read_mutex_. close_reason_ is written
+  // before close_status_ leaves Abnormal and is not changed after.
+  std::atomic<CloseStatus> close_status_{CloseStatus::Abnormal};
+  std::string close_reason_;
   std::thread ping_thread_;
   std::mutex ping_mutex_;
   std::condition_variable ping_cv_;
@@ -5022,6 +5034,8 @@ public:
   void close(CloseStatus status = CloseStatus::Normal,
              const std::string &reason = "");
   bool is_open() const;
+  CloseStatus close_status() const;
+  std::string close_reason() const;
   const std::string &subprotocol() const;
   void set_read_timeout(time_t sec, time_t usec = 0);
   template <class Rep, class Period>
@@ -6294,11 +6308,16 @@ inline FrameRead read_websocket_frame(Stream &strm, Opcode &opcode,
 
 // RFC 6455 §5.5.1, §7.4: a Close payload is empty, or a status code that may
 // be sent followed by a UTF-8 reason.
+// The status code a Close payload of at least 2 bytes starts with
+inline uint16_t close_code(const std::string &payload) {
+  return static_cast<uint16_t>((static_cast<uint8_t>(payload[0]) << 8) |
+                               static_cast<uint8_t>(payload[1]));
+}
+
 inline bool is_valid_close_payload(const std::string &payload) {
   if (payload.empty()) { return true; }
   if (payload.size() < 2) { return false; }
-  auto code = (static_cast<uint8_t>(payload[0]) << 8) |
-              static_cast<uint8_t>(payload[1]);
+  auto code = close_code(payload);
   auto may_be_sent = (1000 <= code && code <= 1003) ||
                      (1007 <= code && code <= 1014) ||
                      (3000 <= code && code <= 4999);
@@ -24912,6 +24931,8 @@ inline ReadResult WebSocket::read(std::string &msg) {
       return true;
     }
     case Opcode::Close:
+      // The reply to a close() of our own, too
+      set_close_status(payload);
       // RFC 6455 §5.5.1: a Close is echoed back, unless its payload is
       // malformed, which is answered with a protocol error instead.
       send_close(impl::is_valid_close_payload(payload)
@@ -25040,7 +25061,10 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
   while (std::chrono::steady_clock::now() < deadline &&
          frames_.read(strm_, op, resp, fin, is_server_, 125) ==
              impl::FrameRead::Ok) {
-    if (op == Opcode::Close) { break; }
+    if (op == Opcode::Close) {
+      set_close_status(resp);
+      break;
+    }
   }
 }
 
@@ -25091,6 +25115,25 @@ inline void WebSocket::start_heartbeat() {
 inline const Request &WebSocket::request() const { return req_; }
 
 inline bool WebSocket::is_open() const { return !closed_; }
+
+inline CloseStatus WebSocket::close_status() const { return close_status_; }
+
+inline std::string WebSocket::close_reason() const {
+  return close_status_ == CloseStatus::Abnormal ? std::string() : close_reason_;
+}
+
+// Called with read_mutex_ held. Only the first Close counts.
+inline void WebSocket::set_close_status(const std::string &payload) {
+  if (close_status_ != CloseStatus::Abnormal) { return; }
+  if (payload.empty()) {
+    close_status_ = CloseStatus::NoStatus;
+  } else if (impl::is_valid_close_payload(payload)) {
+    close_reason_ = payload.substr(2);
+    close_status_ = static_cast<CloseStatus>(impl::close_code(payload));
+  } else {
+    close_status_ = CloseStatus::ProtocolError;
+  }
+}
 
 inline void WebSocket::set_read_timeout(time_t sec, time_t usec) {
   // 0 waits forever here, as it does for SO_RCVTIMEO. The stream waits with
@@ -25364,6 +25407,14 @@ inline void WebSocketClient::close(CloseStatus status,
 }
 
 inline bool WebSocketClient::is_open() const { return ws_ && ws_->is_open(); }
+
+inline CloseStatus WebSocketClient::close_status() const {
+  return ws_ ? ws_->close_status() : CloseStatus::Abnormal;
+}
+
+inline std::string WebSocketClient::close_reason() const {
+  return ws_ ? ws_->close_reason() : std::string();
+}
 
 inline const std::string &WebSocketClient::subprotocol() const {
   return subprotocol_;

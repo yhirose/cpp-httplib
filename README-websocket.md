@@ -144,6 +144,14 @@ const Request &request() const;
 // Check if the connection is still open
 bool is_open() const;
 
+// Why the connection ended, once read() has returned Fail: the code and reason
+// of the peer's Close frame (any code, including 3000-4999, which are not
+// named in CloseStatus), NoStatus (1005) for a Close without a code,
+// ProtocolError (1002) for a malformed one, and Abnormal (1006) when the
+// connection ended without one. After your own close(), the peer's reply.
+CloseStatus close_status() const;
+std::string close_reason() const;
+
 // Bound how long read() waits before returning Timeout (0 waits forever).
 // Safe to call while another thread is in read().
 void set_read_timeout(time_t sec, time_t usec = 0);
@@ -200,6 +208,8 @@ bool send(const char *data, size_t len);
 void close(CloseStatus status = CloseStatus::Normal,
            const std::string &reason = "");
 bool is_open() const;
+CloseStatus close_status() const;
+std::string close_reason() const;
 
 // Authentication - the same setters Client has (Basic wins over Bearer).
 void set_basic_auth(const std::string &username, const std::string &password);
@@ -378,6 +388,12 @@ ws.close(httplib::ws::CloseStatus::GoingAway, "shutting down");
 
 // Server-side: close with a policy violation status
 ws.close(httplib::ws::CloseStatus::PolicyViolation, "forbidden");
+
+// Either side: why the peer closed, once read() has returned Fail
+std::string msg;
+while (ws.read(msg)) {}
+auto code = static_cast<uint16_t>(ws.close_status()); // e.g. 1000, 1001, 4001
+auto reason = ws.close_reason();
 ```
 
 ### Accessing the Upgrade Request
