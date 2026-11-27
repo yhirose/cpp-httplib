@@ -4941,12 +4941,10 @@ private:
   friend class httplib::Server;
   friend class httplib::ws::WebSocketClient;
 
-  WebSocket(
-      Stream &strm, const Request &req, bool is_server,
-      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
-      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS,
-      size_t max_message_length = CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH,
-      std::function<bool()> server_stopping = nullptr)
+  WebSocket(Stream &strm, const Request &req, bool is_server,
+            time_t ping_interval_sec, int max_missed_pongs,
+            size_t max_message_length,
+            std::function<bool()> server_stopping = nullptr)
       : strm_(strm), req_(req), is_server_(is_server),
         ping_interval_sec_(ping_interval_sec),
         max_missed_pongs_(max_missed_pongs),
@@ -4956,12 +4954,10 @@ private:
     start_heartbeat();
   }
 
-  WebSocket(
-      std::unique_ptr<Stream> &&owned_strm, const Request &req, bool is_server,
-      time_t ping_interval_sec = CPPHTTPLIB_WEBSOCKET_PING_INTERVAL_SECOND,
-      int max_missed_pongs = CPPHTTPLIB_WEBSOCKET_MAX_MISSED_PONGS,
-      size_t max_message_length = CPPHTTPLIB_WEBSOCKET_MAX_PAYLOAD_LENGTH,
-      std::function<bool()> server_stopping = nullptr)
+  WebSocket(std::unique_ptr<Stream> &&owned_strm, const Request &req,
+            bool is_server, time_t ping_interval_sec, int max_missed_pongs,
+            size_t max_message_length,
+            std::function<bool()> server_stopping = nullptr)
       : strm_(*owned_strm), owned_strm_(std::move(owned_strm)), req_(req),
         is_server_(is_server), ping_interval_sec_(ping_interval_sec),
         max_missed_pongs_(max_missed_pongs),

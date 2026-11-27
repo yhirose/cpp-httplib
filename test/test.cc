@@ -31085,52 +31085,12 @@ TEST(WebSocketTest, CloseEndsAReadOfEndlessFragments) {
 TEST(WebSocketTest, ServerMaxMessageLength) {
   Server svr;
   svr.set_websocket_ping_interval(0);
-  svr.set_websocket_max_message_length(1024);
+  svr.set_websocket_max_message_length(100);
   svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
     std::string msg;
     while (ws.read(msg)) {
       ws.send(msg);
     }
-  });
-
-  auto port = svr.bind_to_any_port(HOST);
-  std::thread t([&]() { svr.listen_after_bind(); });
-  auto se = detail::scope_exit([&] {
-    svr.stop();
-    t.join();
-  });
-  svr.wait_until_ready();
-
-  ws::WebSocketClient client("ws://localhost:" + std::to_string(port) + "/ws");
-  client.set_read_timeout(5, 0);
-  ASSERT_TRUE(client.connect());
-
-  // A message at the limit is read
-  std::string msg;
-  ASSERT_TRUE(client.send(std::string(1024, 'a')));
-  ASSERT_EQ(ws::Text, client.read(msg));
-  EXPECT_EQ(1024u, msg.size());
-
-  // One over it fails the server's read(), which closes the connection
-  ASSERT_TRUE(client.send(std::string(2048, 'b')));
-  EXPECT_EQ(ws::Fail, client.read(msg));
-  EXPECT_FALSE(client.is_open());
-}
-
-TEST(WebSocketTest, ServerMaxMessageLengthOnRawFrames) {
-  std::atomic<bool> done{false};
-  std::vector<size_t> sizes;
-  auto last = ws::Text;
-
-  Server svr;
-  svr.set_websocket_ping_interval(0);
-  svr.set_websocket_max_message_length(100);
-  svr.WebSocket("/ws", [&](const Request &, ws::WebSocket &ws) {
-    std::string msg;
-    while ((last = ws.read(msg)) != ws::Fail) {
-      sizes.push_back(msg.size());
-    }
-    done = true;
   });
 
   auto port = svr.bind_to_any_port("127.0.0.1");
@@ -31141,34 +31101,27 @@ TEST(WebSocketTest, ServerMaxMessageLengthOnRawFrames) {
   });
   svr.wait_until_ready();
 
-  {
-    auto sock = connect_raw_websocket(port, "/ws");
-    ASSERT_NE(INVALID_SOCKET, sock);
-    auto se_sock = detail::scope_exit([&] { detail::close_socket(sock); });
+  const std::string ping(110, 'p');
+  const std::string half(50, 'a');
+  const std::string over(60, 'b');
+  const std::string too_big("\x88\x02\x03\xf1"); // Close 1009
 
-    // A control frame is not held to the limit. Every data frame is within
-    // it; the second message as a whole is not.
-    auto frames = masked_frame(0x89, std::string(110, 'p')) + // Ping
-                  masked_frame(0x02, std::string(50, 'a')) +  // Binary
-                  masked_frame(0x80, std::string(50, 'a')) +  // FIN + Cont.
-                  masked_frame(0x02, std::string(60, 'b')) +  // Binary
-                  masked_frame(0x80, std::string(60, 'b'));   // FIN + Cont.
-    detail::send_socket(sock, frames.data(), frames.size(), 0);
-
-    for (int i = 0; i < 500 && !done; i++) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    ASSERT_TRUE(done);
-    ASSERT_EQ(1u, sizes.size());
-    EXPECT_EQ(100u, sizes[0]);
-    EXPECT_EQ(ws::Fail, last);
-  }
+  // A Ping longer than the limit is answered, since the limit is for
+  // messages. A message at the limit is echoed, and one over it is refused
+  // although each of its frames is within it.
+  EXPECT_EQ(std::string("\x8a\x6e") + ping + "\x81\x64" + half + half + too_big,
+            raw_websocket_reply(
+                port,
+                masked_frame(0x89, ping) + masked_frame(0x01, half) +
+                    masked_frame(0x80, half) + masked_frame(0x01, over) +
+                    masked_frame(0x80, over),
+                2 + ping.size() + 2 + 2 * half.size() + too_big.size()));
 
   // A header that announces more than the limit is refused before its payload
-  EXPECT_EQ(
-      std::string("\x88\x02\x03\xf1"),
-      raw_websocket_reply(
-          port, std::string("\x82\xfe\x03\xe8", 4) + std::string(4, '\0'), 4));
+  EXPECT_EQ(too_big, raw_websocket_reply(port,
+                                         std::string("\x82\xfe\x03\xe8", 4) +
+                                             std::string(4, '\0'),
+                                         too_big.size()));
 }
 
 TEST(WebSocketTest, ClientMaxMessageLength) {
