@@ -51,4 +51,21 @@ svr.set_pre_routing_handler(
 
 全ルート共通ではなく、ルート単位で認証を分けたいときは、[S11. Pre-request handlerでルート単位の認証を行う](../s11-pre-request)のほうが適しています。
 
+## 接続の段階で断る
+
+接続元のアドレスで絞り込むだけなら、リクエストを読む前に断れます。`set_accept_handler()`は、接続を受け付けた直後、リクエストを読む前（`SSLServer`ならTLSハンドシェイクの前）に呼ばれます。`false`を返すと、その接続は何も読まずに閉じられます。
+
+```cpp
+svr.set_accept_handler([](socket_t sock) {
+  sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  if (getpeername(sock, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+    return false;
+  }
+  return is_allowed(addr); // 自前の判定
+});
+```
+
+このハンドラは接続を受け付けるスレッドで動くので、時間のかかる処理を入れると新しい接続がすべて待たされます。また、ソケットはサーバーが閉じるので、ハンドラの中では閉じないでください。
+
 > **Note:** レスポンスを加工したいだけなら、`set_post_routing_handler()`のほうが適切です。[S10. Post-routing handlerでレスポンスヘッダーを追加する](../s10-post-routing)を参照してください。

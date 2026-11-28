@@ -34676,6 +34676,11 @@ bool sees_eof(socket_t sock, std::chrono::steady_clock::time_point deadline) {
          detail::read_socket(sock, &c, 1, 0) <= 0;
 }
 
+// Whether the server closes `sock` without answering a request.
+bool get_refused(socket_t sock, int timeout_ms) {
+  return send_get(sock) && sees_eof(sock, in_ms(timeout_ms));
+}
+
 bool wait_until(const std::function<bool()> &cond, int timeout_ms) {
   auto deadline = in_ms(timeout_ms);
   while (!cond()) {
@@ -35035,5 +35040,105 @@ TEST(KeepAliveParkingTest, StopClosesParkedTlsConnections) {
   running.thread.join();
   EXPECT_LT(std::chrono::steady_clock::now() - start,
             std::chrono::milliseconds(500));
+}
+#endif
+
+TEST(AcceptHandlerTest, RefusedConnectionIsClosedUnread) {
+  using namespace parking_test;
+  for (auto parking : {false, true}) {
+    SCOPED_TRACE(parking);
+    Server svr;
+    serve_ok(svr, threads(2));
+    svr.set_keep_alive_parking(parking);
+    std::atomic<int> served{0};
+    svr.set_pre_routing_handler([&](const Request &, Response &) {
+      served++;
+      return Server::HandlerResponse::Unhandled;
+    });
+    std::atomic<bool> allow{false};
+    std::atomic<bool> peer_seen{false};
+    svr.set_accept_handler([&](socket_t sock) {
+      sockaddr_in addr{};
+      socklen_t len = sizeof(addr);
+      peer_seen =
+          getpeername(sock, reinterpret_cast<sockaddr *>(&addr), &len) == 0 &&
+          addr.sin_family == AF_INET &&
+          ntohl(addr.sin_addr.s_addr) == INADDR_LOOPBACK;
+      return allow.load();
+    });
+    RunningServer running(svr);
+    Sockets socks;
+
+    EXPECT_TRUE(get_refused(socks.connect(running.port), 1000));
+    EXPECT_TRUE(peer_seen);
+    EXPECT_EQ(0, served);
+
+    allow = true;
+    EXPECT_TRUE(get_ok(socks.connect(running.port), 1000));
+    EXPECT_EQ(1, served);
+  }
+}
+
+TEST(AcceptHandlerTest, HandlerSeesTheReadTimeout) {
+  using namespace parking_test;
+  Server svr;
+  serve_ok(svr, threads(1));
+  svr.set_read_timeout(std::chrono::milliseconds(50));
+  std::atomic<bool> timed_out{false};
+  svr.set_accept_handler([&](socket_t sock) {
+    char c;
+    timed_out = detail::read_socket(sock, &c, 1, 0) < 0;
+    return true;
+  });
+  RunningServer running(svr);
+  Sockets socks;
+
+  auto sock = socks.connect(running.port);
+  EXPECT_TRUE(wait_until([&] { return timed_out.load(); }, 1000));
+  EXPECT_TRUE(get_ok(sock, 1000));
+}
+
+#ifndef CPPHTTPLIB_NO_EXCEPTIONS
+TEST(AcceptHandlerTest, ThrowingHandlerRefusesTheConnection) {
+  using namespace parking_test;
+  Server svr;
+  serve_ok(svr, threads(1));
+  std::atomic<bool> throws{true};
+  svr.set_accept_handler([&](socket_t) -> bool {
+    if (throws) { throw std::runtime_error("refused"); }
+    return true;
+  });
+  std::atomic<int> logged{0};
+  svr.set_error_logger([&](const Error &err, const Request *) {
+    if (err == Error::UserCallbackException) { logged++; }
+  });
+  RunningServer running(svr);
+  Sockets socks;
+
+  EXPECT_TRUE(get_refused(socks.connect(running.port), 1000));
+  EXPECT_EQ(1, logged);
+
+  throws = false;
+  EXPECT_TRUE(get_ok(socks.connect(running.port), 1000));
+}
+#endif
+
+#ifdef CPPHTTPLIB_SSL_ENABLED
+TEST(AcceptHandlerTest, RefusedTlsConnectionSkipsTheHandshake) {
+  using namespace parking_test;
+  for (auto parking : {false, true}) {
+    SCOPED_TRACE(parking);
+    SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+    ASSERT_TRUE(svr.is_valid());
+    serve_ok(svr, threads(1));
+    svr.set_keep_alive_parking(parking);
+    svr.set_accept_handler([](socket_t) { return false; });
+    RunningServer running(svr);
+    Sockets socks;
+
+    // A handshake on a plain request would fail and set ssl_last_error().
+    EXPECT_TRUE(get_refused(socks.connect(running.port), 1000));
+    EXPECT_EQ(0, svr.ssl_last_error());
+  }
 }
 #endif

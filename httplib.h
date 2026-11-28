@@ -2298,6 +2298,8 @@ public:
 
   using StartHandler = std::function<void()>;
 
+  using AcceptHandler = std::function<bool(socket_t sock)>;
+
   using WebSocketHandler =
       std::function<void(const Request &, ws::WebSocket &)>;
   using SubProtocolSelector =
@@ -2362,6 +2364,8 @@ public:
   Server &set_expect_100_continue_handler(Expect100ContinueHandler handler);
 
   Server &set_start_handler(StartHandler handler);
+
+  Server &set_accept_handler(AcceptHandler handler);
 
   Server &set_logger(Logger logger);
   Server &set_pre_compression_logger(Logger logger);
@@ -2438,8 +2442,9 @@ protected:
                        const std::function<void(Request &)> &setup_request,
                        bool *websocket_upgraded = nullptr);
 
-  // Runs the per-connection serving loop and stops an exception thrown by a
-  // user callback from escaping the worker thread.
+  // Runs a user callback, or the per-connection serving loop that calls user
+  // callbacks, and stops an exception thrown by one from escaping the
+  // server's threads.
   //
   // process_request() wraps only routing() and the hooks before a WebSocket
   // upgrade in a try/catch. Content providers, the post-routing, error,
@@ -2542,7 +2547,7 @@ private:
   bool listen_internal();
   bool accept_loop(TaskQueue &task_queue);
   bool parking_loop(TaskQueue &task_queue);
-  void prepare_accepted_socket(socket_t sock) const;
+  bool admit_accepted_socket(socket_t sock) const;
   struct PlainConnection;
   void resume_connection(std::shared_ptr<KeepAliveConnection> conn);
   bool abandon_listen_socket();
@@ -2647,6 +2652,7 @@ private:
   HandlerWithResponse pre_request_handler_;
   Expect100ContinueHandler expect_100_continue_handler_;
   StartHandler start_handler_;
+  AcceptHandler accept_handler_;
 
   mutable std::mutex logger_mutex_;
   Logger logger_;
@@ -14873,6 +14879,11 @@ inline Server &Server::set_start_handler(StartHandler handler) {
   return *this;
 }
 
+inline Server &Server::set_accept_handler(AcceptHandler handler) {
+  accept_handler_ = std::move(handler);
+  return *this;
+}
+
 inline Server &Server::set_address_family(int family) {
   address_family_ = family;
   return *this;
@@ -15678,12 +15689,22 @@ inline bool Server::listen_internal() {
   return ret;
 }
 
-inline void Server::prepare_accepted_socket(socket_t sock) const {
+// Closes the socket and returns false when the accept handler refuses it.
+inline bool Server::admit_accepted_socket(socket_t sock) const {
   detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO, read_timeout_sec_,
                               read_timeout_usec_);
   detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO, write_timeout_sec_,
                               write_timeout_usec_);
   if (tcp_nodelay_) { set_socket_opt(sock, IPPROTO_TCP, TCP_NODELAY, 1); }
+
+  // After the timeouts, so that a handler reading from the socket returns.
+  if (accept_handler_ &&
+      !serve_guarded([&]() { return accept_handler_(sock); })) {
+    detail::shutdown_socket(sock);
+    detail::close_socket(sock);
+    return false;
+  }
+  return true;
 }
 
 // Serves each connection on one worker thread for its whole life.
@@ -15722,7 +15743,7 @@ inline bool Server::accept_loop(TaskQueue &task_queue) {
       break;
     }
 
-    prepare_accepted_socket(sock);
+    if (!admit_accepted_socket(sock)) { continue; }
 
     if (!task_queue.enqueue(
             [this, sock]() { process_and_close_socket(sock); })) {
@@ -16684,7 +16705,7 @@ inline bool Server::parking_loop(TaskQueue &task_queue) {
           }
           // Some platforms make it non-blocking like the listening socket.
           detail::set_nonblocking(sock, false);
-          prepare_accepted_socket(sock);
+          if (!admit_accepted_socket(sock)) { continue; }
           park(new_keep_alive_connection(sock), now);
           if (idle.count() > 0) { next_idle = now + idle; }
         }

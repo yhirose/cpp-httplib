@@ -587,9 +587,27 @@ svr.set_pre_request_handler([](const auto& req, auto& res) {
 > [!NOTE]
 > Because the body has not been read yet, `req.body` and form fields parsed from the body are not available in the pre-request handler. Inspect headers, the path, query parameters, or `req.matched_route` instead.
 
+### Accept handler
+
+The accept handler runs for each accepted connection before anything is read from it, and before the TLS handshake on `SSLServer`. Return `false` to close the connection.
+
+```cpp
+svr.set_accept_handler([](socket_t sock) {
+  sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  if (getpeername(sock, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+    return false;
+  }
+  return is_allowed(addr); // Your own check
+});
+```
+
+> [!NOTE]
+> The handler runs on the thread that accepts connections, so a slow handler delays every new connection. With `set_keep_alive_parking(true)`, that thread also hands out the next requests on kept-alive connections, so those wait too. The server owns `sock` and closes it after a refusal, so the handler must not close it. If the handler throws, the connection is closed and the error logger receives `Error::UserCallbackException`.
+
 ### Handler execution order
 
-`set_start_handler` runs once when the server starts. For each request, handlers run in the following order:
+`set_start_handler` runs once when the server starts, and `set_accept_handler` once for each connection, before any request on it. For each request, handlers run in the following order:
 
 ```
 Request received

@@ -51,4 +51,21 @@ If auth fails, return `Handled` to respond with 401 immediately. If it passes, r
 
 If you want different auth rules per route rather than a single global check, `set_pre_request_handler()` is a better fit. See [S11. Authenticate per route with a pre-request handler](../s11-pre-request).
 
+## Refuse at the connection
+
+If all you need is to filter by the peer address, you can refuse the connection before any request is read. `set_accept_handler()` runs right after a connection is accepted, before the request is read (and before the TLS handshake on `SSLServer`). Return `false`, and the connection is closed without reading from it.
+
+```cpp
+svr.set_accept_handler([](socket_t sock) {
+  sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  if (getpeername(sock, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+    return false;
+  }
+  return is_allowed(addr); // your own check
+});
+```
+
+The handler runs on the thread that accepts connections, so a slow handler holds up every new connection. The server closes the socket, so don't close it in the handler.
+
 > **Note:** If all you want is to modify the response, `set_post_routing_handler()` is the right tool. See [S10. Add response headers with a post-routing handler](../s10-post-routing).
