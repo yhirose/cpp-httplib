@@ -2598,7 +2598,7 @@ private:
                          ContentReceiver multipart_receiver) const;
 
   virtual bool process_and_close_socket(socket_t sock);
-  // The connection that parking_loop() keeps for a socket it has accepted.
+  // The connection that serves an accepted socket, with or without parking.
   virtual std::shared_ptr<KeepAliveConnection>
   new_keep_alive_connection(socket_t sock);
 
@@ -3561,7 +3561,6 @@ public:
   int ssl_last_error() const { return last_ssl_error_; }
 
 private:
-  bool process_and_close_socket(socket_t sock) override;
   std::shared_ptr<KeepAliveConnection>
   new_keep_alive_connection(socket_t sock) override;
   struct TlsConnection;
@@ -14387,9 +14386,9 @@ WebSocketSSLStream::set_read_interrupt(std::function<bool()> interrupted) {
  * Group 4: Server implementation
  */
 
-// A kept-alive connection that the event loop of set_keep_alive_parking()
-// owns while it is idle, and a worker owns while it serves a request. A
-// derived class adds the transport: the stream, and for TLS the session.
+// A connection served across its requests. With set_keep_alive_parking(), the
+// event loop owns it while it is idle, and a worker while it serves a request.
+// A derived class adds the transport: the stream, and for TLS the session.
 struct Server::KeepAliveConnection {
   KeepAliveConnection(socket_t s, Server &server) : svr(server), sock(s) {}
   // Every owner closes it before letting go, which the transport hooks need;
@@ -14409,8 +14408,8 @@ struct Server::KeepAliveConnection {
   // close_notify.
   virtual void shut_down(bool /*graceful*/) {}
 
-  // On a worker, once the event loop has seen the socket readable. Afterwards
-  // turn.park tells whether it may be parked again.
+  // On a worker, with parking once the event loop has seen the socket
+  // readable. Afterwards turn.park tells whether it may be parked again.
   bool resume() {
     turn = Turn();
     return svr.serve_guarded([this]() {
@@ -14435,11 +14434,11 @@ struct Server::KeepAliveConnection {
     sock = INVALID_SOCKET;
   }
 
-  // From the worker that served it.
-  void close_served(bool graceful) {
+  // From the worker that served it, with what resume() returned.
+  void close_served(bool ok) {
     assert(sock != INVALID_SOCKET);
     if (opened) {
-      shut_down(graceful);
+      shut_down(ok && !turn.websocket_upgraded);
       detail::drain_and_close_socket(sock);
     } else {
       // It never got as far as a request, e.g. a failed TLS handshake.
@@ -14464,6 +14463,10 @@ struct Server::KeepAliveConnection {
   }
 
   bool wait_for_next_request() {
+    if (wait_in_place) {
+      return detail::keep_alive(svr.svr_sock_, sock,
+                                svr.keep_alive_timeout_sec_);
+    }
     // The event loop saw the socket readable just before this ran.
     if (turn.woken) {
       turn.woken = false;
@@ -14487,6 +14490,8 @@ struct Server::KeepAliveConnection {
   int remote_port = 0;
   int local_port = 0;
   bool opened = false; // by resume(), once open() has succeeded
+  // Waits for the next request on the worker, as without parking.
+  bool wait_in_place = false;
   Turn turn;
   size_t served = 0;
   std::string remote_addr;
@@ -16544,29 +16549,10 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
 inline bool Server::is_valid() const { return !has_invalid_registration_; }
 
 inline bool Server::process_and_close_socket(socket_t sock) {
-  std::string remote_addr;
-  int remote_port = 0;
-  detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
-
-  std::string local_addr;
-  int local_port = 0;
-  detail::get_local_ip_and_port(sock, local_addr, local_port);
-
-  bool websocket_upgraded = false;
-  auto ret = serve_guarded([&]() {
-    return detail::process_server_socket(
-        svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-        read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-        write_timeout_usec_,
-        [&](Stream &strm, bool close_connection, bool &connection_closed) {
-          return process_request(strm, remote_addr, remote_port, local_addr,
-                                 local_port, close_connection,
-                                 connection_closed, nullptr,
-                                 &websocket_upgraded);
-        });
-  });
-
-  detail::drain_and_close_socket(sock);
+  auto conn = new_keep_alive_connection(sock);
+  conn->wait_in_place = true;
+  auto ret = conn->resume();
+  conn->close_served(ret);
   return ret;
 }
 
@@ -16751,7 +16737,7 @@ Server::resume_connection(std::shared_ptr<KeepAliveConnection> conn) {
     c.release_buffers(); // it may stay idle for long
     if (st.give_back(conn)) { return; }
   }
-  c.close_served(!c.turn.websocket_upgraded && ret);
+  c.close_served(ret);
 }
 
 inline void Server::output_log(const Request &req, const Response &res) const {
@@ -20282,9 +20268,9 @@ inline bool ssl_free_buffers_is_safe(unsigned long version) {
 } // namespace detail
 #endif
 
-// A connection that keep-alive parking keeps for SSLServer. The worker that
-// first resumes it runs the handshake, so one that has not sent its
-// ClientHello yet waits in the event loop like an idle connection.
+// The connection of SSLServer. The worker that first resumes it runs the
+// handshake, so with parking one that has not sent its ClientHello yet waits
+// in the event loop like an idle connection.
 struct SSLServer::TlsConnection final : Server::KeepAliveConnection {
   TlsConnection(socket_t s, SSLServer &server)
       : KeepAliveConnection(s, server), ssl_svr(server) {}
@@ -20380,47 +20366,6 @@ inline tls::session_t SSLServer::start_session(socket_t sock) {
     return nullptr;
   }
   return session;
-}
-
-inline bool SSLServer::process_and_close_socket(socket_t sock) {
-  auto session = start_session(sock);
-  if (!session) {
-    detail::shutdown_socket(sock);
-    detail::close_socket(sock);
-    return false;
-  }
-
-  // Use scope_exit to ensure cleanup on all paths (including exceptions)
-  bool ret = false;
-  bool websocket_upgraded = false;
-  auto cleanup = detail::scope_exit([&] {
-    tls::shutdown(session, !websocket_upgraded && ret);
-    tls::free_session(session);
-    detail::drain_and_close_socket(sock);
-  });
-
-  std::string remote_addr;
-  int remote_port = 0;
-  detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
-
-  std::string local_addr;
-  int local_port = 0;
-  detail::get_local_ip_and_port(sock, local_addr, local_port);
-
-  ret = serve_guarded([&]() {
-    return detail::process_server_socket_ssl(
-        svr_sock_, session, sock, keep_alive_max_count_,
-        keep_alive_timeout_sec_, read_timeout_sec_, read_timeout_usec_,
-        write_timeout_sec_, write_timeout_usec_,
-        [&](Stream &strm, bool close_connection, bool &connection_closed) {
-          return process_request(
-              strm, remote_addr, remote_port, local_addr, local_port,
-              close_connection, connection_closed,
-              [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
-        });
-  });
-
-  return ret;
 }
 
 inline bool SSLServer::update_certs_pem(const char *cert_pem,
