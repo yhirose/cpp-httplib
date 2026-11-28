@@ -11282,7 +11282,8 @@ inline bool parse_www_authenticate(const Response &res,
         if (unquoted.size() != val.size()) {
           unquoted = unescape_quoted_pairs(unquoted);
         }
-        auth[std::move(key_part)] = std::move(unquoted);
+        // auth-param names are case-insensitive (RFC 9110 Section 11.2)
+        auth[case_ignore::to_lower(key_part)] = std::move(unquoted);
       });
 
   // RFC 7616 Section 3.3 requires realm and nonce on every Digest challenge;

@@ -4034,6 +4034,45 @@ TEST(DigestAuthTest, RealmContainingCommaIsNotSplit) {
       "test,realm");
 }
 
+// RFC 9110 11.2: auth-param names are matched case-insensitively.
+TEST(DigestAuthTest, ParamNamesAreCaseInsensitive) {
+  std::atomic<int> hits{0};
+  std::string authorization;
+
+  Server svr;
+  svr.Get("/x", [&](const Request &req, Response &res) {
+    if (++hits == 1) {
+      res.status = StatusCode::Unauthorized_401;
+      res.set_header("WWW-Authenticate",
+                     "Digest Realm=\"testrealm\", QOP=\"auth\", "
+                     "Nonce=\"abc123\", Algorithm=SHA-256, OPAQUE=\"op\"");
+    } else {
+      authorization = req.get_header_value("Authorization");
+      res.set_content("ok", "text/plain");
+    }
+  });
+
+  auto port = svr.bind_to_any_port(HOST);
+  std::thread t([&]() { svr.listen_after_bind(); });
+  auto se = detail::scope_exit([&] {
+    svr.stop();
+    t.join();
+  });
+  svr.wait_until_ready();
+
+  Client cli(HOST, port);
+  cli.set_digest_auth("hello", "world");
+  auto res = cli.Get("/x");
+  ASSERT_TRUE(res) << "Error: " << to_string(res.error());
+  EXPECT_EQ(2, hits.load());
+
+  EXPECT_NE(std::string::npos, authorization.find("realm=\"testrealm\""));
+  EXPECT_NE(std::string::npos, authorization.find("nonce=\"abc123\""));
+  EXPECT_NE(std::string::npos, authorization.find("algorithm=SHA-256"));
+  EXPECT_NE(std::string::npos, authorization.find("qop=auth"));
+  EXPECT_NE(std::string::npos, authorization.find("opaque=\"op\""));
+}
+
 // RFC 7616 3.4: uri is the request-target as sent, which is encoded, carries
 // the params and leaves out the fragment.
 TEST(DigestAuthTest, UriIsTheRequestTargetSent) {
